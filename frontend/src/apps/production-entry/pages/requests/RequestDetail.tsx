@@ -288,6 +288,11 @@ export default function RequestDetail() {
             label={aisAdditional > 0 ? "Original FG Quantity" : "FG Quantity"}
             value={fgQtyLabel(r.fgQty)}
           />
+          {/* Repackaging only, and a different number from the Lot/Batch Card
+              above: this is the lot the goods arrived with. */}
+          {r.cardType === "repackaging" && (
+            <Field label="FG Item Lot Number" value={r.fgLotNo || "—"} />
+          )}
           {aisAdditional > 0 && (
             <Field
               label="Total FG Quantity"

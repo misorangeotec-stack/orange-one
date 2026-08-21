@@ -27,6 +27,7 @@ export interface RepackFormInit {
   requestId: string;
   fgQty: string;
   fgItemId: string;
+  fgLotNo: string;
   issueRemarks: string;
   /** yyyy-mm-dd; falls back to today for cards raised before the field existed. */
   issueDate: string;
@@ -39,6 +40,10 @@ export function useRepackForm(init?: RepackFormInit | null) {
 
   const [fgQty, setFgQty] = useState("");
   const [fgItemId, setFgItemId] = useState("");
+  // The lot the goods being repacked ARRIVED with (supplier / import lot) — not
+  // the Lot/Batch Card number this system allocates. Mandatory, and the number
+  // every later step carries forward.
+  const [fgLotNo, setFgLotNo] = useState("");
   const [issueRemarks, setIssueRemarks] = useState("");
   // See useJobCardForm: todayLocalIso, not time.ts's UTC todayIso.
   const [issueDate, setIssueDate] = useState(todayLocalIso());
@@ -58,6 +63,7 @@ export function useRepackForm(init?: RepackFormInit | null) {
     hydratedFor.current = init.requestId;
     setFgQty(init.fgQty);
     setFgItemId(init.fgItemId);
+    setFgLotNo(init.fgLotNo);
     setIssueRemarks(init.issueRemarks);
     setIssueDate(init.issueDate);
     setPackRows(init.packRows.length ? init.packRows : [makeEmptyPackRow()]);
@@ -76,6 +82,9 @@ export function useRepackForm(init?: RepackFormInit | null) {
     if (!issueDate) return { error: "The job date is required." };
     if (issueDate > todayLocalIso()) return { error: "The job date cannot be in the future." };
     if (!(Number(fgQty) > 0)) return { error: "Enter the quantity to repack." };
+    // Re-checked server-side. The FG lot is the only trace back to the goods that
+    // were repacked, and nothing downstream can reconstruct it after the fact.
+    if (!fgLotNo.trim()) return { error: "The FG item lot number is required." };
     if (filledPackRows.length === 0) return { error: "Add at least one packaging item." };
     if (filledPackRows.some((r) => !r.packagingItemId)) return { error: "Every line needs a packaging item." };
     if (filledPackRows.some((r) => !(Number(r.qty) > 0))) return { error: "Every packaging line needs a quantity greater than 0." };
@@ -85,6 +94,7 @@ export function useRepackForm(init?: RepackFormInit | null) {
         // No wastage — the server writes this same number as the packed quantity.
         fgTotalQty: fgQty.trim(),
         fgItemId,
+        fgLotNo: fgLotNo.trim(),
         issueDate,
         bomLines: [],
         packLines: filledPackRows.map((r) => ({
@@ -102,6 +112,7 @@ export function useRepackForm(init?: RepackFormInit | null) {
   return {
     fgQty, setFgQty,
     fgItemId, setFgItemId,
+    fgLotNo, setFgLotNo,
     issueDate, setIssueDate,
     issueRemarks, setIssueRemarks,
     packRows, setPackRows,

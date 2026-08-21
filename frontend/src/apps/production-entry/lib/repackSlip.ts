@@ -30,6 +30,9 @@ export interface RepackSlipLine {
 export interface RepackSlipExport {
   /** Lot/Batch Card number → "Product Batch Number" on the form. */
   jobcardNo: string;
+  /** The lot the goods being repacked ARRIVED with. A different number from
+   *  jobcardNo, and printed alongside it. */
+  fgLotNo: string;
   reqNo: string;
   /** FG item name → "Product Name & Product Code Number". */
   productName: string;
@@ -54,6 +57,7 @@ export function buildRepackSlipExport(
 ): RepackSlipExport {
   return {
     jobcardNo: r.jobcardNo,
+    fgLotNo: r.fgLotNo ?? "",
     reqNo: r.reqNo,
     productName: lookups.fgItemName(r.fgItemId),
     quantity: r.fgQty,
@@ -132,6 +136,7 @@ export function exportRepackSlipXlsx(vm: RepackSlipExport): void {
   const info: [string, string | number][] = [
     ["Product Name & Product Code Number", vm.productName],
     ["LOT No. / Product Batch Number", vm.jobcardNo],
+    ["FG Item Lot Number", vm.fgLotNo],
     ["Reference No.", vm.reqNo],
     [`Quantity to Repack${vm.unitName ? ` (in ${vm.unitName})` : ""}`, vm.quantity ?? ""],
     ["Raised By", vm.requesterName],
@@ -255,6 +260,7 @@ export function renderRepackSlipHtml(vm: RepackSlipExport): string {
   <table class="info">
     ${infoRow("Product Name & Product Code Number", vm.productName)}
     ${infoRow("LOT No. / Product Batch Number", vm.jobcardNo)}
+    ${infoRow("FG Item Lot Number", vm.fgLotNo)}
     ${infoRow("Reference No.", vm.reqNo)}
     ${infoRow(`Quantity to Repack${vm.unitName ? ` (in ${vm.unitName})` : ""}`, n2(vm.quantity))}
     ${infoRow("Raised By", vm.requesterName)}

@@ -69,6 +69,17 @@ export default function RepackSlipFields({
               {f.fgUnitName && <span className="shrink-0 text-[13px] text-grey-2">{f.fgUnitName}</span>}
             </div>
           </FieldLabel>
+          {/* The lot the goods ARRIVED with — the supplier / import lot printed
+              on the FG being repacked. Deliberately NOT the Lot/Batch Card
+              number above, which this system allocates; both travel together
+              from here through every later step. */}
+          <FieldLabel label="FG Item Lot Number" required>
+            <TextInput
+              value={f.fgLotNo}
+              onChange={(e) => f.setFgLotNo(e.target.value)}
+              placeholder="Lot number on the goods being repacked"
+            />
+          </FieldLabel>
         </div>
 
         {/* The same grid and the same rules as the Log Book Entry — here it divides
