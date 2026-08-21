@@ -43,6 +43,13 @@ export default function OrderDetail() {
 
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
+    // ⚠ NOT-FOUND IS ONLY TRUE ONCE THE REFRESH HAS SETTLED. Raising an order
+    //   navigates here the instant the write returns (NewOrder), and writes no
+    //   longer wait for the refetch — so the row is real in the database and not
+    //   yet in the cache. `isLoading` is false throughout (there IS cached data),
+    //   so without this the first thing a new order shows you is "Order not
+    //   found".
+    if (s.isFetching) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
     return <EmptyState title="Order not found" message="It may have been removed, or the link is stale." />;
   }
 

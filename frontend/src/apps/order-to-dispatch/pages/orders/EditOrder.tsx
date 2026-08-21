@@ -35,6 +35,10 @@ export default function EditOrder() {
   */
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
+    // Same rule as OrderDetail: a refresh in flight is not an answer yet. Writes
+    // do not wait for the refetch, so "absent from the cache" and "absent from
+    // the database" are no longer the same thing.
+    if (s.isFetching) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
     return <EmptyState title="Order not found" message="It may have been cancelled, or the link is stale." />;
   }
   if (!s.canEditOrder(order)) {

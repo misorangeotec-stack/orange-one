@@ -63,6 +63,17 @@ const QK = DISPATCH_QK;
 
 export interface DispatchStoreValue {
   isLoading: boolean;
+  /**
+   * A refresh is in flight over data we ALREADY have. Distinct from `isLoading`,
+   * which is only true on the very first load.
+   *
+   * ⚠ A screen that looks up one row by id must consult this before declaring
+   *   the row missing. Writes no longer wait for the refetch (see `invalidate`
+   *   below), so for a moment after a save the row can be real in the database
+   *   and absent from the cache — and `isLoading` is FALSE throughout, because
+   *   there is cached data. See OrderDetail.
+   */
+  isFetching: boolean;
   error: unknown;
 
   // identity / capability
@@ -312,7 +323,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const userId = session.user?.id ?? null;
   const isAdmin = session.isAdmin;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: dispatchQueryKey(userId),
     queryFn: fetchDispatchData,
     enabled: !!session.user,
@@ -345,7 +356,29 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DispatchStoreValue>(() => {
     const uid = userId ?? "";
-    const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
+    /**
+     * Refresh the module snapshot AFTER a write — deliberately NOT awaited.
+     *
+     * ⚠ `invalidateQueries` resolves only once the query has REFETCHED, and this
+     *   query is the module's whole snapshot. Awaiting it made every one of the
+     *   23 write paths hold its modal open for the length of a full reload: a
+     *   traced save on 21-Aug-2026 took 6.1 s end to end, of which the write
+     *   itself was 70 ms. So the write reports success, the modal closes, and the
+     *   screen underneath catches up a moment later.
+     *
+     *   Two consequences, both accepted:
+     *     · a list can show the pre-save row for that moment. The server is
+     *       authoritative — the RPCs reject a step that is already recorded — so
+     *       a fast double-click is a cosmetic race, not a correctness one.
+     *     · a screen that looks up a JUST-WRITTEN row by id can miss it. That is
+     *       what `isFetching` is exposed for; OrderDetail uses it.
+     *
+     *   The `.catch` is not optional: a background refetch that fails must not
+     *   surface as an unhandled rejection now that nobody is awaiting it.
+     */
+    const invalidate = () => {
+      void queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
+    };
 
     /**
      * The owner-set for a step at a location. `locationId: null` asks for the
@@ -685,6 +718,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     return {
       isLoading,
+      isFetching,
       error,
 
       userId: uid,
@@ -839,86 +873,86 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
       submitOrder: async (input) => {
         const id = await submitOrderWrite(input);
-        await invalidate();
+        invalidate();
         return id;
       },
       updateOrder: async (orderId, input) => {
         await updateOrderWrite(orderId, input);
-        await invalidate();
+        invalidate();
       },
       recordStep: async (step, orderId, payload) => {
         await recordStepWrite(step, orderId, payload);
-        await invalidate();
+        invalidate();
       },
       updateStep: async (step, orderId, payload) => {
         await updateStepWrite(step, orderId, payload);
-        await invalidate();
+        invalidate();
       },
       holdOrder: async (orderId, hold, reason) => {
         await holdOrderWrite(orderId, hold, reason);
-        await invalidate();
+        invalidate();
       },
       holdSalesBill: async (orderId, hold, reason) => {
         await holdSalesBillWrite(orderId, hold, reason);
-        await invalidate();
+        invalidate();
       },
       cancelOrder: async (orderId, reason) => {
         await cancelOrderWrite(orderId, reason);
-        await invalidate();
+        invalidate();
       },
       recordSalesReturn: async (orderId, payload) => {
         await recordSalesReturnWrite(orderId, payload);
-        await invalidate();
+        invalidate();
       },
       updateSalesReturn: async (orderId, payload) => {
         await updateSalesReturnWrite(orderId, payload);
-        await invalidate();
+        invalidate();
       },
       withdrawCancelRequest: async (orderId, reason) => {
         await withdrawCancelRequestWrite(orderId, reason);
-        await invalidate();
+        invalidate();
       },
       closeOrder: async (orderId, reason) => {
         await closeOrderWrite(orderId, reason);
-        await invalidate();
+        invalidate();
       },
       materialNothingAvailable: async (orderId, remarks) => {
         await materialNothingAvailableWrite(orderId, remarks);
-        await invalidate();
+        invalidate();
       },
       amendRound: async (roundId, input) => {
         await amendRoundWrite(roundId, input);
-        await invalidate();
+        invalidate();
       },
       uploadStepDocument: uploadStepDocumentWrite,
       stepDocumentUrl: stepDocumentUrlWrite,
       setStepOwner: async (stepKey, locationId, input) => {
         await setStepOwnerWrite(stepKey, locationId, input);
-        await invalidate();
+        invalidate();
       },
       deleteStepOwner: async (stepKey, locationId) => {
         await deleteStepOwnerWrite(stepKey, locationId);
-        await invalidate();
+        invalidate();
       },
       setConfig: async (key, val) => {
         await setConfigWrite(key, val);
-        await invalidate();
+        invalidate();
       },
       insertMaster: async (mt, input) => {
         await insertMasterWrite(mt, input);
-        await invalidate();
+        invalidate();
       },
       insertMasters: async (mt, inputs) => {
         await insertMastersWrite(mt, inputs);
-        await invalidate();
+        invalidate();
       },
       updateMaster: async (mt, id, input) => {
         await updateMasterWrite(mt, id, input);
-        await invalidate();
+        invalidate();
       },
       setMasterManagers: async (mt, userIds) => {
         await setMasterManagersWrite(mt, userIds);
-        await invalidate();
+        invalidate();
       },
       requestNewMaster: async (mt, payload) => {
         // Stamp the REAL session user: RLS checks auth.uid(), so an impersonated
@@ -932,7 +966,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           recipients: masterReviewersFor(mt),
           meta: { master_type: mt },
         });
-        await invalidate();
+        invalidate();
       },
       resolveMasterRequest: async (id, approve, payload, note) => {
         await resolveMasterRequestWrite(id, approve, payload, note);
@@ -947,15 +981,15 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
             meta: { master_type: req.masterType },
           });
         }
-        await invalidate();
+        invalidate();
       },
       markNotificationsRead: async (ids) => {
         await markNotificationsReadWrite(ids);
-        await invalidate();
+        invalidate();
       },
     };
   }, [
-    userId, isAdmin, isLoading, error, queryClient, dir, orgPeople,
+    userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
     masterManagers, masterRequests, orders, activity, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,

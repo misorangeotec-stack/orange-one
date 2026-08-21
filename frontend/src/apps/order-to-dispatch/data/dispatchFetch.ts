@@ -64,20 +64,69 @@ type Tbl =
  * `id` (the primary key) is appended as the tiebreaker, so the order is total and
  * the walk is exact. Same rule the receivables fetchers and liveMasters carry.
  */
-async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
-  const out: any[] = [];
-  for (let from = 0; ; from += PAGE) {
-    let q = db.from(table).select("*").order(orderBy, { ascending: true });
-    // fms_dispatch_config is the one caller that names its own key, and `key` IS
-    // its primary key — it has no `id` column, so asking for one would 400.
-    if (orderBy !== "key") q = q.order("id", { ascending: true });
-    const { data, error } = await q.range(from, from + PAGE - 1);
+/**
+ * ⚠ PAGES ARE FETCHED IN PARALLEL, NOT ONE AFTER THE OTHER, and the first page
+ *   is what tells us how many there are.
+ *
+ *   Walking serially meant page 2 could not start until page 1 landed. On
+ *   mst_party_items — 8,052 rows, nine pages — that was 1.86 s of pure latency in
+ *   a traced load, and it is paid again on every refresh. Asking the first page
+ *   for `count: "exact"` costs nothing extra and turns the other eight into one
+ *   concurrent round.
+ *
+ * ⚠ THE SERIAL TAIL IS NOT REDUNDANT. The count is read at the start; rows can be
+ *   inserted while the other pages are in flight. So if the LAST page still comes
+ *   back full, we keep walking from there exactly as before, until a short page
+ *   proves the end. That preserves the old termination guarantee — the parallel
+ *   round is an optimisation on top of it, not a replacement for it.
+ */
+/**
+ * The paged walk itself. `build(withCount)` must return a fresh, fully-ordered
+ * query each time it is called; this adds the `.range()`.
+ */
+async function pagedWalk(build: (withCount: boolean) => any): Promise<any[]> {
+  const page = (from: number, withCount = false) =>
+    build(withCount).range(from, from + PAGE - 1);
+
+  const first = await page(0, true);
+  if (first.error) throw new Error(first.error.message);
+
+  const out: any[] = [...(first.data ?? [])];
+  if (out.length < PAGE) return out;
+
+  const total: number | null = first.count ?? null;
+  const known = total === null ? 0 : Math.ceil(total / PAGE);
+  if (known > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: known - 1 }, (_, i) => page((i + 1) * PAGE)),
+    );
+    for (const r of rest) {
+      if (r.error) throw new Error(r.error.message);
+      out.push(...(r.data ?? []));
+    }
+    if ((rest[rest.length - 1]?.data?.length ?? 0) < PAGE) return out;
+  }
+
+  // Either the count was unavailable, or rows arrived mid-read: walk on serially.
+  for (let from = Math.max(known, 1) * PAGE; ; from += PAGE) {
+    const { data, error } = await page(from);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
     if (rows.length < PAGE) break;
   }
   return out;
+}
+
+async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
+  return pagedWalk((withCount) => {
+    let q = db.from(table).select("*", withCount ? { count: "exact" } : undefined)
+      .order(orderBy, { ascending: true });
+    // fms_dispatch_config is the one caller that names its own key, and `key` IS
+    // its primary key — it has no `id` column, so asking for one would 400.
+    if (orderBy !== "key") q = q.order("id", { ascending: true });
+    return q;
+  });
 }
 
 /**
@@ -109,20 +158,13 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 
 /** Everything Dispatch reads is per-table and unfiltered except these two. */
 async function fetchWhere(table: Tbl, extra: (q: any) => any): Promise<any[]> {
-  const out: any[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await extra(db.from(table).select("*"))
+  return pagedWalk((withCount) =>
+    extra(db.from(table).select("*", withCount ? { count: "exact" } : undefined))
       .order("created_at", { ascending: true })
       // The unique tiebreaker — see the note on fetchAll. mst_parties has 1,887
       // customers over 216 distinct timestamps, so page 2 starts inside a tie.
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
-  }
-  return out;
+      .order("id", { ascending: true }),
+  );
 }
 
 /**
@@ -133,9 +175,20 @@ async function fetchWhere(table: Tbl, extra: (q: any) => any): Promise<any[]> {
  */
 async function fetchByIds(table: Tbl, ids: string[]): Promise<any[]> {
   const CHUNK = 200;
+  // ⚠ CONCURRENT, not one chunk after another. This wave cannot even START until
+  //   the whole first wave has landed (it needs the item list), so its latency is
+  //   added to the end of every load and every refresh — 1,693 items is nine
+  //   chunks, ~0.7 s serial in a traced load, for requests of ~25 ms each. The
+  //   chunking itself stays: `in` builds a query STRING and a few thousand uuids
+  //   exceed what the gateway accepts as one.
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+
+  const results = await Promise.all(
+    chunks.map((c) => db.from(table).select("*").in("id", c)),
+  );
   const out: any[] = [];
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await db.from(table).select("*").in("id", ids.slice(i, i + CHUNK));
+  for (const { data, error } of results) {
     if (error) throw new Error(error.message);
     out.push(...(data ?? []));
   }
@@ -154,21 +207,14 @@ const ACTIVITY_DAYS = 120;
 
 async function fetchRecentActivity(): Promise<any[]> {
   const since = new Date(Date.now() - ACTIVITY_DAYS * 86_400_000).toISOString();
-  const out: any[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await db
+  return pagedWalk((withCount) =>
+    db
       .from("fms_dispatch_activity")
-      .select("*")
+      .select("*", withCount ? { count: "exact" } : undefined)
       .gte("created_at", since)
       .order("created_at", { ascending: true })
-      .order("id", { ascending: true }) // unique tiebreaker — see fetchAll
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
-  }
-  return out;
+      .order("id", { ascending: true }), // unique tiebreaker — see fetchAll
+  );
 }
 
 export interface DispatchConfig {
@@ -476,7 +522,17 @@ const mapNotification = (r: any): DispatchNotification => ({
   createdAt: r.created_at,
 });
 
-export async function fetchDispatchData(): Promise<DispatchData> {
+/**
+ * ⚠ THE ARGUMENT IS REACT-QUERY'S OWN CONTEXT, so all three call sites can keep
+ *   passing `queryFn: fetchDispatchData` untouched. The only thing read from it
+ *   is the user id, which `dispatchQueryKey` already puts in the key — see the
+ *   notifications read below for why it is worth having.
+ */
+export async function fetchDispatchData(
+  ctx?: { queryKey?: readonly unknown[] },
+): Promise<DispatchData> {
+  const forUser = typeof ctx?.queryKey?.[1] === "string" ? (ctx.queryKey[1] as string) : null;
+
   // 17 names, 17 calls. Keep them in step. (mst_items is the 18th and comes
   // after, in its own wave — see the note where it is fetched.)
   const [
@@ -511,7 +567,14 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchAll("fms_dispatch_rounds", "archived_at"),
     fetchAll("fms_dispatch_round_items"),
     fetchRecentActivity(),
-    fetchAll("fms_dispatch_notifications"),
+    // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
+    //   user_id is not the signed-in user (`mineNotifications`), so fetching the
+    //   whole table only ever cost bandwidth — and it cost the most for an admin,
+    //   whose RLS lets all 5,296 rows through where a normal user sees ~400. Same
+    //   rows reach the UI either way; four fifths of the payload does not.
+    forUser
+      ? fetchWhere("fms_dispatch_notifications", (q: any) => q.eq("user_id", forUser))
+      : fetchAll("fms_dispatch_notifications"),
   ]);
 
   const unitNameById = new Map<string, string>(units.map((u: any) => [u.id, u.name]));
