@@ -169,6 +169,18 @@ interface HrStoreValue {
   /** May the user CRUD this master — admin, or its assigned owner. */
   canManage: (masterType: HrMasterType) => boolean;
   /** Owns at least one master → sees the Masters page and the review tabs. */
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? On THIS module that
+   * reaches the VACANCY tier only — requisitions, the MRF queues, the Control
+   * Center, the Masters. The candidate screens stay hidden, because their RLS
+   * gate is the candidate-PII gate; see the note beside isModuleViewer in the
+   * provider and 20260925130100 section D.
+   */
+  isModuleViewer: boolean;
+  /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
+  canMonitor: boolean;
+  /** Visibility half of isAnyMasterManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
   isAnyMasterManager: boolean;
   /** Pending requests this user may resolve (admin → all; owner → their types). */
   resolvableRequests: HrMasterRequest[];
@@ -549,6 +561,41 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     const isAnyStepOwner = isAdmin || stepOwners.some((o) => o.employeeIds.includes(user.id));
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(user.id);
 
+    // Module-level write ceiling — see the doc on HrStoreValue.canEdit.
+    //
+    // ⚠ DECLARED HERE, not beside canActOnCandidate where it used to sit.
+    //   `canManage` now folds it and `resolvableRequests` CALLS canManage
+    //   synchronously below; with the old placement that is a temporal dead zone
+    //   and the store throws on first render.
+    const canEdit = session.canEditModule("hr-recruitment");
+
+    /**
+     * A "View only" grant on this module is a read grant — but on THIS module it
+     * reaches the VACANCY tier only.
+     *
+     * ⚠ IT DOES NOT OPEN THE CANDIDATE BOARDS, and that is not an oversight. The
+     *   RLS gate for candidates, interviews, scores, onboardings and probations is
+     *   `fms_hr_can_read_requisition`, and closing a candidate-PII hole is the
+     *   entire reason that function exists (20260712180000: a department head who
+     *   could raise a requisition could read every other department's applicants —
+     *   names, phones, CVs, salary expectations). 20260925130100 therefore widens
+     *   a SIBLING, fms_hr_can_view_requisition, used only by the requisition
+     *   tables, and leaves the PII gate exactly as it was.
+     *
+     *   So a viewer reads the requisitions, the MRF queues, the Control Center and
+     *   the Masters — and the candidate screens stay hidden rather than opening
+     *   empty. Letting a viewer read candidates needs a masked projection (stage
+     *   and dates without name, phone, email, CV or expected salary), which is a
+     *   separate piece of work with its own decision about which columns are PII.
+     *
+     * ⚠ VISIBILITY ONLY, and never an arm on `isProcessCoordinator` — that flag is
+     *   also the authority short-circuit inside canActOn / canActOnCandidate.
+     */
+    const isModuleViewer = session.isModuleViewer("hr-recruitment");
+
+    /** Visibility half of the coordinator flag — nav link + RequireMonitor only. */
+    const canMonitor = isModuleViewer || isProcessCoordinator;
+
     // Offered-salary visibility. Admins always; otherwise a named person or anyone in an
     // allowed department. The finalize form shows the input regardless (you must see what
     // you type) — this only governs read-back on the board, onboarding and reports.
@@ -612,9 +659,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     const managerIdsFor = (mt: HrMasterType) =>
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
 
-    const canManage = (mt: HrMasterType) => isAdmin || managerIdsFor(mt).includes(user.id);
+    // Pure write gate (MasterCrud Add + Actions, and Approve/Reject on a master
+    // request), so the module ceiling folds straight in. It did NOT, which made
+    // every one of those live on a view-only grant — on an ungated route.
+    // isAnyMasterManager below is left alone: it guards the Masters ROUTE.
+    const canManage = (mt: HrMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(user.id));
 
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === user.id);
+    /** Visibility half — nav link + RequireMasterAccess. canManage still gates every write. */
+    const canSeeMasters = isModuleViewer || isAnyMasterManager;
 
     const resolvableRequests = masterRequests
       .filter((r) => r.status === "pending")
@@ -686,9 +739,6 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
      * it is in — a card in "Shared with HOD" is the HOD's work-item even though HR
      * put it there. Getting this wrong is exactly the bug the SQL side had.
      */
-    // Module-level write ceiling — see the doc on HrStoreValue.canEdit.
-    const canEdit = session.canEditModule("hr-recruitment");
-
     const canActOnCandidate = (c: Candidate): boolean => {
       const r = reqById.get(c.requisitionId);
       if (!r) return false;
@@ -805,7 +855,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
      * user owns the step AND its window is open) — canActOn is not uniform across the
      * four entities, so the builder that knows the entity resolves ownership once.
      */
-    const completedFor = (stepKey: StepKey): StageEntry<CompletedRow>[] => {
+    const completedForUngated = (stepKey: StepKey): StageEntry<CompletedRow>[] => {
       switch (stepKey) {
         case "hr_head_approval":
           return requisitions
@@ -913,6 +963,21 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           return [];
       }
     };
+
+    /**
+     * The module write ceiling, applied once to every completed entry.
+     *
+     * ⚠ EACH BRANCH ABOVE SETS `canEdit` FROM OWNERSHIP ALONE — canActOn /
+     *   canActOnCandidate / canActOnProbation — and `CompletedTable` renders its
+     *   row action straight off it. So on a view-only grant every Completed tab in
+     *   the app offered a live Edit. Folding it here rather than in eight branches
+     *   keeps the next branch honest by default. hr-exit's twin
+     *   (CompletedExitTable) already tested `s.canEdit` at the call site.
+     */
+    const completedFor = (stepKey: StepKey): StageEntry<CompletedRow>[] =>
+      canEdit
+        ? completedForUngated(stepKey)
+        : completedForUngated(stepKey).map((e) => ({ ...e, canEdit: false }));
 
     /* ---------------------------------------------------------------------- */
 
@@ -1262,6 +1327,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       managerIdsFor,
       canManage,
       isAnyMasterManager,
+      isModuleViewer,
+      canMonitor,
+      canSeeMasters,
       resolvableRequests,
       myMasterRequests: masterRequests
         .filter((r) => r.requestedBy === user.id)

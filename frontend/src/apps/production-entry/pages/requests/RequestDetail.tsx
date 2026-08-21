@@ -180,7 +180,7 @@ export default function RequestDetail() {
     s.canEdit && (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
 
   const cur = openStep(r);
-  const canActNow = cur ? s.canActOn(cur, r) : false;
+  const canActNow = s.canEdit && (cur ? s.canActOn(cur, r) : false);
 
   const runReason = async (fn: (r: ProductionRequest, reason: string) => Promise<void>, close: () => void) => {
     if (!reason.trim()) { setErr("A reason is required."); return; }

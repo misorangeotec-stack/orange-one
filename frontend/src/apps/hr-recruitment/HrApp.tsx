@@ -41,8 +41,8 @@ function RequireRealAdmin({ children }: { children: ReactNode }) {
 
 /** Gate to admins + process coordinators (Control Center). */
 function RequireMonitor({ children }: { children: ReactNode }) {
-  const { isProcessCoordinator } = useHrStore();
-  if (!isProcessCoordinator) return <AccessDenied />;
+  const { canMonitor } = useHrStore();
+  if (!canMonitor) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -53,8 +53,8 @@ function RequireMonitor({ children }: { children: ReactNode }) {
  * read-only, and RLS agrees).
  */
 function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyMasterManager } = useHrStore();
-  if (!isAnyMasterManager) return <AccessDenied />;
+  const { canSeeMasters } = useHrStore();
+  if (!canSeeMasters) return <AccessDenied />;
   return <>{children}</>;
 }
 

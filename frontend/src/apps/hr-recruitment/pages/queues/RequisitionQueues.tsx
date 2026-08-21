@@ -180,6 +180,7 @@ function StepQueuePage({
             "Only the requisitions waiting on YOU at this step — not every requisition in the system.",
             "The due date comes from this step's rule in Setup → Due Dates, counted in working days (Mon–Sat; only Sunday is skipped).",
           ]}
+          readOnly={!s.canEdit}
           actions={renderAction}
         />
       )}
@@ -195,8 +196,8 @@ export function MrfApprovalsQueue() {
 
   // Coordinators chase everything, and fms_hr_can_act() already lets them act — so
   // gating on step ownership alone would lock them out of a page holding their own work.
-  const canHr = s.isStepOwner("hr_head_approval") || s.isProcessCoordinator;
-  const canMgmt = s.isStepOwner("mgmt_approval") || s.isProcessCoordinator;
+  const canHr = s.isModuleViewer || s.isStepOwner("hr_head_approval") || s.isProcessCoordinator;
+  const canMgmt = s.isModuleViewer || s.isStepOwner("mgmt_approval") || s.isProcessCoordinator;
 
   const rows = useMemo(() => {
     const hr = canHr ? s.myQueue("hr_head_approval") : [];
@@ -336,6 +337,7 @@ export function MrfApprovalsQueue() {
             "Only the requisitions waiting on YOUR decision — the HR Head gate, the Management gate, or both if you own both.",
             "'Waiting on' says which of the two gates it currently sits at. Each gate has its own due date (Setup → Due Dates).",
           ]}
+          readOnly={!s.canEdit}
           actions={(r) => (
             <Button size="sm" onClick={() => setDecide({ r, stage: stageOf(r), editing: false })}>
               Decide
@@ -362,7 +364,7 @@ export function JobPostingQueue() {
   const s = useHrStore();
   const [posting, setPosting] = useState<{ r: Requisition; editing: boolean } | null>(null);
 
-  if (!s.isStepOwner("job_posting") && !s.isProcessCoordinator) return <AccessDenied />;
+  if (!s.isModuleViewer && !s.isStepOwner("job_posting") && !s.isProcessCoordinator) return <AccessDenied />;
 
   return (
     <>

@@ -117,10 +117,14 @@ interface CustomerStore {
 const Ctx = createContext<CustomerStore | null>(null);
 
 export function CustomerOnboardingProvider({ children }: { children: ReactNode }) {
-  const { user, isAdmin, canEditModule } = useSession();
+  const { user, isAdmin, canEditModule, isModuleViewer: moduleIsViewer } = useSession();
   // Module-level write ceiling for Customer Onboarding. Its own grant, not the
   // hub's — the two are separate modules even though they share these pages.
   const canEdit = canEditModule("customer-onboarding");
+  // A "View only" grant reads the whole module: every back-office queue, no
+  // buttons. VISIBILITY ONLY — folded into canSeeQueue and nothing else, and
+  // deliberately not an arm on isCoordinator, which also short-circuits canActOn.
+  const isModuleViewer = moduleIsViewer("customer-onboarding");
   const queryClient = useQueryClient();
   const uid = user?.id ?? null;
 
@@ -165,9 +169,17 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
     const canRaise =
       canEdit && (isCoordinator || submissionOwners.length === 0 || (!!uid && submissionOwners.includes(uid)));
 
-    /** ⚠ Mirrors public.fms_customer_can_act(step, req, uid). Keep the two in step. */
+    /**
+     * ⚠ Mirrors public.fms_customer_can_act(step, req, uid). Keep the two in step.
+     *
+     * ⚠ THE canEdit ARM IS THE MIRROR, NOT AN ADDITION. 20260923120000 wrapped the
+     *   SQL predicate as `module_can_edit(uid, customer-onboarding) AND
+     *   fms_customer_can_act__ungated(...)`, and this copy was not updated with it —
+     *   so on a view-only grant every correction and step button rendered live and
+     *   then failed at the RPC.
+     */
     const canActOn = (step: StepKey, r: CustomerRequest): boolean => {
-      if (!uid) return false;
+      if (!uid || !canEdit) return false;
       if (isCoordinator) return true;
       if (step === "submission") return r.raisedBy === uid;
       return isStepOwner(step);
@@ -184,7 +196,7 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
      *   for everyone whenever a step had work, so all four queues showed for any
      *   user of the module — the opposite of what nav.tsx's own header promises.
      */
-    const canSeeQueue = (step: StepKey): boolean => isCoordinator || isStepOwner(step);
+    const canSeeQueue = (step: StepKey): boolean => isModuleViewer || isCoordinator || isStepOwner(step);
 
     const queueEntries = buildQueueEntries(requests, snap.stepSla);
 

@@ -71,7 +71,7 @@ export default function JobDetail() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {step && s.canActOn(step, job) && (
+          {s.canEdit && step && s.canActOn(step, job) && (
             <Button size="sm" onClick={() => setActing(step)}>
               {step === "schedule" ? "Schedule" : step === "service_done" ? "Record service" : "Verify & close"}
             </Button>

@@ -409,6 +409,24 @@ staff directory on disk for 24 hours, readable through devtools without logging 
 
 **Shipped 2026-08-21 (frontend + both migrations applied to `icutjkrqkbzwvmnfbzpr`):**
 
+**⏳ AWAITING KRITIKA'S FEEDBACK — do not close this until she has actually used it.**
+*Remark added 2026-08-21.* Built, migrations applied, `npm run build` green, and the read gates
+verified against her real account in SQL — but **nobody has signed in as her and clicked through
+yet**, which is the only test that counts. She holds view-only on eleven modules and is the person
+who reported this, so she is the reviewer.
+
+What to ask her to check, module by module: the sidebar shows the queues, the register and the
+Control Center; every one of those pages **opens with rows in it**, not empty; there are no action
+buttons, no row checkboxes and no Add; the **View only** badge shows in the topbar; and Setup is
+still refused. If a screen opens empty, that is a read gate, not a nav gate — say which screen and
+which module.
+
+**The HR candidate question below is PARKED, not open.** New Recruitment ships as it is — vacancies
+and MRF queues readable, candidate boards hidden. Revisit only if Kritika says she needs them.
+
+**Mark this task `[x]` and move it to [Done](#done) once she confirms**, adding the commit and the
+IST timestamp — same rule as every other entry there.
+
 `session.isModuleViewer(appId)` is the one place that knows. Each store derives the
 VISIBILITY halves from it — `canMonitor`, `canSeeMasters`, `canSeeStep`, and the viewer arm on
 `canSeeQueue` — and the AUTHORITY flags (`isProcessCoordinator`, `canActOn`) are untouched,
@@ -416,11 +434,11 @@ because widening those would have handed a viewer act-authority rather than a re
 
 | Module | Screens opened | SQL needed |
 |---|---|---|
-| Order to Dispatch | queues, register, Control Center | yes — `20260925120000` |
+| Order to Dispatch | queues, register, Control Center | yes — `20260925130000` |
 | Production Entry · Sampling · Asset Maintenance | queues, Masters, Control Center | none (already `using (true)`) |
 | Purchase RM Domestic · Purchase RM Import | 11 queue routes, Masters, Control Center | none |
-| General Purchase | queues, Masters, Control Center | yes — `20260925120100` |
-| Employee Exit | approvals, clearance, Masters, Control Center, documents | yes — `20260925120100` |
+| General Purchase | queues, Masters, Control Center | yes — `20260925130100` |
+| Employee Exit | approvals, clearance, Masters, Control Center, documents | yes — `20260925130100` |
 | New Recruitment | MRF + job-posting queues, Masters, Control Center | yes, **vacancy tier only** — see below |
 | New Customer Onboarding | the four back-office queues | none |
 
@@ -430,12 +448,13 @@ because widening those would have handed a viewer act-authority rather than a re
 
 **⚠ NEW RECRUITMENT IS HALF-OPEN, AND THAT NEEDS A DECISION.** `fms_hr_can_read_requisition`
 turned out to *be* the candidate-PII gate, not merely a visibility rule that covers candidates —
-closing a PII hole is the whole reason it exists (`20260712180000`). So `20260925120100` widens a
+closing a PII hole is the whole reason it exists (`20260712180000`). So `20260925130100` widens a
 sibling, `fms_hr_can_view_requisition`, used only by the requisition tables, and leaves the PII
 gate alone. A viewer reads the vacancies and the MRF queues; the candidate boards stay hidden
 rather than opening empty, and the frontend matches.
 
-- [ ] Should a view-only holder read candidates at all? If yes, the answer is a **masked
+- [ ] **PARKED 2026-08-21** — revisit only if Kritika asks for it. Should a view-only holder
+      read candidates at all? If yes, the answer is a **masked
       projection** — stage, dates and counts without name, phone, email, CV or expected salary —
       which is its own piece of work with its own call on which columns count as PII. Widening
       the existing function is not an option; an assertion in the migration now refuses it.
@@ -1639,12 +1658,40 @@ shipping the frontend before the SQL is inert rather than broken. Still apply th
   it "is this a money voucher?", never "is this a sale?" — an unknown type must fall through to
   *keep*.
 
-**Found while dry-running this — separate, small, not yet applied.** The paper voucher type has TWO
-spellings in live data: `GST SALES-PAPER` (49 lines) and **`GST SALES- PAPER` (473 lines — the
-common one)**. The `voucher_type` rule added with the Paper bucket covers only the first, so paper
-*sales* on the older books still resolve to Other. Open bills are unaffected (the `PAPER/` prefix
-rule carries them). Fix is one more rule row for the variant spelling, exactly like the existing
-`GST SALE- SPARE PARTS` note — needs a nod before applying.
+**Found while dry-running this — SQL written, waiting to be applied.** *(Go-ahead from Ritesh Bhai,
+2026-08-21.)* The paper sales voucher has **two spellings** in Tally, one per book, and the rule
+added with the Paper bucket (id 45) matches only the first — so paper *sales* on the NOIDA book
+still resolve to Other. Open bills are unaffected in either direction: `collection_refresh()` types
+them with the voucher type passed empty, so only the `PAPER/` prefix rule (44) can fire there.
+
+**⚠ The spelling recorded here was wrong, and it would have shipped a rule that never fires.** This
+entry read `GST SALES- PAPER` (one space, after the dash). No such string exists in the mirror.
+Read off `v_voucher_type_nature` on 2026-08-21, the three sales-side paper rows are:
+
+| Voucher type | Reserved class | Book |
+|---|---|---|
+| `GST SALES-PAPER` | GST SALES | COLORIX DIGITAL PRINTING SOLUTIONS LLP |
+| `GST SALES-PAPER` | Sales Accounts-HSS | ORANGE O TEC PRIVATE LIMITED (01-04-25 to 31-03-27) |
+| **`GST SALES - PAPER`** | Sales | **ORANGE O TEC PRIVATE LIMITED-NOIDA (from 1-Apr-25)** |
+
+Spaces on **both** sides of the dash. Rule 45 is `match_mode='exact'`, `case_sensitive=true`, so the
+retyped version would have inserted cleanly, changed nothing, and read as fixed. The value in the
+file is copied from the view, not typed. (The 49 / 473 line counts alongside the old spelling came
+from the same reading and are equally unverified — `rpt_sales_register` holds 92 `GST SALES-PAPER`
+lines for the current FY, and the NOIDA book's are on an older one. The counts don't change the fix.)
+
+Same shape as spare parts, which has carried two spellings as two rows since the start (ids 24-25:
+`GST SALES - SPARE PARTS` and `GST SALE- SPARE PARTS`).
+
+**[sale_type_paper_voucher_type_variant.sql](supabase/connectwave/sale_type_paper_voucher_type_variant.sql)** — one
+row, plus three verification blocks. **No `collection_refresh()`:** the snapshot stores no voucher
+type, `v_sales_voucher` is a view, and `connectwaveFetcher` applies `sale_type_rule` in the browser
+— so it lands on the next page load and a refresh would be 2.5 minutes for no change.
+
+- [ ] Apply in the **ConnectWave** SQL editor (`ieeefdnyhzgrroifiqbb`) — needs Ritesh Bhai, as the
+      anon key the repo holds is read-only.
+- [ ] Run Verify 1 first: confirm no *third* spelling has appeared since 2026-08-21.
+- [ ] Open a NOIDA-book customer and confirm paper sales leave the Other band.
 
 **Second, cheaper guard, worth having either way:** a negative Received (`pending > amount`) is
 impossible for a genuine bill. Catches all 7 rows today regardless of voucher type, and needs no

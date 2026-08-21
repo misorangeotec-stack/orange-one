@@ -149,6 +149,19 @@ interface ProductionStoreValue {
   masterManagers: ProductionMasterManager[];
   managerIdsFor: (masterType: ProductionMasterType) => string[];
   canManage: (masterType: ProductionMasterType) => boolean;
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? They read every
+   * screen in it and have no buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY. Folded into canSeeQueue, canMonitor and canSeeMasters and
+   *   nowhere else; canEdit is false for exactly these users, which is what keeps
+   *   the pages read-only.
+   */
+  isModuleViewer: boolean;
+  /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
+  canMonitor: boolean;
+  /** Visibility half of isAnyMasterManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
   isAnyMasterManager: boolean;
   masterRequests: ProductionMasterRequest[];
   resolvableRequests: ProductionMasterRequest[];
@@ -296,6 +309,29 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
+     * queue, every list, the Control Center, the Masters screens — with no
+     * buttons anywhere.
+     *
+     * ⚠ VISIBILITY ONLY, which is why it is a flag of its own rather than an
+     *   extra arm on `isProcessCoordinator`. That one is a route guard AND an
+     *   authority short-circuit inside canActOn / canRaise / canEditRequest, so
+     *   widening it would hand a viewer act-authority on every step. `canMonitor`
+     *   and `canSeeMasters` below are the visibility halves, split off for the
+     *   nav and the route guards.
+     *
+     * ⚠ From the REAL `session`, never a demo persona — same reason as canEdit.
+     *
+     * A viewer therefore sees MORE screens than an editor who owns no step. That
+     * inversion is deliberate: ownership answers "whose work is this", the grant
+     * answers "may this person read the module".
+     */
+    const isModuleViewer = session.isModuleViewer("production-entry");
+
+    /** Visibility half of the coordinator flag — nav link + RequireMonitor only. */
+    const canMonitor = isModuleViewer || isProcessCoordinator;
+
     // Mirrors fms_production_can_act(step, req, uid): admin / coordinator / step owner.
     const canActOn = (stepKey: QueueStep, _r: ProductionRequest): boolean =>
       isAdmin || isProcessCoordinator || isStepOwner(stepKey);
@@ -309,7 +345,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
      * queue is itself filtered by `canActOn`), so both now ask this instead.
      */
     const canSeeQueue = (stepKey: QueueStep): boolean =>
-      isProcessCoordinator || isStepOwner(stepKey);
+      isModuleViewer || isProcessCoordinator || isStepOwner(stepKey);
 
     // Who may raise a job card: open to all module users unless issue_slip has
     // owners configured, then only those owners (or admin / coordinator).
@@ -386,6 +422,8 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     // left alone — it guards the Masters ROUTE, which a view-only manager may read.
     const canManage = (mt: ProductionMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
+    /** Visibility half — nav link + RequireMasterAccess. A viewer reads the masters, canManage still gates every write. */
+    const canSeeMasters = isModuleViewer || isAnyMasterManager;
 
     const resolvableRequests = masterRequests.filter((r) => r.status === "pending").filter((r) => canManage(r.masterType));
 
@@ -490,6 +528,9 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       managerIdsFor,
       canManage,
       isAnyMasterManager,
+      isModuleViewer,
+      canMonitor,
+      canSeeMasters,
       masterRequests,
       resolvableRequests,
       myMasterRequests: masterRequests

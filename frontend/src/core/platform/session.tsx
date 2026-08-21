@@ -36,6 +36,25 @@ interface SessionValue {
    *   returning Access Denied, this verdict has leaked into a read gate.
    */
   canEditModule: (appId: string) => boolean;
+  /**
+   * Is this user a MODULE-WIDE VIEWER of this app?
+   *
+   * A "View only" grant is a read-the-whole-module grant: every queue, every
+   * register, the Control Center. Ownership config — step owners, coordinators,
+   * master managers — decides what an EDIT user sees and is left alone, so a
+   * viewer deliberately sees MORE screens than an editor who owns no step. That
+   * inversion is the design, not a bug: ownership answers "whose work is this",
+   * a view grant answers "may this person read the module".
+   *
+   * ⚠ VISIBILITY ONLY. Never fold this into an action predicate, and never into
+   *   a flag that doubles as both — `isProcessCoordinator` is a route guard AND
+   *   an authority short-circuit inside every `canActOn`, which is why each app
+   *   splits off a separate `canMonitor` instead of widening it. This pairs with
+   *   canEditModule, which stays false for exactly these users.
+   *
+   * Admins are false here: they already pass every gate on their own arm.
+   */
+  isModuleViewer: (appId: string) => boolean;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -72,6 +91,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       canEditModule: (appId: string) =>
         isAdmin || isUniversalApp(appId) || user?.moduleLevels[appId] === "edit",
+      // Read-the-whole-module. Not the inverse of canEditModule: a user with no
+      // grant at all is false here too, and RequireModule has already turned
+      // them away before anything asks.
+      isModuleViewer: (appId: string) =>
+        !isAdmin && !isUniversalApp(appId) && user?.moduleLevels[appId] === "view",
     };
   }, [authId, profiles]);
 

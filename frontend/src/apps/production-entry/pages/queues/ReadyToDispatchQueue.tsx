@@ -106,6 +106,7 @@ export default function ReadyToDispatchQueue() {
         rowsLabel="job cards"
         emptyTitle="Nothing ready to dispatch"
         emptyMessage="Packed cards ready to dispatch will appear here."
+        readOnly={!s.canEdit}
         selectable={{
           renderBulkActions: (selected, clear) => (
             <Button size="sm" disabled={busy} onClick={() => markReady(selected, clear)}>

@@ -30,20 +30,22 @@ export default function ProductionEntryLayout() {
   }, [s]);
 
   const anyQueue = queueSteps.some((step) => queues[step]);
-  const hasRequests = s.requests.length > 0 || s.isProcessCoordinator || anyQueue;
+  // A view-only reader gets All Issue Slips outright — stated, not left to ride
+  // on `anyQueue` now being true for them via canSeeQueue.
+  const hasRequests = s.isModuleViewer || s.requests.length > 0 || s.isProcessCoordinator || anyQueue;
 
   const nav = useMemo(
     () =>
       buildProductionNav({
         isAdmin,
-        canManageMasters: s.isAnyMasterManager,
-        canMonitor: s.isProcessCoordinator,
+        canManageMasters: s.canSeeMasters,
+        canMonitor: s.canMonitor,
         hasRequests,
         canRaise: s.canRaise,
         pendingReviews: s.resolvableRequests.length,
         queues,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasRequests, s.canRaise, s.resolvableRequests.length, queues],
+    [isAdmin, s.canSeeMasters, s.canMonitor, hasRequests, s.canRaise, s.resolvableRequests.length, queues],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

@@ -114,7 +114,7 @@ export default function CandidatePage() {
     : r
       ? `/hr-recruitment/positions/${r.id}`
       : "/hr-recruitment/positions";
-  const targets = s.canActOnCandidate(c) ? legalTargets(c.stage) : [];
+  const targets = s.canEdit && s.canActOnCandidate(c) ? legalTargets(c.stage) : [];
   const idx = siblings.findIndex((x) => x.id === c.id);
   const prev = idx > 0 ? siblings[idx - 1] : null;
   const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;

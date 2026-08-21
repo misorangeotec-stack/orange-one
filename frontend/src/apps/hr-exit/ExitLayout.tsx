@@ -53,6 +53,7 @@ export default function ExitLayout() {
   // so "do I have approvals?" cannot be answered by ownership alone — it is answered by
   // whether anything is actually sitting in their queue.
   const canApprove =
+    s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.isStepOwner("hr_verification") ||
     s.isStepOwner("hr_head_approval") ||
@@ -63,6 +64,7 @@ export default function ExitLayout() {
   // materialised row on some case), and without it the queue they owe work in would
   // simply not be in their sidebar. `myQueue` catches the rest.
   const canClear =
+    s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.isStepOwner("clearance") ||
     s.ownsClearanceItem ||
@@ -71,7 +73,7 @@ export default function ExitLayout() {
   // Exit staff and coordinators get the list even on day one, when there is nothing in
   // it — it is their workspace. Everyone else gets it only once RLS actually hands them
   // a row, because a link to a permanently empty table is noise, not a feature.
-  const hasCases = s.cases.length > 0 || s.isExitStaff || s.isProcessCoordinator;
+  const hasCases = s.isModuleViewer || s.cases.length > 0 || s.isExitStaff || s.isProcessCoordinator;
 
   // ⭐ The Exit Interviews queue. Gated on the SAME predicate as the RLS policy on
   // fms_exit_interviews — admin ∨ coordinator ∨ HR-confidential — and DELIBERATELY NOT
@@ -91,6 +93,7 @@ export default function ExitLayout() {
   // acknowledgement coming back. So it follows Approvals and Clearance: own the step,
   // coordinate the process, or actually have rows in it.
   const canClose =
+    s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.isStepOwner("documents") ||
     s.isStepOwner("archive") ||
@@ -99,7 +102,9 @@ export default function ExitLayout() {
 
   // ⭐ The Control Center. Exactly `isProcessCoordinator` — the same predicate as
   // RequireMonitor in ExitApp.tsx, so the link can never lead somewhere that AccessDenies.
-  const canMonitor = s.isProcessCoordinator;
+  // ⭐ …and a view-only reader, who may read the whole module. `s.canMonitor` is
+  // exactly `RequireMonitor` in ExitApp.tsx, so the link can never AccessDeny.
+  const canMonitor = s.canMonitor;
 
   const nav = useMemo(
     () =>
@@ -107,7 +112,7 @@ export default function ExitLayout() {
         isAdmin,
         // Owner of ANY master, not just an admin — the Masters page is theirs too.
         canEdit: s.canEdit,
-        canManageMasters: s.isAnyMasterManager,
+        canManageMasters: s.canSeeMasters,
         // Badge only what THIS user can actually resolve: an Exit Reasons owner must not
         // see a count for payroll-head requests the RPC will refuse them on.
         pendingReviews: s.resolvableRequests.length,

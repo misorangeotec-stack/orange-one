@@ -64,8 +64,8 @@ function RequireEdit({ children }: { children: ReactNode }) {
  * read every column in the file. See lib/sheetExport.ts.
  */
 function RequireMonitor({ children }: { children: ReactNode }) {
-  const { isProcessCoordinator } = useExitStore();
-  if (!isProcessCoordinator) return <AccessDenied />;
+  const { canMonitor } = useExitStore();
+  if (!canMonitor) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -80,8 +80,8 @@ function RequireMonitor({ children }: { children: ReactNode }) {
  * was admin-only, which is what RLS said at the time.
  */
 function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyMasterManager } = useExitStore();
-  if (!isAnyMasterManager) return <AccessDenied />;
+  const { canSeeMasters } = useExitStore();
+  if (!canSeeMasters) return <AccessDenied />;
   return <>{children}</>;
 }
 

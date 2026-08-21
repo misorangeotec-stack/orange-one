@@ -46,6 +46,7 @@ export default function ApprovalsQueue() {
   // case, never in the owners table — so anyone with a manager-review row belongs here.
   const managerRows = s.myQueue("manager_review");
   const canSeePage =
+    s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.isStepOwner("hr_verification") ||
     s.isStepOwner("hr_head_approval") ||
@@ -194,6 +195,7 @@ export default function ApprovalsQueue() {
           emptyMessage="Exits needing your decision will appear here."
           initialSort={{ key: "due", dir: "asc" }}
           exportName="HR_Exit_Approvals"
+          readOnly={!s.canEdit}
           exportTitle="Exit approvals"
           exportNotes={[
             "Only the exits waiting on YOU — the reporting-manager gate, HR verification, the HR Head gate, or the LWD confirmation.",

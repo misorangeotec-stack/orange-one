@@ -183,6 +183,18 @@ interface SamplingStoreValue {
   masterManagers: SamplingMasterManager[];
   managerIdsFor: (masterType: SamplingMasterType) => string[];
   canManage: (masterType: SamplingMasterType) => boolean;
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? They read every
+   * screen in it and have no buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY. Folded into canSeeQueue, canMonitor and canSeeMasters and
+   *   nowhere else; canEdit is false for exactly these users.
+   */
+  isModuleViewer: boolean;
+  /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
+  canMonitor: boolean;
+  /** Visibility half of isAnyMasterManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
   isAnyMasterManager: boolean;
   setMasterManagers: (masterType: SamplingMasterType, userIds: string[]) => Promise<void>;
 
@@ -332,6 +344,27 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
+     * queue, every list, the Control Center, the Masters screens — no buttons.
+     *
+     * ⚠ VISIBILITY ONLY, which is why it is a flag of its own rather than an arm
+     *   on `isProcessCoordinator`. That one is a route guard AND the authority
+     *   short-circuit inside canActOn, so widening it would hand a viewer
+     *   act-authority on every step of every request. `canMonitor` and
+     *   `canSeeMasters` below are the visibility halves.
+     *
+     * ⚠ From the REAL `session`, never a demo persona — same reason as canEdit.
+     *
+     * A viewer therefore sees MORE screens than an editor who owns no step: that
+     * inversion is deliberate. Ownership answers "whose work is this", the grant
+     * answers "may this person read the module".
+     */
+    const isModuleViewer = session.isModuleViewer("sampling");
+
+    /** Visibility half of the coordinator flag — nav link + RequireMonitor only. */
+    const canMonitor = isModuleViewer || isProcessCoordinator;
+
     // The module-level write ceiling — see the doc on SamplingStoreValue.canEdit.
     // From `session`, never `useEffectiveIdentity`: a demo persona must not be
     // able to step around the real user's view-only grant.
@@ -379,6 +412,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     // manager should still be able to read the masters they look after.
     const canManage = (mt: SamplingMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
+    /** Visibility half — nav link + RequireMasterAccess. canManage still gates every write. */
+    const canSeeMasters = isModuleViewer || isAnyMasterManager;
 
     /* --------------------------------- indexes ------------------------------- */
 
@@ -467,6 +502,10 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
      *   for them, so `myQueue` keeps the entry while work exists.
      */
     const canSeeQueue = (stepKey: StepKey): boolean => {
+      // A view-only grant reads every queue. First, and ahead of the "testing"
+      // special case: that one is scoped to `myQueue`, which is empty for a
+      // viewer, so a later arm would never be reached.
+      if (isModuleViewer) return true;
       if (stepKey === "testing") return myQueue("testing").length > 0;
       if (isProcessCoordinator || isStepOwner(stepKey) || myQueue(stepKey).length > 0) return true;
       if (stepKey === "sample_collect") return everCollector;
@@ -528,6 +567,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       managerIdsFor,
       canManage,
       isAnyMasterManager,
+      isModuleViewer,
+      canMonitor,
+      canSeeMasters,
       setMasterManagers: async (masterType, userIds) => {
         await setMasterManagersWrite(masterType, userIds);
         await invalidate();

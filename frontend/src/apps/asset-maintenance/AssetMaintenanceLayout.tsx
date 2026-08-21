@@ -44,12 +44,12 @@ export default function AssetMaintenanceLayout() {
     () =>
       buildAssetNav({
         isAdmin,
-        canManageMasters: s.isAnyMasterManager,
-        canMonitor: s.isProcessCoordinator,
+        canManageMasters: s.canSeeMasters,
+        canMonitor: s.canMonitor,
         canRaise: s.canRaise,
         queues,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, s.canRaise, queues],
+    [isAdmin, s.canSeeMasters, s.canMonitor, s.canRaise, queues],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {
