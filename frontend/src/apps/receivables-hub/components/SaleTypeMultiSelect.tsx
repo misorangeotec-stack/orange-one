@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 
 export const SALE_TYPE_OPTIONS = [
   { value: "ink",         label: "Ink" },
+  { value: "paper",       label: "Paper" },
   { value: "spare_parts", label: "Spare Parts" },
   { value: "machine",     label: "Machine" },
   { value: "head",        label: "Head" },

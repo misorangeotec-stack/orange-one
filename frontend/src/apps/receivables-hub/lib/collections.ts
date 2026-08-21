@@ -317,7 +317,7 @@ export function buildLastReceiptAmounts(
 
 // ── Dominant sale type (the dormant report's scope filter) ──────────────────────────
 
-export const SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
+export const SALE_TYPES: SaleType[] = ["ink", "paper", "spare_parts", "machine", "head", "other"];
 
 /** ledgerId → its outstanding split by sale type (₹). Raw ledgers — consolidateByName trap. */
 export function buildOutstandingByType(
@@ -386,7 +386,7 @@ export const CRITICAL_SALE_TYPES: SaleType[] = ["head", "spare_parts"];
 export const isCriticalSaleType = (t: SaleType): boolean => CRITICAL_SALE_TYPES.includes(t);
 
 /** Card order: the two that should never be overdue lead, then the rest in book order. */
-export const SALE_TYPE_CARD_ORDER: SaleType[] = ["head", "spare_parts", "ink", "machine", "other"];
+export const SALE_TYPE_CARD_ORDER: SaleType[] = ["head", "spare_parts", "ink", "paper", "machine", "other"];
 
 export interface SaleTypeOverdue {
   type: SaleType;

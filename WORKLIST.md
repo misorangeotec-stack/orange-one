@@ -48,7 +48,6 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Call on removing "new customer / new item" from Dispatch | Bushra | **OD-2** | 2026-08-20 |
 | Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
 | Call on SO-2627-0413 — wrong copy of SPECTRUM DIGITAL | Bushra | **OD-4** | 2026-08-20 |
-| The Excel sheet giving every item its sale type / item type | You — being shared | **OD-7** (Step 0) | 2026-08-21 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
@@ -996,8 +995,20 @@ The repo is public, so runner minutes are free.
 
 ---
 
-### RC-6 · Spare and Head bills read as "Other" on the salesperson report  🔴  `[~]`
-*Raised 2026-08-21 · Feedback from Ritesh Bhai · SQL written and ready to apply; nothing is live yet*
+### RC-6 · Spare and Head bills read as "Other" on the salesperson report  🔴  `[x]`
+*Raised 2026-08-21 · Feedback from Ritesh Bhai · **Applied live 2026-08-21, 13:54 IST** — four rules
+in (ids 40–43) and the snapshot rebuilt. Moves to [Done](#done) at the next tidy-up.*
+
+**Live result, measured after the rebuild:** Spare Parts 74 → **731** bills · Head 138 → **208** ·
+Machine 385 → **386** · Other 1,219 → **491**. Exactly the 728 bills predicted, and **zero** `SPARE/`
+or `HEAD/` bills are still typed `other`. `INK/`, `HD/HG/` and `HG/SPARE/` re-checked unchanged.
+
+⚠ **The rebuild takes ~2.5 min and Supabase's HTTP gateway cuts at 2 min, so `collection_refresh()`
+over PostgREST ALWAYS returns 504** — but the transaction keeps running server-side and commits
+anyway. Do not read that 504 as a failure and do not retry: a retry hits the `pg_try_advisory_lock`
+overlap guard and answers *"another run in progress; skipped"*, which reads like a stuck lock and is
+not one. Poll `collection_meta` instead. Note `refreshed_at` is `now()` = **transaction start**, so
+it stamps ~5 min before the data actually appears.
 
 On the zero-collection report a customer's bill page groups the open bills by sale type, and the
 spare-parts and print-head bills were sitting in the **OTHER** band:
@@ -1044,17 +1055,38 @@ another. The resolver breaks a priority tie on `length(match_value) desc`, so `H
 | `SPARE/EN/` | 3 | ₹4,976 | Spare Parts |
 | `HEAD/M/` | 1 | ₹16,52,000 | Machine |
 
-**To do:**
-- [ ] Run the file in the **ConnectWave** SQL editor (`ieeefdnyhzgrroifiqbb`) — *not* `supabase db
-      push`, which targets the identity project. It is idempotent and carries its own rollback.
-- [ ] Run `select public.collection_refresh();` after it. Until the snapshot rebuilds, nothing on
-      screen changes.
-- [ ] Re-open a customer page on the Collection Report and confirm the Spare Parts / Head bands.
+**Done:**
+- [x] Rules inserted into `sale_type_rule` on **ConnectWave** (`ieeefdnyhzgrroifiqbb`) — ids 40–43.
+- [x] `select public.collection_refresh();` — committed 2026-08-21 08:29 UTC.
+- [x] Resolver spot-checked on every series, including the controls that must NOT move
+      (`M/C ADV`, `HAND/…` → `other`; `INK/`, `HD/HG/`, `HG/SPARE/` unchanged).
 
-**Deliberately left out — each needs its own call, and none is in the report that raised this:**
-- `PAPER/` — 117 bills, ₹1.05 Cr, its own `GST SALES-PAPER` voucher type. There is no paper bucket
-  anywhere in the system; making one means the mirror plus ~10 frontend spots that enumerate sale
-  types. **Decided 2026-08-21: leave it in Other for now.**
+**Left to eyeball:** open a customer page on the Collection Report and confirm the Spare Parts and
+Head bands render. The data is right; this is only confirming the screen.
+
+**`PAPER/` — done too, as its own category.** *(Ritesh Bhai reversed the "leave it in Other" call the
+same day: paper is too big to sit in a catch-all.)* 117 open bills, ₹1.05 Cr, its own Tally voucher
+type. See [sale_type_paper_bucket.sql](supabase/connectwave/sale_type_paper_bucket.sql) — a new
+`paper` bucket plus **two** rules, because the open-bill path and the sales path read different
+signals: `voucher_no_prefix 'PAPER/'` types the outstanding bills (that path sees no voucher), and
+`voucher_type 'GST SALES-PAPER'` types the sales (that path does). One without the other is the same
+split-brain that started RC-6 — right outstanding, wrong sales.
+
+Unlike Spare/Head this is a NEW product line, so the frontend gained a `paper` member in all 20
+places that enumerate sale types — the `SaleType` union, the filters, the labels, the card and
+reading orders, the aging record and the empty-record builders. `npm run build` (strict `tsc`) and
+the collections-report email bundle both pass. Its chart colour is `hsl(165,85%,31%)`, chosen by
+running the palette validator rather than by eye: it clears the chroma floor and separates from Ink
+orange at ΔE 9.4 under protanopia (the obvious green failed at 8.0).
+
+Two things stayed out: `OTPL/` is a delivery challan, not a sale, so it raises no bill; `NOTPL/`
+(2 bills, ₹5.10 L) *looks* like a Nashik paper series but has no voucher to confirm it, and guessing
+is what put `SPARE/` in Other for a year.
+
+⚠ `core/platform/liveMasters.ts` has its own `ItemType` union with the same five names. It is the
+Central Masters **item** type, a different thing — deliberately NOT extended.
+
+**Still deliberately left out — each needs its own call:**
 - `SER/ SER/N/ RENT/ AMC/ JOB/` — ~52 bills, ₹70 L. Income, but not a product line; the mirror has a
   `non_product` bucket the receivables screens already fold back into Other. Not yet asked.
 - `CN/ DN/ G/SR/` — credit notes, debit notes, sales returns. Adjustments that belong to the bill

@@ -1,7 +1,7 @@
 // ── Shared types matching the JSON output from process_data.py ────────────────
 
 export type RiskCategory = "critical" | "high" | "medium" | "low";
-export type SaleType = "ink" | "spare_parts" | "machine" | "head" | "other";
+export type SaleType = "ink" | "paper" | "spare_parts" | "machine" | "head" | "other";
 export type InvoiceStatus = "paid" | "partial" | "overdue" | "pending";
 export type AlertType =
   | "critical_customer"

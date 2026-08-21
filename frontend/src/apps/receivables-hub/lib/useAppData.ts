@@ -1025,9 +1025,11 @@ export function useAppData(filters: Filters = {}): AppData {
 
   // ── Outstanding by sale type (all 4 types; company/location filtered) ────────
   const outstandingByType = useMemo<Record<SaleType, number>>(() => {
-    // "head" is a legacy SaleType member that no longer appears in current data;
-    // keep the original 4-key object (cast preserves runtime behavior).
-    const result = { ink: 0, spare_parts: 0, machine: 0, other: 0 } as unknown as Record<SaleType, number>;
+    // Every SaleType, listed. The old 4-key version dropped "head" on a note that it "no longer
+    // appears in current data" — untrue since the sale-type rules were completed (208 open head
+    // bills on 21-08-2026), and a missing key here silently drops that money from the total.
+    const result: Record<SaleType, number> =
+      { ink: 0, paper: 0, spare_parts: 0, machine: 0, head: 0, other: 0 };
     customers.forEach((c) => {
       if (c.outstandingByType) {
         (Object.keys(result) as SaleType[]).forEach((t) => {
@@ -1222,10 +1224,11 @@ export function useAppData(filters: Filters = {}): AppData {
   // Always uses allCustomers (unfiltered) so the table always shows full-year totals
   // and the Total row matches the dashboard KPI cards exactly.
   const saleTypeBreakdown = useMemo<SaleTypeBreakdown>(() => {
-    const ALL_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "other"];
-    const TYPE_LABELS = {
-      ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", other: "Other",
-    } as unknown as Record<SaleType, string>;
+    const ALL_TYPES: SaleType[] = ["ink", "paper", "spare_parts", "machine", "head", "other"];
+    const TYPE_LABELS: Record<SaleType, string> = {
+      ink: "Ink", paper: "Paper", spare_parts: "Spare Parts", machine: "Machine",
+      head: "Head", other: "Other",
+    };
     const sum = (fn: (c: Customer) => number) => allCustomers.reduce((s, c) => s + fn(c), 0);
 
     // Opening Balance row

@@ -190,9 +190,10 @@ interface CellCtx {
 }
 
 /** All sale-type keys (mirrors SaleTypeMultiSelect); used for residual projection. */
-const ALL_SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
+const ALL_SALE_TYPES: SaleType[] = ["ink", "paper", "spare_parts", "machine", "head", "other"];
 const SALE_TYPE_LABELS: Record<string, string> = {
-  ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
+  ink: "Ink", paper: "Paper", spare_parts: "Spare Parts", machine: "Machine", head: "Head",
+  other: "Other",
 };
 
 interface Metrics {

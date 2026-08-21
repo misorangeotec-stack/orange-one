@@ -34,6 +34,7 @@ const AGING_ORDER: (keyof AgingBuckets)[] = ["0_30", "31_60", "61_90", "91_120",
 
 export const SALE_TYPE_META: { key: SaleType; label: string; color: string }[] = [
   { key: "ink", label: "Ink", color: "hsl(28,80%,52%)" },
+  { key: "paper", label: "Paper", color: "hsl(165,85%,31%)" },
   { key: "spare_parts", label: "Spare Parts", color: "hsl(220,45%,35%)" },
   { key: "machine", label: "Machine", color: "hsl(199,89%,48%)" },
   { key: "head", label: "Head", color: "hsl(280,60%,55%)" },

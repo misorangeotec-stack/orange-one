@@ -213,7 +213,7 @@ export function listReportRows(
  * recently" is its NORMAL state, not a warning — machine-dominant customers otherwise swamp the
  * list with business-as-usual. They are one click away, not gone.
  */
-export const DEFAULT_SALE_TYPES: readonly string[] = ["ink", "spare_parts", "head", "other"];
+export const DEFAULT_SALE_TYPES: readonly string[] = ["ink", "paper", "spare_parts", "head", "other"];
 
 /**
  * Category default: every tier EXCEPT "AA" (internal). AA is not a real customer relationship, so

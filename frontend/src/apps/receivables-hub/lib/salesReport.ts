@@ -189,6 +189,7 @@ export interface SalesFilters {
 /** Human labels for the sale_type codes held in the `sale_type` master. */
 export const SALE_TYPE_LABELS: Record<string, string> = {
   ink: "Ink",
+  paper: "Paper",
   spare_parts: "Spare Parts",
   machine: "Machine",
   head: "Head",
@@ -207,7 +208,7 @@ export const saleTypeLabel = (code: string) => SALE_TYPE_LABELS[code] ?? code;
  * one customer to the next.
  */
 export const SALE_TYPE_ORDER: readonly string[] = [
-  "ink", "spare_parts", "machine", "head", "other", "non_product",
+  "ink", "paper", "spare_parts", "machine", "head", "other", "non_product",
 ];
 
 /**
