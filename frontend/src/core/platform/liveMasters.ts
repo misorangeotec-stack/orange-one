@@ -209,6 +209,18 @@ export interface MasterLookup extends MasterRowBase {
  */
 export interface MasterLocation extends MasterRowBase {
   companyIds: string[];
+  /**
+   * Splits this site's gate pass series off from the main one: 'N' on Noida
+   * turns OTEC-2608-001 into OTEC-N-2608-001. Null means the main series, not
+   * "unset" — Surat is deliberately null.
+   *
+   * ⚠ THE SUFFIX IS ON THE SITE, NOT THE (company, site) PAIR, because the gate
+   *   register is a book kept at a place. Both firms dispatching from Noida
+   *   share the site and each still gets its own series through its prefix.
+   *   Composed server-side in `fms_dispatch_gate_pass_no` (20260928120000);
+   *   nothing in the app builds a gate pass number itself.
+   */
+  gatePassSuffix: string | null;
 }
 
 /** Which of our companies dispatch from a site, and which may bill / sell. */
@@ -429,7 +441,7 @@ export async function fetchMasterLookup(table: "mst_item_groups" | "mst_units"):
 
 export async function fetchMasterLocations(): Promise<MasterLocation[]> {
   const [rows, links] = await Promise.all([
-    fetchAllRows<Record<string, any>>("mst_locations", "id,name,modules,active,sort_order"),
+    fetchAllRows<Record<string, any>>("mst_locations", "id,name,modules,active,sort_order,gate_pass_suffix"),
     fetchAllRows<Record<string, any>>("mst_company_locations", "location_id,company_id,active"),
   ]);
   const byLocation = new Map<string, string[]>();
@@ -445,6 +457,7 @@ export async function fetchMasterLocations(): Promise<MasterLocation[]> {
     tallyGuid: null,
     tallySyncedAt: null,
     companyIds: byLocation.get(r.id) ?? [],
+    gatePassSuffix: r.gate_pass_suffix ?? null,
   })));
 }
 

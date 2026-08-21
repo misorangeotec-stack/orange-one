@@ -65,6 +65,20 @@ export interface StepField {
   /** Save stays disabled until this is filled. */
   required?: boolean;
   /**
+   * SHOWN, NOT ASKED FOR — the value is derived server-side and the modal posts
+   * nothing for this key.
+   *
+   * ⚠ NEVER PAIR THIS WITH `required`. Required-ness is a prompt to type, and
+   *   there is no box to type in: `missingRequired` would disable Save on a
+   *   field nobody can fill. The server is the guarantee instead.
+   *
+   * The gate outward number is the case this exists for. It IS the gate pass
+   * number, and while it was an input sitting under a panel already displaying
+   * that number, people simply copied it across — 183 of 401 Surat entries
+   * ended up holding "Sr. No.: OTEC-2608-206" instead of "OTEC-2608-206".
+   */
+  readOnly?: boolean;
+  /**
    * Required only in some states — the credit remark, which is compulsory the
    * moment "On hold" is picked and optional otherwise. Without this the person
    * finds out by round-tripping to Postgres and reading a raised exception.
@@ -347,8 +361,18 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     context: { showCredit: true, showLines: true, showInvoice: true },
     fields: [
       {
-        key: "go_outward_no", label: "Gate outward no.", kind: "text", required: true,
-        get: (_o, v) => s(v.goOutwardNo), placeholder: "as written in the gate register",
+        /*
+          ⚠ NOT TYPED, AND NOT `required`. The gate outward number IS the gate
+            pass number allocated when the sales bill was recorded, so the RPC
+            derives it from `gp_no` and ignores this key entirely — see
+            20260928120000, which asserts that it stays ignored.
+
+            Falls back to `gpNo` because on the PENDING side nothing has been
+            recorded yet: `goOutwardNo` is null until Save, and the number the
+            person needs to see is the one about to be written.
+        */
+        key: "go_outward_no", label: "Gate outward no.", kind: "text", readOnly: true,
+        get: (_o, v) => s(v.goOutwardNo) || s(v.gpNo),
       },
       { key: "go_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.goRemarks) },
     ],

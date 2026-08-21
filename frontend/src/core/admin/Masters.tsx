@@ -1156,9 +1156,20 @@ export default function Masters() {
           singular="Dispatch location"
           rows={onlyAddedHere(locations.data ?? [])}
           canManage={mayManage("location")}
-          searchText={(r) => `${r.name} ${companyNames(r.companyIds)}`}
+          searchText={(r) => `${r.name} ${companyNames(r.companyIds)} ${r.gatePassSuffix ?? ""}`}
           columns={[
             { header: "Location", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
+            {
+              header: "Gate pass suffix",
+              render: (r) =>
+                r.gatePassSuffix
+                  ? <span className="font-medium text-navy">{r.gatePassSuffix}</span>
+                  : <span className="text-grey">main series</span>,
+              // The cell renders a component in the empty case, which nodeText
+              // cannot walk — so both are declared rather than derived.
+              sortValue: (r) => r.gatePassSuffix ?? "",
+              filter: { get: (r) => r.gatePassSuffix ?? "main series" },
+            },
             {
               header: "Dispatched by",
               render: (r) => (
@@ -1178,12 +1189,22 @@ export default function Masters() {
           fields={[
             { key: "name", label: "Location name", type: "text", required: true, placeholder: "e.g. Unit 2" },
             companiesField(companyOptions),
+            /*
+              Splits this site's gate pass series off from the main one — 'N' on
+              Noida gives OTEC-N-2608-001 beside Surat's OTEC-2608-001. Blank
+              means the main series, which is why Surat is blank rather than
+              carrying an 'S'. Letters and digits only: the database rejects a
+              hyphen, because 'OTEC-N' as a company prefix and 'OTEC' + 'N' would
+              otherwise compose to the same counter.
+            */
+            { key: "gatePassSuffix", label: "Gate pass suffix", type: "text", placeholder: "e.g. N — blank for the main series" },
             modulesField(),
             sortField,
           ]}
-          emptyValues={{ name: "", companyIds: "", modules: "", sortOrder: "0" }}
+          emptyValues={{ name: "", companyIds: "", gatePassSuffix: "", modules: "", sortOrder: "0" }}
           toValues={(r) => ({
             name: r.name, companyIds: r.companyIds.join(","),
+            gatePassSuffix: r.gatePassSuffix ?? "",
             modules: r.modules.join(","), sortOrder: String(r.sortOrder),
           })}
           /**
@@ -1196,6 +1217,9 @@ export default function Masters() {
             const want = csvToList(v.companyIds);
             const patch = {
               name: v.name.trim(), modules: csvToList(v.modules),
+              // Upper-cased on the way in because the uniqueness index and the
+              // allocator both normalise: 'n' and 'N' must not become two series.
+              gate_pass_suffix: v.gatePassSuffix.trim().toUpperCase() || null,
               active, sort_order: Number(v.sortOrder ?? 0) || 0,
             };
             const locId = id

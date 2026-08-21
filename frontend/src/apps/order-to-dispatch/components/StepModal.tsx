@@ -226,6 +226,22 @@ export default function StepModal({
       dash says the same thing honestly: nothing was recorded here.
     */
     const ph = locked ? "—" : f.placeholder;
+    /*
+      DERIVED, NOT ASKED FOR. Rendered as a value rather than an input because
+      that is what it is: the server writes it and ignores anything sent for
+      this key. A disabled TextInput would say the same thing, but it also says
+      "this is normally editable and is not right now", which is the wrong story.
+
+      Kept inside renderField rather than at the three call sites so every layout
+      — before-lines, standard and the mobile sheet — gets it by construction.
+    */
+    if (f.readOnly) {
+      return (
+        <div className="rounded-lg border border-line bg-page px-3 py-2 text-[13px] font-medium text-navy">
+          {v || "—"}
+        </div>
+      );
+    }
     if (f.kind === "select") {
       // A select is either a fixed code enum (`choices`) or a live master list the
       // descriptor names — stepConfig is pure, so resolving it is the modal's job.
@@ -302,7 +318,13 @@ export default function StepModal({
     setError(null);
     try {
       const payload: Record<string, unknown> = {};
-      for (const f of shown) payload[f.key] = values[f.key] ?? "";
+      // `readOnly` keys are OMITTED, not sent-and-ignored. The RPC derives them
+      // and refuses whatever arrives, so putting one on the wire would be a
+      // claim the server does not honour.
+      for (const f of shown) {
+        if (f.readOnly) continue;
+        payload[f.key] = values[f.key] ?? "";
+      }
 
       if (cfg.lines === "ship") {
         payload.lines = shipLines

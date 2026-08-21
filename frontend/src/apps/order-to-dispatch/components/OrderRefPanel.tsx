@@ -125,8 +125,20 @@ export default function OrderRefPanel({
         {/* Rides with the invoice, because it was issued for it. Shown wherever
             the invoice is, so the number on the printed slip can be checked
             against the screen without leaving the step. */}
-        {showInvoice && round.gpNo && <Field label="Gate pass no." value={round.gpNo} />}
-        {showOutward && <Field label="Gate outward no." value={round.goOutwardNo ?? "—"} />}
+        {/* One number, named as both, because they ARE both: the gate outward
+            entry records the gate pass number rather than a second series. */}
+        {showInvoice && round.gpNo && <Field label="Gate pass / outward no." value={round.gpNo} />}
+        {/*
+          ⚠ ONLY WHEN IT DISAGREES, which since 20260928120000 means only on a
+            round dispatched BEFORE it. The gate outward number is now derived
+            from the gate pass, so on every new round these two are one value and
+            printing both would just say it twice under two names. Archived
+            rounds keep whatever was typed — 183 of them a mangled paste of the
+            gate pass — and there the difference is the thing worth showing.
+        */}
+        {showOutward && round.goOutwardNo !== round.gpNo && (
+          <Field label="Gate outward no. (as recorded)" value={round.goOutwardNo ?? "—"} />
+        )}
         {children}
       </div>
 
