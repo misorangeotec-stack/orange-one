@@ -911,44 +911,6 @@ edit values after import or only import-and-generate.
 
 ---
 
-### PE-4 · FG Item Lot Number on the repackaging slip, carried through every step  `[~]`
-*Raised 2026-08-21 · Built; awaiting the migration being applied and the frontend deploy*
-
-A repackaging card is a **traded** finished good — imported ready-made, repacked, sold — so it
-arrives with a lot number of its own, the supplier's lot printed on the goods. That is the number
-traceability actually hangs off, and until now there was nowhere to put it.
-
-**What a user will see:** on the **Repackaging** tab of Generate Issue Slip, a new **FG Item Lot
-Number** field sits directly after *FG / Packing Quantity* and is **mandatory** — the slip cannot be
-raised without it. From there the number is read-only and travels with the card: it shows in the
-header of **every step's** entry modal (packing material transfer → packing entry → ready to
-dispatch → FG transfer), as an **FG Lot No.** column on those queues, on the card detail page, and
-on the printed / exported repackaging slip.
-
-**Two different numbers, deliberately both shown.** `jobcard_no` is the Lot/Batch **Card** number
-this system allocates (YYMM-NNNN). `fg_lot_no` is the lot the goods came in with. They are not
-interchangeable and the labels say so.
-
-**Notes / what to watch on rollout:**
-
-- **Apply the migration before the frontend goes live** —
-  [20260925120000_fms_production_repack_fg_lot_no.sql](supabase/migrations/20260925120000_fms_production_repack_fg_lot_no.sql)
-  adds the column and re-issues `fms_production_submit_request` /
-  `fms_production_update_request`. Both reject a blank lot on a repackaging slip, so the rule is the
-  database's, not the form's.
-- **The column is nullable on purpose.** Repackaging cards raised before today have no FG lot and
-  inventing one would be a lie; a NOT NULL constraint would also block their next edit for a field
-  nobody could have entered. Editing such a card *does* now require the lot — which is exactly the
-  moment to supply it.
-- **Production cards are untouched.** A manufactured lot has no incoming FG lot (its raw-material
-  lots are per-line in `mh_bom_lines.lot_no`), so the column and the queue column stay out of the
-  way: the column appears only when a card in view actually has a lot, the same rule the Status
-  column already follows.
-- **Not added to the issue-slip lists** (All Issue Slips / My Requests) — those are registers, not
-  steps. Worth adding if anyone asks to *search* for a card by its FG lot.
-
----
-
 ## Task Management
 
 *(nothing yet)*
@@ -1368,6 +1330,44 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### PE-4 · FG Item Lot Number on the repackaging slip, carried through every step  `[x]`
+*Production Entry · **Done 2026-08-21, 13:52 IST** (database) · frontend on master, Vercel deploying*
+
+A repackaging card is a **traded** finished good — imported ready-made, repacked, sold — so it
+arrives with a lot number of its own, the supplier's lot printed on the goods. That is what
+traceability actually hangs off, and there was nowhere to record it.
+
+**What a user sees now:** on the **Repackaging** tab of Generate Issue Slip there is an **FG Item
+Lot Number** field directly after *FG / Packing Quantity*, and it is **mandatory** — the slip
+cannot be raised without it. From there the number is read-only and follows the card: the header of
+**every step's** modal (packing material transfer → packing entry → ready to dispatch → FG
+transfer), an **FG Lot No.** column on those four queues, the card detail page, and the printed and
+exported repackaging slip.
+
+**Two different numbers, deliberately both shown.** `jobcard_no` is the Lot/Batch **Card** number
+this system allocates (YYMM-NNNN). `fg_lot_no` is the lot the goods came in with. Not
+interchangeable, and the labels say so.
+
+**Mandatory is the database's rule, not the form's.**
+[20260925120000_fms_production_repack_fg_lot_no.sql](supabase/migrations/20260925120000_fms_production_repack_fg_lot_no.sql)
+adds the column and re-issues `fms_production_submit_request` / `fms_production_update_request`;
+both reject a blank lot on a repackaging slip.
+
+**The column is nullable on purpose.** The **14 repackaging cards already in the system** have no FG
+lot and inventing one would be a lie; NOT NULL would also have blocked their next edit for a field
+nobody could have entered. All 14 are still at *awaiting PM transfer*, so all 14 are still
+editable — **opening one for edit now asks for the lot before it will save.** That is the intended
+moment to supply it, but it is a change anyone editing an old repack card will meet.
+
+**Production cards are untouched.** A manufactured lot has no incoming FG lot (its raw-material lots
+are per-line in `mh_bom_lines.lot_no`), so the queue column appears only where a card in view
+actually has a lot — the same rule the Status column already follows.
+
+**Two things deliberately left out**, both worth a line if anyone asks: the FG Transfer confirm
+popup still says only "*N* job cards will be closed" and names no cards (it never named them); and
+the number is not a column on the registers (All Issue Slips / My Requests), which are lists, not
+steps — that is where it would go if someone wants to *search* a card by its FG lot.
 
 ### OD-6 · Every save in Order to Dispatch was slow — the write was fast, the reload after it was not  `[x]`
 *Order to Dispatch · **Done 2026-08-21, 13:35 IST** (database) and **14:05 IST** (the app, on `master` at `74a525b`) · Raised by Bushra*
