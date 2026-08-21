@@ -1085,7 +1085,11 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
     monthsSinceLastSale: f.monthsSinceLastSale,
     neverPaid: never ? 1 : 0,
     neverSold: neverSold ? 1 : 0,
-    stillBuying: f.salesInWindow > 0 ? 1 : 0,
+    // ⚠ > 0.5, not > 0. The SAME guard `ZC_FOCUS_PREDICATES.buying` and `isDormant` use, and it
+    // has to be: this figure is a card's VALUE and that card links to a list built by the lens.
+    // At `> 0` a customer billed a few paise counts here and not there, so "Still Buying 32" would
+    // open a page naming 31 — the one thing the card→appendix link is gated on avoiding.
+    stillBuying: f.salesInWindow > 0.5 ? 1 : 0,
     wentQuiet: f.salesInPrior > 0.5 && f.salesInWindow <= 0.5 ? 1 : 0,
     bounced: f.chequeReturns > 0.5 ? 1 : 0,
     deteriorating: f.deltaPp !== null && f.deltaPp < -DETERIORATION_PP ? 1 : 0,

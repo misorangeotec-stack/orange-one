@@ -42,7 +42,7 @@ import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 // send can build the same report on a server. The icons and tooltips that dress them are in
 // ./collections/kpiCardCopy.
 import {
-  cardFactsFor, computeKpis, toPdfKpi,
+  STILL_BUYING_NOTE, cardFactsFor, computeKpis, hasStillBuyingCard, toPdfKpi,
   type CardContext, type CardFact, type ZCKpis,
 } from "@hub/lib/collectionCards";
 // Who is on the list, and the one-line record of how it was narrowed. Plain TypeScript for the
@@ -56,7 +56,7 @@ import { CARD_ICONS, CARD_EXPLAIN } from "./collections/kpiCardCopy";
 import { monthEndLong, monthStartLong, monthStartISO, monthEndISO, isoToMonthLabel } from "@hub/lib/months";
 import { Input } from "@hub/components/ui/input";
 import { useQuery } from "@tanstack/react-query";
-import { fetchRangeFacts, priorRange, lastNDays } from "@hub/lib/collectionsRange";
+import { dataUpdatedTillISO, fetchRangeFacts, priorRange, lastNDays } from "@hub/lib/collectionsRange";
 import {
   buildLastReceiptDates, buildLastReceiptAmounts, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor, factsForRange,
   DATE_RANGE_PRESETS, isDateRangePreset,
@@ -221,6 +221,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     dashboard, salesPersonOptions,
   } = useAppData({});
   const asOfDate = dashboard?.asOfDate ?? "";
+  // How complete the books behind those figures are. A LABEL — nothing here is computed against
+  // it, and the report's window still ends on `asOfDate`. "" while the dashboard is loading, and
+  // every renderer below must skip the line rather than print a date derived from nothing.
+  const dataUpdatedTill = dataUpdatedTillISO(asOfDate);
 
   // Which backend the engine is reading. Declared HERE, above the period controls, because the
   // custom date range is Live-only and the period block below has to know.
@@ -875,6 +879,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         dims: groupBy.map((d) => ({ key: d, label: ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d })),
         periodLabel,
         asOfDate,
+        dataUpdatedTill,
       },
       columns,
       kpis: kpiCards.map(toPdfKpi),
@@ -897,7 +902,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     }),
     // `kpisFor` closes over cardsFor/computeKpis/eligible, so everything those read has to be
     // listed or a rep's extract could be built from a previous mode's card set.
-    [title, subtitle, viewLabel, groupBy, periodLabel, asOfDate, columns, kpiCards, focus, rows.length, filterSummary, focusedRows, customerDetail, treeOpts,
+    [title, subtitle, viewLabel, groupBy, periodLabel, asOfDate, dataUpdatedTill, columns, kpiCards, focus, rows.length, filterSummary, focusedRows, customerDetail, treeOpts,
      eligible, computeKpis, mode, isDormantMode, threshold, target],
   );
 
@@ -1142,9 +1147,18 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         </div>
         <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
           {asOfDate && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted rounded-pill px-2.5 py-1">
-              <CalendarClock className="h-3 w-3" /> As on {formatDateDMY(asOfDate)}
-            </span>
+            <div className="flex flex-col items-start sm:items-end gap-0.5">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted rounded-pill px-2.5 py-1">
+                <CalendarClock className="h-3 w-3" /> As on {formatDateDMY(asOfDate)}
+              </span>
+              {/* The as-on date says what the figures are dated; this says how complete the books
+                  behind them are. Both, or a reader takes a same-day date for a settled one. */}
+              {dataUpdatedTill && (
+                <span className="text-[10px] text-muted-foreground/80 px-1">
+                  Data updated till {formatDateDMY(dataUpdatedTill)}
+                </span>
+              )}
+            </div>
           )}
           <div className="flex items-center gap-2">
             {/* "Save my view" writes the layout to the user's profile, so the report opens on
@@ -1393,6 +1407,14 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           );
         })}
       </div>
+
+      {/* "Still Buying" is the one card label that does not explain itself, and the tooltip only
+          reaches people who hover. Gated on the CARD being present, not on the mode: the dormant
+          report's rows are its exact complement, so it carries no such card and must not define
+          one. Same sentence the PDF and the appendix page print. */}
+      {hasStillBuyingCard(kpiCards.map((k) => k.focusKey)) && (
+        <p className="text-[11px] text-muted-foreground -mt-1">{STILL_BUYING_NOTE}</p>
+      )}
 
       {/* Overdue by sale type — Zero Collections only. The question the salesperson asks next:
           "they paid nothing, but WHAT did they not pay for?" Head and Spare Parts are called

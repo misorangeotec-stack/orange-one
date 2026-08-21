@@ -123,6 +123,18 @@ export interface ZCExportMeta {
   periodLabel: string;
   /** Not printed — only stamps the downloaded filename. */
   asOfDate: string;
+  /**
+   * ISO date the books are described as COMPLETE to — `asOfDate` minus `DATA_LAG_DAYS`.
+   * See `dataUpdatedTillISO`. `""` when the as-on date is unknown, and every renderer must then
+   * print nothing rather than a fabricated date.
+   *
+   * ⚠ REQUIRED on purpose. Both `CollectionsExportContext` assembly sites build `meta` as an
+   *   object literal — the screen's `exportContext()` and the scheduled builder's
+   *   `buildCollectionsReportContext` — so making this optional would let the emailed copy quietly
+   *   omit a line the screen prints. A required field fails the build until both are updated,
+   *   which is the only thing keeping those two in step.
+   */
+  dataUpdatedTill: string;
 }
 
 /** Days-since-receipt renders as a number, except the never-paid sentinel. */
@@ -228,14 +240,19 @@ function buildRollupSheet(
 ): XLSX.WorkSheet {
   const aoa: Array<Array<string | number>> = [];
 
-  // THREE rows and nothing else: what the report is called, what it means, and what period it
-  // covers. The block used to carry As on / View / Basis / Shortfall target / Filters as well —
-  // seven rows of preamble before a single figure, which read as clutter rather than context.
-  // (Trade-off accepted deliberately: the sheet no longer records which filters produced it, so a
-  // mailed copy can't be audited back to the screen that made it. The period is still stated.)
+  // What the report is called, what it means, what period it covers, and how complete the data
+  // behind it is. The block used to carry As on / View / Basis / Shortfall target / Filters as
+  // well — seven rows of preamble before a single figure, which read as clutter rather than
+  // context. (Trade-off accepted deliberately: the sheet no longer records which filters produced
+  // it, so a mailed copy can't be audited back to the screen that made it.)
+  //
+  // "Data updated till" was added back on 21-08-2026 and is NOT a regression of that trim: it is
+  // the one fact a reader cannot infer from the figures, and without it a stale workbook and a
+  // fresh one look identical. Everything below indexes off `aoa.length`, so the row costs nothing.
   aoa.push([meta.title]);
   aoa.push([meta.description]);
   aoa.push(["Period", meta.periodLabel]);
+  if (meta.dataUpdatedTill) aoa.push(["Data updated till", formatDateDMY(meta.dataUpdatedTill)]);
   aoa.push([]);
 
   /**
@@ -428,6 +445,7 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
     "grouped by sale type within each customer and oldest bill first.",
   ]);
   aoa.push(["Period", meta.periodLabel]);
+  if (meta.dataUpdatedTill) aoa.push(["Data updated till", formatDateDMY(meta.dataUpdatedTill)]);
   aoa.push([]);
 
   const header = [

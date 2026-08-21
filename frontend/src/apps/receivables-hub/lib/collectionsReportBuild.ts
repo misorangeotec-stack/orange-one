@@ -32,6 +32,7 @@ import {
   type RangeFacts, type ZCColumn, type ZCMetrics, type ZCRow,
 } from "./collections";
 import { buildCollectionsAppData, type RawCollectionsData } from "./collectionsAppData";
+import { dataUpdatedTillISO } from "./collectionsRange";
 import { cardFactsFor, computeKpis, toPdfKpi, type CardContext, type ZCMode } from "./collectionCards";
 import {
   buildFilterSummary, listReportRows, makeSaleTypeScope, selectEligible, type ZCFilters,
@@ -156,6 +157,7 @@ export function buildCollectionsReportContext(
       dims: req.groupBy.map((d) => ({ key: d, label: d })),
       periodLabel: req.periodLabel,
       asOfDate,
+      dataUpdatedTill: dataUpdatedTillISO(asOfDate),
     },
     columns,
     kpis: cardFactsFor(computeKpis(rows, eligible, req.target), cardCtx).map(toPdfKpi),

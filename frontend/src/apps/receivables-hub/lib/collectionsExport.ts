@@ -161,6 +161,11 @@ function customerRowsOf(
     lastReceiptAmount: n.metrics.lastReceiptAmount ? fmtINRMoney(n.metrics.lastReceiptAmount) : "-",
     neverPaid: n.metrics.neverPaid > 0,
     over180: n.metrics.over180,
+    // Read off the SAME summed metric the card counts, so the Still Buying appendix cannot list a
+    // different set from the number that links to it. `stillBuying` is already 0/1 per customer
+    // (makeMetricsOf), so at customer grain this is exactly the flag.
+    stillBuying: n.metrics.stillBuying > 0,
+    salesInWindow: n.metrics.salesInWindow,
     bills: bills(n),
   }));
 }
@@ -387,6 +392,7 @@ export async function buildPdf(
     // because a "By salesperson" table with one row is scaffolding, not information.
     scopeName: scope.kind === "all" ? undefined : scope.name,
     asOfDate: ctx.meta.asOfDate,
+    dataUpdatedTill: ctx.meta.dataUpdatedTill,
     periodLabel: ctx.meta.periodLabel,
     filterSummary: ctx.filterSummary,
     // Scoped cards for a scoped document. See `kpisFor`.
