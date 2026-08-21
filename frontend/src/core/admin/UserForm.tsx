@@ -249,9 +249,34 @@ export default function UserForm() {
   const typedDomain = email.trim().split("@")[1]?.toLowerCase() ?? "";
   const domainWarning = workspaceDomain && typedDomain && typedDomain !== workspaceDomain;
 
-  // The salesperson-scope picker and the menu-access picker are only relevant to non-admins
-  // who can open the Outstanding Dashboard (admins always see all of it, at full depth).
-  const showSalespersonScope = role !== "admin" && moduleAccess.includes(RECEIVABLES_APP_ID);
+  /**
+   * The menu-access and per-report pickers are RESTRICTIONS — "which parts may this person not
+   * see". Meaningless for an admin, who sees all of it at full depth, so they stay hidden and are
+   * cleared on save.
+   */
+  const showReceivablesLimits = role !== "admin" && moduleAccess.includes(RECEIVABLES_APP_ID);
+
+  /**
+   * The salesperson tag is shown to ADMINS TOO, and that is not an oversight.
+   *
+   * ⚠ IT IS NOW TWO QUESTIONS WEARING ONE FIELD.
+   *   Originally `receivables_salespersons` meant only "whose figures may this person SEE", which
+   *   an admin never needs — hence the old `role !== "admin"` gate, which also wiped the field on
+   *   save. Then the scheduled collection email started resolving a salesperson NAME to an inbox
+   *   through the same tag (`collections_report_due`). So the field now also answers "which
+   *   salesperson's report is mailed to this person", and that one applies to everybody.
+   *
+   *   The cost of the old gate was invisible and total: Aayush and Karan are admins, so they could
+   *   not be tagged with AAYUSH SIR / KARAN SIR, so their own reports went to credit control and
+   *   never to them. There was no way to fix it from this screen — the field would not save.
+   *
+   * ⚠ TAGGING AN ADMIN CANNOT SHRINK WHAT THEY SEE. Checked every reader before changing this:
+   *   `lib/scope.tsx` returns `isAdmin ? null : tags`, so the admin test comes first and the tag is
+   *   never consulted for them. `useAppData` scopes off that context alone. The only other live
+   *   readers are delivery (`EmailReportDialog`, `ReportDeliveryConfig`) — which is the point —
+   *   and `useDefaultSalesperson`, where it merely pre-fills a dropdown the user can change.
+   */
+  const showSalespersonScope = moduleAccess.includes(RECEIVABLES_APP_ID);
 
   // Lazy-load the live salesperson names (ConnectWave ext_ledger_tags) the first
   // time the scope picker is shown, so the admin tags exact-matching values.
@@ -299,11 +324,13 @@ export default function UserForm() {
       employeeCode: employeeCode.trim() || null,
       hodIds,
       moduleLevels,
-      // Only meaningful for a non-admin with the dashboard module; otherwise clear.
+      // The tag survives for an admin — it decides which report is MAILED to them, a question
+      // that has nothing to do with what they may open. The three restriction lists do not:
+      // clearing them is what keeps an admin's access unconditional.
       receivablesSalespersons: showSalespersonScope ? receivablesSalespersons : [],
-      receivablesHiddenMenus: showSalespersonScope ? receivablesHiddenMenus : [],
-      receivablesAdminMenus: showSalespersonScope ? receivablesAdminMenus : [],
-      receivablesAllowedReports: showSalespersonScope ? receivablesAllowedReports : [],
+      receivablesHiddenMenus: showReceivablesLimits ? receivablesHiddenMenus : [],
+      receivablesAdminMenus: showReceivablesLimits ? receivablesAdminMenus : [],
+      receivablesAllowedReports: showReceivablesLimits ? receivablesAllowedReports : [],
     };
     setBusy(true);
     setError("");
@@ -598,7 +625,7 @@ export default function UserForm() {
             )}
           </FieldLabel>
 
-          {showSalespersonScope && (
+          {showReceivablesLimits && (
             <FieldLabel
               label="Outstanding Dashboard — menu access"
               hint="which left-nav menus this user gets, and how much of each"
@@ -643,7 +670,7 @@ export default function UserForm() {
             </FieldLabel>
           )}
 
-          {showSalespersonScope && (
+          {showReceivablesLimits && (
             <FieldLabel
               label="Outstanding Dashboard — report access"
               hint="which individual reports this user can open; nothing is granted by default"
@@ -664,7 +691,11 @@ export default function UserForm() {
           {showSalespersonScope && (
             <FieldLabel
               label="Outstanding Dashboard — salesperson access"
-              hint="which salesperson's data this user sees; leave empty = sees nothing"
+              hint={
+                role === "admin"
+                  ? "admins see every salesperson; this only decides which reports are EMAILED to them"
+                  : "which salesperson's data this user sees, and which reports are emailed to them"
+              }
             >
               {spLoading ? (
                 <p className="text-[12.5px] text-grey-2">Loading salespersons…</p>
@@ -674,10 +705,22 @@ export default function UserForm() {
                 <p className="text-[12.5px] text-grey-2">No salespersons found in the receivables data.</p>
               ) : (
                 <>
+                  {/* Two different warnings, because the same empty field means two different
+                      things. For a non-admin it is a broken dashboard; for an admin the dashboard
+                      is fine and only the emails are missing — saying "empty dashboard" there
+                      would be simply false, and would push someone into tagging to fix a problem
+                      they do not have. */}
                   {receivablesSalespersons.length === 0 && (
-                    <p className="text-[12px] text-[#d4493f] mb-2">
-                      No salesperson selected — this user will see an empty dashboard until you tag at least one.
-                    </p>
+                    role === "admin" ? (
+                      <p className="text-[12px] text-grey-2 mb-2">
+                        Nothing tagged. This admin sees the whole dashboard either way, but no
+                        salesperson's report will be emailed to them.
+                      </p>
+                    ) : (
+                      <p className="text-[12px] text-[#d4493f] mb-2">
+                        No salesperson selected — this user will see an empty dashboard until you tag at least one.
+                      </p>
+                    )
                   )}
                   <div className="flex flex-wrap gap-2 max-h-48 overflow-auto p-0.5">
                     {spNames.map((n) => {
