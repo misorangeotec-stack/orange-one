@@ -24,6 +24,12 @@ export interface MenuPos {
   minWidth: number;
   /** Always set. The menu must own a scroll area rather than overflow the screen. */
   maxHeight: number;
+  /**
+   * Always set. How wide the menu may grow on the side it was anchored to — the
+   * horizontal twin of `maxHeight`. Menus are `w-max`, so this is the ceiling
+   * that stops a long row (a 61-character customer ledger) running off screen.
+   */
+  maxWidth: number;
 }
 
 const GAP = 4; // breathing room between trigger and menu
@@ -34,6 +40,15 @@ const EDGE = 8; // never sit flush against the viewport edge
  * flipping just moves the problem — so stay put and let the list scroll.
  */
 const MIN_HEIGHT = 140;
+
+/**
+ * The widest a menu may grow — about 70 characters at the 13.5px rows use. Past
+ * that a long name reads better wrapped onto a second line than in a list so
+ * wide the eye loses its way back to the next row. Menus stay `w-max`, so a
+ * short list is still only as wide as its longest row: this is a ceiling, not a
+ * width.
+ */
+const MAX_WIDTH = 560;
 
 /** Row/chrome heights used to guess how tall a menu WANTS to be (see `menuHeightFor`). */
 const ROW = 38;
@@ -69,14 +84,29 @@ export function placeMenu(
    * jumps over its trigger for no reason.
    */
   const flip = wantedHeight > below && above > below;
+  /*
+   * The same argument sideways. A menu pinned by its LEFT edge can only grow
+   * rightwards, so a picker in the last column of a form has just the sliver
+   * between it and the window edge to grow into — and a customer ledger name is
+   * routinely wider than that sliver, which is what left every long name in the
+   * dispatch customer list shaved down to the same unreadable prefix. So pin it
+   * by its RIGHT edge when that is the roomier side and let it open leftwards
+   * across the form instead. An explicit `align="right"` still wins outright.
+   */
+  const spaceRight = window.innerWidth - anchor.left - EDGE; // room growing rightwards
+  const spaceLeft = anchor.right - EDGE; // room growing leftwards
+  const pinRight = align === "right" || (spaceRight < MAX_WIDTH && spaceLeft > spaceRight);
   return {
     ...(flip
       ? { bottom: window.innerHeight - anchor.top + GAP }
       : { top: anchor.bottom + GAP }),
-    ...(align === "right" ? { right: window.innerWidth - anchor.right } : { left: anchor.left }),
+    ...(pinRight ? { right: window.innerWidth - anchor.right } : { left: anchor.left }),
     minWidth: anchor.width,
     // The space on the chosen side — the menu's own max-heights keep it shorter
     // than this whenever the list is short.
     maxHeight: Math.max(flip ? above : below, MIN_HEIGHT),
+    // Likewise across: never wider than the room on the side it is pinned to,
+    // and never narrower than the trigger it hangs from.
+    maxWidth: Math.max(Math.min(MAX_WIDTH, pinRight ? spaceLeft : spaceRight), anchor.width),
   };
 }

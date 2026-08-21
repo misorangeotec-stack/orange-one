@@ -38,6 +38,15 @@ export interface ComboboxProps {
   className?: string;
   /** Extra classes on the trigger button — used to slim it down inside a grid cell. */
   triggerClassName?: string;
+  /**
+   * Let a long selected label WRAP onto a second line instead of being cut off
+   * with an ellipsis. For form fields whose value is a master name — a customer
+   * ledger runs to 61 characters and the tail is exactly what tells two ledgers
+   * of the same firm apart, so trimming it is what made people pick the wrong
+   * one. Off by default because a wrapped label changes the control's height,
+   * which a fixed-height grid cell (LineGrid) cannot take.
+   */
+  wrapLabel?: boolean;
   align?: "left" | "right";
   /**
    * After a selection, move focus to the next form field (so keyboard users can
@@ -76,6 +85,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
   clearable = false,
   className,
   triggerClassName,
+  wrapLabel = false,
   align = "left",
   onCreate,
   createLabel = (q) => `Add “${q}”`,
@@ -270,7 +280,14 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
         )}
       >
         {selected?.icon && <span className="shrink-0 flex items-center">{selected.icon}</span>}
-        <span className={cn("flex-1 truncate", !selected && "text-grey-2")}>{selected?.label ?? placeholder}</span>
+        {/* `title` even when wrapping: a name too long for two lines is still
+            readable on hover, and it costs a clipped grid cell nothing. */}
+        <span
+          title={selected?.label}
+          className={cn("flex-1 min-w-0", wrapLabel ? "break-words" : "truncate", !selected && "text-grey-2")}
+        >
+          {selected?.label ?? placeholder}
+        </span>
         <svg className={cn("text-grey-2 transition-transform shrink-0", open && "rotate-180")} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -310,10 +327,15 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
             right: pos.right,
             minWidth: pos.minWidth,
             maxHeight: pos.maxHeight,
+            // Was a flat `max-w-[320px]`, which cut every customer name past ~40
+            // characters down to the same prefix — with four ledgers per firm,
+            // that made the list unpickable. `placeMenu` now hands back the room
+            // actually available beside the trigger. See menuPlacement.ts.
+            maxWidth: pos.maxWidth,
           }}
           // `flex flex-col` is what makes the capped height reach the list: the
           // search box keeps its size and the <ul> below takes what is left.
-          className="z-[70] flex flex-col w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
+          className="z-[70] flex flex-col w-max bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
         >
           {showSearch && (
             <div className="shrink-0 p-2 border-b border-line">
@@ -355,7 +377,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
                     >
                       {o.icon && <span className="shrink-0 flex items-center">{o.icon}</span>}
                       <span className="min-w-0 flex-1">
-                        <span className={cn("block text-[13.5px] truncate", on ? "text-orange font-semibold" : "text-navy")}>{o.label}</span>
+                        <span className={cn("block text-[13.5px] break-words", on ? "text-orange font-semibold" : "text-navy")}>{o.label}</span>
                         {o.sublabel && <span className="block text-[11px] text-grey-2 truncate">{o.sublabel}</span>}
                       </span>
                       {on && (
@@ -381,7 +403,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
                   <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-orange-soft text-orange">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                   </span>
-                  <span className="min-w-0 flex-1 text-[13.5px] text-orange font-semibold truncate">{createLabel(trimmed)}</span>
+                  <span className="min-w-0 flex-1 text-[13.5px] text-orange font-semibold break-words">{createLabel(trimmed)}</span>
                 </button>
               </li>
             )}
