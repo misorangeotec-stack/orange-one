@@ -7300,6 +7300,32 @@ export type Database = {
       }
       // Hand-added for migration 20260903120400 (applied). When a report goes out and who to.
       // NOTHING READS EITHER TABLE YET — there is no scheduler; see the migration header.
+      // Admin-readable, and read-only through the API: the sole writer is the SECURITY DEFINER
+      // `collections_report_mark_sent`, called by the runner. Migration 20260922120000.
+      collections_report_send_log: {
+        Row: {
+          note: string | null
+          queued: number
+          report_key: string
+          run_at: string
+          sent_for_date: string
+        }
+        Insert: {
+          note?: string | null
+          queued?: number
+          report_key: string
+          run_at?: string
+          sent_for_date: string
+        }
+        Update: {
+          note?: string | null
+          queued?: number
+          report_key?: string
+          run_at?: string
+          sent_for_date?: string
+        }
+        Relationships: []
+      }
       report_email_schedule: {
         Row: {
           day_of_month: number | null
@@ -7686,6 +7712,13 @@ export type Database = {
       set_report_email_recipients: {
         Args: { p_recipients?: Json; p_report_key: string }
         Returns: number
+      }
+      // The scheduled send's gate — "should anything go out right now, and to whom". Granted to
+      // `authenticated` so the delivery panel can read back what the runner will actually do
+      // instead of asserting it from a hard-coded string. Migration 20260922120000.
+      collections_report_due: {
+        Args: { p_now?: string; p_report_key?: string }
+        Returns: Json
       }
       master_report_snapshot: {
         Args: { p_days?: number }
