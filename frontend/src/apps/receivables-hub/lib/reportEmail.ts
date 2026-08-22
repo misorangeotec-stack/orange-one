@@ -270,3 +270,72 @@ export async function saveReportEmailRecipients(
   });
   if (error) throw new Error(error.message);
 }
+
+/* ────────────────────────────────────────────────────────────────────────────────────
+ * IS THE SCHEDULE ACTUALLY LIVE?
+ *
+ * Read from the database, never asserted in the component. The delivery panel used to carry a
+ * hard-coded "saved but not yet active" warning, written when the report could only be built in
+ * a browser. The runner shipped, the warning did not move, and for a while the screen told an
+ * admin their armed, working schedule was inert — the most expensive kind of stale copy, because
+ * it invites someone to go looking for a fault that is not there.
+ *
+ * `collections_report_due()` is the same call the sender makes, so whatever this panel says is by
+ * construction what the runner will do at the next tick.
+ * ──────────────────────────────────────────────────────────────────────────────────── */
+
+/** Healthy states where "not due" is the correct answer and nothing is wrong. "no schedule is
+ *  set" is deliberately NOT here: that one is answered by the form directly below the banner. */
+const BENIGN_REASONS = [/^not a send day/i, /^not yet/i, /^already sent/i];
+
+export interface ScheduledSendStatus {
+  /** true when the whole chain is armed and a schedule exists — the panel's headline. */
+  live: boolean;
+  /** The gate's own words, shown as-is when something is switched off. */
+  reason: string | null;
+  /** Set when the gate is answering "yes" at this very moment. */
+  dueNow: boolean;
+  /** How many addresses the next send resolves to, when the gate is willing to say. */
+  bookCount: number | null;
+  repCount: number | null;
+  /** Ticked salespeople that no portal user carries — they are built for and reach nobody. */
+  unclaimed: string[];
+  /** Last slot actually served, from the send log. */
+  lastSentFor: string | null;
+  lastSentAt: string | null;
+}
+
+export async function fetchScheduledSendStatus(reportKey: string): Promise<ScheduledSendStatus> {
+  const [gate, log] = await Promise.all([
+    supabase.rpc("collections_report_due", { p_report_key: reportKey }),
+    supabase
+      .from("collections_report_send_log")
+      .select("sent_for_date, run_at")
+      .eq("report_key", reportKey)
+      .order("run_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (gate.error) throw new Error(gate.error.message);
+
+  const g = (gate.data ?? {}) as {
+    due?: boolean; reason?: string;
+    book?: unknown[]; salespersons?: unknown[]; unclaimed?: string[];
+  };
+  const reason = g.reason ?? null;
+
+  // "Off" is a reason that names a switch; every other reason is just today's calendar. Anything
+  // unrecognised is treated as NOT live, so a future gate condition surfaces rather than hides.
+  const live = g.due === true || (!!reason && BENIGN_REASONS.some((r) => r.test(reason)));
+
+  return {
+    live,
+    reason,
+    dueNow: g.due === true,
+    bookCount: g.book?.length ?? null,
+    repCount: g.salespersons?.length ?? null,
+    unclaimed: g.unclaimed ?? [],
+    lastSentFor: log.data?.sent_for_date ?? null,
+    lastSentAt: log.data?.run_at ?? null,
+  };
+}

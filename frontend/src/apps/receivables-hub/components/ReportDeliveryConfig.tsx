@@ -1,25 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, TriangleAlert, X } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, TriangleAlert, X } from "lucide-react";
 import { useDirectory } from "@/core/platform/store";
 import { useToast } from "@hub/hooks/use-toast";
 import {
   NO_SCHEDULE,
-  fetchReportEmailRecipients, fetchReportEmailSchedule,
+  fetchReportEmailRecipients, fetchReportEmailSchedule, fetchScheduledSendStatus,
   saveReportEmailRecipients, saveReportEmailSchedule,
   type ReportEmailFrequency, type ReportEmailSchedule, type ReportRecipientRow,
+  type ScheduledSendStatus,
 } from "@hub/lib/reportEmail";
 import { cn } from "@/shared/lib/cn";
 
 /**
  * WHEN one report goes out, and WHO it goes to.
  *
- * ⚠ NOTHING SENDS ON THIS SCHEDULE YET, and the panel says so on screen rather than only here.
- *   The report is built in the BROWSER (jsPDF over the receivables project), so there is nothing
- *   for a scheduler to call at 08:00 — that builder is the next piece of work. This exists first
- *   on purpose: the distribution list is the part a human has to get right, and the salesperson
- *   mapping is the part most likely to be wrong. Setting it up now means it can be READ and
- *   corrected long before anything is capable of posting it.
+ * ⚠ THIS SCHEDULE IS LIVE, and the banner reads its state from the database rather than stating
+ *   it here. That is the correction to a real failure: this file used to carry a hard-coded
+ *   "saved but not yet active" warning from the days when the report could only be built in a
+ *   browser. The GitHub-runner sender shipped, the warning stayed, and the screen went on telling
+ *   admins their working schedule was inert. A banner that asserts a fact the system can be asked
+ *   for will eventually lie; `fetchScheduledSendStatus` asks `collections_report_due()`, which is
+ *   the same call the sender makes, so the two cannot disagree.
+ *
+ *   Timing is approximate by design: the runner ticks every half hour and GitHub's scheduler is
+ *   best-effort, so an 08:00 slot goes out somewhere in the following hour, not at 08:00. The
+ *   grace window in the database is what lets a late tick still serve the slot.
  *
  * ── THE TWO LISTS ARE DIFFERENT KINDS OF THING ──────────────────────────────────────
  *   Full report  — typed addresses. Whoever is on this list gets the CONSOLIDATED book: every
@@ -74,6 +80,65 @@ function describe(s: ReportEmailSchedule): string {
 const selectCls =
   "rounded-input border border-line bg-white px-2 py-1 text-xs text-navy focus:outline-none focus:ring-2 focus:ring-orange/40";
 
+/** "22-08-2026" — the form the rest of this report prints dates in. */
+function dmy(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return d && m && y ? `${d}-${m}-${y}` : iso;
+}
+
+/**
+ * WHAT WILL ACTUALLY HAPPEN, in one line, from the database.
+ *
+ * Three states, and the distinction that matters is live-vs-off, not due-vs-not-due: "not a send
+ * day" on a Tuesday is a healthy schedule, and showing it in alarm colours would train an admin
+ * to ignore this strip on the one morning it says something real.
+ */
+function StatusBanner({ status, loading }: { status?: ScheduledSendStatus; loading: boolean }) {
+  if (loading || !status) {
+    return (
+      <p className="flex items-center gap-2 rounded-input border border-line bg-white px-2.5 py-2 text-[11px] text-grey">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking the schedule…
+      </p>
+    );
+  }
+
+  const sent = status.lastSentFor
+    ? `Last sent for ${dmy(status.lastSentFor)}.`
+    : "It has not sent yet.";
+
+  if (!status.live) {
+    return (
+      <p className="flex items-start gap-2 rounded-input border border-yellow/50 bg-yellow/10 px-2.5 py-2 text-[11px] leading-snug text-[#8a6400]">
+        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          <span className="font-semibold">Not sending.</span>{" "}
+          {status.reason ? `${status.reason[0].toUpperCase()}${status.reason.slice(1)}.` : "The schedule is not armed."}{" "}
+          Settings are saved either way. {sent}
+        </span>
+      </p>
+    );
+  }
+
+  return (
+    <p className="flex items-start gap-2 rounded-input border border-ryg-green/40 bg-ryg-green/10 px-2.5 py-2 text-[11px] leading-snug text-[#1f6b3a]">
+      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        <span className="font-semibold">Active</span> — this sends itself, no browser needed.{" "}
+        {status.dueNow
+          ? `Due now: ${status.bookCount ?? 0} on the book and ${status.repCount ?? 0} salesperson ${
+              (status.repCount ?? 0) === 1 ? "copy" : "copies"
+            }, going out shortly. `
+          : ""}
+        {sent}{" "}
+        <span className="text-[#1f6b3a]/75">
+          The sender checks every half hour, so a slot goes out within about an hour of its time
+          rather than on the minute.
+        </span>
+      </span>
+    </p>
+  );
+}
+
 export default function ReportDeliveryConfig({ reportKey }: { reportKey: string }) {
   const { toast } = useToast();
   const { profiles } = useDirectory();
@@ -98,6 +163,13 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
     queryFn: () =>
       import("@hub/lib/connectwaveFetcher").then((m) => m.fetchSalespersonNames()),
     staleTime: 10 * 60 * 1000,
+  });
+
+  /** What the RUNNER will do — asked of the same gate the runner asks. See fetchScheduledSendStatus. */
+  const statusQ = useQuery({
+    queryKey: ["receivables", "scheduledSendStatus", reportKey],
+    queryFn: () => fetchScheduledSendStatus(reportKey),
+    staleTime: 60 * 1000,
   });
 
   const [sched, setSched] = useState<ReportEmailSchedule>(NO_SCHEDULE);
@@ -167,7 +239,7 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
       await saveReportEmailSchedule(reportKey, sched);
       await saveReportEmailRecipients(reportKey, rows);
       await Promise.all([schedQ.refetch(), recipQ.refetch()]);
-      toast({ title: "Delivery settings saved", description: "Nothing is sent until the scheduler is built." });
+      toast({ title: "Delivery settings saved", description: "The sender picks this up at its next check." });
     } catch (err) {
       toast({
         title: "Could not save",
@@ -189,16 +261,24 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
 
   return (
     <div className="flex flex-col gap-4 border-t border-line bg-page px-3 py-3">
-      {/* Said on screen, not just in the code: an admin who fills this in deserves to know it
-          will not fire yet, rather than waiting for a mail that never comes. */}
-      <p className="flex items-start gap-2 rounded-input border border-yellow/50 bg-yellow/10 px-2.5 py-2 text-[11px] leading-snug text-[#8a6400]">
-        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span>
-          Saved but <span className="font-semibold">not yet active</span>. The report is built in
-          your browser, so nothing can send it while you are away. Set the list up now and it will
-          be waiting when the scheduler is built.
-        </span>
-      </p>
+      {/* ── Is this actually live? ───────────────────────────────────────────
+          Read from the gate, never asserted here. This banner spent a while insisting the
+          schedule was inert AFTER the runner shipped, which cost an admin a morning hunting a
+          fault that did not exist. Whatever it says now is what the sender will do. */}
+      <StatusBanner status={statusQ.data} loading={statusQ.isLoading} />
+
+      {/* Ticked names that reach nobody: the failure that otherwise looks exactly like success,
+          because the report is built for them and then quietly has no address to go to. */}
+      {!!statusQ.data?.unclaimed.length && (
+        <p className="flex items-start gap-2 rounded-input border border-yellow/50 bg-yellow/10 px-2.5 py-2 text-[11px] leading-snug text-[#8a6400]">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Ticked but nobody carries the tag, so their report reaches no one:{" "}
+            <span className="font-semibold">{statusQ.data.unclaimed.join(", ")}</span>. Tag a user
+            with that salesperson name in Admin › Users, or untick the name here.
+          </span>
+        </p>
+      )}
 
       {/* ── When ─────────────────────────────────────────────────────────── */}
       <div>
