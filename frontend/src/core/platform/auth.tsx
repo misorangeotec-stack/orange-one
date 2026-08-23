@@ -37,12 +37,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Fire-and-forget (a failed stamp must never block auth) and throttled to at
     // most once a minute, so bursty/duplicate auth events don't spam the write.
     let lastStampAt = 0;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const stamp = (s: Session | null) => {
       if (!s) return;
       const now = Date.now();
       if (now - lastStampAt < 60_000) return;
       lastStampAt = now;
-      supabase.rpc("touch_last_active").then(() => {}, () => {});
+      /*
+        ⚠ DEFERRED OUT OF THE AUTH CALLBACK ON PURPOSE, not for politeness.
+
+          onAuthStateChange listeners are invoked by supabase-js from INSIDE the
+          lock it holds over the stored session (GoTrueClient `_acquireLock` →
+          `_notifyAllSubscribers`), and every PostgREST call re-enters that same
+          lock to resolve its access token. Calling a Supabase function straight
+          from the callback is the case their docs warn about: at best the
+          sign-in now waits on this round-trip before it completes, at worst a
+          request resolves its token against a half-written session and goes out
+          unauthenticated — which, on an RLS'd table, is a silent 200 with an
+          empty body rather than an error. `store.tsx` explains what an empty
+          directory then did to the whole app.
+
+          A macrotask is enough: the lock is released before the timer fires.
+          Telemetry hanging off auth must never be able to affect auth.
+      */
+      timers.push(setTimeout(() => supabase.rpc("touch_last_active").then(() => {}, () => {}), 0));
     };
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -55,7 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         stamp(s);
       }
     });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      sub.subscription.unsubscribe();
+      for (const t of timers) clearTimeout(t);
+    };
   }, []);
 
   const value: AuthValue = {
