@@ -13,60 +13,23 @@
  */
 import type { CustomerType, GstState } from "./types";
 
-const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-
-/** Base-36: the index of a character IS its value. */
-const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-/** Upper-case, and drop the spaces and hyphens people paste in from emails. */
-export function normaliseGstin(raw: string): string {
-  return (raw ?? "").toUpperCase().replace(/[\s-]+/g, "").trim();
-}
-
-export function isGstinFormatValid(g: string): boolean {
-  return GSTIN_RE.test(g);
-}
-
 /**
- * The mod-36 check character.
- *
- * Index each of the first 14 characters in base 36; multiply by an alternating
- * weight of 1, 2, 1, 2…; for each product add floor(p / 36) + (p mod 36); the
- * check character's value is (36 - sum mod 36) mod 36.
+ * ⚠ THE VALIDATORS, THE LOOKUP TYPES AND lookupGstin NOW LIVE IN shared/lib/gstin.ts.
+ *   OCPI needs the same GSTIN handling — mst_parties has no address on any row,
+ *   so a lookup is the only way to fill one without typing — and a second copy of
+ *   a checksum algorithm that already has a SQL twin was not worth having. They
+ *   are re-exported here so this file stays the one import site for onboarding.
  */
-export function gstinChecksumOk(g: string): boolean {
-  if (g.length !== 15) return false;
-  let sum = 0;
-  for (let i = 0; i < 14; i += 1) {
-    const v = ALPHABET.indexOf(g[i]);
-    if (v < 0) return false;
-    const p = v * (i % 2 === 0 ? 1 : 2);
-    sum += Math.floor(p / 36) + (p % 36);
-  }
-  return ALPHABET[(36 - (sum % 36)) % 36] === g[14];
-}
+export {
+  normaliseGstin, isGstinFormatValid, gstinChecksumOk, panFromGstin, stateCodeFromGstin,
+  isPanValid, factoryAddressFrom, lookupGstin,
+} from "@/shared/lib/gstin";
+export type { FiledReturn, GstCompliance, AdditionalPlace, GstinLookup } from "@/shared/lib/gstin";
 
-/**
- * Characters 3–12 of the GSTIN.
- *
- * ⚠ OFF-BY-ONE WARNING. This is slice(2, 12): 0-indexed, end-EXCLUSIVE, so it
- *   yields 10 characters starting at the third. The SQL twin is
- *   `substring(g from 3 for 10)`: 1-indexed and length-based. They agree. Get
- *   either wrong and every PAN in the system is silently one character off — the
- *   kind of bug that surfaces months later during a tax filing.
- */
-export function panFromGstin(g: string): string {
-  return g.slice(2, 12);
-}
-
-export function stateCodeFromGstin(g: string): string {
-  return g.slice(0, 2);
-}
-
-export function isPanValid(p: string): boolean {
-  return PAN_RE.test((p ?? "").toUpperCase().trim());
-}
+import {
+  normaliseGstin, isGstinFormatValid, gstinChecksumOk, panFromGstin, stateCodeFromGstin,
+} from "@/shared/lib/gstin";
+import type { GstinLookup, GstCompliance, FiledReturn } from "@/shared/lib/gstin";
 
 export type GstinError = "empty" | "length" | "format" | "checksum" | "unknown_state";
 
@@ -142,95 +105,6 @@ export function parseGstin(raw: string, states: GstState[]): GstinParse {
 /* ── The API-lookup seam ───────────────────────────────────────────────── */
 
 /** One filed GST return. `period` is the tax period covered, not the filing date. */
-export interface FiledReturn {
-  type: string;
-  fy: string;
-  period: string;
-  filedOn: string | null;
-}
-
-/**
- * The credit-relevant half of a lookup, from jamku.
- *
- * ⚠ NULLABLE, AND IT WILL BE NULL IN PRODUCTION SOMETIMES. It comes from the
- *   free tier (1000/day, 20/min); a 429 or a missing key yields null and the
- *   identity half still arrives. Every consumer must render without it.
- *
- * ⚠ CACHED. `syncedOn` is the date the provider last refreshed this record, and
- *   it can be months old. Never show a filing claim without showing that date —
- *   an approver who reads "filed to September" and acts on it deserves to know
- *   whether that was checked yesterday or last year.
- */
-export interface GstCompliance {
-  category: string | null;
-  aggregateTurnover: string | null;
-  aggregateTurnoverFy: string | null;
-  filingFrequency: Record<string, string> | null;
-  latestGstr1: string | null;
-  latestGstr3b: string | null;
-  eInvoiceMandated: string | null;
-  /** Enabled to issue e-invoices — distinct from being mandated to. */
-  eInvoiceEnabled: string | null;
-  hsn: string[];
-  natureOfBusiness: string[];
-  centreJurisdiction: string | null;
-  stateJurisdiction: string | null;
-  returns: FiledReturn[];
-  syncedOn: string | null;
-  returnsSyncedOn: string | null;
-}
-
-/**
- * An additional place of business declared on the GSTIN.
- *
- * `nature` is the portal's own label for the premises — "Factory / Manufacturing",
- * "Warehouse / Depot", "Retail Business" — and it is what makes this usable:
- * see factoryAddressFrom() below.
- */
-export interface AdditionalPlace {
-  address: string;
-  nature: string | null;
-}
-
-export interface GstinLookup {
-  legalName: string | null;
-  tradeName: string | null;
-  registeredAddress: string | null;
-  city: string | null;
-  pincode: string | null;
-  stateCode: string | null;
-  /** 'Active' / 'Cancelled' / … as the portal reports it. */
-  status: string | null;
-  registrationDate: string | null;
-  cancellationDate: string | null;
-  constitution: string | null;
-  /** Regular | Composition | … — a Composition dealer cannot pass on ITC. */
-  taxpayerType: string | null;
-  /** Appyflow only. Empty when it did not answer, or the GSTIN declares none. */
-  additionalPlaces: AdditionalPlace[];
-  compliance: GstCompliance | null;
-  /** Which providers answered: ["appyflow", "jamku"]. */
-  sources: string[];
-}
-
-/**
- * Which additional place is the FACTORY, for pre-filling `factory_address`.
- *
- * ⚠ ONLY EVER RETURNS A LABELLED MATCH — never "the first one". A customer can
- *   declare a warehouse, a branch office and a godown; filling the factory field
- *   with a warehouse produces a confidently wrong address, which is worse than
- *   the blank box a rep would have filled correctly. When nothing is labelled as
- *   manufacturing, this returns null and the rep types it, exactly as before.
- *
- *   The portal's wording varies ("Factory / Manufacturing", "Manufacturing",
- *   "Factory"), so match on either word rather than an exact string.
- */
-export function factoryAddressFrom(places: AdditionalPlace[] | undefined | null): string | null {
-  if (!places?.length) return null;
-  const hit = places.find((p) => /factory|manufactur/i.test(p.nature ?? ""));
-  return hit?.address || null;
-}
-
 /**
  * A lookup frozen onto the request, so approvers days later read the same
  * evidence Sales saw — without spending another paid call per visit.
@@ -293,39 +167,6 @@ export function isInactiveStatus(status: string | null | undefined): boolean {
 export function latestReturn(c: GstCompliance | null, type: string): FiledReturn | null {
   if (!c) return null;
   return c.returns.find((r) => r.type.toUpperCase() === type.toUpperCase()) ?? null;
-}
-
-/**
- * Ask the GST portal who this GSTIN belongs to.
- *
- * Goes through the `gstin-lookup` Edge Function on the identity project, NOT
- * straight to the provider: the API key is billable, and anything in the
- * frontend bundle is public (VITE_* included), so a browser-side call would
- * publish a key anyone could spend. Same reasoning as analyze-receivables.
- *
- * ⚠ A MISS IS NOT AN ERROR. No key configured, provider down, GSTIN unknown —
- *   all resolve to null, and the wizard treats null exactly like the offline
- *   case: the user types the address themselves. A lookup that could break the
- *   form would be worse than no lookup.
- *
- * ⚠ COST: this is pay-per-call, so callers MUST only invoke it for a GSTIN that
- *   already passed the local format + checksum test, and MUST cache per GSTIN.
- *   GstinField does both. Do not call it on every keystroke.
- */
-export async function lookupGstin(gstin: string): Promise<GstinLookup | null> {
-  const g = normaliseGstin(gstin);
-  if (!isGstinFormatValid(g) || !gstinChecksumOk(g)) return null;
-
-  try {
-    const { supabase } = await import("@/core/platform/supabase");
-    const { data, error } = await supabase.functions.invoke("gstin-lookup", { body: { gstin: g } });
-    if (error) return null;
-    const body = data as { ok?: boolean; found?: boolean; data?: GstinLookup } | null;
-    if (!body?.ok || !body.found || !body.data) return null;
-    return body.data;
-  } catch {
-    return null;
-  }
 }
 
 /* ── Fixtures ──────────────────────────────────────────────────────────────

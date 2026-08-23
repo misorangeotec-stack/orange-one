@@ -1,0 +1,437 @@
+[
+  {
+    "n": 1,
+    "title": "Salesperson Name",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 2,
+    "title": "Customer/Party Name",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 3,
+    "title": "Customer/Party Full Address",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 4,
+    "title": "Customer/Party Email ID",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 5,
+    "title": "Customer/Party Mobile No.",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 6,
+    "title": "Customer/Party GST No. Available",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 7,
+    "title": "Customer/Party GST No.",
+    "type": "TextField",
+    "req": true,
+    "validation": {
+      "rule": 10,
+      "numberMinBoundary": "15"
+    }
+  },
+  {
+    "n": 8,
+    "title": "No. of Machine",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 9,
+    "title": "Name of the Printer",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "K64",
+      "K32",
+      "K24",
+      "JP7",
+      "JPK",
+      "Mini Lario",
+      "Fab Pro 1I",
+      "Fab Pro 2I",
+      "Fab Pro 3I",
+      "P8S",
+      "P8D",
+      "Position Printer",
+      "Alpha 2 - 8 Heads machine",
+      "Alpha 3 - 12 Heads machine",
+      "Alpha 15 ",
+      "Alpha 16 ",
+      "Pengda - 1700XD-800",
+      "Pengda - 1800XD-800",
+      "Rocket",
+      "Foil Machines",
+      "Alpha 3.2 - 8 Heads Machine",
+      "Alpha 3.2 - 16 Heads Machine",
+      "Alpha 3.2 - 24 Heads Machine",
+      "Label Printer",
+      "Book Printer"
+    ]
+  },
+  {
+    "n": 10,
+    "title": "Type of Head",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "300DPI - KJ4B",
+      "600 DPI - KJ4B",
+      "EPSON PRINTHEAD I 3200",
+      "KATANA 600 DPI - HANGLORY",
+      "RICOH GEN 6 HEAD",
+      "RC 600 DPI -Hanglory"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 11,
+    "title": "No. of Print Head required with the Printer",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 12,
+    "title": "Type of Ink Use",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Sublimation Ink",
+      "Reactive Ink",
+      "Pigment"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 13,
+    "title": "Ink Price",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 14,
+    "title": "INK Credit terms for Future",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 15,
+    "title": "Deal is inclusive of Ink ?",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 16,
+    "title": "Confirm the Quantity of the ink included with the Deal.",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 17,
+    "title": "Deal is inclusive of Spare Parts?",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 18,
+    "title": "Specify the Detail of the spare part to be included with the deal.",
+    "type": "TextField",
+    "req": true,
+    "subtitle": "Item Name & Quantity"
+  },
+  {
+    "n": 19,
+    "title": "Deal is inclusive of Head?",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 20,
+    "title": "No. of Heads Inclusive with Deal.",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 21,
+    "title": "How to ship the Head included with the deal?",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "With Machine",
+      "Separate Shipment"
+    ]
+  },
+  {
+    "n": 22,
+    "title": "Later Shipment send via",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Directly",
+      "HSS",
+      "Local Sales"
+    ]
+  },
+  {
+    "n": 23,
+    "title": "Remarks- for balance head to be sold in future.",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 24,
+    "title": "Required Separate Invoice for Head?",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 25,
+    "title": "Which Dryer Required",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Chinese",
+      "Indian",
+      "No Applicable"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 26,
+    "title": "How Many chambers with Dryer",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 27,
+    "title": "Confirm the Heating Mode",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 28,
+    "title": "Platter Details",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "With Platter",
+      "Without Platter",
+      "Not Applicable"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 29,
+    "title": "Dryer Warranty Period",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "12 Months",
+      "18 Months",
+      "24 Months"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 30,
+    "title": "Total value of the Deal. (excluding GST Amt)",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 31,
+    "title": "Type of the payment of the entire deal.",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Any Advance",
+      "on Credit"
+    ]
+  },
+  {
+    "n": 32,
+    "title": "Terms of the machine",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 33,
+    "title": "Machine Delivery Date committed to the customer (tentative)",
+    "type": "DateTime",
+    "req": true
+  },
+  {
+    "n": 34,
+    "title": "Air Blade",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 35,
+    "title": "External Centering System",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 36,
+    "title": "Ink Dust Exhauster",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 37,
+    "title": "Chilling System",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Yes",
+      "No"
+    ]
+  },
+  {
+    "n": 38,
+    "title": "Printer Transportation Terms",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "High Seas",
+      "Local Delivery"
+    ]
+  },
+  {
+    "n": 39,
+    "title": "In case of High Seas, Printer Delivery via.",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "CIF",
+      "EX Factory",
+      "FOB"
+    ]
+  },
+  {
+    "n": 40,
+    "title": "In case of High Seas then delivery Cost will be bought by whom?",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Customer",
+      "Company"
+    ]
+  },
+  {
+    "n": 41,
+    "title": "In case of Local delivery, Then Cost will be bought by whom? (Transport, Clearance Charges, Loading/ Unloading Charges)",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Customer",
+      "Company"
+    ]
+  },
+  {
+    "n": 42,
+    "title": "Any other commitments of the charges made by us.",
+    "type": "TextField",
+    "req": true,
+    "subtitle": "Please specify Description and Amount"
+  },
+  {
+    "n": 43,
+    "title": "Warranty Period of the Printer",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "12 months warranty → maximum 13 months from the invoice date",
+      "18 months warranty → maximum 19 months from the invoice date",
+      "24 months warranty → maximum 25 months from the invoice date",
+      "36 months warranty → maximum 37 months from the invoice date"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 44,
+    "title": "Warranty Period of the Head",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "12 Months",
+      "18 Months",
+      "24 Months"
+    ],
+    "allowOther": true
+  },
+  {
+    "n": 45,
+    "title": "Remarks or Additional Information",
+    "type": "TextField",
+    "req": true
+  },
+  {
+    "n": 46,
+    "title": "Insurance coverage up to the point of loading will be the responsibility of the company, while any coverage required during unloading will be the responsibility of the customer.",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Agree",
+      "Disagree"
+    ]
+  },
+  {
+    "n": 47,
+    "title": "If the payment is clear within 60 days, then Dollar exchange not applicable. In case payment terms is more than 3 months equal installments then Dollar exchange will be adjusted against Debit Note/Credit Note.",
+    "type": "Choice",
+    "req": true,
+    "choices": [
+      "Agree",
+      "Disagree"
+    ]
+  }
+]

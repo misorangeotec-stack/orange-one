@@ -58,3 +58,15 @@ verify_jwt = false
 # Resumes are PII and the answer paraphrases one, so JWT verification is mandatory.
 [functions.score-candidate]
 verify_jwt = true
+
+# Renders and sends every outbound mail in the portal — the FMS step alerts, the
+# daily digests, the receivables reports. Two callers with two credentials, exactly
+# as work-snapshot above: pg_cron / the GitHub Actions runner post an
+# `x-dispatch-secret` header (EMAIL_DISPATCH_SECRET) with no JWT to offer, and the
+# admin screens post a signed-in user's JWT. So platform verification is OFF and the
+# function checks BOTH itself.
+# ⚠ This block was ADDED LATER than the function. It was deployed --no-verify-jwt
+#   from the start; without the block the CLI would default to ON and every cron
+#   send would start failing 401. Deploy with --no-verify-jwt if in any doubt.
+[functions.send-email]
+verify_jwt = false

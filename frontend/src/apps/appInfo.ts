@@ -146,6 +146,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/leads-dashboard",
     category: "sales",
   },
+  // The machine SALE, before there is an order to dispatch: a quotation is
+  // drafted, revised through the negotiation, approved, and becomes an order
+  // confirmation the customer signs. Filed under SALES between the lead that
+  // starts it and the onboarding that follows a won deal.
+  ocpi: {
+    name: "OCPI",
+    basePath: "/ocpi",
+    category: "sales",
+  },
   "fms-control-center": {
     name: "FMS Control Center",
     basePath: "/fms-control-center",

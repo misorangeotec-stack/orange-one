@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-21
+**Last updated:** 2026-08-22
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -37,17 +37,12 @@ Work held up because someone owes us something. If a task is late, this is the f
 
 | What we need | From | Blocks | Waiting since |
 |---|---|---|---|
+| WhatsApp access, so the integration can start | WhatsApp team | **PF-10** | 2026-08-22 |
 | The calibration sheets (the Excel report QC keeps today) | Factory / QC team | **PE-1** | 2026-08-20 |
 | The final list of production steps to add | Factory, then Bushra | **PE-2** | 2026-08-20 |
 | The R&D flow and the form | Factory team | **RD-1** | 2026-08-20 |
 | The COA sample PDF + the raw Excel sheet | Factory team | **PE-3** | 2026-08-20 |
-| All the OCPI details | Bushra | **OCPI-1** | 2026-08-20 |
-| Decision: weekly or monthly plan on the Collection Report | Ritesh Bhai | **RC-3** | 2026-08-20 |
-| Decision: does a salesperson's copy go to the rep only, or to everyone who can see that book? | Ritesh Bhai | **RC-5**, and the go-live of **RC-2** | 2026-08-20 |
-| Scope of the internal / related company tag | Bushra | **OD-1** | 2026-08-20 |
-| Call on SO-2627-0413 — wrong copy of SPECTRUM DIGITAL | Bushra | **OD-4** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
-| Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
 
 ---
@@ -593,6 +588,66 @@ the plain `new Notification()` constructor** and throws — mobile needs the ser
 in the foreground. Desktop Chrome, Edge, Firefox and Safari are all fine, so if the coordinator and
 the HODs are on laptops, step 1–7 above covers them.
 
+
+### PF-10 · WhatsApp integration  `[!]`
+*Raised 2026-08-22 · **Blocked:** waiting on the WhatsApp team*
+
+Notify people over **WhatsApp**, alongside the in-app bell and email (cross-ref **PF-9**, which adds
+the browser as a third channel).
+
+**Where it stands:** in discussion with the WhatsApp team for a while now, and **still no
+clearance** — so nothing is designed and nothing is built. It is logged here because it is being
+chased weekly and appears on the client report; the moment access is granted this stops being a
+waiting item and becomes a build.
+
+**Worth settling before it lands:** which events are worth a WhatsApp (an approval waiting, a step
+overdue, the collection report going out) as against the ones that would make it noise; whose
+number it goes to, given `profiles.phone` already exists; and whether a message is one-way or
+expects a reply.
+
+### PF-11 · Training videos, and a place in the hub to watch them  `[ ]`
+*Raised 2026-08-22 · **Joint work with Bushra** · touches every module*
+
+Two halves, and neither is much use without the other:
+
+1. **The videos.** One per module, walking a person through the screens they actually use. Recorded
+   jointly — Bushra knows the process, we know the screens.
+2. **Somewhere to watch them.** A screen inside the portal where a person finds the video for the
+   module they are in, rather than a folder someone has to be sent a link to.
+
+**Notes:** nothing like this exists in the portal today — no help screen, no video anywhere. The
+nearest thing is each module's own dashboard. Worth settling before recording: whether a video is
+per module or per step (a nine-module portal is a lot of one-hour videos, and nobody watches those);
+where the files are hosted, since a video in the repo is a mistake and Supabase storage has a cost;
+whether a new joiner is *pointed* at them by the portal or has to go looking; and whether they need
+re-recording every time a screen changes, which is the reason most such libraries die.
+
+### PF-12 · The reports management actually wants  `[ ]`
+*Raised 2026-08-22 · **Next week's first job** · sit with Ritesh Bhai before building anything*
+
+Brainstorm with **Ritesh Bhai** to understand what he needs out of the hub **on the report side**,
+then build those reports into Orange One.
+
+**The session comes first, and it is the point.** We have nine modules stamping who did what and
+when, so most of what he asks for is probably derivable from data we already hold — but which cuts
+matter, at what frequency, and delivered how (a screen, a scheduled mail, an Excel) is his call, not
+ours. Guessing produces reports nobody opens.
+
+**What already exists, so we do not rebuild it:** the receivables side is well covered — the
+Salesperson Collection Report, the Risk Register, Saved Views, and the scheduled mail behind
+**RC-2** ([RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md)) which already renders a
+PDF and a workbook from the app's own code. The FMS side has almost nothing by comparison: the
+Master Control Center is a live-status board, not a report, and **PE-2** (how long each production
+step took) is the only report anyone has asked for. That gap is most likely where this lands.
+
+**To settle in the session:**
+- [ ] Which decisions he is making today without a number in front of him — start there, not from a
+      list of tables we could join.
+- [ ] Per report: the period (day, week, month), who receives it, and whether it is a screen he
+      opens or a mail that arrives.
+- [ ] Whether these are per-module reports or one management view across modules — the second is a
+      different build, closer to **PC-1**'s dashboard than to a report.
+- [ ] What he wants that the data cannot answer yet, so we know early what needs capturing first.
 ---
 
 ## Process Coordinator Dashboard  *(new)*
@@ -647,26 +702,44 @@ alongside this, or fold into it.
 
 ## OCPI  *(new module)*
 
-### OCPI-1 · Build the OCPI module, standalone  `[!]`
-*Raised 2026-08-20 · **Blocked:** awaiting the details from Bushra*
+### OCPI-1 · Build the OCPI module, standalone  `[~]`
+*Raised 2026-08-20 · **Built 2026-08-22**, phases 0–9d of 10 done. Live checklist and build log:
+[OCPI.md](OCPI.md). Not yet cut over — see "Before it goes live" below.*
 
-A **complete, standalone module** for OCPI, covering the whole thing end to end:
+A **complete, standalone module** for OCPI, covering the whole thing end to end. What is built:
 
-1. **Quotations** — create them in the module.
-2. **Final OCPI reports** — produce them off the same data.
+1. **Quotations** — raised in the module against a machine master, drafted privately, generated
+   as a PDF on the letterhead, revised as often as a negotiation needs, every revision frozen
+   and diffed field by field.
+2. **Two approval gates** — quotation and order confirmation, owned per step in Settings.
+3. **Order confirmations** — part B pre-filled from the quotation, rendered from each machine's
+   own transcribed template, frozen at submit.
+4. **The signature loop** — print, file the customer-signed copy, countersign, closed. Both
+   scans held in a private bucket behind the deal's own visibility rule.
+5. **Reports** — the Deal Register with filters and an .xlsx export; due dates, hold / resume /
+   cancel, the cross-FMS scoreboard row and the Master Report adoption row.
+6. **The lifecycle rail** on the deal page — the same shared `PoStageRail` the other eight FMS
+   modules use, dated and named per step, and showing where a parked or returned deal stopped.
 
-Bushra is sharing all the details; nothing is designed until those land.
+**Notes:** greenfield — nothing named OCPI existed before this. The Import module's
+[SourcingModal.tsx](frontend/src/apps/import/components/SourcingModal.tsx) captures *vendor*
+quotations for a purchase line; it was read for patterns and is a different shape.
 
-**Notes:** nothing named OCPI exists in the codebase today — this is greenfield. The only
-existing quotation handling is in the Import module
-([SourcingModal.tsx](frontend/src/apps/import/components/SourcingModal.tsx)), which
-captures up to three *vendor* quotations for a purchase line — inbound, and almost
-certainly a different shape from what OCPI needs. Worth a look for patterns, not for reuse.
+**Before it goes live** (all recorded in [OCPI.md](OCPI.md)):
+- ~~The `send-email` edge function needs one deploy~~ — **deployed 2026-08-23** (version 29;
+  the live copy was diffed against `git HEAD` first, so it added the OCPI branch and nothing
+  else, and `verify_jwt` stayed off). OCPI's own email switch is still off.
+- **Bushra to confirm the true maximum `QT-M####`.** No longer a blocker: Settings →
+  Quotation numbering takes the figure and moves the series forward (admin-only, forward-only),
+  and until somebody confirms it every screen that can mint a number carries a warning. The
+  counter is still seeded at 23 off the one paper form we have.
+- **Bushra to proof-read the ten transcribed templates**, and to say which selling entities
+  actually raise OCPIs. The four entities with no profile of their own now warn **by name** on
+  every screen that produces a document, saying whose bank block will print instead — so a
+  Colorix or Noida contract can no longer go out with Orange O Tec's account on it unnoticed.
+- Ten other open questions are listed at the foot of OCPI.md.
 
-**To confirm when Bushra's details arrive:** what OCPI stands for and what the final report
-must contain; whether a quotation here is customer-facing; what it needs from the central
-masters (customers, items, rates); and whether it feeds any existing module or stays
-genuinely standalone.
+**Still to come:** phase 10 — Zoho CRM as a third source behind the customer picker.
 
 ---
 
@@ -729,11 +802,12 @@ the same shape.
 - [ ] pgvector inside the identity project, or a separate store?
 - [ ] How re-indexing is triggered when a document changes.
 
-### TR-1 · Travel reimbursement module  `[!]`
-*Raised 2026-08-20 · **Blocked:** waiting on HR's final approved travel details and amounts*
+### TR-1 · Travel reimbursement module  `[ ]`
+*Raised 2026-08-20 · **Unblocked 2026-08-20 (Thursday)** — HR has shared the approved travel details
+and the amounts, so this is queued for build.*
 
-A travel reimbursement module. HR is sharing the **final approved travel details and the travel
-amounts**; work starts once those land.
+A travel reimbursement module. The approved details and amounts are in hand; the build runs against
+them.
 
 **Notes:** nothing exists — "Travel Desk" appears today only as a clearance owner inside Employee
 Exit, which is unrelated. This would be the third HR module alongside New Recruitment
@@ -751,8 +825,9 @@ payroll or stops at "approved"; and whether an advance can be drawn before trave
 
 ## Asset Maintenance  *(service & maintenance)*
 
-### AM-1 · Walk the module with Bushra and list the changes  `[!]`
-*Raised 2026-08-20 · **Blocked:** needs the review session with Bushra*
+### AM-1 · Walk the module with Bushra and list the changes  `[~]`
+*Raised 2026-08-20 · **In progress, live in week 35** — the module itself is built. Every entry is
+being cross-checked, what that throws up gets fixed, and then it goes live.*
 
 The service and maintenance module is already built and live. Go through it **together with
 Bushra**, note down every change it needs, and then make them.
@@ -828,8 +903,9 @@ is fixed — also in Done.)
 
 *(cross-ref: **PF-1** — Save Draft lands here second, after Production · **PF-6** — this module is the pilot for opening view-only access, and **PF-7** ships with it)*
 
-### OD-1 · Internal transfer / Others on a dispatch  `[!]`
-*Raised 2026-08-20 · **Blocked:** needs the scope settled with Bushra*
+### OD-1 · Internal transfer / Others on a dispatch  `[ ]`
+*Raised 2026-08-20 · **Unblocked 2026-08-22** — the scope is settled and this is queued for build. The
+four internal ledgers already carried in the masters are the ones to tag.*
 
 There is no such option today. Add it:
 
@@ -941,8 +1017,9 @@ not match.
 - [ ] Does this connect to **PC-1** — should these approvals land in the coordinator's single
       queue?
 
-### OD-4 · SO-2627-0413 names the wrong copy of SPECTRUM DIGITAL  `[!]`
-*Raised 2026-08-20 · **Blocked:** needs Bushra's confirmation before the row is touched*
+### OD-4 · SO-2627-0413 names the wrong copy of SPECTRUM DIGITAL  `[x]`
+*Raised 2026-08-20 · **Cleared 2026-08-22** — the call came back and this is closed. What was decided
+still has to be written in here, then the entry moves to Done.*
 
 *(cross-ref: **OD-5** — the companyless approved customer is why this pair could form)*
 
@@ -1315,76 +1392,6 @@ The Zero-Collection report itself is built. Live handover doc:
 
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
 
-### RC-2 · Send the report automatically, on a schedule  `[~]`
-*Raised 2026-08-20 · Built and disarmed 2026-08-20, 22:00 IST*
-
-**Built. Nothing sends until you flip one switch.** What is left is yours: choose the days, the
-time and the recipients, read the dry-run log, then arm it.
-
-*Deliberately still open rather than moved to Done: the code is live on `master` but the feature is
-not — nothing is scheduled, nobody is on the list, and the switch is off. It moves to Done the day
-it actually posts something.*
-
-**Proved on the runner, 20-Aug-2026** (runs `32392028439`, `32392193665`, `32392294411`):
-
-- a **dry run** built the whole book in 26 s and one salesperson in 4.8 s — 60 s end to end,
-  including the checkout and `npm ci` — and reproduced the screen exactly: 247 of 362, ₹30.58 Cr,
-  ₹17.53 Cr, 34, 116, ₹3.98 Cr. The runner is faster than the desk it was written on (26 s vs 40 s).
-- a run in **scheduled** mode asked the database, was told `automatic sending is not armed`, and
-  stopped without reading a row. That is the stop that matters.
-- a **sample** posted both shapes — the book and a rep's extract — from the runner through storage
-  and the outbox to a test address. Both delivered; the send log stayed empty, because a sample
-  must not burn a slot.
-
-**How to turn it on** (full detail in [RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md) §6):
-
-1. Receivables → Settings → Notifications — set the frequency, the days, the time, the book
-   addresses and which salespeople get their own copy.
-2. Run **Actions → Collection report → Run workflow → `mode: dry-run`** and read the log. It names
-   every address each salesperson resolves to, flags anyone tagged with more than one book, and
-   warns about names nobody carries.
-3. `select set_collections_report_armed(true);` — last, and yours.
-
-To stop it: `update private.collections_report_config set armed = false;`
-
-**What was built**
-
-| | |
-|---|---|
-| `20260922120000_…_scheduled_send.sql` | `collections_report_due()`, the send log, the arming switch |
-| `supabase/collectionsreport/` | the builder: bundles the app's own TypeScript, three guards |
-| `.github/workflows/collections-report.yml` | ticks every 30 min, gates on the database first |
-
-Earlier phases: multi-day schedules `17bad6a`, the KPI numbers and card wording out of the React
-page `3ca9e7d`, the row predicate and defaults `dd05708` / `18387c7`, the headless build `3e0cd72`.
-
-**⚠ The plan said "Edge Function". It cannot be one, and that is measured.** A probe burned
-straight-line CPU on the live runtime: 1 s → `200`, 3 s → `546 WORKER_RESOURCE_LIMIT`, and 8 s with
-an `await` every 200 ms → `546` as well. The ceiling is **2 s of CPU per request** and the budget is
-**cumulative** — yielding does not reset it. This report is **~40 s of solid CPU** (101 pages,
-~250 customers, a 1.5 MB workbook), and the per-salesperson fallback does not rescue it either: one
-rep's 18-page extract is already over. So it runs on a **GitHub Actions runner**, which has no such
-cap and has the repo checked out — so it still runs the app's own code, which was always the point.
-The repo is public, so runner minutes are free.
-
-**Notes:**
-- No `pg_cron` job, and no UTC conversion by hand: the IST comparison happens inside
-  `collections_report_due` in `Asia/Kolkata`, so the stored hour means what it says.
-- Send log keyed `(report_key, sent_for_date)` on the **IST** date; a run reaching nobody
-  deliberately does **not** log, or adding the first recipient an hour late would cost the slot.
-- **Four switches** must all be on. `report_email_settings` is already `true` so admins can mail by
-  hand — which is exactly why a dedicated `armed` flag exists, so finishing this feature could not
-  arm an unattended send as a side effect.
-- Timing is honest, not exact: GitHub's scheduler can run several minutes late, so an 08:00 slot
-  goes out shortly after 08:00. `grace_minutes` (120) lets a late tick still serve it.
-- **GitHub disables a scheduled workflow after 60 days with no commits to the repo.** Unlikely here,
-  but it stops silently rather than failing.
-- Still open: an attachment size guard (fine today at 2.2 MB), and resolving a salesperson to a
-  chosen **user id** rather than to everyone holding the tag — the run log surfaces that for now.
-- **⚠ Do not arm this before RC-5 is answered.** Who a salesperson's copy actually reaches is a
-  decision for Ritesh Bhai, and on today's tags three accounts would each receive thirteen separate
-  emails per send. Arming first and asking after is the wrong order — those mails cannot be recalled.
-
 ---
 
 ### RC-6 · Spare and Head bills read as "Other" on the salesperson report  🔴  `[x]`
@@ -1684,10 +1691,14 @@ row, plus three verification blocks. **No `collection_refresh()`:** the snapshot
 type, `v_sales_voucher` is a view, and `connectwaveFetcher` applies `sale_type_rule` in the browser
 — so it lands on the next page load and a refresh would be 2.5 minutes for no change.
 
-- [ ] Apply in the **ConnectWave** SQL editor (`ieeefdnyhzgrroifiqbb`) — needs Ritesh Bhai, as the
-      anon key the repo holds is read-only.
-- [ ] Run Verify 1 first: confirm no *third* spelling has appeared since 2026-08-21.
-- [ ] Open a NOIDA-book customer and confirm paper sales leave the Other band.
+- [x] **Applied to ConnectWave by Ritesh Bhai, 2026-08-21** — landed as rule id **46**, active.
+- [x] Verify 2 run through the live resolver on the **anon** key: `GST SALES-PAPER` → `paper`,
+      `GST SALES - PAPER` → `paper`, and the two controls hold — `GST PURCHASE - PAPER` → `other`,
+      `DELIVERY CHALLAN-PAPER` → `other`. A purchase and a challan are not sales.
+- [x] Verify 3: open bills unmoved — `PAPER/126/25-26` and `PAPER/26-27/12` → `paper`,
+      `OTPL/001` → `other`. Confirms the open-bill path never saw this rule, as intended.
+- [ ] Open a NOIDA-book customer and confirm paper sales leave the Other band. Data is right; this
+      is only confirming the screen. No `collection_refresh()` — the rule applies at read time.
 
 **Second, cheaper guard, worth having either way:** a negative Received (`pending > amount`) is
 impossible for a genuine bill. Catches all 7 rows today regardless of voucher type, and needs no
@@ -1770,15 +1781,17 @@ removal is pure deletion.
 
 ---
 
-### RC-5 · Who should receive a salesperson's copy — one person, or everyone who can see it?  `[!]`
-*Raised 2026-08-20 · **Blocked:** needs a decision from Ritesh Bhai · Blocks the go-live of **RC-2***
+### RC-5 · Who receives a salesperson's copy  `[x]` *(decision — no build)*
+*Raised 2026-08-20 · **Decided 2026-08-21 (Ritesh Bhai)** · no longer blocks **RC-2***
 
-**The question in one line:** when the Collection report goes out automatically for, say, NAKUL JI,
-should that copy reach only Nakul — or everyone who is allowed to see his book?
+**The decision: everyone who can see a salesperson's book receives that salesperson's report.**
+Option 1 of the three below — and it is what the code already does, so nothing was built and
+nothing changed.
 
-**Why it is a question at all.** `profiles.receivables_salespersons` is a **visibility scope**, not
-an identity. It answers *"whose figures may this person see"*, not *"who is this salesperson"*. So
-a salesperson name does not resolve to one inbox. Five accounts carry more than one name:
+**Why it was a question.** `profiles.receivables_salespersons` is a **visibility scope**, not an
+identity. It answers *"whose figures may this person see"*, not *"who is this salesperson"*, so a
+name does not resolve to one inbox. `UMESH JI` is carried by six people: Umesh, his HOD Nakul, and
+four in credit control. Five accounts carry more than one name:
 
 | Account | Email | Names carried |
 |---|---|---|
@@ -1788,28 +1801,29 @@ a salesperson name does not resolve to one inbox. Five accounts carry more than 
 | Nitesh Prajapati | `nitesh@orangeotec.com` | 8 |
 | Nakuleshwar Sharma | `nakul@orangeotec.com` | 5 |
 
-Everyone else carries one or two. Note that even **Nakul** — a real rep — carries five, so "tagged
-with exactly one name" cannot be used to identify a salesperson either.
+**The volume this accepts, stated plainly:** with all 13 names scheduled, those three 13-name
+accounts each receive **thirteen separate emails per send**. **Accepted 2026-08-21: the report goes
+out weekly, on Saturday, so thirteen mails a week is fine.** It would be worth revisiting only if
+the schedule ever moves to daily.
 
-**What happens today if all thirteen names are scheduled:** those three accounts each receive
-**thirteen separate emails**, one per salesperson, every send. That may be exactly right for credit
-control, but it should be a decision.
+**⚠ It follows that arming is now a one-way door on volume.** Nothing else gates it. If the day or
+frequency changes later, this decision was made against *Saturday*, not against the schedule in
+general.
 
-**Three ways to go, whichever Ritesh Bhai prefers:**
+**The two options NOT taken**, recorded so the same ground is not walked twice:
+2. Send to the rep only, and give oversight the whole-book copy instead.
+3. Choose the address per name, via a chosen **user id** on `report_email_recipients`.
 
-1. **Leave it.** Everyone who can see a book gets it mailed. Simplest; noisiest.
-2. **Send to the rep only**, and give the oversight accounts the whole-book copy instead — they can
-   already see everything in it.
-3. **Choose the address per name**, the way the manual Export → Email dialog already does. Needs a
-   chosen **user id** on `report_email_recipients` (not the address, so a rep who changes email
-   keeps receiving and one who loses the tag stops).
+Option 2 turned out to *require* option 3: nothing in the data says who "the rep" is. A HOD's tag
+list is his own name plus his team's — Nakul carries himself, Umesh, Dhananjay, Purav and Abhishek;
+Manmohan carries himself and Khurshid — so "carries exactly one tag" identifies a plain salesperson
+but not a manager. Option 3 was built on 2026-08-21 (an `owner_user_id` column, the resolver and a
+picker) and **reverted the same day, unused**, when the answer came back as option 1. The database
+was returned to its prior state — column, constraint and index dropped, both functions restored.
+Nothing shipped and the frontend was never touched.
 
-Until it is decided, the run log prints who each name reaches and how many books that person can
-see, so nothing is a surprise — but the noise is real and it is worth settling before the first
-automatic send rather than after.
-
-**Three stale tags found while checking this** — small, separate, and fixable in Admin → Users
-without waiting for the decision above. The live data holds 13 salesperson names
+**Three tag problems found while checking this.** Independent of the decision above, fixable in
+Admin → Users, and none of them blocks anything. The live data holds 13 salesperson names
 (`OTHERS` 703 ledgers, `MANMOHAN JI` 300, `NAKUL JI` 292, `UMESH JI` 132, `KHURSHID JI` 116,
 `KARAN SIR` 70, `AAYUSH SIR` 62, `DHANANJAY` 42, `PURAV SHAH` 37, `SUHEL` 27, `RELATED PARTY` 24,
 `ABHISHEK` 7, `HARI OM` 2):
@@ -1818,18 +1832,22 @@ without waiting for the decision above. The live data holds 13 salesperson names
 - **`Others`** (lower case) sits on Jayshree and Ritesh *alongside* the real `OTHERS`. Dead, and it
   is why their count reads 13 when only 11 names are live — they are also missing `RELATED PARTY`,
   which Bushra has.
-- **`HARI OM`** exists in the data but **nobody is tagged with it**. Scheduling it would report
-  "nobody to send to".
+- **`HARI OM`** exists in the data but **nobody is tagged with it**. It is HARIOMSHARAN DAVE
+  (`hariomdave@orangeotec.com`), who has an account carrying no tags. Scheduling the name as it
+  stands would report "nobody to send to". The same is true of **`AAYUSH SIR`** (Aayush Rathi) and
+  **`KARAN SIR`** (Karan Toshniwal) — both have accounts, neither is tagged, so those two reports
+  would reach only credit control.
 
-**To discuss with Ritesh Bhai:**
-- [ ] Should a salesperson's copy go to the rep only, or to everyone who can see that book?
-- [ ] If oversight accounts should still receive something, is the whole-book copy enough?
-- [ ] Remove `MAYANK` and the lower-case `Others`, and should anyone hold `HARI OM`?
+- [ ] Delete `MAYANK` and the lower-case `Others`; add `RELATED PARTY` to Jayshree and Ritesh.
+- [ ] Decide whether Aayush, Karan and Hariom should be tagged with their own names before the
+      first send, or whether credit control receiving those three is the intent.
 
 ---
 
 ### RC-3 · Planned / Gap to plan reads wrong — weekly plan against a monthly report  `[!]`
-*Raised 2026-08-20 · Feedback from Ritesh Bhai · **Blocked:** needs a decision from Ritesh Bhai*
+*Raised 2026-08-20 · Feedback from Ritesh Bhai · **Blocked:** needs a decision from Ritesh Bhai ·
+**Pulled off the weekly client report 2026-08-22** — it stays open here, but nobody is being asked
+for the decision any more, so it will not move until someone puts it back in front of him.*
 
 On the Salesperson Collection Report, the **Planned (Aug-26)** and **Gap to plan** columns don't
 show properly. The team **plans weekly**, but the report — sales, received, outstanding, everything
@@ -1962,6 +1980,122 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### RC-2 · The Collection report sends itself, on a schedule  `[x]`
+*Outstanding Dashboard · **Live 2026-08-21, 21:28 IST** — the first armed slot ran and delivered ·
+raised 2026-08-20, built and disarmed the same day*
+
+**What happens now.** Nobody builds or mails this report by hand. A schedule set on the settings
+screen posts it on its own: the whole book to a list of typed addresses, and each ticked
+salesperson's own extract to everyone tagged with that name. PDF and workbook attached, both drawn
+by the app's own code, so the mail and the screen cannot disagree.
+
+**The first armed send, deliberately narrowed to one person.** Rather than go live on the real list,
+the schedule was pointed at that same Friday evening with **one** address on the book list
+(`e.techie4@gmail.com`) and **no** salesperson ticked — so the real path could run end to end with
+nothing at stake. It fired at **21:28:57 IST** and delivered inside a minute: one outbox row,
+status `sent`, and the slot logged so it could not repeat. Schedule → runner → build → storage →
+Gmail, all proved on live data.
+
+**Why it was held until today.** Two switches shipped **off** on 20-Aug and stayed off for a reason
+that was not caution for its own sake: **RC-5** — who a salesperson's copy actually reaches — was
+unanswered, and arming first would have posted thirteen separate emails to each of three accounts
+with no way to recall them. RC-5 was decided on 21-Aug (everyone who can see a book receives it,
+accepted **because the send is weekly**), and the switches went on the same day on Ritesh Bhai's
+instruction.
+
+**⚠ Adding a recipient is now a live action, not configuration.** With the system armed, ticking a
+name or typing an address on the settings screen reaches a real inbox at the next due slot. There
+is no further switch standing between an edit and a send.
+
+**Turning it off**, if it is ever needed: `update private.collections_report_config set armed = false;`
+
+**What was built** — unchanged from the 20-Aug entry, recorded here so it lives with the shipped
+task:
+
+| | |
+|---|---|
+| `20260922120000_…_scheduled_send.sql` | `collections_report_due()`, the send log, the arming switch |
+| `supabase/collectionsreport/` | the builder: bundles the app's own TypeScript, three guards |
+| `.github/workflows/collections-report.yml` | ticks every 30 min, gates on the database first |
+
+Earlier phases: multi-day schedules `17bad6a`, the KPI numbers and card wording out of the React
+page `3ca9e7d`, the row predicate and defaults `dd05708` / `18387c7`, the headless build `3e0cd72`.
+
+**⚠ It is a GitHub Actions runner, not an Edge Function, and that is measured rather than assumed.**
+A probe burned straight-line CPU on the live runtime: 1 s → `200`, 3 s → `546
+WORKER_RESOURCE_LIMIT`, and 8 s with an `await` every 200 ms → `546` as well. The ceiling is **2 s
+of CPU per request** and the budget is **cumulative** — yielding does not reset it. This report is
+**~40 s of solid CPU** (101 pages, ~250 customers, a 1.5 MB workbook), and splitting it per
+salesperson does not rescue it either: one rep's 18-page extract is already over. The runner has no
+such cap and has the repo checked out, so it still runs the app's own code — which was the point.
+
+**Notes worth keeping:**
+- No `pg_cron` and no UTC conversion by hand: the IST comparison happens inside
+  `collections_report_due` in `Asia/Kolkata`, so the stored hour means what it says.
+- Send log keyed `(report_key, sent_for_date)` on the **IST** date. A run reaching nobody
+  deliberately does **not** log, or adding the first recipient an hour late would cost the slot.
+- Timing is honest, not exact: GitHub's scheduler can run several minutes late, so a 21:13 slot
+  went out at 21:28. `grace_minutes` (120) is what lets a late tick still serve it.
+- **GitHub disables a scheduled workflow after 60 days with no commits to the repo.** Unlikely
+  here, but it stops silently rather than failing.
+- Still open, and small: an attachment size guard — fine today at 2.2 MB, should degrade to a link
+  rather than fail above 10 MB.
+
+### OD-11 · The gate outward number is the gate pass number, and Noida counts its own  `[x]`
+*Order to Dispatch · **Done 2026-08-21, 21:30 IST** — migration applied to live first, frontend on
+`master` as `2a1cc88`, Vercel green · raised in conversation, so there was never an open entry*
+
+**What a user sees now.** At **Gate Outward Entry** the *Gate outward no.* is no longer a box to type
+in. It shows the gate pass number for that round, read-only, with no red asterisk — the same number
+printed on the slip and shown in the panel above it. Fill in the remark and save.
+
+**Why it changed.** It was a required free-text field that nothing generated, sitting directly under
+a panel already displaying the gate pass number. So Surat copied it across by hand. Of **401 Surat
+gate entries: 193** were exactly the gate pass, **183** were the gate pass with the clipboard debris
+still attached — `Sr. No.: OTEC-2608-206`, `: ENT-2608-218`, `.: ENT-2608-202` — and 25 were something
+else. Noida never copied it at all: all **38** of its entries read `123`, `PORTER`, `BY VEHICLE`,
+`BY BUS`. One number, written twice, wrong about half the time. It is now derived in the database and
+the payload key is ignored, so the two cannot drift again.
+
+**Noida numbers itself.** The series was keyed on the company alone, so both plants drew from one pot
+and their numbers interleaved. A per-site suffix splits them:
+
+| | Surat | Noida |
+|---|---|---|
+| Orange O Tec Pvt Ltd | `OTEC-2608-001` | `OTEC-N-2608-001` |
+| Orange O Tec Enterprise | `ENT-2608-001` | `ENT-N-2608-001` |
+
+The suffix is on the **site**, not the (company, site) pair, because the gate register is a book kept
+at a place. Both Surat sites share the main series; **Admin → Central Masters → Dispatch Locations**
+has a *Gate pass suffix* column to set one on any future site. Noida starting at 001 needed no
+seeding — a new scope key is a counter that does not exist yet, the same mechanism that already
+restarts the numbering each month.
+
+**Nothing already issued was renumbered.** The archive keeps whatever was typed — **227 rounds** where
+the two disagree stay exactly as recorded, because those passes were printed under those numbers. Only
+the **19 still-open** rounds were corrected, and every one had an empty remark, so nothing was lost.
+
+**Three traps, all found before any code moved:**
+
+1. **A unique index on `go_outward_no` would have failed the deploy.** It looks like the obvious
+   companion to the one on `gp_no` — but the archive holds 13 rounds numbered `123`. History is
+   staying, so that column can never be unique. Uniqueness lives on `gp_no`, which the value derives
+   from.
+2. **A hyphen in a prefix or suffix collides two series.** Prefix `OTEC-N` with no suffix composes to
+   the same counter key as prefix `OTEC` plus suffix `N`. A check constraint allows letters and digits
+   only.
+3. **Migration filenames here are labels, not clocks.** `supabase_migrations.schema_migrations` stores
+   real timestamps; the files on disk are forward-dated. Taking the next number from the table would
+   have produced a filename that sorts wrong.
+
+The migration ends with a `do $$` block that re-reads both gate-out function bodies and fails the
+deploy if either ever reads the payload key again — putting it back looks like a kindness and silently
+restores the bug.
+
+⚠ **Not visually verified.** The Playwright Chrome profile was locked for the whole session, so the
+read-only box was never seen rendered on a real entry. The build gate and the database checks passed;
+someone should open one Gate Outward Entry and confirm it reads right.
 
 ### OD-9 · A missing item is mapped on the spot, not requested  `[x]`
 *Order to Dispatch · **Done 2026-08-21** — migration applied first, frontend on `master` as
