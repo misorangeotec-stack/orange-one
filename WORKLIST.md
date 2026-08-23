@@ -652,8 +652,40 @@ step took) is the only report anyone has asked for. That gap is most likely wher
 
 ## Process Coordinator Dashboard  *(new)*
 
-### PC-1 · Consolidated dashboard for the process coordinator  `[ ]`
-*Also touches: Admin / Masters · every FMS · Raised 2026-08-20*
+### PC-1 · Consolidated dashboard for the process coordinator  `[~]`
+*Also touches: Admin / Masters · every FMS · Raised 2026-08-20 · **Built 2026-08-23**, awaiting
+the access grants below before it shows anything to a non-admin.*
+
+**What shipped.** A new module at `/process-coordinator` (Control category, between the
+Control Center and the Master Report), two screens and nothing else:
+
+1. **Approvals** — every module's master requests in one queue, waiting-first, with the
+   decided history one click away. Backed by `pc_master_requests()`, a UNION over the ten
+   `fms_*_master_requests` tables. Approving goes back through **that module's own**
+   `fms_<mod>_resolve_master_request`, so it creates the real master row, fires the
+   module's notification and its email exactly as before.
+2. **Processes** — one row per FMS, worst first, reusing the FMS Control Center's own
+   adapters so the counts cannot disagree with it. Expanding a row shows **only the steps
+   that are delayed or due today**, each with its owners' name, phone and email as
+   one-click `tel:` / `mailto:` links — the half the adapter contract cannot express, since
+   it stops at counts. Steps with nobody on them render "No owner set" and are counted in
+   the footer.
+
+**⚠ TWO GRANTS ARE NEEDED PER COORDINATOR, and the second is counter-intuitive.**
+In Admin → Module Access give them `process-coordinator`, **and `view` — not `edit` — on
+every FMS module.** Several FMS read policies (dispatch, OCPI, HR Exit) admit
+`module_is_viewer()`, which is `module_level() = 'view'` *exactly*, so an `edit` grant makes
+it false and the coordinator would silently see **zeros** for precisely the modules that
+matter most. Verified 2026-08-23: view grants add no email traffic — no email, recipient,
+announce or notify function reads `module_is_viewer`.
+
+**Not covered, deliberately:** Sampling and Customer Onboarding have master managers but no
+`master_requests` table, so they cannot appear in the approval queue. Asset Maintenance,
+Customer Onboarding, OCPI and Travel Desk have **no step-owner rows at all**, so they show
+"No owner set" throughout Processes until configured. Steps routing to a *per-entity* person
+(HR Exit's manager steps, travel approvers) are not step-level config and so are not
+resolved. `MastersReconcile` is excluded — an admin-only live merge against foreign keys,
+a different data shape and authority model.
 
 We have a new process coordinator. Build them one consolidated dashboard — **a different
 thing from the existing FMS Control Center** — that does two things:
@@ -688,15 +720,62 @@ The bar is that it reads at a glance. No hunting.
 - It does no master approvals at all. Approvals are gated on `isAdmin`
   ([MastersReconcile.tsx](frontend/src/core/admin/MastersReconcile.tsx)), so a coordinator
   who isn't an admin cannot approve anything.
-- A "process coordinator" already exists in code, but **per FMS**: Asset Maintenance, HR
-  Exit, HR Recruitment and Order to Dispatch each hold a `process_coordinators` config row
-  of user ids, set in that module's own Settings. There is no single coordinator identity
-  spanning all modules.
+- A "process coordinator" already exists in code, but **per FMS**: **twelve** modules —
+  Purchase, Import, HR Recruitment, HR Exit, General Purchase, Sampling, Production,
+  Order to Dispatch, Customer Onboarding, Asset Maintenance, OCPI and Travel Desk — each
+  hold a `process_coordinators` config row of user ids, set in that module's own Settings.
+  (This line said "four" until 2026-08-23; it was written before the last eight shipped.)
+  There is no single coordinator identity spanning all modules. **Measured 2026-08-23: the
+  union of those twelve lists holds THREE assignments** — Riya Kumari on HR/Exit and a
+  `master@taskflow.app` system account on Purchase — so building identity on them would
+  have started empty.
 
-**Open questions for when we build it:** is this a new module of its own or a mode inside
-an existing one; does the coordinator become a real role, a global permission, or a union
-of the per-FMS `process_coordinators` lists; and does the FMS Control Center stay as it is
-alongside this, or fold into it.
+**Answered when we built it (2026-08-23):** a new module of its own, `/process-coordinator`
+in the Control category; the FMS Control Center stays exactly as it is; and the coordinator
+is **neither a role nor the union of the per-FMS lists** — holding the `app_access` row for
+`process-coordinator` IS the permission, the Master Report precedent.
+
+⚠ **The per-FMS `fms_<mod>_is_coordinator()` was deliberately NOT widened**, and must not
+be: `isProcessCoordinator` is `return true` as the *first arm* of ~15 predicates across
+twelve stores — `canActOn`, `canRaise`, `canCancelOrder`, `canTickCheck` and HR Exit's
+`canReadConfidential`, which guards the exit-interview PII tier. Only the ten
+`*_resolve_master_request` RPCs were widened, one authorisation line each.
+
+### PC-2 · A user's phone doubles as their login password  `[ ]`
+*Platform / Admin · Raised 2026-08-23, out of PC-1*
+
+Per platform convention a user's mobile number IS their initial password, set on create and
+re-pinned every time the admin user form is saved. Nothing ever forces a change. Measured
+2026-08-23: **60 users, 59 with a phone on file, 56 have signed in at least once** — but
+signing in does not change the password, so most passwords are probably still the mobile.
+
+That coupling is why `list_org_people()` strips phone and email, and why PC-1 needed a
+SECURITY DEFINER RPC to show a step owner's number at all. A work mobile is not really a
+secret inside the company; a password is. **The defect is the coupling, not the exposure.**
+
+**To settle:** force a change on next sign-in for anyone whose password still equals their
+phone; or stop re-pinning the password on every user-form save; or both. Note the admin
+"Share login" modal (`core/admin/Users.tsx:227`) passes `defaultPassword={shareFor?.phone}`,
+so it depends on the convention and would need to change with it.
+
+### PC-3 · Collapse the ten duplicated master-request systems  `[ ]`
+*Also touches: every FMS · Raised 2026-08-23, out of PC-1 · **This is Central Masters Phase 3***
+
+[CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) already tracks this as Phase 3, not started. PC-1
+put one queue **on top of** the ten systems rather than collapsing them, deliberately: the
+thin layer carried no regression risk to any module's approval path, and it shipped in a day.
+
+The duplication is still there underneath — ten `fms_*_master_requests` tables with
+identical columns, ten `*_resolve_master_request` RPCs (nine sharing a signature, Travel
+Desk's differing), ten `*_master_managers` tables, and a `mst_master_managers` that holds
+**zero rows** and is the table they are all supposed to fold into.
+
+**Worth knowing before starting:** the resolve RPCs read `proposed_payload` keys VERBATIM
+from each module's `lib/masterFields.ts` — a wire contract with no compile-time link, so a
+collapse has to reconcile ten field schemas. And `fms_dispatch_resolve_master_request`'s live
+body is **not** the one in its migration; the Phase 1 cutover replaced it with a version that
+writes into `mst_*`. Read every definition from `pg_get_functiondef()`, never from a
+migration file.
 
 ---
 

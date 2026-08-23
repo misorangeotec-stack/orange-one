@@ -15,6 +15,7 @@ import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { ocpiApp } from "./ocpi/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
+import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
@@ -72,6 +73,13 @@ export const apps: AppManifest[] = [
   // user to the sales team and to whoever approves.
   ocpiApp,
   fmsControlCenterApp,
+  // Process Coordinator — the coordinator's own desk, and the only screen in the
+  // Control category that WRITES: every module's master approvals land in one
+  // queue here. Its second half answers the question the Control Center cannot —
+  // not just which step is delayed, but who is sitting on it and how to reach
+  // them. Granted per user; the grant itself is what makes someone the
+  // coordinator.
+  processCoordinatorApp,
   // Master Report — the director's read on module ADOPTION, not on due work.
   // Sits beside the Control Center in the Control category and answers the
   // question that one cannot: "is anyone actually using this module?". Counts

@@ -165,6 +165,16 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/master-report",
     category: "control",
   },
+  // The coordinator's own desk: every module's master approvals in one queue,
+  // and every process at a glance with the person to ring about a stuck step.
+  // Sits in Control between the two screens it is deliberately not — the
+  // Control Center ("what is due today") and the Master Report ("is this module
+  // alive").
+  "process-coordinator": {
+    name: "Process Coordinator",
+    basePath: "/process-coordinator",
+    category: "control",
+  },
   // Virtual module: no web app and no route, so no basePath that resolves to a
   // page. It only gates login to the mobile Leads app. `basePath` is a dead
   // string kept so the shape stays uniform; nothing routes to it.
