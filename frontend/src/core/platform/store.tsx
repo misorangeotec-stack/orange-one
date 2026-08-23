@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppRole, Band, Department, Designation, ModuleLevel, Profile, SubDepartment } from "./types";
@@ -111,14 +111,61 @@ export function computeDownlineIds(profiles: Profile[], rootId: string): string[
 
 const DirectoryContext = createContext<DirectoryValue | null>(null);
 
+/** How many times a directory missing the user's own row is re-read before giving up. */
+const SELF_ROW_MAX_RETRIES = 3;
+
 export function PlatformDirectoryProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const authId = session?.user.id ?? null;
   const { data, error } = useQuery({
-    queryKey: ["directory", session?.user.id ?? null],
+    queryKey: ["directory", authId],
     queryFn: fetchDirectory,
     enabled: !!session,
   });
+
+  /*
+    ⚠ A DIRECTORY WITHOUT YOUR OWN ROW IS A FAILED READ WEARING A SUCCESS'S CLOTHES.
+
+      `profiles` is RLS'd as `(id = auth.uid() OR is_admin(…) OR is_hod_of(…) OR
+      same_department(…))`, so the signed-in user's own row is ALWAYS readable —
+      it is the first arm of the policy. A read that comes back without it did not
+      carry their token, and PostgREST reports that as HTTP 200 with `[]`, not as
+      an error: RLS filters rows, it does not raise. So `error` stays null,
+      `data` is a perfectly well-formed object, and the gate below used to wave it
+      straight through.
+
+      What that produced: SessionProvider resolves `user` to undefined (it casts
+      `user as Profile`, so nothing complains), and the first screen to read a
+      field off it — `user.name` in HomeLayout, `user.id` in the My Work tasks
+      provider — throws during render. With no error boundary in the tree that
+      unmounted the whole app, which is the BLANK WHITE /home people were curing
+      with a hard refresh: the reload re-read the token from storage cleanly and
+      the next fetch went out authenticated.
+
+      Treating it as loaded is therefore never right. Re-read instead — the
+      condition is transient — and only after several attempts say so plainly.
+  */
+  const selfMissing = !!authId && !!data && !data.profiles.some((p) => p.id === authId);
+  const [reread, setReread] = useState<{ uid: string | null; attempts: number }>({ uid: null, attempts: 0 });
+  const attemptsForUser = reread.uid === authId ? reread.attempts : 0;
+
+  useEffect(() => {
+    if (!selfMissing || !authId || attemptsForUser >= SELF_ROW_MAX_RETRIES) return;
+    setReread({ uid: authId, attempts: attemptsForUser + 1 });
+    /*
+      REMOVE, not invalidate. The bad payload is `status: "success"`, so leaving it
+      in the cache would (a) keep handing it to children on the very next render,
+      before the refetch lands, and (b) let it be dehydrated to IndexedDB by the
+      persister — "directory" is in PERSISTED_QUERY_ROOTS — where it would be
+      restored for the full 24-hour max age and turn one unlucky read into a blank
+      page on every subsequent load.
+    */
+    queryClient.removeQueries({ queryKey: ["directory", authId], exact: true });
+  }, [selfMissing, authId, attemptsForUser, queryClient]);
+
+  /** Re-read the allowed number of times and the row still isn't there. */
+  const selfUnreadable = selfMissing && attemptsForUser >= SELF_ROW_MAX_RETRIES;
 
   const profiles = data?.profiles ?? [];
   const departments = data?.departments ?? [];
@@ -324,7 +371,24 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
       </div>
     );
   }
-  if (session && !data) {
+  // Re-read exhausted: the directory loads but never contains this user. Say so,
+  // rather than rendering children that will dereference a user who isn't there.
+  if (selfUnreadable) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page-grad px-6 text-center">
+        <div className="max-w-sm">
+          <p className="text-[15px] font-semibold text-navy">Couldn't load your profile</p>
+          <p className="text-[13px] text-grey mt-1">
+            You're signed in, but your workspace profile didn't come back. Sign out and in again —
+            if it persists, ask your admin to check your account.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  // `!data` covers the first load; `selfMissing` holds the same screen across the
+  // re-read above, so children never see a directory the user isn't in.
+  if (session && (!data || selfMissing)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-page-grad text-grey text-sm">
         Loading your workspace…

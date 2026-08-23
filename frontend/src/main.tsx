@@ -5,6 +5,7 @@ import App from "./App";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { getPersister, PERSIST_BUSTER, PERSIST_MAX_AGE } from "./queryPersister";
+import ErrorBoundary from "@/core/platform/ErrorBoundary";
 import { AuthProvider } from "@/core/platform/auth";
 import { PlatformDirectoryProvider } from "@/core/platform/store";
 import { SessionProvider } from "@/core/platform/session";
@@ -44,6 +45,22 @@ const PERSISTED_QUERY_ROOTS = new Set([
   "dispatchMasters",
 ]);
 
+/**
+ * A `["directory", …]` payload with no profiles in it must never reach disk.
+ *
+ * `profiles` is RLS'd, so a read that went out without the user's token comes
+ * back as HTTP 200 with `[]` — a "successful" query holding nothing. Persisting
+ * that would restore an empty directory on every load for the full 24-hour max
+ * age, turning one unlucky read into a permanent one. PlatformDirectoryProvider
+ * already re-reads when its own row is missing; this stops the bad payload
+ * outliving the tab in the first place.
+ */
+function isEmptyDirectory(query: { queryKey: readonly unknown[]; state: { data?: unknown } }): boolean {
+  if (query.queryKey[0] !== "directory") return false;
+  const data = query.state.data as { profiles?: unknown[] } | undefined;
+  return !data?.profiles?.length;
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
@@ -57,17 +74,26 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             shouldDehydrateQuery: (query) =>
               query.state.status === "success" &&
               typeof query.queryKey[0] === "string" &&
-              PERSISTED_QUERY_ROOTS.has(query.queryKey[0]),
+              PERSISTED_QUERY_ROOTS.has(query.queryKey[0]) &&
+              !isEmptyDirectory(query),
           },
         }}
       >
-        <AuthProvider>
-          <PlatformDirectoryProvider>
-            <SessionProvider>
-              <App />
-            </SessionProvider>
-          </PlatformDirectoryProvider>
-        </AuthProvider>
+        {/*
+          The boundary sits INSIDE the query + router providers and OUTSIDE the
+          app, so a crash anywhere in a screen still renders a message with the
+          page chrome's tokens available — and so no screen can ever again
+          unmount the whole tree into a blank white page.
+        */}
+        <ErrorBoundary>
+          <AuthProvider>
+            <PlatformDirectoryProvider>
+              <SessionProvider>
+                <App />
+              </SessionProvider>
+            </PlatformDirectoryProvider>
+          </AuthProvider>
+        </ErrorBoundary>
       </PersistQueryClientProvider>
     </BrowserRouter>
   </React.StrictMode>
