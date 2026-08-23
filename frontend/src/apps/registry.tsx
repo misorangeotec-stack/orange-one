@@ -13,6 +13,7 @@ import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
+import { ocpiApp } from "./ocpi/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { masterReportApp } from "./master-report/meta";
 import { isUniversalApp } from "./universal";
@@ -65,6 +66,11 @@ export const apps: AppManifest[] = [
   // under its own basePath and chrome. See customer-onboarding/meta.tsx.
   customerOnboardingApp,
   leadsDashboardApp,
+  // OCPI — the machine SALE before there is an order to dispatch: a quotation
+  // drafted and revised through the negotiation, approved, then turned into an
+  // order confirmation the customer signs. Own fms_ocpi_* tables, granted per
+  // user to the sales team and to whoever approves.
+  ocpiApp,
   fmsControlCenterApp,
   // Master Report — the director's read on module ADOPTION, not on due work.
   // Sits beside the Control Center in the Control category and answers the

@@ -103,6 +103,21 @@ const GLYPH_FALLBACK: Record<string, string> = {
   "Δ": "D",                                                // Δ
   "✓": "y", "✔": "y", "✗": "x",                  // ✓ ✔ ✗
   "№": "No.",                                              // №
+  /**
+   * FULLWIDTH FORMS, which arrive with anything copied out of a Chinese-authored
+   * document — and OCPI's machine templates are transcribed from exactly that.
+   *
+   * ⚠ THESE ARE SEPARATORS, SO LOSING THEM JOINS WORDS RATHER THAN LEAVING A
+   *   GAP. Poppins has neither, so before this an electrical specification read
+   *   "AC220V~240V +- 10% single phasePrinter 34A (7.4 kW)" and "DryerAC380V" on
+   *   a customer's contract — the missing glyph took the word boundary with it,
+   *   which reads as a typo rather than as a rendering fault and so goes
+   *   unreported. Caught by rendering an order confirmation, not by the compiler.
+   */
+  "｜": " | ",                                             // U+FF5C fullwidth vertical line
+  "：": ": ",                                              // U+FF1A fullwidth colon
+  "，": ", ",                                              // U+FF0C fullwidth comma
+  "（": " (", "）": ") ",                                  // U+FF08 / U+FF09
 };
 const GLYPH_RE = new RegExp(`[${Object.keys(GLYPH_FALLBACK).join("")}]`, "g");
 
