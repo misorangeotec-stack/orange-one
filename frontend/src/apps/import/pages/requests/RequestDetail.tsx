@@ -10,8 +10,8 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
 import { lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
-import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
+import CancelLinesModal from "../../components/CancelLinesModal";
 import RequestStepper from "../../components/RequestStepper";
 import QtyTotal from "../../components/QtyTotal";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -22,15 +22,10 @@ import type { RequestItem } from "../../types";
 export default function RequestDetail() {
   const { id } = useParams();
   const s = useImportStore();
-  const [sourcing, setSourcing] = useState<RequestItem | null>(null);
   const [approving, setApproving] = useState(false);
-  const [cancelling, setCancelling] = useState<RequestItem | null>(null);
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // Cancelling the WHOLE request is a different verb from cancelling one line,
-  // so it gets its own four state slots — sharing reason/busy/err with the line
-  // modal above would cross-wire the two dialogs.
+  const [cancellingLines, setCancellingLines] = useState(false);
+  // Cancelling the WHOLE request is a different verb from cancelling lines, so it
+  // gets its own state slots — sharing them would cross-wire the two dialogs.
   const [cancellingRequest, setCancellingRequest] = useState(false);
   const [reqReason, setReqReason] = useState("");
   const [reqBusy, setReqBusy] = useState(false);
@@ -57,6 +52,10 @@ export default function RequestDetail() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const canEdit = s.canEditRequest(request);
+  // Wider than the per-row Cancel this replaces (approved_pending_po only): the
+  // RPC refuses only po / cancelled / rejected, so all four open statuses are on
+  // offer. Empty when the user is not a sourcing/PO owner, which hides the button.
+  const cancellable = s.canCancelLines ? s.cancellableLinesForRequest(request.id) : [];
   const anyInApproval = lines.some((l) => l.status === "approval" || l.status === "on_hold");
 
   const doCancelRequest = async () => {
@@ -71,22 +70,6 @@ export default function RequestDetail() {
       setReqErr((e as Error).message);
     } finally {
       setReqBusy(false);
-    }
-  };
-
-  const doCancel = async () => {
-    if (!cancelling) return;
-    if (!reason.trim()) return setErr("A reason is required.");
-    setBusy(true);
-    setErr(null);
-    try {
-      await s.cancelLine(cancelling.id, reason.trim());
-      setCancelling(null);
-      setReason("");
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -115,18 +98,32 @@ export default function RequestDetail() {
           {/* The requester's own affordances — only the raiser (or an admin) and
               only while nothing has been decided. The RPCs re-check server-side. */}
           {canEdit && (
-            <>
-              <Link to={`/import/requests/${request.id}/edit`}>
-                <Button variant="outline" size="sm">Edit request</Button>
-              </Link>
-              <Button
-                size="sm"
-                className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
-                onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
-              >
-                Cancel request
-              </Button>
-            </>
+            <Link to={`/import/requests/${request.id}/edit`}>
+              <Button variant="outline" size="sm">Edit request</Button>
+            </Link>
+          )}
+          {/* Line-level cancel: the PO owners' (Import has no sourcing owner),
+              and available from approval onwards — which is exactly where
+              "Cancel request" below stops. The two are not alternatives; between
+              them they cover the whole life of a requisition. */}
+          {cancellable.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="!text-ryg-red hover:!border-ryg-red"
+              onClick={() => setCancellingLines(true)}
+            >
+              {cancellable.length === 1 ? "Cancel line" : "Cancel lines"}
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              size="sm"
+              className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+              onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
+            >
+              Cancel request
+            </Button>
           )}
         </div>
       </div>
@@ -207,27 +204,21 @@ export default function RequestDetail() {
         <ActivityTimeline rows={activity} />
       </div>
 
-      <SourcingModal line={sourcing} open={sourcing !== null} onClose={() => setSourcing(null)} />
+      {/* No SourcingModal here. It took a LINE, and the per-line Source /
+          Re-source button that fed it died with the Actions column in d6c9f65 —
+          its `sourcing` state sat here for five weeks, only ever set to null.
+          Not rebuilt on purpose: Import lines are born at 'approval', Import
+          approval carries no rate or value, and no 'sourcing' step owner is
+          configured, so the stage feeds nothing this app routes on. The live
+          Source path is the Sourcing Queue. Retire-or-rebuild is WORKLIST PU-1. */}
       <ApprovalModal request={approving ? request : null} open={approving} onClose={() => setApproving(false)} />
 
-      <Modal
-        open={cancelling !== null}
-        onClose={() => setCancelling(null)}
-        title="Cancel line"
-        footer={
-          <>
-            <Button variant="ghost" size="sm" onClick={() => setCancelling(null)} disabled={busy}>Back</Button>
-            <Button size="sm" onClick={doCancel} disabled={busy}>{busy ? "Cancelling…" : "Cancel line"}</Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <FieldLabel label="Reason" required>
-            <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this line being cancelled?" />
-          </FieldLabel>
-          {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
-        </div>
-      </Modal>
+      <CancelLinesModal
+        request={request}
+        lines={cancellable}
+        open={cancellingLines}
+        onClose={() => setCancellingLines(false)}
+      />
 
       <Modal
         open={cancellingRequest}

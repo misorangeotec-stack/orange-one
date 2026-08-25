@@ -1291,8 +1291,9 @@ export type ProcEntity = "request" | "line" | "po" | "pi" | "grn" | "payment" | 
 
 /**
  * Write one activity row (actor = signed-in user) and fan a notification out to
- * `recipients` via the SECURITY DEFINER `fms_purchase_announce` RPC. Recipients
- * equal to the actor are skipped server-side. Best-effort: callers should not
+ * `recipients` via the SECURITY DEFINER `fms_purchase_announce` RPC. The actor is
+ * NOT skipped — that guard was removed in 20260726150000, so a user who is their
+ * own recipient gets the bell and the email too. Best-effort: callers should not
  * let a failure here roll back the workflow action that already succeeded.
  */
 export async function announce(input: {

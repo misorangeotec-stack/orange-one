@@ -39,6 +39,7 @@ import type {
   Activity,
   ProcNotification,
   ProcEntityType,
+  CancelLinesResult,
 } from "./types";
 import { STEPS, type StepKey } from "./lib/steps";
 import { ownerResolver } from "./lib/owners";
@@ -77,6 +78,7 @@ import {
   requestInPoDesk,
   requestApprovalTotal,
   poDeskLines,
+  cancellableLines,
   requestPoDeskTotal,
   poDeskVendorIds,
   requestLockedVendorId,
@@ -284,6 +286,8 @@ interface ProcurementStoreValue {
   poItems: PoItem[];
   requestById: (id: string | null) => PurchaseRequest | undefined;
   itemsForRequest: (requestId: string) => RequestItem[];
+  /** The subset of a requisition's lines `cancelLines` will still be accepted for. */
+  cancellableLinesForRequest: (requestId: string) => RequestItem[];
   lineById: (id: string | null) => RequestItem | undefined;
   quotationsForLine: (lineId: string) => Quotation[];
   /** The up-to-3 vendor shortlist captured at sourcing, in display order. */
@@ -423,6 +427,13 @@ interface ProcurementStoreValue {
   isStepOwner: (stepKey: StepKey) => boolean;
   canSource: boolean;
   canGeneratePo: boolean;
+  /**
+   * May the current user cancel a requisition LINE? Mirrors
+   * `fms_purchase_cancel_line`'s authz exactly: admin, the PO step owner, or the
+   * sourcing step owner. NOT the requester — a raiser's own cancel is the
+   * whole-request `canEditRequest`, which stops the moment sourcing begins.
+   */
+  canCancelLines: boolean;
   canApproveLine: (line: RequestItem) => boolean;
   /** May the current user edit / cancel this request? Requester-or-admin, and no
    *  line sourced yet. Derived from the real session — hidden while impersonating. */
@@ -485,7 +496,15 @@ interface ProcurementStoreValue {
   /** @deprecated per-LINE; kept for legacy mixed-vendor requisitions. */
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null; tallyPoNo: string; documentPath: string; documentName: string }) => Promise<string>;
-  cancelLine: (requestItemId: string, reason: string) => Promise<void>;
+  /**
+   * Cancel one or more requisition lines under a single shared reason.
+   *
+   * The loop lives HERE, not in the page: each call ends in a full module
+   * refetch, so an N-line loop in a component would fire N of them. Resolves
+   * with what went through and what did not — it never throws for a per-line
+   * refusal (see `CancelLinesResult`).
+   */
+  cancelLines: (requestItemIds: string[], reason: string) => Promise<CancelLinesResult>;
   /** Correct an already-submitted request. Pre-sourcing only — the RPC re-checks. */
   updateRequest: (input: { requestId: string; note: string | null; items: EditRequestLine[] }) => Promise<void>;
   /** Cancel a whole request (kept, marked cancelled). Pre-sourcing only. */
@@ -812,6 +831,26 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       const req = line ? requests.find((r) => r.id === line.requestId) : undefined;
       return req?.requesterId ? [req.requesterId] : [];
     };
+    /**
+     * Who hears about a cancelled line: the requester, plus whoever is on the
+     * hook for the approval. The approver is NOTIFIED, never asked to consent —
+     * a cancellation is not a decision that routes back to them.
+     *
+     * A decided line carries its approver on `approverId`. One still awaiting a
+     * decision has none yet, so the band's approvers are used instead; nobody is
+     * added for a line that never reaches approval (sourcing), which is correct.
+     */
+    const cancelRecipients = (lineId: string): string[] => {
+      const line = requestItems.find((l) => l.id === lineId);
+      const ids = new Set<string>(requesterOfLine(lineId));
+      if (line?.approverId) ids.add(line.approverId);
+      else if (line && (line.status === "approval" || line.status === "on_hold")) {
+        for (const id of owners.requestApprovalOwnerIds(line.requestId, requestApprovalTotalOf(line.requestId))) {
+          ids.add(id);
+        }
+      }
+      return [...ids];
+    };
     /** Fan out a transition notification; never let it break the workflow action. */
     const safeAnnounce = async (input: {
       entityType: ProcEntity;
@@ -913,6 +952,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       requestById: (id) => (id ? requests.find((r) => r.id === id) : undefined),
       itemsForRequest: (requestId) =>
         (itemsByGroupId.get(requestId) ?? []).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      cancellableLinesForRequest: (requestId) =>
+        cancellableLines((itemsByGroupId.get(requestId) ?? []).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt))),
       lineById: (id) => (id ? requestItems.find((l) => l.id === id) : undefined),
       quotationsForLine: (lineId) => quotations.filter((q) => q.requestItemId === lineId),
       requestVendors,
@@ -961,6 +1002,9 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       isStepOwner,
       canSource: canEdit && isStepOwner("sourcing"),
       canGeneratePo: canEdit && isStepOwner("po"),
+      // The exact client mirror of fms_purchase_cancel_line's authz. isStepOwner
+      // already admits an admin, so the three arms of the SQL gate are covered.
+      canCancelLines: canEdit && (isStepOwner("po") || isStepOwner("sourcing")),
       canApproveLine,
       canEditRequest,
       canApproveRequest,
@@ -1198,17 +1242,47 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         await invalidate();
         return id;
       },
-      cancelLine: async (requestItemId, reason) => {
-        await cancelLineWrite(requestItemId, reason);
-        await safeAnnounce({
-          entityType: "line",
-          entityId: requestItemId,
-          type: "cancelled",
-          text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
-          recipients: requesterOfLine(requestItemId),
-          meta: email.lineCancelled(requestItemId, reason),
-        });
-        await invalidate();
+      // ⚠ THIS safeAnnounce IS THE ONLY ONE, AND IT STAYS HERE.
+      // fms_purchase_cancel_line writes an activity row too, but a REQUEST-scoped
+      // one ('request' / 'request_cancelled'), and only when a cancel emptied the
+      // requisition. Different entity, different type — they never collide.
+      //
+      // Do NOT add a second announce here for that roll: the header flip is
+      // decided inside the RPC's transaction, and this closure still holds the
+      // pre-invalidate() snapshot, so it cannot tell whether it happened.
+      //
+      // Do NOT move this one into SQL either. fms_purchase_announce builds the
+      // email_outbox payload straight from p_meta, and every key send-email
+      // renders — subject/eyebrow/headline/rows/ctaLabel/ctaPath — is authored
+      // right here by emailMeta.ts. SQL would still mail the requester; it would
+      // mail them a blank-looking card. Accepted cost: safeAnnounce swallows its
+      // own errors, so this timeline row can go missing. The FACT cannot — the
+      // RPC stamps cancel_reason / edited_at / edited_by in its own transaction.
+      cancelLines: async (requestItemIds, reason) => {
+        const cancelled: string[] = [];
+        const failed: { requestItemId: string; message: string }[] = [];
+        for (const id of requestItemIds) {
+          try {
+            await cancelLineWrite(id, reason);
+            cancelled.push(id);
+            await safeAnnounce({
+              entityType: "line",
+              entityId: id,
+              type: "cancelled",
+              text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
+              recipients: cancelRecipients(id),
+              meta: email.lineCancelled(id, reason),
+            });
+          } catch (e) {
+            // Each line is its own committed write. One refusal — already on a
+            // PO, cancelled by someone else a second ago — must not undo the rest.
+            failed.push({ requestItemId: id, message: (e as Error).message });
+          }
+        }
+        // ONE refetch for the whole batch; per-line invalidate() would re-fetch
+        // the module's entire dataset once per ticked line.
+        if (cancelled.length > 0) await invalidate();
+        return { cancelled, failed };
       },
       updateRequest: async (input) => {
         await updateRequestWrite(input);
