@@ -1662,62 +1662,6 @@ edit values after import or only import-and-generate.
 
 ---
 
-## Purchase  *(RM Domestic & RM Import)*
-
-### PU-1 · 🔴 No way to cancel a requisition line once sourcing has begun  `[~]`
-*Raised 2026-08-25 · Found on PR-2627-0034 · Caused by `d6c9f65` (20-Jul-2026) · **Built and
-verified end-to-end 2026-08-25**; the two migrations are already live on production, the frontend
-is waiting to be merged. Move to [Fixes](#fixes) once it ships.*
-
-**What was seen:** PR-2627-0034 — ₹19,82,400, one line approved and sitting in the PO pool, no PO
-generated — needed cancelling, and there was no button to do it. Not on the requisition, not on
-the line, not in the PO workbench. Nowhere.
-
-**What is wrong:** the header's **Cancel request** is gated pre-sourcing only, and that part is by
-design — it refuses once a buyer has shortlisted vendors and an approver has signed
-([store.tsx:760-766](frontend/src/apps/procurement/store.tsx#L760-L766), mirroring the SQL
-predicate `fms_purchase_request_editable`). The escape hatch for everything after that point was
-the per-line **Cancel**, and `d6c9f65` ("Request Detail: remove the per-line Actions column")
-deleted it, on the reasoning that "whole-requisition actions already live in the header". They
-don't. The server still tells the user to *"Cancel the individual lines instead"* — pointing at a
-control that no longer exists.
-
-Everything except the trigger survived, orphaned but still compiling: the `cancelling` state, the
-`doCancel` handler, the whole "Cancel line" modal, `s.cancelLine`, and the RPCs
-`fms_purchase_cancel_line` / `fms_import_cancel_line`, which would still accept this line today.
-`setCancelling` is only ever called with `null`.
-
-**The fix:** a **Cancel line(s)** header button opening a modal that lists the still-cancellable
-lines with checkboxes and one shared reason — a header verb alongside Source, Approve and Generate
-PO, rather than the Actions column `d6c9f65` removed on purpose. Offered for all four statuses the
-RPC already allows (`sourcing`, `approval`, `on_hold`, `approved_pending_po`); permission unchanged
-(admin, or the PO / sourcing step owner — never the requester); no approver-consent step, the
-approver is notified. Two migrations amend the two `cancel_line` RPCs to stamp **who** cancelled a
-line in-transaction — today the only actor record is a best-effort activity row that can silently
-not exist — and to roll the request header to `cancelled` once no live line remains. A requisition
-emptied one line at a time currently sits at `open` forever, so the red "This request was
-cancelled" banner never appears and
-[Dashboard.tsx:140](frontend/src/apps/procurement/pages/Dashboard.tsx#L140) counts it as open
-indefinitely.
-
-**What else is at risk:** the same commit hit **both** apps, and in Import it took a second path
-with it — Import's per-line **Source / Re-source** is unreachable in exactly the same way
-([RequestDetail.tsx:25](frontend/src/apps/import/pages/requests/RequestDetail.tsx#L25) sets its
-`sourcing` state only to `null`, and its `SourcingModal` takes a line, not a request). The dead
-code goes in this change; whether the stage itself is retired or rebuilt is the open question
-below. The live Source path is the Sourcing Queue, which still works. Worth noting the shape of
-the original mistake, since it is the one to avoid repeating: a cleanup removed a *container* and
-left its contents unreachable rather than deleting them, so nothing failed to compile and nothing
-looked wrong until someone needed the button.
-
-**To discuss with whoever owns Import:**
-- [ ] Retire Import's sourcing stage (drop `SourcingModal` + `SourcingQueue`), or rebuild it
-      request-scoped the way RM Domestic was? Import lines are born at `approval` and Import
-      approval carries no rate or value, so the stage feeds nothing Import currently routes on —
-      which argues for retiring it. Rebuilding needs a new request-scoped RPC.
-
----
-
 ## Task Management
 
 *(nothing yet)*
@@ -2235,6 +2179,57 @@ Three rules:
   what will be searched for a year from now; the tied-timestamp explanation is the second line.
 - **Say what else was at risk.** A fault is rarely alone — if the same mistake sits in other code,
   write down where, so the next reader does not have to find it twice.
+
+### FIX-4 · A requisition could not be cancelled once sourcing had begun  `[x]`
+*Purchase RM Domestic · RM Import · **Fixed 2026-08-25, 13:35 IST** · Live on `master` at `3c71504`*
+
+**What was seen:** PR-2627-0034 — ₹19,82,400, one line approved and sitting in the PO pool, no PO
+raised — needed to be cancelled, and there was no button anywhere to do it. Not on the requisition,
+not on the line, not in the PO workbench. The server even told the user to *"Cancel the individual
+lines instead"*, pointing at a control that no longer existed.
+
+**What was wrong:** `d6c9f65` (20-Jul-2026) removed the per-line **Actions** column from Request
+Detail in both purchase apps, reasoning that *"whole-requisition actions already live in the
+header"*. That was true of Source and Approve, which had moved there in `03e2389` — and false of
+**Cancel**, which had never been in the header. The header's *Cancel request* is gated pre-sourcing
+only, so deleting the column left no cancel path at all from the first sourcing action onwards.
+
+**Why it went unnoticed for five weeks:** nothing broke. The commit removed the *trigger* and left
+everything it fed — the state, the handler, the whole "Cancel line" modal, `s.cancelLine`, both
+RPCs. `setCancelling` was only ever called with `null`, which is legal TypeScript, and
+`noUnusedLocals` is `false` in this repo, so the build stayed green. There is no test runner. The
+screen looked complete because the dialog was still there; only the way in was gone. It surfaced
+the day someone actually needed to cancel something.
+
+**The fix:** a **Cancel line(s)** header button opening a picker — tick lines, one shared reason —
+matching how Source / Approve / Generate PO already work, rather than reinstating the column that
+was deliberately removed. It is offered for every status the RPC accepts (`sourcing`, `approval`,
+`on_hold`, `approved_pending_po`), which is wider than the control it replaces. Permission is
+unchanged: admin, or the `po` / `sourcing` step owner. Both `cancel_line` RPCs now also stamp
+`edited_at`/`edited_by` in-transaction and roll the request header to `cancelled` once no live line
+remains — a requisition emptied one line at a time used to sit at `open` forever, so the red "This
+request was cancelled" banner never appeared and the Dashboard counted it as open indefinitely.
+
+**What else was at risk:** the same commit hit **both** apps, and in Import it took a second path
+with it — the per-line **Source / Re-source**, whose `SourcingModal` takes a line. Its `sourcing`
+state sat there for five weeks, likewise only ever set to `null`. The dead code is now removed;
+whether the stage is retired or rebuilt is **FIX-4a** below. The general lesson is the one worth
+keeping: **a cleanup that removes a container must account for each thing inside it, one by one.**
+Removing the container and orphaning its contents compiles, ships, and looks fine.
+
+**Still open — to settle with whoever owns Import:**
+- [ ] **FIX-4a ·** Retire Import's sourcing stage (drop `SourcingModal` + `SourcingQueue`), or
+      rebuild it request-scoped the way RM Domestic was? Import lines are born at `approval`, Import
+      approval carries no rate or value, and **no `sourcing` step owner is configured**, so the
+      stage feeds nothing Import currently routes on — which argues for retiring it. Rebuilding
+      needs a new request-scoped RPC.
+- [ ] `importWrites.ts`'s `announce` doc still says recipients equal to the actor are skipped
+      server-side; untrue since `20260726150000`. The RM Domestic twin was corrected in `3c71504`;
+      Import's was left out of that commit because the file also held an unrelated in-flight change
+      (`fetchFxRate` moving to `shared/lib/fx.ts`) whose new file was not yet in git. Fix it once
+      that lands.
+
+---
 
 ### FIX-3 · An interview nobody was assigned showed as "Booked"  `[~]`
 *New Recruitment · Found 2026-08-25 while auditing **NR-1** · **Fixed in the working tree 2026-08-25**,
