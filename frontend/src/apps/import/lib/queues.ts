@@ -548,6 +548,17 @@ const LINE_STEPS: { stepKey: StepKey; match: (l: RequestItem) => boolean }[] = [
 export const poDeskLinesOf = (lines: RequestItem[]): RequestItem[] => lines.filter(lineInPoDesk);
 
 /**
+ * The lines `fms_import_cancel_line` will still accept.
+ *
+ * Written as the NEGATION on purpose. The RPC refuses exactly three statuses and
+ * takes everything else, so mirroring it as a whitelist would silently drop any
+ * status added to `LineStatus` later — which is how the Cancel button came to be
+ * missing in the first place. A new open status is cancellable by default here.
+ */
+export const cancellableLinesOf = (lines: RequestItem[]): RequestItem[] =>
+  lines.filter((l) => l.status !== "po" && l.status !== "cancelled" && l.status !== "rejected");
+
+/**
  * A requisition's PO due date: the EARLIEST of its pool lines' due dates. On a
  * legacy requisition with divergent stamps the minimum is the conservative
  * choice.

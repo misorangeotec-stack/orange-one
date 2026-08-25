@@ -211,6 +211,19 @@ export interface RequestItem {
   createdAt: string;
 }
 
+/**
+ * Outcome of cancelling several lines at once.
+ *
+ * `fms_purchase_cancel_line` is per-line, with no bulk or transactional variant,
+ * so a batch is a LOOP: a mid-loop failure is REPORTED, never rolled back —
+ * every line cancelled before it is already committed and correct. The caller
+ * shows what did not go through rather than pretending the whole thing failed.
+ */
+export interface CancelLinesResult {
+  cancelled: string[];
+  failed: { requestItemId: string; message: string }[];
+}
+
 export interface Quotation {
   id: string;
   requestItemId: string;

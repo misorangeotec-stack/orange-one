@@ -877,6 +877,17 @@ export const linesOf = (idx: ProcIndex, requestId: string): RequestItem[] =>
 export const sourceableLines = (lines: RequestItem[]): RequestItem[] =>
   lines.filter((l) => l.status === "sourcing" || l.status === "approval" || l.status === "on_hold");
 
+/**
+ * The lines `fms_purchase_cancel_line` will still accept.
+ *
+ * Written as the NEGATION on purpose. The RPC refuses exactly three statuses and
+ * takes everything else, so mirroring it as a whitelist would silently drop any
+ * status added to `LineStatus` later — which is how the Cancel button came to be
+ * missing in the first place. A new open status is cancellable by default here.
+ */
+export const cancellableLines = (lines: RequestItem[]): RequestItem[] =>
+  lines.filter((l) => l.status !== "po" && l.status !== "cancelled" && l.status !== "rejected");
+
 export const requestInSourcing = (idx: ProcIndex, r: PurchaseRequest): boolean =>
   linesOf(idx, r.id).some(lineInSourcing);
 

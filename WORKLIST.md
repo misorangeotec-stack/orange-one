@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-22
+**Last updated:** 2026-08-25
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -39,7 +39,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 |---|---|---|---|
 | WhatsApp access, so the integration can start | WhatsApp team | **PF-10** | 2026-08-22 |
 | The calibration sheets (the Excel report QC keeps today) | Factory / QC team | **PE-1** | 2026-08-20 |
-| The final list of production steps to add | Factory, then Bushra | **PE-2** | 2026-08-20 |
+| The final list of production steps to add | Factory, then Bushra | Widens **PE-2** (no longer blocks it) | 2026-08-20 |
 | The R&D flow and the form | Factory team | **RD-1** | 2026-08-20 |
 | The COA sample PDF + the raw Excel sheet | Factory team | **PE-3** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
@@ -652,8 +652,40 @@ step took) is the only report anyone has asked for. That gap is most likely wher
 
 ## Process Coordinator Dashboard  *(new)*
 
-### PC-1 · Consolidated dashboard for the process coordinator  `[ ]`
-*Also touches: Admin / Masters · every FMS · Raised 2026-08-20*
+### PC-1 · Consolidated dashboard for the process coordinator  `[~]`
+*Also touches: Admin / Masters · every FMS · Raised 2026-08-20 · **Built 2026-08-23**, awaiting
+the access grants below before it shows anything to a non-admin.*
+
+**What shipped.** A new module at `/process-coordinator` (Control category, between the
+Control Center and the Master Report), two screens and nothing else:
+
+1. **Approvals** — every module's master requests in one queue, waiting-first, with the
+   decided history one click away. Backed by `pc_master_requests()`, a UNION over the ten
+   `fms_*_master_requests` tables. Approving goes back through **that module's own**
+   `fms_<mod>_resolve_master_request`, so it creates the real master row, fires the
+   module's notification and its email exactly as before.
+2. **Processes** — one row per FMS, worst first, reusing the FMS Control Center's own
+   adapters so the counts cannot disagree with it. Expanding a row shows **only the steps
+   that are delayed or due today**, each with its owners' name, phone and email as
+   one-click `tel:` / `mailto:` links — the half the adapter contract cannot express, since
+   it stops at counts. Steps with nobody on them render "No owner set" and are counted in
+   the footer.
+
+**⚠ TWO GRANTS ARE NEEDED PER COORDINATOR, and the second is counter-intuitive.**
+In Admin → Module Access give them `process-coordinator`, **and `view` — not `edit` — on
+every FMS module.** Several FMS read policies (dispatch, OCPI, HR Exit) admit
+`module_is_viewer()`, which is `module_level() = 'view'` *exactly*, so an `edit` grant makes
+it false and the coordinator would silently see **zeros** for precisely the modules that
+matter most. Verified 2026-08-23: view grants add no email traffic — no email, recipient,
+announce or notify function reads `module_is_viewer`.
+
+**Not covered, deliberately:** Sampling and Customer Onboarding have master managers but no
+`master_requests` table, so they cannot appear in the approval queue. Asset Maintenance,
+Customer Onboarding, OCPI and Travel Desk have **no step-owner rows at all**, so they show
+"No owner set" throughout Processes until configured. Steps routing to a *per-entity* person
+(HR Exit's manager steps, travel approvers) are not step-level config and so are not
+resolved. `MastersReconcile` is excluded — an admin-only live merge against foreign keys,
+a different data shape and authority model.
 
 We have a new process coordinator. Build them one consolidated dashboard — **a different
 thing from the existing FMS Control Center** — that does two things:
@@ -688,15 +720,62 @@ The bar is that it reads at a glance. No hunting.
 - It does no master approvals at all. Approvals are gated on `isAdmin`
   ([MastersReconcile.tsx](frontend/src/core/admin/MastersReconcile.tsx)), so a coordinator
   who isn't an admin cannot approve anything.
-- A "process coordinator" already exists in code, but **per FMS**: Asset Maintenance, HR
-  Exit, HR Recruitment and Order to Dispatch each hold a `process_coordinators` config row
-  of user ids, set in that module's own Settings. There is no single coordinator identity
-  spanning all modules.
+- A "process coordinator" already exists in code, but **per FMS**: **twelve** modules —
+  Purchase, Import, HR Recruitment, HR Exit, General Purchase, Sampling, Production,
+  Order to Dispatch, Customer Onboarding, Asset Maintenance, OCPI and Travel Desk — each
+  hold a `process_coordinators` config row of user ids, set in that module's own Settings.
+  (This line said "four" until 2026-08-23; it was written before the last eight shipped.)
+  There is no single coordinator identity spanning all modules. **Measured 2026-08-23: the
+  union of those twelve lists holds THREE assignments** — Riya Kumari on HR/Exit and a
+  `master@taskflow.app` system account on Purchase — so building identity on them would
+  have started empty.
 
-**Open questions for when we build it:** is this a new module of its own or a mode inside
-an existing one; does the coordinator become a real role, a global permission, or a union
-of the per-FMS `process_coordinators` lists; and does the FMS Control Center stay as it is
-alongside this, or fold into it.
+**Answered when we built it (2026-08-23):** a new module of its own, `/process-coordinator`
+in the Control category; the FMS Control Center stays exactly as it is; and the coordinator
+is **neither a role nor the union of the per-FMS lists** — holding the `app_access` row for
+`process-coordinator` IS the permission, the Master Report precedent.
+
+⚠ **The per-FMS `fms_<mod>_is_coordinator()` was deliberately NOT widened**, and must not
+be: `isProcessCoordinator` is `return true` as the *first arm* of ~15 predicates across
+twelve stores — `canActOn`, `canRaise`, `canCancelOrder`, `canTickCheck` and HR Exit's
+`canReadConfidential`, which guards the exit-interview PII tier. Only the ten
+`*_resolve_master_request` RPCs were widened, one authorisation line each.
+
+### PC-2 · A user's phone doubles as their login password  `[ ]`
+*Platform / Admin · Raised 2026-08-23, out of PC-1*
+
+Per platform convention a user's mobile number IS their initial password, set on create and
+re-pinned every time the admin user form is saved. Nothing ever forces a change. Measured
+2026-08-23: **60 users, 59 with a phone on file, 56 have signed in at least once** — but
+signing in does not change the password, so most passwords are probably still the mobile.
+
+That coupling is why `list_org_people()` strips phone and email, and why PC-1 needed a
+SECURITY DEFINER RPC to show a step owner's number at all. A work mobile is not really a
+secret inside the company; a password is. **The defect is the coupling, not the exposure.**
+
+**To settle:** force a change on next sign-in for anyone whose password still equals their
+phone; or stop re-pinning the password on every user-form save; or both. Note the admin
+"Share login" modal (`core/admin/Users.tsx:227`) passes `defaultPassword={shareFor?.phone}`,
+so it depends on the convention and would need to change with it.
+
+### PC-3 · Collapse the ten duplicated master-request systems  `[ ]`
+*Also touches: every FMS · Raised 2026-08-23, out of PC-1 · **This is Central Masters Phase 3***
+
+[CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) already tracks this as Phase 3, not started. PC-1
+put one queue **on top of** the ten systems rather than collapsing them, deliberately: the
+thin layer carried no regression risk to any module's approval path, and it shipped in a day.
+
+The duplication is still there underneath — ten `fms_*_master_requests` tables with
+identical columns, ten `*_resolve_master_request` RPCs (nine sharing a signature, Travel
+Desk's differing), ten `*_master_managers` tables, and a `mst_master_managers` that holds
+**zero rows** and is the table they are all supposed to fold into.
+
+**Worth knowing before starting:** the resolve RPCs read `proposed_payload` keys VERBATIM
+from each module's `lib/masterFields.ts` — a wire contract with no compile-time link, so a
+collapse has to reconcile ten field schemas. And `fms_dispatch_resolve_master_request`'s live
+body is **not** the one in its migration; the Phase 1 cutover replaced it with a version that
+writes into `mst_*`. Read every definition from `pg_get_functiondef()`, never from a
+migration file.
 
 ---
 
@@ -740,6 +819,74 @@ quotations for a purchase line; it was read for patterns and is a different shap
 - Ten other open questions are listed at the foot of OCPI.md.
 
 **Still to come:** phase 10 — Zoho CRM as a third source behind the customer picker.
+
+### OCPI-2 · The OCPI revision — one form, one document set, tracked to Finance  `[x]`
+*Raised 2026-08-24 · Plan of record:
+`C:\Users\Admin\.claude\plans\now-there-is-a-memoized-mccarthy.md` · Client-facing flow:
+https://claude.ai/code/artifact/bd77ceb1-a5f5-46fa-a37e-5f51977b6b0c*
+
+⚠ **OCPI-1's phases 0–9d describe what was BUILT. This entry changes the chain itself** — read the
+plan before touching the module, or you will build against the old shape.
+
+OCPI today splits one commercial act across two stages: a **Quotation**, then — through a second
+form, a second number series and a second approval gate — an **Order Confirmation**. The price is
+typed twice (`deal_value_amount` and `machine_value_inr`) with nothing reconciling the two. The
+client wants one act.
+
+**What changes**
+
+1. **One form.** The order confirmation's questions move into the quotation form as *optional* fields.
+2. **Sections B and C become mandatory** — visible fields only; the branch rules still hide questions.
+3. **Section C opens with High Seas / Others**, which drives currency and tax:
+   High Seas ⇒ USD always and **no GST line at all**; Others ⇒ GST charged.
+4. **Dollar deals print USD and INR** on a live overridable rate, frozen onto each revision. The
+   dollar-fluctuation line prints in Section C, and its tick is asked only on dollar deals.
+5. **Special remarks** — the master form's three remark boxes gathered into one group.
+6. **Both papers generated together**, headed ORDER QUOTATION, **re-headed ORDER CONFIRMATION** when
+   the Directors approve — which is also when `OTPL/OC/<fy>/nnnn` is minted, so a returned or
+   abandoned quotation burns no number. Printing the signature copy is gated on that approval.
+7. **Every revision keeps its own value, currency, FX rate and pair of PDFs.**
+8. **Two new steps after the countersignature** — Finance handover, then Finance receipt.
+
+**All pricing is phase 2**, by explicit instruction: no price master, no per-machine price, no
+deviation limit, no price-approval gate. The salesperson types the value, as today.
+
+**Stages** (live checklist in [OCPI.md](OCPI.md)): 0 track · A SQL foundations · B merged form ·
+C commercial terms/currency/GST/FX · D both papers · E conversion + print gating · F the chain
+(cutover) · G round-out · H teardown + go-live. Gate for each: `cd frontend && npm run build` green.
+**All nine stages done: 0, A, B, C, D, E, F, G, H** (25-Aug-2026) — a quotation issues both papers at once, each
+revision keeping its own price, rate and pair of PDFs; the Directors' approval mints
+`OTPL/OC/<fy>/nnnn` and re-heads the pair as the contract, and a quotation sent back mints nothing.
+The chain is cut over: approval hands straight to the customer signature, the countersignature no
+longer closes the deal, and the signed contract is tracked to Finance in two halves — who handed it
+over, and who accepted it. The round-out is done: Directors named on the approval gate with an empty-owners warning, every
+email event given a branch that points somewhere that exists, and the register carrying the FX rate,
+the rupee equivalent and both halves of the Finance handover. **Teardown is done too** — every
+`ZZ TEST` deal, version, activity row, notification, master request and stored file removed, the OC
+counter cleared and the quotation series put back to 23. A full chain was walked against the deployed
+RPCs inside a rolled-back transaction to prove the first numbers: **QT-M0024** and
+**OTPL/OC/2627/0001**.
+
+**Before it goes live** (none of these is code): confirm the quotation series in Settings → Quotation
+numbering; name the Directors on `quotation_approval` and owners for the two Finance steps, since
+nobody is named and it all falls to admins today; and settle the four open items at the foot of
+[OCPI.md](OCPI.md).
+
+**Two audit findings that would have stopped the build**
+- `fms_ocpi_can_add_doc` maps the `oc` storage slot to `order_confirmation`, so **a Director cannot
+  upload the Order Confirmation PDF** — refused by the storage policy, silently, and *invisible to an
+  admin account* because coordinators pass unconditionally. Remap to `quotation_approval`.
+- The OC number and the printed paper cannot both be right unless minting and rendering happen in
+  **one action at approval**.
+
+**Relationship to OCPI-1:** OCPI-1 stays `[~]`. Its "Before it goes live" items are **not** superseded
+and must not be lost — the true maximum `QT-M####`, the ten transcribed templates awaiting a
+proof-read, and which selling entities actually raise OCPIs.
+
+**Still open** (none blocks the build): P8D is headed *OFFER QUOTE*, neither of the two headings this
+flow uses; who supplies the 18 missing detailed-sheet templates; whether an *Others* deal quoted in
+USD really attracts GST; and the client's own remaining feedback.
+
 
 ---
 
@@ -802,24 +949,127 @@ the same shape.
 - [ ] pgvector inside the identity project, or a separate store?
 - [ ] How re-indexing is triggered when a document changes.
 
-### TR-1 · Travel reimbursement module  `[ ]`
-*Raised 2026-08-20 · **Unblocked 2026-08-20 (Thursday)** — HR has shared the approved travel details
-and the amounts, so this is queued for build.*
+### TR-1 · Travel reimbursement module  `[x]`
+*Raised 2026-08-20 · Unblocked 2026-08-20 · **Built 23–24 Aug 2026.** Ten phases, each verified
+against the live database and the running app before the next started. Live log:
+[TRAVEL-DESK.md](TRAVEL-DESK.md).*
 
-A travel reimbursement module. The approved details and amounts are in hand; the build runs against
-them.
+Delivered as **Travel Desk** ([frontend/src/apps/travel-desk/](frontend/src/apps/travel-desk/)) —
+the whole trip lifecycle, not only the reimbursement half: request → band entitlement → approval →
+advance → booking → travel → claim → daily allowance → HOD review → Finance verification →
+settlement. One trip carries all of it, with many legs.
 
-**Notes:** nothing exists — "Travel Desk" appears today only as a clearance owner inside Employee
-Exit, which is unrelated. This would be the third HR module alongside New Recruitment
-([hr-recruitment](frontend/src/apps/hr-recruitment/)) and Employee Exit
-([hr-exit](frontend/src/apps/hr-exit/)), and the FMS engine pattern those use — step owners,
-planned-vs-actual due dates, per-owner queues, master governance — is the obvious base, since a
-claim raised → checked → approved → paid is the same shape.
+**Every question this entry asked has an answer, and it is a setting rather than code:**
 
-**To confirm when HR shares the details:** the approved entitlement slabs and what they key off
-(grade? band? distance? city?); who approves a claim and in how many stages; whether bills or
-receipts must be attached; how it settles once approved — and specifically whether it hands off to
-payroll or stops at "approved"; and whether an advance can be drawn before travel.
+| Asked | Answered |
+|---|---|
+| What the entitlement slabs key off | **Band → travel category → city tier.** The band comes from the org masters; the mapping and every rate live on an effective-dated **rate card** a Director confirms, so January's revision is a new card and not a deploy |
+| Who approves, in how many stages | **Reporting manager for bands 1–5; manager + Director for bands 6–9** (§3.2), configurable in Settings → Approval matrix. The claim is approved again by the manager, then verified by Finance |
+| Whether bills must be attached | **Per expense category**, with a receipt threshold and a self-declaration limit on each. §15's non-reimbursable list is carried as categories that refuse **by the category** — alcohol, fines and personal entertainment cannot be claimed or paid, and Finance cannot override that |
+| How it settles, and whether it hands off to payroll | **It stops at Finance-marked Paid** — amount, date, mode and reference recorded — per the confirmed scope. Nothing writes to Tally or payroll: the ConnectWave mirror is read-only and there is no payroll integration. Where money comes *back*, the recovery is recorded against hr-exit's existing **Advance Recovery** deduction head |
+| Whether an advance can be drawn before travel | **Yes**, capped at 90% of the estimate (§11.1), due **before departure** — the one deadline in the portal that counts backwards — and §11.2's "no second advance while one is unreconciled" is now enforceable, because Outstanding Advances can finally answer who owes what |
+
+**Two things it does that were not asked for and are worth knowing about:**
+- **GST input credit register** — §11.3 wants the credit on travel invoices; nothing in the business
+  could list it, so nobody claimed it. The tax is apportioned to the settled share of each line.
+  The company GSTIN is still unknown (**H8**) and the screen says so rather than printing a
+  placeholder — until Finance confirms it, hotels bill employees personally and the credit is lost
+  at source.
+- **Policy exceptions** — §16 asks for a periodic review of exceptions and there was no list to
+  review. Every capped line, every one Finance settled higher, every one settled lower, with the
+  reason and whether §7.3's evidence and HOD approval are both on file.
+
+**The hand-off this module makes possible:** hr-exit's `travel_advance` clearance row was a tick
+from memory, because nothing could answer whether a leaver still owed travel advance. It now demands
+evidence and can read the live figure by employee code — which matters, since exit cases carry a
+nullable user id and plenty of staff never had a login.
+
+**Not built, deliberately:** group travel (§11 is entirely per-employee, so two people travelling
+together raise two trips), push notifications (the portal has no push infrastructure of any kind),
+and any write to Tally or payroll.
+
+**⚠ BUILT, NOT LIVE. Two things gate go-live, and both are HR's to answer:**
+- **H1 — the policy contradicts itself on band → travel category.** §2 contains two tables, one
+  after the other, that disagree: Band 8 is TC-A *and* TC-B; Band 3 is TC-D *and* TC-C. On live
+  headcount that is **23 of 59 employees**, and Band 3 is the largest band and the field staff who
+  travel most. Every cap, rate and class rule keys off it. Both readings are seeded on the draft
+  card; confirming the card is what makes caps enforce rather than advise.
+- **~30 figures marked `[⚠ CONFIRM]`** in the source, and Annexure C says no rate is final until
+  both Directors sign off.
+
+Six further contradictions (**H2**–**H7**) are recorded in [TRAVEL-DESK.md](TRAVEL-DESK.md) with the
+reading taken for each. **H2 — the half-DA rule, which is impossible as written** — is resolved by
+reading rather than guessing, and every threshold behind it is config, so a correction is a settings
+change plus a recompute.
+
+**Email notifications ship OFF.** Turning them on in Settings is a live send, and this module mails
+people about their own pay.
+
+---
+
+## New Recruitment
+
+The live recruitment FMS — [frontend/src/apps/hr-recruitment/](frontend/src/apps/hr-recruitment/),
+id `hr-recruitment`, tables `fms_hr_*`, shown in the portal as **New Recruitment**. The two entries
+under **HR** above are separate *new* modules and do not belong here.
+
+### NR-1 · Round 2 offers every head set up to raise an MRF, and can be handed over  `[~]`
+*Raised 2026-08-25 · **Built 2026-08-25**, `npm run build` green · SQL applied live to
+`icutjkrqkbzwvmnfbzpr` (`20261020130000`, `20261020130100`) and the rollback rehearsed ·
+**Not yet walked through in the running app** — the Playwright browser profile was locked by an open
+Chrome session, so the picker, the handover and the outgoing-head ping have been proven against the
+database but not clicked · Plan of record:
+`C:\Users\Admin\.claude\plans\now-in-this-the-groovy-cherny.md`*
+
+Booking **Interview R2 — HOD** offers one name, and it is usually not a head of department. On
+MRF-2627-0009 (Krishan Pal, Design Engineer) the only option was *Saloni Rathod · Executive* — the
+person who raised the requisition.
+
+**Root cause:** R1 resolves against the HR department and R3 against anyone designated Director, but
+R2 alone reads the *requisition* — `hiring_manager_ids ∪ reporting_to_ids`
+([interviewers.ts:42-45](frontend/src/apps/hr-recruitment/lib/interviewers.ts#L42-L45)) — and
+`fms_hr_submit_mrf` defaults that to whoever raised the MRF. The stage has always been *labelled*
+"HOD" while the picker delivered the raiser.
+
+**Measured on live data:**
+
+| Checked | Found |
+|---|---|
+| Requisitions naming any HOD / sub-HOD | **4 of 16** — so 12 of 16 R2 pickers offer no head at all |
+| People assigned "Raise the MRF" in Setup → Step owners | **20** — the President, two Directors, the CFO, the HR Head, the Plant Head, the GMs and DGMs |
+| Of those 20, holding no `hr-recruitment` module grant | **4** — Dimple, Khushi Soni, Nakuleshwar Sharma, Sourabh Rakesh Nagpal |
+
+**What was decided:** the R2 list becomes the 20 people set up to raise an MRF, plus this
+requisition's own hiring managers and reporting-to. A booked round gains a **Change interviewer**
+button. The assigned head and the hiring manager **both** own the round, and the head is told by
+bell, by the daily work email and by an immediate mail.
+
+**⚠ It is not just a dropdown.** "The HOD" is hard-wired to `hiring_manager_ids` in five more
+places — the RLS read gate `fms_hr_can_read_requisition`, the act gate `fms_hr_can_act`, its client
+mirror in `store.tsx`, My Work and the daily digest in `items/hr.ts`, and the bell fan-out. Widening
+only the picker books a head who cannot see the candidate, cannot record the result, and is never
+told. Two further defects were found while auditing this: the queue calling an unbooked round
+"Booked" (**FIX-3**, already affecting live rows) and panel names vanishing for anyone outside the
+reader's own department.
+
+**Email ships OFF.** `email_module_enabled('hr-recruitment')` is `false`; the rows enqueue and
+nothing sends. Turning it on also releases the master-request mail already built behind the same
+switch.
+
+**Worth settling before it goes live:**
+- [ ] **Redeploy `send-email` before the email switch is ever turned on.** The renderer change is
+      committed but NOT deployed: `supabase/functions/send-email/index.ts` now knows that a
+      `hr-recruitment_interview_*` kind is a panel notice, not master-data governance. Left
+      undeployed deliberately — the running copy serves five modules that DO have email on, and
+      hand-uploading 1,261 lines to fix a footer that cannot render while the HR switch is off is
+      the wrong risk. Deploy it in the same change that flips the switch:
+      `supabase functions deploy send-email --project-ref icutjkrqkbzwvmnfbzpr`.
+- [ ] Grant `hr-recruitment` to the four heads above, or accept that booking them notifies someone
+      who cannot open the app. Four edits in the admin User form, no code.
+- [ ] Whether the R1 and R3 lists should be repaired at the same time — both silently drop a
+      cross-department interviewer today, and it is the same one-line source swap.
+- [ ] Whether HR wants the *named* hiring manager corrected on live requisitions. It is effectively
+      immutable after submit — only `fms_hr_resubmit_mrf` writes it, requester-only, sent-back only.
 
 ---
 
@@ -1327,25 +1577,54 @@ machines are in scope and whether they are already a master somewhere; whether a
 is pass/fail, a set of readings, or both; who signs it off; and whether a missed calibration should
 raise a queue item the way other FMS steps do.
 
-### PE-2 · Report on how long each production step took  `[!]`
-*Raised 2026-08-20 · From the factory visit · **Blocked:** waiting on the final step list*
+### PE-2 · Lot-wise and stage-wise production cycle-time report  `[~]`
+*Raised 2026-08-20 · From the factory visit · **Unblocked 2026-08-25**, scope agreed ·
+in build*
 
-A report showing the **overall time every step took to complete** in production — critical from the
-production side. This needs some **additional steps included** first: only once those are in does
-the production cycle read as complete.
+Two screens under Production Entry → Reports, both gated on `canMonitor` (the same flag that
+already opens the Control Center):
 
-**Notes:** the timing data is largely already there — every step stamps its own completion time on
-the job (`mhAt`, `rmtAt`, `tsAt`, `peAt`, `qcAt`, `aisAt`, `mcAt`, `pmhAt`, `pmtAt`, `pkAt`,
-`rtdAt`, `fgAt`, plus `submittedAt` / `closedAt`), so step durations are derivable for the steps
-that exist today. Production also already carries a step-SLA model — every step defaults to one
-working day after the one before ([sla.ts](frontend/src/apps/production-entry/lib/sla.ts)) — which
-gives a planned-vs-actual to report against, not just a raw duration. The new work is the
-*additional* steps, then the report itself.
+- **Lot Cycle Time** — one row per lot: when it started, how long it has spent at each stage, and
+  how long the whole lot has taken. Finished stages show a duration; the stage the lot is sitting
+  in right now shows age-so-far.
+- **Stage Cycle Time** — one row per stage: average, median, P90, fastest, slowest, and what share
+  came in inside the target. So "this stage takes this long on average" has an answer.
+
+**Decided 2026-08-25:**
+- Durations run on the **system timestamps** (`*_at`) — the only stamps carrying a time of day.
+- Time is counted as **plain clock time**, nights and Sundays included, **plus** a late/on-time
+  verdict against the step SLA already configured in Setup → Due Dates.
+- **Both granularities**: the 5 rolled-up `STAGES` by default, expandable to all 11 steps.
+- **In-flight lots are included** — they have to be; see the caveat below.
+
+**Why it is no longer blocked on the step list.** Everything derives from `STEPS` / `STAGES` in
+[steps.ts](frontend/src/apps/production-entry/lib/steps.ts) and the `AT` / `ANCHOR_AT` maps in
+[queues.ts](frontend/src/apps/production-entry/lib/queues.ts) — the same four places any new step
+has to be added anyway. When the factory's additional steps land, both reports widen on their own
+with no report code changed. The step list is still wanted; it is no longer a gate.
+
+**Notes:** the timing data was already there — every step stamps its own completion time on the job
+card (`mhAt`, `rmtAt`, `qcAt`, `aisAt`, `tsAt`, `peAt`, `mcAt`, `pmtAt`, `pkAt`, `rtdAt`, `fgAt`,
+plus `submittedAt` / `closedAt`), and `ANCHOR_AT` already says which stamp starts each step's clock,
+so a stage's duration is `AT[step] − ANCHOR_AT[step]`. **No migration, no new column, no new table.**
+
+**⚠ What the first version cannot tell you, and says so on screen.** Checked against live data on
+25-Aug: 125 job cards, **none closed**, nothing ever stamped at M/C Testing or FG Transfer — so
+every total reads "so far" until the first card clears. More importantly, much of the current
+spread is **data-entry cadence, not floor time**: eight cards share `RM Transfer → Quality = 26.6h`
+to the decimal, and `Log Book → Production` reads under a minute on most cards because both are
+saved in the same second. The report renders those as `<1m` rather than `0h` and states the caveat,
+instead of presenting them as a fast stage. **That gap is itself a finding for the factory** and
+worth raising separately from this build.
+
+**Known under-counts, latent rather than live** (no lot is affected today): a QC-rejected lot that
+loops back through Additional Issue Slip keeps its *first* handover timestamps, because every step
+stamps `coalesce(x_at, now())`; and a hold has `hold_at` but no resume stamp, so a held lot's
+current stage silently includes the hold. Both are surfaced as columns, not hidden.
 
 **To discuss with Bushra:** which steps are missing and where they sit in the existing chain
-(`STAGES` in [steps.ts](frontend/src/apps/production-entry/lib/steps.ts): Handover & QC → Log Book
-& Production → M/C Testing → Packing → Dispatch); whether the report measures step-to-step elapsed
-time or time against the SLA; and whether it reads per job, or averages across jobs over a period.
+(Handover & QC → Log Book & Production → M/C Testing → Packing → Dispatch) — the report widens to
+fit them automatically, so this is now about completeness of the record, not about unblocking.
 
 ---
 
@@ -1380,6 +1659,62 @@ already in this module:
 a job / batch / request and how it is numbered; whether the import is per batch or a sheet of many;
 whether the generated PDF must be stored and re-openable later or just printed; and whether QC can
 edit values after import or only import-and-generate.
+
+---
+
+## Purchase  *(RM Domestic & RM Import)*
+
+### PU-1 · 🔴 No way to cancel a requisition line once sourcing has begun  `[~]`
+*Raised 2026-08-25 · Found on PR-2627-0034 · Caused by `d6c9f65` (20-Jul-2026) · **Built and
+verified end-to-end 2026-08-25**; the two migrations are already live on production, the frontend
+is waiting to be merged. Move to [Fixes](#fixes) once it ships.*
+
+**What was seen:** PR-2627-0034 — ₹19,82,400, one line approved and sitting in the PO pool, no PO
+generated — needed cancelling, and there was no button to do it. Not on the requisition, not on
+the line, not in the PO workbench. Nowhere.
+
+**What is wrong:** the header's **Cancel request** is gated pre-sourcing only, and that part is by
+design — it refuses once a buyer has shortlisted vendors and an approver has signed
+([store.tsx:760-766](frontend/src/apps/procurement/store.tsx#L760-L766), mirroring the SQL
+predicate `fms_purchase_request_editable`). The escape hatch for everything after that point was
+the per-line **Cancel**, and `d6c9f65` ("Request Detail: remove the per-line Actions column")
+deleted it, on the reasoning that "whole-requisition actions already live in the header". They
+don't. The server still tells the user to *"Cancel the individual lines instead"* — pointing at a
+control that no longer exists.
+
+Everything except the trigger survived, orphaned but still compiling: the `cancelling` state, the
+`doCancel` handler, the whole "Cancel line" modal, `s.cancelLine`, and the RPCs
+`fms_purchase_cancel_line` / `fms_import_cancel_line`, which would still accept this line today.
+`setCancelling` is only ever called with `null`.
+
+**The fix:** a **Cancel line(s)** header button opening a modal that lists the still-cancellable
+lines with checkboxes and one shared reason — a header verb alongside Source, Approve and Generate
+PO, rather than the Actions column `d6c9f65` removed on purpose. Offered for all four statuses the
+RPC already allows (`sourcing`, `approval`, `on_hold`, `approved_pending_po`); permission unchanged
+(admin, or the PO / sourcing step owner — never the requester); no approver-consent step, the
+approver is notified. Two migrations amend the two `cancel_line` RPCs to stamp **who** cancelled a
+line in-transaction — today the only actor record is a best-effort activity row that can silently
+not exist — and to roll the request header to `cancelled` once no live line remains. A requisition
+emptied one line at a time currently sits at `open` forever, so the red "This request was
+cancelled" banner never appears and
+[Dashboard.tsx:140](frontend/src/apps/procurement/pages/Dashboard.tsx#L140) counts it as open
+indefinitely.
+
+**What else is at risk:** the same commit hit **both** apps, and in Import it took a second path
+with it — Import's per-line **Source / Re-source** is unreachable in exactly the same way
+([RequestDetail.tsx:25](frontend/src/apps/import/pages/requests/RequestDetail.tsx#L25) sets its
+`sourcing` state only to `null`, and its `SourcingModal` takes a line, not a request). The dead
+code goes in this change; whether the stage itself is retired or rebuilt is the open question
+below. The live Source path is the Sourcing Queue, which still works. Worth noting the shape of
+the original mistake, since it is the one to avoid repeating: a cleanup removed a *container* and
+left its contents unreachable rather than deleting them, so nothing failed to compile and nothing
+looked wrong until someone needed the button.
+
+**To discuss with whoever owns Import:**
+- [ ] Retire Import's sourcing stage (drop `SourcingModal` + `SourcingQueue`), or rebuild it
+      request-scoped the way RM Domestic was? Import lines are born at `approval` and Import
+      approval carries no rate or value, so the stage feeds nothing Import currently routes on —
+      which argues for retiring it. Rebuilding needs a new request-scoped RPC.
 
 ---
 
@@ -1900,6 +2235,36 @@ Three rules:
   what will be searched for a year from now; the tied-timestamp explanation is the second line.
 - **Say what else was at risk.** A fault is rarely alone — if the same mistake sits in other code,
   write down where, so the next reader does not have to find it twice.
+
+### FIX-3 · An interview nobody was assigned showed as "Booked"  `[~]`
+*New Recruitment · Found 2026-08-25 while auditing **NR-1** · **Fixed in the working tree 2026-08-25**,
+build green — not yet on `master`, so no live stamp until it ships with NR-1*
+
+**What was seen:** in the Interviews queue, rounds with no interviewer and no date read **Booked**
+and offered **Record result**. There was no way to book them from that screen at all — the **Book
+it** button never appeared for them.
+
+**Root cause:** passing a round auto-advances the candidate and inserts a *stub* interview row for
+the next round — no panel, no date, `status = 'scheduled'`
+([20260816120100:542-544](supabase/migrations/20260816120100_add_fms_hr_hired_stage.sql#L542-L544)).
+The board tests for a real booking — `!iv?.interviewerIds.length && !iv?.interviewerName`
+([CandidateCard.tsx:75](frontend/src/apps/hr-recruitment/components/kanban/CandidateCard.tsx#L75)) —
+but the queue tested only that a *row existed*
+([InterviewsQueue.tsx:82](frontend/src/apps/hr-recruitment/pages/queues/InterviewsQueue.tsx#L82)).
+So the board said "To be scheduled" and the queue said "Booked" about the very same round.
+
+**Live when found:** 3 rows — one at Round 2, two at Round 3.
+
+**The fix:** one `isBooked(iv)` predicate in `lib/interviewers.ts`, used by the card, the queue's
+lookup, its Booked / Not booked badge, its filter, its export and its action branch — so the two
+screens cannot drift apart again. It sits beside `interviewerPool` and `panelNames` for the reason
+those do: an interview can be reached from two places and both must say the same thing.
+
+**What else was at risk:** the same round's panel was named through the RLS-scoped `profileById` in
+**four** places — the board card, the queue, Prior rounds and the candidate's Meetings tab — and
+`panelNames` drops any id it cannot resolve. An interviewer outside the reader's own department
+therefore rendered as no name at all, making a booked round look unassigned. All four now use
+`personName`, which reads the org-wide directory.
 
 ### FIX-2 · A long customer name was cut off on the new sales order  `[x]`
 *Order to Dispatch · **Fixed 2026-08-21, 13:18 IST** · Live on `master` at `1121181`*

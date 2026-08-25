@@ -11,6 +11,12 @@ const TYPE_META: Record<string, { label: string; dot: string }> = {
   rejected: { label: "Rejected", dot: "bg-ryg-red" },
   on_hold: { label: "Put on hold", dot: "bg-yellow" },
   cancelled: { label: "Cancelled", dot: "bg-grey-2" },
+  // Written by fms_purchase_cancel_request since 20260723120000, and by
+  // fms_purchase_cancel_line since 20261020 when a cancel empties the last live
+  // line. Both always meant it; neither had a label, so both rendered as a
+  // lowercase "request cancelled" through metaFor's fallback. Grey, not red:
+  // red is `rejected` — someone refused this — not a withdrawal.
+  request_cancelled: { label: "Request cancelled", dot: "bg-grey-2" },
   // Reassign was removed (the matrix is the sole approval authority), but old
   // activity rows still exist — keep the label so history renders.
   reassigned: { label: "Reassigned", dot: "bg-orange" },
