@@ -7,6 +7,7 @@ import {
   markNotificationsRead as markNotificationsReadWrite,
   setConfig as setConfigWrite,
   setQuotationSeries as setQuotationSeriesWrite,
+  setOcSeries as setOcSeriesWrite,
 } from "./data/ocpiWrites";
 import { buildQueueEntries, type QueueEntry, type QueueStep } from "./lib/queues";
 import { resolveStepSla, type StepSlaMap } from "./lib/sla";
@@ -121,8 +122,12 @@ interface OcpiStoreValue {
   setStepSla: (map: StepSlaMap) => Promise<void>;
   /** Admin: who may act on any step and open the Control Center. */
   setCoordinators: (userIds: string[]) => Promise<void>;
+  /** How many days a quotation stands — the {{quotation_validity_days}} token. */
+  setQuotationValidityDays: (days: number) => Promise<void>;
   /** Admin: confirm the last quotation number already issued. Forward-only. */
   setQuotationSeries: (lastUsed: number) => Promise<number>;
+  /** Move the order-confirmation series for one financial year. */
+  setOcSeries: (lastUsed: number, fy: string) => Promise<number>;
   refresh: () => Promise<void>;
 }
 
@@ -133,6 +138,7 @@ const EMPTY_CONFIG: OcpiConfig = {
   quotationValidityDays: 30,
   defaultGstRate: 18,
   quotationSeries: { confirmed: false, confirmedAtValue: null, confirmedAt: null, confirmedBy: null },
+  ocSeries: {},
 };
 
 export function OcpiStoreProvider({ children }: { children: ReactNode }) {
@@ -180,14 +186,14 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
      * who reads everything and can action nothing.
      *
      * ⚠ PLUS ANY SALESPERSON, FOR THE TWO STEPS THEY THEMSELVES ACT ON. The
-     *   salesperson completes the order confirmation and files the customer's
-     *   signed copy — the RPCs let them, whether or not anyone made them a step
-     *   owner — so hiding those two queues would leave the one person who owes
-     *   the work with no list of what they owe. It is not a widening of what
+     *   salesperson files the customer's signed copy and hands the countersigned
+     *   contract to Finance — the RPCs let them, whether or not anyone made them
+     *   a step owner — so hiding those two queues would leave the one person who
+     *   owes the work with no list of what they owe. It is not a widening of what
      *   they can SEE: the deals policy still hands a non-owner only their own
      *   deals, so the list they open is their own.
      */
-    const RAISER_STEPS: QueueStep[] = ["order_confirmation", "customer_signoff"];
+    const RAISER_STEPS: QueueStep[] = ["customer_signoff", "finance_handover"];
     const canSeeQueue = (step: QueueStep): boolean =>
       isProcessCoordinator ||
       isViewer ||
@@ -304,8 +310,17 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite('process_coordinators', { user_ids: userIds });
         await qc.invalidateQueries({ queryKey: QK });
       },
+      setQuotationValidityDays: async (days) => {
+        await setConfigWrite('quotation_validity_days', { days });
+        await qc.invalidateQueries({ queryKey: QK });
+      },
       setQuotationSeries: async (lastUsed) => {
         const v = await setQuotationSeriesWrite(lastUsed);
+        await qc.invalidateQueries({ queryKey: QK });
+        return v;
+      },
+      setOcSeries: async (lastUsed, fy) => {
+        const v = await setOcSeriesWrite(lastUsed, fy);
         await qc.invalidateQueries({ queryKey: QK });
         return v;
       },

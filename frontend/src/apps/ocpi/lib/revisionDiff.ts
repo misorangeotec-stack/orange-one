@@ -30,6 +30,18 @@ export interface Revision {
   generatedBy: string | null;
   /** Empty for version 1 — nothing precedes it, so nothing has changed yet. */
   changes: FieldChange[];
+  /*
+    ⚠ WHAT THIS REVISION WAS PRICED AT, taken from the version row rather than
+      the deal. A negotiation that went ₹52L → ₹47L → ₹44L reads as ₹44L three
+      times if the deal is consulted, because the deal only ever holds its
+      current value.
+  */
+  dealValueAmount: number | null;
+  dealValueCurrency: string | null;
+  fxRate: number | null;
+  /** The pair of papers frozen at this revision. Detail is null with no template. */
+  pdfPath: string | null;
+  ocPdfPath: string | null;
 }
 
 /** snake_case payload key → the label the form and the PDF use. */
@@ -100,6 +112,11 @@ export function revisionsOf(versions: QuotationVersion[]): Revision[] {
     generatedAt: v.generatedAt,
     generatedBy: v.generatedBy,
     changes: i === 0 ? [] : diffPayloads(sorted[i - 1].fieldPayload, v.fieldPayload),
+    dealValueAmount: v.dealValueAmount,
+    dealValueCurrency: v.dealValueCurrency,
+    fxRate: v.fxRate,
+    pdfPath: v.pdfPath,
+    ocPdfPath: v.ocPdfPath,
   }));
 }
 

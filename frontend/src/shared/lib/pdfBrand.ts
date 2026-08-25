@@ -678,6 +678,18 @@ export interface TableOpts<T> {
   maxY?: number;
   /** Collector for `linkKey` cells. Pass the same array to `applyDeferredLinks` afterwards. */
   linkSink?: DeferredLink[];
+  /**
+   * Draw the navy header row. Default true — every existing caller is unchanged.
+   *
+   * ⚠ SET IT FALSE FOR A LABEL/VALUE FACT LIST, which is a table with no column
+   *   names to give. Before this existed the only way to hide the header was
+   *   `headerSize: 0.01`, which still PAINTS the navy band and merely makes its
+   *   text invisible — so the page grew a solid blue bar that read as a rendering
+   *   fault. Inventing headers ("Field" / "Value") to fill it is the other wrong
+   *   answer: they are noise directly under a section heading that already said
+   *   what the block is.
+   */
+  showHeader?: boolean;
 }
 
 /** Draw a table. Returns the y coordinate just below the last row. */
@@ -702,6 +714,7 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
   let y = opts.y;
 
   const drawHeader = () => {
+    if (opts.showHeader === false) return;
     setFill(pdf, BRAND.navy);
     pdf.rect(x, y, width, rowH + 1, "F");
     columns.forEach((c, i) => {

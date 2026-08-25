@@ -5,17 +5,21 @@ import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../../store";
 import { setStepOwners } from "../../data/ocpiWrites";
-import { STEPS } from "../../lib/steps";
+import { LIVE_STEPS } from "../../lib/steps";
 
 /**
  * Who owns each step — which, for the two approval steps, is who approves.
  *
  * ⚠ THERE IS NO SEPARATE "APPROVERS" SETTING, and that is the design. The
- *   approval gates are ordinary workflow steps, so the people who approve a
+ *   approval gate is an ordinary workflow step, so the DIRECTORS who approve a
  *   quotation are simply the owners of `quotation_approval`. Inventing a second
  *   list would have meant two places to look when somebody cannot approve, and
  *   they would disagree within a month. This is the same shape Order to Dispatch
  *   and Procurement use.
+ *
+ * ⚠ RETIRED STEPS ARE NOT LISTED. `order_confirmation` and `oc_approval` still
+ *   exist as keys so historical deals stay readable, but naming an owner for a
+ *   step nothing can reach would be asking somebody to watch an empty queue.
  *
  * ⚠ THE ORIGIN STEP IS SPECIAL, AND IT SAYS SO. With NO owners on `quotation`,
  *   anyone holding an edit grant may raise one; name owners and only they can.
@@ -76,7 +80,7 @@ export default function StepOwnersSection() {
         </p>
       </div>
 
-      {STEPS.map((step) => {
+      {LIVE_STEPS.map((step) => {
         const current = s.ownersOf(step.key);
         const isOrigin = step.key === "quotation";
         return (

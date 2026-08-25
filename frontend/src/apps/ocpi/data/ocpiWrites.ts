@@ -64,16 +64,27 @@ export async function deleteDraft(dealId: string): Promise<void> {
  *   PDF renderer actually used — the machine's spec rows and section bodies as
  *   they stand right now — is stored with the version, so rewording a template
  *   next month cannot rewrite a document the customer already holds.
+ *
+ * ⚠ TWO DOCUMENTS, ONE REVISION (revision stage D). `document` freezes the
+ *   summary sheet's template and `ocDocument` the resolved detailed sheet. A
+ *   machine with no template sends an empty object for the second — the deal is
+ *   summary-only, which is a legal outcome and not a failure.
+ *
+ * The price, the currency and the exchange rate are NOT passed: the RPC reads
+ * them off the deal row, because the server is what forced USD on a high seas
+ * sale and the payload may still say otherwise.
  */
 export async function generateQuotation(
   dealId: string,
   fields: Record<string, unknown>,
   document: Record<string, unknown>,
+  ocDocument: Record<string, unknown> = {},
 ): Promise<number> {
   const { data, error } = await db.rpc("fms_ocpi_generate_quotation", {
     p_deal: dealId,
     p_fields: fields,
     p_document: document,
+    p_oc_document: ocDocument,
   });
   if (error) throw new Error(error.message);
   return data as number;
@@ -89,6 +100,12 @@ const DOCS_BUCKET = "fms-ocpi-docs";
  *   a file filed anywhere else would be readable by the wrong people. The RPC
  *   refuses a path that does not.
  *
+ * ⚠ `upsert: true` MAKES THE FILE NAME THE IDENTITY. Both papers of one
+ *   revision land in this same folder, so the summary and the detailed sheet
+ *   must be named differently — `quotationFileName` and
+ *   `quotationDetailFileName` — or the second silently replaces the first and
+ *   the deal appears to have one document when it has two.
+ *
  * A failure here is NOT fatal to generating — the version is already frozen and
  * the PDF is deterministic, so it can be re-rendered. The caller reports it
  * without unwinding the revision.
@@ -98,6 +115,7 @@ export async function uploadQuotationPdf(
   versionNo: number,
   blob: Blob,
   fileName: string,
+  slot: "summary" | "detail" = "summary",
 ): Promise<string> {
   const path = `${dealId}/quotation/v${versionNo}-${fileName}`;
   const up = await supabase.storage
@@ -108,6 +126,7 @@ export async function uploadQuotationPdf(
     p_deal: dealId,
     p_version: versionNo,
     p_path: path,
+    p_slot: slot,
   });
   if (error) throw new Error(error.message);
   return path;
@@ -173,35 +192,58 @@ export async function setQuotationSeries(lastUsed: number): Promise<number> {
   return data as number;
 }
 
-/** Save part-B answers in place, without submitting. Mints no number. */
-export async function saveOcDraft(dealId: string, payload: Record<string, unknown>): Promise<void> {
-  const { error } = await db.rpc("fms_ocpi_save_oc_draft", { p_deal: dealId, p: payload });
+/**
+ * Move the ORDER-CONFIRMATION series, for one financial year.
+ *
+ * ⚠ A DIFFERENT SERIES FROM THE QUOTATION'S, AND THE MORE EXPENSIVE ONE. A
+ *   quotation number goes out on an offer; an OC number goes out on a contract
+ *   the customer signs and files. It also RESTARTS EACH APRIL — the number
+ *   carries the financial year — so the year is part of what is being set, and
+ *   the forward-only rule applies within it.
+ *
+ * Returns the value that year's series now stands at.
+ */
+export async function setOcSeries(lastUsed: number, fy: string): Promise<number> {
+  const { data, error } = await db.rpc("fms_ocpi_set_oc_series", {
+    p_last_used: lastUsed,
+    p_fy: fy,
+  });
   if (error) throw new Error(error.message);
+  return data as number;
 }
+
+/*
+ * ⚠ THE ORDER-CONFIRMATION STEP'S WRAPPERS ARE GONE (revision stage F).
+ *   `fms_ocpi_save_oc_draft`, `fms_ocpi_submit_oc` and `fms_ocpi_decide_oc` all
+ *   still EXIST in the database — they are what a historical deal parked at one
+ *   of the retired steps was written by, and deleting them would rewrite what
+ *   those rows mean. Nothing in the app calls them any more: the questions they
+ *   asked are on the quotation form, and the approval that used them is the
+ *   Directors' gate.
+ */
 
 /**
- * Mark the order confirmation complete and send it for approval.
+ * Store the resolved order confirmation and the paths of BOTH approved papers.
  *
- * ⚠ THIS MINTS `OTPL/OC/<fy>/<nnnn>`, and refuses a machine with no template —
- *   naming it, so the failure reads as missing content rather than a bug.
- * Returns the number.
+ * ⚠ `summaryPath` is the second half of the contract (revision stage E). The
+ *   Directors' approval re-renders the summary and the detailed sheet together,
+ *   re-headed and carrying the minted number; filing only one of them would
+ *   leave the signature copy incomplete.
+ *
+ * A machine with no detailed template passes `path` undefined and an empty
+ * document — summary-only is a legal outcome, not a failure.
  */
-export async function submitOc(dealId: string): Promise<string> {
-  const { data, error } = await db.rpc("fms_ocpi_submit_oc", { p_deal: dealId });
-  if (error) throw new Error(error.message);
-  return data as string;
-}
-
-/** Store the resolved order confirmation and its PDF path. */
 export async function freezeOc(
   dealId: string,
   document: Record<string, unknown>,
   path?: string,
+  summaryPath?: string,
 ): Promise<void> {
   const { error } = await db.rpc("fms_ocpi_freeze_oc", {
     p_deal: dealId,
     p_document: document,
     p_path: path ?? null,
+    p_summary_path: summaryPath ?? null,
   });
   if (error) throw new Error(error.message);
 }
@@ -214,20 +256,6 @@ export async function uploadOcPdf(dealId: string, blob: Blob, fileName: string):
     .upload(path, blob, { cacheControl: "3600", upsert: true, contentType: "application/pdf" });
   if (up.error) throw new Error(up.error.message);
   return path;
-}
-
-/** Confirm, reject or return an order confirmation. */
-export async function decideOc(
-  dealId: string,
-  decision: "approve" | "reject" | "rework",
-  note?: string,
-): Promise<void> {
-  const { error } = await db.rpc("fms_ocpi_decide_oc", {
-    p_deal: dealId,
-    p_decision: decision,
-    p_note: note ?? null,
-  });
-  if (error) throw new Error(error.message);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -300,7 +328,7 @@ export async function returnSignature(dealId: string, note: string): Promise<voi
   if (error) throw new Error(error.message);
 }
 
-/** File the countersigned copy. This closes the deal. */
+/** File the countersigned copy. The deal then goes to Finance, not to Closed. */
 export async function recordManagementSign(
   dealId: string,
   pages: OcpiDoc[],
@@ -313,6 +341,39 @@ export async function recordManagementSign(
       doc_pages: pages.slice(1),
       note: note ?? null,
     },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Record that the countersigned contract has been handed over to Finance.
+ *
+ * ⚠ THE SALESPERSON MAY DO THIS, and the database says so too: they are usually
+ *   the person physically carrying the paper to the Finance desk. Confirming
+ *   RECEIPT is a different matter — see below.
+ *
+ * The note is optional and goes to the activity feed with the event; what is
+ * recorded on the deal is who handed it over, and when.
+ */
+export async function recordFinanceHandover(dealId: string, note?: string): Promise<void> {
+  const { error } = await db.rpc("fms_ocpi_record_finance_handover", {
+    p_deal: dealId,
+    p_note: note ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Finance confirms they have it. This closes the deal.
+ *
+ * ⚠ NOT THE PERSON WHO HANDED IT OVER. The database refuses that outright: a
+ *   handover with one name on both halves records nothing, and the whole point
+ *   of this step is that somebody in Finance says "I have it".
+ */
+export async function recordFinanceReceipt(dealId: string, note?: string): Promise<void> {
+  const { error } = await db.rpc("fms_ocpi_record_finance_receipt", {
+    p_deal: dealId,
+    p_note: note ?? null,
   });
   if (error) throw new Error(error.message);
 }

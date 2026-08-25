@@ -16,11 +16,10 @@ import DealDetail from "./pages/deals/DealDetail";
 import Machines from "./pages/machines/Machines";
 import MachineTemplate from "./pages/machines/MachineTemplate";
 import QuotationApprovalQueue from "./pages/queues/QuotationApprovalQueue";
-import OrderConfirmationQueue from "./pages/queues/OrderConfirmationQueue";
-import OcApprovalQueue from "./pages/queues/OcApprovalQueue";
 import CustomerSignQueue from "./pages/queues/CustomerSignQueue";
 import ManagementSignQueue from "./pages/queues/ManagementSignQueue";
-import OrderConfirmationEditor from "./pages/deals/OrderConfirmationEditor";
+import FinanceHandoverQueue from "./pages/queues/FinanceHandoverQueue";
+import FinanceReceiptQueue from "./pages/queues/FinanceReceiptQueue";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import DealRegister from "./pages/reports/DealRegister";
 import Masters from "./pages/masters/Masters";
@@ -116,14 +115,22 @@ export default function OcpiApp() {
           <Route path="deals" element={<Loaded><DealsList /></Loaded>} />
           {/* ":id/edit" must come before ":id" would swallow "edit". */}
           <Route path="deals/:id/edit" element={<Loaded><RequireRaise><EditDraft /></RequireRaise></Loaded>} />
-          <Route path="deals/:id/order-confirmation" element={<Loaded><OrderConfirmationEditor /></Loaded>} />
           <Route path="deals/:id" element={<Loaded><DealDetail /></Loaded>} />
 
+          {/*
+            ⚠ NO ROUTE FOR THE TWO RETIRED STEPS. `order_confirmation` and
+              `oc_approval` still exist as step keys — deals raised before the
+              stage-F cutover are parked at them and must stay countable — but
+              the screens that ACTED on them are gone, because the questions they
+              asked are on the quotation form now and the approval that used them
+              is the Directors' gate. A parked deal is reached from All Deals,
+              reads correctly, and a coordinator can cancel it.
+          */}
           <Route path="queues/approve-quotation" element={<Loaded><RequireQueue step="quotation_approval"><QuotationApprovalQueue /></RequireQueue></Loaded>} />
-          <Route path="queues/order-confirmation" element={<Loaded><RequireQueue step="order_confirmation"><OrderConfirmationQueue /></RequireQueue></Loaded>} />
-          <Route path="queues/approve-oc" element={<Loaded><RequireQueue step="oc_approval"><OcApprovalQueue /></RequireQueue></Loaded>} />
           <Route path="queues/customer-signature" element={<Loaded><RequireQueue step="customer_signoff"><CustomerSignQueue /></RequireQueue></Loaded>} />
           <Route path="queues/management-signature" element={<Loaded><RequireQueue step="management_signoff"><ManagementSignQueue /></RequireQueue></Loaded>} />
+          <Route path="queues/finance-handover" element={<Loaded><RequireQueue step="finance_handover"><FinanceHandoverQueue /></RequireQueue></Loaded>} />
+          <Route path="queues/finance-receipt" element={<Loaded><RequireQueue step="finance_receipt"><FinanceReceiptQueue /></RequireQueue></Loaded>} />
           <Route path="monitoring" element={<Loaded><ControlCenter /></Loaded>} />
           <Route path="reports" element={<Loaded><DealRegister /></Loaded>} />
           <Route path="master-requests" element={<Loaded><MasterRequests /></Loaded>} />

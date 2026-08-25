@@ -158,8 +158,8 @@ export default function RequestMasterModal({
             {mt === "machine" && (
               <>
                 {" "}
-                A new machine can carry a quotation straight away; its order-confirmation
-                template has to be built before a contract can be printed.
+                A new machine can carry a quotation straight away; until somebody builds its
+                detailed-sheet template, deals on it issue the summary sheet alone.
               </>
             )}
           </p>

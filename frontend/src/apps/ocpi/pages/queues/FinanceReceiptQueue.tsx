@@ -2,38 +2,35 @@ import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import Button from "@/shared/components/ui/Button";
-import { useOcpiStore } from "../../store";
 import DueCell from "@/shared/components/ui/DueCell";
+import { useOrgPersonById } from "@/core/platform/orgPeople";
+import { useOcpiStore } from "../../store";
 import { dealRef, dueIsoFor } from "../../lib/queues";
 import { dmy, fmtDealValue } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
 
 /**
- * Quotations waiting on an approver.
+ * Handed over, and waiting for Finance to say they have it.
  *
- * ⚠ THE ROWS COME FROM THE SHARED QUEUE BUILDER, not from a filter written here.
- *   The dashboard tile, this page and the cross-FMS scoreboard all read
- *   `buildQueueEntries`, which is what stops the three of them disagreeing about
- *   how much work is outstanding.
- *
- * ⚠ EVERY COLUMN SORTS AND FILTERS, and the grid is flat. Value is ordered by
- *   the number, not by the rendered string with its currency symbol.
+ * ⚠ "HANDED OVER BY" IS A COLUMN, not a detail on the deal page. This queue is
+ *   read by the person who has to go and find a contract that has not turned up,
+ *   and the first question they ask is who last had it.
  */
-export default function OcApprovalQueue() {
+export default function FinanceReceiptQueue() {
   const s = useOcpiStore();
   const nav = useNavigate();
+  const personById = useOrgPersonById();
 
   const rows = useMemo(() => {
-    const ids = new Set(s.entries.filter((e) => e.stepKey === "oc_approval").map((e) => e.dealId));
+    const ids = new Set(
+      s.entries.filter((e) => e.stepKey === "finance_receipt").map((e) => e.dealId),
+    );
     return s.deals.filter((d) => ids.has(d.id));
   }, [s.entries, s.deals]);
 
   const machineName = (id: string | null) => (id ? s.machineById(id)?.name ?? "" : "");
-
-  // The admin-configured target for THIS step, from the anchor step's own
-  // timestamp. Null when it cannot be known, which renders as a dash — never as
-  // a date the module cannot stand behind.
-  const due = (d: OcpiDeal) => dueIsoFor(d, "oc_approval", s.stepSla);
+  const due = (d: OcpiDeal) => dueIsoFor(d, "finance_receipt", s.stepSla);
+  const handedBy = (d: OcpiDeal) => (d.fhBy ? personById(d.fhBy)?.name ?? "Someone" : "");
 
   const columns = useMemo<QueueColumn<OcpiDeal>[]>(
     () => [
@@ -76,48 +73,41 @@ export default function OcApprovalQueue() {
         exportValue: (d) => d.dealValueAmount ?? "",
       },
       {
-        key: "quotation",
-        header: "Quotation",
-        cell: (d) => d.quotationNo ?? "",
-        sortValue: (d) => d.quotationNo ?? "",
-        filter: { kind: "text", get: (d) => d.quotationNo ?? "" },
+        key: "handedBy",
+        header: "Handed over by",
+        cell: (d) => handedBy(d),
+        sortValue: (d) => handedBy(d),
+        filter: { kind: "select", get: (d) => handedBy(d) },
       },
       {
-        key: "returned",
-        header: "Sent back before",
-        cell: (d) => (d.reworkCount > 0 ? `${d.reworkCount}×` : "—"),
-        sortValue: (d) => d.reworkCount,
-        filter: { kind: "select", get: (d) => (d.reworkCount > 0 ? `${d.reworkCount}×` : "No") },
-      },
-      {
-        key: "raised",
-        header: "Raised",
-        cell: (d) => dmy(d.createdAt),
-        sortValue: (d) => d.createdAt,
-        filter: { kind: "date", get: (d) => d.createdAt.slice(0, 10) },
+        key: "handedOn",
+        header: "Handed over on",
+        cell: (d) => dmy(d.fhAt),
+        sortValue: (d) => d.fhAt ?? "",
+        filter: { kind: "date", get: (d) => (d.fhAt ?? "").slice(0, 10) },
       },
       {
         key: "due",
         header: "Due",
-        // ⚠ SORTED AND FILTERED ON THE DATE, never on the rendered cell — that
-        //   carries an "overdue" chip, and ordering by its text would sort the
-        //   late rows by how late they read rather than by when they were due.
         cell: (d) => <DueCell dueIso={due(d)} />,
         sortValue: (d) => due(d) ?? "",
         filter: { kind: "date", get: (d) => due(d) ?? "" },
         exportValue: (d) => due(d) ?? "",
       },
     ],
-    [s.machines, s.stepSla],
+    // `personById` is rebuilt every render by design, so it is deliberately not
+    // a dependency — including it would rebuild these columns on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.machines, s.stepSla, s.deals],
   );
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-[20px] font-bold text-navy">Approve order confirmations</h1>
+        <h1 className="text-[20px] font-bold text-navy">Confirm Finance has it</h1>
         <p className="mt-0.5 text-[13.5px] text-grey-2">
-          Order confirmations the salesperson has completed. Confirming sends it back to them to print
-          and get signed by the customer.
+          Signed contracts handed over and not yet confirmed. Confirming receipt completes the deal —
+          and the person who handed one over cannot confirm it themselves.
         </p>
       </div>
 
@@ -126,21 +116,20 @@ export default function OcApprovalQueue() {
         rowKey={(d) => d.id}
         columns={columns}
         loading={s.isLoading}
-        rowsLabel="order confirmations"
-        emptyTitle="Nothing waiting"
-        emptyMessage="An order confirmation appears here once a salesperson has completed and submitted it."
-        initialSort={{ key: "raised", dir: "asc" }}
-        exportName="ocpi-ocs-awaiting-approval"
-        exportTitle="Order confirmations awaiting approval"
+        rowsLabel="contracts"
+        emptyTitle="Nothing waiting on Finance"
+        emptyMessage="A contract appears here once somebody records handing it over."
+        initialSort={{ key: "handedOn", dir: "asc" }}
+        exportName="ocpi-awaiting-finance-receipt"
+        exportTitle="Awaiting Finance receipt"
         actions={(d) => (
           <div className="flex justify-end">
             <Button size="sm" onClick={() => nav(`/ocpi/deals/${d.id}`)}>
-              Review
+              Open
             </Button>
           </div>
         )}
       />
-
     </div>
   );
 }

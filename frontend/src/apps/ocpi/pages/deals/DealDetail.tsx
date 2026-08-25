@@ -4,10 +4,12 @@ import Card from "@/shared/components/ui/Card";
 import QuotationForm from "../../components/QuotationForm";
 import OcpiStepper from "../../components/OcpiStepper";
 import ApprovalPanel from "../../components/ApprovalPanel";
-import OcApprovalPanel from "../../components/OcApprovalPanel";
 import CustomerSignPanel from "../../components/CustomerSignPanel";
 import ManagementSignPanel from "../../components/ManagementSignPanel";
+import FinanceHandoverPanel from "../../components/FinanceHandoverPanel";
+import FinanceReceiptPanel from "../../components/FinanceReceiptPanel";
 import SignedDocStrip from "../../components/SignedDocStrip";
+import RevisionHistory from "../../components/RevisionHistory";
 import LifecyclePanel from "../../components/LifecyclePanel";
 import { useOcpiStore } from "../../store";
 import { draftFromDeal } from "../../lib/fieldSpec";
@@ -35,6 +37,10 @@ export default function DealDetail() {
   const deal = s.deals.find((d) => d.id === id);
 
   const draft = useMemo(() => (deal ? draftFromDeal(deal) : null), [deal]);
+  const versions = useMemo(
+    () => (deal ? s.versions.filter((v) => v.dealId === deal.id) : []),
+    [s.versions, deal],
+  );
 
   if (!deal || !draft) {
     return (
@@ -107,17 +113,21 @@ export default function DealDetail() {
       */}
       <LifecyclePanel deal={deal} />
 
-      {/* Renders itself only when this deal is actually waiting on an approver. */}
+      {/*
+        Renders itself only when this deal is actually waiting on an approver.
+        This is the Directors' gate — approving it issues the contract.
+      */}
       <ApprovalPanel deal={deal} />
-
-      {/* Also self-hiding: only renders while the OC is with management. */}
-      <OcApprovalPanel deal={deal} />
 
       {/* Print, collect the signature, file it. Only while it is out. */}
       <CustomerSignPanel deal={deal} />
 
-      {/* Countersign and close. Only while the signed copy is with management. */}
+      {/* Countersign. Only while the signed copy is with management. */}
       <ManagementSignPanel deal={deal} />
+
+      {/* The two halves of the handover to Finance. Both self-hiding. */}
+      <FinanceHandoverPanel deal={deal} />
+      <FinanceReceiptPanel deal={deal} />
 
       {/*
         ⚠ ONCE CLOSED, THE SIGNED FILES ARE THE RECORD, so the completed deal
@@ -130,8 +140,14 @@ export default function DealDetail() {
           <div>
             <h2 className="text-[15px] font-bold text-navy">The signed contract</h2>
             <p className="mt-0.5 text-[13.5px] text-grey-2">
-              Completed{deal.msAt ? ` on ${dmy(deal.msAt)}` : ""}. These scans are the record —
-              they are the one thing here that cannot be produced again.
+              {/*
+                ⚠ COMPLETED IS NOW WHEN FINANCE RECEIVED IT, not when it was
+                  countersigned. The countersignature stopped being the end of
+                  the process at the stage-F cutover, and dating the record from
+                  it would understate how long the paper actually took to land.
+              */}
+              Completed{deal.frAt ? ` on ${dmy(deal.frAt)}` : deal.msAt ? ` on ${dmy(deal.msAt)}` : ""}.
+              These scans are the record — they are the one thing here that cannot be produced again.
             </p>
           </div>
           {signed.map((set) => (
@@ -145,17 +161,22 @@ export default function DealDetail() {
         </Card>
       )}
 
-      {deal.status === "awaiting_order_confirmation" && (
-        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <p className="text-[13.5px] text-grey">
-            The quotation is approved. The order confirmation is what the customer signs.
+      {/*
+        ⚠ A DEAL PARKED AT ONE OF THE RETIRED STEPS SAYS SO. Five deals were at
+          `awaiting_order_confirmation` and two at `awaiting_oc_approval` when the
+          chain changed. The screens that used to act on them are gone, so
+          without this the page would show a status and offer nothing, which
+          reads as a broken deal rather than a historical one.
+      */}
+      {(deal.status === "awaiting_order_confirmation" || deal.status === "awaiting_oc_approval") && (
+        <Card className="border-ryg-yellow/40 bg-[#FFFCF3] p-4">
+          <p className="text-[13px] font-medium text-navy">This deal is at a step that no longer runs</p>
+          <p className="mt-1 text-[13px] text-grey">
+            It was raised before the order confirmation was merged into the quotation. There is
+            nothing to fill in any more — the questions it was waiting for are on the quotation form,
+            and the approval it was waiting for is the Directors&rsquo;. A coordinator can cancel it,
+            or leave it as a record.
           </p>
-          <Link
-            to={`/ocpi/deals/${deal.id}/order-confirmation`}
-            className="rounded-xl bg-orange px-4 py-2 text-[13.5px] font-semibold text-white shadow-cta hover:brightness-105"
-          >
-            Fill in the order confirmation
-          </Link>
         </Card>
       )}
 
@@ -167,6 +188,17 @@ export default function DealDetail() {
           <p className="mt-1 text-[13.5px] text-navy">{deal.qaNote}</p>
         </Card>
       )}
+
+      {/*
+        ⚠ THE NEGOTIATION BELONGS ON THIS PAGE, not only on the draft editor.
+          The strip used to live in QuotationEditor alone, which meant it
+          disappeared the moment a quotation was submitted — at exactly the point
+          the Directors are deciding whether the price is right, and the one
+          question they would ask is how it moved to get there. Each row carries
+          the value, the rate it was converted at, and links to the pair of
+          papers frozen at that revision.
+      */}
+      {versions.length > 0 && <RevisionHistory versions={versions} />}
 
       <QuotationForm draft={draft} patch={() => {}} disabled />
     </div>

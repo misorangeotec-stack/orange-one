@@ -35,6 +35,17 @@ export interface StepDefBase<K extends string = string, S extends string = strin
    * could not distinguish "nothing stuck here" from "this step doesn't exist".
    */
   noQueue?: true;
+  /**
+   * This step no longer runs — the workflow was changed and it was cut out — but
+   * entities raised before that change may still be sitting at it.
+   *
+   * It is NOT the same as `noQueue`: a retired step can still hold work, and
+   * hiding it would make those entities invisible rather than historical. What
+   * consumers do with it is deliberately theirs to decide — a sidebar should not
+   * offer its queue and Settings should not let anyone be made its owner, while
+   * the cross-FMS scoreboard should keep counting it until it is empty.
+   */
+  retired?: true;
 }
 
 /** One open work-item sitting at one step: the atom every queue and the board render. */

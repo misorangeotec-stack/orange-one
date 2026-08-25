@@ -12,10 +12,14 @@ import type { StepKey } from "../lib/steps";
 export type OcpiStatus =
   | "draft"
   | "awaiting_quotation_approval"
+  /** Retired at the stage-F cutover. Kept legal for deals raised before it. */
   | "awaiting_order_confirmation"
+  /** Retired at the stage-F cutover. Kept legal for deals raised before it. */
   | "awaiting_oc_approval"
   | "awaiting_customer_sign"
   | "awaiting_management_sign"
+  | "awaiting_finance_handover"
+  | "awaiting_finance_receipt"
   | "closed"
   /** Management refused it. Distinct from cancelled, which is US withdrawing. */
   | "rejected"
@@ -26,20 +30,30 @@ export type OcpiStatus =
 /** A status that still owes somebody work. */
 export const OPEN_STATUSES: OcpiStatus[] = [
   "awaiting_quotation_approval",
+  // The two retired statuses stay listed: a deal parked at one still owes
+  // somebody the work of deciding what to do with it.
   "awaiting_order_confirmation",
   "awaiting_oc_approval",
   "awaiting_customer_sign",
   "awaiting_management_sign",
+  "awaiting_finance_handover",
+  "awaiting_finance_receipt",
   "rework",
 ];
 
 /** Which step a status is waiting at. Drafts and terminal statuses owe nobody. */
 export const STATUS_STEP: Partial<Record<OcpiStatus, StepKey>> = {
   awaiting_quotation_approval: "quotation_approval",
+  // ⚠ THE RETIRED PAIR KEEPS ITS ENTRIES. Removing them would drop the deals
+  //   parked there out of every queue, every count and the Control Center at
+  //   once — invisible rather than historical, which is the opposite of what
+  //   retiring a step should mean.
   awaiting_order_confirmation: "order_confirmation",
   awaiting_oc_approval: "oc_approval",
   awaiting_customer_sign: "customer_signoff",
   awaiting_management_sign: "management_signoff",
+  awaiting_finance_handover: "finance_handover",
+  awaiting_finance_receipt: "finance_receipt",
 };
 
 export type Decision = "approve" | "reject" | "rework";
@@ -108,6 +122,19 @@ export interface OcpiDeal {
 
   dealValueCurrency: DealCurrency | null;
   dealValueAmount: number | null;
+
+  /* ── The FX position, for a dollar deal ───────────────────────────────────
+   * ⚠ FROZEN, NEVER RE-DERIVED. A rate looked up again at print time would
+   *   silently restate arithmetic the customer already agreed to. Stage D
+   *   copies these onto each quotation version beside the frozen document.
+   *   Named after the Import module's columns, which solved this first. */
+  fxRate: number | null;
+  fxRateAt: string | null;
+  fxRateSource: string | null;
+  /** True when a person replaced the fetched rate with the one actually agreed. */
+  fxRateOverridden: boolean | null;
+  /** The rupee equivalent of a USD deal. Null on a rupee deal — nothing to convert. */
+  dealValueInr: number | null;
   paymentType: PaymentType | null;
   paymentTerms: string | null;
   deliveryDate: string | null;
@@ -205,6 +232,24 @@ export interface OcpiDeal {
   /** The RESOLVED order confirmation, frozen at submit. See fms_ocpi_freeze_oc. */
   ocDocumentPayload: Record<string, unknown> | null;
   ocPdfPath: string | null;
+  /**
+   * The Finance handover, both halves of it.
+   *
+   * ⚠ TWO NAMES, NOT ONE. `fh` is who handed the signed contract over and when;
+   *   `fr` is who in Finance confirmed they have it. The database refuses to let
+   *   one person record both — a handover with one name on both halves is a note
+   *   to self, not a transfer of custody.
+   */
+  fhAt: string | null;
+  fhBy: string | null;
+  frAt: string | null;
+  frBy: string | null;
+  /**
+   * The approved SUMMARY sheet — the sibling of `ocPdfPath`, which holds the
+   * detailed one. Both are written at the Directors' approval, re-headed and
+   * carrying the OC number, and both are what gets printed for signature.
+   */
+  ocSummaryPdfPath: string | null;
 
   /** Written ONLY by the update_* RPCs — never by the workflow's own writes. */
   editedAt: string | null;
@@ -228,7 +273,22 @@ export interface QuotationVersion {
   versionNo: number;
   fieldPayload: Record<string, unknown>;
   documentPayload: Record<string, unknown>;
+  /** The resolved DETAILED sheet, frozen with this revision alongside the summary. */
+  ocDocumentPayload: Record<string, unknown>;
   pdfPath: string | null;
+  /** The detailed sheet's own file. Null when the machine carries no template. */
+  ocPdfPath: string | null;
+  /**
+   * What this revision was priced at, and in what.
+   *
+   * ⚠ FROZEN HERE, NOT READ THROUGH THE DEAL. The deal carries only its CURRENT
+   *   value; a negotiation that went ₹52L → ₹47L → ₹44L is only readable
+   *   afterwards because each revision kept its own figure.
+   */
+  dealValueAmount: number | null;
+  dealValueCurrency: string | null;
+  /** The USD→INR rate this revision's papers were priced at. Null on a rupee deal. */
+  fxRate: number | null;
   generatedAt: string;
   generatedBy: string | null;
 }
@@ -245,7 +305,7 @@ export interface OcpiMachine {
   composition: string[];
   headerFields: string[];
   signoffStyle: "approved_by" | "checked_by";
-  /** False ⇒ quotable, but the order-confirmation step is blocked. */
+  /** False ⇒ quotable, and issued on the summary sheet alone — nothing is blocked. */
   hasTemplate: boolean;
   active: boolean;
   sortOrder: number;

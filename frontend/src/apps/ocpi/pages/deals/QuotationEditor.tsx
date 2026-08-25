@@ -3,13 +3,13 @@ import { useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import QuotationForm from "../../components/QuotationForm";
-import DocumentPreview from "../../components/DocumentPreview";
+import IssuedPapers from "../../components/IssuedPapers";
 import RevisionHistory from "../../components/RevisionHistory";
 import { CompanyProfileWarning, QuotationSeriesWarning } from "../../components/SetupWarnings";
 import { useOcpiStore } from "../../store";
-import { quotationFileName } from "../../lib/quotationPdf";
 import { submitQuotation } from "../../data/ocpiWrites";
-import { useQuotationDraft } from "./useQuotationDraft";
+import { useQuotationDraft, type GeneratedPapers } from "./useQuotationDraft";
+import { missingForDetailSheet } from "../../lib/fieldSpec";
 
 /**
  * Write a quotation — the same screen whether it is new or a draft being
@@ -30,7 +30,7 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
   const nav = useNavigate();
   const s = useOcpiStore();
   const q = useQuotationDraft(dealId);
-  const [pdf, setPdf] = useState<Blob | null>(null);
+  const [papers, setPapers] = useState<GeneratedPapers | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -42,6 +42,19 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
   );
   const canGenerate = q.missing.length === 0;
 
+  /** Which lines the DETAILED sheet will print blank. A warning, never a gate. */
+  const blankOnDetailSheet = useMemo(() => missingForDetailSheet(q.draft), [q.draft]);
+
+  /*
+    ⚠ 18 OF THE 28 MACHINES HAVE NO DETAILED TEMPLATE YET, and that is a state of
+      the content, not a fault in the deal. Such a machine produces the summary
+      sheet alone — the quotation still goes out, still gets a number, still goes
+      for approval. What must not happen is a salesperson discovering afterwards
+      that only one paper exists, so the machine is named here, before generating.
+  */
+  const chosenMachine = s.machineById(q.draft.machineId || null);
+  const noDetailTemplate = !!chosenMachine && !chosenMachine.hasTemplate;
+
   async function onSave() {
     const id = await q.save();
     if (!id) return;
@@ -49,9 +62,9 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
   }
 
   async function onGenerate() {
-    const blob = await q.generate();
-    if (!blob) return;
-    setPdf(blob);
+    const built = await q.generate();
+    if (!built) return;
+    setPapers(built);
     if (isNew && q.savedId) nav(`/ocpi/deals/${q.savedId}/edit`, { replace: true });
   }
 
@@ -139,6 +152,29 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
           </p>
         </Card>
       )}
+      {/*
+        ⚠ A WARNING, NEVER A BLOCK. The detail fields are optional on purpose —
+          a quotation goes out mid-negotiation, often before the warranty and
+          delivery terms are settled. What must not happen is a salesperson
+          discovering the blanks in the customer's reply, so the lines that will
+          print ruled-blank are named here, before anything is sent.
+
+        ⚠ SUPPRESSED WHEN THERE IS NO DETAILED SHEET AT ALL. "The detailed sheet
+          will print 6 blank lines" is a false statement about a machine that
+          produces no detailed sheet, and it sat directly under the notice saying
+          so — two cards contradicting each other on the same screen.
+      */}
+      {canGenerate && !noDetailTemplate && blankOnDetailSheet.length > 0 && (
+        <Card className="border-ryg-yellow/40 bg-[#FFFCF3] p-4">
+          <p className="text-[13px] font-medium text-navy">
+            The detailed sheet will print {blankOnDetailSheet.length === 1 ? "one blank line" : `${blankOnDetailSheet.length} blank lines`}
+          </p>
+          <p className="mt-1 text-[13px] text-grey">
+            {blankOnDetailSheet.join(", ")}. You can generate anyway and fill these in later — the
+            summary sheet is unaffected.
+          </p>
+        </Card>
+      )}
 
       {alreadyIssued && (
         <Card className="p-4">
@@ -150,17 +186,43 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
         </Card>
       )}
 
-      {pdf && deal && (
-        <DocumentPreview
-          blob={pdf}
-          fileName={quotationFileName(deal, deal.quotationVersionNo)}
-          title={deal.quotationNo ?? "Quotation"}
-          note={
-            deal.quotationVersionNo > 1
-              ? `Revision ${deal.quotationVersionNo - 1} · earlier versions are kept`
-              : "First version"
-          }
-          busy={q.busy}
+      {/*
+        ⚠ THE MACHINE WITH NO TEMPLATE IS NAMED, NOT REFUSED. The old order
+          confirmation step refused such a machine by name and stopped there;
+          under one form that would block 18 of 28 machines from being quoted at
+          all. Summary-only is a legal outcome, so this says which machine and
+          what the consequence is, and nothing is disabled.
+      */}
+      {noDetailTemplate && (
+        <Card className="border-ryg-yellow/40 bg-[#FFFCF3] p-4">
+          <p className="text-[13px] font-medium text-navy">
+            {chosenMachine!.name} has no detailed sheet yet
+          </p>
+          <p className="mt-1 text-[13px] text-grey">
+            Only the summary will be generated. The quotation still gets its number and still goes for
+            approval — the detailed sheet appears once somebody builds this machine's template under
+            Machines.
+          </p>
+        </Card>
+      )}
+
+      {/*
+        ⚠ BOTH PAPERS, SHOWN AS A PAIR, AND SHOWN EVERY TIME. They are one issue
+          of one document set, and a salesperson who sees only the summary will
+          send only the summary.
+
+        ⚠ NOT GATED ON `papers`, WHICH WAS THE BUG. This panel used to appear
+          only when the Generate handler had just filled a piece of component
+          state, so the documents disappeared on reload and the one chance to
+          download a quotation was the moment it was made. `IssuedPapers` reads
+          the stored files off the version row instead, and merely PREFERS the
+          freshly rendered pair when it has one.
+      */}
+      {deal && versions.length > 0 && (
+        <IssuedPapers
+          deal={deal}
+          versions={versions}
+          fresh={papers ? { summary: papers.summary, detail: papers.detail } : null}
         />
       )}
 

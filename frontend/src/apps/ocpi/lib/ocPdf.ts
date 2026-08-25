@@ -3,8 +3,9 @@ import {
   BRAND, MARGIN, contentW, loadBrandAssets, pageH, pageW, registerBrandFonts,
   setDraw, setFill, text, widthOf, wrapText,
 } from "@/shared/lib/pdfBrand";
-import { bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
+import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import { resolve, tokensFor } from "./tokens";
+import { docHeading } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection } from "../types";
 
 /**
@@ -49,6 +50,9 @@ const dmy = (iso: string | null): string => {
 const inr = (n: number | null): string =>
   n === null ? "" : `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
+const usd = (n: number | null): string =>
+  n === null ? "" : `$ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
 /** What this deal adds to the machine's standard composition. */
 export function optionalExtras(d: OcpiDeal): string[] {
   const out: string[] = [];
@@ -72,7 +76,7 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
     quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
   };
   return {
-    doc_title: machine.docTitle,
+    doc_title: docHeading(deal),
     oc_no: deal.ocNo,
     intro_text: machine.introText ? resolve(machine.introText, tokens).text : null,
     header_fields: machine.headerFields,
@@ -88,7 +92,16 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
       title: s.title,
       body: resolve(s.body ?? "", tokens).text,
     })),
+    /*
+      ⚠ THE CURRENCY AND THE RATE ARE PART OF THE MONEY, not context around it.
+        A frozen snapshot recording only rupees cannot afterwards say whether the
+        contract was struck in dollars or what it was converted at, and those are
+        the two facts a disputed total turns on.
+    */
     money: {
+      deal_value_amount: deal.dealValueAmount,
+      deal_value_currency: deal.dealValueCurrency,
+      fx_rate: deal.fxRate,
       machine_value_inr: deal.machineValueInr,
       gst_rate: deal.gstRate,
       gst_amount_inr: deal.gstAmountInr,
@@ -124,7 +137,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   const newPage = (a: LetterheadAssets): number => {
     pdf.addPage();
     drawLetterhead(pdf, a);
-    return 78;
+    return BODY_TOP;
   };
   const room = (y: number, need: number): number =>
     y + need > bodyBottom(pdf) ? newPage(letterhead) : y;
@@ -135,7 +148,8 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   // ── Title ────────────────────────────────────────────────────────────────
   setFill(pdf, BRAND.navy);
   pdf.rect(left, y, cw, 24, "F");
-  text(pdf, machine.docTitle, left + 10, y + 16.5, { size: 12, bold: true, color: BRAND.white });
+  // ⚠ THE HEADING COMES FROM THE STAGE, NOT THE MACHINE. See docHeading.
+  text(pdf, docHeading(deal), left + 10, y + 16.5, { size: 12, bold: true, color: BRAND.white });
   if (deal.ocNo) {
     text(pdf, deal.ocNo, left + cw - 10, y + 16.5, {
       size: 10, bold: true, color: BRAND.white, align: "right",
@@ -224,12 +238,34 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
     }
     y += 4;
   }
-  const rate = deal.gstRate === null ? 18 : deal.gstRate;
-  const moneyRows: [string, string, boolean][] = [
-    ["Machine Value INR", inr(deal.machineValueInr), false],
-    [`+ ${rate}% GST Value INR`, inr(deal.gstAmountInr), false],
-    ["Total Value INR", inr(deal.totalInr), true],
-  ];
+  /*
+    ⚠ THE TAX ROW IS OMITTED ON A HIGH SEAS SALE, NOT SET TO ZERO. This block
+      used to read `deal.gstRate === null ? 18 : deal.gstRate`, which printed
+      "+ 18% GST Value INR" with a blank figure beside it on exactly the deals
+      that carry no tax — the renderer "remembering" a default the data had
+      deliberately cleared. A null rate now means there is no row.
+
+    ⚠ A DOLLAR DEAL PRINTS BOTH CURRENCIES, and the rate it was converted at, so
+      the arithmetic on the paper can be checked from the paper. The rate is the
+      one frozen onto this revision, never today's.
+  */
+  const moneyRows: [string, string, boolean][] = [];
+  if (deal.dealValueCurrency === "USD") {
+    moneyRows.push(["Machine Value USD", usd(deal.dealValueAmount), false]);
+    moneyRows.push([
+      deal.fxRate === null
+        ? "Machine Value INR"
+        : `Machine Value INR (at ${deal.fxRate.toFixed(4)} per USD)`,
+      inr(deal.machineValueInr),
+      false,
+    ]);
+  } else {
+    moneyRows.push(["Machine Value INR", inr(deal.machineValueInr), false]);
+  }
+  if (deal.gstRate !== null) {
+    moneyRows.push([`+ ${deal.gstRate}% GST Value INR`, inr(deal.gstAmountInr), false]);
+  }
+  moneyRows.push(["Total Value INR", inr(deal.totalInr), true]);
   for (const [label, value, strong] of moneyRows) {
     y = room(y, 18);
     if (strong) {
@@ -305,7 +341,21 @@ export async function ocPdfBlob(input: OcDocInput): Promise<Blob> {
   return pdf.output("blob");
 }
 
+const ocBase = (deal: OcpiDeal): string =>
+  (deal.ocNo ?? `OC-DRAFT-${deal.customerName ?? "order"}`).replace(/[\\/:*?"<>|]/g, "-");
+
 export function ocFileName(deal: OcpiDeal): string {
-  const base = (deal.ocNo ?? `OC-DRAFT-${deal.customerName ?? "order"}`).replace(/[\\/:*?"<>|]/g, "-");
-  return `${base}.pdf`;
+  return `${ocBase(deal)}.pdf`;
+}
+
+/**
+ * The approved SUMMARY sheet's file name.
+ *
+ * ⚠ IT MUST DIFFER FROM `ocFileName`. Both approved papers are uploaded to the
+ *   deal's `oc/` folder with `upsert: true`, so one shared name would mean the
+ *   detailed sheet silently replaced the summary and the deal would appear to
+ *   have half a contract.
+ */
+export function ocSummaryFileName(deal: OcpiDeal): string {
+  return `${ocBase(deal)} Summary.pdf`;
 }

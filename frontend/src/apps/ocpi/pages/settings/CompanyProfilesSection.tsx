@@ -20,20 +20,20 @@ import type { OcpiCompanyProfile } from "../../types";
  *   would therefore have printed another company's bank account on the contract
  *   the customer pays against. That is not a formatting problem.
  *
- * ⚠ THE DEFAULT ROW IS THE FALLBACK, and something must always be marked
- *   default. `profileFor(companyId)` looks for the deal's own company and drops
- *   back to the default, so a company nobody has set up here still prints a real
- *   bank block rather than a blank one — the WRONG one, admittedly, which is
- *   exactly why the list below shows which companies are still unconfigured.
+ * ⚠ THIS LIST IS NOW THE GATE, NOT AN ANNOTATION. A company with no row here is
+ *   not offered on the quotation form at all (`companyOptions` in
+ *   QuotationForm.tsx), and `CustomerPicker` will not copy one onto a draft.
+ *   It used to be selectable with a warning, and the document then printed the
+ *   DEFAULT entity's bank account, CIN and registered address on a contract the
+ *   customer pays against. A warning is the wrong instrument for that: it is
+ *   read once and clicked past, and the consequence is money sent to the wrong
+ *   company. So the choice is removed rather than annotated.
  *
- * ⚠ AND THE LIST BELOW IS NO LONGER THE ONLY PLACE IT IS SAID. Nobody generating
- *   a contract is looking at Settings, so `CompanyProfileWarning`
- *   (components/SetupWarnings.tsx) now names the fallback on the quotation
- *   editor, the order-confirmation editor and the approval panel. This screen
- *   answers "what is still to set up"; that warning answers "the document I am
- *   about to send is wrong". The default row is attached to Orange O Tec Pvt Ltd
- *   (20260929122000) precisely so that warning fires on the four entities that
- *   need it rather than on all five.
+ * ⚠ THE DEFAULT ROW IS STILL THE FALLBACK, and something must always be marked
+ *   default — it covers the ~10 Tally customers with no company at all, for whom
+ *   the field is legitimately blank. `CompanyProfileWarning` also stays, for the
+ *   deals raised BEFORE this gate existed, which still carry an unconfigured
+ *   company and must say so on the editor and the approval panel.
  *
  * ⚠ THE LETTERHEAD IS A PATH, NOT AN UPLOAD, and deliberately so for now. The
  *   footer on the artwork carries a registered address and a CIN, so a second
@@ -110,8 +110,8 @@ export default function CompanyProfilesSection() {
           <h3 className="text-[15px] font-bold text-navy">Selling entities</h3>
           <p className="mt-1 max-w-2xl text-[12.5px] text-grey">
             The legal name, bank block, Ex-Works city and letterhead printed on an order
-            confirmation. Which one is used follows the customer&rsquo;s company in Tally; anything
-            without its own row here prints the default.
+            confirmation. <b className="text-navy">This list decides what may be quoted under</b> —
+            a company with no row here is not offered on the quotation form at all.
           </p>
         </div>
         {s.isAdmin && editing === null && (
@@ -123,8 +123,9 @@ export default function CompanyProfilesSection() {
 
       {unconfigured.length > 0 && (
         <p className="rounded-xl border border-ryg-amber/40 bg-page/60 p-3 text-[12.5px] text-grey">
-          <b className="text-navy">Printing the default:</b> {unconfigured.map((c) => c.name).join(", ")}.
-          A deal booked under one of these prints the default entity&rsquo;s bank account.
+          <b className="text-navy">Cannot be quoted under:</b> {unconfigured.map((c) => c.name).join(", ")}.
+          These have no bank details of their own, so the quotation form does not offer them. Add an
+          entity for each one to make it selectable.
         </p>
       )}
 

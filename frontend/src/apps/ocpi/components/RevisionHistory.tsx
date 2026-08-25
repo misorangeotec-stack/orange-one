@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import Card from "@/shared/components/ui/Card";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { revisionsOf } from "../lib/revisionDiff";
-import { dmy } from "../lib/format";
+import { useOcpiDocUrls } from "../lib/docUrls";
+import { dmy, fmtDealValue } from "../lib/format";
 import type { QuotationVersion } from "../types";
 
 /**
@@ -14,10 +15,24 @@ import type { QuotationVersion } from "../types";
  * ⚠ VERSION 1 SHOWS NO CHANGES, and says so rather than rendering an empty
  *   list. Nothing precedes it, so "no changes" would be a false statement about
  *   a first quotation; "this is where it started" is a true one.
+ *
+ * ⚠ EACH ROW CARRIES ITS OWN PRICE AND ITS OWN PAIR OF PAPERS (revision stage
+ *   D). The value, the currency and the exchange rate come off the version row,
+ *   not the deal — the deal holds only what it is worth today, so reading it
+ *   would print the final figure against every revision and make a negotiation
+ *   look like it never moved.
  */
 export default function RevisionHistory({ versions }: { versions: QuotationVersion[] }) {
   const personById = useOrgPersonById();
   const revisions = useMemo(() => revisionsOf(versions).reverse(), [versions]);
+
+  // One round trip signs every paper in the strip; the bucket is private, so an
+  // unsigned path is not a link.
+  const docPaths = useMemo(
+    () => revisions.flatMap((r) => [r.pdfPath, r.ocPdfPath].filter((p): p is string => !!p)),
+    [revisions],
+  );
+  const urls = useOcpiDocUrls(docPaths);
 
   if (revisions.length === 0) {
     return (
@@ -53,6 +68,39 @@ export default function RevisionHistory({ versions }: { versions: QuotationVersi
                   {dmy(r.generatedAt)} · {who}
                 </span>
               </div>
+
+              {(r.dealValueAmount !== null || r.pdfPath || r.ocPdfPath) && (
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+                  {r.dealValueAmount !== null && (
+                    <span className="font-semibold text-navy">
+                      {fmtDealValue(r.dealValueAmount, r.dealValueCurrency)}
+                      {r.dealValueCurrency === "USD" && r.fxRate !== null
+                        ? ` · at ${r.fxRate.toFixed(4)} per USD`
+                        : ""}
+                    </span>
+                  )}
+                  {r.pdfPath && urls[r.pdfPath] && (
+                    <a
+                      className="font-semibold text-orange hover:underline"
+                      href={urls[r.pdfPath]}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Summary
+                    </a>
+                  )}
+                  {r.ocPdfPath && urls[r.ocPdfPath] && (
+                    <a
+                      className="font-semibold text-orange hover:underline"
+                      href={urls[r.ocPdfPath]}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Detailed sheet
+                    </a>
+                  )}
+                </div>
+              )}
 
               {r.versionNo === 1 ? (
                 <p className="mt-1 text-[13px] text-grey-2">This is where the quotation started.</p>

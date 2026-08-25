@@ -143,10 +143,19 @@ export default function QuotationApprovalQueue() {
         )}
       />
 
+      {/*
+        ⚠ THE WIDEST DIALOG THERE IS, because this one holds a CONTRACT. At the
+          default width the papers were read through a column narrower than the
+          page they render — the reviewer scrolled a portrait document inside a
+          portrait dialog inside a portrait scroll, and could not take in a
+          table row without panning. Approving is the decision this module
+          exists for; it does not get the same dialog as a confirm prompt.
+      */}
       <Modal
         open={!!deciding}
         onClose={() => setDeciding(null)}
         title={deciding ? dealRef(deciding) : ""}
+        size="2xl"
         mobileFull
       >
         {deciding && (
@@ -164,7 +173,7 @@ export default function QuotationApprovalQueue() {
               </Link>{" "}
               to read every answer before deciding.
             </p>
-            <ApprovalPanel deal={deciding} />
+            <ApprovalPanel deal={deciding} inDialog />
           </div>
         )}
       </Modal>

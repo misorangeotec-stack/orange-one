@@ -7,6 +7,7 @@ import {
   OCPI_MASTERS_QK, fetchOcpiMasters, fetchLastContactFor, type OcpiParty,
 } from "../data/ocpiMasters";
 import type { QuotationDraft } from "../lib/fieldSpec";
+import { useOcpiStore } from "../store";
 
 /**
  * Pick the customer, from Tally or as a brand-new lead.
@@ -36,6 +37,7 @@ export default function CustomerPicker({
   patch: (p: Partial<QuotationDraft>) => void;
   disabled?: boolean;
 }) {
+  const s = useOcpiStore();
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -65,7 +67,13 @@ export default function CustomerPicker({
       // Cleared: this becomes a new lead. The typed name is deliberately KEPT —
       // clearing the picker is how someone converts a mis-picked customer into a
       // fresh lead, and wiping their work would punish that.
-      patch({ customerId: "", companyId: "" });
+      //
+      // ⚠ THE SELLING ENTITY IS KEPT TOO, now that it is a field the salesperson
+      //   can set. It used to be cleared because only a Tally party could supply
+      //   it, so a cleared party meant a meaningless value; today a new lead is
+      //   exactly the case where somebody has to choose the entity by hand, and
+      //   clearing it would throw that choice away.
+      patch({ customerId: "" });
       return;
     }
 
@@ -76,8 +84,20 @@ export default function CustomerPicker({
     const next: Partial<QuotationDraft> = {
       customerId: party.id,
       customerName: party.name,
-      companyId: party.companyId ?? "",
     };
+    // The party's company is the DEFAULT selling entity, not the last word — the
+    // form now shows it and lets it be changed. Only overwrite when Tally has one:
+    // `?? ""` used to blank a deliberate choice for the ~10 parties it does not.
+    //
+    // ⚠ AND ONLY WHEN THAT COMPANY IS A CONFIGURED SELLING ENTITY. Four of the
+    //   five Tally companies have no profile, so copying one here would put a
+    //   value on the draft that the Selling entity field no longer offers —
+    //   the reader would see a company marked "not set up" that they never
+    //   chose. Left blank instead, which the form already explains, naming the
+    //   default entity it will print.
+    if (party.companyId && s.companyProfiles.some((p) => p.companyId === party.companyId && p.active)) {
+      next.companyId = party.companyId;
+    }
     if (!draft.gstNo && party.gstin) {
       next.gstNo = party.gstin;
       next.gstAvailable = true;
