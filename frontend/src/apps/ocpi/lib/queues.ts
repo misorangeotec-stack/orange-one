@@ -58,6 +58,8 @@ export function stepCompletedIso(d: OcpiDeal, step: StepKey): string | null {
     case "oc_approval":        return d.ocaAt;
     case "customer_signoff":   return d.csAt;
     case "management_signoff": return d.msAt;
+    case "finance_handover":   return d.fhAt;
+    case "finance_receipt":    return d.frAt;
     default:                   return null;
   }
 }
@@ -88,6 +90,8 @@ export function stepActorId(d: OcpiDeal, step: StepKey): string | null {
     case "oc_approval":        return d.ocaBy;
     case "customer_signoff":   return d.csBy;
     case "management_signoff": return d.msBy;
+    case "finance_handover":   return d.fhBy;
+    case "finance_receipt":    return d.frBy;
     default:                   return null;
   }
 }

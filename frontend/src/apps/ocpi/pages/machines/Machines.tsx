@@ -96,8 +96,9 @@ export default function Machines() {
       <div>
         <h1 className="text-[20px] font-bold text-navy">Machines</h1>
         <p className="mt-0.5 text-[13.5px] text-grey-2">
-          Every model that can be quoted, and the order-confirmation template behind it. A machine
-          with no template can still be quoted — it is stopped at the order-confirmation step.
+          Every model that can be quoted, and the detailed sheet&rsquo;s template behind it. A
+          machine with no template can still be quoted and still goes all the way through — it
+          simply issues the summary sheet alone, and the salesperson is told so before they send it.
         </p>
       </div>
 

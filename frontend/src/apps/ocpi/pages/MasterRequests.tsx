@@ -202,9 +202,9 @@ export default function MasterRequests() {
 
           {acting?.masterType === "machine" && (
             <p className="rounded-xl border border-line bg-page/60 p-3 text-[12.5px] text-grey">
-              Approving adds the model to the quotation dropdown straight away. Its
-              order-confirmation template starts empty, so the deal will stop at the order
-              confirmation until somebody builds it under Machines.
+              Approving adds the model to the quotation dropdown straight away. Its detailed
+              sheet&rsquo;s template starts empty, so deals on this machine issue the summary sheet
+              alone until somebody builds it under Machines. Nothing is blocked in the meantime.
             </p>
           )}
 

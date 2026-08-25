@@ -97,6 +97,11 @@ export interface OcpiConfig {
   quotationValidityDays: number;
   defaultGstRate: number;
   quotationSeries: OcpiQuotationSeries;
+  /**
+   * Keyed by financial year, because the OC counter restarts each April and
+   * confirming 2627 says nothing about 2728. An absent year is unconfirmed.
+   */
+  ocSeries: Record<string, OcpiQuotationSeries>;
 }
 
 export interface OcpiData {
@@ -241,6 +246,11 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   dealValueCurrency: r.deal_value_currency ?? null,
   dealValueAmount: num(r.deal_value_amount),
+  fxRate: num(r.fx_rate),
+  fxRateAt: r.fx_rate_at ?? null,
+  fxRateSource: r.fx_rate_source ?? null,
+  fxRateOverridden: r.fx_rate_overridden ?? null,
+  dealValueInr: num(r.deal_value_inr),
   paymentType: r.payment_type ?? null,
   paymentTerms: r.payment_terms ?? null,
   deliveryDate: r.delivery_date ?? null,
@@ -315,6 +325,10 @@ const mapDeal = (r: any): OcpiDeal => ({
   msDocPages: Array.isArray(r.ms_doc_pages) ? (r.ms_doc_pages as OcpiDoc[]) : [],
   msAt: r.ms_at ?? null,
   msBy: r.ms_by ?? null,
+  fhAt: r.fh_at ?? null,
+  fhBy: r.fh_by ?? null,
+  frAt: r.fr_at ?? null,
+  frBy: r.fr_by ?? null,
 
   rejectedAt: r.rejected_at ?? null,
   rejectStage: r.reject_stage ?? null,
@@ -330,6 +344,7 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   ocDocumentPayload: r.oc_document_payload ?? null,
   ocPdfPath: r.oc_pdf_path ?? null,
+  ocSummaryPdfPath: r.oc_summary_pdf_path ?? null,
 
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
@@ -344,7 +359,12 @@ const mapVersion = (r: any): QuotationVersion => ({
   versionNo: r.version_no,
   fieldPayload: r.field_payload ?? {},
   documentPayload: r.document_payload ?? {},
+  ocDocumentPayload: r.oc_document_payload ?? {},
   pdfPath: r.pdf_path ?? null,
+  ocPdfPath: r.oc_pdf_path ?? null,
+  dealValueAmount: num(r.deal_value_amount),
+  dealValueCurrency: r.deal_value_currency ?? null,
+  fxRate: num(r.fx_rate),
   generatedAt: r.generated_at,
   generatedBy: r.generated_by ?? null,
 });
@@ -399,6 +419,21 @@ export async function fetchOcpiData(): Promise<OcpiData> {
         confirmedAt: cfg.get("quotation_series")?.confirmed_at ?? null,
         confirmedBy: cfg.get("quotation_series")?.confirmed_by ?? null,
       },
+      // ⚠ KEYED BY FINANCIAL YEAR, unlike the quotation series. The OC counter
+      //   restarts each April, so confirming 2627 must NOT silence the warning
+      //   the following April when 2728 starts at zero against a paper series
+      //   that has kept running.
+      ocSeries: Object.fromEntries(
+        Object.entries((cfg.get("oc_series") ?? {}) as Record<string, any>).map(([fy, v]) => [
+          fy,
+          {
+            confirmed: v?.confirmed === true,
+            confirmedAtValue: v?.confirmed_at_value ?? null,
+            confirmedAt: v?.confirmed_at ?? null,
+            confirmedBy: v?.confirmed_by ?? null,
+          },
+        ]),
+      ),
     },
     stepSla: cfg.get("step_sla") ?? null,
     companyProfiles: profileRows.map(mapCompanyProfile),
@@ -450,6 +485,25 @@ export async function fetchQuotationCounter(): Promise<number | null> {
     .from("fms_ocpi_counters")
     .select("last_value")
     .eq("scope", "quotation")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? (data.last_value as number) : null;
+}
+
+/**
+ * Where the ORDER-CONFIRMATION series stands, for one financial year.
+ *
+ * ⚠ THE SCOPE CARRIES THE YEAR — `oc:2627` — because this counter restarts each
+ *   April while the quotation counter runs on forever. A year nobody has issued
+ *   under yet has no row, and null here means "nothing issued", not "unknown".
+ *
+ * Same admin-only RLS and same freshness reasoning as the quotation counter.
+ */
+export async function fetchOcCounter(fy: string): Promise<number | null> {
+  const { data, error } = await db
+    .from("fms_ocpi_counters")
+    .select("last_value")
+    .eq("scope", `oc:${fy}`)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ? (data.last_value as number) : null;

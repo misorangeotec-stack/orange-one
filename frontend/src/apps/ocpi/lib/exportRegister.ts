@@ -9,7 +9,7 @@ import type { OcpiDeal, OcpiMachine } from "../types";
  *
  * ⚠ ONE ROW PER DEAL, and unlike Order to Dispatch's register that is genuinely
  *   correct rather than a simplification: a deal is one model, one customer and
- *   one order confirmation from first draft to countersignature. Quotation
+ *   one order confirmation from first draft to Finance receipt. Quotation
  *   REVISIONS are the one thing that repeats, and they are summarised as a count
  *   plus the date of the latest — the full before/after trail is the revision
  *   history on the deal, which is a reading task, not a spreadsheet column.
@@ -58,6 +58,12 @@ export function exportDealRegister(
     // purpose, so the numeric column can be summed without lying.
     { header: "Currency", width: 9, value: (d) => d.dealValueCurrency ?? "" },
     { header: "Deal value", width: 15, value: (d) => d.dealValueAmount ?? "" },
+    // A dollar deal is contracted in rupees, at a rate frozen onto the revision
+    // it was issued under. Without both columns the sheet cannot reproduce its
+    // own arithmetic, and somebody re-converting at today's rate gets a
+    // different total from the one on the customer's contract.
+    { header: "USD rate", width: 11, value: (d) => d.fxRate ?? "" },
+    { header: "Deal value (INR)", width: 16, value: (d) => d.dealValueInr ?? "" },
     { header: "Machine value (INR)", width: 17, value: (d) => d.machineValueInr ?? "" },
     { header: "GST (INR)", width: 14, value: (d) => d.gstAmountInr ?? "" },
     { header: "Total (INR)", width: 15, value: (d) => d.totalInr ?? "" },
@@ -69,10 +75,20 @@ export function exportDealRegister(
     { header: "Sent back", width: 10, value: (d) => d.reworkCount },
     { header: "Sent for approval", width: 15, value: (d) => dmy(d.qsAt) },
     { header: "Quotation approved", width: 16, value: (d) => dmy(d.qaAt) },
-    { header: "OC submitted", width: 14, value: (d) => dmy(d.ocAt) },
-    { header: "OC confirmed", width: 14, value: (d) => dmy(d.ocaAt) },
+    // ⚠ "OC issued" IS THE APPROVAL now, not a later step. The column kept its
+    //   underlying field and changed its name, because the field changed meaning
+    //   at the stage-E cutover and a header saying "OC submitted" would date a
+    //   step that no longer runs.
+    { header: "OC issued", width: 14, value: (d) => dmy(d.ocAt) },
+    { header: "OC confirmed (retired step)", width: 22, value: (d) => dmy(d.ocaAt) },
     { header: "Customer signed", width: 14, value: (d) => dmy(d.csAt) },
     { header: "Countersigned", width: 14, value: (d) => dmy(d.msAt) },
+    // Where the signed paper actually went — the question the old register could
+    // not answer at all, because countersigning closed the deal.
+    { header: "Handed to Finance", width: 16, value: (d) => dmy(d.fhAt) },
+    { header: "Handed over by", width: 20, value: (d) => deps.personName(d.fhBy) },
+    { header: "Finance received", width: 16, value: (d) => dmy(d.frAt) },
+    { header: "Received by", width: 20, value: (d) => deps.personName(d.frBy) },
     {
       header: "Signed pages",
       width: 12,
@@ -96,8 +112,10 @@ export function exportDealRegister(
     rows: deals,
     filters,
     notes: [
-      "One row per deal, from the first draft to the countersigned order confirmation.",
-      "Deal value is the figure quoted to the customer and may be in USD — read the Currency column beside it. Machine value, GST and Total are always rupees, and are what the order confirmation printed.",
+      "One row per deal, from the first draft to Finance confirming they have the signed contract.",
+      "Deal value is the figure quoted to the customer and may be in USD — read the Currency column beside it. On a dollar deal, USD rate and Deal value (INR) are the conversion the contract was actually issued at, frozen at that revision. Machine value, GST and Total are always rupees, and are what the order confirmation printed.",
+      "Handed to Finance and Finance received are the two halves of the handover; they are always different people, because one person cannot record both.",
+      "OC confirmed dates a step that was retired when the order confirmation was merged into the quotation. It is populated only on deals raised before that change.",
       "Revisions counts generated quotation versions; the number itself never changes across them. Sent back counts times a step was returned for changes.",
       "Signed pages is the total scanned pages held for both signatures — a contract with fewer pages than the printed document is worth opening.",
       "Drafts are included only when the person running the export raised them; a draft is private to its author.",

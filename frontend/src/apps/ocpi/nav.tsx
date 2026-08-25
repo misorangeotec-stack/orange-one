@@ -27,10 +27,15 @@ const ic = {
  */
 export const QUEUE_PATH: Record<QueueStep, string> = {
   quotation_approval: "approve-quotation",
-  order_confirmation: "order-confirmation",
-  oc_approval: "approve-oc",
   customer_signoff: "customer-signature",
   management_signoff: "management-signature",
+  finance_handover: "finance-handover",
+  finance_receipt: "finance-receipt",
+  // ⚠ RETIRED, AND STILL MAPPED. The record is exhaustive over QueueStep, and
+  //   these two keys still exist so a historical deal can be counted. No route
+  //   is mounted for either path and the sidebar never offers them.
+  order_confirmation: "order-confirmation",
+  oc_approval: "approve-oc",
 };
 
 export function buildOcpiNav(opts: {
@@ -57,8 +62,11 @@ export function buildOcpiNav(opts: {
     nav.push({ label: "New Quotation", to: `${B}/new`, icon: ic.add, section: "Actions" });
   }
 
+  // ⚠ A RETIRED STEP IS NEVER OFFERED. Deals parked at one are still counted
+  //   everywhere else — the Control Center, the deal list, the rail — but the
+  //   sidebar must not invite anybody to work a queue the process no longer has.
   let queueUsed = false;
-  for (const st of STEPS.filter((x) => !x.noQueue)) {
+  for (const st of STEPS.filter((x) => !x.noQueue && !x.retired)) {
     const step = st.key as QueueStep;
     if (!opts.queues[step]) continue;
     nav.push({

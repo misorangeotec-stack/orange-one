@@ -3,6 +3,8 @@ import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import QuotationNumberingSection from "./QuotationNumberingSection";
+import OcNumberingSection from "./OcNumberingSection";
+import QuotationValiditySection from "./QuotationValiditySection";
 import CompanyProfilesSection from "./CompanyProfilesSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 
@@ -34,6 +36,8 @@ export default function Setup() {
       <StepDueDatesSection />
       <MasterOwnersSection />
       <QuotationNumberingSection />
+      <OcNumberingSection />
+      <QuotationValiditySection />
       <CompanyProfilesSection />
       <EmailNotificationsSection />
     </div>

@@ -40,9 +40,48 @@ import type { OcpiCompanyProfile } from "../types";
 const LOGO = { x: 0.581, y: 0.006, w: 0.379, h: 0.090 };
 const FOOTER = { x: 0, y: 0.552, w: 1, h: 0.448 };
 
-/** Where the body may be drawn without colliding with the letterhead. */
+/**
+ * Where the footer artwork's INK begins, as a fraction of the footer image.
+ *
+ * ⚠ MEASURED OFF THE PNG, NOT GUESSED. The footer band is 806×500 and is mostly
+ *   a faint watermark; the first row carrying dark pixels — the top of the
+ *   registered-address block — is row 360, so 360/500. Everything above that is
+ *   safe to draw over, everything below is the address, the CIN and the contact
+ *   bar. If the artwork is ever re-cut, re-measure this: scan the PNG for the
+ *   first row with pixels below ~55% brightness.
+ */
+const FOOTER_INK_TOP = 0.72;
+
+/** A visual gap between the last line of body text and the address block. */
+const FOOTER_CLEARANCE = 0.015;
+
+/**
+ * Where the body may be drawn without colliding with the letterhead.
+ *
+ * ⚠ `BODY_BOTTOM_FRACTION` WAS 0.925 AND THE ADDRESS BLOCK STARTS AT 0.875, so
+ *   for every page the renderer believed it had another 5% of the sheet to fill
+ *   after the footer text had already begun. The paragraph that fitted in that
+ *   gap printed straight through the registered address and the CIN — reported
+ *   on a live detailed sheet, on the paragraph about component compatibility.
+ *   Both `room()` in ocPdf and the four `bodyBottom` checks in quotationPdf read
+ *   this one number, so the pagination logic never needed touching: it was
+ *   obeying a limit that was in the wrong place.
+ *
+ * ⚠ DERIVED, NOT RE-TYPED. Writing 0.86 here would be a second copy of the
+ *   geometry that drifts the moment FOOTER moves.
+ */
+export const BODY_BOTTOM_FRACTION =
+  FOOTER.y + FOOTER_INK_TOP * FOOTER.h - FOOTER_CLEARANCE;
+
+/**
+ * The first y a CONTINUATION page may draw at.
+ *
+ * ⚠ THIS IS EXPORTED BECAUSE IT MUST BE USED, and for a long time it was not:
+ *   both renderers hardcoded their own smaller numbers (70 and 78) in `newPage`,
+ *   which sit ABOVE the wordmark's lower edge at 0.096 of the page — about 81pt
+ *   on A4. A full-width table on page two therefore started inside the logo.
+ */
 export const BODY_TOP = 92;
-export const BODY_BOTTOM_FRACTION = 0.925;
 
 export interface LetterheadAssets {
   logo: string;

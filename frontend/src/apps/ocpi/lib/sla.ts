@@ -17,11 +17,6 @@ import { STEPS, type StepKey } from "./steps";
  *   right for an approval somebody can do from their phone, and wrong for two of
  *   these steps:
  *
- *     order_confirmation  2 days — part B is a dozen commercial terms, several
- *                                  of which the salesperson has to go and
- *                                  confirm with the customer. A one-day target
- *                                  would mark most of them late while somebody
- *                                  was doing the job properly.
  *     customer_signoff    7 days — this one is NOT OURS TO HURRY. The document
  *                                  is printed, carried or couriered to a
  *                                  customer, signed by whoever signs, and
@@ -40,12 +35,29 @@ import { STEPS, type StepKey } from "./steps";
 export type StepSla = StepSlaBase<StepKey>;
 export type StepSlaMap = StepSlaMapBase<StepKey>;
 
+/**
+ * ⚠ EVERY NON-ORIGIN STEP NAMES ITS ANCHOR EXPLICITLY, and that is load-bearing
+ *   rather than tidy. The shared model derives a default anchor from ARRAY
+ *   POSITION, so retiring a step would otherwise silently re-anchor whatever
+ *   followed it — `customer_signoff` would start counting from a step nothing
+ *   reaches, and the whole signature half of the queue would compute its due
+ *   dates from a timestamp that is never stamped.
+ */
 const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   quotation_approval: { anchor: "quotation", days: 1 },
+  // ⚠ RE-ANCHORED at the stage-F cutover: was `oc_approval`, a step that no
+  //   longer completes. The Directors' approval of the quotation is now what
+  //   puts the contract in the salesperson's hands.
+  customer_signoff: { anchor: "quotation_approval", days: 7 },
+  management_signoff: { anchor: "customer_signoff", days: 1 },
+  // Carrying a signed contract to the Finance desk, and Finance saying they have
+  // it. Both are a day's work at most; neither is anybody's negotiation.
+  finance_handover: { anchor: "management_signoff", days: 1 },
+  finance_receipt: { anchor: "finance_handover", days: 1 },
+  // Retired, and still anchored: a deal parked at one of these must keep a due
+  // date rather than suddenly reading as untimed.
   order_confirmation: { anchor: "quotation_approval", days: 2 },
   oc_approval: { anchor: "order_confirmation", days: 1 },
-  customer_signoff: { anchor: "oc_approval", days: 7 },
-  management_signoff: { anchor: "customer_signoff", days: 1 },
 };
 
 const model = createStepSlaModel<StepKey>(STEPS, OVERRIDES);

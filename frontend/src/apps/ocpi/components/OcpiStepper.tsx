@@ -4,7 +4,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../store";
 import { stepActorId, stepCompletedIso } from "../lib/queues";
 import { dmy } from "../lib/format";
-import type { StepKey } from "../lib/steps";
+import { isRetiredStep, type StepKey } from "../lib/steps";
 import { STATUS_STEP, type OcpiDeal, type OcpiStatus } from "../types";
 
 /**
@@ -22,17 +22,64 @@ import { STATUS_STEP, type OcpiDeal, type OcpiStatus } from "../types";
  *   negotiation, so leaving it off would make the rail start at an approval for
  *   a document nobody is shown the author of.
  */
-const STAGES: { key: string; label: string; step: StepKey | null }[] = [
+type Stage = { key: string; label: string; step: StepKey | null };
+
+/** The chain a deal raised today travels. */
+const LIVE_STAGES: Stage[] = [
   { key: "quotation",          label: "Quotation",            step: "quotation" },
   { key: "quotation_approval", label: "Approve Quotation",    step: "quotation_approval" },
-  { key: "order_confirmation", label: "Order Confirmation",   step: "order_confirmation" },
-  { key: "oc_approval",        label: "Approve OC",           step: "oc_approval" },
   { key: "customer_signoff",   label: "Customer Signature",   step: "customer_signoff" },
   { key: "management_signoff", label: "Management Signature", step: "management_signoff" },
+  { key: "finance_handover",   label: "Hand Over to Finance", step: "finance_handover" },
+  { key: "finance_receipt",    label: "Finance Receipt",      step: "finance_receipt" },
   { key: "closed",             label: "Closed",               step: null },
 ];
 
-const idxOfStep = (step: StepKey): number => STAGES.findIndex((s) => s.step === step);
+/** The two steps the stage-F cutover removed, in the place they used to occupy. */
+const RETIRED_STAGES: Stage[] = [
+  { key: "order_confirmation", label: "Order Confirmation", step: "order_confirmation" },
+  { key: "oc_approval",        label: "Approve OC",         step: "oc_approval" },
+];
+
+/**
+ * Did this deal travel the OLD chain?
+ *
+ * ⚠ NOT ANSWERED FROM `oc_at`, which would be wrong now. Since stage E the order
+ *   confirmation is issued at the Directors' approval, so `oc_at` is stamped on
+ *   every new deal and would report all of them as historical. `oca_at` is only
+ *   ever written by fms_ocpi_decide_oc, the retired gate, so it is the honest
+ *   marker — together with a deal actually parked at, held from, or bounced back
+ *   from one of the retired steps.
+ */
+function tookOldPath(d: OcpiDeal): boolean {
+  if (d.ocaAt) return true;
+  const retiredStatus = (st: string | null): boolean =>
+    st === "awaiting_order_confirmation" || st === "awaiting_oc_approval";
+  return (
+    retiredStatus(d.status) ||
+    retiredStatus(d.holdFromStatus) ||
+    isRetiredStep(d.reworkStage ?? "") ||
+    isRetiredStep(d.rejectStage ?? "")
+  );
+}
+
+/**
+ * The rail THIS deal should draw.
+ *
+ * ⚠ A NEW DEAL IS NOT SHOWN TWO STEPS IT WILL NEVER VISIT, and a historical one
+ *   is not shown a rail that omits where it is standing. Building the nodes from
+ *   the deal rather than from a single constant is what lets both be true; a
+ *   fixed array would have to be wrong for one of them.
+ */
+function stagesFor(d: OcpiDeal): Stage[] {
+  if (!tookOldPath(d)) return LIVE_STAGES;
+  const out = [...LIVE_STAGES];
+  out.splice(2, 0, ...RETIRED_STAGES);
+  return out;
+}
+
+const idxOfStep = (stages: Stage[], step: StepKey): number =>
+  stages.findIndex((s) => s.step === step);
 
 /**
  * Which node the deal is sitting on.
@@ -48,36 +95,36 @@ const idxOfStep = (step: StepKey): number => STAGES.findIndex((s) => s.step === 
  *   stage string this build does not recognise, the honest answer is the first
  *   step with nothing stamped on it.
  */
-function activeIndex(d: OcpiDeal): number {
-  if (d.status === "closed") return STAGES.length - 1;
+function activeIndex(d: OcpiDeal, stages: Stage[]): number {
+  if (d.status === "closed") return stages.length - 1;
   if (d.status === "draft") return 0;
 
   const live = STATUS_STEP[d.status];
-  if (live) return idxOfStep(live);
+  if (live) return idxOfStep(stages, live);
 
   if (d.status === "on_hold" && d.holdFromStatus) {
     const held = STATUS_STEP[d.holdFromStatus as OcpiStatus];
-    if (held) return idxOfStep(held);
+    if (held) return idxOfStep(stages, held);
   }
   const stamped = d.status === "rework" ? d.reworkStage : d.status === "rejected" ? d.rejectStage : null;
   if (stamped) {
-    const i = idxOfStep(stamped as StepKey);
+    const i = idxOfStep(stages, stamped as StepKey);
     if (i >= 0) return i;
   }
 
   // Nothing recorded: the first step that never completed. Floored at 0 and
   // capped below the Closed node, which only a closed deal may sit on.
-  const first = STAGES.findIndex((s) => s.step !== null && !stepCompletedIso(d, s.step));
-  return first < 0 ? STAGES.length - 2 : first;
+  const first = stages.findIndex((s) => s.step !== null && !stepCompletedIso(d, s.step));
+  return first < 0 ? stages.length - 2 : first;
 }
 
 /**
  * Statuses in which the deal is not moving, and the rail should say so.
  *
- * ⚠ `rework` IS UNREACHABLE TODAY and is listed anyway. Both approval RPCs send a
+ * ⚠ `rework` IS UNREACHABLE TODAY and is listed anyway. The approval RPC sends a
  *   returned deal back to a LIVE status — `fms_ocpi_decide_quotation` sets
- *   `draft`, `fms_ocpi_decide_oc` sets `awaiting_order_confirmation` — and record
- *   the bounce in `rework_stage` / `rework_at` / `rework_count` instead. So
+ *   `draft` — and records the bounce in `rework_stage` / `rework_at` /
+ *   `rework_count` instead. So
  *   nothing in the module can currently produce this status, even though it is a
  *   legal value in the deals CHECK and several screens test for it. Do not
  *   conclude the rail is broken because you cannot make this branch fire; the
@@ -91,9 +138,17 @@ const HALTED: Partial<Record<OcpiStatus, string>> = {
   cancelled: "Cancelled",
 };
 
-/** The step a deal was last returned from, in the words the rail uses. */
+/**
+ * The step a deal was last returned from, in the words the rail uses.
+ *
+ * ⚠ THE NULL CHECK IS LOAD-BEARING, not defensive. The Closed node carries
+ *   `step: null`, so a lookup for a deal with no recorded rework stage used to
+ *   match it and the chip read "sent back from Closed" — a step nothing is ever
+ *   returned from, on a deal that had been bounced from an approval.
+ */
 const STAGE_LABEL = (stage: string | null): string =>
-  STAGES.find((s) => s.step === stage)?.label ?? "an approval";
+  (stage ? [...LIVE_STAGES, ...RETIRED_STAGES].find((s) => s.step === stage)?.label : null) ??
+  "an approval";
 
 /**
  * The horizontal lifecycle rail for one deal — the same rail Order to Dispatch,
@@ -118,14 +173,15 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
   const s = useOcpiStore();
   const personById = useOrgPersonById();
 
-  const active = activeIndex(deal);
+  const stages = useMemo(() => stagesFor(deal), [deal]);
+  const active = activeIndex(deal, stages);
   const finished = deal.status === "closed";
   const haltedLabel = HALTED[deal.status];
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const name = (id: string | null): string | null => personById(id)?.name ?? null;
 
-    return STAGES.map((st, i) => {
+    return stages.map((st, i) => {
       if (!st.step) {
         // Closed carries no owners and no caption — nobody is assigned to a deal
         // being over.
@@ -162,7 +218,7 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
     // result), so it is deliberately not a dependency — including it would make
     // this memo run every render and defeat the point.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deal, active, finished, s.stepOwners]);
+  }, [deal, stages, active, finished, s.stepOwners]);
 
   return (
     <div className="space-y-2.5">

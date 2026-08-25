@@ -12,7 +12,12 @@ import { dmy } from "../lib/format";
 import type { OcpiDeal } from "../types";
 
 /**
- * The countersignature — the last act, and the one that closes the deal.
+ * The countersignature — and the moment the contract starts its way to Finance.
+ *
+ * ⚠ IT NO LONGER CLOSES THE DEAL (revision stage F). Countersigning used to be
+ *   the end of the process, which recorded that the contract had been signed and
+ *   nothing at all about where the paper then went. It now hands the deal to
+ *   the Finance handover step, and only Finance confirming receipt completes it.
  *
  * ⚠ WHAT THE CUSTOMER SIGNED IS SHOWN FIRST, and the approved original beneath
  *   it. Countersigning without seeing both is signing on trust: the whole value
@@ -94,10 +99,10 @@ export default function ManagementSignPanel({ deal }: { deal: OcpiDeal }) {
       {mayAct ? (
         <Card className="space-y-3 p-5">
           <div>
-            <h2 className="text-[15px] font-bold text-navy">Countersign and close</h2>
+            <h2 className="text-[15px] font-bold text-navy">Countersign</h2>
             <p className="mt-0.5 text-[13.5px] text-grey-2">
-              Sign the printed copy, photograph it, and file it here. That completes the
-              deal and tells the salesperson.
+              Sign the printed copy, photograph it, and file it here. The contract then has to
+              reach Finance — filing it asks for that handover to be recorded.
             </p>
           </div>
 
@@ -125,7 +130,7 @@ export default function ManagementSignPanel({ deal }: { deal: OcpiDeal }) {
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void sign()} disabled={!!busy || pages.length === 0}>
-              {busy === "sign" ? "Filing…" : "Countersign and close"}
+              {busy === "sign" ? "Filing…" : "Countersign and send to Finance"}
             </Button>
             <Button variant="ghost" onClick={() => void sendBack()} disabled={!!busy}>
               {busy === "return" ? "Sending back…" : "Send the signed copy back"}

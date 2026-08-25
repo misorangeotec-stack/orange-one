@@ -12,6 +12,19 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked ·
 
 ---
 
+> # ⚠ READ THIS FIRST — the chain is changing (24-Aug-2026)
+>
+> **Phases 0–9d below describe what was BUILT. They are no longer the target.** A second round of
+> client requirements folds the order confirmation into the quotation, changes the step chain, and
+> adds two steps after the countersignature. Tracked as **OCPI-2** in `WORKLIST.md`; the live
+> checklist is **[The revision · stages 0–H](#the-revision--stages-0h)** at the foot of this file.
+>
+> Plan of record: `C:\Users\Admin\.claude\plans\now-there-is-a-memoized-mccarthy.md`
+> Client-facing flow: https://claude.ai/code/artifact/bd77ceb1-a5f5-46fa-a37e-5f51977b6b0c
+>
+> **All pricing is phase 2** — no price master, no deviation limit, no price approval. Do not build
+> `fms_ocpi_price_*`; earlier drafts specified it and it is withdrawn.
+
 ## Status at a glance
 
 | Phase | What | State |
@@ -570,3 +583,1050 @@ silently invisible. Do not conclude the rail is broken because you cannot make t
 - [x] Moved to `docs/ocpi/ms-form-questions.json` (decoded to real JSON — the 47-question spec with branching)
 
 - [x] Deleted `ms-form-definition.json` and the phase-1 screenshot from the repo root
+
+---
+
+## Test data · 24-Aug-2026
+
+**20 seeded deals put a row at every stage of the chain**, because the module was live but almost
+empty (8 drafts, one quotation waiting) and the queues, the dashboard tiles, the Control Center and
+the register all rendered as empty states that could not be judged. Every one was raised and walked
+down the chain **through the real RPCs**, acting as real users (Yash raises, Karan approves the
+quotation and countersigns, Shweta confirms the OC), so the numbers, stamps, activity rows and
+notifications are the ones the app itself would have written — not hand-set columns.
+
+| Stage | Deals |
+|---|---|
+| `draft` (7 old + Gokul, returned by the approver) | 8 |
+| `awaiting_quotation_approval` (+ 1 pre-existing) | 3 |
+| `awaiting_order_confirmation` | 4 |
+| `awaiting_oc_approval` | 2 |
+| `awaiting_customer_sign` | 3 |
+| `awaiting_management_sign` | 2 |
+| `closed` | 2 |
+| `rejected` (one at each gate) | 2 |
+| `on_hold` · `cancelled` | 1 · 1 |
+
+Also exercised: both rework loops (Suryodaya's quotation returned then revised to Rev 1; Vardhman's
+OC returned then resubmitted), the management signature return (Ravi Kiran), a USD deal on high seas
+(Hariom), three deals booked to the Noida entity so the **wrong-entity warning** fires, and one deal
+on a machine with **no order-confirmation template** (Rangoli / K64) so the OC step's refusal is
+visible. Stamps were then backdated so the SLA colours have a real spread — roughly half of each
+queue overdue.
+
+- **The handle is `customer_name like 'ZZ TEST%'`**, and `remarks` also carries
+  `DUMMY TEST RECORD - safe to delete`.
+- **Twelve real files sit in `fms-ocpi-docs`** behind the customer-signed and countersigned copies
+  (10 PDFs, 2 PNGs) — a signature is the one artifact the module cannot re-render, so a path with
+  no object behind it would render as "this page could not be opened".
+- **Teardown:** storage first, then SQL — scripts in the session scratchpad
+  (`SOP/ocpi-test-data/`, gitignored — see its README). `activity` and `notifications`
+  have no FK, so they must be deleted by `entity_id` before the deals.
+- **⚠ THE COUNTERS DO NOT COME BACK.** The seed burned **QT-M0027…QT-M0046** and
+  **OTPL/OC/2627/0001…0011**. Deleting the deals does not return them, and
+  `fms_ocpi_set_quotation_series` is forward-only by design, so the quotation series can only be
+  lowered from SQL. After teardown, reset `oc:2627` to zero and set the quotation counter to the last
+  number really issued, then confirm it in Settings → Quotation numbering.
+
+### Found while seeding
+
+- [ ] **`status = 'rework'` is unreachable.** It is in the table's CHECK, in `OPEN_STATUSES`, and
+      `fms_ocpi_save_oc_draft` / `fms_ocpi_submit_oc` both accept it — but no RPC ever sets it.
+      `decide_quotation` rework lands on `draft`, `decide_oc` rework lands on
+      `awaiting_order_confirmation`, and `return_signature` lands on `awaiting_customer_sign`. So it
+      is the one status with no row in the seed, and either the value is dead and should be dropped
+      from `OPEN_STATUSES`, or a path was meant to reach it and does not.
+
+---
+
+# The revision · stages 0–H
+
+*Raised 24-Aug-2026. Tracked as **OCPI-2** in `WORKLIST.md`. Plan of record:
+`C:\Users\Admin\.claude\plans\now-there-is-a-memoized-mccarthy.md`.*
+
+**What changes:** one form instead of two; both papers generated together headed ORDER QUOTATION and
+re-headed ORDER CONFIRMATION when the Directors approve (which is also when the OC number mints);
+Sections B and C mandatory; High Seas / Others driving currency and GST; dollar deals showing both
+currencies on a live overridable rate; the master form's remark boxes gathered as Special remarks;
+every revision keeping its own value and pair of PDFs; and two new steps after the countersignature.
+
+**What does NOT change:** the customer-signature → countersignature loop, and the price — the
+salesperson still types it. **All pricing is phase 2.**
+
+Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked · `[-]` dropped
+
+## Status at a glance — the revision
+
+| Stage | What | Gate | State |
+|---|---|---|---|
+| 0 | Track it — WORKLIST + this file | — | `[x]` done 24-Aug-2026 |
+| A | SQL foundations | build green | `[x]` done 24-Aug-2026 |
+| B | The merged form | build green + form walk | `[x]` done 24-Aug-2026 |
+| C | Commercial terms, currency, GST, FX | build green + High Seas walk | `[x]` done 24-Aug-2026 |
+| D | Both papers, one set | build green + 2 PDFs stored | `[x]` done 24-Aug-2026 |
+| E | The conversion + print gating | build green + **non-admin Director test** | `[x]` done 24-Aug-2026 |
+| F | The chain — cutover | build green + full walk | `[x]` done 25-Aug-2026 |
+| G | Round-out | build green | `[x]` done 25-Aug-2026 |
+| H | Teardown + go-live | counters correct | `[x]` done 25-Aug-2026 |
+
+**Gate for every stage:** `cd frontend && npm run build` green (tsc strict; there is no test runner).
+
+---
+
+## Stage 0 · Track it `[x]`
+- [x] `WORKLIST.md` — **OCPI-2** added, `[~]`, cross-referencing OCPI-1 whose "Before it goes live"
+      items are explicitly **not** superseded
+- [x] `OCPI.md` — the READ THIS FIRST banner at the top, and this section
+
+## Stage A · SQL foundations `[x]` — applied & rollback rehearsed 24-Aug-2026
+- [x] Migration `…_add_fms_ocpi_merged_form.sql` — prose header + `-- Reversal (reverse order):`
+- [x] `fms_ocpi_quotation_versions` + `deal_value_amount`, `deal_value_currency`, `fx_rate`,
+      `oc_pdf_path`, `oc_document_payload`
+- [x] `fms_ocpi_deals` + `fx_rate`, `fx_rate_at`, `fx_rate_source`, `fx_rate_overridden`,
+      `deal_value_inr`, `fh_at` / `fh_by` / `fr_at` / `fr_by`
+- [x] `fms_ocpi_set_version_pdf` widened with `p_slot text default 'summary'` — the default keeps
+      every existing caller working
+- [x] `doc_title` CHECK accepts `'ORDER QUOTATION'`
+- [x] Lift `fetchFxRate` to `shared/lib/fx.ts`; re-point Import's import
+- [x] **Rehearse the rollback on live data** — not read it
+
+
+### Verify — Stage A
+- [x] Applied to `icutjkrqkbzwvmnfbzpr`: 5 new version columns, 9 new deal columns, widened
+      `doc_title` CHECK, one `fms_ocpi_set_version_pdf`
+- [x] **`fms_ocpi_deals` still has 0 write policies** — the RPC is still the only write door
+- [x] 28 deals, 28 machines, 27 versions all intact
+- [x] **Rollback rehearsed on the live database, not read**: the migration's own Reversal block ran
+      clean — every column gone, the 3-arg function back, the CHECK back to two values — and was then
+      re-applied. Verified all new columns were NULL first, so nothing was destroyed to prove it
+- [x] `npm run build` green — tsc strict + vite, 36.1s
+
+**Found while applying: `create or replace` with an ADDED parameter creates an OVERLOAD, it does not
+replace.** After the first apply the catalogue held BOTH the 3-arg and 4-arg `fms_ocpi_set_version_pdf`.
+A 3-arg call would have resolved to the stale one, PostgREST can refuse an ambiguous call outright,
+and a later edit to one would not have touched the other. Caught by reading `pg_proc` back rather
+than trusting the `{"success":true}`. The old signature is now dropped explicitly in the migration.
+
+**⚠ The database is in live use during this build.** `QT-M0047` was generated by somebody else at
+13:24 on 24-Aug while Stage A was being applied. Still `ZZ TEST` data, but the quotation counter is
+moving, so Stage H must read the counter fresh rather than assume 46.
+
+**Counters as at the end of stage H: `quotation` = 23, and no `oc:` row at all.** The seed and the
+stage A–G walks between them consumed `QT-M0024`…`QT-M0048` and `OTPL/OC/2627/0001`…`0013`;
+teardown put the quotation series back to 23 — where the seed found it — and removed the OC counter
+entirely, so the first order confirmation ever issued will be `OTPL/OC/2627/0001`.
+## Stage B · The merged form `[x]` — 24-Aug-2026
+- [x] `fieldSpec.ts` absorbs `ocFieldSpec.ts`'s part-B fields as **optional**; `withGst()` kept
+- [x] `missingForDetailSheet` — names the blank lines, **never blocks**
+- [x] `missingForSubmit` widened to every **visible** field of Sections B and C, gated by `isVisible`
+- [x] New branch rule: `dollarClauseAgreed` visible only when currency is USD — in
+      `PART_A_VISIBILITY` **and** in `write_quotation`'s clearing (the header says they must agree)
+- [x] **Special remarks** — `head_balance_remarks` + `other_commitments` + `remarks` in one group;
+      Q46's label renamed, column kept
+- [x] Insurance and dollar clauses left as clauses; `spare_details` / `platter_details` left as
+      specifics
+- [x] `QuotationForm.tsx` — "Document details (optional)" card; deal-value input **unchanged**
+- [x] **Check existing rows, then** widen CHECK `fms_ocpi_complete_when_submitted`
+- [x] Collapse `clearHidden`'s identical ternary branches
+
+
+### Verify — Stage B
+- [x] `npm run build` green — tsc strict + vite, 15.8s
+- [x] **Part-B columns write while the deal is still `draft`** — the exact thing
+      `fms_ocpi_save_oc_draft` refuses. Probed `fms_ocpi_write_oc` against a ZZ TEST draft: printer
+      warranty, head warranty, delivery days, trade term, GST %, air blade, chilling system, dryer
+      chambers, prepared-by and both remark boxes all landed
+- [x] **The cross-writer branch reads still work from the merged path**: `head_balance_remarks`
+      survived because `incl_head` is true on the row, `dryer_chambers` because the dryer is
+      "Chinese" and not "Not Applicable" — `write_oc` reading part-A answers off the row, not the bag
+- [x] **The dollar clause is a dollar term.** Same deal written as INR with
+      `dollar_clause_agreed: true` → stored **null**; written as USD → stored **true**
+- [x] Existing branch clearing unharmed: switching `local` → `high_seas` cleared `local_cost_by`;
+      `incl_head = false` cleared `heads_included`
+- [x] The widened CHECK was **validated by Postgres against all 28 existing rows** when the constraint
+      was added — and measured first: 0 failures on each of its seven new clauses
+- [x] Probe row restored **from its own frozen version 1** — the freeze doing exactly what it exists
+      for. Every field matches. The one difference is deliberate: `dollar_clause_agreed` came back
+      `null` rather than `false`, because it is an INR deal and the clause is no longer asked of one
+
+- [x] **Walked in the browser** (24-Aug, after the profile lock cleared). The merged form renders:
+      "Special remarks · section D" carrying the remarks and commitments boxes, and a "Document
+      details" card with Warranty & service / Delivery & tax / Options / Sign-off. The conditional
+      groups behaved — **the head and dryer groups stayed hidden** with no head and no dryer chosen,
+      and so did the dollar-clause block on an INR deal
+- [x] **Sections B and C are demanded**: the blocking list read "…whether the deal includes ink,
+      whether the deal includes spare parts, whether the deal includes a head, the deal type
+      (High Seas or Others), the total deal value, the type of payment, the terms of payment, the
+      machine delivery date"
+- [x] **THE STAGE-B RISK IS CLOSED END TO END.** A draft saved from the real form with real auth
+      (`ZZ TEST Stage B Walk`, deal `e319432f`) persisted `delivery_days`, `consumables_supplier`,
+      `prepared_by` and `gst_rate` — part-B columns, on a row whose status is `draft`, which
+      `fms_ocpi_save_oc_draft` would have refused outright
+- [ ] Still shows the old label "Transportation terms" — Stage C relabels it *Deal type* and moves it
+      to the head of section C
+
+**Found while probing: a temp table does not survive between MCP SQL calls.** Each call is its own
+session, so the `probe_snap` snapshot taken before a full-bag `write_quotation` was gone by the time
+it was needed. Recoverable only because the deal's own frozen version held the original answers.
+Anything that needs a restore point across calls must write to a real table — or, better, be probed
+on a row whose version history can restore it.
+
+**The browser walk was deferred once.** The Playwright profile was locked by the user's own Chrome
+("Browser is already in use"), so Stage B was first proved in SQL alone. Cleared later the same day by
+killing only the processes whose command line named the MCP profile — the user's own 75 Chrome
+processes were left alone — and then walked properly. Both records are kept: the SQL probes are the
+stronger evidence for the writer split, the walk is the only evidence the form itself works.
+## Stage C · Commercial terms, currency, GST, FX `[x]` — 24-Aug-2026
+- [x] `transport_terms` relabelled *High Seas / Others*, promoted to the head of Section C —
+      **no new column**
+- [x] `write_quotation`: high seas implies `deal_value_currency = 'USD'`, forced server-side
+- [x] `write_oc`: reads `transport_terms` **off the row**, forces `gst_rate = null` on High Seas.
+      GST is a part-B column, so the suppression belongs here — the two writers must keep their
+      column separation or saving one blanks the other
+- [x] The GST rate is **cleared on High Seas, not left at 18** — `branching.ts` rule 5 hides the
+      field, `clearHidden` blanks it, and `write_oc` sets the column NULL regardless.
+      (`EMPTY_OC` no longer exists; stage B merged it into `EMPTY_DRAFT`.)
+- [ ] **DEFERRED TO STAGE D** — High Seas needs a separate RENDER branch that omits the GST rows
+      entirely, since `withGst()`'s empty strings would print a blank tax row instead of no row.
+      That is the PDF renderer, which stage D builds; the DATA is already correct (null, not zero)
+- [x] FX panel — fetch on USD, show source and time, hand override, `fx_rate_overridden`
+
+
+### Verify — Stage C
+- [x] `npm run build` green — tsc strict + vite, 14.1s
+- [x] **Others + INR** — ₹52,00,000 at 18% derived to ₹9,36,000 GST and ₹61,36,000 total, with
+      `machine_value_inr` taken from the deal value rather than typed
+- [x] **High Seas** — the payload deliberately said `deal_value_currency: 'INR'` and the row came back
+      **USD**, forced server-side. `gst_rate` and `gst_amount_inr` both **null, not zero**.
+      `deal_value_inr` = 62,000 × 87.425 = **₹54,20,350**, and `machine_value_inr` took that converted
+      figure rather than the dollar one. `local_cost_by` cleared by the switch
+- [x] The FX position stored with provenance — rate, source `xe.com`, fetched-at, and the
+      overridden flag
+- [x] **Walked in the browser.** Section C now opens with **Deal type**, reading "High Seas"; the
+      currency picker is **disabled showing USD** with the hint "fixed by the deal type"; the
+      explanatory line prints; the FX panel shows the rate, a *Get live rate* button, the provenance
+      line, and **≈ ₹54,20,350** beside it
+- [x] **Both directions of the GST rule** — hidden on the High Seas deal, present and defaulted to 18
+      on a fresh Others quotation. The FX panel likewise absent on a rupee deal
+
+**Found in the walk: the GST % field was still being asked on a high seas deal.** The branch rule was
+declared in `branching.ts` but the field in the Document details card was never wired to it, so the
+form asked for a tax rate on a contract that carries no tax. No bad data reached the row — `write_oc`
+nulls it regardless — but asking an impossible question is exactly what the branch rules exist to
+prevent, and only the browser walk showed it. Fixed by gating the field on `show("gstRate")`.
+
+**The currency picker is DISABLED, not hidden, on a high seas sale.** A reader still needs to see
+*which* currency the deal is in; hiding the field would make the rule look like a missing question
+rather than a fixed one.
+## Stage D · Both papers, one set `[x]` — applied & rollback rehearsed 24-Aug-2026
+
+Migration `20261019120300_fms_ocpi_generate_both_papers.sql`.
+
+- [x] `generate_quotation` stamps value / currency / fx onto the version and freezes **both** payloads.
+      The three money columns are **read off the deal row, not taken from the payload** — the server
+      is what forced USD on a high seas sale, and the payload may still say otherwise
+- [x] Browser uploads **two** PDFs per version under the deal's own `quotation` folder
+- [x] `quotationDetailFileName()` — the sibling of `quotationFileName()`. Both papers land in one
+      folder with `upsert: true`, so a shared name would mean the second silently replaced the first
+- [x] `has_template = false` implies summary only, machine named on screen, **nothing blocked**
+- [x] `quotationPdf.ts` `sectionRows()` — Section C now leads with the deal type and is **built, not
+      listed**: dual currency and the rate on a dollar deal, the GST row only when a rate exists, the
+      dollar-exchange clause and its tick only on a dollar deal
+- [x] Section D retitled **"D. Special Remarks"**, carrying all three fields — and the balance-heads
+      box only when the deal actually includes a head
+- [x] `missingForOc`'s four hard blocks are gone from the live path: `machine_value_inr` stopped
+      being a question at all in stage C (it is derived), and the other three are named by
+      `missingForDetailSheet` as blanks that will print, never as a gate. `missingForOc` itself
+      survives only in `OrderConfirmationEditor`, the retired screen stage F deletes
+- [x] `npm run build` green — tsc strict + vite, 15.1s
+- [x] **Rollback rehearsed on live data** — not read
+
+### Verify — Stage D
+
+- [x] **High Seas, USD, machine WITH a template** (Homer K24, QT-M0048) — two PDFs written to
+      `<deal>/quotation/v1-QT-M0048.pdf` (187,651 B) and `v1-QT-M0048 Detailed.pdf` (232,462 B),
+      confirmed as two distinct objects in `storage.objects`
+- [x] **The summary's section C, read out of the generated PDF**: Deal Type *High Seas* · Machine
+      Value *$ 62,000* · Value in INR *₹ 54,20,350 (at 87.4250 per USD)* · Total Value (INR)
+      *₹ 54,20,350* — **and no GST row at all**, not a zero one
+- [x] **The detailed sheet's totals block, likewise**: *Machine Value USD $ 62,000* ·
+      *Machine Value INR (at 87.4250 per USD) ₹ 54,20,350* · *Total Value INR ₹ 54,20,350*.
+      The old `gstRate === null ? 18` line — which printed "+ 18% GST Value INR" with a blank
+      figure on exactly the deals that carry no tax — is gone
+- [x] **Others, INR, machine WITHOUT a template** (Position Printer, QT-M0047 Rev 1) — one PDF, the
+      *"Position Printer has no detailed sheet yet"* notice before generating and *"No detailed sheet
+      was produced"* after, and nothing disabled. Section C printed *Deal Type Others · Machine Value
+      ₹ 11,50,000 · GST @ 18% ₹ 2,07,000 · Total Value (INR) ₹ 13,57,000*, with no dollar rows
+- [x] **Section D on both** — *D. Special Remarks* carrying all three boxes on the head-included deal,
+      and only two on the deal without a head
+- [x] **The freeze holds, proved rather than asserted.** A `[FREEZE PROBE]` line was appended to
+      Homer K24's CANCELLATION section, a revision generated, and the version rows read back:
+      **v1 does not carry the probe, v2 does.** The section was then restored to its original 614
+      characters
+- [x] **Every revision keeps its own strip** — the revision history shows, per revision, the value,
+      the rate it was converted at, and working signed links to both papers. A version frozen before
+      this stage shows nulls in the money columns and degrades to the summary link alone
+- [x] **Rollback rehearsed on the live database.** The Reversal block ran clean — the 4-argument
+      function dropped, the previous 3-argument one recreated, `pg_proc` read back to confirm
+      exactly one signature — and the migration was then re-applied. Grants came back identical
+      (`anon` / `authenticated` / `service_role`), which is the thing a drop-and-recreate silently
+      loses
+
+**Found in the walk: the blank-lines warning fired on a machine that produces no detailed sheet.**
+"The detailed sheet will print 6 blank lines" sat directly beneath the notice saying no detailed
+sheet exists — two cards on one screen contradicting each other. Suppressed when there is no
+template.
+
+**Two things this stage deliberately does NOT do.**
+
+1. **The headings are still the old ones.** The summary prints *NEW MACHINE QUOTATION* and the
+   detailed sheet prints the machine's own `doc_title` — *ORDER CONFIRMATION* for nine machines,
+   *OFFER QUOTE* for P8D — on a paper that has not been approved by anyone. Resolving the heading
+   **by stage** is stage E, and it is stage E's first item.
+2. **`oc_document_payload` is frozen RESOLVED while `document_payload` freezes the template.** That
+   asymmetry is deliberate: the summary is drawn from the deal's own answers, which `field_payload`
+   already freezes, whereas the detailed sheet is drawn from a machine template somebody may reword
+   next month.
+
+## Stage E · The conversion + print gating `[x]` — applied & rollback rehearsed 24-Aug-2026
+
+Migration `20261019120400_fms_ocpi_conversion_at_approval.sql`.
+
+- [x] `doc_title` resolved **by stage**, not stored — `docHeading(deal)` in `lib/format.ts`. Both
+      sheets print **ORDER QUOTATION** until the Directors approve and **ORDER CONFIRMATION** after,
+      and the approved summary now carries the OC number in its title bar as the detailed sheet
+      always has
+- [x] Minting lifted into `decide_quotation`'s approve arm — **only on approve, and only once**
+- [x] The `has_template` refusal is **not carried onto the approval**; summary-only is a legal
+      outcome there. `submit_oc` keeps its own refusal — see the deviation note below
+- [x] **`can_add_doc` admits the approver to the `oc` slot**, and `freeze_oc`'s own check with it
+- [x] The Director's browser renders both papers with the minted number, uploads them to
+      `<deal-id>/oc/` under two names, and calls `freeze_oc` with both paths
+- [x] **Print signature copy** only at `awaiting_customer_sign`, serving the **stored** files, with
+      the rebuild fallback labelled on screen
+- [x] 🔴 **Proved for a real non-admin, non-coordinator Director** — see below
+- [x] `npm run build` green — tsc strict + vite, 14.3s
+- [x] **Rollback rehearsed on live data** — not read
+
+### Verify — Stage E
+
+- [x] **Before approval both papers read `ORDER QUOTATION`** — read out of the generated PDFs on
+      QT-M0048 Rev 2, summary and detailed sheet alike
+- [x] **A quotation sent back at the gate mints nothing.** Returned with a reason: the `oc:2627`
+      counter stayed at **11**, `oc_no` stayed null, and the deal went back to the salesperson with
+      its quotation number and every revision intact. This was the explicit promise
+- [x] **Approving minted `OTPL/OC/2627/0012`** and, in the same action, re-rendered and uploaded both
+      papers: `…/oc/OTPL-OC-2627-0012 Summary.pdf` (187,850 B) and `…/oc/OTPL-OC-2627-0012.pdf`
+      (232,868 B), two distinct objects, both paths frozen onto the deal, `oc_document_payload`
+      recording `doc_title = ORDER CONFIRMATION`. Counter 11 → 12
+- [x] **Both approved papers read `ORDER CONFIRMATION` and carry the number**, read out of the
+      stored bytes
+- [x] **P8D no longer prints `OFFER QUOTE`.** A seeded P8D deal at `awaiting_customer_sign` rendered
+      `ORDER CONFIRMATION OTPL/OC/2627/0004` on both sheets. The stage rule supersedes
+      `fms_ocpi_machines.doc_title`, which answers open item 1 — the client should confirm it
+- [x] **Print gating** — the signature copy is offered only at `awaiting_customer_sign`. On the
+      seeded deals, which have no stored files, both sheets rebuilt and the panel said
+      *"Rebuilt from the template — the approved file could not be found"* rather than substituting
+      silently
+- [x] **Rollback rehearsed on the live database.** The whole Reversal block ran — the 4-argument
+      `freeze_oc` dropped and the 3-argument one restored, `decide_quotation` and `can_add_doc` put
+      back verbatim, the column dropped — verified by reading `pg_proc` and
+      `information_schema.columns`, then re-applied. **The rehearsal found something a reading would
+      not have:** dropping the column loses the approved summary's path. The files survive in
+      storage, so it is a repair rather than a re-render, but a real rollback must copy the column
+      out first. Recorded in the migration's own Reversal block
+
+### 🔴 The one test an admin account cannot perform
+
+`fms_ocpi_can_add_doc` is exactly what the storage INSERT policy calls
+(`with_check: bucket_id = 'fms-ocpi-docs' AND fms_ocpi_can_add_doc(name, auth.uid())`), and
+coordinators pass it unconditionally — so an admin can never see this refusal. A real portal user
+was granted OCPI edit and made the sole `quotation_approval` owner, and the predicate evaluated
+against **their** id:
+
+| | |
+|---|---|
+| `is_admin` | **false** |
+| `is_coordinator` | **false** |
+| raised this deal | **false** |
+| may approve (`quotation_approval`) | **true** — they are a Director |
+| **`can_act('order_confirmation')` — the arm the `oc` slot used to map to** | **false** ← the bug |
+| **`can_add_doc('<deal>/oc/….pdf')`** | **true** ← the fix |
+| `can_add_doc('<deal>/management-signed/….jpg')` | **false** — no other door opened |
+
+A control user with OCPI edit who is **not** an approver returns **false** for both, so the new arm
+admits Directors and nobody else. The grant and the owner row were then removed; the module is back
+to **zero OCPI grants and zero step-owner rows**, exactly as found.
+
+**Not driven through a browser as that user, and deliberately so.** Logging in as them needs their
+password — a real employee's, which per CLAUDE.md is also their mobile number — and creating a
+dedicated test account means creating a user in the production identity project. Say the word and
+I will raise a `ZZ TEST` Director account for the full click-through; what is proved above is the
+predicate the policy calls, with the bucket check the only thing between it and the write.
+
+### Two deviations from the plan, and why
+
+1. **The final gate is `ApprovalPanel` grown into a document gate, not `OcApprovalPanel`
+   repurposed.** The plan chose `OcApprovalPanel` because it already renders the PDF — but what it
+   contributes is a layout, while every binding it carries (`awaiting_oc_approval`, the
+   `oc_approval` owners, `decideOc`) is the wrong one for this gate and would all have had to be
+   re-pointed. `ApprovalPanel` already owns `decide_quotation`, the `quotation_approval` owners and
+   the self-approval rule; it gained the rendering. **`OcApprovalPanel` is therefore deleted in
+   stage F rather than kept** — the opposite of what the plan says, and the plan's *behaviour*
+   requirement (nobody confirms a contract from a list of field values) is met either way.
+2. **`submit_oc` keeps its `has_template` refusal.** The plan says drop it "when the minting
+   moves"; the reason was that the refusal must not travel to the Directors' gate, and it has not —
+   the approval never checks for a template. Dropping it from `submit_oc` itself would only make the
+   retired path worse: a no-template deal would reach `awaiting_oc_approval` with nothing to render.
+   Stage F retires that step, and the RPC is retained for historical rows.
+
+### Found in the walk
+
+- **Nobody has OCPI access at all.** `app_access` holds **zero** rows for `ocpi`, so today the module
+  is reachable only by admins, who bypass module checks. Stage G's empty-Directors warning is not a
+  hypothetical.
+- **The UI is stricter than the database about self-approval.** With no step owners,
+  `fms_ocpi_decide_quotation` allows the raiser to approve (`array_length('{}', 1)` is null, so the
+  guard's condition is null and never raises), but `ApprovalPanel` computes `soleApprover` as
+  `owners.length === 1` — false for an empty list — and blocks everyone, admins included. Pre-existing,
+  and exactly the confusion the empty-Directors warning should name. Left for stage G.
+- **The approved summary carried no OC number.** It said ORDER CONFIRMATION in the title bar while
+  its header block named only the quotation number. Fixed during the walk: the number now prints at
+  the right of the title bar, where the detailed sheet has always shown it.
+
+## Stage F · The chain — cutover `[x]` — applied & rollback rehearsed 25-Aug-2026
+
+Migration `20261019120500_fms_ocpi_finance_chain.sql`.
+
+**The new chain:** `quotation → quotation_approval → customer_signoff → management_signoff →
+finance_handover → finance_receipt → closed`.
+
+- [x] New RPCs `fms_ocpi_record_finance_handover` / `fms_ocpi_record_finance_receipt`
+- [x] `record_management_sign` no longer sets `closed` — it hands to `finance_handover`
+- [x] `order_confirmation` / `oc_approval` **retired but retained**: statuses stay legal, RPCs stay
+      callable, step defs carry `retired: true`
+- [x] `customer_signoff` re-anchored from `oc_approval` to `quotation_approval`
+- [x] Both Finance steps given **explicit** SLA anchors — and every other step keeps one, so array
+      position never decides an anchor
+- [x] `fms_ocpi_resume`'s map — both new statuses added, `rework` repointed to `quotation`, the two
+      retired rows kept
+- [x] All ten chain encodings moved together, including the `STAGES` Finance band
+- [x] Two new queue pages, cloned from the countersignature queue so the grid rules come free
+- [x] `OrderConfirmationForm.tsx`, `ocFieldSpec.ts`, `OrderConfirmationEditor.tsx`,
+      `OrderConfirmationQueue.tsx`, `OcApprovalQueue.tsx` and `OcApprovalPanel.tsx` **deleted**;
+      their RPCs kept
+- [x] `npm run build` green — tsc strict + vite
+- [x] **Rollback rehearsed on live data** — not read
+
+### The ten places that encode the chain, and where each moved
+
+| # | Where | What changed |
+|---|---|---|
+| 1 | `lib/steps.ts` — `STEPS` | two Finance steps added; the retired pair moved to the end behind `retired: true` |
+| 2 | `lib/steps.ts` — `STAGES` | new **Finance** band; the retired pair keeps a band of its own so nothing lands in "Other" |
+| 3 | `types/index.ts` — `OcpiStatus` / `OPEN_STATUSES` / `STATUS_STEP` | two statuses added; the retired entries deliberately **kept** |
+| 4 | `OcpiStepper.tsx` | the rail is now built **per deal** — see below |
+| 5 | `lib/queues.ts` | `stepCompletedIso` / `stepActorId` read `fh_at/fh_by` and `fr_at/fr_by` |
+| 6 | `nav.tsx` — `QUEUE_PATH` | two paths added; the loop skips `retired` steps |
+| 7 | `lib/sla.ts` — `OVERRIDES` | `customer_signoff` re-anchored; both Finance steps anchored; retired pair still anchored |
+| 8 | `adapters/ocpi.ts` | **no change needed** — it reads `STEPS` and `STAGES` generically, verified by opening the Control Center |
+| 9 | deals status CHECK | widened by two; nothing removed |
+| 10 | `fms_ocpi_resume`'s `VALUES` map | two rows added, `rework` repointed, retired rows kept |
+
+Plus `fms_ocpi_config.step_sla`, the eleventh: **no stored row exists**, so the code defaults are
+what apply. Nothing to migrate, checked rather than assumed.
+
+### Verify — Stage F
+
+- [x] **The full chain, walked as a real user** on QT-M0045: approve → the deal went **straight to
+      Awaiting customer signature**, skipping both retired steps, minting `OTPL/OC/2627/0013`
+- [x] File the customer-signed page → **Awaiting management signature**
+- [x] Countersign → **To hand over to Finance**, *not* Completed. This is the change the client asked
+      for, and the one that stops the paper going missing
+- [x] Record the handover → **Awaiting Finance receipt**, showing *"Handed over to Finance — Yash
+      Agarwal on 25 Aug 2026"*
+- [x] **The same person cannot confirm their own delivery.** The panel offered no button and said
+      why; the DATABASE was then asked directly, impersonating that user, and refused with
+      *"You handed this contract over, so somebody in Finance has to confirm receiving it"* — raised
+      from the function, not the UI
+- [x] **A real non-admin Finance person closed it.** Granted OCPI edit and made sole owner of
+      `finance_receipt`, they confirmed receipt: the deal went to `closed` with **two different
+      people** on the two halves — `fh_by` the salesperson, `fr_by` Finance. Grant and owner row
+      removed afterwards
+- [x] **Completed is now dated from Finance receipt**, not the countersignature — *"Completed on
+      25 Aug 2026"* off `fr_at`
+- [x] **The rail draws the chain each deal actually travelled.** A new deal shows the seven live
+      nodes and neither retired one; a deal parked at `awaiting_order_confirmation` shows the old
+      nine-node rail with Order Confirmation and Approve OC in place
+- [x] **A deal at a retired step says so** — its status reads *"(retired step)"* and a card explains
+      that there is nothing to fill in any more and a coordinator can cancel it
+- [x] **The sidebar offers exactly the five live queues** and neither retired one
+- [x] **Resume, exercised against the deployed function for all eight statuses in its map** — each
+      landed on the right step, including both retired ones and `rework → quotation`. Run inside a
+      transaction that was rolled back; the probe deal was re-read afterwards and is untouched
+- [x] **The Control Center opens** with the Finance steps and the retired band, no errors — proving
+      the adapter needed no change
+- [x] **Rollback rehearsed on the live database.** The whole Reversal block ran — both Finance RPCs
+      dropped, three functions restored verbatim, the CHECK narrowed — verified by reading
+      `pg_proc` and `pg_constraint`, then re-applied. **And its own caveat was proved first:** with a
+      deal set to `awaiting_finance_handover`, narrowing the CHECK failed with
+      *"check constraint … is violated by some row"*, exactly as the header warns
+
+### Found in the walk
+
+- **"Countersign and close" no longer closed anything.** The panel's heading, body copy and button
+  all still said the countersignature completed the deal. Corrected to *"Countersign and send to
+  Finance"*.
+- **"Sent back from Closed."** The rework chip read that on a deal with no recorded rework stage:
+  `STAGE_LABEL(null)` matched the Closed node, whose `step` is `null`. Pre-existing, surfaced by
+  this walk, fixed with a null guard.
+- **Four screens still said a machine without a template would be *stopped*** at the order
+  confirmation. Since stage D such a deal simply issues the summary sheet alone and goes all the way
+  through, so the copy was the opposite of the truth. Corrected in Machines, Master Requests, the
+  request modal and the quotation form.
+
+### A decision left standing, not taken
+
+**`status = 'rework'` is still unreachable.** The plan flagged this as the moment to fix it — land
+send-backs on `rework` rather than `draft` — and asked for a decision rather than doing it quietly.
+No decision has come back, so the behaviour is unchanged: a returned quotation still goes to
+`draft` and is identifiable only by `rework_count` / `rework_stage`. `fms_ocpi_resume` now maps
+`rework → quotation` so that the day it becomes reachable it resumes correctly.
+
+### Two things a reader should not mistake for oversights
+
+1. **The retired steps still appear on the Control Center.** Seven deals are parked at them. Filtering
+   them out of the breakdown would make the collapsed total stop equalling the sum of the rows
+   beneath it — the exact silent hole `buckets.ts` warns about. They disappear when the last deal
+   leaves them.
+2. **No route exists for either retired queue.** The screens that ACTED on those steps are gone,
+   because the questions they asked are on the quotation form now. A parked deal is reached from All
+   Deals, reads correctly, and a coordinator can cancel it.
+
+- [ ] `record_finance_handover` / `record_finance_receipt`, cloned from the decision RPCs
+- [ ] `record_management_sign` no longer sets `closed` — it hands to `finance_handover`
+- [ ] `order_confirmation` / `oc_approval` **retired but retained**; statuses stay legal in the CHECK;
+      step defs keep a `retired` flag so a historical deal's rail still draws
+- [ ] `customer_signoff` re-anchored from `oc_approval` to `quotation_approval`
+- [ ] Both Finance steps given **explicit** SLA anchors — anchors derive from array position, so an
+      implicit one would be decided by where a retired step happens to sit
+- [ ] `fms_ocpi_resume`'s VALUES map — two new statuses, `rework` repointed to `quotation`, retired
+      rows kept
+- [ ] All **ten** chain encodings moved together, including the `STAGES` Finance band
+- [ ] Two new queue pages cloned from an existing queue (grid rules come free)
+- [ ] `OrderConfirmationForm.tsx` + `ocFieldSpec.ts` **deleted** after absorption;
+      `OrderConfirmationEditor` / `OrderConfirmationQueue` / `OcApprovalQueue` routes removed;
+      **RPCs kept**
+
+## Stage G · Round-out `[x]` — applied & rollback rehearsed 25-Aug-2026
+
+Migration `20261019120600_fms_ocpi_round_out.sql`.
+
+- [x] **Directors on Step Owners** — the gate is `quotation_approval` and Settings now says so.
+      Retired steps are no longer listed there: naming an owner for a step nothing can reach would
+      be asking somebody to watch an empty queue
+- [x] **Empty-owners warning**, naming administrators and process coordinators as the current
+      fallback. Shown on the Directors' gate and on both Finance steps
+- [x] **`email_payload` branches** — the conversion reworded, **two genuinely new events**
+      (`management_signed`, `finance_handover`) given branches of their own, `deal_closed` reworded
+      for Finance receipt, and the four retired `oc_*` events re-pointed off two deleted routes
+- [x] Finance steps announce to their own `step_owner_ids` — done in stage F, verified here
+- [x] **Register**: the USD rate and the rupee equivalent, the two Finance stamps and who did them,
+      and the OC date columns renamed to match what they now mean. Control Center needed no change —
+      it derives from `STEPS` / `STAGES`
+- [x] `Machines.tsx` already carries a read-only **Template** column, sorted and filtered on the
+      answer rather than the link text
+- [x] `npm run build` green — tsc strict + vite
+- [x] **Rollback rehearsed on live data** — not read
+
+### The hole this stage found
+
+**The self-approval guard was not firing.** `fms_ocpi_decide_quotation` computed
+
+```sql
+v_sole := (array_length(v_owners, 1) = 1 and v_owners[1] = v_uid);
+```
+
+With **no owners named** — which is the state of this module today, zero rows in
+`fms_ocpi_step_owners` — `array_length` returns NULL, so `v_sole` is NULL, so
+`if v_owner = v_uid and not v_sole` evaluates to NULL. plpgsql takes a NULL condition as false, so
+the guard was skipped entirely. A coordinator who raised a deal could approve their own quotation
+through the API; the only thing stopping them was a hidden button.
+
+`coalesce(array_length(v_owners, 1), 0)` makes "nobody is named" mean the guard **does** fire.
+
+**Proved both ways, on live data:**
+
+| | |
+|---|---|
+| the OLD expression, with no owners | evaluates to **NULL** |
+| the NEW expression, with no owners | evaluates to **false** — so `not false` fires the guard |
+| a plpgsql `if` on a NULL condition | takes the else branch — demonstrated in a `DO` block |
+| calling the deployed RPC as the raiser | refused: *"You raised this quotation, so somebody else has to approve it"* |
+
+The old-expression probe was created and called inside a transaction that was rolled back; the probe
+function is gone.
+
+### Verify — Stage G
+
+- [x] **Settings → Who does what lists exactly the six live steps**, numbered 1–6, and neither
+      retired one
+- [x] **The empty-Directors warning shows on a deal awaiting approval**, naming admins and
+      coordinators as the fallback and stating the self-approval rule — which the database now
+      actually enforces
+- [x] **Every event the chain can fire renders a real headline and a live CTA**, checked against a
+      real deal: `quotation_submitted`, `quotation_approved`, `quotation_returned`,
+      `customer_signed`, `management_signed`, `finance_handover`, `deal_closed`, and the two
+      retired `oc_*` events. **No branch now points at a deleted route**, and none falls through to
+      the generic "was updated" arm
+- [x] **A dollar deal's email carries its rupee equivalent and the rate** —
+      *"In rupees: Rs. 54,20,350.00 (at 87.4250 per USD)"* — so a reader does not convert it
+      themselves at today's rate
+- [x] **The Deal Register opens and its status filter offers all thirteen statuses**, including both
+      Finance ones and the two labelled *(retired step)*. It derives from `STATUS_LABEL` rather than
+      a hand-written list, which is exactly what that file's header promised
+- [x] **Rollback rehearsed on the live database** — the pre-G `decide_quotation` restored, confirmed
+      by reading `prosrc` back, then re-applied. Grants unchanged
+
+### What Stage G did NOT need to do
+
+- **The Control Center**: it reads `STEPS` and `STAGES` generically, so the Finance band and the
+  retired band arrived with stage F. Verified by opening it rather than assumed.
+- **The deal lists**: `DealsTable` already carries value and currency, and the register already
+  carried the revision count.
+- **The Machines template column**: it has existed since phase 6.
+
+- [ ] `Directors` on `StepOwnersSection` + the empty-Directors warning naming admins as the fallback
+- [ ] `email_payload` — **three** new branches (the conversion, and both Finance events). An event
+      with no branch mails nothing, silently
+- [ ] Finance steps announce to their `step_owner_ids`
+- [ ] Register and Control Center: revision count, value, currency, the new chain
+- [ ] `Machines.tsx` — read-only "has detailed template" column
+- [ ] Verification write-ups here; `WORKLIST.md` OCPI-2 ticked
+
+## Stage H · Teardown + go-live `[x]` — done 25-Aug-2026
+
+Client instruction: *"Don't worry about deleting any of the existing data because all the data is
+just the sample data."* That settles the one question teardown was waiting on — whether any of the
+earlier drafts belonged to a real customer.
+
+- [x] **Confirmed with the client** that every row was sample data. All **29** deals carried the
+      `ZZ TEST` handle, so the handle and the instruction agreed
+- [x] **Storage first, then SQL.** `99-teardown-storage.mjs` removed **35 objects** across all four
+      slots — `quotation` (15), `customer-signed` (12), `management-signed` (4), `oc` (4). Doing it
+      the other way round would have lost the deal ids the object paths are keyed on, and deleting
+      the `storage.objects` rows from SQL would have orphaned the bytes in S3
+- [x] `fms_ocpi_activity` (114) and `fms_ocpi_notifications` (38) deleted **by `entity_id` before
+      the deals** — neither carries a foreign key
+- [x] 29 deals and 32 quotation versions deleted
+- [x] **Two seeded master requests deleted too**, which the teardown script did not previously cover:
+      they hang off nothing, so they would have sat in the Master Requests queue for ever with a
+      badge on the nav. `99-teardown.sql` now removes them
+- [x] **The OC counter row removed**, so the next order confirmation mints `OTPL/OC/2627/0001`
+- [x] **The quotation series put back to 23** — see below
+- [x] **Final walk on a clean database**
+
+### What the masters kept
+
+Teardown removed deals and only deals. **28 machines** and their templates, the head / ink / dryer
+masters, the company profiles and the module config all stayed: they are real content, transcribed
+from the PowerPoint decks, and nothing about them was test data.
+
+### The quotation series: put back, not guessed
+
+The counter is at **23**, which is exactly where the seed found it. Everything from `QT-M0024` to
+`QT-M0048` was consumed by the seed and by the stage A–G walks, and setting it back to 23 undoes
+precisely that and invents nothing.
+
+⚠ **It does NOT settle whether 23 is the real last quotation.** That figure was read off a single
+scanned submission (`QT-M0023`) and has never been checked against the paper register — an open
+question before any of this work and an open question still. `QuotationSeriesWarning` therefore
+keeps showing on every screen that can mint a number until an admin confirms it in
+**Settings → Quotation numbering**, which reads *"Last number issued: QT-M0023 · The next quotation
+generated will be QT-M0024 · Not confirmed."* **This is the one thing standing between the module and
+go-live, and only somebody with the register can answer it.**
+
+### Verify — Stage H
+
+- [x] **Nothing left**: 0 deals, 0 versions, 0 activity rows, 0 notifications, 0 master requests,
+      0 storage objects. 28 machines kept
+- [x] **The first numbers come out right, proved without burning them.** A complete walk —
+      `save_draft` → `generate_quotation` → `submit_quotation` → `decide_quotation('approve')` —
+      was run against the deployed RPCs inside a transaction that was **rolled back**
+      (`fms_ocpi_next_seq` upserts a plain table row, so the counters roll back with it):
+
+      | | |
+      |---|---|
+      | first quotation generated | **QT-M0024** |
+      | after submit | `awaiting_quotation_approval` |
+      | after the Directors approve | **OTPL/OC/2627/0001**, status `awaiting_customer_sign`, step `customer_signoff` |
+
+      Straight past both retired steps, and the very first OC number is 0001.
+- [x] **Re-read afterwards**: 0 deals, 0 activity, 0 step owners, 0 OCPI grants, counter still 23,
+      0 storage objects. The walk left nothing behind
+- [x] **Every screen renders a clean empty state**, no errors and no Access Denied: Dashboard, All
+      Deals (*"0 quotations · No quotations yet"*), Approve Quotation, Hand Over to Finance, Finance
+      Receipt, Control Center, Master Requests — whose nav badge is now gone
+- [x] **Settings → Quotation numbering** shows 23 / next `QT-M0024` / **Not confirmed**
+
+### Left exactly as found
+
+Zero `app_access` rows for `ocpi` and zero `fms_ocpi_step_owners` rows — every grant and every
+step-owner row created for testing was removed. **The module is reachable only by admins today**, and
+nobody is named as a Director; the empty-owners warning says so on the approval gate itself.
+
+---
+
+# The order-confirmation series became a setting · 25-Aug-2026
+
+The client, reading Settings: *"I see just the quotation number, but after the quotation is approved,
+the quotation becomes the order confirmation. The order confirmation should have a separate number
+series than the quotation, so add that as well in the settings."*
+
+**It always was a separate series** — `OTPL/OC/<fy>/nnnn`, minted at the Directors' gate, off its own
+counter (`fms_ocpi_counters.scope = 'oc:2627'`). What was missing is everything around it: no way to
+see where it stood, and no way to move it. So the first order confirmation raised here would have
+been `OTPL/OC/2627/0001` at a company that has been issuing them on paper for years — the exact
+failure `fms_ocpi_set_quotation_series` exists to prevent, on the more expensive of the two numbers.
+A quotation number goes out on an offer. An OC number goes out on a contract that is signed,
+countersigned, and booked against.
+
+**Migration `20261020120000_fms_ocpi_oc_series.sql`** adds `fms_ocpi_set_oc_series(p_last_used int,
+p_fy text default null)` — admin-only, `for update` on the counter row, forward-only, and it records
+the confirmation. Additive: one function, one config key, no table altered.
+
+**⚠ THE OC COUNTER IS PER FINANCIAL YEAR AND THE QUOTATION COUNTER IS NOT.** The number carries the
+year and restarts each April, so the year is an argument, the forward-only rule applies *within* it —
+2728 legitimately starts again at 0001 while 2627 stands at 8 — and the confirmation is recorded per
+year under `config.oc_series` as a **map keyed by year**, not a flag. A single flag would silence the
+question next April, when a fresh counter starts at zero against a paper series that kept counting.
+The config upsert is `value || excluded.value`, so confirming a new year does not erase the old one.
+
+**Proven on live data before anything was believed**, in a rolled-back transaction:
+
+| Rule | Result |
+|---|---|
+| a non-admin sets the series | refused |
+| moving 2627 backwards (it stands at 8) | refused, naming the floor |
+| a malformed year (`26-27`) | refused |
+| out of range (99999 — the number prints as four digits) | refused |
+| moving 2627 forward to 25 | counter = 25 |
+| setting a different year, 2728, to 0 | counter = 0, unaffected by 2627's floor |
+| both years in config afterwards | both present, each with its own stamp |
+
+Counter verified still at **8** afterwards — nothing was burned. The **Reversal block was rehearsed**
+too: function dropped, config key deleted, counter untouched, then rolled back and the function
+confirmed present again. ⚠ The reversal deliberately does **not** touch `fms_ocpi_counters`: that
+table pre-dates this migration and holds numbers already issued to customers.
+
+**On screen:** *Settings → Order confirmation numbering*, mirroring the quotation card and naming the
+year it is setting. Plus **`OcSeriesWarning`** on the **approval gate** rather than the editor —
+that is where the number is minted, and the approver is the last person who can stop a contract going
+out under a number somebody already holds.
+
+**The printouts already carried it.** `deal.ocNo` prints right-aligned in the title bar of both
+papers (added at revision stage E), the heading flips to ORDER CONFIRMATION through `docHeading`, the
+detailed sheet offers `{{oc_no}}` as a placeholder, and the register exports it. Nothing there needed
+changing — what was missing was only the ability to control where the series starts.
+
+## Two things that went wrong while doing this
+
+- **`git checkout -- lib/format.ts` discarded uncommitted work.** A bash patch script mangled the
+  file (backticks inside a template literal, interpreted by the shell — the same trap logged twice
+  already in this file), and reaching for `git checkout` to undo it reverted the file to its last
+  *commit*, throwing away `docHeading` and the Finance/retired `STATUS_LABEL` entries from earlier in
+  the revision. Both were recovered from the minified `dist/` bundle of the build made minutes
+  earlier, and the comments rewritten. **The lesson is the same one already recorded: write patch
+  scripts with a file, never a bash heredoc — and never reach for `git checkout` on a tree whose work
+  is not committed.**
+- **The build gate cannot go green right now, and not because of this work.** Another session is
+  editing `hr-recruitment`, `import` and `procurement` in the same working tree — files changing
+  between consecutive builds, and `InterviewsQueue.tsx` importing a `ReassignInterviewModal` that
+  does not exist yet, which takes the dev server's whole module graph down. `tsc` reports **zero
+  errors under `apps/ocpi`**; every remaining error is in those three modules. Browser verification
+  of this change is therefore still outstanding.
+
+---
+
+# The body text was printing over the registered address · 25-Aug-2026
+
+Reported off a live detailed sheet: the paragraph about component compatibility ran straight through
+*Shed No. A2/711, Road No. 71, G.I.D.C. Sachin* and the CIN beneath it.
+
+**The pagination logic was never wrong — it was obeying a limit in the wrong place.**
+`BODY_BOTTOM_FRACTION` was `0.925`, and the footer artwork's ink starts at `0.875` of the page. So
+for every page the renderer believed it had another 5% of the sheet to fill *after* the address block
+had already begun. Anything short enough to fit that gap — a two-line paragraph, a signature label —
+printed on top of it.
+
+**The new limit is measured off the artwork, not guessed.** `letterhead-default.png` is 806×500 and
+mostly a faint watermark; scanning it for the first row carrying pixels below ~55% brightness gives
+row **360**, so `FOOTER_INK_TOP = 360/500 = 0.72` of the footer image. The band sits at `y 0.552`
+with height `0.448`, so the ink begins at `0.552 + 0.72 × 0.448 = 0.8746` of the page.
+`BODY_BOTTOM_FRACTION` is now **derived** from those three numbers minus a 1.5% clearance — not
+re-typed as `0.86`, which would be a second copy of the geometry that drifts the moment the band
+moves. If the artwork is ever re-cut, re-measure `FOOTER_INK_TOP` the same way.
+
+One constant fixed **both** papers: `room()` in `ocPdf.ts` and the four `bodyBottom` checks in
+`quotationPdf.ts` all read it.
+
+**A second collision, at the other end.** `BODY_TOP = 92` has been exported from `letterhead.ts` all
+along and used by nothing — both renderers hardcoded their own smaller numbers in `newPage` (70 in
+the summary, 78 in the detailed sheet), and both sit *above* the wordmark's lower edge at `0.096` of
+the page, about 81pt on A4. A full-width table continuing onto page two therefore started inside the
+logo. Both now return `BODY_TOP`.
+
+**Verified by measurement, not by eye.** Both PDFs were pulled out of storage and their text
+placement operators read: against an address block starting at 736pt from the page top, the old
+detailed sheet put **2 lines inside the footer, the worst 13pt past it**; the re-generated one puts
+**none**, its lowest body text landing at 707pt — 29pt clear. The deliberate *Page x of y* line at
+`pageH − 16` is excluded from the count; it belongs in the footer.
+
+# The approval dialog is the width of a contract · 25-Aug-2026
+
+The Directors' review opened in the default `md` dialog — 448px, narrower than the A4 page it was
+rendering. The reviewer scrolled a portrait document inside a portrait dialog inside a portrait
+scroll, and could not take in a table row without panning. Approving is the decision this module
+exists for; it does not get the same dialog as a confirm prompt. It is now `size="2xl"`
+(`max-w-6xl`), and `ApprovalPanel` takes an `inDialog` flag that shortens the PDF frame to `52vh` —
+a viewer taller than its dialog just makes the *dialog* scroll, and the contract is then read through
+a letterbox.
+
+⚠ **Only this one modal needed it.** The other four queues (customer signature, countersignature,
+and both Finance steps) open the full deal page rather than a dialog, so there was nothing to widen.
+
+---
+
+# The issued papers became a place, not a moment · 25-Aug-2026
+
+The client's report: *"once the quotation is generated, I don't see that anywhere in the draft… the
+user can have the option to download the PDF just once, but ideally it should not happen that way…
+the user should have the option to re-download both the summary and the detailed version."*
+
+**All three complaints were one defect.** `QuotationEditor` held the generated blobs in a
+`useState` set by the Generate handler, and rendered the preview only when that state was full. The
+files were never lost — they are in storage, on the version row, and `RevisionHistory` was already
+linking them — but the editor never read them back. So the panel existed for exactly as long as the
+page did: reload, navigate away, or come back the next morning, and the quotation had no documents.
+The single chance to download was the moment of generation, which is the moment somebody is least
+likely to want the file.
+
+**`IssuedPapers`** (new) reads the newest version's `pdf_path` / `oc_pdf_path` off the row and
+downloads them, and merely *prefers* the freshly rendered pair when Generate has just run — which
+also removes a race with the upload. It is mounted on `versions.length > 0`, not on a piece of
+component state. There is deliberately **no rebuild fallback**: an issued version is frozen, and a
+quotation whose stored file is missing says so rather than quietly handing over a different
+document. (`ApprovedOcPreview` does rebuild, because a deal must not be stuck at the signature step;
+the reasoning is opposite on purpose.)
+
+**`PaperSet`** (new) replaces `DocumentPreview`, which is deleted. Every one of its three callers
+showed a PAIR, and all three did it by stacking two full 70vh PDF frames one under the other — so
+reading the detailed sheet meant scrolling past the whole summary, and the page carried two copies
+of every control. They are two faces of one issue, so they now get one frame and a switch:
+
+- **Tabs** — Summary / Detailed sheet. The switch is also the statement that a second paper exists;
+  a salesperson who never sees the tab sends the summary alone and does not know they have.
+- **A paper that does not exist is still a tab**, marked *— none*, and clicking it explains why in
+  words. A missing tab reads as a page that failed to load.
+- **Download, Print, and Download both**, always, from every screen that shows papers.
+- **The browser's own PDF chrome is suppressed** (`#toolbar=0&navpanes=0`). Chrome painted a dark
+  bar with its own download button directly under ours — two sets of controls doing the same thing,
+  and the browser's would have saved the file as a uuid.
+
+Two traps found while building it:
+
+- **Chrome cancels a second programmatic download fired in the same tick**, so *Download both*
+  silently handed over one paper. The second is delayed 400 ms.
+- **Auto-selecting the first tab with content must stop once the reader clicks.** Without a `chosen`
+  ref, pressing *Detailed sheet* on any of the 18 no-template machines bounced straight back to
+  Summary — so the screen that explains why there is no detailed sheet could never be reached, and
+  the tab looked broken rather than empty. Caught in the browser, not in review.
+
+Verified on QT-M0036 (Homer K24, both papers) and QT-M0035 (Rocket, summary only), each on a **cold
+page load** — the case that was broken. Build green.
+
+---
+
+# The selling entity is now gated on having bank details · 25-Aug-2026
+
+Tally carries five companies. **One has a selling-entity profile; four do not.** Until now all five
+were offered on the quotation form, and picking one of the four printed the DEFAULT entity's bank
+account, CIN and registered address — Axis Bank A/C 919030077980346, Orange O Tec Pvt Ltd's — on a
+contract the customer pays against. Three screens warned about it: the dropdown subtitle, the
+quotation editor and the Directors' approval gate.
+
+The client's instruction, in their words: *"whatever entries are there in the master entities, only
+those companies should be shown in the quotation."* They are right, and the warning was the wrong
+instrument. A warning is read once and clicked past; the consequence is money sent to the wrong
+company. **So the choice is removed rather than annotated.**
+
+- `QuotationForm.tsx` `companyOptions` now builds only from companies with an **active profile**.
+  Today that is one row, so the dropdown offers one company and names its bank in the sublabel.
+- `CustomerPicker` no longer copies the Tally party's company onto a draft unless that company has a
+  profile. Without this the picker would set a value the field does not offer, and the reader would
+  see a company marked *not set up* that they never chose. Left blank instead — which the form
+  already explains, naming the default entity it will print.
+- **A company already on a deal is still offered**, labelled *"not set up as a selling entity"*, so
+  an existing draft does not silently lose its entity. `CompanyProfileWarning` stays for exactly
+  these rows: deals raised before the gate existed.
+- Settings → Selling entities is re-worded from *"anything without its own row here prints the
+  default"* to **"this list decides what may be quoted under"**, and the amber strip from
+  *"Printing the default:"* to **"Cannot be quoted under:"**.
+
+**This is now a data-entry blocker, not a warning.** Until somebody adds profiles for COLORIX
+DIGITAL PRINTING SOLUTIONS LLP, both ORANGE O TEC ENTERPRISES rows and ORANGE O TEC PRIVATE
+LIMITED-NOIDA, **no quotation can be raised under any of them.** That is the intended behaviour and
+it is the client's call, but it means four entities are unquotable until their bank details, CIN,
+registered address and Ex-Works city are entered. The letterhead is a path, not an upload, so a
+second entity also needs its artwork placed in `public/assets/ocpi/`.
+
+Verified in the browser: the dropdown offers ORANGE O TEC PRIVATE LIMITED (01-04-25TO31-03-27) and
+nothing else, with *"M/s ORANGE O TEC PVT LTD. · AXIS BANK · Ex-Works Surat"* beneath it. Build green.
+
+---
+
+# Test data · 25-Aug-2026 (second seed, on the new chain)
+
+⚠ **THE MODULE IS NOT EMPTY.** After teardown the client asked for a fresh set covering every stage
+so they could walk the new chain. **13 deals**, handle **`customer_name like 'ZZ TEST%'`**, raised
+by Afrin Saiyed so an admin can approve them without hitting the self-approval guard.
+
+| Ref | Customer | Machine | Deal type | Stage |
+|---|---|---|---|---|
+| — | Suryodaya Prints | Homer K24 | Others, ₹52,00,000 | **draft** (1 day old) |
+| — | Meridian Fabrics | Position Printer *(no template)* | Others, ₹11,50,000 | **draft** (17 days old) |
+| QT-M0024 | Anmol Textile Park | Homer K32 | Others, ₹59,00,000 | **awaiting approval** — 3 revisions, sent back once, ₹64L → ₹59L |
+| QT-M0025 | Gulf Digital LLC | P8S | **High Seas, $62,000** | **awaiting approval** — overdue |
+| OTPL/OC/2627/0001 | Girija Prints | Kolorado Alpha 15 | Others, ₹47,50,000 | **awaiting customer signature** |
+| OTPL/OC/2627/0002 | Laxmi Fabrics | JP7 *(no template)* | Others, ₹9,80,000 | **awaiting customer signature** — summary sheet only, overdue |
+| OTPL/OC/2627/0003 | Shree Textiles | KoloRado Alpha II 1.8 m | Others, ₹42,50,000 | **awaiting countersignature** — overdue |
+| OTPL/OC/2627/0004 | Hariom Textiles | Homer K24 | **High Seas, $48,000** | **to hand over to Finance** |
+| OTPL/OC/2627/0005 | Chetna Digital | P8D | Others, ₹58,60,000 | **awaiting Finance receipt** — overdue |
+| OTPL/OC/2627/0006 | Nirmal Prints | Homer K32 | Others, ₹71,00,000 | **completed** |
+| QT-M0032 | Om Sai Textiles | Fab Pro 1I *(no template)* | Others, ₹26,50,000 | **rejected** |
+| OTPL/OC/2627/0007 | Manthan Fabrics | Rocket *(no template)* | Others, ₹18,00,000 | **on hold** |
+| OTPL/OC/2627/0008 | Dwarkadhish Prints | JPK *(no template)* | Others, ₹15,00,000 | **cancelled** |
+
+**The papers are real.** Every quotation was generated through the browser, and every approval was
+taken through the Directors' gate in the browser, so all 42 stored files are genuine renders — the
+*"Rebuilt from the template"* fallback appears on none of them. Four deals carry real signature
+scans as well.
+
+**What it burned:** `QT-M0024`…`QT-M0034` and `OTPL/OC/2627/0001`…`0008`. Teardown gives none of it
+back; `99-teardown.sql` puts the quotation series to 23 and clears the OC counter, exactly as it did
+on the first teardown. Storage teardown (`99-teardown-storage.mjs`) must run first, as before.
+
+**Left as found:** zero OCPI grants and zero step-owner rows. The temporary grant that let the
+salesperson raise these deals was removed afterwards, so the module is still admin-only and the
+empty-Directors warning still shows — which is the state to go live from, not a fault.
+
+**Four more drafts, 25-Aug-2026 — `04-my-drafts.sql`.** The thirteen above were all raised by Afrin
+Saiyed, which is right for everything that has to be approved and wrong for the two screens that are
+keyed to the reader: **My Deals** was empty, and every draft on the Drafts screen carried somebody
+else's name. Drafts have no approver, so they carry no self-approval constraint and belong to
+whoever is walking the module. Four now stand in Yash Agarwal's name, at four levels of
+completeness, because a draft is the one screen where an *incomplete* record is the correct record:
+
+| Customer | State | What it is for |
+|---|---|---|
+| ZZ TEST Kesari Textile Mills | a name and nothing else, 11 days old | the screen's promise that you may save with most of it blank |
+| ZZ TEST Bhavani Prints | part A done, Sections B and C untouched | what *Sections B and C are mandatory* refuses |
+| ZZ TEST Saraswati Fabrics | complete, INR, Homer K24 (**has** a template) | press Generate and both papers come out |
+| ZZ TEST Emirates Print House | complete, **High Seas $74,500**, Rocket (**no** template) | the dollar path and the summary-only path in one row |
+
+Three CHECK constraints refused the first attempt and are worth knowing before writing another
+seed: `head_ship_mode` is `with_machine | separate`, `head_ship_via` is `directly | hss |
+local_sales` (not a courier name), and `high_seas_cost_by` is `customer | company`. The whole
+`DO` block is one transaction, so each refusal rolled back all four.
+
+### Two things this seed turned up
+
+- **The revision strip was only on the draft editor.** It vanished the moment a quotation was
+  submitted — at exactly the point the Directors are deciding whether the price is right, and the
+  question they would ask is how it moved to get there. It now renders on the deal page too, so an
+  approver sees ₹64,00,000 → ₹59,00,000 with the author, the date and links to the pair of papers
+  frozen at each revision.
+- **Going from one draft editor straight to another keeps the first draft's state.**
+  `useQuotationDraft` seeds once per mount, and React Router reuses the component when only the route
+  param changes. Not reachable through the UI — nothing links editor-to-editor, and going via any
+  other screen remounts it correctly — but typing or bookmarking the second URL would show deal A's
+  answers under deal B's heading. Logged as an open item below.
+
+---
+
+# The revision is complete
+
+All nine stages (0, A–H) are done, each with its build green and its rollback rehearsed on live data
+rather than read. What changed, end to end:
+
+1. **One form.** The order confirmation's questions are optional fields on the quotation form.
+2. **Sections B and C mandatory**, visible fields only.
+3. **High Seas / Others** at the head of Section C, driving currency and tax: High Seas ⇒ USD and
+   **no GST line at all**; Others ⇒ GST charged.
+4. **Dollar deals print both currencies** on a live overridable rate, frozen per revision.
+5. **Special remarks** — the master form's three boxes in one group, under a Section D headed
+   *Special Remarks*.
+6. **Both papers issued together**, headed ORDER QUOTATION, **re-headed ORDER CONFIRMATION** when the
+   Directors approve — which is when `OTPL/OC/<fy>/nnnn` mints. A quotation sent back mints nothing.
+7. **Every revision keeps its own** value, currency, FX rate and pair of PDFs.
+8. **Two steps after the countersignature** — who handed the contract to Finance, and who in Finance
+   accepted it. One person cannot record both.
+
+**Before it goes live**, three things that are not code:
+
+1. **Confirm the quotation series** in Settings → Quotation numbering. Until then every number issued
+   may repeat one a customer already holds.
+2. **Name the Directors** on `quotation_approval`, and owners for the two Finance steps. Nobody is
+   named, so it all falls to admins.
+3. **The four open items** below — the P8D heading rule now answered by stage E and awaiting the
+   client's nod, who supplies the 18 missing detailed templates, GST on an *Others* deal quoted in
+   USD, and `status = 'rework'` still being unreachable.
+
+- [ ] Confirm none of the 7 pre-existing drafts was a real customer
+- [ ] Storage first, then SQL (`SOP/ocpi-test-data/`); `activity` and `notifications` by `entity_id`
+      before the deals
+- [ ] Reset `oc:2627` to zero
+- [ ] Quotation counter set to the last number really issued, confirmed in Settings
+- [ ] Final walk on a clean database
+
+---
+
+## The two audit findings that would have stopped this build
+
+Read out of the **deployed** function bodies, not inferred.
+
+1. **A Director cannot upload the Order Confirmation PDF.** `fms_ocpi_can_add_doc` maps the `oc`
+   storage slot to the `order_confirmation` step, and its only other arm admits the raiser. A
+   Director approving is neither, so the upload is refused **by the storage policy** — silently, with
+   nothing in the UI saying why. Worse, it is **invisible to an admin account**, because
+   `fms_ocpi_is_coordinator` passes admins through unconditionally. Hence the remap in Stage E, and
+   the non-admin Director test.
+2. **The OC number and the printed paper cannot both be right** unless minting and rendering happen
+   in one action at approval. Minting at submit burns numbers on rejected quotations; rendering
+   before minting prints a contract with no number on it. If the upload fails after a successful
+   mint, `ApprovedOcPreview` already rebuilds from the template and says so on screen.
+
+## The revision's open items
+
+- [~] **P8D** was headed *OFFER QUOTE* — neither of the two headings this flow uses. **Answered by
+      stage E's rule**: the heading now comes from the stage, not the machine, so P8D prints ORDER
+      QUOTATION then ORDER CONFIRMATION like every other model. `fms_ocpi_machines.doc_title` is kept
+      but no longer printed. **Confirm with the client** that OFFER QUOTE is genuinely gone.
+- [ ] **The 18 machines with no detailed sheet** — who supplies the content. Until then those deals
+      go out on the summary sheet alone.
+- [ ] **GST on an *Others* deal quoted in USD.** Under the rule as stated it still attracts GST.
+      Coherent, but unusual enough to confirm rather than assume.
+- [ ] The client's own remaining feedback, which they have said is coming.
+- [ ] **`useQuotationDraft` seeds once per mount.** Navigating from `/deals/A/edit` straight to
+      `/deals/B/edit` — same route, different param — reuses the component and keeps A's draft and
+      A's `savedId`, so a save would write to the wrong deal. Nothing in the UI links editor to
+      editor, and any other screen in between remounts it correctly, so this is a latent fragility
+      rather than a live bug. The fix is one line: key the `seeded` ref on `dealId`.
+
+## Decision taken inside the plan, flagged not assumed
+
+**`status = 'rework'` is unreachable** — recorded above under "Found while seeding". Both send-backs
+land on `draft`, so a deal an approver returned looks in every screen exactly like one nobody has
+opened. Adding the Finance steps is the moment to fix it: land send-backs on `rework`, which
+`generate_quotation` already accepts as revisable, `OPEN_STATUSES` already contains and the rail
+already draws. It changes existing behaviour, so it is called out rather than done quietly.
