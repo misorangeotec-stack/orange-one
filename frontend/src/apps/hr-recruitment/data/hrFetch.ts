@@ -467,3 +467,25 @@ export async function fetchHrData(): Promise<HrData> {
     masterRequests: masterRequests.map(mapMasterRequest),
   };
 }
+
+/**
+ * Everyone who can actually OPEN New Recruitment — an `app_access` row, or admin.
+ *
+ * The R2 interview picker offers the heads set up to raise an MRF, and some of them
+ * hold no grant on this module: booking one would send a notification to somebody who
+ * lands on Access Denied. The picker cannot work that out for itself, because
+ * `app_access` RLS is `user_id = auth.uid() or is_admin(...)` — a non-admin cannot read
+ * anyone else's grant. `fms_hr_module_user_ids()` is a SECURITY DEFINER view of the ids
+ * ONLY, in the same spirit as `list_org_people`.
+ *
+ * Its own cache entry rather than part of the HR snapshot: it changes when an admin
+ * edits a user, not when recruitment work moves, so it must not be invalidated by
+ * every board action.
+ */
+export const hrModuleUserIdsKey = ["hrModuleUserIds"] as const;
+
+export async function fetchHrModuleUserIds(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("fms_hr_module_user_ids");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { user_id: string }[]).map((r) => r.user_id);
+}

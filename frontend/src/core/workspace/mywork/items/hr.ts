@@ -1,7 +1,7 @@
 /**
  * HR Recruitment → work items. See ./README.md.
  *
- * OWNERSHIP HERE IS TWO RULES, NOT ONE.
+ * OWNERSHIP HERE IS THREE RULES, NOT ONE.
  *
  * Most steps route by plain step ownership, so they use the shared
  * `isMineByStepOwners`. But the HOD steps have no row in `fms_hr_step_owners` at
@@ -9,6 +9,13 @@
  * there is no departments.hod_id, and one global owner would send Sales candidates
  * to the Exim head. They route to the requisition's OWN hiring managers instead,
  * exactly as `fms_hr_can_act()` does server-side.
+ *
+ * `interview_2` then adds a third: the panel actually BOOKED for the round, which
+ * since 20261020130000 may be any head set up to raise an MRF and not only this
+ * vacancy's hiring manager. It is ORed on top of the hiring-manager rule rather than
+ * replacing it — the server does the same (`fms_hr_can_act OR
+ * fms_hr_is_interview_panel`), so both keep the round and a handover can never leave
+ * it owned by nobody.
  *
  * Filtering those by step ownership alone drops them on the floor: the lookup finds
  * no row, returns nobody, and the work belongs to NO ONE. That went unnoticed while
@@ -37,13 +44,42 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
   /** Requisition → its hiring managers, for the HOD steps that route per-vacancy. */
   const managersByReq = new Map(data.requisitions.map((r) => [r.id, r.hiringManagerIds]));
 
-  const isMine = (stepKey: string, requisitionId: string | null | undefined): boolean =>
-    isHodStep(stepKey as Parameters<typeof isHodStep>[0])
+  /**
+   * Candidate → the panel booked for `interview_2`, if anyone is on it.
+   *
+   * Round 2 can now be handed to any head set up to raise an MRF, and that head is not
+   * necessarily this requisition's hiring manager — so routing R2 by `managersByReq`
+   * alone would send it to somebody who is not taking it and hide it from whoever is.
+   *
+   * Ownership is ADDITIVE, not transferred: the hiring manager keeps the round and the
+   * booked panel gains it, matching fms_hr_can_act OR fms_hr_is_interview_panel on the
+   * server. That is deliberate — a handover must never leave a round owned by nobody.
+   *
+   * An empty panel is an auto-advance STUB, not a booking, so it contributes nothing
+   * and the round correctly stays with the hiring manager until someone is put on it.
+   */
+  const r2PanelByCandidate = new Map<string, string[]>();
+  for (const iv of data.interviews) {
+    if (iv.round === 2 && !iv.heldAt && iv.interviewerIds.length > 0) {
+      r2PanelByCandidate.set(iv.candidateId, iv.interviewerIds);
+    }
+  }
+
+  const isMine = (
+    stepKey: string,
+    requisitionId: string | null | undefined,
+    entityId?: string,
+  ): boolean => {
+    if (stepKey === "interview_2" && entityId && (r2PanelByCandidate.get(entityId) ?? []).includes(uid)) {
+      return true;
+    }
+    return isHodStep(stepKey as Parameters<typeof isHodStep>[0])
       ? (managersByReq.get(requisitionId ?? "") ?? []).includes(uid)
       : isMineByStepOwners(stepKey, uid, owners);
+  };
 
   return buildQueueEntries(hrSnapshotFrom(data))
-    .filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId))
+    .filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId, e.entityId))
     .map((e) => ({
       id: `hr:${e.entityId}:${e.stepKey}`,
       source: "hr",
@@ -55,7 +91,7 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
       to: `/hr-recruitment/requisitions/${
         e.entityType === "requisition" ? e.entityId : e.requisitionId ?? ""
       }`,
-      assignment: isMine(e.stepKey, e.requisitionId) ? ("direct" as const) : ("team" as const),
+      assignment: isMine(e.stepKey, e.requisitionId, e.entityId) ? ("direct" as const) : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
     }));
 }

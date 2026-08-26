@@ -83,7 +83,11 @@ export default function HrLayout() {
           s.isStepOwner("interview_2") ||
           s.isStepOwner("interview_3") ||
           s.isStepOwner("hr_shortlist") ||
-          s.isProcessCoordinator,
+          s.isProcessCoordinator ||
+          // A head booked onto a round owns none of those steps — the HOD steps have no
+          // rows in the step-owner table at all — so without this the one screen they
+          // were sent to had no link in the sidebar.
+          s.isBookedInterviewer,
         canOnboard: s.isStepOwner("onboarding"),
         // Coordinators chase everything and the server already lets them act, so the
         // link must appear for them too — otherwise the page they can open has no

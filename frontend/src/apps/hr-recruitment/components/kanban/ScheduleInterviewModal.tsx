@@ -4,7 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
-import { interviewerPool, interviewerOptions } from "../../lib/interviewers";
+import { interviewerPool, interviewerOptions, withoutModuleAccess } from "../../lib/interviewers";
 import { useHrStore } from "../../store";
 import type { Candidate } from "../../types";
 
@@ -40,11 +40,21 @@ export default function ScheduleInterviewModal({
   const [err, setErr] = useState<string | null>(null);
 
   const roundLabel = round === 0 ? "the telephonic screen" : `Round ${round}`;
+  // `orgPeople`, not `profiles`: the directory is RLS-scoped, so a head of department
+  // outside the reader's own department never reached the browser and was dropped from
+  // the list without a word. See lib/interviewers.ts.
   const pool = useMemo(
-    () => interviewerPool(round, s.profiles, s.departments, req),
-    [round, s.profiles, s.departments, req],
+    () => interviewerPool(round, s.orgPeople, s.departments, req, s.mrfOwnerIds),
+    [round, s.orgPeople, s.departments, req, s.mrfOwnerIds],
   );
-  const people: MultiOption[] = useMemo(() => interviewerOptions(pool.people), [pool]);
+  const people: MultiOption[] = useMemo(
+    () => interviewerOptions(pool, s.moduleUserIds),
+    [pool, s.moduleUserIds],
+  );
+  const noAccess = useMemo(
+    () => withoutModuleAccess(pool, interviewerIds, s.moduleUserIds),
+    [pool, interviewerIds, s.moduleUserIds],
+  );
 
   // The date is REQUIRED. A booking with no date is a round whose due date falls back to
   // "no date" — so it quietly leaves the overdue counts and the Control Center entirely,
@@ -94,11 +104,22 @@ export default function ScheduleInterviewModal({
             onChange={setInterviewerIds}
             options={people}
             placeholder="Pick the panel"
+            searchable
           />
           {pool.restricted ? (
             <span className="mt-1.5 block text-[11.5px] leading-snug text-grey-2">{pool.hint}</span>
           ) : (
             <span className="mt-1.5 block text-[11.5px] leading-snug text-grey">{pool.fallbackNote}</span>
+          )}
+          {/* Warn, never block: a head may genuinely be taking the interview. But they
+              would be notified about work behind a door they cannot open, and finding
+              that out from the recipient is worse than reading it here. */}
+          {noAccess.length > 0 && (
+            <span className="mt-1.5 block text-[11.5px] leading-snug text-yellow">
+              {noAccess.join(", ")} {noAccess.length === 1 ? "has" : "have"} no access to New Recruitment. The
+              booking still works and they will be told, but the link in it lands on Access Denied until an
+              admin grants them the module.
+            </span>
           )}
           {/* Additive, not exclusive: a panel is often two portal users PLUS an
               external consultant, and forcing a choice would lose one of them. */}

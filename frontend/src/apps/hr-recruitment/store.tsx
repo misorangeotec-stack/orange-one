@@ -3,10 +3,17 @@ import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
-import { fetchOrgPeople } from "@/core/platform/orgPeople";
+import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
-import { candidateWindowStartIso, fetchHrData, HR_QK, hrQueryKey } from "./data/hrFetch";
+import {
+  candidateWindowStartIso,
+  fetchHrData,
+  fetchHrModuleUserIds,
+  HR_QK,
+  hrModuleUserIdsKey,
+  hrQueryKey,
+} from "./data/hrFetch";
 import {
   addCandidates as addCandidatesWrite,
   announce as announceWrite,
@@ -19,6 +26,7 @@ import {
   setCandidateNote as setCandidateNoteWrite,
   setCandidateTags as setCandidateTagsWrite,
   saveCandidateScore as saveCandidateScoreWrite,
+  reassignInterview as reassignInterviewWrite,
   recordInterviewResult as recordInterviewResultWrite,
   recordProbationReview as recordProbationReviewWrite,
   scheduleInterview as scheduleInterviewWrite,
@@ -90,6 +98,7 @@ import {
   type StageEntry,
   type CompletedRow,
 } from "./lib/queues";
+import { roundOf } from "./lib/board";
 import type {
   Candidate,
   CandidateFit,
@@ -362,6 +371,32 @@ interface HrStoreValue {
   completedFor: (stepKey: StepKey) => StageEntry<CompletedRow>[];
   /** Actor id → display name, resolving people outside the RLS directory (org-wide). */
   personName: (id: string | null) => string;
+  /**
+   * The same lookup, but `undefined` when the person genuinely cannot be found.
+   *
+   * `panelNames` DROPS an id it cannot resolve, so passing it `personName` would print
+   * the literal "Unknown user" inside a panel line. Passing it the RLS-scoped
+   * `profileById` — which every caller used to do — silently erased any interviewer
+   * outside the reader's own department, making a booked round look unassigned. This
+   * tries the directory first (no flicker while the org roster loads) and falls back
+   * to the org-wide roster before giving up.
+   */
+  personNameOrNull: (id: string) => string | undefined;
+  /**
+   * The ORG-WIDE roster (`list_org_people`), not the RLS-scoped directory.
+   *
+   * `profiles` exposes self + downline + same-department peers only, so any picker
+   * built on it silently omits people in other departments. The interview panel is the
+   * clearest case: a head of department elsewhere in the company simply was not there.
+   * Non-sensitive fields only — no phone, no email.
+   */
+  orgPeople: OrgPerson[];
+  /** Everyone who can open New Recruitment. Empty while the lookup is in flight. */
+  moduleUserIds: ReadonlySet<string>;
+  /** Owners of the `mrf` step — the heads this module is set up with, offered for R2. */
+  mrfOwnerIds: string[];
+  /** On the panel of at least one interview that has not been held yet. */
+  isBookedInterviewer: boolean;
   /** The EFFECTIVE user id — what "Mine" means on a Completed tab. */
   userId: string;
   /** Set in persona mode so the Completed tab can say whose work "Mine" is showing. */
@@ -420,6 +455,15 @@ interface HrStoreValue {
     interviewerIds: string[],
     interviewerName: string | null,
     scheduledOn: string | null,
+  ) => Promise<void>;
+  /** Hand a BOOKED, not-yet-held round to a different panel. `reason` rides the trail. */
+  reassignInterview: (
+    candidate: Candidate,
+    round: number,
+    interviewerIds: string[],
+    interviewerName: string | null,
+    scheduledOn: string | null,
+    reason: string,
   ) => Promise<void>;
   recordInterviewResult: (
     candidate: Candidate,
@@ -498,6 +542,16 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   // The Completed tab names people the RLS directory cannot reach (a cross-department
   // hiring manager, an external actor stamped by id). Org people is the org-wide roster.
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
+
+  // Who can actually OPEN this module. The R2 interview picker offers the heads set up
+  // to raise an MRF, and not all of them hold a grant on New Recruitment — booking one
+  // silently would notify somebody who lands on Access Denied. Its own cache entry: it
+  // changes when an admin edits a user, not when recruitment work moves.
+  const { data: moduleUserIdList } = useQuery({
+    queryKey: hrModuleUserIdsKey,
+    queryFn: fetchHrModuleUserIds,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
@@ -743,7 +797,23 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       const r = reqById.get(c.requisitionId);
       if (!r) return false;
       const step = STAGE_PENDING_STEP[c.stage];
-      if (step) return canActOn(step, r);
+      if (step) {
+        // The BOOKED panel owns the round it was given, alongside the requisition's
+        // hiring manager — the client mirror of fms_hr_is_interview_panel. It lives
+        // here rather than in `canActOn` because that one is requisition-scoped and
+        // has no candidate to look a panel up by. Ownership is additive: the hiring
+        // manager keeps the round, so a handover can never leave it owned by nobody.
+        const round = roundOf(c.stage);
+        if (
+          round !== null &&
+          (ivsByCan.get(c.id) ?? []).some(
+            (iv) => iv.round === round && iv.interviewerIds.includes(user.id),
+          )
+        ) {
+          return true;
+        }
+        return canActOn(step, r);
+      }
       // A card with no pending step owes nobody a move — except Made Offer, which
       // still has two exits: mark them hired once they join, or disqualify them if
       // the offer falls through. Those belong to the onboarding owner and the offer
@@ -845,6 +915,31 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       if (id === user.id) return user.name;
       return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
     };
+
+    /**
+     * The same lookup without the "Unknown user" sentinel — see the doc on the type.
+     * Directory first so a same-department name never flickers while the org roster
+     * loads; org-wide second so a cross-department interviewer resolves at all.
+     */
+    const personNameOrNull = (id: string): string | undefined => {
+      if (id === user.id) return user.name;
+      return dir.profileById(id)?.name ?? (orgPeople ?? []).find((p) => p.id === id)?.name;
+    };
+
+    const moduleUserIds: ReadonlySet<string> = new Set(moduleUserIdList ?? []);
+    const mrfOwnerIds = stepOwnerFor("mrf")?.employeeIds ?? [];
+
+    /**
+     * On the panel of an interview that has not happened yet.
+     *
+     * The Interviews queue and its sidebar link were gated on `isStepOwner(interview_*)`
+     * / coordinator / owning the requisition — and the HOD steps have NO rows in the
+     * step-owner table, so a head booked onto a round they do not otherwise own got no
+     * link and an Access Denied on the page their notification points at.
+     */
+    const isBookedInterviewer = interviews.some(
+      (iv) => !iv.heldAt && iv.interviewerIds.includes(user.id),
+    );
 
     const deptOfReq = (requisitionId: string | null): string | null =>
       requisitionId ? (reqById.get(requisitionId)?.departmentId ?? null) : null;
@@ -1098,6 +1193,11 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
 
       completedFor,
       personName,
+      personNameOrNull,
+      orgPeople: orgPeople ?? [],
+      moduleUserIds,
+      mrfOwnerIds,
+      isBookedInterviewer,
       userId: user.id,
       stageScopeNote: user.id !== realUserId ? `Showing ${user.name}'s work` : undefined,
 
@@ -1151,14 +1251,18 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         // writes the activity row, so the audit trail is unaffected.
         const digestOnly = toStage === "hr_shortlisted";
         // Notify whoever now owes this card an action. A HOD step routes to the
-        // requisition's OWN hiring manager, not to a global owner list.
+        // requisition's OWN hiring manager, not to a global owner list — plus, when
+        // the move BOOKED a panel (an interview move carries `interviewerIds`), the
+        // people just put on it. Ownership is additive, so both are told: the panel
+        // has to turn up, and the hiring manager still owns the vacancy.
+        const bookedPanel = payload?.interviewerIds ?? [];
         const recipients = digestOnly
           ? []
           : nextStep && r
             ? isHodStep(nextStep)
-              ? r.hiringManagerIds
-              : ownerIdsOf(nextStep)
-            : [];
+              ? [...new Set([...r.hiringManagerIds, ...bookedPanel])]
+              : [...new Set([...ownerIdsOf(nextStep), ...bookedPanel])]
+            : bookedPanel;
         await safeAnnounce({
           entityType: "candidate",
           entityId: c.id,
@@ -1203,6 +1307,51 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       scheduleInterview: async (id, round, interviewerIds, interviewerName, scheduledOn) => {
         await scheduleInterviewWrite(id, round, interviewerIds, interviewerName, scheduledOn);
+        // Tell the panel. Booking used to notify NOBODY — not the people put on it,
+        // not anyone else — so a head learned they were taking a round only by opening
+        // the board. The panel is the audience here, not the step owner: they are the
+        // ones who now owe the interview.
+        const c = canById.get(id);
+        await safeAnnounce({
+          entityType: "candidate",
+          entityId: id,
+          type: "interview_booked",
+          text: `${c?.name ?? "A candidate"} — ${
+            round === 0 ? "telephonic screen" : `Round ${round}`
+          } booked${scheduledOn ? ` for ${scheduledOn}` : ""}`,
+          recipients: interviewerIds,
+          meta: { round, scheduled_on: scheduledOn },
+        });
+        await invalidate();
+      },
+      reassignInterview: async (c, round, interviewerIds, interviewerName, scheduledOn, reason) => {
+        const before = (ivsByCan.get(c.id) ?? []).find((iv) => iv.round === round);
+        await reassignInterviewWrite(c.id, round, interviewerIds, interviewerName, scheduledOn);
+        const roundLabel = round === 0 ? "the telephonic screen" : `Round ${round}`;
+        // The incoming panel is told they have it...
+        await safeAnnounce({
+          entityType: "candidate",
+          entityId: c.id,
+          type: "interview_reassigned",
+          text: `${c.name} — ${roundLabel} is now yours${reason.trim() ? ` (${reason.trim()})` : ""}`,
+          recipients: interviewerIds,
+          meta: { round, from: before?.interviewerIds ?? [], to: interviewerIds, reason: reason.trim() || null },
+        });
+        // ...and whoever is losing it is told to stop expecting it. Without this the
+        // outgoing head keeps a round on their list that is no longer theirs, which is
+        // exactly the confusion a handover is meant to remove. Anyone on both panels is
+        // dropped — being told you have gained and lost the same round is nonsense.
+        const dropped = (before?.interviewerIds ?? []).filter((id) => !interviewerIds.includes(id));
+        if (dropped.length) {
+          await safeAnnounce({
+            entityType: "candidate",
+            entityId: c.id,
+            type: "interview_handed_over",
+            text: `${c.name} — ${roundLabel} has been passed to someone else`,
+            recipients: dropped,
+            meta: { round },
+          });
+        }
         await invalidate();
       },
       recordInterviewResult: async (c, round, status, remarks, docPath, docName, videoUrl, nextStage) => {
@@ -1473,6 +1622,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     // `orgPeople` — personName closes over it; without it the memo would not recompute
     // when the org roster arrives and Completed-tab "By" names would stay "Unknown user".
     orgPeople,
+    // Same reason: the interview picker marks anyone who cannot open this module, and
+    // that marking must appear when the lookup lands rather than on the next board move.
+    moduleUserIdList,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
