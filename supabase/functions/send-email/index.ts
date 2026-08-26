@@ -1135,11 +1135,14 @@ async function compose(row: Row): Promise<Composed | null> {
     // already renders no actor row in that case, which is the correct reading:
     // the reminder is from the system, not from a colleague.
     const isAsset = row.kind.startsWith("asset-maintenance_");
-    // The two HR apps enqueue master-request events ONLY (migrations 20260814120000 /
-    // 20260814120100), so anything arriving under these prefixes is master-data
-    // governance — not a step alert. The footer wording below accounts for that.
+    // Employee Exit enqueues master-request events ONLY (20260814120100), and so did
+    // New Recruitment (20260814120000) until 20261020130100 added the two interview
+    // kinds below — so "hr-recruitment_" is no longer master-data governance by
+    // definition and the footer has to ask which it is.
     const isHr = row.kind.startsWith("hr-recruitment_");
     const isExit = row.kind.startsWith("hr-exit_");
+    // Booked or handed a round: the reader is on the PANEL, not the owner of a master.
+    const isHrInterview = row.kind.startsWith("hr-recruitment_interview_");
     // OCPI mails CUSTOMER-FACING documents - a quotation, then a contract that
     // gets signed by both sides - so its tag names the business the reader is
     // in rather than a queue. It is also the only sender here whose CTA can be
@@ -1169,7 +1172,9 @@ async function compose(row: Row): Promise<Composed | null> {
         eyebrow, headline, inner,
         tag,
         footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; automated ${appLabel} notification.<br>${
-          isHr || isExit
+          isHrInterview
+            ? `You're receiving this because you're on the panel for this interview.`
+            : isHr || isExit
             ? `You're receiving this because you own this master, or you raised the request.`
             : `You're receiving this because you're the next actor on this ${appLabel} document.`
         } Replies reach the person who acted.`,

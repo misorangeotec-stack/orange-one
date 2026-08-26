@@ -115,7 +115,16 @@ export default function StepOwnersSection() {
                     <td className="px-4 py-3">
                       {hod ? (
                         <span className="text-grey-2">
-                          The hiring manager who raised the requisition
+                          {/* Round 2 is the one HOD step with a wider rule: it is offered to
+                              everyone set up to raise an MRF (the row above), because the
+                              stage means "a head of department takes this" and the
+                              requisition's own manager defaults to whoever raised it. It
+                              stays Automatic rather than becoming an editable owner list —
+                              naming people here would make them recruitment staff, which
+                              grants sight of EVERY candidate's PII in the module. */}
+                          {st.key === "interview_2"
+                            ? "Anyone set up to raise an MRF, plus this requisition's hiring manager"
+                            : "The hiring manager who raised the requisition"}
                         </span>
                       ) : names.length ? (
                         <span className="text-navy">{names.join(", ")}</span>

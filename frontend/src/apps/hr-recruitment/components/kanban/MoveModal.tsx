@@ -6,7 +6,7 @@ import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelec
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
 import { formatDateDMY } from "@/shared/lib/date";
-import { interviewerPool, interviewerOptions } from "../../lib/interviewers";
+import { interviewerPool, interviewerOptions, withoutModuleAccess } from "../../lib/interviewers";
 import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, roundOf } from "../../lib/board";
@@ -77,11 +77,21 @@ export default function MoveModal({
   // A telephonic screen is round 0, so test against null — `round ? …` would skip it.
   const roundLabel = round === 0 ? "the telephonic screen" : `Round ${round}`;
   // Each round is offered only the people who actually take it — see lib/interviewers.ts.
+  // `orgPeople`, not `profiles`: the directory is RLS-scoped, so a head of department
+  // outside the reader's own department never reached the browser and was dropped from
+  // the list without a word.
   const pool = useMemo(
-    () => (round !== null ? interviewerPool(round, s.profiles, s.departments, req) : null),
-    [round, s.profiles, s.departments, req],
+    () => (round !== null ? interviewerPool(round, s.orgPeople, s.departments, req, s.mrfOwnerIds) : null),
+    [round, s.orgPeople, s.departments, req, s.mrfOwnerIds],
   );
-  const people: MultiOption[] = useMemo(() => (pool ? interviewerOptions(pool.people) : []), [pool]);
+  const people: MultiOption[] = useMemo(
+    () => (pool ? interviewerOptions(pool, s.moduleUserIds) : []),
+    [pool, s.moduleUserIds],
+  );
+  const noAccess = useMemo(
+    () => (pool ? withoutModuleAccess(pool, interviewerIds, s.moduleUserIds) : []),
+    [pool, interviewerIds, s.moduleUserIds],
+  );
   const reasons: ComboOption[] = useMemo(
     () => s.disqualificationReasons.filter((r) => r.active).map((r) => ({ value: r.id, label: r.name })),
     [s.disqualificationReasons],
@@ -211,6 +221,7 @@ export default function MoveModal({
                 onChange={setInterviewerIds}
                 options={people}
                 placeholder="Pick the panel"
+                searchable
               />
               {pool &&
                 (pool.restricted ? (
@@ -218,6 +229,15 @@ export default function MoveModal({
                 ) : (
                   <span className="mt-1.5 block text-[11.5px] leading-snug text-grey">{pool.fallbackNote}</span>
                 ))}
+              {/* Warn, never block: a head may genuinely be taking the interview. But
+                  they would be notified about work behind a door they cannot open. */}
+              {noAccess.length > 0 && (
+                <span className="mt-1.5 block text-[11.5px] leading-snug text-yellow">
+                  {noAccess.join(", ")} {noAccess.length === 1 ? "has" : "have"} no access to New Recruitment.
+                  The booking still works and they will be told, but the link in it lands on Access Denied
+                  until an admin grants them the module.
+                </span>
+              )}
               {/* Additive, not exclusive: a panel is often two portal users PLUS an
                   external consultant, and forcing a choice would lose one of them. */}
               <TextInput

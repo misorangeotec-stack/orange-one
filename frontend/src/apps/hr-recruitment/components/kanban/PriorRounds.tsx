@@ -56,7 +56,7 @@ export default function PriorRounds({
   return (
     <ul className="space-y-2.5">
       {rounds.map((iv) => (
-        <RoundCard key={iv.id} iv={iv} nameOf={(id) => s.profileById(id)?.name} onOpenDoc={openDoc} />
+        <RoundCard key={iv.id} iv={iv} nameOf={s.personNameOrNull} onOpenDoc={openDoc} />
       ))}
     </ul>
   );

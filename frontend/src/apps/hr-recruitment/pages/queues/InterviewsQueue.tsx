@@ -8,11 +8,12 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import InterviewResultModal from "../../components/kanban/InterviewResultModal";
 import ScheduleInterviewModal from "../../components/kanban/ScheduleInterviewModal";
+import ReassignInterviewModal from "../../components/kanban/ReassignInterviewModal";
 import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { roundOf } from "../../lib/board";
-import { panelNames } from "../../lib/interviewers";
+import { isBooked, panelNames } from "../../lib/interviewers";
 import type { StepKey } from "../../lib/steps";
 import type { StageEntry, CompletedRow } from "../../lib/queues";
 import type { Candidate, Interview, Requisition } from "../../types";
@@ -28,6 +29,13 @@ interface Row {
   requisition: Requisition;
   round: 0 | 1 | 2 | 3;
   interview: Interview | undefined;
+  /**
+   * Whether anyone is actually ON it. NOT the same as `interview` existing: passing a
+   * round inserts a STUB row for the next one with no panel and no date, so this page
+   * used to call those "Booked" and offer Record result — while the board, which tests
+   * the panel, correctly said "To be scheduled". Three rows were live in that state.
+   */
+  booked: boolean;
   mine: boolean;
 }
 
@@ -58,6 +66,7 @@ export default function InterviewsQueue() {
   /** The candidate now has a page, so the queue links to it rather than opening a dialog. */
   const openCandidate = (c: Candidate) => navigate(`/hr-recruitment/candidates/${c.id}`);
   const [book, setBook] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
+  const [reassign, setReassign] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [result, setResult] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [mineOnly, setMineOnly] = useState(false);
 
@@ -68,7 +77,12 @@ export default function InterviewsQueue() {
     s.isStepOwner("interview_3") ||
     s.isStepOwner("hr_shortlist") ||
     s.isProcessCoordinator ||
-    s.myRequisitions.length > 0;
+    s.myRequisitions.length > 0 ||
+    // Booked onto a round they do not otherwise own. The HOD steps have NO rows in the
+    // step-owner table, and `myRequisitions` is requester-or-hiring-manager, so a head
+    // handed Round 2 matched none of the tests above — they were notified about work and
+    // then met Access Denied on the page the notification points at.
+    s.isBookedInterviewer;
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
@@ -80,7 +94,14 @@ export default function InterviewsQueue() {
       const requisition = s.requisitionById(c.requisitionId);
       if (!requisition) continue;
       const interview = s.interviewsFor(c.id).find((iv) => iv.round === round && !iv.heldAt);
-      out.push({ candidate: c, requisition, round, interview, mine: s.canEdit && s.canActOnCandidate(c) });
+      out.push({
+        candidate: c,
+        requisition,
+        round,
+        interview,
+        booked: isBooked(interview),
+        mine: s.canEdit && s.canActOnCandidate(c),
+      });
     }
     return out.filter((r) => !mineOnly || r.mine);
   }, [s, mineOnly]);
@@ -96,7 +117,7 @@ export default function InterviewsQueue() {
   const dueOf = (r: Row) => s.candidateDueIso(r.candidate);
   const interviewerOf = (r: Row) =>
     r.interview
-      ? panelNames(r.interview.interviewerIds, r.interview.interviewerName, (id) => s.profileById(id)?.name)
+      ? panelNames(r.interview.interviewerIds, r.interview.interviewerName, s.personNameOrNull)
       : "";
 
   const columns: QueueColumn<Row>[] = [
@@ -148,7 +169,7 @@ export default function InterviewsQueue() {
       key: "status",
       header: "Status",
       cell: (r) =>
-        r.interview ? (
+        r.booked ? (
           <span className="rounded-full bg-page px-2 py-0.5 text-[11.5px] font-semibold text-navy">Booked</span>
         ) : (
           // The gap this page exists to expose: a round the system advanced them into
@@ -157,9 +178,9 @@ export default function InterviewsQueue() {
             Not booked
           </span>
         ),
-      sortValue: (r) => (r.interview ? 1 : 0),
-      filter: { kind: "text", get: (r) => (r.interview ? "Booked" : "Not booked") },
-      exportValue: (r) => (r.interview ? "Booked" : "Not booked"),
+      sortValue: (r) => (r.booked ? 1 : 0),
+      filter: { kind: "text", get: (r) => (r.booked ? "Booked" : "Not booked") },
+      exportValue: (r) => (r.booked ? "Booked" : "Not booked"),
       tdClassName: "whitespace-nowrap",
     },
     {
@@ -268,10 +289,17 @@ export default function InterviewsQueue() {
         ]}
         actions={(r) =>
           r.mine ? (
-            r.interview ? (
-              <Button size="sm" variant="ghost" onClick={() => setResult({ c: r.candidate, round: r.round })}>
-                Record result
-              </Button>
+            r.booked ? (
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" variant="ghost" onClick={() => setResult({ c: r.candidate, round: r.round })}>
+                  Record result
+                </Button>
+                {/* The round was booked against a name, and that name could not be
+                    changed: a wrong pick or a head on leave had no way out. */}
+                <Button size="sm" variant="ghost" onClick={() => setReassign({ c: r.candidate, round: r.round })}>
+                  Change interviewer
+                </Button>
+              </div>
             ) : (
               <Button size="sm" onClick={() => setBook({ c: r.candidate, round: r.round })}>
                 Book it
@@ -288,6 +316,14 @@ export default function InterviewsQueue() {
           round={book.round}
           open={!!book}
           onClose={() => setBook(null)}
+        />
+      )}
+      {reassign && (
+        <ReassignInterviewModal
+          candidate={reassign.c}
+          round={reassign.round}
+          open={!!reassign}
+          onClose={() => setReassign(null)}
         />
       )}
       {result && (

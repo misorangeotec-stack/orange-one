@@ -654,6 +654,37 @@ export async function scheduleInterview(
 }
 
 /**
+ * Hand a round that is ALREADY booked to somebody else.
+ *
+ * Separate from `scheduleInterview` even though both end in the same upsert, because
+ * the two mean different things and only one of them is safe on a held round: the
+ * schedule RPC resets `status` and NULLs `held_at`, which is right when re-booking an
+ * interview that never happened and would silently unmake a recorded result otherwise.
+ * `fms_hr_reassign_interview` refuses a held round outright, requires an existing
+ * booking, and lets the OUTGOING panel pass it on as well as the hiring manager.
+ *
+ * A blank `scheduledOn` keeps the standing date — a handover is usually "same slot,
+ * different person", and blanking it would drop the round out of every overdue count
+ * while still being somebody's work.
+ */
+export async function reassignInterview(
+  id: string,
+  round: number,
+  interviewerIds: string[],
+  interviewerName: string | null,
+  scheduledOn: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_reassign_interview", {
+    p_id: id,
+    p_round: round,
+    p_interviewer_ids: interviewerIds,
+    p_interviewer_name: interviewerName ?? undefined,
+    p_scheduled_on: scheduledOn ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Record the RESULT of a round (0 = telephonic, 1–3 = interviews) — this is what
  * closes it. `selected` advances the card to `nextStage` (any later interview round
  * still to come); left null the server picks the immediate next, and after the last

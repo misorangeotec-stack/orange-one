@@ -8027,6 +8027,14 @@ export type Database = {
         Args: { p_step_key: string; p_uid: string }
         Returns: boolean
       }
+      fms_hr_is_interview_panel: {
+        Args: { p_candidate: string; p_round: number; p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_module_user_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: { user_id: string }[]
+      }
       fms_hr_move_candidate: {
         Args: { p?: Json; p_id: string; p_to_stage: string }
         Returns: undefined
@@ -8044,6 +8052,16 @@ export type Database = {
       }
       fms_hr_post_job: {
         Args: { p_other_note?: string; p_platform_ids: string[]; p_posted_on?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_reassign_interview: {
+        Args: {
+          p_id: string
+          p_interviewer_ids?: string[]
+          p_interviewer_name?: string
+          p_round: number
+          p_scheduled_on?: string
+        }
         Returns: undefined
       }
       fms_hr_record_interview_result: {
