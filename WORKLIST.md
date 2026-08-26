@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-08-26
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -1013,13 +1013,13 @@ The live recruitment FMS — [frontend/src/apps/hr-recruitment/](frontend/src/ap
 id `hr-recruitment`, tables `fms_hr_*`, shown in the portal as **New Recruitment**. The two entries
 under **HR** above are separate *new* modules and do not belong here.
 
-### NR-1 · Round 2 offers every head set up to raise an MRF, and can be handed over  `[~]`
-*Raised 2026-08-25 · **Built 2026-08-25**, `npm run build` green · SQL applied live to
-`icutjkrqkbzwvmnfbzpr` (`20261020130000`, `20261020130100`) and the rollback rehearsed ·
-**Not yet walked through in the running app** — the Playwright browser profile was locked by an open
-Chrome session, so the picker, the handover and the outgoing-head ping have been proven against the
-database but not clicked · Plan of record:
-`C:\Users\Admin\.claude\plans\now-in-this-the-groovy-cherny.md`*
+### NR-1 · Round 2 offers every head set up to raise an MRF, and can be handed over  `[x]`
+*Raised 2026-08-25 · **Live 2026-08-26, 08:17 IST** on `master` at `adea51c` · SQL applied to
+`icutjkrqkbzwvmnfbzpr` (`20261020130000`, `20261020130100`) BEFORE the frontend, and the rollback
+rehearsed rather than read · **Not walked through in the running app** — the Playwright browser
+profile was locked by an open Chrome session, so the picker, the handover and the outgoing-head ping
+were proven against the database and by `npm run build`, but never clicked. Worth one pass by hand ·
+Plan of record: `C:\Users\Admin\.claude\plans\now-in-this-the-groovy-cherny.md`*
 
 Booking **Interview R2 — HOD** offers one name, and it is usually not a head of department. On
 MRF-2627-0009 (Krishan Pal, Design Engineer) the only option was *Saloni Rathod · Executive* — the
@@ -2227,9 +2227,9 @@ Removing the container and orphaning its contents compiles, ships, and looks fin
 
 ---
 
-### FIX-3 · An interview nobody was assigned showed as "Booked"  `[~]`
-*New Recruitment · Found 2026-08-25 while auditing **NR-1** · **Fixed in the working tree 2026-08-25**,
-build green — not yet on `master`, so no live stamp until it ships with NR-1*
+### FIX-3 · An interview nobody was assigned showed as "Booked"  `[x]`
+*New Recruitment · Found 2026-08-25 while auditing **NR-1** · **Fixed 2026-08-26, 08:17 IST** ·
+Live on `master` at `adea51c`, shipped with **NR-1***
 
 **What was seen:** in the Interviews queue, rounds with no interviewer and no date read **Booked**
 and offered **Record result**. There was no way to book them from that screen at all — the **Book
