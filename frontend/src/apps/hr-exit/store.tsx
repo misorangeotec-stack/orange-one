@@ -35,6 +35,7 @@ import {
   releaseFnfPayment as releaseFnfPaymentWrite,
   setClearanceNa as setClearanceNaWrite,
   setConfig as setConfigWrite,
+  reassignStep as reassignStepWrite,
   setStepOwner as setStepOwnerWrite,
   signAssets as signAssetsWrite,
   skipStep as skipStepWrite,
@@ -102,7 +103,7 @@ import {
 } from "./lib/queues";
 import { masterTypeLabel } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
-import { isManagerStep, SETTLEMENT_STEPS, type StepKey } from "./lib/steps";
+import { isManagerStep, SETTLEMENT_STEPS, stepByKey, type StepKey } from "./lib/steps";
 import type {
   ClearanceCheck,
   ClearanceItem,
@@ -383,6 +384,22 @@ interface ExitStoreValue {
    * The RPC re-checks and is the real gate; this only decides what the UI offers.
    */
   canActOn: (stepKey: StepKey, c: ExitCase) => boolean;
+  /**
+   * VISIBILITY, not authority. Whether this step of this case belongs on MY
+   * queue - which follows the ASSIGNEE even for an admin or coordinator, while
+   * canActOn keeps its admin arm.
+   */
+  stepIsMine: (stepKey: StepKey, c: ExitCase) => boolean;
+  /** Who is holding (case, step), or null. */
+  assigneeOfStep: (caseId: string | null, stepKey: string) => string | null;
+  /** May I reassign this step, or take it back? Broader than acting on it. */
+  canReassignStep: (stepKey: StepKey, c: ExitCase) => boolean;
+  /** Who it may be reassigned to: the pool plus the step's natural owners, minus me. */
+  reassignCandidates: (stepKey: StepKey, c: ExitCase) => { id: string; name: string }[];
+  /** Departments the Setup picker filters candidates by. A UI FILTER - grants nothing. */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a step. The authority. */
+  reassignPoolUserIds: string[];
 
   // queues — the SAME entries the Control Center counts, so they cannot disagree
   queueEntries: QueueEntry[];
@@ -520,6 +537,10 @@ interface ExitStoreValue {
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
+  /** Reassign one step, or pass assignee: null to return it to its natural owner. */
+  reassignStep: (input: { exitCase: ExitCase; stepKey: StepKey; assignee: string | null; note?: string | null }) => Promise<void>;
+  /** Save who may be reassigned a step. departmentIds is a picker filter and grants nothing. */
+  setReassignPool: (input: { departmentIds: string[]; userIds: string[] }) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
   setPolicy: (policy: ExitPolicy) => Promise<void>;
 
@@ -553,6 +574,7 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
   });
 
   const stepOwners = data?.stepOwners ?? [];
+  const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
   const reasons = data?.reasons ?? [];
   const assetTypes = data?.assetTypes ?? [];
@@ -580,6 +602,8 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
   const activity = data?.activity ?? [];
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
+  const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
+  const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const policy: ExitPolicy = data?.config.policy ?? DEFAULT_POLICY;
 
@@ -749,10 +773,80 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
      * `handover` needs both confirmations — and a manager who never responds must not
      * be able to wedge the case.
      */
+    /**
+     * Who is holding (case, step), or null. Keyed the way fms_exit_can_act
+     * authorises, so the client and the server cannot disagree.
+     */
+    const assigneeByKey = new Map<string, string>();
+    for (const a of stepAssignees) assigneeByKey.set(a.caseId + '|' + a.stepKey, a.assignedTo);
+    const assigneeOfStep = (caseId: string | null, stepKey: string): string | null =>
+      caseId ? assigneeByKey.get(caseId + '|' + stepKey) ?? null : null;
+
+    /** Who owns a step when nobody is assigned. Mirrors fms_exit_is_natural_step_owner. */
+    const isNaturalStepOwner = (stepKey: StepKey, c: ExitCase, uid: string): boolean => {
+      if (isManagerStep(stepKey) && c.reportingManagerIds.includes(uid)) return true;
+      return stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid));
+    };
+
     const canActOn = (stepKey: StepKey, c: ExitCase): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
+      // A REASSIGNMENT MOVES THE WORK. While an assignee is set they are the only
+      // non-admin who may act - deliberately NOT an OR with the natural owners, or
+      // the step would stay in their queues too. It REPLACES the whole additive
+      // chain below, which is also what gives it precedence over a later
+      // fms_exit_update_case manager edit. Exact mirror of fms_exit_can_act__ungated.
+      const assignee = assigneeOfStep(c.id, stepKey);
+      if (assignee) return assignee === user.id;
       if (isManagerStep(stepKey) && c.reportingManagerIds.includes(user.id)) return true;
       return isStepOwner(stepKey); // no early return above — access is additive
+    };
+
+    /**
+     * VISIBILITY - is this step on MY desk? Deliberately NOT canActOn, which is
+     * AUTHORITY and opens with an admin/coordinator arm.
+     *
+     * ⚠ manager_review, exit_interview and hr_head_approval are all owned by the
+     *   ONE person who is also the sole exit coordinator, so canActOn returns true
+     *   for her on everything. Without this split a reassignment would leave her
+     *   queue never - and she is the most likely person to use it.
+     */
+    const stepIsMine = (stepKey: StepKey, c: ExitCase): boolean => {
+      const assignee = assigneeOfStep(c.id, stepKey);
+      if (assignee) return assignee === user.id;
+      return canActOn(stepKey, c);
+    };
+
+    /**
+     * May I reassign this step, or take it back? Broader than acting on it: the
+     * NATURAL owner keeps this after passing it on. Mirrors fms_exit_reassign_step.
+     *
+     * WARNING: identity comes from the REAL session, never the persona - this
+     * gates a write the server authorises against auth.uid().
+     */
+    const canReassignStep = (stepKey: StepKey, c: ExitCase): boolean => {
+      // Terminal statuses in this module are withdrawn / rejected / archived -
+      // there is no 'cancelled'. Mirrors the guard in fms_exit_reassign_step.
+      if (c.status === 'withdrawn' || c.status === 'rejected' || c.status === 'archived') return false;
+      const me = realUserId ?? '';
+      if (!me || !canEdit) return false;
+      if (session.isAdmin || processCoordinatorIds.includes(me)) return true;
+      if (assigneeOfStep(c.id, stepKey) === me) return true;
+      return isNaturalStepOwner(stepKey, c, me);
+    };
+
+    /**
+     * Who this step may be handed to: the configured pool plus its own natural
+     * owners so it can be returned, minus me. Names go through personName, i.e.
+     * the ORG-WIDE list, because the directory is RLS-scoped.
+     */
+    const reassignCandidates = (stepKey: StepKey, c: ExitCase): { id: string; name: string }[] => {
+      const ids = new Set<string>(reassignPoolUserIds);
+      if (isManagerStep(stepKey)) for (const id of c.reportingManagerIds) ids.add(id);
+      for (const id of ownerIdsOf(stepKey)) ids.add(id);
+      ids.delete(realUserId ?? '');
+      return [...ids]
+        .map((id) => ({ id, name: personName(id) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     };
 
     const isMine = (c: ExitCase) => c.employeeUserId === user.id || c.raisedBy === user.id;
@@ -880,7 +974,7 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
           );
         }
         const c = caseMap.get(e.caseId);
-        return c ? canActOn(stepKey, c) : false;
+        return c ? stepIsMine(stepKey, c) : false;
       });
 
     // Actor id → display name. The Completed tab names people outside the RLS
@@ -1093,6 +1187,12 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
       isOpenCase,
 
       canActOn,
+      stepIsMine,
+      assigneeOfStep,
+      canReassignStep,
+      reassignCandidates,
+      reassignPoolDepartmentIds,
+      reassignPoolUserIds,
 
       queueEntries,
       myQueue,
@@ -1100,6 +1200,10 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
       // Mirrors the three ownership rules of fms_exit_can_act() / can_tick_clearance().
       // A clearance row's own owners WIN; a manager step is manager + step owner, additively.
       queueOwnerIds: (e) => {
+        // Assigned? Then it is owed by exactly one person, whatever the step -
+        // including a clearance row, whose own owners otherwise win.
+        const assignee = assigneeOfStep(e.caseId, e.stepKey);
+        if (assignee) return [assignee];
         if (e.ownerIds) return e.ownerIds;
         const owners = ownerIdsOf(e.stepKey);
         const c = caseMap.get(e.caseId);
@@ -1381,6 +1485,32 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
         await setStepOwnerWrite(stepKey, input);
         await invalidate();
       },
+      reassignStep: async ({ exitCase, stepKey, assignee, note }) => {
+        await reassignStepWrite(exitCase.id, stepKey, assignee, note ?? null);
+        const returned = assignee === null;
+        const label = stepByKey(stepKey)?.title ?? stepKey;
+        await safeAnnounce({
+          entityType: 'case',
+          entityId: exitCase.id,
+          type: 'step_reassigned',
+          text: returned
+            ? label + ' on ' + exitCase.exitNo + ' was returned to its usual owner' + (note ? ' - ' + note : '')
+            : label + ' on ' + exitCase.exitNo + ' was reassigned to ' + personName(assignee) + (note ? ' - ' + note : ''),
+          recipients: returned
+            ? Array.from(new Set([
+                ...(isManagerStep(stepKey) ? exitCase.reportingManagerIds : []),
+                ...ownerIdsOf(stepKey),
+              ]))
+            : [assignee as string],
+        });
+        await invalidate();
+      },
+      setReassignPool: async ({ departmentIds, userIds }) => {
+        // department_ids is stored so Setup can re-open on the same filter; it is
+        // NOT read by fms_exit_can_receive_reassignment and grants nothing.
+        await setConfigWrite('reassign_pool', { department_ids: departmentIds, user_ids: userIds });
+        await invalidate();
+      },
       setStepSla: async (map) => {
         await setConfigWrite("step_sla", map as unknown as Record<string, unknown>);
         await invalidate();
@@ -1490,6 +1620,10 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
     clearanceItems, masterManagers, masterRequests, cases, skips, clearanceChecks, assets,
     handovers, interviews, settlements, payrollLines, documents, stepOwners,
     processCoordinatorIds, stepSla, policy, activity, notifications, isAdmin, user.id, user.name,
+    // Load-bearing and invisible to tsc, like orgPeople below: without these the
+    // memo keeps the assignees and the pool it was built with, so a reassignment
+    // would not move anything on screen and Setup Save would never confirm.
+    stepAssignees, reassignPoolDepartmentIds, reassignPoolUserIds,
     // ⚠ `orgPeople` — `personName` closes over it; without it the memo would not recompute
     //   when the org-people list loads, and every actor would read "Unknown user".
     orgPeople,

@@ -637,6 +637,25 @@ export interface ExitMasterRequest {
 
 /* -------------------------------- config ----------------------------------- */
 
+/**
+ * Who is currently holding one step of one exit case.
+ *
+ * ⚠ Keyed on (caseId, stepKey), matching fms_exit_can_act. An assignee REPLACES
+ *   the natural owner for that step - including the reporting managers, so it
+ *   also overrides a later fms_exit_update_case manager edit until released.
+ *
+ * ⚠ Nothing here is called a "handover": `handover` is an existing STEP KEY in
+ *   this module meaning the leaver handing work back to their team.
+ */
+export interface StepAssignee {
+  caseId: string;
+  stepKey: string;
+  assignedTo: string;
+  assignedBy: string | null;
+  assignedAt: string;
+  note: string | null;
+}
+
 export interface StepOwner {
   id: string;
   stepKey: string;

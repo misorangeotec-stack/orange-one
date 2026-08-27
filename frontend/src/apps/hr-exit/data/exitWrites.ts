@@ -761,6 +761,39 @@ export async function setStepOwner(stepKey: string, input: StepOwnerInput): Prom
 /* --------------------------------- config --------------------------------- */
 
 /** Upsert a singleton config key (admin-only under RLS). */
+/**
+ * Reassign ONE step of ONE exit case to another person, or pass a null
+ * `assignee` to return it to the step's natural owner ("take it back").
+ *
+ * ⚠ Deliberately NOT called a handover. `handover` is an existing STEP KEY in
+ *   this module, meaning the leaver handing work back to their team.
+ *
+ * ⚠ An assignee takes PRECEDENCE over a later `updateCase` edit of
+ *   `reportingManagerIds`. Both are ways of changing who owes a manager step, so
+ *   one has to win, and it is the explicit choice — somebody picked this person
+ *   for this step on purpose. A manager change that looks ignored is explained by
+ *   an outstanding assignee.
+ *
+ * The server accepts this from an admin, a process coordinator, the step's
+ * natural owner, or the current assignee — broader than who may ACT, so the
+ * original owner can take it back. It does not announce; the store raises the
+ * notification client-side so the email renders with content.
+ */
+export async function reassignStep(
+  caseId: string,
+  stepKey: string,
+  assignee: string | null,
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_exit_reassign_step", {
+    p_case: caseId,
+    p_step_key: stepKey,
+    p_assignee: assignee,
+    p_note: note,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function setConfig(key: string, value: Record<string, unknown>): Promise<void> {
   const { error } = await supabase
     .from("fms_exit_config")

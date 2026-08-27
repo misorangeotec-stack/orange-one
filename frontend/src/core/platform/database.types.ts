@@ -1471,6 +1471,41 @@ export type Database = {
           },
         ]
       }
+      fms_exit_step_assignees: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          assigned_to: string
+          case_id: string
+          note: string | null
+          step_key: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          assigned_to: string
+          case_id: string
+          note?: string | null
+          step_key: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          assigned_to?: string
+          case_id?: string
+          note?: string | null
+          step_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_step_assignees_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_exit_step_owners: {
         Row: {
           created_at: string
@@ -7827,6 +7862,23 @@ export type Database = {
       fms_exit_can_read_case: {
         Args: { p_case: string; p_uid: string }
         Returns: boolean
+      }
+      fms_exit_can_receive_reassignment: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_is_natural_step_owner: {
+        Args: { p_case: string; p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_reassign_step: {
+        Args: {
+          p_assignee?: string | null
+          p_case: string
+          p_note?: string | null
+          p_step_key: string
+        }
+        Returns: undefined
       }
       fms_exit_can_read_settlement: {
         Args: { p_case: string; p_uid: string }

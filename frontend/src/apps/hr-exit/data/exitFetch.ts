@@ -26,6 +26,7 @@ import type {
   ExitReason,
   ExitSettlement,
   ManagerRecommendation,
+  StepAssignee,
   StepOwner,
   StepSkip,
 } from "../types";
@@ -47,6 +48,7 @@ const PAGE = 1000;
 
 type Tbl =
   | "fms_exit_step_owners"
+  | "fms_exit_step_assignees"
   | "fms_exit_config"
   | "fms_exit_reasons"
   | "fms_exit_asset_types"
@@ -86,6 +88,14 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 
 export interface ExitConfig {
   processCoordinatorIds: string[];
+  /**
+   * Departments whose employees the Setup picker offers as reassignment
+   * candidates. A UI FILTER ONLY - it grants nothing. Authority is
+   * reassignPoolUserIds alone.
+   */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a STEP of an exit case. The authority. */
+  reassignPoolUserIds: string[];
   /** Per-step due-date rules (anchor + days), merged over the code defaults. */
   stepSla: StepSlaMap;
   policy: ExitPolicy;
@@ -101,6 +111,7 @@ export const exitQueryKey = (userId: string | null) => [...EXIT_QK, userId] as c
 
 export interface ExitData {
   stepOwners: StepOwner[];
+  stepAssignees: StepAssignee[];
   designations: Designation[];
   config: ExitConfig;
   reasons: ExitReason[];
@@ -473,6 +484,15 @@ const mapSkip = (r: any): StepSkip => ({
   skippedAt: r.skipped_at,
 });
 
+const mapStepAssignee = (r: any): StepAssignee => ({
+  caseId: r.case_id,
+  stepKey: r.step_key,
+  assignedTo: r.assigned_to,
+  assignedBy: r.assigned_by ?? null,
+  assignedAt: r.assigned_at,
+  note: r.note ?? null,
+});
+
 const mapStepOwner = (r: any): StepOwner => ({
   id: r.id,
   stepKey: r.step_key,
@@ -509,6 +529,7 @@ const mapNotification = (r: any): ExitNotification => ({
 export async function fetchExitData(): Promise<ExitData> {
   const [
     stepOwners,
+    stepAssignees,
     configRows,
     designations,
     reasons,
@@ -531,6 +552,7 @@ export async function fetchExitData(): Promise<ExitData> {
     notifications,
   ] = await Promise.all([
     fetchAll("fms_exit_step_owners"),
+    fetchAll("fms_exit_step_assignees", "case_id"),
     fetchAll("fms_exit_config", "key"),
     fetchAll("designations"),
     fetchAll("fms_exit_reasons"),
@@ -592,10 +614,13 @@ export async function fetchExitData(): Promise<ExitData> {
       defaultNoticeDays: Number(byKey.get("default_notice_days")?.value ?? 30),
       allowSelfService: byKey.get("allow_self_service")?.value !== false,
     },
+    reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
+    reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
   };
 
   return {
     stepOwners: stepOwners.map(mapStepOwner),
+    stepAssignees: stepAssignees.map(mapStepAssignee),
     designations: designations.map(mapDesignation),
     config,
     reasons: reasons.map(mapMaster),
