@@ -542,6 +542,28 @@ export async function updateApprovalRequest(input: {
 }
 
 /**
+ * Hand ONE requisition awaiting approval to another person, or pass a null
+ * `approverId` to return it to the amount band ("take it back").
+ *
+ * The server accepts this from an admin, any member of the requisition's current
+ * band, or the current holder — deliberately broader than who may DECIDE it, so
+ * an approver can pull back a requisition he handed over. It does not announce;
+ * the store raises the notification client-side so the email renders with
+ * content (see `lib/emailMeta.ts`).
+ */
+export async function reassignApprovalRequest(input: {
+  requestId: string;
+  /** Null = return it to the amount band. */
+  approverId: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_reassign_request", {
+    p_request_id: input.requestId,
+    p_approver_id: input.approverId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Stage 2 — save sourcing for one line (quotations + recommendation + final qty/rate).
  *
  * @deprecated Per-LINE. Superseded by `saveSourcingRequest`. Retained because it

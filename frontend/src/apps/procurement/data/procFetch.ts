@@ -107,6 +107,14 @@ export interface ProcConfig {
   amountBasis: string;
   /** Per-step due-date rules (anchor + working days), merged over the code defaults. */
   stepSla: StepSlaMap;
+  /**
+   * Departments whose employees the Setup picker offers as handover candidates.
+   * A UI FILTER ONLY - it grants nothing. Authority is reassignPoolUserIds alone,
+   * exactly as fms_purchase_can_receive_reassignment reads it server-side.
+   */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a requisition awaiting approval. The authority. */
+  reassignPoolUserIds: string[];
 }
 
 /**
@@ -324,6 +332,7 @@ const mapRequestItem = (r: any): RequestItem => ({
   lineValue: num(r.line_value),
   status: r.status as LineStatus,
   approverId: r.approver_id ?? null,
+  assignedApproverId: r.assigned_approver_id ?? null,
   approvalTier: r.approval_tier ?? null,
   rejectReason: r.reject_reason ?? null,
   cancelReason: r.cancel_reason ?? null,
@@ -618,6 +627,8 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     amountBasis: (configByKey.get("amount_basis")?.value ?? "line_incl_gst") as string,
     // Unset or partially-stored rules fall back to the code defaults.
     stepSla: resolveStepSla(configByKey.get("step_sla")),
+    reassignPoolDepartmentIds: (configByKey.get("reassign_pool")?.department_ids ?? []) as string[],
+    reassignPoolUserIds: (configByKey.get("reassign_pool")?.user_ids ?? []) as string[],
   };
 
   return {

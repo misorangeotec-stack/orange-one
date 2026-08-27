@@ -6,6 +6,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import ReassignmentSection from "./ReassignmentSection";
 import { useProcurementStore } from "../../store";
 import type { ApprovalBand } from "../../types";
 
@@ -19,6 +20,10 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
  * Several approvers on a band means ANY ONE of them can decide — it is a cover
  * list so a single absence can't stall the queue, not a sequential or quorum
  * approval. All of them are notified.
+ *
+ * Below the list sits ReassignmentSection: an approver holding a requisition can
+ * hand THAT ONE requisition to somebody the admin has named there. Reassign only
+ * ever moves a requisition off a band, so the two controls belong on one tab.
  */
 export default function ApprovalMatrixSection() {
   const s = useProcurementStore();
@@ -226,6 +231,10 @@ export default function ApprovalMatrixSection() {
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>
+
+      <div className="pt-2">
+        <ReassignmentSection />
+      </div>
     </div>
   );
 }

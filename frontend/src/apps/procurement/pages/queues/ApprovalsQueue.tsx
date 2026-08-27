@@ -9,6 +9,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
+import ReassignApprovalModal from "../../components/ReassignApprovalModal";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
@@ -25,6 +26,7 @@ export default function ApprovalsQueue() {
   const s = useProcurementStore();
   const { user } = useEffectiveIdentity();
   const [approving, setApproving] = useState<PurchaseRequest | null>(null);
+  const [reassigning, setReassigning] = useState<PurchaseRequest | null>(null);
   const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedApprovalRequestEntries, user.id);
 
@@ -205,7 +207,12 @@ export default function ApprovalsQueue() {
             emptyMessage="Requisitions routed to you will appear here."
             initialSort={{ key: "value", dir: "desc" }}
             actions={(r) => (
-              <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+              <>
+                <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+                {s.canReassignRequest(r) && (
+                  <button onClick={() => setReassigning(r)} className="ml-3 text-[12.5px] font-semibold text-orange hover:underline">Reassign</button>
+                )}
+              </>
             )}
           />
         )}
@@ -238,6 +245,11 @@ export default function ApprovalsQueue() {
       )}
 
       <ApprovalModal request={approving} open={approving !== null} onClose={() => setApproving(null)} />
+      <ReassignApprovalModal
+        request={reassigning}
+        open={reassigning !== null}
+        onClose={() => setReassigning(null)}
+      />
       <ApprovalModal
         request={editRequest.row}
         open={editRequest.row !== null}

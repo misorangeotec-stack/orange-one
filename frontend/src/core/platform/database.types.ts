@@ -8623,6 +8623,14 @@ export type Database = {
         Returns: undefined
       }
       fms_purchase_can_act_po: { Args: { p_uid: string }; Returns: boolean }
+      fms_purchase_can_receive_reassignment: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_purchase_reassign_request: {
+        Args: { p_approver_id?: string | null; p_request_id: string }
+        Returns: undefined
+      }
       fms_purchase_cancel_line: {
         Args: { p_reason: string; p_request_item_id: string }
         Returns: undefined

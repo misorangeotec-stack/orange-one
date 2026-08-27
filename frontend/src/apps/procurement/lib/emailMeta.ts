@@ -25,6 +25,9 @@ interface LineLike {
   quantity?: number | null; unit?: string | null;
   finalRate?: number | null; gstPct?: number | null;
   finalVendorId?: string | null; lineValue?: number | null;
+  /** Only `reassigned` reads it — the handover card must list the lines actually
+   *  under decision, not the requisition's cancelled or already-PO'd ones. */
+  status?: string | null;
 }
 interface PoLike {
   id: string; poNo?: string | null; vendorId?: string | null; companyId?: string | null;
@@ -155,6 +158,36 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
           { label: "Items", value: `${input.lines.length} item${input.lines.length === 1 ? "" : "s"}` },
         ],
         items: rowItems.map(({ name, meta, value }) => ({ name, meta, value })),
+        ctaLabel: "Open Approvals", ctaPath: `${B}/queues/approvals`,
+      };
+    },
+
+    // 2c. Approval handed over → the receiver, or handed back → the band.
+    //
+    // Authored here rather than in SQL for the reason at the top of this file:
+    // fms_purchase_announce copies p_meta straight into email_outbox, so an
+    // announce raised inside fms_purchase_reassign_request would mail a card with
+    // no content in it. The store raises this one client-side instead.
+    reassigned(input: { requestId: string; returned?: boolean; note?: string | null }): ProcurementEmailMeta {
+      const lines = linesOfRequest(input.requestId).filter(
+        (l) => l.status === "approval" || l.status === "on_hold"
+      );
+      const req = reqOf(input.requestId);
+      const t = totalsOf(lines);
+      const back = !!input.returned;
+      return {
+        subject: back
+          ? `Approval returned to the approvers${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`
+          : `Approval reassigned to you${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`,
+        eyebrow: back ? "Returned" : "Reassigned",
+        headline: back
+          ? "A requisition has come back to the approvers"
+          : "A requisition has been handed to you for approval",
+        action: back ? "returned a requisition to the approvers" : "reassigned a requisition for approval",
+        docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
+        rows: [t.row, t.itemsRow],
+        items: lines.map(lineItem),
+        note: reasonNote("Why the change", input.note),
         ctaLabel: "Open Approvals", ctaPath: `${B}/queues/approvals`,
       };
     },

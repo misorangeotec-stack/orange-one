@@ -196,6 +196,14 @@ export interface RequestItem {
   lineValue: number | null;
   status: LineStatus;
   approverId: string | null;
+  /**
+   * Set while this requisition has been HANDED OVER to one person, and it
+   * survives the decision — `fms_purchase_update_approval_request` reads it on
+   * approved_pending_po lines, so clearing it at approve would let the holder
+   * approve but not revise. Cleared only on the BLOCK+RE-ROUTE arms, where an
+   * override moved the requisition into a different amount band.
+   */
+  assignedApproverId: string | null;
   approvalTier: string | null;
   rejectReason: string | null;
   cancelReason: string | null;

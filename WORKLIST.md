@@ -38,6 +38,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | What we need | From | Blocks | Waiting since |
 |---|---|---|---|
 | WhatsApp access, so the integration can start | WhatsApp team | **PF-10** | 2026-08-22 |
+| Who owns the approvals in OCPI, Customer Onboarding, Asset Maintenance and Travel Desk — no step owners are configured at all | Ritesh Bhai / Bushra | **PF-14** | 2026-08-27 |
 | The calibration sheets (the Excel report QC keeps today) | Factory / QC team | **PE-1** | 2026-08-20 |
 | The final list of production steps to add | Factory, then Bushra | Widens **PE-2** (no longer blocks it) | 2026-08-20 |
 | The R&D flow and the form | Factory team | **RD-1** | 2026-08-20 |
@@ -648,6 +649,99 @@ step took) is the only report anyone has asked for. That gap is most likely wher
 - [ ] Whether these are per-module reports or one management view across modules — the second is a
       different build, closer to **PC-1**'s dashboard than to a report.
 - [ ] What he wants that the data cannot answer yet, so we know early what needs capturing first.
+### PF-13 · Reassign an approval — the remaining four modules  `[ ]`
+*Also touches: Office Supplies · HR (Recruitment + Exit) · Travel Desk · Order to Dispatch ·
+Raised 2026-08-27, out of **IM-1** · do **PD-1** first — a second module proves the shape before it
+is copied four more times*
+
+Every module still has the problem Import had: an approval sits with one named person until they get
+to it. **IM-1** shipped the handover for Import and **PD-1** ports it to Purchase RM Domestic; this
+is the remaining four. Each gets the same skeleton — a `reassign_pool` key in the module's config,
+an `assigned_approver_id` holder column, the holder branch in `fms_<mod>_can_act` and in the
+decide/update RPCs, the store gates, a Setup section, the modal and its triggers, the module's
+`mywork/items/*.ts`, and a bundle rebuild.
+
+**Where the exclusivity actually comes from** — measured on live data, not inferred:
+
+| Module | Approval | Exclusive because | Setup can already fix it? |
+|---|---|---|---|
+| **office-supplies** | `first_approval` | **structural** — one `uuid` column, bare `= p_uid`, and the owner row is deliberately empty (0 rows) | **no** |
+| **hr-recruitment** | HOD + probation | `hiring_manager_ids`, and the branch **`return`s — no fall-through** | **no** |
+| **hr-recruitment** | `hr_head_approval`, `final_decision` | step owners, **1 person each** (`mgmt_approval` holds 3 — fine) | yes, add a name |
+| **hr-exit** | `hr_head_approval`, `fnf_approve` | step owners — **all 15 rows hold exactly 1 person** | yes, add a name |
+| **travel-desk** | `manager_approval` | per-trip HOD snapshot, **write-once**; the owners table is **empty** | **no** |
+| **order-to-dispatch** | `credit_check` | 1 person per location, and the all-locations fallback row holds **0** | yes, add a name |
+
+**Process coordinators are not the escape hatch.** Only `purchase`, `hr` and `exit` have a
+`process_coordinators` row at all, one person each. `supplies`, `travel` and `dispatch` have none, so
+their `can_act` coordinator arm grants nobody anything today.
+
+**Do Office Supplies second, and extract the shared UI while doing it** — one instance is not a
+pattern, two is. `shared/components/ReassignModal.tsx` (Import's is already generic given
+`{ candidates, currentHolder, onReassign(target|null, note) }`) and
+`shared/components/settings/ReassignPoolSection.tsx` (parameterised on `appId` plus four store
+callbacks, keeping the *receiver has no edit grant* warning), then retro-fit Import and Purchase.
+⚠ Do **not** generalise the holder rule itself into `shared/lib/fmsOwners.ts` — that file is compiled
+into the daily mail, so a change there moves every module's mail at once.
+
+**The traps, module by module:**
+
+- **Office Supplies** — ⚠ **the read gate has to widen too.** `fms_supplies_can_read_request` admits
+  only admin / coordinator / fulfilment staff / raiser / beneficiary / the department HOD; without a
+  holder arm the receiver cannot open the request at all. Import never hit this — its tables are
+  `select … using (true)`. And `lib/queues.ts` must carry the holder on the entry, because
+  `mywork/items/officeSupplies.ts` restates the HOD rule inline; its own header records that missing
+  this once made HOD approvals vanish from My Work and the daily mail.
+- **HR Recruitment** — the most involved, and it spans two entity types. The MRF approvals hang off
+  `fms_hr_requisitions`, while the HOD and probation steps read `hiring_manager_ids`, whose branch in
+  `fms_hr_can_act` `return`s with no fall-through — that is the hard stop worth fixing.
+  `fms_hr_reassign_interview` is the in-house precedent Import copied; extend that shape rather than
+  inventing a second one.
+- **HR Exit** — ⚠ **`handover` is already a step key here**, meaning knowledge transfer. Do not name
+  anything "handover". `fms_exit_update_case` can already rewrite `reporting_manager_ids`, a de-facto
+  reassign for the manager steps; the two must not contradict each other.
+- **Travel Desk** — ⚠ write a **per-trip override; never re-derive from `user_hods`**.
+  [20261005120700](supabase/migrations/20261005120700_add_fms_travel_trips.sql) says the snapshot
+  exists so *"a re-org must not silently re-route a trip somebody is already waiting on."* The
+  manager branch falls *through* to step owners, so the holder arm sits before that fall-through.
+  Also `fms_travel_can_act` opens with `module_can_edit(p_uid,'travel-desk')`, so a receiver without
+  edit access is refused **by the database**, not merely stranded in the UI as in Import — here the
+  Setup warning prevents a hard refusal rather than a dead end. And `lib/queues.ts` carries the
+  holder, because `mywork/items/travel-desk.ts` filters on `e.approverManagerIds`.
+- **Order to Dispatch** — ⚠ ownership is **location-scoped**
+  (`fms_dispatch_is_step_owner(step, uid, location)`), so the *who may reassign* arm has to resolve
+  the order's location first. Cheapest win before any of this, and it needs no code: add a second
+  name per location, or fill the empty all-locations fallback row.
+
+**All four rebuild the bundle.** `workSnapshot.bundle.js` compiles each module's `lib/queues.ts`,
+its `data/*Fetch.ts` and all eleven `mywork/items/*.ts` — build it from the `oo-master` worktree, and
+see **PD-1** for why.
+
+---
+
+### PF-14 · Four modules have no step owners at all, so every approval in them is admin-only  `[!]`
+*Raised 2026-08-27, found while auditing for **PF-13** · this needs the business to name people, not
+code*
+
+`fms_ocpi_step_owners`, `fms_customer_step_owners`, `fms_asset_step_owners` and
+`fms_travel_step_owners` hold **0 rows each**, and none of those four modules has a
+`process_coordinators` row either. So **OCPI** quotation approval, **Customer Onboarding**'s three
+approvals, **Asset Maintenance**'s `verify_close`, and **Travel Desk**'s director / advance / finance
+steps have nobody configured at all: only an admin can move them, because only the admin arm of
+`can_act` ever matches. Six travel trips are sitting with no approver.
+
+**Reassign cannot help this** — there is nobody to reassign *from*. It is a configuration gap, and it
+is the reason **PF-13** stops where it does.
+
+**To discuss with Ritesh Bhai / Bushra:**
+- [ ] OCPI — who approves a quotation, and is it banded by value the way Purchase is?
+- [ ] Customer Onboarding — who signs off each of the three approvals?
+- [ ] Asset Maintenance — who owns `verify_close`?
+- [ ] Travel Desk — who is the director approver, who clears an advance, and who is finance? Those
+      are the six trips sitting with nobody.
+- [ ] For each of them: **two names, not one.** A one-person step is exactly the thing PF-13 exists
+      to work around, so naming a single person here just recreates the problem.
+
 ---
 
 ## Process Coordinator Dashboard  *(new)*
@@ -922,6 +1016,8 @@ live initiatives, or progress and outcomes against the aim.
 
 ## HR  *(two new modules)*
 
+*(cross-ref: **PF-13** — Recruitment's HOD / probation / `hr_head_approval` / `final_decision` and Exit's `hr_head_approval` / `fnf_approve` all rest on one person; **PF-14** — Travel Desk's director, advance and finance steps have nobody configured at all)*
+
 ### KB-1 · HR knowledge base — a second brain over the HR documents  `[ ]`
 *Raised 2026-08-20*
 
@@ -1008,6 +1104,8 @@ people about their own pay.
 ---
 
 ## New Recruitment
+
+*(cross-ref: **PF-13** — the MRF approvals get a reassign, and `fms_hr_can_act`'s hiring-manager branch `return`s with no fall-through)*
 
 The live recruitment FMS — [frontend/src/apps/hr-recruitment/](frontend/src/apps/hr-recruitment/),
 id `hr-recruitment`, tables `fms_hr_*`, shown in the portal as **New Recruitment**. The two entries
@@ -1155,7 +1253,7 @@ picked up now. (**OD-8**, the tail of OD-6, shipped on 2026-08-21 — see [Done]
 2026-08-21, see [Done](#done). The screen work is no longer blocked on it. (**OD-6**, the slow save,
 is fixed — also in Done.)
 
-*(cross-ref: **PF-1** — Save Draft lands here second, after Production · **PF-6** — this module is the pilot for opening view-only access, and **PF-7** ships with it)*
+*(cross-ref: **PF-1** — Save Draft lands here second, after Production · **PF-6** — this module is the pilot for opening view-only access, and **PF-7** ships with it · **PF-13** — the credit check gets a reassign, and the empty all-locations fallback row is the cheap fix that needs no code)*
 
 ### OD-1 · Internal transfer / Others on a dispatch  `[ ]`
 *Raised 2026-08-20 · **Unblocked 2026-08-22** — the scope is settled and this is queued for build. The
@@ -1662,66 +1760,64 @@ edit values after import or only import-and-generate.
 
 ---
 
+## Purchase RM Domestic
+
+### PD-1 · An approver can hand a requisition to someone else  `[ ]`
+*Raised 2026-08-27 · Ports **IM-1**, which shipped for Purchase RM Import the same day · the
+reference implementation is `20260827120000_fms_import_reassign_approval.sql` plus four frontend
+files, and every rule below was learned there*
+
+The same problem Import had. A requisition awaiting approval sits with whoever the amount band names
+until they get to it — and **all three live bands hold exactly one person**, so today there is nobody
+else it could go to. Setup gains **who may receive a handover**, and a requisition awaiting approval
+gains **Reassign**. The handover **moves** the work: it leaves the band's queue, appears in the
+receiver's, and only they or an admin may decide it. Any member of the band can pull it back. One
+requisition at a time, not a standing stand-in.
+
+**Four things that differ from Import and have to be got right:**
+
+1. **There is no `fms_purchase_is_approver` helper, and there cannot be.** Band membership depends on
+   the amount, so the holder rule is written inline against the band's `v_approvers`, not against a
+   flat approver list the way Import's was.
+2. **The holder rule replaces the `OR` in four RPCs, not three.**
+   `fms_purchase_decide_approval_request` and `_update_approval_request`
+   ([20260725130000:78](supabase/migrations/20260725130000_fms_purchase_approval_line_overrides.sql#L78),
+   [:275](supabase/migrations/20260725130000_fms_purchase_approval_line_overrides.sql#L275)) **and**
+   the per-line twins `fms_purchase_decide_approval` / `_update_approval`
+   ([20260720160000:306](supabase/migrations/20260720160000_fms_purchase_multi_approver_bands.sql#L306),
+   [:363](supabase/migrations/20260720160000_fms_purchase_multi_approver_bands.sql#L363)). The twins
+   are granted to `authenticated`, so leaving them alone leaves a band member able to decide a
+   handed-over line — exactly the live bypass the Import audit found.
+3. **⚠ The six `assigned_approver_id` clear-sites split 4 / 2.** Stop clearing at `:88`, `:175`,
+   `:197` and `:388` — approve, approve-after-override, reject, revise-reject. Cleared there, the
+   holder can approve but cannot revise before the PO, because the revise RPC reads that column.
+   **Keep clearing at `:183` and `:373`**, the *re-route* arms: an override that pushes the total
+   into a different band genuinely voids the handover, because the requisition now belongs to a
+   different set of people.
+4. **The request stepper gets it for free here, and Import's did not.**
+   `requestApprovalOwnerIds` in
+   [procurement/lib/owners.ts](frontend/src/apps/procurement/lib/owners.ts) captions the stepper's
+   Approval node, so the rail will name the holder rather than staying generic.
+
+**No `mywork/items/purchase.ts` edit is needed** — it delegates to `ownerResolver`. But **the
+daily-mail bundle must be rebuilt**: `owners.ts` compiles into
+`supabase/functions/_shared/workSnapshot.bundle.js`, and without the rebuild the mail names the
+**original** approver while the screen names the receiver. Run `node supabase/worksnapshot/build.mjs`
+**from the `oo-master` worktree** — `build.mjs` resolves the repo root relative to its own location,
+so run from there it compiles master's committed code alone, whereas running it in this shared tree
+would compile other sessions' unreleased work. That same rebuild clears the one still outstanding
+from **IM-1**.
+
+**⚠ Check the email switch before any browser test.**
+`select module_id, enabled from public.email_module_settings;` — testing the Import handover against
+production sent **four real emails to real colleagues**, and sent mail cannot be recalled. Flip the
+module off for the run, or confine testing to RPC checks inside a rolled-back transaction.
+
+---
+
 ## Purchase RM Import
 
-### IM-1 · An approver can hand a requisition to someone else  `[~]`
-*Raised 2026-08-27 · From the business · Setup gains the list of who may receive one*
-
-Setup carries exactly one approval control today — **Approvers**
-([ApprovalMatrixSection.tsx](frontend/src/apps/import/pages/settings/ApprovalMatrixSection.tsx)), a
-flat list of people, one per row, with every requisition routed to all of them. An approver who is
-travelling, tied up, or looking at something outside his remit has no way to pass a single
-requisition to a colleague; it sits in his queue until he gets to it.
-
-Two parts. **Setup** gains a Departments + Users list of who may receive a handover, and a
-**Reassign** action appears on a requisition awaiting approval. The requisition **moves** — it leaves
-the approver's queue and appears in the receiver's. Any active approver, or an admin, can pull it
-back. One requisition at a time, not a blanket delegation.
-
-**Notes:** this existed and was deliberately removed.
-`20260806123000_fms_import_remove_reassign.sql` dropped `fms_import_reassign_line` for one stated
-reason — *its picker listed EVERY profile, so an approval could be handed to someone with no approval
-authority at all.* The configured pool is the answer to exactly that objection, and the removal
-migration names its own reversal recipe. The rails it left behind are all still in place and inert:
-the `assigned_approver_id` column, an `assigned_approver_id = auth.uid()` authz branch in both
-request-scoped approval RPCs, and the `'reassigned'` activity type with its label at
-[ActivityTimeline.tsx:20](frontend/src/apps/import/components/ActivityTimeline.tsx#L20). So this is a
-revival with a gate on it, not a new subsystem. The live template with the right authority model is
-HR's `fms_hr_reassign_interview` + `ReassignInterviewModal.tsx` — *whoever owes the work may pass it
-on, and work already done cannot be handed over.*
-
-**Three things the audit turned up that are not obvious:**
-
-1. **The daily work-snapshot mail goes stale unless the bundle is rebuilt.** `lib/owners.ts` is
-   compiled into `supabase/functions/_shared/workSnapshot.bundle.js` via
-   [worksnapshot/entry.ts](supabase/worksnapshot/entry.ts) → `mywork/items/import.ts` →
-   `ownerResolver`. Change the owner rule without `node supabase/worksnapshot/build.mjs` and the mail
-   names the **original** approver while the screen names the receiver — the two-sources-of-truth
-   failure that file exists to prevent.
-2. **The receiver needs Import module access at `edit` level, or the handover is a dead end.**
-   `canEdit = session.canEditModule("import")`
-   ([store.tsx:674](frontend/src/apps/import/store.tsx#L674)) folds into every write gate, and
-   `RequireModule` bounces anyone without the grant to `/home`. Both pickers have to surface it.
-3. **`fms_import_decide_approval` (the legacy per-line RPC) is a live bypass.** Its authz resolves the
-   approver by a band lookup on `line_value`, and `line_value` is always `0` since the
-   quantity-requisition change — so it always matches the **first** active approver, who could decide
-   a handed-over line through it. Unreachable from the UI, but granted to `authenticated`.
-
-**The fix, in order:** migration (pool helper + `fms_import_reassign_request`, the holder rule in all
-three approval RPCs, and stop nulling `assigned_approver_id` at the decision so the holder can still
-revise before the PO) → data layer → `owners.ts` → store gates → Setup section → the Reassign modal
-and its two triggers → rebuild the snapshot bundle → browser walkthrough, including two direct-RPC
-refusals, because a client-side-only block is not the check that matters.
-
-**Not in scope, deliberately:** a standing *"stand-in for all my approvals while I am away"* — a
-date-bounded delegation of the whole role. It was considered and set aside in favour of the
-per-requisition handover, so it is not an oversight if someone comes looking for it later.
-
-**Found in passing, not fixed here:** `store.decideApproval`
-([store.tsx:472](frontend/src/apps/import/store.tsx#L472), implemented at
-[:1110](frontend/src/apps/import/store.tsx#L1110)) is called from no page — the per-line approval path
-was superseded by the request-scoped one and its trigger went with it. Exactly the **FIX-4** orphan
-class. Removing it is a separate decision.
+*(nothing yet — **IM-1** shipped 2026-08-27, see [Done](#done))*
 
 ---
 
@@ -2407,6 +2503,50 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### IM-1 · An approver can hand a requisition to someone else  `[x]`
+*Purchase RM Import · **Live 2026-08-27, 15:56 IST** — `507ab47` on master, deployed by Vercel ·
+raised, built and shipped the same day*
+
+**What happens now.** Setup carries a second approval control — **Who can be handed an approval**, a
+departments filter plus the people who may receive one. A requisition awaiting approval shows
+**Reassign**, on the queue and on the request itself. The handover **moves** the work: it leaves the
+approvers' queue, appears in the receiver's, and only they or an admin may decide it. Any approver
+can pull it back. One requisition at a time — this is not a standing stand-in, and that was a
+deliberate choice, so it is not an oversight if someone comes looking for one.
+
+**Reassign existed once and was deliberately dropped**, in
+`20260806123000_fms_import_remove_reassign.sql`, for one stated reason: its picker listed **every**
+profile, so an approval could be handed to somebody with no authority at all. The configured pool is
+the answer to exactly that objection, so the feature came back with the gate it had been missing.
+
+**Two live faults the audit turned up, both fixed in the same migration:**
+
+- `fms_import_decide_approval`, the legacy per-line RPC, resolved its approver by a band lookup on
+  `line_value` — and every `line_value` has been `0` since Import became a quantity requisition, so
+  it always matched the **first** approver, who could then decide a handed-over line through it.
+  Unreachable from the UI, but granted to `authenticated`.
+- `assigned_approver_id` is no longer cleared at the decision. Cleared, the holder could approve but
+  not revise before the PO, because the revise RPC reads that column.
+
+**The queue follows the holder even for an admin**, while `canApproveRequest` keeps its admin arm.
+Both configured approvers here are also admins, so an admin bypass in the queue would have left a
+handed-over requisition sitting exactly where it was meant to leave.
+
+**The rollback was rehearsed on live data**, and doing so disproved two things the migration header
+had asserted as fact: Postgres does **not** enforce the drop order, and restoring the three RPC
+bodies is optional once `assigned_approver_id` is null. The header says so now.
+
+**Verified in the browser, twelve checks** — and that pass caught a bug `tsc` and the build both
+missed: the store's `useMemo` was missing the two new config arrays, so Setup's Save stayed enabled
+and never confirmed after a successful write. ⚠ The walkthrough also **sent four real emails to real
+colleagues**, because Import's email switch is on and there is no staging address. Sent mail cannot
+be recalled; the activity rows and notifications were cleaned up afterwards.
+
+**One thing still outstanding:** `supabase/functions/_shared/workSnapshot.bundle.js` was deliberately
+not rebuilt — rebuilding it in this tree compiles other sessions' unreleased work. `owners.ts` is
+committed, so the next rebuild picks it up, and that rebuild is carried as a step of **PD-1**, which
+runs it from the clean `oo-master` worktree.
 
 ### RC-2 · The Collection report sends itself, on a schedule  `[x]`
 *Outstanding Dashboard · **Live 2026-08-21, 21:28 IST** — the first armed slot ran and delivered ·

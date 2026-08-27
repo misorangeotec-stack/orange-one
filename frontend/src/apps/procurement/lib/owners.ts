@@ -13,10 +13,32 @@
  * routes approvals per REQUISITION with a multi-approver band, Import still routes
  * per LINE with a single approver. They are not twins and must not be merged —
  * see the entityType union on each app's `QueueEntry`.
+ *
+ * ⚠ A requisition can be HANDED OVER to one person (Setup → Approval matrix names
+ *   who may receive one). While it is, that person is its sole owner — the
+ *   handover MOVES the work rather than sharing it. `holderOfLines` is the one
+ *   place that rule is expressed; the store imports it too, so the queue, My Work,
+ *   the daily snapshot mail and the Approve button cannot drift apart.
  */
 import type { ApprovalBand, RequestItem, StepOwner } from "../types";
 import type { StepKey } from "./steps";
 import type { QueueEntry } from "./queues";
+
+/**
+ * Whoever this set of lines has been handed to, or null if it still sits with
+ * the amount band.
+ *
+ * The CALLER picks the basis, because the two readers disagree about it on
+ * purpose: queue ownership asks about the lines still under decision, while the
+ * store also has to answer for a decided-but-not-yet-PO'd requisition it is
+ * about to let the holder revise. Same rule, different slice.
+ *
+ * Lines of one requisition are handed over together, so the first non-null wins.
+ */
+export const holderOfLines = (lines: RequestItem[]): string | null => {
+  for (const l of lines) if (l.assignedApproverId) return l.assignedApproverId;
+  return null;
+};
 
 /** The slice of `ProcurementData` owner resolution reads — nothing more. */
 export interface OwnerSnapshot {
@@ -36,11 +58,13 @@ export interface OwnerResolver {
   stepOwnerIds: (stepKey: string) => string[];
   /** Every user who owns this work-item. Empty means unassigned. */
   ownerIdsOf: (e: QueueEntry) => string[];
+  /** Whoever this requisition has been handed to while it awaits a decision. */
+  holderOfRequest: (requestId: string) => string | null;
   isMine: (e: QueueEntry, userId: string) => boolean;
   /**
-   * Who may decide THIS requisition's approval — the matrix band for `total`, and
-   * nothing else. The band is the single authority on approval routing; there is
-   * deliberately no per-requisition override (see the removed Reassign feature).
+   * Who may decide THIS requisition's approval — the matrix band for `total`,
+   * unless it has been HANDED OVER, in which case the holder alone. The band is
+   * otherwise the single authority on approval routing.
    *
    * Exposed separately from `ownerIdsOf` because the request stepper has to caption
    * its Approval node and holds a requisition, not a QueueEntry. It used to caption
@@ -82,8 +106,20 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   const stepOwnerIds = (stepKey: string): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
 
-  /** The band for what these lines are worth. The matrix is the only routing input. */
-  const approvalOwnersOf = (_lines: RequestItem[], total: number): string[] => approversForAmount(total);
+  /**
+   * The band for what these lines are worth — UNLESS the requisition has been
+   * handed to someone, in which case they are its only owner. That is what makes
+   * the handover a MOVE: it leaves the band's queue, their My Work list, and
+   * their line on the daily snapshot mail, rather than merely appearing in one
+   * more place.
+   *
+   * Both readers below go through here, so the queue and the request stepper
+   * cannot give different answers.
+   */
+  const approvalOwnersOf = (lines: RequestItem[], total: number): string[] => {
+    const holder = holderOfLines(lines);
+    return holder ? [holder] : approversForAmount(total);
+  };
 
   /** The lines actually under decision — the same set `requestApprovalTotal` sums. */
   const linesInApproval = (requestId: string): RequestItem[] =>
@@ -91,6 +127,10 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   const requestApprovalOwnerIds = (requestId: string, total: number): string[] =>
     approvalOwnersOf(linesInApproval(requestId), total);
+
+  /** Handed over to whom, judged on the lines still awaiting a decision. */
+  const holderOfRequest = (requestId: string): string | null =>
+    holderOfLines(linesInApproval(requestId));
 
   /**
    * Every step reads its owners from `step_owners`, except `approval` — there the
@@ -116,6 +156,7 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
     stepOwnerFor,
     stepOwnerIds,
     ownerIdsOf,
+    holderOfRequest,
     isMine,
     requestApprovalOwnerIds,
   };
