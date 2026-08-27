@@ -97,6 +97,14 @@ export interface SupplyRequest {
   submittedAt: string;
   firstApprovedAt: string | null;
   firstApproverId: string | null;
+  /**
+   * Set while this request's FIRST approval has been handed to one person.
+   * While it is set that person, not the department HOD, is the only non-admin
+   * who may decide it - and it is what admits them to READING the request at
+   * all (fms_supplies_can_read_request). Never cleared at the decision, so the
+   * holder can still revise it.
+   */
+  assignedApproverId: string | null;
   firstRemarks: string | null;
   secondApprovedAt: string | null;
   secondApproverId: string | null;

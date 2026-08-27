@@ -10,6 +10,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { formatDateTime } from "@/shared/lib/time";
 import ApprovalModal from "./ApprovalModal";
+import ReassignApprovalModal from "./ReassignApprovalModal";
 import HandoverModal from "./HandoverModal";
 import { dmy, requestTypeLabel } from "../lib/format";
 import { requestHref } from "../lib/routes";
@@ -49,6 +50,7 @@ export default function RequestQueue({
   const s = useSuppliesStore();
   const session = useSession();
   const [acting, setActing] = useState<SupplyRequest | null>(null);
+  const [reassigning, setReassigning] = useState<SupplyRequest | null>(null);
   const editing = useEntryModal<SupplyRequest>();
 
   // This app has no sandbox/personas, so the real session user IS the effective
@@ -287,9 +289,18 @@ export default function RequestQueue({
           emptyMessage="Requests needing your action will appear here."
           readOnly={!s.canEdit}
           actions={({ request }) => (
-            <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
-              {actionLabel}
-            </Button>
+            <>
+              <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
+                {actionLabel}
+              </Button>
+              {/* First approval only - the other two steps already have more than
+                  one owner, so neither is blocked on a single person. */}
+              {s.canReassignRequest(request) && (
+                <Button size="sm" variant="ghost" onClick={() => setReassigning(request)}>
+                  Reassign
+                </Button>
+              )}
+            </>
           )}
         />
       )}
@@ -318,6 +329,12 @@ export default function RequestQueue({
           />
         </>
       )}
+
+      <ReassignApprovalModal
+        request={reassigning}
+        open={reassigning !== null}
+        onClose={() => setReassigning(null)}
+      />
     </div>
   );
 }

@@ -33,15 +33,23 @@ export function officeSuppliesWorkItems(
     data.departments.filter((d) => d.hodUserId === uid).map((d) => d.id),
   );
 
-  const mine = (stepKey: string, departmentId: string): boolean =>
-    stepKey === "first_approval"
-      ? myHodDepartmentIds.has(departmentId)
-      : isMineByStepOwners(stepKey, uid, owners);
+  /**
+   * ⚠ THE HOLDER COMES FIRST, AND IT REPLACES THE HOD — it does not add to them.
+   *   A handover MOVES the approval: the request has to leave the HOD's My Work
+   *   list and the HOD's line of the daily mail, or it is a share rather than a
+   *   move and nothing has actually been passed on. `assignedApproverId` rides on
+   *   the queue entry for exactly this reason; see lib/queues.ts.
+   */
+  const mine = (stepKey: string, departmentId: string, holderId: string | null): boolean => {
+    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
+    if (holderId) return holderId === uid;
+    return myHodDepartmentIds.has(departmentId);
+  };
 
   return buildQueueEntries(
     supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla }),
   )
-    .filter((e) => isAdmin || mine(e.stepKey, e.departmentId))
+    .filter((e) => isAdmin || mine(e.stepKey, e.departmentId, e.assignedApproverId))
     .map((e) => ({
       id: `office-supplies:${e.requestId}:${e.stepKey}`,
       source: "office-supplies",
@@ -50,7 +58,7 @@ export function officeSuppliesWorkItems(
       stage: stepByKey(e.stepKey)?.short,
       dueIso: e.dueIso,
       to: requestHref(e.requestId),
-      assignment: mine(e.stepKey, e.departmentId) ? ("direct" as const) : ("team" as const),
+      assignment: mine(e.stepKey, e.departmentId, e.assignedApproverId) ? ("direct" as const) : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
     }));
 }

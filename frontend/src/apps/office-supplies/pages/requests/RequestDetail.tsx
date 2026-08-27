@@ -8,6 +8,7 @@ import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDate } from "@/shared/lib/time";
 import ApprovalModal from "../../components/ApprovalModal";
 import HandoverModal from "../../components/HandoverModal";
+import ReassignApprovalModal from "../../components/ReassignApprovalModal";
 import StatusPill from "../../components/StatusPill";
 import { dmy, requestTypeLabel } from "../../lib/format";
 import { requestsHref, editRequestHref } from "../../lib/routes";
@@ -77,6 +78,7 @@ export default function RequestDetail() {
 
   const [approving, setApproving] = useState<"first" | "second" | null>(null);
   const [handingOver, setHandingOver] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -102,6 +104,8 @@ export default function RequestDetail() {
   // isProcessCoordinator, which also decide what a person can SEE.
   const canFirst = s.canEdit && r.status === "pending_first_approval" && s.canActOn("first_approval", r);
   const canSecond = s.canEdit && r.status === "pending_second_approval" && s.canActOn("second_approval", r);
+  /** Whoever the first approval has been handed to, or null while it sits with the HOD. */
+  const holder = s.holderOfRequest(r);
   const canHandover = s.canEdit && r.status === "pending_handover" && s.canActOn("handover", r);
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
   const canHold = s.canEdit && isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
@@ -148,9 +152,27 @@ export default function RequestDetail() {
             For {r.requestedForName}
             {r.raisedOnBehalf ? ` · raised by ${name(r.raisedBy)}` : ""}
           </p>
+          {/* Where the approval actually sits. This is the oversight surface for a
+              handover: the first-approval QUEUE deliberately shows only what is on
+              your own desk, so without this line an admin browsing requests would
+              have no way to see that one had been passed on. */}
+          {holder && (
+            <p className="text-[12.5px] text-navy mt-1">
+              <span className="text-grey-2">Awaiting approval from</span>{" "}
+              <span className="font-semibold">{s.personName(holder)}</span>
+              <span className="text-grey-2"> · reassigned</span>
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           {canFirst && <Button size="sm" onClick={() => setApproving("first")}>Review (first approval)</Button>}
+          {/* Hand it on, or pull it back. Broader than Review on purpose: the HOD
+              keeps this after handing over, which is how it comes back. */}
+          {s.canReassignRequest(r) && (
+            <Button variant="outline" size="sm" onClick={() => setReassigning(true)}>
+              {holder ? "Reassign / take back" : "Reassign"}
+            </Button>
+          )}
           {canSecond && <Button size="sm" onClick={() => setApproving("second")}>Review (second approval)</Button>}
           {canHandover && <Button size="sm" onClick={() => setHandingOver(true)}>Handover</Button>}
           {canHold && (
@@ -232,6 +254,7 @@ export default function RequestDetail() {
       </Card>
 
       <ApprovalModal open={approving !== null} onClose={() => setApproving(null)} request={r} stage={approving ?? "first"} />
+      <ReassignApprovalModal request={reassigning ? r : null} open={reassigning} onClose={() => setReassigning(false)} />
       <HandoverModal open={handingOver} onClose={() => setHandingOver(false)} request={r} />
 
       <Modal

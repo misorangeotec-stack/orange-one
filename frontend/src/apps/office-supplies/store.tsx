@@ -22,6 +22,7 @@ import {
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
   setConfig as setConfigWrite,
+  reassignRequest as reassignRequestWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
   submitRequest as submitRequestWrite,
@@ -228,6 +229,18 @@ interface SuppliesStoreValue {
   updateFirstApproval: (r: SupplyRequest, approve: boolean, remarks: string) => Promise<void>;
   updateSecondApproval: (r: SupplyRequest, approve: boolean, remarks: string) => Promise<void>;
   updateHandover: (r: SupplyRequest, input: HandoverInput) => Promise<void>;
+  /** Hand one request on, or pass approverId: null to return it to the department HOD. */
+  reassignRequest: (input: { request: SupplyRequest; approverId: string | null; note?: string | null }) => Promise<void>;
+  /** Whoever this request has been handed to, or null if it sits with the HOD. */
+  holderOfRequest: (r: SupplyRequest) => string | null;
+  /** May I hand this request on, or pull it back? Broader than deciding it. */
+  canReassignRequest: (r: SupplyRequest) => boolean;
+  /** Who it may be handed to: the configured pool plus this request's own HOD, minus me. */
+  reassignCandidates: (r: SupplyRequest) => { id: string; name: string }[];
+  /** Departments the Setup picker filters candidates by. A UI FILTER - grants nothing. */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a request awaiting first approval. The authority. */
+  reassignPoolUserIds: string[];
 
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
@@ -235,6 +248,8 @@ interface SuppliesStoreValue {
   setCoordinators: (userIds: string[]) => Promise<void>;
   setRequesters: (userIds: string[]) => Promise<void>;
   setHodDesignations: (designationIds: string[]) => Promise<void>;
+  /** Save who may be handed a first approval. departmentIds is a picker filter and grants nothing. */
+  setReassignPool: (input: { departmentIds: string[]; userIds: string[] }) => Promise<void>;
 
   // master writes
   insertCompany: (input: CompanyInput) => Promise<void>;
@@ -288,6 +303,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
   const requesterIds = data?.config.requesterIds ?? [];
   const hodDesignationIds = data?.config.hodDesignationIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
+  const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
+  const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
 
   const value = useMemo<SuppliesStoreValue>(() => {
     const uid = userId ?? "";
@@ -356,10 +373,66 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     const canActOn = (stepKey: StepKey, r: SupplyRequest): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
       if (stepKey === "first_approval") {
+        // A HANDOVER MOVES THE WORK. While assignedApproverId is set the holder
+        // is the only non-admin who may decide — deliberately NOT an OR with the
+        // HOD, or the request would stay in his queue too and nothing would have
+        // moved. Exact mirror of fms_supplies_can_act__ungated.
+        if (r.assignedApproverId) return r.assignedApproverId === uid;
         const hod = departmentById(r.departmentId)?.hodUserId;
         return !!hod && hod === uid;
       }
       return isStepOwner(stepKey);
+    };
+
+    /** Whoever this request's first approval has been handed to, or null. */
+    const holderOfRequest = (r: SupplyRequest): string | null => r.assignedApproverId;
+
+    /**
+     * Am I holding anything handed to me? The only reason somebody who heads no
+     * department may reach the first-approval queue at all.
+     */
+    const holdsAnyReassigned = requests.some(
+      (r) =>
+        r.assignedApproverId === uid &&
+        (r.status === "pending_first_approval" || r.status === "pending_second_approval")
+    );
+
+    /**
+     * May I hand this on, or pull it back? Broader than deciding it: the HOD keeps
+     * this after handing over, which is exactly how a request comes back.
+     * Mirrors fms_supplies_reassign_request.
+     *
+     * WARNING: identity comes from the REAL `session`, never the effective
+     * persona. This gates a write the server authorises against auth.uid(), so a
+     * persona-derived gate would offer a button the RPC then refuses — and both
+     * halves must come from `session`, since taking the real id but the persona's
+     * isAdmin is the subtle version of the same bug.
+     */
+    const canReassignRequest = (r: SupplyRequest): boolean => {
+      if (r.status !== "pending_first_approval") return false;
+      const me = session.user?.id ?? "";
+      if (!me || !canEdit) return false;
+      if (session.isAdmin || processCoordinatorIds.includes(me)) return true;
+      if (r.assignedApproverId === me) return true;
+      return departmentById(r.departmentId)?.hodUserId === me;
+    };
+
+    /**
+     * Who I may hand it to: the configured pool, plus this request's own HOD so it
+     * can be handed BACK, minus me.
+     *
+     * Names resolve through `personName`, i.e. the ORG-WIDE list — the directory
+     * is RLS-scoped, so a pool member in another department would render blank for
+     * a non-admin HOD, who is precisely the person using this dialog.
+     */
+    const reassignCandidates = (r: SupplyRequest): { id: string; name: string }[] => {
+      const ids = new Set<string>(reassignPoolUserIds);
+      const hod = departmentById(r.departmentId)?.hodUserId;
+      if (hod) ids.add(hod);
+      ids.delete(session.user?.id ?? "");
+      return [...ids]
+        .map((id) => ({ id, name: personName(id) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     };
 
     /**
@@ -377,7 +450,9 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     const canSeeQueue = (stepKey: StepKey): boolean => {
       // A view-only grant reads every queue, ahead of the HOD special case below.
       if (isModuleViewer || isProcessCoordinator) return true;
-      if (stepKey === "first_approval") return hodDepartmentIds.length > 0;
+      // A holder heads no department, so without this arm the request would sit
+      // in a queue they cannot open.
+      if (stepKey === "first_approval") return hodDepartmentIds.length > 0 || holdsAnyReassigned;
       return isStepOwner(stepKey);
     };
 
@@ -452,17 +527,34 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     const secondEntries = completedSecondApprovalEntries(snapshot);
     const handoverEntries = completedHandoverEntries(snapshot);
 
+    /**
+     * VISIBILITY — is this entry on MY desk? Deliberately NOT `canActOn`, which is
+     * AUTHORITY and opens with an admin arm.
+     *
+     * ⚠ THE QUEUE HAS TO FOLLOW THE HOLDER EVEN FOR AN ADMIN. Without this the
+     *   handover leaves an admin's queue never — `canActOn` returns true for them
+     *   on everything — so the one thing the feature promises, that the work
+     *   MOVES, is invisible to exactly the people most likely to be testing it.
+     *   Caught in the browser; `tsc` and the build both passed.
+     */
+    const stepIsMine = (stepKey: StepKey, r: SupplyRequest): boolean => {
+      if (stepKey === "first_approval" && r.assignedApproverId) return r.assignedApproverId === uid;
+      return canActOn(stepKey, r);
+    };
+
     const myQueue = (stepKey: StepKey): QueueEntry[] =>
       queueEntries.filter((e) => {
         if (e.stepKey !== stepKey) return false;
         const r = requestMap.get(e.requestId);
-        return r ? canActOn(stepKey, r) : false;
+        return r ? stepIsMine(stepKey, r) : false;
       });
 
-    // "Pending with" — for first_approval that is the department's HOD alone.
-    // Merging in the step-owner list here would name people who can no longer act.
+    // "Pending with" — for first_approval that is whoever it was HANDED to, and
+    // otherwise the department's HOD alone. Merging in the step-owner list here
+    // would name people who can no longer act.
     const queueOwnerIds = (e: QueueEntry): string[] => {
       if (e.stepKey === "first_approval") {
+        if (e.assignedApproverId) return [e.assignedApproverId];
         const r = requestMap.get(e.requestId);
         const hod = r ? departmentById(r.departmentId)?.hodUserId : null;
         return hod ? [hod] : [];
@@ -514,6 +606,11 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       hodDepartmentIds,
       canActOn,
       canSeeQueue,
+      holderOfRequest,
+      canReassignRequest,
+      reassignCandidates,
+      reassignPoolDepartmentIds,
+      reassignPoolUserIds,
 
       masterManagers,
       masterRequests,
@@ -676,6 +773,28 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         await updateSecondApprovalWrite(r.id, approve, remarks);
         await invalidate();
       },
+      reassignRequest: async ({ request, approverId, note }) => {
+        await reassignRequestWrite(request.id, approverId);
+        const returned = approverId === null;
+        const hod = departmentById(request.departmentId)?.hodUserId ?? null;
+        await safeAnnounce({
+          entityType: "request",
+          entityId: request.id,
+          type: "reassigned",
+          text: returned
+            ? `An approval was returned to the department head${note ? " — " + note : ""}`
+            : `An approval was reassigned to ${personName(approverId)}${note ? " — " + note : ""}`,
+          // On a hand-back nobody in particular owns it, so tell the HOD it is
+          // theirs again.
+          recipients: returned ? (hod ? [hod] : []) : [approverId as string],
+          // ⚠ Unlike Import and Purchase, the CARD is built server-side by
+          //   fms_supplies_email_payload — this meta only tells it which of the
+          //   two directions to render, because by mail time the column is
+          //   already null on a hand-back and the row cannot tell them apart.
+          meta: { returned, note: note ?? null },
+        });
+        await invalidate();
+      },
       updateHandover: async (r, input) => {
         await updateHandoverWrite(r.id, input);
         // An edit CAN deliver a request that was recorded but not yet delivered
@@ -721,6 +840,12 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       },
       setHodDesignations: async (designationIds) => {
         await setConfigWrite("hod_designations", { designation_ids: designationIds });
+        await invalidate();
+      },
+      setReassignPool: async ({ departmentIds, userIds }) => {
+        // department_ids is stored so Setup can re-open on the same filter; it is
+        // NOT read by fms_supplies_can_receive_reassignment and grants nothing.
+        await setConfigWrite("reassign_pool", { department_ids: departmentIds, user_ids: userIds });
         await invalidate();
       },
 
@@ -769,6 +894,10 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     isLoading, error, dir, userId, isAdmin, designations, companies, departments, categories, items,
     serviceTypes, masterManagers, masterRequests, requests, activity, notifications,
     stepOwners, processCoordinatorIds, requesterIds, hodDesignationIds, stepSla, queryClient,
+    // Load-bearing and invisible to tsc, exactly like orgPeople below: without
+    // these the memo keeps handing out the pool it was built with, so Setup Save
+    // never confirms after a successful write and reassignCandidates goes stale.
+    reassignPoolDepartmentIds, reassignPoolUserIds,
     // Load-bearing, and tsc cannot catch its absence: personName closes over
     // orgPeople, so without this the names stay "Unknown user" until some other
     // dep happens to change.
