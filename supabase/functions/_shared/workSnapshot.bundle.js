@@ -2566,6 +2566,7 @@ var mapRequest3 = (r) => ({
   submittedAt: r.submitted_at,
   firstApprovedAt: r.first_approved_at ?? null,
   firstApproverId: r.first_approver_id ?? null,
+  assignedApproverId: r.assigned_approver_id ?? null,
   firstRemarks: r.first_remarks ?? null,
   secondApprovedAt: r.second_approved_at ?? null,
   secondApproverId: r.second_approver_id ?? null,
@@ -2656,7 +2657,9 @@ async function fetchSuppliesData() {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
     requesterIds: byKey.get("requesters")?.user_ids ?? [],
     hodDesignationIds: byKey.get("hod_designations")?.designation_ids ?? [],
-    stepSla: resolveStepSla5(byKey.get("step_sla"))
+    stepSla: resolveStepSla5(byKey.get("step_sla")),
+    reassignPoolDepartmentIds: byKey.get("reassign_pool")?.department_ids ?? [],
+    reassignPoolUserIds: byKey.get("reassign_pool")?.user_ids ?? []
   };
   return {
     stepOwners: stepOwners.map(mapStepOwner5),
@@ -5239,7 +5242,8 @@ function buildQueueEntries5(snap) {
       ref: r.reqNo,
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
-      requestId: r.id
+      requestId: r.id,
+      assignedApproverId: r.assignedApproverId
     });
   }
   return out;
@@ -5256,10 +5260,14 @@ function officeSuppliesWorkItems(data, uid, isAdmin) {
   const myHodDepartmentIds = new Set(
     data.departments.filter((d) => d.hodUserId === uid).map((d) => d.id)
   );
-  const mine = (stepKey, departmentId) => stepKey === "first_approval" ? myHodDepartmentIds.has(departmentId) : isMineByStepOwners(stepKey, uid, owners);
+  const mine = (stepKey, departmentId, holderId) => {
+    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
+    if (holderId) return holderId === uid;
+    return myHodDepartmentIds.has(departmentId);
+  };
   return buildQueueEntries5(
     supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla })
-  ).filter((e) => isAdmin || mine(e.stepKey, e.departmentId)).map((e) => ({
+  ).filter((e) => isAdmin || mine(e.stepKey, e.departmentId, e.assignedApproverId)).map((e) => ({
     id: `office-supplies:${e.requestId}:${e.stepKey}`,
     source: "office-supplies",
     sourceLabel: appName("office-supplies"),
@@ -5267,7 +5275,7 @@ function officeSuppliesWorkItems(data, uid, isAdmin) {
     stage: stepByKey5(e.stepKey)?.short,
     dueIso: e.dueIso,
     to: requestHref(e.requestId),
-    assignment: mine(e.stepKey, e.departmentId) ? "direct" : "team",
+    assignment: mine(e.stepKey, e.departmentId, e.assignedApproverId) ? "direct" : "team",
     isApproval: APPROVAL_STEPS3.has(e.stepKey)
   }));
 }
