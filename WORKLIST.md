@@ -649,83 +649,6 @@ step took) is the only report anyone has asked for. That gap is most likely wher
 - [ ] Whether these are per-module reports or one management view across modules — the second is a
       different build, closer to **PC-1**'s dashboard than to a report.
 - [ ] What he wants that the data cannot answer yet, so we know early what needs capturing first.
-### PF-13 · Reassign an approval — the remaining modules  `[~]`
-*Also touches: Office Supplies · HR (Recruitment + Exit) · Travel Desk · Order to Dispatch ·
-Raised 2026-08-27, out of **IM-1** · do **PD-1** first — a second module proves the shape before it
-is copied four more times*
-
-**Office Supplies and HR Recruitment shipped 2026-08-27** — **PF-13a** and **PF-13b** in
-[Done](#done). Office Supplies extracted the shared `ReassignModal` / `ReassignPoolSection` and
-retro-fitted Import and Purchase onto them; HR needed a different SHAPE — a `(requisition, step)`
-table rather than a column — because a requisition has several steps open at once across three
-scopes, and that is the template HR Exit should follow if it turns out to need one too.
-**Left: HR Exit, Travel Desk, Order to Dispatch.**
-
-Every module still has the problem Import had: an approval sits with one named person until they get
-to it. **IM-1** shipped the handover for Import and **PD-1** ports it to Purchase RM Domestic; this
-is the remaining four. Each gets the same skeleton — a `reassign_pool` key in the module's config,
-an `assigned_approver_id` holder column, the holder branch in `fms_<mod>_can_act` and in the
-decide/update RPCs, the store gates, a Setup section, the modal and its triggers, the module's
-`mywork/items/*.ts`, and a bundle rebuild.
-
-**Where the exclusivity actually comes from** — measured on live data, not inferred:
-
-| Module | Approval | Exclusive because | Setup can already fix it? |
-|---|---|---|---|
-| **office-supplies** | `first_approval` | **structural** — one `uuid` column, bare `= p_uid`, and the owner row is deliberately empty (0 rows) | **no** |
-| **hr-recruitment** | HOD + probation | `hiring_manager_ids`, and the branch **`return`s — no fall-through** | **no** |
-| **hr-recruitment** | `hr_head_approval`, `final_decision` | step owners, **1 person each** (`mgmt_approval` holds 3 — fine) | yes, add a name |
-| **hr-exit** | `hr_head_approval`, `fnf_approve` | step owners — **all 15 rows hold exactly 1 person** | yes, add a name |
-| **travel-desk** | `manager_approval` | per-trip HOD snapshot, **write-once**; the owners table is **empty** | **no** |
-| **order-to-dispatch** | `credit_check` | 1 person per location, and the all-locations fallback row holds **0** | yes, add a name |
-
-**Process coordinators are not the escape hatch.** Only `purchase`, `hr` and `exit` have a
-`process_coordinators` row at all, one person each. `supplies`, `travel` and `dispatch` have none, so
-their `can_act` coordinator arm grants nobody anything today.
-
-**Do Office Supplies second, and extract the shared UI while doing it** — one instance is not a
-pattern, two is. `shared/components/ReassignModal.tsx` (Import's is already generic given
-`{ candidates, currentHolder, onReassign(target|null, note) }`) and
-`shared/components/settings/ReassignPoolSection.tsx` (parameterised on `appId` plus four store
-callbacks, keeping the *receiver has no edit grant* warning), then retro-fit Import and Purchase.
-⚠ Do **not** generalise the holder rule itself into `shared/lib/fmsOwners.ts` — that file is compiled
-into the daily mail, so a change there moves every module's mail at once.
-
-**The traps, module by module:**
-
-- **Office Supplies** — ⚠ **the read gate has to widen too.** `fms_supplies_can_read_request` admits
-  only admin / coordinator / fulfilment staff / raiser / beneficiary / the department HOD; without a
-  holder arm the receiver cannot open the request at all. Import never hit this — its tables are
-  `select … using (true)`. And `lib/queues.ts` must carry the holder on the entry, because
-  `mywork/items/officeSupplies.ts` restates the HOD rule inline; its own header records that missing
-  this once made HOD approvals vanish from My Work and the daily mail.
-- **HR Recruitment** — the most involved, and it spans two entity types. The MRF approvals hang off
-  `fms_hr_requisitions`, while the HOD and probation steps read `hiring_manager_ids`, whose branch in
-  `fms_hr_can_act` `return`s with no fall-through — that is the hard stop worth fixing.
-  `fms_hr_reassign_interview` is the in-house precedent Import copied; extend that shape rather than
-  inventing a second one.
-- **HR Exit** — ⚠ **`handover` is already a step key here**, meaning knowledge transfer. Do not name
-  anything "handover". `fms_exit_update_case` can already rewrite `reporting_manager_ids`, a de-facto
-  reassign for the manager steps; the two must not contradict each other.
-- **Travel Desk** — ⚠ write a **per-trip override; never re-derive from `user_hods`**.
-  [20261005120700](supabase/migrations/20261005120700_add_fms_travel_trips.sql) says the snapshot
-  exists so *"a re-org must not silently re-route a trip somebody is already waiting on."* The
-  manager branch falls *through* to step owners, so the holder arm sits before that fall-through.
-  Also `fms_travel_can_act` opens with `module_can_edit(p_uid,'travel-desk')`, so a receiver without
-  edit access is refused **by the database**, not merely stranded in the UI as in Import — here the
-  Setup warning prevents a hard refusal rather than a dead end. And `lib/queues.ts` carries the
-  holder, because `mywork/items/travel-desk.ts` filters on `e.approverManagerIds`.
-- **Order to Dispatch** — ⚠ ownership is **location-scoped**
-  (`fms_dispatch_is_step_owner(step, uid, location)`), so the *who may reassign* arm has to resolve
-  the order's location first. Cheapest win before any of this, and it needs no code: add a second
-  name per location, or fill the empty all-locations fallback row.
-
-**All four rebuild the bundle.** `workSnapshot.bundle.js` compiles each module's `lib/queues.ts`,
-its `data/*Fetch.ts` and all eleven `mywork/items/*.ts` — build it from the `oo-master` worktree, and
-see **PD-1** for why.
-
----
-
 ### PF-14 · Four modules have no step owners at all, so every approval in them is admin-only  `[!]`
 *Raised 2026-08-27, found while auditing for **PF-13** · this needs the business to name people, not
 code*
@@ -739,6 +662,20 @@ steps have nobody configured at all: only an admin can move them, because only t
 
 **Reassign cannot help this** — there is nobody to reassign *from*. It is a configuration gap, and it
 is the reason **PF-13** stops where it does.
+
+**Two more of the same class, found while building PF-13 and confirmed on live data:**
+
+- **Seven of HR Exit's fifteen step owners cannot act on the steps they own.**
+  `fms_exit_is_step_owner` is module-gated and these four people have `hr-exit` access `none`:
+  DHARMISHTHA PRAJAPATI (`asset_return`, `handover`, `leave_verification`), Ritesh Tulsyan
+  (`fnf_approve`), Bushra (`fnf_generate`, `payroll_inputs`) and Jyoti (`fnf_payment`). `fnf_approve`
+  is one of the module's two approvals, so those seven steps are admin-and-coordinator only. The fix
+  is a module grant, not code.
+- **Nobody has Travel Desk edit access at all** — zero rows in `app_access` at level `edit` — so every
+  non-admin is refused before any ownership rule is consulted, on top of the empty step-owner table.
+
+- [ ] Grant those four people `hr-exit` edit access, or move the steps to somebody who has it.
+- [ ] Decide who gets Travel Desk edit access when the module goes live.
 
 **To discuss with Ritesh Bhai / Bushra:**
 - [ ] OCPI — who approves a quotation, and is it banded by value the way Purchase is?
@@ -2457,6 +2394,73 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### PF-13 · Reassign an approval — every module now has one  `[x]`
+*Platform · **Live 2026-08-27** · closes the sweep that began with **IM-1** and **PD-1***
+
+**What happens now, everywhere.** Each module's Setup carries **who may receive a handover**, and the
+work awaiting a decision carries **Reassign**. It **moves**: it leaves the usual owner's queue, appears
+in the receiver's, and only they or an admin may act. The usual owner can pull it back. The shared
+controls are `shared/components/approvals/ReassignModal.tsx` and `ReassignPoolSection.tsx`.
+
+| Module | What it hands over | Shape |
+|---|---|---|
+| **Purchase RM Import** (IM-1) | one requisition | `assigned_approver_id` column |
+| **Purchase RM Domestic** (PD-1) | one requisition | column · amount-banded |
+| **Office Supplies** (PF-13a) | one request's first approval | column · HOD-routed |
+| **HR Recruitment** (PF-13b) | one **step** of one requisition | `(requisition, step)` table |
+| **HR Exit** (PF-13c) | one **step** of one case | `(case, step)` table |
+| **Travel Desk** (PF-13d) | one **step** of one trip | `(trip, step)` table · migration only, see below |
+| **Order to Dispatch** (PF-13e) | one **step** of one order | `(order, step)` table · location-scoped |
+
+**The shape split is the finding.** The first three modules carry **one** approval in flight per
+entity, so a single column says everything. The last four do not — an HR requisition walks nineteen
+steps across three scopes with several open at once — so the holder has to be keyed on
+`(entity, step)`. And that key is right because it is already how those modules authorise: every one
+of HR's eighteen RPCs calls `fms_hr_can_act(step_key, requisition_id, uid)`, so the rule landed inside
+the gate they already go through with **no signature or call-site change**.
+
+**Three rules that held in every module:**
+
+1. **The holder REPLACES the natural owner, never ORs with it.** An OR is a *share* — the item stays
+   in the original owner's queue and nothing has moved.
+2. **Visibility is separate from authority.** The queue follows the holder **even for an admin or a
+   coordinator**; `canAct*` keeps its admin arm. This mattered most in HR, where `hr_head_approval`'s
+   sole owner is also the sole process coordinator.
+3. **The read gate had to be widened in four modules**, for a counterintuitive reason: the module arm
+   is `module_is_viewer`, which is `module_level(...) = 'view'` **exactly** — so a receiver holding an
+   *edit* grant matches nothing and cannot open what was just handed to them.
+
+**⚠ Two failures that only the browser caught, both at the RLS / PostgREST layer:**
+
+- **Travel Desk went dark.** The new assignee table's policy read `fms_travel_trips`, whose policy now
+  reads the assignee table — Postgres refused both with *"infinite recursion detected in policy"* and
+  the whole module showed "could not be loaded". Fixed within minutes; the assignee policy no longer
+  consults the trips table.
+- **Every Order to Dispatch queue emptied.** That module's `fetchAll` adds a secondary sort on `id`
+  for stable paging, and the new table had a composite primary key and no `id`. PostgREST answered
+  400, the store's `Promise.all` rejected, and `orders` was empty. The table now carries an `id`.
+
+**Neither was visible to `tsc`, to the build, or to the SQL suites** — those connect as `postgres`,
+for whom **RLS is not enforced at all**. Every table added in this sweep is now read back with
+`set local role authenticated`, as an admin and as a non-admin, which is the check that would have
+caught both.
+
+**⚠ Travel Desk shipped its MIGRATION ONLY.** The Travel Desk app is another session's in-flight work
+— 88 files, untracked here and on master, never committed anywhere — so its frontend half (store,
+fetch, writes, Setup section, modal, queue trigger, My Work item) is left in the working tree for that
+session to commit with the rest of the module. The migration is additive and inert until then.
+
+**Verification, per module:** authorisation cases on live data inside rolled-back transactions (15,
+17, 22, 22, 19, 14), a rollback rehearsed the same way each time (8/8, 9/9, 8/8, 8/8, 7/7), and a
+browser walkthrough (12, 10, 7, 3, 3, 6). **No email was sent by any run** — the four HR/Travel/
+Dispatch switches are off, and Import's and Purchase's were turned off for their runs and back on
+after, with the outbox confirming zero rows each time.
+
+**Two configuration gaps this surfaced, both needing the business rather than code — see PF-14:**
+seven of HR Exit's fifteen step owners **cannot act on the steps they own** (no module access,
+including `fnf_approve`), and Travel Desk has **no step owners at all** plus **nobody with edit
+access**.
 
 ### PF-13b · HR Recruitment — a step owner can hand a step to someone else  `[x]`
 *HR Recruitment · **Live 2026-08-27, 19:20 IST** · the fourth module after **IM-1**, **PD-1** and
