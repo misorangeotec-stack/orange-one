@@ -17,8 +17,9 @@ const TYPE_META: Record<string, { label: string; dot: string }> = {
   // lowercase "request cancelled" through metaFor's fallback. Grey, not red:
   // red is `rejected` — someone refused this — not a withdrawal.
   request_cancelled: { label: "Request cancelled", dot: "bg-grey-2" },
-  // Reassign was removed (the configured approvers are the sole authority), but
-  // old activity rows may still exist — keep the label so history renders.
+  // Reassign is live again (20260827120000), gated this time on a configured pool
+  // of people who may receive one — the missing gate that got it removed in the
+  // first place. Rows from the 2026 original render under the same label.
   reassigned: { label: "Reassigned", dot: "bg-orange" },
   po_generated: { label: "PO generated", dot: "bg-teal" },
   po_shared: { label: "PO shared", dot: "bg-orange" },

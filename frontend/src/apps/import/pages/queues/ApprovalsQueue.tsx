@@ -8,6 +8,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { useImportStore } from "../../store";
 import { sumQty } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
+import ReassignApprovalModal from "../../components/ReassignApprovalModal";
 import QtyTotal from "../../components/QtyTotal";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
@@ -25,6 +26,7 @@ export default function ApprovalsQueue() {
   const s = useImportStore();
   const { user } = useEffectiveIdentity();
   const [approving, setApproving] = useState<PurchaseRequest | null>(null);
+  const [reassigning, setReassigning] = useState<PurchaseRequest | null>(null);
   const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedApprovalRequestEntries, user.id);
 
@@ -117,7 +119,7 @@ export default function ApprovalsQueue() {
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
             ? "Decisions already made. Each stays revisable until the PO is generated."
-            : "Requisitions awaiting your purchase approval — banded on the requisition total."}
+            : "Requisitions awaiting your purchase approval. One reassigned to someone else leaves this list and appears in theirs."}
         </p>
       </div>
 
@@ -161,7 +163,12 @@ export default function ApprovalsQueue() {
             emptyMessage="Requisitions routed to you will appear here."
             initialSort={{ key: "qty", dir: "desc" }}
             actions={(r) => (
-              <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+              <span className="whitespace-nowrap">
+                <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+                {s.canReassignRequest(r) && (
+                  <button onClick={() => setReassigning(r)} className="ml-3 text-[12.5px] font-semibold text-orange hover:underline">Reassign</button>
+                )}
+              </span>
             )}
           />
         )}
@@ -194,6 +201,11 @@ export default function ApprovalsQueue() {
       )}
 
       <ApprovalModal request={approving} open={approving !== null} onClose={() => setApproving(null)} />
+      <ReassignApprovalModal
+        request={reassigning}
+        open={reassigning !== null}
+        onClose={() => setReassigning(null)}
+      />
       <ApprovalModal
         request={editRequest.row}
         open={editRequest.row !== null}

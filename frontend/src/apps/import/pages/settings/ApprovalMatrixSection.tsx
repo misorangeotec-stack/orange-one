@@ -7,6 +7,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useImportStore } from "../../store";
+import ReassignmentSection from "./ReassignmentSection";
 import type { ApprovalBand } from "../../types";
 
 /**
@@ -17,6 +18,12 @@ import type { ApprovalBand } from "../../types";
  *
  * It is still backed by the fms_import_approval_matrix table (each row = one
  * approver); the amount columns are written 0 / no-limit and never used.
+ *
+ * Below the list sits ReassignmentSection: an approver holding a requisition can
+ * hand THAT ONE requisition to somebody named there, and it moves off his queue
+ * onto theirs. The two configs live on one tab on purpose - the second is
+ * meaningless without the first, and the question "who signs this off" is one
+ * question.
  */
 export default function ApprovalMatrixSection() {
   const s = useImportStore();
@@ -183,6 +190,10 @@ export default function ApprovalMatrixSection() {
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>
+
+      <div className="pt-2">
+        <ReassignmentSection />
+      </div>
     </div>
   );
 }

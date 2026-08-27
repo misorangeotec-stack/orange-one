@@ -565,6 +565,27 @@ export async function decideApprovalRequest(input: {
 }
 
 /**
+ * Hand one requisition awaiting approval to someone else, or pass a null
+ * `approverId` to return it to the configured approvers ("take it back").
+ *
+ * The RPC deliberately does NOT announce — see the store, which raises the
+ * notification client-side so `emailMeta` can author a card that renders with
+ * content rather than a blank one. The handover reason travels with that
+ * announce, which is why there is no note parameter here.
+ */
+export async function reassignApprovalRequest(input: {
+  requestId: string;
+  /** Null = return it to the configured approvers. */
+  approverId: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_reassign_request", {
+    p_request_id: input.requestId,
+    p_approver_id: input.approverId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Stage 3 — generate a vendor × company PO from chosen approved lines. Returns
  * the PO id.
  *

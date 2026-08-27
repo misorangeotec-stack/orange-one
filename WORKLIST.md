@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-08-27
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -1659,6 +1659,69 @@ already in this module:
 a job / batch / request and how it is numbered; whether the import is per batch or a sheet of many;
 whether the generated PDF must be stored and re-openable later or just printed; and whether QC can
 edit values after import or only import-and-generate.
+
+---
+
+## Purchase RM Import
+
+### IM-1 · An approver can hand a requisition to someone else  `[~]`
+*Raised 2026-08-27 · From the business · Setup gains the list of who may receive one*
+
+Setup carries exactly one approval control today — **Approvers**
+([ApprovalMatrixSection.tsx](frontend/src/apps/import/pages/settings/ApprovalMatrixSection.tsx)), a
+flat list of people, one per row, with every requisition routed to all of them. An approver who is
+travelling, tied up, or looking at something outside his remit has no way to pass a single
+requisition to a colleague; it sits in his queue until he gets to it.
+
+Two parts. **Setup** gains a Departments + Users list of who may receive a handover, and a
+**Reassign** action appears on a requisition awaiting approval. The requisition **moves** — it leaves
+the approver's queue and appears in the receiver's. Any active approver, or an admin, can pull it
+back. One requisition at a time, not a blanket delegation.
+
+**Notes:** this existed and was deliberately removed.
+`20260806123000_fms_import_remove_reassign.sql` dropped `fms_import_reassign_line` for one stated
+reason — *its picker listed EVERY profile, so an approval could be handed to someone with no approval
+authority at all.* The configured pool is the answer to exactly that objection, and the removal
+migration names its own reversal recipe. The rails it left behind are all still in place and inert:
+the `assigned_approver_id` column, an `assigned_approver_id = auth.uid()` authz branch in both
+request-scoped approval RPCs, and the `'reassigned'` activity type with its label at
+[ActivityTimeline.tsx:20](frontend/src/apps/import/components/ActivityTimeline.tsx#L20). So this is a
+revival with a gate on it, not a new subsystem. The live template with the right authority model is
+HR's `fms_hr_reassign_interview` + `ReassignInterviewModal.tsx` — *whoever owes the work may pass it
+on, and work already done cannot be handed over.*
+
+**Three things the audit turned up that are not obvious:**
+
+1. **The daily work-snapshot mail goes stale unless the bundle is rebuilt.** `lib/owners.ts` is
+   compiled into `supabase/functions/_shared/workSnapshot.bundle.js` via
+   [worksnapshot/entry.ts](supabase/worksnapshot/entry.ts) → `mywork/items/import.ts` →
+   `ownerResolver`. Change the owner rule without `node supabase/worksnapshot/build.mjs` and the mail
+   names the **original** approver while the screen names the receiver — the two-sources-of-truth
+   failure that file exists to prevent.
+2. **The receiver needs Import module access at `edit` level, or the handover is a dead end.**
+   `canEdit = session.canEditModule("import")`
+   ([store.tsx:674](frontend/src/apps/import/store.tsx#L674)) folds into every write gate, and
+   `RequireModule` bounces anyone without the grant to `/home`. Both pickers have to surface it.
+3. **`fms_import_decide_approval` (the legacy per-line RPC) is a live bypass.** Its authz resolves the
+   approver by a band lookup on `line_value`, and `line_value` is always `0` since the
+   quantity-requisition change — so it always matches the **first** active approver, who could decide
+   a handed-over line through it. Unreachable from the UI, but granted to `authenticated`.
+
+**The fix, in order:** migration (pool helper + `fms_import_reassign_request`, the holder rule in all
+three approval RPCs, and stop nulling `assigned_approver_id` at the decision so the holder can still
+revise before the PO) → data layer → `owners.ts` → store gates → Setup section → the Reassign modal
+and its two triggers → rebuild the snapshot bundle → browser walkthrough, including two direct-RPC
+refusals, because a client-side-only block is not the check that matters.
+
+**Not in scope, deliberately:** a standing *"stand-in for all my approvals while I am away"* — a
+date-bounded delegation of the whole role. It was considered and set aside in favour of the
+per-requisition handover, so it is not an oversight if someone comes looking for it later.
+
+**Found in passing, not fixed here:** `store.decideApproval`
+([store.tsx:472](frontend/src/apps/import/store.tsx#L472), implemented at
+[:1110](frontend/src/apps/import/store.tsx#L1110)) is called from no page — the per-line approval path
+was superseded by the request-scoped one and its trigger went with it. Exactly the **FIX-4** orphan
+class. Removing it is a separate decision.
 
 ---
 
