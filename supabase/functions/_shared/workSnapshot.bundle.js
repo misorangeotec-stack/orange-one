@@ -99,6 +99,15 @@ var APPS = {
     basePath: "/leads-dashboard",
     category: "sales"
   },
+  // The machine SALE, before there is an order to dispatch: a quotation is
+  // drafted, revised through the negotiation, approved, and becomes an order
+  // confirmation the customer signs. Filed under SALES between the lead that
+  // starts it and the onboarding that follows a won deal.
+  ocpi: {
+    name: "OCPI",
+    basePath: "/ocpi",
+    category: "sales"
+  },
   "fms-control-center": {
     name: "FMS Control Center",
     basePath: "/fms-control-center",
@@ -107,6 +116,16 @@ var APPS = {
   "master-report": {
     name: "Master Report",
     basePath: "/master-report",
+    category: "control"
+  },
+  // The coordinator's own desk: every module's master approvals in one queue,
+  // and every process at a glance with the person to ring about a stuck step.
+  // Sits in Control between the two screens it is deliberately not — the
+  // Control Center ("what is due today") and the Master Report ("is this module
+  // alive").
+  "process-coordinator": {
+    name: "Process Coordinator",
+    basePath: "/process-coordinator",
     category: "control"
   },
   // Virtual module: no web app and no route, so no basePath that resolves to a
@@ -1621,6 +1640,7 @@ var mapRequestItem = (r) => ({
   lineValue: num3(r.line_value),
   status: r.status,
   approverId: r.approver_id ?? null,
+  assignedApproverId: r.assigned_approver_id ?? null,
   approvalTier: r.approval_tier ?? null,
   rejectReason: r.reject_reason ?? null,
   cancelReason: r.cancel_reason ?? null,
@@ -1897,7 +1917,9 @@ async function fetchProcurementData() {
     processCoordinatorIds: configByKey.get("process_coordinators")?.user_ids ?? [],
     amountBasis: configByKey.get("amount_basis")?.value ?? "line_incl_gst",
     // Unset or partially-stored rules fall back to the code defaults.
-    stepSla: resolveStepSla3(configByKey.get("step_sla"))
+    stepSla: resolveStepSla3(configByKey.get("step_sla")),
+    reassignPoolDepartmentIds: configByKey.get("reassign_pool")?.department_ids ?? [],
+    reassignPoolUserIds: configByKey.get("reassign_pool")?.user_ids ?? []
   };
   return {
     companies: companies.map(mapCompany),
@@ -2113,6 +2135,9 @@ var mapRequestItem2 = (r) => ({
   lineValue: num4(r.line_value),
   status: r.status,
   approverId: r.approver_id ?? null,
+  /** Set while this line has been HANDED OVER; the holder is then the only
+   *  non-admin who may decide it. Null = it sits with the configured approvers. */
+  assignedApproverId: r.assigned_approver_id ?? null,
   approvalTier: r.approval_tier ?? null,
   rejectReason: r.reject_reason ?? null,
   cancelReason: r.cancel_reason ?? null,
@@ -2397,7 +2422,9 @@ async function fetchImportData() {
   const config = {
     processCoordinatorIds: configByKey.get("process_coordinators")?.user_ids ?? [],
     // Unset or partially-stored rules fall back to the code defaults.
-    stepSla: resolveStepSla4(configByKey.get("step_sla"))
+    stepSla: resolveStepSla4(configByKey.get("step_sla")),
+    reassignPoolDepartmentIds: configByKey.get("reassign_pool")?.department_ids ?? [],
+    reassignPoolUserIds: configByKey.get("reassign_pool")?.user_ids ?? []
   };
   return {
     companies: companies.map(mapCompany2),
@@ -3046,6 +3073,9 @@ var mapRequest5 = (r) => ({
   })) : [],
   fgItemId: r.fg_item_id ?? null,
   fgQty: num5(r.fg_qty),
+  // Repackaging only — null on production cards and on repackaging cards raised
+  // before the column existed.
+  fgLotNo: r.fg_lot_no ?? null,
   issueRemarks: r.issue_remarks ?? null,
   raisedBy: r.raised_by ?? null,
   requesterName: r.requester_name,
@@ -3324,10 +3354,26 @@ var resolveStepSla8 = model8.resolveStepSla;
 // frontend/src/apps/order-to-dispatch/data/dispatchFetch.ts
 var db4 = supabase;
 var PAGE8 = 1e3;
-async function fetchAll9(table, orderBy = "created_at") {
-  const out = [];
-  for (let from = 0; ; from += PAGE8) {
-    const { data, error } = await db4.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE8 - 1);
+async function pagedWalk(build) {
+  const page = (from, withCount = false) => build(withCount).range(from, from + PAGE8 - 1);
+  const first = await page(0, true);
+  if (first.error) throw new Error(first.error.message);
+  const out = [...first.data ?? []];
+  if (out.length < PAGE8) return out;
+  const total = first.count ?? null;
+  const known = total === null ? 0 : Math.ceil(total / PAGE8);
+  if (known > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: known - 1 }, (_, i) => page((i + 1) * PAGE8))
+    );
+    for (const r of rest) {
+      if (r.error) throw new Error(r.error.message);
+      out.push(...r.data ?? []);
+    }
+    if ((rest[rest.length - 1]?.data?.length ?? 0) < PAGE8) return out;
+  }
+  for (let from = Math.max(known, 1) * PAGE8; ; from += PAGE8) {
+    const { data, error } = await page(from);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -3335,59 +3381,21 @@ async function fetchAll9(table, orderBy = "created_at") {
   }
   return out;
 }
-async function fetchWhere(table, extra) {
-  const out = [];
-  for (let from = 0; ; from += PAGE8) {
-    const { data, error } = await extra(db4.from(table).select("*")).order("created_at", { ascending: true }).range(from, from + PAGE8 - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE8) break;
-  }
-  return out;
+async function fetchAll9(table, orderBy = "created_at", cols = "*") {
+  return pagedWalk((withCount) => {
+    let q = db4.from(table).select(cols, withCount ? { count: "exact" } : void 0).order(orderBy, { ascending: true });
+    if (orderBy !== "key") q = q.order("id", { ascending: true });
+    return q;
+  });
 }
-async function fetchByIds(table, ids) {
-  const CHUNK2 = 200;
-  const out = [];
-  for (let i = 0; i < ids.length; i += CHUNK2) {
-    const { data, error } = await db4.from(table).select("*").in("id", ids.slice(i, i + CHUNK2));
-    if (error) throw new Error(error.message);
-    out.push(...data ?? []);
-  }
-  return out;
-}
-var ACTIVITY_DAYS = 120;
-async function fetchRecentActivity() {
-  const since = new Date(Date.now() - ACTIVITY_DAYS * 864e5).toISOString();
-  const out = [];
-  for (let from = 0; ; from += PAGE8) {
-    const { data, error } = await db4.from("fms_dispatch_activity").select("*").gte("created_at", since).order("created_at", { ascending: true }).range(from, from + PAGE8 - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE8) break;
-  }
-  return out;
+async function fetchWhere(table, extra, cols = "*") {
+  return pagedWalk(
+    (withCount) => extra(db4.from(table).select(cols, withCount ? { count: "exact" } : void 0)).order("created_at", { ascending: true }).order("id", { ascending: true })
+  );
 }
 var num6 = (v) => v === null || v === void 0 || v === "" ? null : Number(v);
 var str = (v) => v === null || v === void 0 || v === "" ? null : String(v);
 var docs = (v) => Array.isArray(v) ? v.filter((d) => d && typeof d.path === "string" && d.path !== "").map((d) => ({ path: String(d.path), name: String(d.name ?? d.path) })) : [];
-var mapMaster4 = (r) => ({
-  id: r.id,
-  name: r.name,
-  active: r.active,
-  sortOrder: r.sort_order ?? 0
-});
-var mapCustomer = (r) => ({
-  ...mapMaster4(r),
-  companyId: r.company_id ?? null,
-  code: str(r.code),
-  location: str(r.location),
-  gstin: str(r.gstin),
-  contactName: str(r.contact_name),
-  phone: str(r.phone),
-  email: str(r.email)
-});
 var mapMasterManager6 = (r) => ({
   id: r.id,
   masterType: r.master_type,
@@ -3497,6 +3505,7 @@ var mapOrder = (r) => ({
   status: r.status,
   currentStep: r.current_step,
   submittedAt: r.submitted_at,
+  updatedAt: r.updated_at,
   roundNo: Number(r.round_no ?? 1),
   roundStartedAt: r.round_started_at ?? r.submitted_at,
   ccStatus: r.cc_status ?? null,
@@ -3584,16 +3593,6 @@ var mapStepOwner8 = (r) => ({
   employeeIds: r.employee_ids ?? []
 });
 var mapDesignation8 = (r) => ({ id: r.id, name: r.name });
-var mapActivity8 = (r) => ({
-  id: r.id,
-  entityType: r.entity_type,
-  entityId: r.entity_id,
-  type: r.type,
-  actorId: r.actor_id ?? null,
-  note: str(r.note),
-  meta: r.meta ?? {},
-  createdAt: r.created_at
-});
 var mapNotification8 = (r) => ({
   id: r.id,
   userId: r.user_id,
@@ -3605,62 +3604,36 @@ var mapNotification8 = (r) => ({
   readAt: r.read_at ?? null,
   createdAt: r.created_at
 });
-async function fetchDispatchData() {
+async function fetchDispatchData(ctx) {
+  const forUser = typeof ctx?.queryKey?.[1] === "string" ? ctx.queryKey[1] : null;
   const [
     stepOwners,
     configRows,
     designations,
-    companies,
-    locations,
-    companySites,
-    customerItems,
-    customers,
-    units,
     masterManagers,
     masterRequests,
     orders,
     orderItems,
     rounds,
     roundItems,
-    activity,
     notifications
   ] = await Promise.all([
     fetchAll9("fms_dispatch_step_owners"),
     fetchAll9("fms_dispatch_config", "key"),
     fetchAll9("designations"),
-    // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
-    // items, where Tally holds thousands and the tick is the only thing making
-    // a picker usable, there are five companies. A new one should appear on its
-    // own rather than waiting for somebody to remember to tick it.
-    fetchAll9("mst_companies"),
-    fetchAll9("mst_locations"),
-    fetchAll9("mst_company_locations"),
-    // ⚠ THE CATALOGUE IS FETCHED FIRST BECAUSE IT DECIDES THE ITEM LIST. Every
-    //   item the order form can offer is one a pair names; nothing else is
-    //   reachable. 8,555 rows of two uuids — cheaper than the item rows it saves.
-    fetchAll9("mst_party_items"),
-    // EVERY customer ledger, all 1,850 of them. The company narrows them on the
-    // form; there is no list to tick any more.
-    fetchWhere("mst_parties", (q) => q.eq("is_customer", true)),
-    fetchAll9("mst_units"),
     fetchAll9("fms_dispatch_master_managers"),
     fetchAll9("fms_dispatch_master_requests"),
     fetchAll9("fms_dispatch_orders", "submitted_at"),
     fetchAll9("fms_dispatch_order_items"),
     fetchAll9("fms_dispatch_rounds", "archived_at"),
     fetchAll9("fms_dispatch_round_items"),
-    fetchRecentActivity(),
-    fetchAll9("fms_dispatch_notifications")
+    // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
+    //   user_id is not the signed-in user (`mineNotifications`), so fetching the
+    //   whole table only ever cost bandwidth — and it cost the most for an admin,
+    //   whose RLS lets all 5,296 rows through where a normal user sees ~400. Same
+    //   rows reach the UI either way; four fifths of the payload does not.
+    forUser ? fetchWhere("fms_dispatch_notifications", (q) => q.eq("user_id", forUser)) : fetchAll9("fms_dispatch_notifications")
   ]);
-  const unitNameById = new Map(units.map((u) => [u.id, u.name]));
-  const customerIds = new Set(customers.map((c) => c.id));
-  const wantedItemIds = /* @__PURE__ */ new Set();
-  for (const r of customerItems) {
-    if (customerIds.has(r.party_id)) wantedItemIds.add(r.item_id);
-  }
-  for (const r of orderItems) if (r.item_id) wantedItemIds.add(r.item_id);
-  const items = await fetchByIds("mst_items", [...wantedItemIds]);
-  const itemIds = new Set(items.map((i) => i.id));
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
@@ -3702,93 +3675,9 @@ async function fetchDispatchData() {
     stepOwners: stepOwners.map(mapStepOwner8),
     designations: designations.map(mapDesignation8),
     config,
-    /**
-     * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name.
-     *   `name` is Tally's book name — "ORANGE O TEC PRIVATE LIMITED
-     *   (01-04-25TO31-03-27)" — which the sync rewrites and which is re-minted
-     *   every April. It reaches a driver at the gate: printGatePass puts the
-     *   billing company in the masthead. `alias` is the human's label and no
-     *   sync touches it.
-     *
-     *   The city is appended because Tally keeps a separate book per site, so
-     *   "O-tec" alone names two of the five rows and the picker would show the
-     *   same word twice with no way to tell them apart.
-     */
-    companies: companies.map((r) => ({
-      ...mapMaster4(r),
-      name: [str(r.alias) || r.name, str(r.location)].filter(Boolean).join(" \u2014 "),
-      gstin: str(r.gstin),
-      address: str(r.address),
-      gatePassPrefix: str(r.gate_pass_prefix)
-    })),
-    /**
-     * A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.
-     *
-     * It used to be one row per (company, site) — NOIDA twice, SURAT-HOJIWALA
-     * twice, SURAT-SACHIN twice — so a single `companyId` was enough. The
-     * duplication carried no information (every step's owners were identical
-     * across both copies) and it meant a new company added three rows to retype.
-     * Now there are three sites and a separate list of who dispatches from each,
-     * so this carries `companyIds`.
-     */
-    companyLocations: (() => {
-      const byLocation = /* @__PURE__ */ new Map();
-      for (const cs of companySites) {
-        if (cs.active === false) continue;
-        const arr2 = byLocation.get(cs.location_id);
-        if (arr2) arr2.push(cs.company_id);
-        else byLocation.set(cs.location_id, [cs.company_id]);
-      }
-      return locations.map((r) => ({
-        ...mapMaster4(r),
-        companyIds: byLocation.get(r.id) ?? []
-      }));
-    })(),
-    /**
-     * ⚠ `companyId` IS CARRIED AGAIN, and it now means something real.
-     *
-     *   It was dropped when the masters moved: in Dispatch's own table it had
-     *   meant "which of our companies bills this customer" and was filled on 1
-     *   of 327 rows, while on mst_parties the same name means Tally's company
-     *   BOOK — a different set of ids entirely, which the old 2-row company list
-     *   could only render as a blank.
-     *
-     *   The company list is now Tally's own, so the two agree. And a firm having
-     *   a separate ledger in every book it trades with is exactly the fact the
-     *   order form needs: this column IS "which of our companies may bill this
-     *   customer", kept up to date by the sync rather than by hand.
-     */
-    customers: customers.map(mapCustomer),
-    items: items.map((r) => ({
-      ...mapMaster4(r),
-      code: str(r.code),
-      // mst_items points at mst_units; Dispatch's Item carries the unit's NAME.
-      unit: unitNameById.get(r.unit_id) ?? "",
-      hsnCode: str(r.hsn_code),
-      companyId: r.company_id ?? null
-    })),
-    /**
-     * The customer-item catalogue, now shared.
-     *
-     * Two sources feed it: the pairs Dispatch maintains by hand, and the pairs
-     * derived from Tally's sales register (what a customer has ACTUALLY bought).
-     * Both live in mst_party_items, so a customer's picker is richer than it was.
-     *
-     * ⚠ Filtered to this module's masters. The table holds every party-item pair
-     *   in the business; a pair whose item is not ticked into Dispatch must not
-     *   appear in a Dispatch picker, and `itemsForCustomer` intersects with the
-     *   item list anyway — this just avoids carrying thousands of dead rows.
-     */
-    customerItems: customerItems.filter((r) => customerIds.has(r.party_id) && itemIds.has(r.item_id)).map((r) => ({
-      ...mapMaster4(r),
-      name: "",
-      customerId: r.party_id,
-      itemId: r.item_id
-    })),
     masterManagers: masterManagers.map(mapMasterManager6),
     masterRequests: masterRequests.map(mapMasterRequest7),
     orders: mappedOrders,
-    activity: activity.map(mapActivity8),
     notifications: notifications.map(mapNotification8),
     orderNoPreview: orderPeek ?? ""
   };
@@ -3830,34 +3719,34 @@ var DEFAULT_REMINDER_LADDER = [45, 30, 15, 7, 1];
 var num7 = (v) => v === null || v === void 0 || v === "" ? null : Number(v);
 var str2 = (v) => v === null || v === void 0 || v === "" ? null : String(v);
 var arr = (v) => Array.isArray(v) ? v.map(String) : [];
-var mapMaster5 = (r) => ({
+var mapMaster4 = (r) => ({
   id: r.id,
   name: r.name,
   active: r.active,
   sortOrder: r.sort_order ?? 0
 });
 var mapScheduleType = (r) => ({
-  ...mapMaster5(r),
+  ...mapMaster4(r),
   kind: r.kind ?? "service",
   defaultFrequencyValue: num7(r.default_frequency_value),
   defaultFrequencyUnit: str2(r.default_frequency_unit),
   defaultLeadDays: Number(r.default_lead_days ?? 15)
 });
 var mapCategory4 = (r) => ({
-  ...mapMaster5(r),
+  ...mapMaster4(r),
   defaultLeadDays: num7(r.default_lead_days),
   defaultScheduleTypeIds: arr(r.default_schedule_type_ids)
 });
-var mapLocation2 = (r) => ({ ...mapMaster5(r), address: str2(r.address) });
+var mapLocation2 = (r) => ({ ...mapMaster4(r), address: str2(r.address) });
 var mapVendor3 = (r) => ({
-  ...mapMaster5(r),
+  ...mapMaster4(r),
   contactPerson: str2(r.contact_person),
   phone: str2(r.phone),
   email: str2(r.email),
   gstin: str2(r.gstin),
   address: str2(r.address)
 });
-var mapCompany5 = (r) => ({ ...mapMaster5(r), gstin: str2(r.gstin), address: str2(r.address) });
+var mapCompany5 = (r) => ({ ...mapMaster4(r), gstin: str2(r.gstin), address: str2(r.address) });
 var mapSchedule = (r) => ({
   id: r.id,
   assetId: r.asset_id,
@@ -4032,11 +3921,11 @@ async function fetchAssetData() {
     categories: categoryRows.map(mapCategory4),
     locations: locationRows.map(mapLocation2),
     vendors: vendorRows.map(mapVendor3),
-    makes: makeRows.map(mapMaster5),
+    makes: makeRows.map(mapMaster4),
     companies: companyRows.map(mapCompany5),
-    conditions: conditionRows.map(mapMaster5),
-    usageUnits: usageUnitRows.map(mapMaster5),
-    costHeads: costHeadRows.map(mapMaster5),
+    conditions: conditionRows.map(mapMaster4),
+    usageUnits: usageUnitRows.map(mapMaster4),
+    costHeads: costHeadRows.map(mapMaster4),
     masterManagers: managerRows.map((r) => ({
       id: r.id,
       masterType: r.master_type,
@@ -4398,6 +4287,10 @@ function buildQueueEntries(data, idx = buildProcIndex(data)) {
 }
 
 // frontend/src/apps/procurement/lib/owners.ts
+var holderOfLines = (lines) => {
+  for (const l of lines) if (l.assignedApproverId) return l.assignedApproverId;
+  return null;
+};
 function ownerResolver(data) {
   const linesByRequest = /* @__PURE__ */ new Map();
   const lineById = /* @__PURE__ */ new Map();
@@ -4414,9 +4307,13 @@ function ownerResolver(data) {
   };
   const stepOwnerFor = (stepKey) => data.stepOwners.find((o) => o.stepKey === stepKey);
   const stepOwnerIds = (stepKey) => stepOwnerFor(stepKey)?.employeeIds ?? [];
-  const approvalOwnersOf = (_lines, total) => approversForAmount(total);
+  const approvalOwnersOf = (lines, total) => {
+    const holder = holderOfLines(lines);
+    return holder ? [holder] : approversForAmount(total);
+  };
   const linesInApproval = (requestId) => (linesByRequest.get(requestId) ?? []).filter((l) => l.status === "approval" || l.status === "on_hold");
   const requestApprovalOwnerIds = (requestId, total) => approvalOwnersOf(linesInApproval(requestId), total);
+  const holderOfRequest = (requestId) => holderOfLines(linesInApproval(requestId));
   const ownerIdsOf = (e) => {
     if (e.stepKey === "approval") {
       return e.entityType === "request" ? requestApprovalOwnerIds(e.entityId, e.value ?? 0) : approvalOwnersOf(
@@ -4432,6 +4329,7 @@ function ownerResolver(data) {
     stepOwnerFor,
     stepOwnerIds,
     ownerIdsOf,
+    holderOfRequest,
     isMine,
     requestApprovalOwnerIds
   };
@@ -4752,14 +4650,27 @@ function buildQueueEntries2(data, idx = buildImportIndex(data)) {
 }
 
 // frontend/src/apps/import/lib/owners.ts
+var holderOfLines2 = (lines) => {
+  for (const l of lines) if (l.assignedApproverId) return l.assignedApproverId;
+  return null;
+};
 function ownerResolver2(data) {
   const activeApproverIds = () => [...data.approvalBands].filter((b) => b.active).sort((a, b) => a.sortOrder - b.sortOrder || a.minAmount - b.minAmount).map((b) => b.approverUserId);
   const approverForAmount = (_amount) => activeApproverIds()[0] ?? null;
   const stepOwnerFor = (stepKey) => data.stepOwners.find((o) => o.stepKey === stepKey);
   const stepOwnerIds = (stepKey) => stepOwnerFor(stepKey)?.employeeIds ?? [];
-  const ownerIdsOf = (e) => e.stepKey === "approval" ? activeApproverIds() : stepOwnerIds(e.stepKey);
+  const holderOfRequest = (requestId) => holderOfLines2(
+    data.requestItems.filter(
+      (l) => l.requestId === requestId && (l.status === "approval" || l.status === "on_hold")
+    )
+  );
+  const ownerIdsOf = (e) => {
+    if (e.stepKey !== "approval") return stepOwnerIds(e.stepKey);
+    const holder = holderOfRequest(e.entityId);
+    return holder ? [holder] : activeApproverIds();
+  };
   const isMine = (e, userId) => ownerIdsOf(e).includes(userId);
-  return { approverForAmount, stepOwnerFor, stepOwnerIds, ownerIdsOf, isMine };
+  return { approverForAmount, stepOwnerFor, stepOwnerIds, ownerIdsOf, holderOfRequest, isMine };
 }
 
 // frontend/src/apps/import/lib/links.ts
@@ -5040,8 +4951,19 @@ var APPROVAL_STEPS = /* @__PURE__ */ new Set(["hr_head_approval", "mgmt_approval
 function hrWorkItems(data, uid, isAdmin) {
   const owners = data.stepOwners;
   const managersByReq = new Map(data.requisitions.map((r) => [r.id, r.hiringManagerIds]));
-  const isMine = (stepKey, requisitionId) => isHodStep(stepKey) ? (managersByReq.get(requisitionId ?? "") ?? []).includes(uid) : isMineByStepOwners(stepKey, uid, owners);
-  return buildQueueEntries3(hrSnapshotFrom(data)).filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId)).map((e) => ({
+  const r2PanelByCandidate = /* @__PURE__ */ new Map();
+  for (const iv of data.interviews) {
+    if (iv.round === 2 && !iv.heldAt && iv.interviewerIds.length > 0) {
+      r2PanelByCandidate.set(iv.candidateId, iv.interviewerIds);
+    }
+  }
+  const isMine = (stepKey, requisitionId, entityId) => {
+    if (stepKey === "interview_2" && entityId && (r2PanelByCandidate.get(entityId) ?? []).includes(uid)) {
+      return true;
+    }
+    return isHodStep(stepKey) ? (managersByReq.get(requisitionId ?? "") ?? []).includes(uid) : isMineByStepOwners(stepKey, uid, owners);
+  };
+  return buildQueueEntries3(hrSnapshotFrom(data)).filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId, e.entityId)).map((e) => ({
     id: `hr:${e.entityId}:${e.stepKey}`,
     source: "hr",
     sourceLabel: appName("hr-recruitment"),
@@ -5050,7 +4972,7 @@ function hrWorkItems(data, uid, isAdmin) {
     dueIso: e.dueIso,
     // A candidate row has no page of its own — it opens its requisition.
     to: `/hr-recruitment/requisitions/${e.entityType === "requisition" ? e.entityId : e.requisitionId ?? ""}`,
-    assignment: isMine(e.stepKey, e.requisitionId) ? "direct" : "team",
+    assignment: isMine(e.stepKey, e.requisitionId, e.entityId) ? "direct" : "team",
     isApproval: APPROVAL_STEPS.has(e.stepKey)
   }));
 }
