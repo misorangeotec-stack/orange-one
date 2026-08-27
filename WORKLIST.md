@@ -1762,56 +1762,7 @@ edit values after import or only import-and-generate.
 
 ## Purchase RM Domestic
 
-### PD-1 · An approver can hand a requisition to someone else  `[ ]`
-*Raised 2026-08-27 · Ports **IM-1**, which shipped for Purchase RM Import the same day · the
-reference implementation is `20260827120000_fms_import_reassign_approval.sql` plus four frontend
-files, and every rule below was learned there*
-
-The same problem Import had. A requisition awaiting approval sits with whoever the amount band names
-until they get to it — and **all three live bands hold exactly one person**, so today there is nobody
-else it could go to. Setup gains **who may receive a handover**, and a requisition awaiting approval
-gains **Reassign**. The handover **moves** the work: it leaves the band's queue, appears in the
-receiver's, and only they or an admin may decide it. Any member of the band can pull it back. One
-requisition at a time, not a standing stand-in.
-
-**Four things that differ from Import and have to be got right:**
-
-1. **There is no `fms_purchase_is_approver` helper, and there cannot be.** Band membership depends on
-   the amount, so the holder rule is written inline against the band's `v_approvers`, not against a
-   flat approver list the way Import's was.
-2. **The holder rule replaces the `OR` in four RPCs, not three.**
-   `fms_purchase_decide_approval_request` and `_update_approval_request`
-   ([20260725130000:78](supabase/migrations/20260725130000_fms_purchase_approval_line_overrides.sql#L78),
-   [:275](supabase/migrations/20260725130000_fms_purchase_approval_line_overrides.sql#L275)) **and**
-   the per-line twins `fms_purchase_decide_approval` / `_update_approval`
-   ([20260720160000:306](supabase/migrations/20260720160000_fms_purchase_multi_approver_bands.sql#L306),
-   [:363](supabase/migrations/20260720160000_fms_purchase_multi_approver_bands.sql#L363)). The twins
-   are granted to `authenticated`, so leaving them alone leaves a band member able to decide a
-   handed-over line — exactly the live bypass the Import audit found.
-3. **⚠ The six `assigned_approver_id` clear-sites split 4 / 2.** Stop clearing at `:88`, `:175`,
-   `:197` and `:388` — approve, approve-after-override, reject, revise-reject. Cleared there, the
-   holder can approve but cannot revise before the PO, because the revise RPC reads that column.
-   **Keep clearing at `:183` and `:373`**, the *re-route* arms: an override that pushes the total
-   into a different band genuinely voids the handover, because the requisition now belongs to a
-   different set of people.
-4. **The request stepper gets it for free here, and Import's did not.**
-   `requestApprovalOwnerIds` in
-   [procurement/lib/owners.ts](frontend/src/apps/procurement/lib/owners.ts) captions the stepper's
-   Approval node, so the rail will name the holder rather than staying generic.
-
-**No `mywork/items/purchase.ts` edit is needed** — it delegates to `ownerResolver`. But **the
-daily-mail bundle must be rebuilt**: `owners.ts` compiles into
-`supabase/functions/_shared/workSnapshot.bundle.js`, and without the rebuild the mail names the
-**original** approver while the screen names the receiver. Run `node supabase/worksnapshot/build.mjs`
-**from the `oo-master` worktree** — `build.mjs` resolves the repo root relative to its own location,
-so run from there it compiles master's committed code alone, whereas running it in this shared tree
-would compile other sessions' unreleased work. That same rebuild clears the one still outstanding
-from **IM-1**.
-
-**⚠ Check the email switch before any browser test.**
-`select module_id, enabled from public.email_module_settings;` — testing the Import handover against
-production sent **four real emails to real colleagues**, and sent mail cannot be recalled. Flip the
-module off for the run, or confine testing to RPC checks inside a rolled-back transaction.
+*(nothing yet — **PD-1** shipped 2026-08-27, see [Done](#done))*
 
 ---
 
@@ -2503,6 +2454,61 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### PD-1 · An approver can hand a requisition to someone else  `[x]`
+*Purchase RM Domestic · **Live 2026-08-27, 18:05 IST** — `25d27aa` on master, deployed by Vercel ·
+raised, built and shipped the same day, straight after **IM-1***
+
+**What happens now.** Setup → Approval Matrix carries a second control, **Who can be handed an
+approval** — a departments filter plus the people who may receive one. A requisition awaiting
+approval shows **Reassign**, on the queue and on the request. The handover **moves** the work: it
+leaves the band's queue, appears in the receiver's, and only they or an admin may decide it. Any
+member of the band can pull it back. One requisition at a time.
+
+**It matters more here than in Import.** Purchase routes approvals by **amount band**, and all three
+live bands hold exactly one person — L1 Rohan Jariwala, L2 and Director both Karan Toshniwal. Until
+now a requisition simply had nowhere else to go.
+
+**Four things differed from Import, each of them load-bearing:**
+
+1. **There is no `fms_purchase_is_approver`, and there cannot be** — band membership depends on the
+   amount, so every rule resolves the band inline exactly as the approval RPCs already do.
+2. **Four RPCs carry the holder rule, not three.** The two request-scoped ones and the two legacy
+   per-line twins. All four already had `is_admin OR band member OR assigned_approver_id =
+   auth.uid()`, which as an **OR is a share, not a move**. The per-line twins are unreachable from
+   the UI but granted to `authenticated`, so leaving them alone would have left the bypass open.
+3. **Ten clear-sites, split 8 stop / 2 keep.** `assigned_approver_id` now survives the decision, or
+   the holder could approve but not revise before the PO. The two still cleared are the
+   **BLOCK+RE-ROUTE** arms, where an override pushed the total into a different band — that genuinely
+   voids the handover.
+4. **The override arm had to learn about the holder.** It re-derives the band and asks *may the
+   caller approve at the NEW band?*, and a holder is by definition not a band member — so her own
+   override would have re-routed and silently undone the handover she was in the middle of acting on.
+   It now also passes for the holder **when the band row is unchanged**.
+
+**Something Import does not have:** `requestApprovalOwnerIds` captions the request stepper's Approval
+node, so the rail names the holder rather than staying generic.
+
+**How it was verified, in order.** The four new RPC bodies were **diffed mechanically** against the
+migrations they are based on — only the intended deltas, nothing lost in retyping. Then **15
+authorisation cases** on live data inside a rolled-back transaction. Then the **reversal recipe was
+rehearsed** the same way, with a handover deliberately in flight; both claims the migration header
+makes about that recipe were tested rather than asserted (the drop order is *not* enforced, and
+restoring the four bodies is optional). Then **12 browser checks**, all green.
+
+**The browser run sent no email.** `procurement`'s switch is **on**, so it was turned off for the run
+and back on afterwards, and the outbox confirms zero rows added. Import's run, which did not take
+that precaution, mailed four real colleagues.
+
+**Setup starts empty on purpose** — the test pool was removed afterwards. Until an admin names who
+may receive an approval, a requisition can only be passed between the approvers of its own band.
+
+**The daily-mail bundle was rebuilt** from the clean `oo-master` worktree and `work-snapshot`
+redeployed (v16), which also cleared the rebuild still outstanding from **IM-1**. Both handover rules
+are now in the mail.
+
+**Next:** **PF-13** ports the same shape to Office Supplies, HR Recruitment, HR Exit, Travel Desk and
+Order to Dispatch.
 
 ### IM-1 · An approver can hand a requisition to someone else  `[x]`
 *Purchase RM Import · **Live 2026-08-27, 15:56 IST** — `507ab47` on master, deployed by Vercel ·
