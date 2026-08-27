@@ -224,6 +224,15 @@ export interface RequestItem {
   lineValue: number | null;
   status: LineStatus;
   approverId: string | null;
+  /**
+   * Set while this requisition has been HANDED OVER to a specific person. It
+   * survives the decision, so the holder can still revise before the PO.
+   *
+   * A handover MOVES the work: while this is set, the holder is the only
+   * non-admin who may decide the line. Null means it sits with whoever is
+   * configured in Setup, which is the normal case.
+   */
+  assignedApproverId: string | null;
   approvalTier: string | null;
   rejectReason: string | null;
   cancelReason: string | null;

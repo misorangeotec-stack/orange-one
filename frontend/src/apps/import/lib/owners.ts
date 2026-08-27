@@ -7,10 +7,32 @@
  * the configured approvers. Import still uses a SINGLE approver per band
  * (`approverUserId`), where Purchase grew a multi-approver band — that difference
  * remains.
+ *
+ * ⚠ A requisition can be HANDED OVER to one person (Setup → Approvers names who
+ *   may receive one). While it is, that person is its sole owner — the handover
+ *   MOVES the work rather than sharing it. `holderOfLines` is the one place that
+ *   rule is expressed; the store imports it too, so the queue, My Work, the
+ *   daily snapshot mail and the Approve button cannot drift apart.
  */
 import type { ApprovalBand, RequestItem, StepOwner } from "../types";
 import type { StepKey } from "./steps";
 import type { QueueEntry } from "./queues";
+
+/**
+ * Whoever this set of lines has been handed to, or null if it still sits with
+ * the configured approvers.
+ *
+ * The CALLER picks the basis, because the two readers disagree about it on
+ * purpose: queue ownership asks about the lines still under decision, while the
+ * store also has to answer for a decided-but-not-yet-PO'd requisition it is
+ * about to let the holder revise. Same rule, different slice.
+ *
+ * Lines of one requisition are handed over together, so the first non-null wins.
+ */
+export const holderOfLines = (lines: RequestItem[]): string | null => {
+  for (const l of lines) if (l.assignedApproverId) return l.assignedApproverId;
+  return null;
+};
 
 /** The slice of `ImportData` owner resolution reads — nothing more. */
 export interface OwnerSnapshot {
@@ -26,6 +48,8 @@ export interface OwnerResolver {
   stepOwnerIds: (stepKey: string) => string[];
   /** Every user who owns this work-item. Empty means unassigned. */
   ownerIdsOf: (e: QueueEntry) => string[];
+  /** Whoever this requisition has been handed to while it awaits a decision. */
+  holderOfRequest: (requestId: string) => string | null;
   isMine: (e: QueueEntry, userId: string) => boolean;
 }
 
@@ -47,16 +71,31 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   const stepOwnerIds = (stepKey: string): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
 
+  /** Handed over to whom, judged on the lines still awaiting a decision. */
+  const holderOfRequest = (requestId: string): string | null =>
+    holderOfLines(
+      data.requestItems.filter(
+        (l) => l.requestId === requestId && (l.status === "approval" || l.status === "on_hold")
+      )
+    );
+
   /**
    * Every step reads its owners from `step_owners`, except `approval` — there the
-   * owners are ALL active configured approvers (no value banding any more). The
-   * configured approvers are the only answer; there is deliberately no
-   * per-requisition override (see the removed Reassign feature).
+   * owners are ALL active configured approvers (no value banding any more)...
+   * UNLESS the requisition has been handed to someone, in which case they are its
+   * only owner. That is what makes the handover a MOVE: it leaves the approvers'
+   * queues, their My Work list, and their line on the daily snapshot mail.
+   *
+   * An approval entry is request-scoped, so `entityId` IS the request id
+   * (lib/queues.ts builds it that way).
    */
-  const ownerIdsOf = (e: QueueEntry): string[] =>
-    e.stepKey === ("approval" as StepKey) ? activeApproverIds() : stepOwnerIds(e.stepKey);
+  const ownerIdsOf = (e: QueueEntry): string[] => {
+    if (e.stepKey !== ("approval" as StepKey)) return stepOwnerIds(e.stepKey);
+    const holder = holderOfRequest(e.entityId);
+    return holder ? [holder] : activeApproverIds();
+  };
 
   const isMine = (e: QueueEntry, userId: string): boolean => ownerIdsOf(e).includes(userId);
 
-  return { approverForAmount, stepOwnerFor, stepOwnerIds, ownerIdsOf, isMine };
+  return { approverForAmount, stepOwnerFor, stepOwnerIds, ownerIdsOf, holderOfRequest, isMine };
 }

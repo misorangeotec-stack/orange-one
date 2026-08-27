@@ -42,7 +42,7 @@ import type {
 } from "./types";
 import { STEPS, type StepKey } from "./lib/steps";
 import { makeImportEmail } from "./lib/emailMeta";
-import { ownerResolver } from "./lib/owners";
+import { ownerResolver, holderOfLines } from "./lib/owners";
 import { masterTypeLabel } from "./lib/masterFields";
 import {
   buildImportIndex,
@@ -111,6 +111,7 @@ import {
   decideApproval as decideApprovalWrite,
   decideApprovalRequest as decideApprovalRequestWrite,
   updateApprovalRequest as updateApprovalRequestWrite,
+  reassignApprovalRequest as reassignApprovalRequestWrite,
   generatePo as generatePoWrite,
   cancelLine as cancelLineWrite,
   requestPoCancel as requestPoCancelWrite,
@@ -234,6 +235,12 @@ interface ImportStoreValue {
   stepOwners: StepOwner[];
   stepOwnerFor: (stepKey: string) => StepOwner | undefined;
   approvalBands: ApprovalBand[];
+  /** Setup picker filter for the handover pool. Grants nothing on its own. */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be HANDED a requisition awaiting approval. The authority. */
+  reassignPoolUserIds: string[];
+  /** The pool plus the active approvers (so it can be handed back), minus me. */
+  reassignCandidates: () => { id: string; name: string }[];
   /** Resolve the approver for an amount via the active matrix bands (null if none). */
   approverForAmount: (amount: number) => string | null;
   /** True when the current user is an approver in the matrix (or admin). */
@@ -427,6 +434,10 @@ interface ImportStoreValue {
   canApproveLine: (line: RequestItem) => boolean;
   /** May the current user decide this whole requisition? Banded on its total. */
   canApproveRequest: (r: PurchaseRequest) => boolean;
+  /** Whoever this requisition has been handed to, or null if it sits with the approvers. */
+  holderOfRequest: (r: PurchaseRequest) => string | null;
+  /** May I hand this requisition on, or pull it back? Broader than deciding it. */
+  canReassignRequest: (r: PurchaseRequest) => boolean;
   /**
    * May the current user edit / cancel this request? Requester-or-admin AND
    * nothing decided yet. Derived from the REAL session, not the demo persona —
@@ -472,6 +483,8 @@ interface ImportStoreValue {
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   /** One decision for the whole requisition, banded on its total (Import's request-scoped approval). `override` carries revised per-line rates. */
   decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null; rates?: { requestItemId: string; rate: number }[] | null }) => Promise<void>;
+  /** Hand a requisition to someone else; `approverId: null` returns it to the approvers. */
+  reassignApprovalRequest: (input: { requestId: string; approverId: string | null; note?: string | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null; tallyPoNo: string; documentPath: string; documentName: string }) => Promise<string>;
   /**
    * Cancel one or more requisition lines under a single shared reason.
@@ -590,6 +603,7 @@ interface ImportStoreValue {
   editApprovalBand: (id: string, input: ApprovalBandInput) => Promise<void>;
   removeApprovalBand: (id: string) => Promise<void>;
   setProcessCoordinators: (userIds: string[]) => Promise<void>;
+  setReassignPool: (input: { departmentIds: string[]; userIds: string[] }) => Promise<void>;
   /** Persist the whole per-step due-date map (admin only, enforced by RLS). */
   setStepSla: (map: StepSlaMap) => Promise<void>;
 }
@@ -633,6 +647,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const approvalBands = data?.approvalBands ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
+  const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
+  const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
@@ -660,7 +676,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     const snapshot: ImportSnapshot = {
       requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings,
       qcInspections, qcItems, categories, payments, followups, activity,
-      config: { processCoordinatorIds, stepSla },
+      config: { processCoordinatorIds, stepSla, reassignPoolDepartmentIds, reassignPoolUserIds },
     };
     const importIndex = buildImportIndex(snapshot);
     const byName = <T extends { name: string; sortOrder: number }>(a: T, b: T) =>
@@ -741,7 +757,23 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
     const isActiveApprover = approvalBands.some((b) => b.active && b.approverUserId === user.id);
 
-    const canApproveLine = (_line: RequestItem): boolean => canEdit && (isAdmin || isActiveApprover);
+    /**
+     * Am I currently HOLDING anything that was handed to me? This is the only
+     * reason a person who is not a configured approver may reach the Approvals
+     * screens at all, so it feeds `canSeeApprovals` and nothing else.
+     *
+     * `approved_pending_po` is in the list on purpose: the holder keeps the
+     * Completed tab until the PO exists, because that is where she revises a
+     * decision she made.
+     */
+    const holdsAnyReassigned = requestItems.some(
+      (l) =>
+        l.assignedApproverId === user.id &&
+        (l.status === "approval" || l.status === "on_hold" || l.status === "approved_pending_po")
+    );
+
+    const canApproveLine = (l: RequestItem): boolean =>
+      canEdit && (isAdmin || (l.assignedApproverId ? l.assignedApproverId === user.id : isActiveApprover));
 
     // Request-scoped approval, no value banding: ANY active approver may decide a
     // requisition (mirrors the RPC's fms_import_is_approver check). The basis is
@@ -750,12 +782,87 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     // configured approvers are the only ones who may act — there is no per-line
     // override (see the removed Reassign feature).
     const linesOfRequest = (requestId: string) => itemsByGroupId.get(requestId) ?? [];
-    const canApproveRequest = (r: PurchaseRequest): boolean => {
+    /**
+     * The lines a decision would act on: those still under decision, or - when
+     * REVISING a completed one - those approved but not yet on a PO.
+     */
+    const approvalBasis = (r: PurchaseRequest): RequestItem[] => {
       const lines = linesOfRequest(r.id);
       const pending = lines.filter(lineInApproval);
-      const basis = pending.length > 0 ? pending : lines.filter(lineInPoDesk);
+      return pending.length > 0 ? pending : lines.filter(lineInPoDesk);
+    };
+    const holderOfRequest = (r: PurchaseRequest): string | null => holderOfLines(approvalBasis(r));
+
+    /**
+     * AUTHORITY. Exact mirror of the SQL in
+     * 20260827120000_fms_import_reassign_approval.sql: an admin always may; once
+     * the requisition has been handed over the holder is the only other person
+     * who may; otherwise any active approver may. The two must not drift, or a
+     * button appears that the server then refuses.
+     */
+    const canApproveRequest = (r: PurchaseRequest): boolean => {
+      const basis = approvalBasis(r);
       if (basis.length === 0) return false;
-      return canEdit && (isAdmin || isActiveApprover);
+      if (!canEdit) return false;
+      if (isAdmin) return true;
+      const holder = holderOfLines(basis);
+      return holder ? holder === user.id : isActiveApprover;
+    };
+
+    /**
+     * VISIBILITY - is this requisition on MY desk? Deliberately NOT the same as
+     * canApproveRequest: an admin keeps the authority to act on a handed-over
+     * requisition from its detail page, but it must still leave their QUEUE, or
+     * the handover does nothing for the two people most likely to use it. Both
+     * configured approvers here are themselves admins, so an admin bypass in the
+     * queue would make the feature look broken to exactly them.
+     */
+    const approvalIsMine = (r: PurchaseRequest): boolean => {
+      const basis = approvalBasis(r);
+      if (basis.length === 0) return false;
+      const holder = holderOfLines(basis);
+      return holder ? holder === user.id : isAdmin || isActiveApprover;
+    };
+
+    /**
+     * May I hand this on, or pull it back? Broader than deciding it: an active
+     * approver keeps this even after handing it over, which is exactly how a
+     * requisition gets taken back. Mirrors fms_import_reassign_request.
+     *
+     * WARNING: identity comes from the REAL `session`, never useEffectiveIdentity.
+     * This gates a write the server authorises against auth.uid(), so a
+     * persona-derived gate would offer a button the RPC then refuses. Taking the
+     * real id but the persona's isAdmin is the subtle version of the same bug;
+     * both halves come from `session`. Same rule as canEditRequest below.
+     */
+    const canReassignRequest = (r: PurchaseRequest): boolean => {
+      const pending = linesOfRequest(r.id).filter(lineInApproval);
+      if (pending.length === 0) return false;
+      const me = session.user?.id ?? "";
+      if (!me || !canEdit) return false;
+      if (session.isAdmin) return true;
+      if (approvalBands.some((b) => b.active && b.approverUserId === me)) return true;
+      return holderOfLines(pending) === me;
+    };
+
+    /**
+     * Who I may hand it to: the configured pool, plus the active approvers so it
+     * can be handed BACK, minus me.
+     *
+     * Names resolve through `personName`, i.e. the ORG-WIDE list - the directory
+     * is RLS-scoped, so a pool member in another department would render blank
+     * for a non-admin approver, who is precisely the person using this dialog.
+     *
+     * Module access is deliberately NOT filtered here; orgPeople does not carry
+     * it. Setup does that check, standing next to the admin who can grant it.
+     */
+    const reassignCandidates = (): { id: string; name: string }[] => {
+      const ids = new Set<string>(reassignPoolUserIds);
+      for (const b of approvalBands) if (b.active && b.approverUserId) ids.add(b.approverUserId);
+      ids.delete(session.user?.id ?? "");
+      return [...ids]
+        .map((id) => ({ id, name: personName(id) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     };
 
     /**
@@ -916,11 +1023,14 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       stepOwners,
       stepOwnerFor: owners.stepOwnerFor,
       approvalBands,
+      reassignPoolDepartmentIds,
+      reassignPoolUserIds,
+      reassignCandidates,
       approverForAmount,
       // ---- VISIBILITY (nav + route guards). Never authorise an action on these. ----
       isModuleViewer,
       canSeeStep,
-      canSeeApprovals: isModuleViewer || isAdmin || isActiveApprover,
+      canSeeApprovals: isModuleViewer || isAdmin || isActiveApprover || holdsAnyReassigned,
       canSeeMasters: isModuleViewer || isAnyManager,
       canMonitor: isModuleViewer || isAdmin || processCoordinatorIds.includes(user.id),
       isApprover: isAdmin || isActiveApprover,
@@ -960,7 +1070,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
       approvalRequestQueue: requests.filter(
-        (r) => requestInApproval(itemsByGroupId.get(r.id) ?? []) && canApproveRequest(r)
+        (r) => requestInApproval(itemsByGroupId.get(r.id) ?? []) && approvalIsMine(r)
       ),
       dueIsoForApprovalRequest: (r) => requestApprovalDueIso(snapshot, itemsByGroupId.get(r.id) ?? []),
       poPool: requestItems.filter(lineInPoDesk),
@@ -997,6 +1107,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       canCancelLines: canEdit && (isStepOwner("po") || isStepOwner("sourcing")),
       canApproveLine,
       canApproveRequest,
+      holderOfRequest,
+      canReassignRequest,
       canEditRequest,
 
       // ---- PO lifecycle data + selectors ----
@@ -1174,6 +1286,32 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             meta: email.declined({ kind: "request", requestId: input.requestId }, "on_hold", input.reason),
           });
         }
+        await invalidate();
+      },
+      /**
+       * Hand a requisition on, or pull it back (`approverId: null`).
+       *
+       * The RPC does NOT announce - see its header. This is the announce, and it
+       * is best-effort in the usual way: if it fails, the timeline row and the
+       * mail go missing, but the FACT does not, because the RPC stamped
+       * assigned_approver_id in its own transaction.
+       */
+      reassignApprovalRequest: async ({ requestId, approverId, note }) => {
+        await reassignApprovalRequestWrite({ requestId, approverId });
+        const returned = approverId === null;
+        await safeAnnounce({
+          entityType: "request",
+          entityId: requestId,
+          type: "reassigned",
+          text: returned
+            ? `An approval was returned to the approvers${note ? " - " + note : ""}`
+            : `An approval was reassigned to ${personName(approverId)}${note ? " - " + note : ""}`,
+          // On a hand-back nobody in particular owns it, so tell the approvers.
+          recipients: returned
+            ? approvalBands.filter((b) => b.active && b.approverUserId).map((b) => b.approverUserId)
+            : [approverId as string],
+          meta: email.reassigned({ requestId, returned, note: note ?? null }),
+        });
         await invalidate();
       },
       generatePo: async (input) => {
@@ -1629,6 +1767,12 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite("process_coordinators", { user_ids: userIds });
         await invalidate();
       },
+      setReassignPool: async ({ departmentIds, userIds }) => {
+        // department_ids is stored so Setup can re-open on the same filter; it is
+        // NOT read by fms_import_can_receive_reassignment and grants nothing.
+        await setConfigWrite("reassign_pool", { department_ids: departmentIds, user_ids: userIds });
+        await invalidate();
+      },
       setStepSla: async (map) => {
         await setConfigWrite("step_sla", map as unknown as Record<string, unknown>);
         await invalidate();
@@ -1648,6 +1792,12 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     stepOwners,
     approvalBands,
     processCoordinatorIds,
+    // Same class of load-bearing dep as `orgPeople` below, and caught the same
+    // way — by using the screen. Without these the memo keeps handing out the
+    // pool it was built with, so Setup's Save stays enabled and never confirms
+    // after a successful write, and reassignCandidates goes stale.
+    reassignPoolDepartmentIds,
+    reassignPoolUserIds,
     requests,
     requestItems,
     quotations,

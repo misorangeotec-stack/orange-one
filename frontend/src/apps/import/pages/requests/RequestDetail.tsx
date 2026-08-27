@@ -11,6 +11,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
 import { lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
+import ReassignApprovalModal from "../../components/ReassignApprovalModal";
 import CancelLinesModal from "../../components/CancelLinesModal";
 import RequestStepper from "../../components/RequestStepper";
 import QtyTotal from "../../components/QtyTotal";
@@ -23,6 +24,7 @@ export default function RequestDetail() {
   const { id } = useParams();
   const s = useImportStore();
   const [approving, setApproving] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
   const [cancellingLines, setCancellingLines] = useState(false);
   // Cancelling the WHOLE request is a different verb from cancelling lines, so it
   // gets its own state slots — sharing them would cross-wire the two dialogs.
@@ -37,6 +39,8 @@ export default function RequestDetail() {
   }
   const co = s.companyById(request.companyId);
   const lines = s.itemsForRequest(request.id);
+  /** Set only while this requisition has been handed to one person. */
+  const holder = s.holderOfRequest(request);
 
   // A request may span categories, so the header lists every distinct one its
   // lines carry. Lines predating per-line category fall back to the header's.
@@ -87,6 +91,17 @@ export default function RequestDetail() {
             raised by {s.profileById(request.requesterId)?.name ?? "—"} on {formatDate(request.createdAt)}
             {request.editedAt && <> · edited {formatDate(request.editedAt)}</>}
           </p>
+          {/* Where the approval actually sits. This is the oversight surface for
+              a handover: the Approvals QUEUE deliberately shows only what is on
+              your own desk, so without this line an admin browsing requisitions
+              would have no way to see that one had been passed on. */}
+          {holder && (
+            <p className="text-[12.5px] text-navy mt-1">
+              <span className="text-grey-2">Awaiting approval from</span>{" "}
+              <span className="font-semibold">{s.personName(holder)}</span>
+              <span className="text-grey-2"> · reassigned</span>
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* ONE approve button for the whole requisition — the band is picked on
@@ -94,6 +109,13 @@ export default function RequestDetail() {
               every item under decision. */}
           {anyInApproval && s.canApproveRequest(request) && (
             <Button size="sm" onClick={() => setApproving(true)}>Approve</Button>
+          )}
+          {/* Hand it on, or pull it back. Broader than Approve on purpose: an
+              approver keeps this after handing over, which is how it comes back. */}
+          {anyInApproval && s.canReassignRequest(request) && (
+            <Button variant="outline" size="sm" onClick={() => setReassigning(true)}>
+              {holder ? "Reassign / take back" : "Reassign"}
+            </Button>
           )}
           {/* The requester's own affordances — only the raiser (or an admin) and
               only while nothing has been decided. The RPCs re-check server-side. */}
@@ -212,6 +234,12 @@ export default function RequestDetail() {
           configured, so the stage feeds nothing this app routes on. The live
           Source path is the Sourcing Queue. Retire-or-rebuild is WORKLIST PU-1. */}
       <ApprovalModal request={approving ? request : null} open={approving} onClose={() => setApproving(false)} />
+
+      <ReassignApprovalModal
+        request={reassigning ? request : null}
+        open={reassigning}
+        onClose={() => setReassigning(false)}
+      />
 
       <CancelLinesModal
         request={request}

@@ -159,6 +159,31 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       };
     },
 
+    // 2c. Requisition handed over → whoever now holds it (or, on a hand-back,
+    // the configured approvers). Reassign writes no activity row of its own
+    // server-side, so this meta is the only thing that makes the mail readable.
+    reassigned(input: { requestId: string; returned?: boolean; note?: string | null }): ImportEmailMeta {
+      const lines = linesOfRequest(input.requestId);
+      const req = reqOf(input.requestId);
+      const t = totalsOf(lines, req?.currency);
+      const back = !!input.returned;
+      return {
+        subject: back
+          ? `Approval returned to the approvers${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`
+          : `Approval reassigned to you${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`,
+        eyebrow: back ? "Returned" : "Reassigned",
+        headline: back
+          ? "A requisition has come back to the approvers"
+          : "A requisition has been handed to you for approval",
+        action: back ? "returned a requisition to the approvers" : "reassigned a requisition for approval",
+        docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
+        rows: [{ label: "Vendor", value: vName(req?.vendorId) }, ...shipmentRow(req?.shipmentType), t.row, t.itemsRow],
+        items: lines.map(lineItem),
+        note: reasonNote("Why the change", input.note),
+        ctaLabel: "Open Approvals", ctaPath: `${B}/queues/approvals`,
+      };
+    },
+
     // 3. PO generated → Share-PO owner
     //
     // The Tally PO number and the document name come in as INPUTS, not off a PO

@@ -75,30 +75,42 @@ export default function ControlCenter() {
     [s.stepOwners, s.approvalBands, s.requestItems]
   );
 
+  /**
+   * A name for every owner, even one this viewer cannot see in the directory.
+   *
+   * `profileById` reads the RLS-scoped directory — self, downline and same
+   * department — so a coordinator looking at work owned across the org gets
+   * `undefined` and the row used to read "Unassigned", which is a different and
+   * wrong statement: somebody owns it, we just cannot see their card. It matters
+   * more since approvals can be HANDED OVER: the handover pool is chosen with a
+   * department filter precisely so it can cross departments. `personName`
+   * resolves against the org-wide list and is the same fallback the store uses.
+   */
   const ownerNames = (e: QueueEntry): string => {
-    const names = ownerIdsOf(e)
-      .map((id) => s.profileById(id)?.name)
-      .filter(Boolean) as string[];
+    const names = ownerIdsOf(e).map((id) => s.personName(id));
     return names.length ? names.join(", ") : "Unassigned";
   };
 
   const ownerCell = (e: QueueEntry) => {
-    const owners = ownerIdsOf(e)
-      .map((id) => s.profileById(id))
-      .filter(Boolean);
-    if (!owners.length) return <span className="text-grey-2">Unassigned</span>;
+    const ids = ownerIdsOf(e);
+    if (!ids.length) return <span className="text-grey-2">Unassigned</span>;
     return (
       <div className="space-y-0.5">
-        {owners.map((p) => (
-          <div key={p!.id} className="leading-tight">
-            <div className="text-navy">{p!.name}</div>
-            {p!.phone ? (
-              <div className="text-[12px] text-grey-2 tabular-nums">{p!.phone}</div>
-            ) : (
-              <div className="text-[12px] text-grey-2/60 italic">no number</div>
-            )}
-          </div>
-        ))}
+        {ids.map((id) => {
+          // The phone only exists on a directory row, so it is shown when the
+          // viewer can see one and quietly omitted when they cannot.
+          const p = s.profileById(id);
+          return (
+            <div key={id} className="leading-tight">
+              <div className="text-navy">{p?.name ?? s.personName(id)}</div>
+              {p?.phone ? (
+                <div className="text-[12px] text-grey-2 tabular-nums">{p.phone}</div>
+              ) : (
+                <div className="text-[12px] text-grey-2/60 italic">no number</div>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   };
