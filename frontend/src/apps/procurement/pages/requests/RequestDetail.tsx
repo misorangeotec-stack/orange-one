@@ -14,6 +14,7 @@ import QtyTotal from "../../components/QtyTotal";
 import RequestStepper from "../../components/RequestStepper";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
+import ReassignApprovalModal from "../../components/ReassignApprovalModal";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import CancelLinesModal from "../../components/CancelLinesModal";
 
@@ -26,6 +27,7 @@ export default function RequestDetail() {
   // on all of them — see CancelLinesModal.
   const [sourcing, setSourcing] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
   const [cancellingLines, setCancellingLines] = useState(false);
   // Cancelling the WHOLE request is a distinct verb from cancelling one line, so
   // it gets its own state — sharing the slots above would cross-wire the two.
@@ -42,6 +44,8 @@ export default function RequestDetail() {
   const lines = s.itemsForRequest(request.id);
   const anyInSourcing = lines.some((l) => l.status === "sourcing");
   const anyInApproval = lines.some((l) => l.status === "approval" || l.status === "on_hold");
+  /** Whoever this requisition has been handed to, or null if it sits with its band. */
+  const holder = s.holderOfRequest(request);
   const mixedVendors = s.requestHasMixedVendors(request.id);
 
   // Activity for the request + all its lines, newest first.
@@ -83,6 +87,17 @@ export default function RequestDetail() {
             {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {s.categoryById(request.categoryId)?.name ?? "—"} ·
             raised by {s.profileById(request.requesterId)?.name ?? "—"} on {formatDate(request.createdAt)}
           </p>
+          {/* Where the approval actually sits. This is the oversight surface for
+              a handover: the Approvals QUEUE deliberately shows only what is on
+              your own desk, so without this line an admin browsing requisitions
+              would have no way to see that one had been passed on. */}
+          {holder && (
+            <p className="text-[12.5px] text-navy mt-1">
+              <span className="text-grey-2">Awaiting approval from</span>{" "}
+              <span className="font-semibold">{s.personName(holder)}</span>
+              <span className="text-grey-2"> · reassigned</span>
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* ONE sourcing button. The modal always works on every open line at
@@ -99,6 +114,13 @@ export default function RequestDetail() {
           )}
           {anyInApproval && s.canApproveRequest(request) && (
             <Button size="sm" onClick={() => setApproving(true)}>Approve</Button>
+          )}
+          {/* Hand it on, or pull it back. Broader than Approve on purpose: a band
+              member keeps this after handing over, which is how it comes back. */}
+          {anyInApproval && s.canReassignRequest(request) && (
+            <Button variant="outline" size="sm" onClick={() => setReassigning(true)}>
+              {holder ? "Reassign / take back" : "Reassign"}
+            </Button>
           )}
           {/* The requester's own affordance — only before any buyer sources. */}
           {canEdit && (
@@ -230,6 +252,11 @@ export default function RequestDetail() {
 
       <SourcingModal request={sourcing ? request : null} open={sourcing} onClose={() => setSourcing(false)} />
       <ApprovalModal request={approving ? request : null} open={approving} onClose={() => setApproving(false)} />
+      <ReassignApprovalModal
+        request={reassigning ? request : null}
+        open={reassigning}
+        onClose={() => setReassigning(false)}
+      />
 
       <CancelLinesModal
         request={request}
