@@ -3613,6 +3613,14 @@ var mapOrder = (r) => ({
   lines: [],
   rounds: []
 });
+var mapStepAssignee3 = (r) => ({
+  orderId: r.order_id,
+  stepKey: r.step_key,
+  assignedTo: r.assigned_to,
+  assignedBy: r.assigned_by ?? null,
+  assignedAt: r.assigned_at,
+  note: r.note ?? null
+});
 var mapStepOwner8 = (r) => ({
   id: r.id,
   stepKey: r.step_key,
@@ -3637,6 +3645,7 @@ async function fetchDispatchData(ctx) {
   const forUser = typeof ctx?.queryKey?.[1] === "string" ? ctx.queryKey[1] : null;
   const [
     stepOwners,
+    stepAssignees,
     configRows,
     designations,
     masterManagers,
@@ -3648,6 +3657,7 @@ async function fetchDispatchData(ctx) {
     notifications
   ] = await Promise.all([
     fetchAll9("fms_dispatch_step_owners"),
+    fetchAll9("fms_dispatch_step_assignees", "order_id"),
     fetchAll9("fms_dispatch_config", "key"),
     fetchAll9("designations"),
     fetchAll9("fms_dispatch_master_managers"),
@@ -3666,7 +3676,9 @@ async function fetchDispatchData(ctx) {
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
-    stepSla: resolveStepSla8(byKey.get("step_sla"))
+    stepSla: resolveStepSla8(byKey.get("step_sla")),
+    reassignPoolDepartmentIds: byKey.get("reassign_pool")?.department_ids ?? [],
+    reassignPoolUserIds: byKey.get("reassign_pool")?.user_ids ?? []
   };
   const linesByOrder = /* @__PURE__ */ new Map();
   for (const raw of orderItems) {
@@ -3702,6 +3714,7 @@ async function fetchDispatchData(ctx) {
   const { data: orderPeek } = await db4.rpc("fms_dispatch_peek_order_no");
   return {
     stepOwners: stepOwners.map(mapStepOwner8),
+    stepAssignees: stepAssignees.map(mapStepAssignee3),
     designations: designations.map(mapDesignation8),
     config,
     masterManagers: masterManagers.map(mapMasterManager6),
@@ -5661,10 +5674,18 @@ var ownsStepAt = (stepKey, locationId, uid, owners) => owners.some(
 function dispatchWorkItems(data, uid, isAdmin) {
   const owners = data.stepOwners;
   const orderById = new Map(data.orders.map((o) => [o.id, o]));
+  const assigneeByKey = new Map(
+    (data.stepAssignees ?? []).map((a) => [`${a.orderId}|${a.stepKey}`, a.assignedTo])
+  );
+  const mine = (stepKey, orderId, locationId) => {
+    const assignee = assigneeByKey.get(`${orderId}|${stepKey}`);
+    if (assignee) return assignee === uid;
+    return ownsStepAt(stepKey, locationId, uid, owners);
+  };
   return buildQueueEntries8(
     dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla })
   ).filter(
-    (e) => isAdmin || ownsStepAt(e.stepKey, orderById.get(e.orderId)?.locationId ?? null, uid, owners)
+    (e) => isAdmin || mine(e.stepKey, e.orderId, orderById.get(e.orderId)?.locationId ?? null)
   ).map((e) => {
     const o = orderById.get(e.orderId);
     return {
@@ -5681,12 +5702,12 @@ function dispatchWorkItems(data, uid, isAdmin) {
       stage: stepByKey8(e.stepKey)?.short,
       dueIso: e.dueIso,
       to: `/order-to-dispatch/orders/${e.orderId}`,
-      assignment: ownsStepAt(e.stepKey, o?.locationId ?? null, uid, owners) ? "direct" : "team",
+      assignment: mine(e.stepKey, e.orderId, o?.locationId ?? null) ? "direct" : "team",
       isApproval: false
     };
   }).concat(
     data.orders.filter(
-      (o) => o.status === "awaiting_sales_return" && o.srAt == null && (isAdmin || ownsStepAt("sales_return", o.locationId, uid, owners))
+      (o) => o.status === "awaiting_sales_return" && o.srAt == null && (isAdmin || mine("sales_return", o.id, o.locationId))
     ).map((o) => ({
       id: `order-to-dispatch:${o.id}:sales_return`,
       source: "order-to-dispatch",
