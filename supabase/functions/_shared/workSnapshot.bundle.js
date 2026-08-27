@@ -759,6 +759,14 @@ var mapMasterRequest = (r) => ({
   resolvedMasterId: r.resolved_master_id ?? null,
   createdAt: r.created_at
 });
+var mapStepAssignee = (r) => ({
+  requisitionId: r.requisition_id,
+  stepKey: r.step_key,
+  assignedTo: r.assigned_to,
+  assignedBy: r.assigned_by ?? null,
+  assignedAt: r.assigned_at,
+  note: r.note ?? null
+});
 var mapStepOwner = (r) => ({
   id: r.id,
   stepKey: r.step_key,
@@ -838,6 +846,7 @@ async function fetchHrData() {
   const liveRequisitionIds = requisitions.filter((r) => canStillMove(r.status)).map((r) => r.id);
   const [
     stepOwners,
+    stepAssignees,
     configRows,
     designations,
     jobPlatforms,
@@ -862,6 +871,7 @@ async function fetchHrData() {
     masterRequests
   ] = await Promise.all([
     fetchAll2("fms_hr_step_owners"),
+    fetchAll2("fms_hr_step_assignees", "requisition_id"),
     fetchAll2("fms_hr_config", "key"),
     fetchAll2("designations"),
     fetchAll2("fms_hr_job_platforms"),
@@ -916,10 +926,13 @@ async function fetchHrData() {
     salaryViewers: {
       departmentIds: byKey.get("salary_viewers")?.department_ids ?? [],
       personIds: byKey.get("salary_viewers")?.person_ids ?? []
-    }
+    },
+    reassignPoolDepartmentIds: byKey.get("reassign_pool")?.department_ids ?? [],
+    reassignPoolUserIds: byKey.get("reassign_pool")?.user_ids ?? []
   };
   return {
     stepOwners: stepOwners.map(mapStepOwner),
+    stepAssignees: stepAssignees.map(mapStepAssignee),
     designations: designations.map(mapDesignation),
     config,
     jobPlatforms: jobPlatforms.map(mapJobPlatform),
@@ -4960,7 +4973,12 @@ function hrWorkItems(data, uid, isAdmin) {
       r2PanelByCandidate.set(iv.candidateId, iv.interviewerIds);
     }
   }
+  const holderByKey = new Map(
+    data.stepAssignees.map((a) => [`${a.requisitionId}|${a.stepKey}`, a.assignedTo])
+  );
   const isMine = (stepKey, requisitionId, entityId) => {
+    const holder = holderByKey.get(`${requisitionId ?? ""}|${stepKey}`);
+    if (holder) return holder === uid;
     if (stepKey === "interview_2" && entityId && (r2PanelByCandidate.get(entityId) ?? []).includes(uid)) {
       return true;
     }
