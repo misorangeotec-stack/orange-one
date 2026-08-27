@@ -2897,6 +2897,41 @@ export type Database = {
           },
         ]
       }
+      fms_hr_step_assignees: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          assigned_to: string
+          note: string | null
+          requisition_id: string
+          step_key: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          assigned_to: string
+          note?: string | null
+          requisition_id: string
+          step_key: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          assigned_to?: string
+          note?: string | null
+          requisition_id?: string
+          step_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_step_assignees_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_step_owners: {
         Row: {
           created_at: string
@@ -7968,6 +8003,23 @@ export type Database = {
       fms_hr_can_read_requisition: {
         Args: { p_req: string; p_uid: string }
         Returns: boolean
+      }
+      fms_hr_can_receive_reassignment: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_is_natural_step_owner: {
+        Args: { p_req: string; p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_reassign_step: {
+        Args: {
+          p_assignee?: string | null
+          p_note?: string | null
+          p_req: string
+          p_step_key: string
+        }
+        Returns: undefined
       }
       fms_hr_cancel_requisition: {
         Args: { p_reason: string; p_req: string }

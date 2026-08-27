@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import ReassignStepModal from "../../components/ReassignStepModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
@@ -193,6 +194,7 @@ export function MrfApprovalsQueue() {
   const s = useHrStore();
   const navigate = useNavigate();
   const [decide, setDecide] = useState<{ r: Requisition; stage: "hr" | "mgmt"; editing: boolean } | null>(null);
+  const [reassign, setReassign] = useState<{ r: Requisition; step: StepKey } | null>(null);
 
   // Coordinators chase everything, and fms_hr_can_act() already lets them act — so
   // gating on step ownership alone would lock them out of a page holding their own work.
@@ -339,12 +341,29 @@ export function MrfApprovalsQueue() {
           ]}
           readOnly={!s.canEdit}
           actions={(r) => (
-            <Button size="sm" onClick={() => setDecide({ r, stage: stageOf(r), editing: false })}>
-              Decide
-            </Button>
+            <>
+              <Button size="sm" onClick={() => setDecide({ r, stage: stageOf(r), editing: false })}>
+                Decide
+              </Button>
+              {/* Hand this GATE on, or pull it back. Both gates here are owned by
+                  one person, and hr_head_approval by the process coordinator
+                  herself - so this is the module s sharpest case. */}
+              {s.canReassignStep(stepOf(r), r) && (
+                <Button size="sm" variant="ghost" onClick={() => setReassign({ r, step: stepOf(r) })}>
+                  Reassign
+                </Button>
+              )}
+            </>
           )}
         />
       )}
+
+      <ReassignStepModal
+        requisition={reassign?.r ?? null}
+        stepKey={reassign?.step ?? null}
+        open={reassign !== null}
+        onClose={() => setReassign(null)}
+      />
 
       {decide && (
         <MrfDecisionModal

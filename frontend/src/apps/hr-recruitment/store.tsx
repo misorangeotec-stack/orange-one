@@ -27,6 +27,7 @@ import {
   setCandidateTags as setCandidateTagsWrite,
   saveCandidateScore as saveCandidateScoreWrite,
   reassignInterview as reassignInterviewWrite,
+  reassignStep as reassignStepWrite,
   recordInterviewResult as recordInterviewResultWrite,
   recordProbationReview as recordProbationReviewWrite,
   scheduleInterview as scheduleInterviewWrite,
@@ -70,7 +71,7 @@ import {
 } from "./data/hrWrites";
 import { masterTypeLabel, type MasterLists } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
-import { isHodStep, type StepKey } from "./lib/steps";
+import { isHodStep, stepByKey, type StepKey } from "./lib/steps";
 import {
   buildQueueEntries,
   candidateDueIso,
@@ -360,6 +361,22 @@ interface HrStoreValue {
   /** True if the user may act on THIS requisition at THIS step (mirrors fms_hr_can_act). */
   canActOn: (stepKey: StepKey, requisition: Requisition) => boolean;
   /**
+   * VISIBILITY, not authority. Whether this step of this requisition belongs on
+   * MY queue - which follows the HOLDER even for an admin or coordinator, while
+   * canActOn keeps its admin arm.
+   */
+  stepIsMine: (stepKey: StepKey, requisition: Requisition) => boolean;
+  /** Whoever is holding (requisition, step), or null. */
+  holderOfStep: (requisitionId: string | null, stepKey: string) => string | null;
+  /** May I hand this step on, or pull it back? Broader than acting on it. */
+  canReassignStep: (stepKey: StepKey, requisition: Requisition) => boolean;
+  /** Who this step may be handed to: the pool plus its natural owners, minus me. */
+  reassignCandidates: (stepKey: StepKey, requisition: Requisition) => { id: string; name: string }[];
+  /** Departments the Setup picker filters candidates by. A UI FILTER - grants nothing. */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a step. The authority. */
+  reassignPoolUserIds: string[];
+  /**
    * Who owes this work-item. A HOD step routes to the requisition's OWN hiring
    * manager; every other step reads the global step-owner table. Empty = nobody owns
    * it — which the reports surface rather than hide.
@@ -504,6 +521,10 @@ interface HrStoreValue {
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
+  /** Hand one step on, or pass assignee: null to return it to its natural owner. */
+  reassignStep: (input: { requisition: Requisition; stepKey: StepKey; assignee: string | null; note?: string | null }) => Promise<void>;
+  /** Save who may be handed a step. departmentIds is a picker filter and grants nothing. */
+  setReassignPool: (input: { departmentIds: string[]; userIds: string[] }) => Promise<void>;
   setProcessCoordinators: (userIds: string[]) => Promise<void>;
   // setSalaryViewers is declared with canViewSalary above.
   insertMaster: (table: HrMasterTable, input: MasterInput) => Promise<void>;
@@ -554,6 +575,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   });
 
   const stepOwners = data?.stepOwners ?? [];
+  const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
   const jobPlatforms = data?.jobPlatforms ?? [];
   const jobTypes = data?.jobTypes ?? [];
@@ -579,6 +601,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const salaryViewers = data?.config.salaryViewers ?? { departmentIds: [], personIds: [] };
+  const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
+  const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
 
   // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
   // stamping run off the JWT, so any write whose policy checks `= auth.uid()`
@@ -758,6 +782,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
      * Mirrors fms_hr_can_act() in SQL. Kept in step with it deliberately: this
      * only decides what the UI offers — the RPC re-checks and is the real gate.
      */
+    /**
+     * Who is HOLDING (requisition, step), or null. Keyed exactly the way
+     * fms_hr_can_act authorises, so the client and the server cannot disagree.
+     */
+    const holderByKey = new Map<string, string>();
+    for (const a of stepAssignees) holderByKey.set(a.requisitionId + '|' + a.stepKey, a.assignedTo);
+    const holderOfStep = (requisitionId: string | null, stepKey: string): string | null =>
+      requisitionId ? holderByKey.get(requisitionId + '|' + stepKey) ?? null : null;
+
     const canActOn = (stepKey: StepKey, r: Requisition): boolean => {
       // Resubmitting a sent-back MRF is the ONE step whose server rule is neither
       // "step owner" nor "hiring manager": fms_hr_resubmit_mrf allows the REQUESTER (or
@@ -766,8 +799,64 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       // coordinator a button the database will reject.
       if (stepKey === "mrf_resubmit") return r.requesterId === user.id || isAdmin;
       if (isAdmin || isProcessCoordinator) return true;
+      // A HANDOVER MOVES THE WORK. While a holder is set they are the only
+      // non-admin who may act - deliberately NOT an OR with the natural owner,
+      // or the step would stay in that owner's queue too. Exact mirror of
+      // fms_hr_can_act__ungated, and it sits BEFORE the HOD branch for the same
+      // reason the SQL does: that branch returns, so anything after it is
+      // unreachable for the seven steps that need this most.
+      const holder = holderOfStep(r.id, stepKey);
+      if (holder) return holder === user.id;
       if (isHodStep(stepKey)) return r.hiringManagerIds.includes(user.id);
       return stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
+    };
+
+    /** Who owns a step when nobody holds it. Mirrors fms_hr_is_natural_step_owner. */
+    const isNaturalStepOwner = (stepKey: StepKey, r: Requisition, uid: string): boolean =>
+      isHodStep(stepKey)
+        ? r.hiringManagerIds.includes(uid)
+        : stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid));
+
+    /**
+     * May I hand this step on, or pull it back? Broader than acting on it: the
+     * NATURAL owner keeps this after handing over, which is exactly how a step
+     * comes back. Mirrors fms_hr_reassign_step.
+     *
+     * WARNING: identity comes from the REAL `session`, never the effective
+     * persona. This gates a write the server authorises against auth.uid(), so a
+     * persona-derived gate would offer a button the RPC then refuses — and both
+     * halves must come from the real session, since taking the real id but the
+     * persona's isAdmin is the subtle version of the same bug.
+     */
+    const canReassignStep = (stepKey: StepKey, r: Requisition): boolean => {
+      if (r.status === "cancelled") return false;
+      const me = realUserId ?? "";
+      if (!me || !canEdit) return false;
+      if (session.isAdmin || processCoordinatorIds.includes(me)) return true;
+      if (holderOfStep(r.id, stepKey) === me) return true;
+      return isNaturalStepOwner(stepKey, r, me);
+    };
+
+    /**
+     * Who this step may be handed to: the configured pool, plus its own natural
+     * owners so it can be handed BACK, minus me.
+     *
+     * Per-STEP rather than a flat list, because the natural owner differs by step
+     * — the hiring managers for the seven HOD/probation steps, the configured step
+     * owners for everything else — and fms_hr_reassign_step would refuse anyone
+     * who is neither.
+     *
+     * Names resolve through `personName`, i.e. the ORG-WIDE list: the directory is
+     * RLS-scoped, so a pool member in another department would render blank for a
+     * non-admin hiring manager, who is precisely the person using this dialog.
+     */
+    const reassignCandidates = (stepKey: StepKey, r: Requisition): { id: string; name: string }[] => {
+      const ids = new Set<string>(reassignPoolUserIds);
+      for (const id of isHodStep(stepKey) ? r.hiringManagerIds : ownerIdsOf(stepKey)) ids.add(id);
+      ids.delete(realUserId ?? "");
+      return [...ids]
+        .map((id) => ({ id, name: personName(id) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     };
 
     /* ------------------------------- candidates ---------------------------- */
@@ -884,11 +973,27 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     });
     const queueEntries = buildQueueEntries(snapshot);
 
+    /**
+     * VISIBILITY - is this entry on MY desk? Deliberately NOT canActOn, which is
+     * AUTHORITY and opens with an admin/coordinator arm.
+     *
+     * ⚠ IT MATTERS MORE HERE THAN ANYWHERE ELSE. hr_head_approval and
+     *   final_decision are both owned by the ONE person who is also the process
+     *   coordinator, so canActOn returns true for her on everything. Without this
+     *   split a handover would leave her queue never - and she is the single most
+     *   likely person to use the feature.
+     */
+    const stepIsMine = (stepKey: StepKey, r: Requisition): boolean => {
+      const holder = holderOfStep(r.id, stepKey);
+      if (holder) return holder === user.id;
+      return canActOn(stepKey, r);
+    };
+
     const myQueue = (stepKey: StepKey): QueueEntry[] =>
       queueEntries.filter((e) => {
         if (e.stepKey !== stepKey) return false;
         const r = e.requisitionId ? reqById.get(e.requisitionId) : undefined;
-        return r ? canActOn(stepKey, r) : false;
+        return r ? stepIsMine(stepKey, r) : false;
       });
 
     /**
@@ -897,6 +1002,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
      */
     const queueOwnerIds = (e: QueueEntry): string[] => {
       const r = e.requisitionId ? reqById.get(e.requisitionId) : undefined;
+      // Handed over? Then it is owed by exactly one person, whatever the step.
+      const holder = holderOfStep(e.requisitionId ?? null, e.stepKey);
+      if (holder) return [holder];
       // Owed by the one person who raised it — not the hiring manager, and not the
       // global owners table (which has no row for this step, so without this branch it
       // would be reported as work owed by "Nobody").
@@ -1189,6 +1297,12 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       myQueue,
       dueIsoFor: (r, stepKey) => requisitionDueIso(snapshot, r, stepKey),
       canActOn,
+      stepIsMine,
+      holderOfStep,
+      canReassignStep,
+      reassignCandidates,
+      reassignPoolDepartmentIds,
+      reassignPoolUserIds,
       queueOwnerIds,
 
       completedFor,
@@ -1544,6 +1658,30 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite("step_sla", map as unknown as Record<string, unknown>);
         await invalidate();
       },
+      reassignStep: async ({ requisition, stepKey, assignee, note }) => {
+        await reassignStepWrite(requisition.id, stepKey, assignee, note ?? null);
+        const returned = assignee === null;
+        const label = stepByKey(stepKey)?.title ?? stepKey;
+        await safeAnnounce({
+          entityType: 'requisition',
+          entityId: requisition.id,
+          type: 'step_reassigned',
+          text: returned
+            ? label + ' on ' + requisition.mrfNo + ' was returned to its usual owner' + (note ? ' - ' + note : '')
+            : label + ' on ' + requisition.mrfNo + ' was reassigned to ' + personName(assignee) + (note ? ' - ' + note : ''),
+          // On a hand-back nobody in particular owns it, so tell whoever does now.
+          recipients: returned
+            ? (isHodStep(stepKey) ? requisition.hiringManagerIds : ownerIdsOf(stepKey))
+            : [assignee as string],
+        });
+        await invalidate();
+      },
+      setReassignPool: async ({ departmentIds, userIds }) => {
+        // department_ids is stored so Setup can re-open on the same filter; it is
+        // NOT read by fms_hr_can_receive_reassignment and grants nothing.
+        await setConfigWrite('reassign_pool', { department_ids: departmentIds, user_ids: userIds });
+        await invalidate();
+      },
       setProcessCoordinators: async (userIds) => {
         await setConfigWrite("process_coordinators", { user_ids: userIds });
         await invalidate();
@@ -1617,6 +1755,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
     onboardingItems, jobTitles, skills, qualifications,
     stepOwners, processCoordinatorIds, stepSla, salaryViewers, activity, candidateScores, notifications,
+    // Load-bearing and invisible to tsc, like orgPeople below: without these the
+    // memo keeps the holders and the pool it was built with, so a handover would
+    // not move anything on screen and Setup Save would never confirm.
+    stepAssignees, reassignPoolDepartmentIds, reassignPoolUserIds,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute
