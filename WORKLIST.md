@@ -649,10 +649,14 @@ step took) is the only report anyone has asked for. That gap is most likely wher
 - [ ] Whether these are per-module reports or one management view across modules — the second is a
       different build, closer to **PC-1**'s dashboard than to a report.
 - [ ] What he wants that the data cannot answer yet, so we know early what needs capturing first.
-### PF-13 · Reassign an approval — the remaining four modules  `[ ]`
+### PF-13 · Reassign an approval — the remaining modules  `[~]`
 *Also touches: Office Supplies · HR (Recruitment + Exit) · Travel Desk · Order to Dispatch ·
 Raised 2026-08-27, out of **IM-1** · do **PD-1** first — a second module proves the shape before it
 is copied four more times*
+
+**Office Supplies shipped 2026-08-27** — see **PF-13a** in [Done](#done); it also extracted the
+shared `ReassignModal` / `ReassignPoolSection` that the remaining four will use, and retro-fitted
+Import and Purchase onto them. **Left: HR Recruitment, HR Exit, Travel Desk, Order to Dispatch.**
 
 Every module still has the problem Import had: an approval sits with one named person until they get
 to it. **IM-1** shipped the handover for Import and **PD-1** ports it to Purchase RM Domestic; this
@@ -2454,6 +2458,74 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### PF-13a · Office Supplies — the first approver can hand a request to someone else  `[x]`
+*Office Supplies · **Live 2026-08-27, 18:35 IST** · the third module to get the handover, after
+**IM-1** and **PD-1**, and the first where the exclusivity was structural rather than a config gap*
+
+**What happens now.** Setup → Raising & Routing carries **Who can be handed an approval**. A request
+awaiting FIRST approval shows **Reassign**, on the queue and on the request. It **moves**: it leaves
+the department head's queue, appears in the receiver's, and only they or an admin may decide it. The
+HOD can pull it back. Only first approval — second approval and handover already have two step owners
+each, so neither was ever blocked on one person.
+
+**Why this module needed it most.** In Purchase every band held one person, but the schema allowed a
+list, so the business could have fixed it in Setup. Not here. First approval routes to
+`fms_supplies_departments.hod_user_id` — **one uuid column**, compared with a bare `= p_uid` — and the
+`first_approval` row in `fms_supplies_step_owners` was **deliberately emptied** by `20260720100000`
+so that list could not be mistaken for the routing rule. There was no second name to add anywhere. A
+department whose head was away had no way to move its requests at all. (MIS currently has **no HOD at
+all**, so its requests are admin-only until one is set — worth raising separately.)
+
+**One authz site, not four.** Both `fms_supplies_decide_first_approval` and
+`fms_supplies_update_first_approval` delegate to `fms_supplies_can_act`, so the holder rule went in
+**one** function and both RPCs picked it up untouched. Purchase needed the same rule written into four
+hand-written bodies. That is a real advantage of this module's design.
+
+**⚠ The read gate had to be widened, for a counterintuitive reason.**
+`fms_supplies_can_read_request` admits admin / coordinator / fulfilment staff / module **viewer** /
+raiser / requested-for / department HOD. It looks as though anyone with module access can read a
+request — but **`module_is_viewer` is `module_level(...) = 'view'` EXACTLY**. A receiver holding an
+*edit* grant is therefore not a viewer and matched no arm at all: the handover would have put the
+request in their queue and then refused to let them open it. Proved rather than argued — the SQL run
+checked `can_read_request(req, receiver)` **before** the handover (false) and **after** (true).
+
+**Three real bugs the browser caught that `tsc` and the build both passed:**
+
+1. **`ref` is a reserved React prop.** The extracted shared modal took a prop called `ref`; React
+   strips it before the component sees it, so the title rendered `undefined` and the console threw
+   *"Function components cannot have string refs"*. It is now `docRef`. ⚠ This had also silently
+   broken **Purchase's** modal via the retro-fit — which is why Purchase was re-run afterwards.
+2. **`useState(saved…)` never re-syncs.** The shared Setup section read its saved values once, so a
+   section that mounts before the store's query resolves kept the empty arrays it was born with and a
+   reload looked like the save was lost. Import and Purchase never hit it — their Setup tab is opened
+   by a *click*, always after the data lands. Office Supplies puts it on the **default** tab.
+3. **The queue did not follow the holder for an admin.** `myQueue` used `canActOn`, which opens with
+   an admin arm, so a handed-over request never left an admin's queue — the one thing the feature
+   promises, invisible to exactly the people testing it. Visibility is now `stepIsMine`, separate
+   from authority. The same lesson as Import; it had to be learned again here because this module
+   splits the two differently.
+
+**The shared components were extracted at the third instance, not the second** —
+`shared/components/approvals/ReassignModal.tsx` and `ReassignPoolSection.tsx`, with Import and
+Purchase retro-fitted onto them. ⚠ They live under `approvals/`, **not `fms/`**: the root
+`.gitignore` carries `FMS/` with no leading slash, and Windows matches it case-insensitively, so a
+folder named `fms/` would have been silently left out of every commit and the build would have failed
+on master with no local sign of why.
+
+**The email card is built in SQL here, which is the opposite of Import and Purchase**, so the fix
+belonged in a different place: `fms_supplies_email_payload` gained a `reassigned` branch
+(`20260827140100`). Its existing `else` arm would have rendered a complete card anyway — it would just
+have said *"updated a request"*, which is a poor way to tell somebody an approval has landed on them.
+
+**Verified:** 17 authorisation cases on live data in a rolled-back transaction (17/17), including the
+holder approving end to end through the real RPC and then revising her own decision; the reversal
+recipe rehearsed the same way with a handover in flight (9/9); 10 browser checks (10/10) after the
+three fixes; and Purchase re-run afterwards (12/12) because the retro-fit had touched it.
+**No email was sent** — office-supplies' switch is off, procurement's was turned off for its re-run
+and back on after, and the outbox confirms zero rows for both.
+
+**Still to come under PF-13:** HR Recruitment, HR Exit, Travel Desk, Order to Dispatch.
 
 ### PD-1 · An approver can hand a requisition to someone else  `[x]`
 *Purchase RM Domestic · **Live 2026-08-27, 18:05 IST** — `25d27aa` on master, deployed by Vercel ·

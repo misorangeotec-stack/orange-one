@@ -72,6 +72,14 @@ export interface SuppliesConfig {
    */
   hodDesignationIds: string[];
   stepSla: StepSlaMap;
+  /**
+   * Departments whose employees the Setup picker offers as handover candidates.
+   * A UI FILTER ONLY - it grants nothing. Authority is reassignPoolUserIds alone,
+   * exactly as fms_supplies_can_receive_reassignment reads it server-side.
+   */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a request awaiting FIRST approval. The authority. */
+  reassignPoolUserIds: string[];
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -175,6 +183,7 @@ const mapRequest = (r: any): SupplyRequest => ({
   submittedAt: r.submitted_at,
   firstApprovedAt: r.first_approved_at ?? null,
   firstApproverId: r.first_approver_id ?? null,
+  assignedApproverId: r.assigned_approver_id ?? null,
   firstRemarks: r.first_remarks ?? null,
   secondApprovedAt: r.second_approved_at ?? null,
   secondApproverId: r.second_approver_id ?? null,
@@ -272,6 +281,8 @@ export async function fetchSuppliesData(): Promise<SuppliesData> {
     requesterIds: (byKey.get("requesters")?.user_ids ?? []) as string[],
     hodDesignationIds: (byKey.get("hod_designations")?.designation_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
+    reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
+    reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
   };
 
   return {

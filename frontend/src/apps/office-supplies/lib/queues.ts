@@ -28,6 +28,18 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
   entityType: "request";
   departmentId: string;
   requestId: string;
+  /**
+   * Whoever this request's FIRST approval has been handed to, or null while it
+   * still sits with the department HOD.
+   *
+   * ⚠ IT HAS TO RIDE ON THE ENTRY. `core/workspace/mywork/items/officeSupplies.ts`
+   *   decides ownership from the entry alone - it never sees the request row - so
+   *   a holder resolved anywhere else would be invisible to My Work and to the
+   *   daily snapshot mail. That file's own header records the last time
+   *   this went wrong: emptying the first_approval step-owner row made every
+   *   HOD approval vanish from both.
+   */
+  assignedApproverId: string | null;
 }
 
 /** Still someone's work — a held / closed / rejected / cancelled request leaves every queue. */
@@ -228,6 +240,7 @@ export function buildQueueEntries(snap: SupplySnapshot): QueueEntry[] {
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
       requestId: r.id,
+      assignedApproverId: r.assignedApproverId,
     });
   }
   return out;

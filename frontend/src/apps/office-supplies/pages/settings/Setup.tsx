@@ -6,6 +6,7 @@ import CoordinatorsSection from "./CoordinatorsSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 import RaisingSection from "./RaisingSection";
+import ReassignmentSection from "./ReassignmentSection";
 
 export default function Setup() {
   const [tab, setTab] = useState("raising");
@@ -27,7 +28,14 @@ export default function Setup() {
         </p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
-      {tab === "raising" && <RaisingSection />}
+      {tab === "raising" && (
+        <div className="space-y-5">
+          <RaisingSection />
+          {/* Reassign only ever moves a request off its FIRST approval, which is
+              the routing this tab configures, so the two are read together. */}
+          <ReassignmentSection />
+        </div>
+      )}
       {tab === "owners" && <StepOwnersSection />}
       {tab === "due" && <StepDueDatesSection />}
       {tab === "coordinators" && <CoordinatorsSection />}

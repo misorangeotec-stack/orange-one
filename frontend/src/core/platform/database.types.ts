@@ -8950,6 +8950,14 @@ export type Database = {
         Returns: boolean
       }
       fms_supplies_can_raise: { Args: { p_uid: string }; Returns: boolean }
+      fms_supplies_can_receive_reassignment: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_reassign_request: {
+        Args: { p_approver_id?: string | null; p_req: string }
+        Returns: undefined
+      }
       fms_supplies_can_read_request: {
         Args: { p_req: string; p_uid: string }
         Returns: boolean

@@ -80,6 +80,23 @@ export async function decideFirstApproval(requestId: string, approve: boolean, r
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Hand ONE request awaiting FIRST approval to another person, or pass a null
+ * `approverId` to return it to the department HOD ("take it back").
+ *
+ * The server accepts this from an admin, a process coordinator, the request's own
+ * HOD, or the current holder — deliberately broader than who may DECIDE it, so an
+ * HOD can pull back a request he handed over. It does not announce; the store
+ * raises the notification client-side so the email renders with content.
+ */
+export async function reassignRequest(requestId: string, approverId: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_supplies_reassign_request", {
+    p_req: requestId,
+    p_approver_id: approverId,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function decideSecondApproval(requestId: string, approve: boolean, remarks: string): Promise<void> {
   const { error } = await supabase.rpc("fms_supplies_decide_second_approval", {
     p_req: requestId,
