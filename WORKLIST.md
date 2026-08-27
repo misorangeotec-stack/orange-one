@@ -654,9 +654,12 @@ step took) is the only report anyone has asked for. That gap is most likely wher
 Raised 2026-08-27, out of **IM-1** · do **PD-1** first — a second module proves the shape before it
 is copied four more times*
 
-**Office Supplies shipped 2026-08-27** — see **PF-13a** in [Done](#done); it also extracted the
-shared `ReassignModal` / `ReassignPoolSection` that the remaining four will use, and retro-fitted
-Import and Purchase onto them. **Left: HR Recruitment, HR Exit, Travel Desk, Order to Dispatch.**
+**Office Supplies and HR Recruitment shipped 2026-08-27** — **PF-13a** and **PF-13b** in
+[Done](#done). Office Supplies extracted the shared `ReassignModal` / `ReassignPoolSection` and
+retro-fitted Import and Purchase onto them; HR needed a different SHAPE — a `(requisition, step)`
+table rather than a column — because a requisition has several steps open at once across three
+scopes, and that is the template HR Exit should follow if it turns out to need one too.
+**Left: HR Exit, Travel Desk, Order to Dispatch.**
 
 Every module still has the problem Import had: an approval sits with one named person until they get
 to it. **IM-1** shipped the handover for Import and **PD-1** ports it to Purchase RM Domestic; this
@@ -2454,6 +2457,66 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### PF-13b · HR Recruitment — a step owner can hand a step to someone else  `[x]`
+*HR Recruitment · **Live 2026-08-27, 19:20 IST** · the fourth module after **IM-1**, **PD-1** and
+**PF-13a**, and the first that needed a different **shape***
+
+**What happens now.** Setup gains a **Reassignment** tab naming who may receive a step. The MRF
+approvals queue gains **Reassign** on each row. The handover **moves** that one step: it leaves the
+usual owner's queue, appears in the receiver's, and only they or an admin may act. The usual owner
+can pull it back. The rest of the requisition is untouched.
+
+**⚠ Why this is a table and not a column.** The other three modules carry **one** approval in flight
+per entity, so a single `assigned_approver_id` column says everything. HR does not: a requisition
+walks **nineteen steps across three scopes** — requisition, candidate and hire — and several are open
+at once. It can be at `job_posting` while one of its candidates is at `final_decision` and last
+month's hire is at `probation_m2`. So the holder is `fms_hr_step_assignees`, keyed on
+**(requisition, step)**.
+
+**And that key is right because it is already how the module authorises.** Every one of the
+**eighteen** HR RPCs calls `fms_hr_can_act(step_key, requisition_id, uid)` — even the hire-scoped
+ones, which resolve `probations.requisition_id` first and pass that. So the new rule lands inside the
+gate they all already go through: **no signature change and no call-site change anywhere**.
+
+**The hard stop this fixes.** `fms_hr_can_act__ungated`'s hiring-manager branch **`return`s with no
+fall-through**, so for `hod_shortlist`, `interview_2` and the five probation steps the hiring managers
+are the only non-admins who can *ever* act — and there is no step-owner list an admin could add a
+second name to. **15 of the 17 live requisitions name exactly one hiring manager.** Putting the holder
+check *before* that branch is what makes those steps movable at all.
+
+**⚠ A finding worth carrying forward.** `hr_head_approval` and `final_decision` are both owned by
+**Riya Kumari, who is also the sole process coordinator** — and the coordinator arm returns true
+before the holder check. So for *her* a handover **adds** the receiver without removing her, by
+design: a coordinator oversees the whole flow. That is correct, but it means the **queue** must follow
+the holder even for a coordinator, or the feature looks inert to the one person most likely to use it.
+`store.stepIsMine` does that, kept separate from `canActOn`; the browser check confirms it — the gate
+left the queue while signed in as an admin.
+
+**The read gate needed widening**, for the same counterintuitive reason as Office Supplies:
+`fms_hr_requisitions`' RLS select is `fms_hr_can_read_requisition OR module_is_viewer`, and
+`module_is_viewer` is `= 'view'` **exactly** — so an edit-level receiver matched nothing and the
+requisition would not even load.
+
+**One rule, two readers.** The pre-existing ownership test was lifted out verbatim into
+`fms_hr_is_natural_step_owner`: the gate asks it **after** the holder check (*who owns it now*), the
+reassign RPC asks it directly (*who owned it before*), so the original owner can still take it back.
+
+**Not the same thing as `fms_hr_reassign_interview`, which stays.** That moves one **interview** to
+different interviewers; this moves a **step**. Both can be in play on one requisition at once — and in
+`mywork/items/hr.ts` the two rules sit three lines apart and mean opposite things: the holder
+**replaces** every other rule, while the Round-2 panel arm is deliberately **additive**.
+
+**Verified:** 22 authorisation cases on live data in a rolled-back transaction — including the hard
+stop before and after, the read gate before and after, and proof that it is per-**step** (handing over
+`interview_2` left the same manager owning `probation_m1` on the same requisition); the reversal
+rehearsed the same way (8/8), which **confirmed its unusual ordering** — dropping
+`fms_hr_is_natural_step_owner` first breaks the *whole gate*, not just reassign, so the bodies go back
+**first** here, unlike the other three modules; and 7 browser checks. **No email sent** —
+hr-recruitment's switch is off and the outbox confirms zero rows. MRF-2627-0017 was restored to its
+exact prior status.
+
+**Still to come under PF-13:** HR Exit, Travel Desk, Order to Dispatch.
 
 ### PF-13a · Office Supplies — the first approver can hand a request to someone else  `[x]`
 *Office Supplies · **Live 2026-08-27, 18:35 IST** · the third module to get the handover, after
