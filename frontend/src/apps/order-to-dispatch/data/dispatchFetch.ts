@@ -8,7 +8,7 @@ import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company, CompanyItem, CompanyLocation, Customer, Designation, DispatchActivity,
   DispatchMasterRequest, CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder,
-  DispatchRound, Item, MasterManager, NamedMaster, OrderLine, RoundItem, StepDoc, StepOwner,
+  DispatchRound, Item, MasterManager, NamedMaster, OrderLine, RoundItem, StepAssignee, StepDoc, StepOwner,
 } from "../types";
 
 /**
@@ -31,6 +31,7 @@ const PAGE = 1000;
 
 type Tbl =
   | "fms_dispatch_step_owners"
+  | "fms_dispatch_step_assignees"
   | "fms_dispatch_config"
   | "mst_companies"
   | "mst_locations"
@@ -290,6 +291,13 @@ export const orderActivityQueryKey = (orderId: string) => ["dispatchOrderActivit
 export interface DispatchConfig {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
+  /**
+   * Departments whose employees the Setup picker offers as reassignment
+   * candidates. A UI FILTER ONLY - it grants nothing.
+   */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a STEP of an order. The authority. */
+  reassignPoolUserIds: string[];
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -330,6 +338,7 @@ export const COMPANY_ITEMS_QK = (companyId: string) =>
  */
 export interface DispatchData {
   stepOwners: StepOwner[];
+  stepAssignees: StepAssignee[];
   designations: Designation[];
   config: DispatchConfig;
 
@@ -583,6 +592,15 @@ const mapOrder = (r: any): DispatchOrder => ({
   createdAt: r.created_at,
   lines: [],
   rounds: [],
+});
+
+const mapStepAssignee = (r: any): StepAssignee => ({
+  orderId: r.order_id,
+  stepKey: r.step_key,
+  assignedTo: r.assigned_to,
+  assignedBy: r.assigned_by ?? null,
+  assignedAt: r.assigned_at,
+  note: r.note ?? null,
 });
 
 const mapStepOwner = (r: any): StepOwner => ({
@@ -841,12 +859,13 @@ export async function fetchDispatchData(
   //   key. This list is the LIVE working set, and it is what a save invalidates.
   //   Adding an mst_* read back into it would put ~2 MB behind every write again.
   const [
-    stepOwners, configRows, designations,
+    stepOwners, stepAssignees, configRows, designations,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
     notifications,
   ] = await Promise.all([
     fetchAll("fms_dispatch_step_owners"),
+    fetchAll("fms_dispatch_step_assignees", "order_id"),
     fetchAll("fms_dispatch_config", "key"),
     fetchAll("designations"),
     fetchAll("fms_dispatch_master_managers"),
@@ -870,6 +889,8 @@ export async function fetchDispatchData(
   const config: DispatchConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
+    reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
+    reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
   };
 
   // Group the lines onto their orders in memory (see the header note).
@@ -914,6 +935,7 @@ export async function fetchDispatchData(
 
   return {
     stepOwners: stepOwners.map(mapStepOwner),
+    stepAssignees: stepAssignees.map(mapStepAssignee),
     designations: designations.map(mapDesignation),
     config,
 
@@ -988,9 +1010,10 @@ export async function fetchDispatchDelta(
       writes of their own, and each of those writes goes through this same path —
       so they must come back fresh or a Setup save would appear not to save.
   */
-  const [stepOwners, configRows, designations, masterManagers, masterRequests, notifications, stamps] =
+  const [stepOwners, stepAssignees, configRows, designations, masterManagers, masterRequests, notifications, stamps] =
     await Promise.all([
       fetchAll("fms_dispatch_step_owners"),
+      fetchAll("fms_dispatch_step_assignees", "order_id"),
       fetchAll("fms_dispatch_config", "key"),
       fetchAll("designations"),
       fetchAll("fms_dispatch_master_managers"),
@@ -1008,10 +1031,13 @@ export async function fetchDispatchDelta(
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const rest = {
     stepOwners: stepOwners.map(mapStepOwner),
+    stepAssignees: stepAssignees.map(mapStepAssignee),
     designations: designations.map(mapDesignation),
     config: {
       processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
       stepSla: resolveStepSla(byKey.get("step_sla")),
+      reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
+      reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
     },
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),

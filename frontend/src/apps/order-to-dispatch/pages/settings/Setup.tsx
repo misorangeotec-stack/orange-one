@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Tabs from "@/shared/components/ui/Tabs";
 import StepOwnersSection from "./StepOwnersSection";
+import ReassignmentSection from "./ReassignmentSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
@@ -10,6 +11,7 @@ export default function Setup() {
   const [tab, setTab] = useState("owners");
   const tabs = [
     { key: "owners", label: "Step Owners" },
+    { key: "reassign", label: "Reassignment" },
     { key: "due", label: "Due Dates" },
     { key: "coordinators", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
@@ -26,6 +28,7 @@ export default function Setup() {
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === "owners" && <StepOwnersSection />}
+      {tab === "reassign" && <ReassignmentSection />}
       {tab === "due" && <StepDueDatesSection />}
       {tab === "coordinators" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}

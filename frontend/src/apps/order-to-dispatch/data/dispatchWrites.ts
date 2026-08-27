@@ -380,6 +380,32 @@ export async function deleteStepOwner(stepKey: string, locationId: string): Prom
 
 /* --------------------------------- config --------------------------------- */
 
+/**
+ * Reassign ONE step of ONE order to another person, or pass a null assignee to
+ * return it to the step location-scoped owners.
+ *
+ * ⚠ Ownership in this module is per (step, LOCATION), so "return it" means the
+ *   owners configured for THIS order location - not a global list.
+ *
+ * The server accepts this from an admin, a coordinator, one of those owners, or
+ * the current assignee, and only from someone with order-to-dispatch edit
+ * access. It does not announce; the store raises the notification client-side.
+ */
+export async function reassignStep(
+  orderId: string,
+  stepKey: string,
+  assignee: string | null,
+  note: string | null,
+): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_reassign_step", {
+    p_order: orderId,
+    p_step_key: stepKey,
+    p_assignee: assignee,
+    p_note: note,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function setConfig(key: string, value: Record<string, unknown>): Promise<void> {
   const { error } = await db.from("fms_dispatch_config").upsert({ key, value }, { onConflict: "key" });
   if (error) throw new Error(error.message);
