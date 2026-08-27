@@ -1323,6 +1323,14 @@ var mapSkip = (r) => ({
   skippedBy: r.skipped_by ?? null,
   skippedAt: r.skipped_at
 });
+var mapStepAssignee2 = (r) => ({
+  caseId: r.case_id,
+  stepKey: r.step_key,
+  assignedTo: r.assigned_to,
+  assignedBy: r.assigned_by ?? null,
+  assignedAt: r.assigned_at,
+  note: r.note ?? null
+});
 var mapStepOwner2 = (r) => ({
   id: r.id,
   stepKey: r.step_key,
@@ -1355,6 +1363,7 @@ var mapNotification2 = (r) => ({
 async function fetchExitData() {
   const [
     stepOwners,
+    stepAssignees,
     configRows,
     designations,
     reasons,
@@ -1377,6 +1386,7 @@ async function fetchExitData() {
     notifications
   ] = await Promise.all([
     fetchAll3("fms_exit_step_owners"),
+    fetchAll3("fms_exit_step_assignees", "case_id"),
     fetchAll3("fms_exit_config", "key"),
     fetchAll3("designations"),
     fetchAll3("fms_exit_reasons"),
@@ -1436,10 +1446,13 @@ async function fetchExitData() {
       payrollCutoffDay: Number(byKey.get("payroll_cutoff_day")?.day ?? 25),
       defaultNoticeDays: Number(byKey.get("default_notice_days")?.value ?? 30),
       allowSelfService: byKey.get("allow_self_service")?.value !== false
-    }
+    },
+    reassignPoolDepartmentIds: byKey.get("reassign_pool")?.department_ids ?? [],
+    reassignPoolUserIds: byKey.get("reassign_pool")?.user_ids ?? []
   };
   return {
     stepOwners: stepOwners.map(mapStepOwner2),
+    stepAssignees: stepAssignees.map(mapStepAssignee2),
     designations: designations.map(mapDesignation2),
     config,
     reasons: reasons.map(mapMaster2),
@@ -5194,10 +5207,17 @@ function buildQueueEntries4(snap) {
 
 // frontend/src/core/workspace/mywork/items/hrExit.ts
 var APPROVAL_STEPS2 = /* @__PURE__ */ new Set(["manager_review", "hr_verification", "hr_head_approval", "fnf_approve"]);
-var ownersOf = (e, stepOwners) => e.ownerIds && e.ownerIds.length ? e.ownerIds : stepOwnerIdsFor(e.stepKey, stepOwners);
+var ownersOf = (e, stepOwners, assigneeByKey) => {
+  const assignee = assigneeByKey.get(`${e.caseId}|${e.stepKey}`);
+  if (assignee) return [assignee];
+  return e.ownerIds && e.ownerIds.length ? e.ownerIds : stepOwnerIdsFor(e.stepKey, stepOwners);
+};
 function hrExitWorkItems(data, uid, isAdmin) {
   const stepOwners = data.stepOwners;
-  return buildQueueEntries4(exitSnapshotFrom(data)).filter((e) => isAdmin || ownersOf(e, stepOwners).includes(uid)).map((e) => ({
+  const assigneeByKey = new Map(
+    data.stepAssignees.map((a) => [`${a.caseId}|${a.stepKey}`, a.assignedTo])
+  );
+  return buildQueueEntries4(exitSnapshotFrom(data)).filter((e) => isAdmin || ownersOf(e, stepOwners, assigneeByKey).includes(uid)).map((e) => ({
     // A clearance check is its own work-item, so the check id has to be part of
     // the key — otherwise four open checks on one case collapse into one row.
     id: `hr-exit:${e.checkId ?? e.entityId}:${e.stepKey}`,
@@ -5207,7 +5227,7 @@ function hrExitWorkItems(data, uid, isAdmin) {
     stage: stepByKey2(e.stepKey)?.short,
     dueIso: e.dueIso,
     to: `/hr-exit/exits/${e.caseId}`,
-    assignment: ownersOf(e, stepOwners).includes(uid) ? "direct" : "team",
+    assignment: ownersOf(e, stepOwners, assigneeByKey).includes(uid) ? "direct" : "team",
     isApproval: APPROVAL_STEPS2.has(e.stepKey)
   }));
 }
