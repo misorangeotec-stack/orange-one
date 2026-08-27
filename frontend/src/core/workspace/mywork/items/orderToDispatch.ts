@@ -40,12 +40,29 @@ export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: bool
   const owners = data.stepOwners;
   const orderById = new Map(data.orders.map((o) => [o.id, o]));
 
+  /**
+   * (order, step) → whoever it has been REASSIGNED to.
+   *
+   * ⚠ AN ASSIGNEE REPLACES ownsStepAt for that one order's step - it does not add
+   *   to it. A reassignment MOVES the step, so it has to leave the location
+   *   owner's My Work list and their line of the daily mail. Every OTHER order at
+   *   that location stays theirs, which is why this is keyed on the order.
+   */
+  const assigneeByKey = new Map(
+    (data.stepAssignees ?? []).map((a) => [`${a.orderId}|${a.stepKey}`, a.assignedTo]),
+  );
+  const mine = (stepKey: string, orderId: string, locationId: string | null): boolean => {
+    const assignee = assigneeByKey.get(`${orderId}|${stepKey}`);
+    if (assignee) return assignee === uid;
+    return ownsStepAt(stepKey, locationId, uid, owners);
+  };
+
   return buildQueueEntries(
     dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla }),
   )
     .filter(
       (e) =>
-        isAdmin || ownsStepAt(e.stepKey, orderById.get(e.orderId)?.locationId ?? null, uid, owners),
+        isAdmin || mine(e.stepKey, e.orderId, orderById.get(e.orderId)?.locationId ?? null),
     )
     .map((e) => {
       const o = orderById.get(e.orderId);
@@ -67,7 +84,7 @@ export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: bool
         stage: stepByKey(e.stepKey)?.short,
         dueIso: e.dueIso,
         to: `/order-to-dispatch/orders/${e.orderId}`,
-        assignment: ownsStepAt(e.stepKey, o?.locationId ?? null, uid, owners)
+        assignment: mine(e.stepKey, e.orderId, o?.locationId ?? null)
           ? ("direct" as const)
           : ("team" as const),
         isApproval: false,
@@ -91,7 +108,7 @@ export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: bool
           (o) =>
             o.status === "awaiting_sales_return" &&
             o.srAt == null &&
-            (isAdmin || ownsStepAt("sales_return", o.locationId, uid, owners)),
+            (isAdmin || mine("sales_return", o.id, o.locationId)),
         )
         .map((o) => ({
           id: `order-to-dispatch:${o.id}:sales_return`,

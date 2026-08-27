@@ -26,6 +26,7 @@ import {
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
   setConfig as setConfigWrite,
+  reassignStep as reassignStepWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
   deleteStepOwner as deleteStepOwnerWrite,
@@ -120,6 +121,18 @@ export interface DispatchStoreValue {
    *   lookup table that has no arm for it.
    */
   canActOn: (step: OwnerStepKey, order: DispatchOrder) => boolean;
+  /** Who is holding (order, step), or null. */
+  assigneeOfStep: (orderId: string | null, step: string) => string | null;
+  /** May I reassign this step, or take it back? Broader than acting on it. */
+  canReassignStep: (step: OwnerStepKey, order: DispatchOrder) => boolean;
+  /** Who it may go to: the pool plus THIS ORDER'S LOCATION owners, minus me. */
+  reassignCandidates: (step: OwnerStepKey, order: DispatchOrder) => { id: string; name: string }[];
+  /** Reassign one step, or pass assignee: null to return it to the location's owners. */
+  reassignStep: (input: { order: DispatchOrder; step: OwnerStepKey; assignee: string | null; note?: string | null }) => Promise<void>;
+  /** Departments the Setup picker filters candidates by. A UI FILTER - grants nothing. */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a step. The authority. */
+  reassignPoolUserIds: string[];
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (step: OwnerStepKey) => boolean;
   canEditOrder: (order: DispatchOrder) => boolean;
@@ -431,6 +444,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const stepOwners = data?.stepOwners ?? [];
+  const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
   // The catalogue comes from its own query now — see the useQuery above.
   const companies = masters?.companies ?? [];
@@ -443,6 +457,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const orders = data?.orders ?? [];
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
+  const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
+  const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const orderNoPreview = data?.orderNoPreview ?? "";
 
@@ -632,8 +648,65 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   confirmation now REQUIRES a configured step owner. Seed one before
      *   go-live or the last step falls back to admins only.
      */
-    const canActOn = (stepKey: OwnerStepKey, o: DispatchOrder): boolean =>
-      isAdmin || isProcessCoordinator || isStepOwner(stepKey, o.locationId);
+    /**
+     * Who is holding (order, step), or null. Keyed the way fms_dispatch_can_act
+     * authorises, so the client and the server cannot disagree.
+     */
+    const assigneeByKey = new Map<string, string>();
+    for (const a of stepAssignees) assigneeByKey.set(a.orderId + '|' + a.stepKey, a.assignedTo);
+    const assigneeOfStep = (orderId: string | null, stepKey: string): string | null =>
+      orderId ? assigneeByKey.get(orderId + '|' + stepKey) ?? null : null;
+
+    const canActOn = (stepKey: OwnerStepKey, o: DispatchOrder): boolean => {
+      if (isAdmin || isProcessCoordinator) return true;
+      // A REASSIGNMENT MOVES THE WORK. While an assignee is set they are the only
+      // non-admin who may act - deliberately NOT an OR with the location's owners,
+      // or the step would stay in their queue too. Mirrors fms_dispatch_can_act.
+      const assignee = assigneeOfStep(o.id, stepKey);
+      if (assignee) return assignee === uid;
+      return isStepOwner(stepKey, o.locationId);
+    };
+
+    /**
+     * VISIBILITY - is this step on MY desk? Here it happens to equal canActOn for
+     * everyone except an admin/coordinator, and THAT is the difference that
+     * matters: without this the reassignment would never leave an admin's queue.
+     */
+    const stepIsMine = (stepKey: OwnerStepKey, o: DispatchOrder): boolean => {
+      const assignee = assigneeOfStep(o.id, stepKey);
+      if (assignee) return assignee === uid;
+      return canActOn(stepKey, o);
+    };
+
+    /**
+     * May I reassign this step, or take it back? Broader than acting on it: the
+     * location's owner keeps this after passing it on. Mirrors
+     * fms_dispatch_reassign_step, including its module-edit gate.
+     */
+    const canReassignStep = (stepKey: OwnerStepKey, o: DispatchOrder): boolean => {
+      const me = session.user?.id ?? '';
+      if (!me || !canEdit) return false;
+      if (session.isAdmin || processCoordinatorIds.includes(me)) return true;
+      if (assigneeOfStep(o.id, stepKey) === me) return true;
+      return isStepOwner(stepKey, o.locationId);
+    };
+
+    /**
+     * Who this step may be reassigned to: the configured pool plus the owners for
+     * THIS ORDER'S LOCATION so it can be returned, minus me.
+     */
+    const reassignCandidates = (stepKey: OwnerStepKey, o: DispatchOrder): { id: string; name: string }[] => {
+      const ids = new Set<string>(reassignPoolUserIds);
+      for (const row of stepOwners) {
+        if (row.stepKey !== stepKey) continue;
+        if (row.locationId && row.locationId !== o.locationId) continue;
+        for (const id of row.employeeIds) ids.add(id);
+      }
+      ids.delete(session.user?.id ?? '');
+      return [...ids]
+        .map((id) => ({ id, name: personName(id) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    };
 
     /**
      * May this person see the step's QUEUE at all — the nav link, the route, the page?
@@ -1076,7 +1149,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         queueEntries
           .filter((e) => e.stepKey === step)
           .map((e) => ({ order: orderIndex.get(e.entityId)!, dueIso: e.dueIso }))
-          .filter((r) => !!r.order && canActOn(step, r.order)),
+          .filter((r) => !!r.order && stepIsMine(step as OwnerStepKey, r.order)),
       // Scoped the same way, or a queue that no longer lists another site's pending
       // rows would still show that site's finished ones under Completed.
       completedFor: (step) => completedForPure(snapshot, step).filter((e) => canActOn(step, e.row)),
@@ -1162,6 +1235,31 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       deleteStepOwner: async (stepKey, locationId) => {
         await deleteStepOwnerWrite(stepKey, locationId);
+        invalidate();
+      },
+      assigneeOfStep,
+      canReassignStep,
+      reassignCandidates,
+      reassignPoolDepartmentIds,
+      reassignPoolUserIds,
+      reassignStep: async ({ order, step, assignee, note }) => {
+        await reassignStepWrite(order.id, step, assignee ?? null, note ?? null);
+        const returned = assignee === null;
+        await safeAnnounce({
+          entityType: 'order',
+          entityId: order.id,
+          type: 'step_reassigned',
+          text: returned
+            ? step + ' on ' + order.orderNo + ' was returned to its usual owners' + (note ? ' - ' + note : '')
+            : step + ' on ' + order.orderNo + ' was reassigned to ' + personName(assignee) + (note ? ' - ' + note : ''),
+          // On a hand-back it goes to whoever owns the step at THIS order's
+          // location - the same rule the server returns it to.
+          recipients: returned
+            ? stepOwners
+                .filter((r) => r.stepKey === step && (!r.locationId || r.locationId === order.locationId))
+                .flatMap((r) => r.employeeIds)
+            : [assignee as string],
+        });
         invalidate();
       },
       setConfig: async (key, val) => {
@@ -1260,6 +1358,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
     masterManagers, masterRequests, orders, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,
+    // Load-bearing and invisible to tsc: without these the memo keeps the
+    // assignees and the pool it was built with, so a reassignment would not move
+    // anything on screen and Setup Save would never confirm.
+    stepAssignees, reassignPoolDepartmentIds, reassignPoolUserIds,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

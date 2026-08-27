@@ -273,6 +273,23 @@ export interface DispatchMasterRequest {
  *   at most one such row per step, and every owner-set that existed before
  *   locations did is one.
  */
+/**
+ * Who is currently holding one step of one order.
+ *
+ * ⚠ Keyed on (orderId, stepKey), NOT on (step, location). Ownership in this
+ *   module is per (step, location) and has no answer without the order, so the
+ *   order is the natural key - and an assignee is a person put on ONE order,
+ *   which is what makes it a stand-in rather than a change of the roster.
+ */
+export interface StepAssignee {
+  orderId: string;
+  stepKey: string;
+  assignedTo: string;
+  assignedBy: string | null;
+  assignedAt: string;
+  note: string | null;
+}
+
 export interface StepOwner {
   id: string;
   stepKey: string;
