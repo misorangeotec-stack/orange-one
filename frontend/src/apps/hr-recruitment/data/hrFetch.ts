@@ -48,6 +48,7 @@ import type {
   Requisition,
   RequisitionPlatform,
   RequisitionStatus,
+  StepAssignee,
   StepOwner,
 } from "../types";
 
@@ -105,6 +106,7 @@ const CHUNK = 80;
 
 type Tbl =
   | "fms_hr_step_owners"
+  | "fms_hr_step_assignees"
   | "fms_hr_config"
   | "fms_hr_job_platforms"
   | "fms_hr_job_types"
@@ -183,6 +185,13 @@ export interface HrConfig {
    * whole departments and named people. UI-level only — see store.canViewSalary.
    */
   salaryViewers: { departmentIds: string[]; personIds: string[] };
+  /**
+   * Departments whose employees the Setup picker offers as handover candidates.
+   * A UI FILTER ONLY - it grants nothing. Authority is reassignPoolUserIds alone.
+   */
+  reassignPoolDepartmentIds: string[];
+  /** Everyone who may be handed a STEP of a requisition. The authority. */
+  reassignPoolUserIds: string[];
 }
 
 /**
@@ -195,6 +204,7 @@ export const hrQueryKey = (userId: string | null) => [...HR_QK, userId] as const
 
 export interface HrData {
   stepOwners: StepOwner[];
+  stepAssignees: StepAssignee[];
   designations: Designation[];
   config: HrConfig;
   jobPlatforms: JobPlatform[];
@@ -263,6 +273,15 @@ const mapMasterRequest = (r: any): HrMasterRequest => ({
   reviewNote: r.review_note ?? null,
   resolvedMasterId: r.resolved_master_id ?? null,
   createdAt: r.created_at,
+});
+
+const mapStepAssignee = (r: any): StepAssignee => ({
+  requisitionId: r.requisition_id,
+  stepKey: r.step_key,
+  assignedTo: r.assigned_to,
+  assignedBy: r.assigned_by ?? null,
+  assignedAt: r.assigned_at,
+  note: r.note ?? null,
 });
 
 const mapStepOwner = (r: any): StepOwner => ({
@@ -362,6 +381,7 @@ export async function fetchHrData(): Promise<HrData> {
 
   const [
     stepOwners,
+    stepAssignees,
     configRows,
     designations,
     jobPlatforms,
@@ -386,6 +406,7 @@ export async function fetchHrData(): Promise<HrData> {
     masterRequests,
   ] = await Promise.all([
     fetchAll("fms_hr_step_owners"),
+    fetchAll("fms_hr_step_assignees", "requisition_id"),
     fetchAll("fms_hr_config", "key"),
     fetchAll("designations"),
     fetchAll("fms_hr_job_platforms"),
@@ -438,10 +459,13 @@ export async function fetchHrData(): Promise<HrData> {
       departmentIds: (byKey.get("salary_viewers")?.department_ids ?? []) as string[],
       personIds: (byKey.get("salary_viewers")?.person_ids ?? []) as string[],
     },
+    reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
+    reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
   };
 
   return {
     stepOwners: stepOwners.map(mapStepOwner),
+    stepAssignees: stepAssignees.map(mapStepAssignee),
     designations: designations.map(mapDesignation),
     config,
     jobPlatforms: jobPlatforms.map(mapJobPlatform),

@@ -65,11 +65,29 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
     }
   }
 
+  /**
+   * (requisition, step) → whoever it has been HANDED to. Keyed exactly the way
+   * fms_hr_can_act authorises, so this list and the module's own queues cannot
+   * give different answers.
+   */
+  const holderByKey = new Map(
+    data.stepAssignees.map((a) => [`${a.requisitionId}|${a.stepKey}`, a.assignedTo]),
+  );
+
   const isMine = (
     stepKey: string,
     requisitionId: string | null | undefined,
     entityId?: string,
   ): boolean => {
+    /**
+     * ⚠ THE HOLDER COMES FIRST, AND IT REPLACES EVERY OTHER RULE — including the
+     *   Round-2 panel arm below, which is deliberately ADDITIVE. A handover MOVES
+     *   the step: it has to leave the usual owner's My Work list and their line of
+     *   the daily mail, or nothing has actually been passed on.
+     */
+    const holder = holderByKey.get(`${requisitionId ?? ""}|${stepKey}`);
+    if (holder) return holder === uid;
+
     if (stepKey === "interview_2" && entityId && (r2PanelByCandidate.get(entityId) ?? []).includes(uid)) {
       return true;
     }

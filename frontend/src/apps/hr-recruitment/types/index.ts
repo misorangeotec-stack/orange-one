@@ -164,6 +164,23 @@ export interface OnboardingItem {
   sortOrder: number;
 }
 
+/**
+ * Who is currently HOLDING one step of one requisition.
+ *
+ * ⚠ Keyed on (requisitionId, stepKey), NOT on the entity the step acts on. That
+ *   is how fms_hr_can_act already authorises - even hire-scoped steps pass their
+ *   requisition id - so the client and the server ask the same question. Read it
+ *   as "for this requisition, this step is held by X".
+ */
+export interface StepAssignee {
+  requisitionId: string;
+  stepKey: string;
+  assignedTo: string;
+  assignedBy: string | null;
+  assignedAt: string;
+  note: string | null;
+}
+
 export interface StepOwner {
   id: string;
   stepKey: string;

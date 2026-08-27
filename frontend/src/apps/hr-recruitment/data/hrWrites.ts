@@ -667,6 +667,35 @@ export async function scheduleInterview(
  * different person", and blanking it would drop the round out of every overdue count
  * while still being somebody's work.
  */
+/**
+ * Hand ONE step of ONE requisition to another person, or pass a null `assignee`
+ * to return it to the step's natural owner ("take it back").
+ *
+ * ⚠ NOT the same thing as `reassignInterview` below, which moves one INTERVIEW to
+ *   different interviewers. This moves a STEP, and they do not overlap: an
+ *   interview can be passed to another panel while the requisition's
+ *   `interview_2` step is held by somebody standing in for the hiring manager.
+ *
+ * The server accepts this from an admin, a process coordinator, the step's
+ * natural owner, or the current holder — deliberately broader than who may ACT,
+ * so the original owner can pull it back. It does not announce; the store raises
+ * the notification client-side so the email renders with content.
+ */
+export async function reassignStep(
+  requisitionId: string,
+  stepKey: string,
+  assignee: string | null,
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_reassign_step", {
+    p_req: requisitionId,
+    p_step_key: stepKey,
+    p_assignee: assignee,
+    p_note: note,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function reassignInterview(
   id: string,
   round: number,
