@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
+import ReassignStepModal from "../../components/ReassignStepModal";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import StageTabs from "@/shared/components/ui/StageTabs";
@@ -38,6 +39,7 @@ export default function ApprovalsQueue() {
   const s = useExitStore();
   const navigate = useNavigate();
   const [reviewing, setReviewing] = useState<ExitCase | null>(null);
+  const [reassigning, setReassigning] = useState<{ c: ExitCase; step: StepKey } | null>(null);
   const [verifying, setVerifying] = useState<ExitCase | null>(null);
   const [deciding, setDeciding] = useState<ExitCase | null>(null);
   const [confirmingLwd, setConfirmingLwd] = useState<ExitCase | null>(null);
@@ -202,6 +204,20 @@ export default function ApprovalsQueue() {
             "The due date comes from this step's rule in Setup → Due Dates, counted in working days (Mon–Sat; only Sunday is skipped).",
           ]}
           actions={(r) => (
+            <>
+              {/* Reassign this ONE gate, or take it back. Every step-owner row in
+                  this module holds exactly one person, so any of these four gates
+                  can stall on a single absence. */}
+              {s.canReassignStep(r.stepKey, r.case) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mr-2"
+                  onClick={() => setReassigning({ c: r.case, step: r.stepKey })}
+                >
+                  Reassign
+                </Button>
+              )}
             <Button size="sm" onClick={() => act(r)}>
               {r.stepKey === "manager_review"
                 ? "Review"
@@ -211,9 +227,17 @@ export default function ApprovalsQueue() {
                     ? "Decide"
                     : "Confirm LWD"}
             </Button>
+            </>
           )}
         />
       )}
+
+      <ReassignStepModal
+        exitCase={reassigning?.c ?? null}
+        stepKey={reassigning?.step ?? null}
+        open={reassigning !== null}
+        onClose={() => setReassigning(null)}
+      />
 
       {reviewing && (
         <ManagerReviewModal
