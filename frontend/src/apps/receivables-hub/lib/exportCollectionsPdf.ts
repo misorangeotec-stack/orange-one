@@ -1414,6 +1414,11 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     const billCols: PdfColumn<BillLine>[] = [
       {
         header: "Bill No", width: 28,
+        // A heading row's Bill Date / Due Date / Due Days cells are empty, so the label may use
+        // them: a ledger band was ellipsizing "DASS EMBROIDERY PRIVATE LIMIT…" against three
+        // columns of blank space. It stops at Amount, which every heading row DOES carry.
+        // A bill row spans nothing — its dates are the point.
+        span: (r) => (r.bill ? 1 : 4),
         value: (r) =>
           r.spacer ? ""
           : r.total ? "TOTAL"

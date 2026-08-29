@@ -609,6 +609,16 @@ export interface PdfColumn<T> {
   value: (row: T) => string;
   /** Per-row colour override (e.g. red for an alarm figure). */
   color?: (row: T) => string | undefined;
+  /**
+   * How many columns this cell occupies ON THIS ROW. Default 1.
+   *
+   * For heading rows whose neighbouring cells are empty anyway: a section band naming a long
+   * ledger would otherwise ellipsize inside its own narrow column while three blank date columns
+   * sat beside it. Returning a span lets the label measure against the space it actually has.
+   * The swallowed cells are not drawn, so a column that DOES carry a figure on that row must not
+   * be spanned over.
+   */
+  span?: (row: T) => number;
   /** Target page for an internal link on this cell, when it is already known. */
   linkTo?: (row: T) => number | undefined;
   /**
@@ -780,15 +790,34 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
     const baseColor =
       kind === "grand" ? BRAND.white : kind === "muted" ? BRAND.grey2 : BRAND.navy;
 
+    /**
+     * Cells swallowed by a `span` to their left — see `PdfColumn.span`.
+     *
+     * A heading row whose neighbouring cells are EMPTY should be allowed to use that space rather
+     * than ellipsize against it: a section named "DASS EMBROIDERY PRIVATE LIMIT…" sitting beside
+     * three blank date columns is losing its name to nothing at all.
+     */
+    const spanned = new Set<number>();
     columns.forEach((c, i) => {
+      const n = c.span?.(row) ?? 1;
+      for (let k = 1; k < n && i + k < columns.length; k++) spanned.add(i + k);
+    });
+
+    columns.forEach((c, i) => {
+      if (spanned.has(i)) return;
       const right = (c.align ?? "left") === "right";
       const bold =
         kind === "grand" || kind === "total" || kind === "band" || kind === "subtotal" ||
         kind === "big" || kind === "ledger";
       const color = (kind === "grand" ? undefined : c.color?.(row)) ?? baseColor;
       const raw = c.value(row);
-      const shown = ellipsize(pdf, raw, widths[i] - pad * 2, bodySize, bold);
-      const tx = right ? xs[i] + widths[i] - pad : xs[i] + pad;
+      // The cell's own width, plus any it swallows. Reaches to the far edge of the last spanned
+      // column, so a spanning cell measures against the space it actually occupies.
+      const span = c.span?.(row) ?? 1;
+      const last = Math.min(i + span - 1, columns.length - 1);
+      const cellW = xs[last] + widths[last] - xs[i];
+      const shown = ellipsize(pdf, raw, cellW - pad * 2, bodySize, bold);
+      const tx = right ? xs[i] + cellW - pad : xs[i] + pad;
       text(pdf, shown, tx, y + rowH - 4.5, { size: bodySize, bold, color, align: right ? "right" : "left" });
 
       const target = c.linkTo?.(row);
