@@ -4,9 +4,10 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { SectionHeading } from "@/shared/components/ui/Readout";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
-import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
+import { exportSheetsToXlsx } from "@/shared/lib/exportXlsx";
 import { useAssetStore } from "../../store";
-import { IMPORT_COLUMNS, buildImportPlan, type ImportPlan } from "../../lib/importAssets";
+import { buildImportPlan, type ImportPlan } from "../../lib/importAssets";
+import { TEMPLATE_NOTES, buildTemplateSheets } from "../../lib/importTemplate";
 
 /**
  * Bulk-load the existing asset register from Excel.
@@ -49,63 +50,25 @@ export default function ImportAssets() {
   );
 
   const downloadTemplate = () => {
-    exportRowsToXlsx({
+    exportSheetsToXlsx({
       fileName: "Asset_Import_Template",
-      sheetName: "Assets",
       title: "Asset import template",
-      rows: [
-        {
-          "Asset name": "Honda City",
-          Category: "Vehicle",
-          Make: "Honda",
-          Model: "ZX CVT",
-          "Serial / registration no.": "MH12AB1234",
-          Company: "",
-          Location: "Head Office",
-          Department: "",
-          "Custodian email": "someone@orangeotec.com",
-          "Purchase date": "10-01-2026",
-          "Purchase cost": "1450000",
-          "Bought from": "",
-          "Invoice no.": "INV-9911",
-          "Warranty months": "24",
-          Condition: "In Use",
-          "Usage unit": "KM",
-          "Current reading": "18400",
-          Remarks: "",
-          Track: "Insurance",
-          "Track next due": "14-03-2027",
-          "Track repeats every": "1",
-          "Track repeat unit": "years",
-          "Track remind days ahead": "45",
-          "Track reference no.": "POL-2026-77",
-          "Track provider": "ICICI Lombard",
-          "Track amount": "28400",
-        },
-        {
-          "Asset name": "Honda City",
-          Category: "",
-          Make: "",
-          Model: "",
-          "Serial / registration no.": "MH12AB1234",
-          Company: "", Location: "", Department: "", "Custodian email": "",
-          "Purchase date": "", "Purchase cost": "", "Bought from": "", "Invoice no.": "",
-          "Warranty months": "", Condition: "", "Usage unit": "", "Current reading": "", Remarks: "",
-          Track: "Periodic Service",
-          "Track next due": "05-08-2026",
-          "Track repeats every": "6",
-          "Track repeat unit": "months",
-          "Track remind days ahead": "15",
-          "Track reference no.": "", "Track provider": "", "Track amount": "",
-        },
-      ],
-      columns: IMPORT_COLUMNS.map((c) => ({ header: c, value: (r: Record<string, string>) => r[c] ?? "" })),
-      notes: [
-        "One row = one asset. To give an asset several tracks, repeat the row with the SAME serial number and different Track columns — the second row only adds the track.",
-        "Master columns (Category, Make, Location, Condition, Usage unit, Bought from, Company, Department, Track) must match an existing master by name. Load the masters first.",
-        "Dates may be dd-mm-yyyy, yyyy-mm-dd, or a real Excel date.",
-        "Track repeat unit: days, months, years or one time.",
-      ],
+      // Data Entry is deliberately the FIRST sheet: parseXlsxRows reads the first
+      // sheet that is not "About this export", so any other order would have the
+      // importer parsing the instructions.
+      sheets: buildTemplateSheets({
+        categories: s.categories,
+        makes: s.makes,
+        companies: s.companies,
+        locations: s.locations,
+        vendors: s.vendors,
+        conditions: s.conditions,
+        usageUnits: s.usageUnits,
+        scheduleTypes: s.scheduleTypes,
+        departments: s.departments,
+        activeOf: s.activeOf,
+      }),
+      notes: TEMPLATE_NOTES,
     });
   };
 
@@ -186,9 +149,10 @@ export default function ImportAssets() {
       <Card className="space-y-3 p-5">
         <SectionHeading>1 · Get the template</SectionHeading>
         <p className="text-[13px] text-grey">
-          Master columns must match an existing master <strong>by name</strong> — load Masters first,
-          or those rows will be rejected. One row is one asset; repeat the row with the same serial
-          number to add a second track.
+          Four tabs: fill in <strong>Data Entry</strong>, follow <strong>Sample (filled)</strong>, and
+          keep to the values on <strong>Picklists</strong> — those are read live from the masters, and a
+          name that is not on them is rejected. One row is one asset; repeat the row with the same
+          serial number to add a second track.
         </p>
         <div><Button variant="ghost" size="sm" onClick={downloadTemplate}>Download template</Button></div>
       </Card>
