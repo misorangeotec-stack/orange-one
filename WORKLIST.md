@@ -1856,6 +1856,29 @@ still ends at 22-Aug — because other fixes are pending first. Sending it later
 
 ---
 
+**⚠ The 29-Aug slot is being served LATE, at 18:30 IST, by two ONE-OFF cron jobs.** On the user's
+explicit instruction (29-Aug). They remove themselves; if you are reading this after 29-Aug-2026 and
+they still exist, something went wrong.
+
+| job | when | what |
+|---|---|---|
+| `collections-report-catchup-open` | `55 12 29 8 *` (18:25 IST) | `grace_minutes` 120 → **660**, so the 08:00 slot may be served until 19:00 IST |
+| `collections-report-catchup-close` | `30 14 29 8 *` (20:00 IST) | grace back to **120**, then unschedules both |
+
+**The schedule itself is NOT touched** — it stays weekly Saturday 08:00. Widening the grace is the
+honest lever here: it means exactly "this missed slot may still be served", which is the situation.
+Changing `hour_ist` would have left next Saturday at 18:30 if the restore ever failed.
+
+**Opened five minutes early on purpose.** The regular `*/15` kick fires at 18:30 IST on the dot; had
+the widening run in the same second it could have read the old grace and skipped the slot for
+another quarter hour.
+
+Checked before arming: slot 08:00, window closes 19:00, kick fires 18:30 (inside), slot unclaimed,
+last kick 11:00 IST so the 20-minute `min_gap_minutes` guard cannot block it. Everything else the
+gate wants — armed, both switches, a Saturday, 63 recipients — was already confirmed.
+
+---
+
 ### RC-10 · The reports are Customer-wise; the dashboard is Customer Group-wise  🔴  `[x]`
 *Raised 2026-08-29 · called critical · **built and verified against live data 2026-08-29** · in the
 working tree, not yet merged to `master`*
