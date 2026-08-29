@@ -74,7 +74,23 @@ export interface PdfKpi {
  * arrive pre-formatted because they are per-customer facts the caller already renders.
  */
 export interface PdfCustomerRow {
+  /**
+   * The customer GROUP's name, undecorated.
+   *
+   * ⚠ Never pre-decorated with the ledger count — `buildPdf`'s tripwire matches this against the
+   *   set of group names in the rep's book, so a "(3)" baked in here would make it throw on the
+   *   very rows it guards. The suffix is applied at draw time from `ledgers` below.
+   */
   name: string;
+  /**
+   * How many ledgers the group holds. Printed as an "ABC GROUP (3)" suffix and ONLY when > 1.
+   *
+   * The screen and the workbook both carry this as a Customers column; the PDF has no room for one
+   * (the name column is the tightest thing on the page and a truncated ledger name is the one thing
+   * a reader cannot reconstruct), so it rides along with the name instead. Optional so a caller
+   * that has no count still renders — the suffix is simply omitted.
+   */
+  ledgers?: number;
   outstanding: number;
   overdue: number;
   lastReceipt: string;
@@ -99,6 +115,15 @@ export interface PdfCustomerRow {
 
 /** One line on a customer's bill page. `overdueDays` is null on the On Account credit line. */
 export interface PdfBillRow {
+  /**
+   * The ledger this bill sits in — set ONLY when its group holds more than one.
+   *
+   * A group's bill page can span several ledgers, and without this they merge into a single list
+   * with nothing to distinguish them, which is the reader's very next question. Left undefined on
+   * a single-ledger group (the large majority), where it would repeat the page heading on every
+   * line; the column is dropped entirely when no row carries it.
+   */
+  ledger?: string;
   number: string;
   date: string;
   /**
@@ -523,6 +548,22 @@ interface AppendixRow extends PdfCustomerRow {
   salesperson: string;
 }
 
+/**
+ * A group's printed label: its name, plus how many ledgers it holds when that is more than one.
+ *
+ * The rows are customer GROUPS, and most groups are a single ledger — so "(3)" is shown only where
+ * it says something. Without it a four-ledger group is indistinguishable from a lone customer, and
+ * the reader has no way to tell that the figure in front of them covers several accounts. The
+ * screen and the workbook answer this with a Customers column; the PDF has no width to spare for
+ * one, so it rides on the name.
+ *
+ * Applied HERE and never upstream: `PdfCustomerRow.name` must stay the bare group name for
+ * `buildPdf`'s tripwire and for `custKey` anchors to keep matching.
+ */
+function groupLabel(r: { name: string; ledgers?: number }): string {
+  return (r.ledgers ?? 0) > 1 ? `${r.name} (${r.ledgers})` : r.name;
+}
+
 /** Every customer in the document, tagged with their salesperson. */
 function allRows(reps: readonly PdfSalespersonBlock[]): AppendixRow[] {
   return reps.flatMap((rep) => rep.rows.map((r) => ({ ...r, salesperson: rep.name })));
@@ -900,10 +941,12 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       kind: "normal" | "muted" | "total";
     }
     const custRows: CustRow[] = shown.map((r) => ({
-      label: r.name,
-      // Only NAMED customers get a link, and only when there are bills behind the name. The
-      // "Remaining N" bucket deliberately gets none: it is not a customer, and a link that lands
+      label: groupLabel(r),
+      // Only NAMED groups get a link, and only when there are bills behind the name. The
+      // "Remaining N" bucket deliberately gets none: it is not a group, and a link that lands
       // on a page about nobody is worse than plain text.
+      // ⚠ Keyed on the BARE `r.name`, not the decorated label — the anchor is registered under the
+      //   same bare name on the bill page, and a "(3)" on one side only would break every link.
       linkKey: r.bills?.length ? custKey(rep.name, r.name) : undefined,
       outstanding: r.outstanding, overdue: r.overdue,
       lastReceipt: r.lastReceipt, lastReceiptAmount: r.lastReceiptAmount,
@@ -926,7 +969,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     // cannot fit is ellipsized — a truncated customer name is the one thing on this page a reader
     // cannot reconstruct. It got wider once the company/branch suffix came off the name.
     const custCols: PdfColumn<CustRow>[] = [
-      { header: "Customer", width: 38, value: (r) => r.label, linkKey: (r) => r.linkKey },
+      { header: "Customer Group", width: 38, value: (r) => r.label, linkKey: (r) => r.linkKey },
       { header: "Outstanding", width: 13, align: "right", value: (r) => money(r.outstanding) },
       {
         header: "Overdue", width: 13, align: "right", value: (r) => money(r.overdue),
@@ -1119,7 +1162,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       kind: "normal" | "muted" | "total";
     }
     const tableRows: AppRow[] = listed.map((r) => ({
-      label: r.name,
+      label: groupLabel(r),
       salesperson: r.salesperson,
       lastReceipt: r.lastReceipt,
       outstanding: r.outstanding,
@@ -1150,7 +1193,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       // Customer takes the most: a truncated ledger name is the one thing on this page a reader
       // cannot reconstruct, and unlike the salesperson-page tables this one also has to fit a
       // salesperson column.
-      { header: "Customer", width: app.showLastReceipt ? 33 : 36, value: (r) => r.label },
+      { header: "Customer Group", width: app.showLastReceipt ? 33 : 36, value: (r) => r.label },
       { header: "Salesperson", width: app.showLastReceipt ? 11 : 18, value: (r) => r.salesperson },
       { header: "Outstanding", width: 12, align: "right", value: (r) => money(r.outstanding) },
       {
@@ -1328,6 +1371,25 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
           : r.bill!.number,
         color: (r) => (r.bill?.isOnAccount ? BRAND.green : undefined),
       },
+      // The LEDGER, and only on a group that holds more than one.
+      //
+      // The rows on the table that linked here are customer GROUPS, so this page can span several
+      // ledgers — and merged into one list with nothing to separate them, "which account is this
+      // bill against?" becomes unanswerable at exactly the moment somebody picks up the phone.
+      // `billsFor` sets `ledger` only for a multi-ledger group, so a single-ledger page (the large
+      // majority) drops the column entirely rather than repeating its own heading down every row.
+      //
+      // Column widths are ratios normalised across the set (`totalRatio` in pdfBrand), so adding
+      // one here simply rescales the rest — no other width needs touching.
+      ...(bills.some((b) => b.ledger)
+        ? [{
+            header: "Ledger", width: 20,
+            // Blank on band, subtotal and TOTAL rows: those speak in the Bill No column, and a
+            // ledger name against a sale-type subtotal would read as if the subtotal were that
+            // ledger's.
+            value: (r: BillLine) => (r.bill ? r.bill.ledger || "" : ""),
+          }]
+        : []),
       // 13, not 12: a dd-mm-yyyy of all-wide digits needs ~47pt of cell and 12 gives 47 exactly,
       // so some dates ellipsized and others did not. See the Last Receipt column's note.
       { header: "Bill Date", width: 13, align: "right", value: (r) => (r.bill ? r.bill.date || NIL : "") },
