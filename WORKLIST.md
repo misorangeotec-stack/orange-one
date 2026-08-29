@@ -2604,9 +2604,11 @@ else. Watchdog alert requeued → `sent`. Gate simulated at 05-Sep 07:59 / 08:00
 had ever queued a mail. Done on the user's explicit go-ahead; the mailer had been two commits behind
 `master` since 22-Aug.
 
-**⚠ Still open: the 29-Aug slot was never served.** It is deliberately **not** claimed — the send log
-still ends at 22-Aug — because other fixes are pending first. Sending it later needs
-`grace_minutes` widened, since the gate reads `missed` and `entry.ts` returns on `due:false`.
+**The 29-Aug slot went unserved all day and is being caught up at 18:30 IST** — see the two one-off
+cron jobs described under RC-10. It was held deliberately (the send log still ended at 22-Aug) while
+the group-wise rework was proved, then released on the user's instruction. Serving it late needs
+`grace_minutes` widened, because the gate reads `missed` and `entry.ts` returns on `due:false` — a
+plain re-run refuses.
 
 ---
 
