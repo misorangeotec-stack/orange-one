@@ -44,6 +44,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | The R&D flow and the form | Factory team | **RD-1** | 2026-08-20 |
 | The COA sample PDF + the raw Excel sheet | Factory team | **PE-3** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
+| The filled asset register sheet (vehicles, IT, air conditioners) | Ritesh Bhai / Finance | **AM-2** | 2026-08-29 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
 
 ---
@@ -1140,6 +1141,50 @@ Reports, Masters, Master Requests, Settings, System.
   asset. Does the factory's daily QC calibration belong here, or standalone in Production?
 - **PC-1** — the coordinator's single approval queue. This module has its own Master Requests and
   its own per-FMS `process_coordinators` list.
+
+### AM-2 · Load the real asset register from the field  `[~]`
+*Raised 2026-08-29 · **Template built and sent, waiting on Finance to fill it.***
+
+The register holds 10 rows, 9 of them seeded `[TEST DATA]`. Until the real assets are in, the
+module reminds nobody about anything. Ritesh Bhai asked for a sheet to fill in, so the collection
+template is the deliverable and the bulk importer is how it comes back.
+
+**Done:**
+- `Asset Data Collection Template.xlsx` at the repo root (untracked). Four tabs — Data Entry
+  (blank, dropdowns, frozen header), Read Me, Sample (filled), Picklists. Regenerate with
+  `npm run asset-template`; the generator is
+  [build-asset-template.mjs](frontend/scripts/build-asset-template.mjs) and it **asserts its
+  columns against `IMPORT_COLUMNS`**, so it cannot drift from the importer.
+- The importer gained a **`Reading as on`** column (a meter reading with no date is a guess) and
+  now **skips wholly blank rows** — without that the 2000-row validated grid opens the preview
+  with a screen of red. [importAssets.ts](frontend/src/apps/asset-maintenance/lib/importAssets.ts).
+- The in-app **Download template** button now emits the same four tabs off the live masters
+  ([importTemplate.ts](frontend/src/apps/asset-maintenance/lib/importTemplate.ts)). It had been
+  shipping a worked example whose Location was `"Head Office"` — not a master, so anyone who
+  followed the example got a row the importer rejected.
+- Verified: `npm run build` clean; the real `buildImportPlan` against the real file with live
+  masters gives **3 assets, 7 tracks, 0 rejected**, unchanged with 200 blank rows appended.
+  Nothing was committed to the register.
+
+**Round one is vehicles, IT equipment and air conditioners only.** The other four categories are a
+re-send of the same 27 columns, not a redesign.
+
+**Two traps the Read Me warns about, because neither gives a usable error:**
+- A serial number identifies one physical unit. Give two different assets the same one and the
+  second is absorbed as a track on the first, its details discarded silently.
+- `Warranty months` + a purchase date auto-creates the Warranty Expiry track
+  (`fms_asset_submit_asset`). Adding a Warranty Expiry row as well breaks the
+  `unique (asset_id, schedule_type_id)` key, and the importer swallows that in a bare `catch`.
+
+**When the sheets come back:** add any new makes / locations / vendors as masters *first*, then
+upload — the importer resolves masters by name and rejects anything it does not already hold.
+Note the preview undercounts tracks: the auto-created Warranty Expiry ones never appear in it.
+
+**Before the first real load, two decisions that are not mine to take:**
+- The 9 `[TEST DATA]` assets and their 20 tracks. Removal is destructive and constrained by
+  `on delete restrict` from schedules and jobs.
+- **PF-14** — `fms_asset_step_owners` still holds 0 rows, so a loaded register would have nobody
+  able to action its jobs except an admin.
 
 ---
 

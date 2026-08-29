@@ -35,6 +35,7 @@ export const IMPORT_COLUMNS = [
   "Condition",
   "Usage unit",
   "Current reading",
+  "Reading as on",
   "Remarks",
   "Track",
   "Track next due",
@@ -147,6 +148,14 @@ export function buildImportPlan(records: Record<string, unknown>[], ctx: ImportC
   });
 
   records.forEach((rec, i) => {
+    // A sheet a dozen people have edited carries trailing blank rows, and the
+    // collection template ships with a validated but empty grid beneath the data.
+    // Left alone every one of those becomes an "Asset name is required" rejection,
+    // so the first thing anyone sees in the preview is a screen of red for rows
+    // they never filled in. Skipped before planning, never counted as invalid.
+    // The index still advances, so rowNo keeps pointing at the real line in the sheet.
+    if (Object.values(rec).every((v) => String(v ?? "").trim() === "")) return;
+
     const problems: string[] = [];
     const rowNo = i + 2; // header is row 1
     const name = text(rec["Asset name"]);
@@ -189,6 +198,11 @@ export function buildImportPlan(records: Record<string, unknown>[], ctx: ImportC
 
     const purchaseDate = parseDateCell(rec["Purchase date"]);
     if (text(rec["Purchase date"]) && !purchaseDate) problems.push("Purchase date is not a date");
+
+    // A meter reading with no date attached decays into a guess the moment it is
+    // filed, so the reading and the date it was taken travel together.
+    const readingAsOn = parseDateCell(rec["Reading as on"]);
+    if (text(rec["Reading as on"]) && !readingAsOn) problems.push("Reading as on is not a date");
 
     // ---- the optional track on this row ----
     const trackName = text(rec.Track);
@@ -255,6 +269,7 @@ export function buildImportPlan(records: Record<string, unknown>[], ctx: ImportC
         condition_id: conditionId,
         usage_unit_id: usageUnitId,
         current_usage: numCell(rec["Current reading"]),
+        usage_as_on: readingAsOn ?? "",
         remarks: text(rec.Remarks),
       };
       if (serialRaw) seenSerials.add(serialKey);
