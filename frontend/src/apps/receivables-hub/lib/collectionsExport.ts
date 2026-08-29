@@ -43,12 +43,23 @@ export const OVERLAP_NOTE =
   "each of their files, so a set of these does not add up to the consolidated report.";
 
 /**
- * The workbook is ALWAYS Salesperson → Customer, whatever the screen is grouped by.
+ * The artefacts are ALWAYS Salesperson → Customer Group, whatever the screen is grouped by.
  *
- * The report opens on Salesperson → Customer Group, which never names a customer — and a customer
- * name is the one thing the person receiving the file needs in order to act on it.
+ * ⚠ THIS USED TO SAY "Customer", AND THE DOCUMENT SAID OTHERWISE. `reportSpec.ts` asks for
+ *   `groupBy: ["salesperson","group"]` and every artefact prints "Salesperson → Customer Group" as
+ *   its view label — but the export ignores `req.groupBy` and grouped by CUSTOMER, so every file
+ *   that has ever left the building was mislabelled. The dashboard's own default view is
+ *   Salesperson → Customer Group; these now agree with it and with their own heading.
+ *
+ * Every caller (ExportMenu, EmailReportDialog, SalespersonExportDialog, and the scheduled send)
+ * passes a SCOPE and never dims, so this constant is the single place that decides the grain for
+ * all four paths at once. That is deliberate — it is why they cannot drift apart.
+ *
+ * The ledger name is not lost: the workbook's bill-by-bill sheet carries `customerName` AND
+ * `groupName` on every row, and a group holding more than one ledger names them on its bill page
+ * (see `billsFor`) and carries a count suffix in the PDF (see `customerRowsOf`).
  */
-const EXPORT_DIMS = ["salesperson", "customer"] as const;
+const EXPORT_DIMS = ["salesperson", "group"] as const;
 
 /**
  * Heaviest first, applied at EVERY level of the exported tree.
@@ -142,12 +153,17 @@ function lastReceiptText(ordinal: number): string {
 }
 
 /**
- * Customer rows for a PDF block, taken from the leaf nodes of a roll-up tree.
+ * Customer GROUP rows for a PDF block, taken from the leaf nodes of a roll-up tree.
  *
  * `n.sub` — the trading company and branch, e.g. "Enterprise / Colorix · Surat" — is deliberately
  * NOT carried through. It is internal structure that means nothing to the person working the call
  * list, and appending it to every name made the widest column twice as wide and pushed real names
  * into an ellipsis. It survives per bill on the workbook's Overdue Bill Details tab.
+ *
+ * ⚠ `name` IS THE BARE GROUP NAME AND MUST STAY THAT WAY. The "(3)" ledger count is `ledgers`, a
+ *   separate field the renderer appends, because `buildPdf`'s tripwire compares `name` against the
+ *   set of group names in the rep's book — a decorated name would fail that check on exactly the
+ *   multi-ledger rows it exists to guard.
  */
 function customerRowsOf(
   nodes: GroupNode<ZCMetrics>[],
@@ -155,15 +171,25 @@ function customerRowsOf(
 ): PdfCustomerRow[] {
   return nodes.map((n) => ({
     name: n.label,
+    // How many ledgers this group holds. The screen shows it as a Customers column and the workbook
+    // carries it as a column too; the PDF has no room for one (the name column is already the
+    // tightest thing on the page), so the renderer prints it as a suffix and only when it is > 1.
+    // Without it a four-ledger group is indistinguishable from a single ledger.
+    ledgers: n.metrics.customers,
     outstanding: n.metrics.outstanding,
     overdue: n.metrics.overdue,
     lastReceipt: lastReceiptText(n.metrics.lastReceiptAt),
+    // ⚠ ON A MULTI-LEDGER GROUP THIS IS A SUM of each ledger's last receipt, while `lastReceipt`
+    //   above is the LATEST of their dates (`addMetrics`: summed vs Math.max) — so the money and
+    //   the date can describe different ledgers. Inherited from the screen, which aggregates the
+    //   same way; left alone deliberately so mail and dashboard agree.
     lastReceiptAmount: n.metrics.lastReceiptAmount ? fmtINRMoney(n.metrics.lastReceiptAmount) : "-",
+    // At group grain these read "ANY ledger in this group", not "this customer".
     neverPaid: n.metrics.neverPaid > 0,
     over180: n.metrics.over180,
     // Read off the SAME summed metric the card counts, so the Still Buying appendix cannot list a
-    // different set from the number that links to it. `stillBuying` is already 0/1 per customer
-    // (makeMetricsOf), so at customer grain this is exactly the flag.
+    // different set from the number that links to it. `stillBuying` is 0/1 per customer
+    // (makeMetricsOf), so summed over a group `> 0` means at least one member is still buying.
     stillBuying: n.metrics.stillBuying > 0,
     salesInWindow: n.metrics.salesInWindow,
     bills: bills(n),
@@ -171,12 +197,17 @@ function customerRowsOf(
 }
 
 /**
- * The open past-due bills behind one customer's Overdue figure.
+ * The open past-due bills behind one customer group's Overdue figure.
  *
  * Built with the SAME `buildDrillRows` the on-screen popup and the workbook's bill tab use, which
  * is what keeps three renderings of the same money in agreement. That includes the negative On
  * Account line: the bills are gross, the report's Overdue is net, and without that line a
- * customer's page sums to more than the figure that sent the reader to it.
+ * group's page sums to more than the figure that sent the reader to it.
+ *
+ * ⚠ A GROUP'S PAGE CAN SPAN SEVERAL LEDGERS, so each bill names the ledger it belongs to — but only
+ *   when there is more than one, since on a single-ledger group (the large majority) the column
+ *   would repeat the page's own heading on every line. Without it, three ledgers' bills merge into
+ *   one list with nothing to tell them apart, which is precisely the person's next question.
  */
 function billsFor(
   node: GroupNode<ZCMetrics>,
@@ -184,7 +215,9 @@ function billsFor(
   ctx: CollectionsExportContext,
 ): PdfBillRow[] {
   const { rows } = buildDrillRows(node.ids, rowsById, ctx.customerDetail, "overdue");
+  const multiLedger = node.ids.length > 1;
   return rows.map((r) => ({
+    ledger: multiLedger ? r.customerName : undefined,
     // Just "On Account", not the workbook's fuller "On Account (paid, tagged to no bill)": that
     // label is 36 characters and would be ellipsized into meaninglessness in a Bill No column
     // sized for bill numbers. The PDF explains it in a line under the table instead.
@@ -282,7 +315,7 @@ const scopedRows = (ctx: CollectionsExportContext, scope: ExportScope): ZCRow[] 
 const scopeSuffix = (scope: ExportScope): string | undefined =>
   scope.kind === "all" ? undefined : scope.name;
 
-/** The workbook for a scope: roll-up at Salesperson → Customer + the bills behind Overdue. */
+/** The workbook for a scope: roll-up at Salesperson → Customer Group + the bills behind Overdue. */
 export function buildXlsx(ctx: CollectionsExportContext, scope: ExportScope): { blob: Blob; filename: string } {
   const rows = scopedRows(ctx, scope);
   const tree = buildGroupTree<ZCRow, ZCMetrics>(rows, [...EXPORT_DIMS], exportOpts(ctx));
@@ -294,7 +327,7 @@ export function buildXlsx(ctx: CollectionsExportContext, scope: ExportScope): { 
     ...ctx.meta,
     dims: [
       { key: "salesperson", label: "Salesperson" },
-      { key: "customer", label: "Customer" },
+      { key: "group", label: "Customer Group" },
     ],
     description:
       scope.kind === "all"
@@ -348,9 +381,9 @@ export async function buildPdf(
     }));
     total = totalsOf(tree.total);
   } else {
-    // One rep: group by customer only, so the single block is titled with the REP's own name
+    // One rep: group by customer GROUP only, so the single block is titled with the REP's own name
     // rather than the combined "A, B" bucket a shared customer would otherwise impose on it.
-    const tree = buildGroupTree<ZCRow, ZCMetrics>(rows, ["customer"], exportOpts(ctx));
+    const tree = buildGroupTree<ZCRow, ZCMetrics>(rows, ["group"], exportOpts(ctx));
     total = totalsOf(tree.total);
     blocks = [{
       name: scope.name,
@@ -364,16 +397,26 @@ export async function buildPdf(
 
     // The second tripwire, over the ASSEMBLED DOCUMENT rather than its input.
     //
-    // `assertOnlyTheirs` checked the rows going in; this checks the customers actually coming out,
-    // so a roll-up that reached past its own row set (a tree built from the wrong ids, a leaf
-    // pulling from ctx.customerDetail) is caught too. The two are deliberately independent: one
-    // guards the filter, the other guards everything between the filter and the page.
-    const allowed = new Set(rows.map((r) => r.customer.name));
+    // `assertOnlyTheirs` checked the rows going in; this checks what actually comes out, so a
+    // roll-up that reached past its own row set (a tree built from the wrong ids, a leaf pulling
+    // from ctx.customerDetail) is caught too. The two are deliberately independent: one guards the
+    // filter, the other guards everything between the filter and the page.
+    //
+    // ⚠ COMPARED ON THE GROUP NAME, BECAUSE THE LEAVES ARE GROUPS. It read `r.customer.name` while
+    //   the tree grouped by customer; the moment the grain moved to `group` the two vocabularies
+    //   stopped matching and the FIRST multi-ledger group would throw here — turning a working
+    //   report into "nothing has been written or sent" for every rep who has one. It is the same
+    //   resolver the tree itself uses (`r.group`), so they cannot disagree again.
+    //
+    // ⚠ AND IT IS WHY `PdfCustomerRow.name` STAYS THE BARE GROUP NAME. The renderer appends the
+    //   "(3)" ledger count; baking that into `name` here would break this guard for exactly the
+    //   rows it exists to check.
+    const allowed = new Set(rows.map((r) => r.group));
     const printed = blocks[0].rows.find((r) => !allowed.has(r.name));
     if (printed) {
       throw new Error(
         `Refusing to build the report for ${scope.name}: the customer table lists ${printed.name}, ` +
-        `who is not in their book. Nothing has been written or sent.`,
+        `which is not a customer group in their book. Nothing has been written or sent.`,
       );
     }
     if (blocks.length !== 1 || blocks[0].name !== scope.name) {
