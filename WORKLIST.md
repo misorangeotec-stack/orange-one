@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-27
+**Last updated:** 2026-08-29
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -1948,6 +1948,31 @@ Note the preview undercounts tracks: the auto-created Warranty Expiry ones never
 
 ---
 
+### MS-2 · Credit terms in the masters are half-filled, and the ₹1 flag is stale  `[ ]`
+*Raised 2026-08-29 · the data half of **RC-8**, which builds the report that surfaces this*
+
+**RC-8** gives Finance the list. This is the cleanup it will point at, and it is Accounts' call, not
+a build.
+
+`mst_parties` carries one row per ledger per Tally company — 7,886 rows, 6,424 names, 5 companies —
+and **1,043 names live in more than one company** (424 customers). Credit **days** are set in some
+books and blank in others for **117** names, credit **limit** for **130**; where set in every book
+the values still disagree for **28** (days) and **136** (limit). **180 of the 424** multi-company
+customers have at least one gap.
+
+**To discuss with Accounts:**
+- [ ] **Is blank always wrong?** A book that never sells to a party needs no limit. VAIBHAV
+      ENTERPRISES argues for weighting by activity: the book holding ₹16 lakh overdue matters, the
+      one holding −₹92 does not.
+- [ ] **136 names carry different limits in different books** — deliberate per-company exposure, or
+      drift nobody has looked at?
+- [ ] **The 184 rows still flagged ₹1 in Tally** — only 12 are on the Red Mark master. Clean them up
+      so ₹1 means something again, or leave them and teach every reader to ignore ₹1?
+- [ ] **Who fixes it** — Accounts correct it in Tally and the next sync carries it across, or may the
+      portal hold a credit term of its own? Today the field is read-only by design.
+
+---
+
 ## FMS Control Center
 
 *(cross-ref: **PC-1** above — decide whether this stays alongside the new dashboard)*
@@ -2523,6 +2548,101 @@ The Zero-Collection report itself is built. Live handover doc:
 [RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md).
 
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
+
+---
+
+### RC-8 · Credit days and credit limit are not set for most customers, and differ book to book  `[ ]`
+*Raised 2026-08-29 · off a check on VAIBHAV ENTERPRISES · cross-ref **MS-2** (the masters half of this)*
+
+**VAIBHAV ENTERPRISES** was checked: credit days and credit limit filled in for one company, blank
+for the others. It is one ledger in four books, and only the smallest carries a term.
+
+| Company | Credit limit | Credit days | Outstanding |
+|---|---|---|---|
+| O-tec — Noida | ₹40,000 | **15 Days** | ₹28,792 |
+| Enterprise — Noida | ₹16,51,000 | — | **₹16,01,201, all overdue** |
+| Enterprise — Surat | ₹1 *(a flag, not a limit)* | — | ₹0 |
+| O-tec — Surat | ₹1 *(flag)* | — | −₹92 |
+| O-tec — Surat · `VAIBHAV ENTERPRISES MACHINE` | ₹1 *(flag)* | — | ₹4,00,000 |
+
+The book holding **₹16 lakh, all of it overdue**, has no credit days at all — so no rule can call
+anything there late.
+
+**It is not one party.** Measured on the source the report reads — `collection_customer_snapshot`,
+all 1,854 customer rows, one per ledger per book, resolved to companies through `ext_company_map`:
+
+| Company — Location | Rows | Neither set | Days missing | Limit missing | Set on the bills | Complete |
+|---|---|---|---|---|---|---|
+| O-tec — Surat | 1,189 | **604** | 68 | 144 | 93 | 280 |
+| Enterprise — Surat | 303 | 53 | 2 | 41 | 20 | 187 |
+| O-tec — Noida | 176 | 36 | 10 | 26 | 7 | 97 |
+| Enterprise — Noida | 105 | 15 | 1 | 31 | 8 | 50 |
+| Colorix — Surat | 81 | 23 | 10 | 16 | 14 | 18 |
+| **Total** | **1,854** | **731** | **91** | **258** | **142** | **632** |
+
+**The genuinely uncontrolled money is ₹1.42 Cr**, not the ₹24 Cr a ledger-only reading gives — see
+the bill-wise trap below, which is the single most important thing on this entry. And the Vaibhav
+pattern: 391 customer names appear in more than one book, and **206 records** are missing a term the
+same customer already holds in another book — ₹5.33 Cr outstanding, ₹2.10 Cr of it overdue. Those
+are demonstrably an oversight rather than a deliberate no-credit book, and they are one filter click.
+
+**It is Tally's data, not our sync** — confirmed row-for-row against the mirror's `v_ledger_detail`.
+Fixing the data is **MS-2**; this entry is the report that shows Finance where to look.
+
+**What we are building.** *Credit Terms Not Set* — Outstanding Dashboard → Reports → Receivables, at
+`reports/credit-terms`. Two panels: a **company-wise** summary (one row per company + location, with
+the counts above and the money owed with nothing set) and the **customer-wise** list beneath it,
+every column sorting and filtering, filters cascading, 25 a page, Excel out in two sheets.
+**Filters by sale type** — Ink / Paper / Spare Parts / Machine / Head / Other, a customer matching on
+open outstanding or sales, with the mix shown per row: Spare Parts alone is 355 customer records, 80%
+of them fully set up. A **Has outstanding** toggle drops the 1,131 ledgers sitting at exactly
+zero — 1,080 rows become 140, which is the list somebody can actually work through — and a **Last
+activity** column (newest receipt or bill; dormant ledgers read "—") says whether a gap is worth
+chasing at all. **Every figure in the company panel is a drill-down**: click a count and the
+list below becomes exactly those customers (604 -> 604 rows), click it again to come back. Clicking
+the money column also switches the balance filter to *owes money*, because that column sums positive
+balances only — without that the ₹82.47 L cell landed on a list whose own total read −₹3.42 Cr,
+having dragged back in the credit balances the figure deliberately excludes. A zero count is inert:
+it could only ever land on an empty table. The five status columns are mutually exclusive and add up to Customers; the panel
+says so, and each Customers cell carries the sum as a tooltip so a future change cannot break it
+quietly. Default view is the gaps, sorted by outstanding, so the largest exposure with
+no terms is the first line; one
+click on the filter chip widens it to the full customer list. Reads `useAppData().allCustomers` — no
+new fetcher, no migration, no schema change.
+
+**⚠ Four traps, all of which bite a naive reading of this data.**
+1. **🔴 CREDIT DAYS LIVE IN TWO PLACES, AND THE LEDGER IS ONLY ONE OF THEM.** A bill carries its own
+   `BILLCREDITPERIOD` — "45 Days", or an explicit date like "5-May-26" — typed at invoice entry;
+   61,410 such values are stored. **142 ledgers here hold no master credit period while their open
+   bills each carry a due date.** Reading the ledger alone called every one of them "Days missing".
+   BISHEN DYEING (MACHINE) — 44 open bills, ₹4.62 Cr, a machine instalment schedule due 15-Apr,
+   15-May, 15-Jun — was the report's number-one offender and is perfectly controlled. Correcting
+   this took "owed with nothing set" from **₹24.32 Cr to ₹1.42 Cr**: the ledger-only reading
+   overstated the problem by seventeen times. They now carry their own status, **Set on the bills**,
+   which is visible but deliberately outside the default gap view. *(Caught in review on 29-08-2026, after the
+   report had already been built and verified — the ledger-only reading looked entirely plausible.)*
+2. **Tally stores a debtor's credit limit as a NEGATIVE (Cr) amount.** 817 of `mst_parties`' rows are
+   negative against 123 positive. A `credit_limit > 0` test calls 817 real limits "blank".
+3. **A limit of ₹1 is a flag, not a limit** — 184 rows. Tally reads 0/blank as *no credit control at
+   all*, so Accounts used ₹1, the smallest figure that any sale breaches, to mean "blocked". It once
+   drove the Red Mark badge; `ext_redmark` replaced it and now holds 54 ledgers, **only 12 of which
+   overlap the 184**. So on Live a ₹1 row is NOT a Red Mark customer and must never be labelled one.
+   The report treats `creditLimit <= 1` as not set and shows a "₹1 flag (Tally)" chip, never a rupee.
+4. **Money owed must sum POSITIVE balances only.** Netting credit balances in flips a whole company:
+   Colorix reads +₹0.83 Cr owed against a net of −₹4.03 Cr. An advance is not negative exposure.
+
+**⚠ A new report reaches nobody until an admin grants it.** `profiles.receivables_allowed_reports` is
+an allow-list — the opposite polarity to the menu deny-list, deliberately: *a new menu reaches
+everyone until it is hidden, a new report reaches no one until it is granted*
+([reportAccess.ts](frontend/src/apps/receivables-hub/lib/reportAccess.ts)). After deploy, tick
+**Credit Terms Not Set** for each finance user in Admin → User form. Admins see it at once.
+
+**To discuss:**
+- [ ] Who on the finance team gets the grant.
+- [ ] Should this go out on a schedule, like the Collection report? Not wired — `emailable` is only
+      set in the same commit that wires an Email action and someone has actually read the output.
+
+---
 
 ---
 
