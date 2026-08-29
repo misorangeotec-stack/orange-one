@@ -123,8 +123,9 @@ Two things bit on the way, both worth knowing:
 
 ### 2.2 The timer — ✅ done, split between the database and the runner
 
-There is **no `pg_cron` job**, and the reason is the same one: nothing in Postgres or in an Edge
-Function can build this report, so a Postgres timer would have nothing to call.
+> **⚠ SUPERSEDED 29-Aug-2026 — THE WAKING NOW LIVES IN `pg_cron`. See §2.2a below.**
+> This section still describes how the *decision* is made, which is unchanged. What changed is who
+> does the waking: GitHub's own scheduler proved unreliable enough to miss a slot outright.
 
 Instead the workflow ticks every 30 minutes and asks
 **`collections_report_due()`** — one SECURITY DEFINER function that is the single answer to "should
@@ -150,13 +151,55 @@ the schedule or the list takes effect at the next tick, with no deploy.
   ships **`false`** and flipping it is a deliberate act:
   `select set_collections_report_armed(true);`
 
-**Timing, honestly:** GitHub's scheduler can run several minutes late under load, so an 08:00 slot
-goes out shortly after 08:00, not on the second. `grace_minutes` is what lets a late tick still
-serve it.
-
 **And one silent failure mode worth knowing:** GitHub disables a scheduled workflow after **60 days
 with no commits to the repository**, emailing the owner. This repo is under daily development, so
 it is unlikely — but it stops rather than fails, which is the kind worth writing down.
+
+### 2.2a The waking moved to `pg_cron` — 29-Aug-2026
+
+**Why: GitHub's scheduler did not merely run late, it stopped.** Ticks actually fired, against 48/day
+expected from `*/30`:
+
+| 22-Aug | 23-Aug | 24-Aug | 25-Aug | 26-Aug | 27-Aug | 28-Aug | 29-Aug |
+|---|---|---|---|---|---|---|---|
+| 40 | 39 | 29 | 31 | 18 | **3** | **2** | **1** |
+
+On **Saturday 29-Aug the 08:00 IST slot was missed.** The last tick before it ran at 06:53 IST and
+the next never came, so the 120-minute grace expired at 10:00 IST having had **zero** opportunities.
+Nothing was misconfigured — replaying the gate at 08:05 returns `due:true`, 63 mails. Meanwhile
+pg_cron's `master-report-daily`, scheduled for **the same minute**, fired at `08:00:00 IST` (±40 ms)
+on nine consecutive days including that one.
+
+So the **decision is unchanged** — `collections_report_due()` is still the single answer — but the
+**waking** is now `pg_cron`, which keeps time. The runner still draws and sends; it just no longer
+has to remember when.
+
+- `collections-report-kick` (`*/15`) → `collections_report_kick()`: asks the same gate, and only if
+  due fires `net.http_post` to GitHub's `workflow_dispatch` API. No HTTP on a quiet tick.
+- `collections-report-watchdog` (`*/30`) → `collections_report_watchdog()`: once the grace window
+  closes with no send-log row, queues a `collections_report_missed` mail to
+  `alert_email`. **This is the part that was missing**: every run reports success, because "not due"
+  is a success, so a missed slot was previously invisible to everyone.
+- Config + token live in `private.collections_report_kick_config` (never Vault — see the migration
+  header). Set with `select set_collections_report_kick_pat('<token>', '<alert email>');`
+- **GitHub's own `*/30` cron is deliberately left in place** as a free backstop. It cannot
+  double-send: `entry.ts` re-asks the gate and the send log claims the slot.
+
+Migration: `supabase/migrations/20261022120000_collections_report_kick.sql` (header carries the full
+reasoning, the four things that break it silently, and the reversal).
+
+**Timing, honestly — revised.** With pg_cron doing the waking, 08:00 IST means 08:00 IST: the job
+fires at 02:30:00 UTC to the millisecond. `grace_minutes` is now a safety net rather than the thing
+the design leans on.
+
+**Testing without sending.** `collections_report_dispatch()` takes a mode, so the whole chain can be
+proved from SQL with nothing leaving the building:
+```sql
+select public.collections_report_dispatch('dry-run');                    -- builds, sends nothing
+select public.collections_report_dispatch('sample', 'you@example.com');  -- one address, slot NOT claimed
+```
+Verify with `select status_code from net._http_response order by id desc limit 1;` — GitHub returns
+**204**.
 
 ### 2.3 Housekeeping — ✅ retention done, ⚠ size guard not
 

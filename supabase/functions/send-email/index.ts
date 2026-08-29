@@ -595,6 +595,70 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
 
+  // ---- the Collection report DID NOT GO OUT --------------------------------
+  // Queued by pg_cron (collections_report_watchdog) once the slot's grace window
+  // has closed with no row in collections_report_send_log.
+  //
+  // ⚠ THIS BRANCH IS THE WHOLE POINT OF THE WATCHDOG. The chain below ends in
+  //   markSkipped(row, "unknown kind ..."), and `receivables_` is NOT in the
+  //   generic prefix list — so without a branch here the one mail that reports a
+  //   silent failure would itself be dropped silently. Tested by queueing a row
+  //   and checking it leaves as `sent`, not `skipped`.
+  //
+  // Deliberately plain: no tiles, no table. It is read on a phone by someone who
+  // needs one fact (nothing went out) and one instruction (what to do about it).
+  if (row.kind === "collections_report_missed") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
+
+    const forDate = str(p.for_date);
+    const dateLabel = forDate ? ddmmyyyy(forDate) : "";
+    const slot = str(p.slot_ist, "08:00");
+    const grace = num(p.grace_minutes) || 120;
+    const reason = str(p.reason, "unknown");
+    const lastKick = str(p.last_kick_at);
+
+    const headline = `Collection report was not sent${dateLabel ? ` on ${dateLabel}` : ""}`;
+
+    const facts = itemList([
+      { name: "Slot", value: `${slot} IST`, meta: dateLabel },
+      { name: "Grace window", value: `${grace} min`, meta: "closed with nothing sent" },
+      { name: "The gate now says", value: reason },
+      ...(lastKick ? [{ name: "Last attempt to wake the runner", value: lastKick }] : []),
+    ]);
+
+    const inner =
+      noteBox(
+        "What this means",
+        "The report was due and nobody received it. Recipients are not aware of this — " +
+          "no failure is recorded anywhere, because a run that never happens cannot fail.",
+      ) +
+      facts +
+      noteBox(
+        "To send it now",
+        "The grace window has closed, so a plain re-run will refuse. Widen grace_minutes " +
+          "first, then dispatch the workflow with mode=scheduled. It cannot double-send: " +
+          "the send log claims the slot.",
+      );
+
+    return {
+      subject: str(row.subject, headline),
+      html: emailShell({
+        eyebrow: "Receivables",
+        headline,
+        inner,
+        tag: "Outstanding Dashboard",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; scheduled send watchdog.<br>You're receiving this because you are the alert address for the Collection report.`,
+      }),
+      text:
+        `${headline}\n\nSlot: ${slot} IST${dateLabel ? ` on ${dateLabel}` : ""}\n` +
+        `Grace: ${grace} min, closed with nothing sent\nGate now says: ${reason}\n` +
+        (lastKick ? `Last attempt to wake the runner: ${lastKick}\n` : ""),
+    };
+  }
+
+
   // ---- the MASTER REPORT one-pager ----------------------------------------
   // Queued two ways, rendered one way:
   //   · pg_cron at 08:00 IST (master_report_enqueue_daily) — no attachments;

@@ -1772,6 +1772,174 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
+### RC-9 · The Saturday send was missed — GitHub's clock stopped  🔴  `[x]`
+*Raised and fixed 2026-08-29 · **Live 2026-08-29, 11:00 IST** · migration
+`20261022120000_collections_report_kick.sql`, `send-email` v30*
+
+**What happened.** The 08:00 IST slot on Saturday 29-Aug **did not go out**, and nobody was told.
+Nothing was misconfigured: replaying the gate at 08:05 returns `due:true`, **63 mails** (4 book + 59
+rep copies), 0 unclaimed. GitHub's `schedule` trigger simply stopped — ticks/day against 48 expected:
+40 → 39 → 29 → 31 → 18 → **3** → **2** → **1**. The last tick before the slot was 06:53 IST; the next
+never came, so the 120-minute grace expired at 10:00 IST with **zero** opportunities.
+
+**The comparison that settled it.** pg_cron's `master-report-daily` is set for **the same minute**
+and fired at `08:00:00 IST` (±40 ms) on nine consecutive days including that one. Same building, two
+clocks; only one keeps time.
+
+**The fix — the waking moved, the deciding did not.** `collections_report_due()` is still the single
+answer. `collections-report-kick` (`*/15`) asks it and, only if due, pokes GitHub's
+`workflow_dispatch` API over `pg_net`. The runner still draws and sends — it must, at ~40s CPU
+against a 2s Edge ceiling. GitHub's own `*/30` cron is **left in place** as a free backstop; it
+cannot double-send.
+
+**The silent-success trap, now closed.** Every run exits *success* — "not due" is a success — and a
+dropped tick creates no run at all, so a missed slot was invisible. `collections-report-watchdog`
+(`*/30`) now queues an alert once the window closes unserved. ⚠ A new outbox `kind` alone is not
+enough: `send-email` ends in `markSkipped(…"unknown kind")` and `receivables_` is not in its generic
+prefix list — the very first alert **was itself silently dropped** until the renderer shipped in v30.
+
+**Proved on live data, nothing at stake:** `dispatch('dry-run')` → GitHub **204**, run built 4 files,
+posted nothing. `dispatch('sample','e.techie4@gmail.com')` → 2 mails, `sent`, PDF + workbook, nobody
+else. Watchdog alert requeued → `sent`. Gate simulated at 05-Sep 07:59 / 08:00 / 08:15 / Fri →
+`not yet` / **due, 63** / due / `not a send day`.
+
+**Deploying `send-email` also carried three other people's undeployed changes live** — OCPI emails
+(committed 23-Aug), HR interview round 2 (26-Aug) and Travel Desk (uncommitted). All additive, none
+had ever queued a mail. Done on the user's explicit go-ahead; the mailer had been two commits behind
+`master` since 22-Aug.
+
+**⚠ Still open: the 29-Aug slot was never served.** It is deliberately **not** claimed — the send log
+still ends at 22-Aug — because other fixes are pending first. Sending it later needs
+`grace_minutes` widened, since the gate reads `missed` and `entry.ts` returns on `due:false`.
+
+---
+
+### RC-10 · The reports are Customer-wise; the dashboard is Customer Group-wise  🔴  `[x]`
+*Raised 2026-08-29 · called critical · **built and verified against live data 2026-08-29** · in the
+working tree, not yet merged to `master`*
+
+**Proved by running the real builder locally in `MODE=dry-run` — 0 mails queued.** Not a mock: the
+same `entry.ts` the runner executes, against live ConnectWave, writing the actual PDF and workbook.
+
+| Check | Result |
+|---|---|
+| `npm run build` | clean (`tsc` strict + vite) |
+| Totals vs the screen | **236 customers · ₹23.57 Cr · ₹14.40 Cr overdue** — identical |
+| Whole book | 236 customers → **225 group rows**, 9 holding >1 ledger |
+| **NAKUL JI** vs the screen's `NAKUL JI (64)` | **64 group rows** from 67 customers — exact |
+| NAKUL JI figures | 67 · ₹6.40 Cr · ₹3.43 Cr overdue · ₹49.12 L On Account — identical |
+| Workbook header | `Salesperson · Customer Group · Customers · …` |
+| PDF header + suffix | "Customer Group"; `DASS DIGITAL (3)`, `SHREE RAMANUJ … (2)` |
+| Multi-ledger bill page | Ledger column separates `DASS EMBROIDER…` from `DASS DIGITAL` |
+| Single-ledger bill page | **no** Ledger column (K3 FABRIC HUB) — the conditional holds |
+| **The tripwire** | NAKUL JI's extract built without throwing — the whole point |
+
+⚠ **`MODE=dry-run` draws one rep's extract** (`firstRepIn(ctx)` in `entry.ts`), which is why a local
+dry-run exercises the per-rep tripwire at all. A run that only built the book would have proved
+nothing about the guard.
+
+**Round 2 — the bill page, off the first sample (29-Aug).** Grouping the rows by customer group
+made a group's bill page span several ledgers, and banding it only by sale type interleaved them:
+46 INK bills from three accounts in one run, told apart by a repeated Ledger column. That page
+cannot be worked — chasing is done one ACCOUNT at a time. So the **ledger opens the section and its
+sale types sit inside it**, with the ledger's own figures carried ON its band (which is what avoids
+a third tier of subtotal rows):
+
+```
+DASS DIGITAL        ₹84.19 L      INK · Subtotal 20 · SPARE PARTS · Subtotal 3 · HEAD · Subtotal 2
+M/S. DASS PRINTS    ₹37.75 L      INK …
+DASS EMBROIDERY     ₹4.57 L       INK …
+```
+
+- **`ledger` is a new `RowKind`** in the shared `pdfBrand` — there was one band weight and this
+  needs two. Same ground as a subtotal but opened by an orange rail rather than closed by a navy
+  rule, which is what tells them apart when a subtotal sits immediately above the next ledger.
+- **The Sale Type column is GONE and paid for the rest.** It repeated its own band on every row —
+  under INK every cell said "Ink", under SPARE PARTS every cell said "Spare Par…", ellipsized
+  because the width it needed was spent restating the heading eight rows above it. Its 13 went to
+  the two date columns (clipping to `03-07-2…`; a truncated date is not a shorter date) and to
+  Bill No, which now also holds a ledger name. **Fixed on width, not by shrinking the type.**
+- **A blank row between a closed section and the next heading** — subtotal and band are both filled
+  rows, so back to back they abutted into one grey slab.
+- A **single-ledger page is unchanged**: no ledger band, no removed column beyond Sale Type, bands
+  where they were.
+
+Verified on the regenerated book: `DASS DIGITAL ₹84.19 L → INK/SPARE PARTS/HEAD → M/S. DASS PRINTS
+→ DASS EMBROIDERY → On Account → TOTAL`, full `dd-mm-yyyy` dates throughout. Samples to
+`e.techie4@gmail.com` at 06:55 and 07:19 IST — book + NAKUL JI, all `sent`, **slot still
+unclaimed** (log still ends 22-Aug).
+
+**Round 3 — a heading may use the empty cells beside it.** `DASS EMBROIDERY PRIVATE LIMIT…` was
+ellipsizing inside its 28/100 column while the three date columns to its right sat **empty on that
+very row** — the name was being lost to nothing at all. New `PdfColumn.span` (shared `pdfBrand`)
+lets a cell say how many columns it occupies ON THIS ROW, so a heading measures against the space
+it actually has. The span stops at Amount, because every heading row here — ledger band, sale-type
+band, subtotal, TOTAL — carries figures in the last three columns; a bill row spans nothing, its
+dates being the point. Verified: the full ledger name prints and **no ellipsis remains** on those
+pages, with bill dates and the band's own figures both intact.
+
+⚠ **Round 1's sample run failed once on `upload` with an empty error message**, after the book had
+already been mailed — the retry succeeded unchanged, so it was transient. But there is **no retry
+around `upload`**, so one flaky storage call aborts a live send partway through. The slot is still
+claimed in a `finally` when anything was queued, so it will not re-send to people who already have
+it — the rest simply never get it, and only the watchdog would notice. Worth a retry (**RC-11**).
+
+**The mismatch, and it is mislabelled rather than merely different.** The dashboard's default view is
+**Salesperson → Customer Group**. Every artefact that leaves the building is **Salesperson →
+Customer** — and prints "Salesperson → Customer Group" at the top of itself anyway.
+
+| Path | Grouped by | Heading printed |
+|---|---|---|
+| Dashboard | **Customer Group** | — |
+| **Export** button | Customer | "Salesperson → Customer Group" |
+| Email report dialog | Customer | "Salesperson → Customer Group" |
+| Per-salesperson dialog | Customer | "Salesperson → Customer Group" |
+| Scheduled Saturday mail | Customer | "Salesperson → Customer Group" |
+
+**One hardcoded line causes all four.** `reportSpec.ts` correctly asks for
+`groupBy: ["salesperson","group"]`, but `collectionsExport.ts` **ignores `req.groupBy`** and uses its
+own `EXPORT_DIMS = ["salesperson","customer"]`. Every caller passes a *scope* only, never dims — so
+the one line fixes all four paths together.
+
+**What does NOT change.** Only non-paying ledgers are grouped: the table only ever holds customers
+who paid nothing, and grouping buckets *those* rows rather than pulling in the rest of a group —
+exactly what the dashboard does. Grand total stays 236 customers / ₹23.57 Cr. The KPI cards keep
+counting **customers**, not groups, because the screen does too (236 customers above 64 group rows).
+Nothing renders blank: `groupNameOf()` resolves by Tally ledger **GUID** — 387 ledger names repeat
+across companies — and falls back to the ledger's own name when unmapped.
+
+**⚠ The tripwire, which is why steps 1-3 cannot ship alone.** `collectionsExport.ts:371-378` guards a
+rep's file against another rep's customer by comparing printed names against `r.customer.name`. Once
+leaves are groups the first multi-ledger group throws and **nothing is sent**. It must be rebuilt
+from `r.group` in the same edit. It is not weakened: it is the second of two independent leak guards
+(`assertOnlyTheirs` checks rows going in, this checks what comes out).
+
+**Two gaps the audit found, without which the change is technically done and practically worse:**
+- The PDF has **no Customers column** (screen and Excel both do), so a 4-ledger group would look
+  identical to a 1-ledger one. Rendered as an `ABC GROUP (3)` suffix, shown only when > 1 — the
+  Customer column is already tight and a truncated ledger name is the worst thing on that page. The
+  suffix must be added by the **renderer**, never baked into the row name, or it breaks the tripwire.
+- A group's **bill page merges bills from several ledgers with no way to tell them apart**.
+  `PdfBillRow` carries no ledger identity though `InvoiceDrillRow.customerName` already has it.
+
+**Decided:** ledger names stay in the Excel bill-by-bill sheet (which already carries `customerName`
+*and* `groupName` per row); the PDF shows group names only, so it does not grow past its 101 pages.
+
+**Behaviour that shifts at group grain** — all inherited from the screen, so matching it keeps mail
+and dashboard in agreement: `Last Receipt ₹` becomes a **sum** of different receipts while
+`Last Receipt` is the **latest** date; `daysSinceLastReceipt` takes the worst member;
+`neverPaid` / `stillBuying` become "**any** ledger in this group"; the Still Buying appendix lists
+groups while its sentence counts customers; the send-log note still counts ledgers.
+
+**Verify:** `npm run build`, then `collections_report_dispatch('dry-run')` (builds the real files,
+sends nothing). ⚠ **A whole-book dry-run does not exercise the tripwire** — it fires only on a
+per-rep file, so prove it with `collections_report_dispatch('sample','e.techie4@gmail.com')`, which
+mails one address and does **not** claim the slot.
+
+Frontend-only: no migration, no Edge Function redeploy; Vercel picks it up on merge to `master`.
+
+---
+
 ### RC-6 · Spare and Head bills read as "Other" on the salesperson report  🔴  `[x]`
 *Raised 2026-08-21 · Feedback from Ritesh Bhai · **Applied live 2026-08-21, 13:54 IST** — four rules
 in (ids 40–43) and the snapshot rebuilt. Moves to [Done](#done) at the next tidy-up.*
