@@ -11,6 +11,7 @@ import type {
   OcpiCompanyProfile, OcpiDeal, OcpiDoc, OcpiMachine, OcpiMachineSection,
   OcpiNotification, OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiNamedMaster,
+  OcpiDryer, OcpiMachineHead,
 } from "../types";
 import type { StepSla } from "../lib/sla";
 
@@ -51,6 +52,9 @@ type Tbl =
   | "fms_ocpi_head_types"
   | "fms_ocpi_ink_types"
   | "fms_ocpi_dryer_types"
+  | "fms_ocpi_machine_categories"
+  | "fms_ocpi_dryers"
+  | "fms_ocpi_machine_head_types"
   | "fms_ocpi_master_managers"
   | "fms_ocpi_master_requests";
 
@@ -92,10 +96,29 @@ export interface OcpiQuotationSeries {
   confirmedBy: string | null;
 }
 
+/**
+ * The warranty periods, which are a company-wide POLICY and not a per-deal answer.
+ *
+ * ⚠ THIS REPLACED A PER-MACHINE MAPPING THAT WAS SPECIFIED AND THEN WITHDRAWN.
+ *   The client settled on fixed periods — machine 12 months, head 18 — with no
+ *   dryer or spare-parts warranty offered at all, and no dropdown anywhere. An
+ *   exception is written into Special remarks instead.
+ *
+ * ⚠ THESE ARE MONTHS AS A BARE NUMBER, because the templates supply the word:
+ *   "Machine Warranty period will be of {{machine_warranty_months}} months from
+ *   the date of installation". A value of "12 Months" here would print
+ *   "12 Months months".
+ */
+export interface OcpiWarranty {
+  machineMonths: number;
+  headMonths: number;
+}
+
 export interface OcpiConfig {
   processCoordinatorIds: string[];
   quotationValidityDays: number;
   defaultGstRate: number;
+  warranty: OcpiWarranty;
   quotationSeries: OcpiQuotationSeries;
   /**
    * Keyed by financial year, because the OC counter restarts each April and
@@ -126,6 +149,9 @@ export interface OcpiData {
   headTypes: OcpiNamedMaster[];
   inkTypes: OcpiNamedMaster[];
   dryerTypes: OcpiNamedMaster[];
+  machineCategories: OcpiNamedMaster[];
+  dryers: OcpiDryer[];
+  machineHeads: OcpiMachineHead[];
   masterManagers: OcpiMasterManager[];
   masterRequests: OcpiMasterRequest[];
 }
@@ -160,6 +186,13 @@ const mapCompanyProfile = (r: any): OcpiCompanyProfile => ({
 const mapMachine = (r: any): OcpiMachine => ({
   id: r.id,
   name: r.name,
+  billingName: r.billing_name ?? null,
+  categoryId: r.category_id ?? null,
+  needsDryer: r.needs_dryer ?? null,
+  optAirBlade: r.opt_air_blade ?? null,
+  optExternalCentering: r.opt_external_centering ?? null,
+  optInkDustExhauster: r.opt_ink_dust_exhauster ?? null,
+  optChillingSystem: r.opt_chilling_system ?? null,
   docTitle: r.doc_title,
   introText: r.intro_text ?? null,
   machineModelNo: r.machine_model_no ?? null,
@@ -187,6 +220,20 @@ const mapNamed = (r: any): OcpiNamedMaster => ({
   id: r.id,
   name: r.name,
   active: r.active !== false,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapDryer = (r: any): OcpiDryer => ({
+  id: r.id,
+  dryerTypeId: r.dryer_type_id,
+  name: r.name,
+  active: r.active !== false,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapMachineHead = (r: any): OcpiMachineHead => ({
+  machineId: r.machine_id,
+  headTypeId: r.head_type_id,
   sortOrder: r.sort_order ?? 0,
 });
 
@@ -265,7 +312,33 @@ const mapDeal = (r: any): OcpiDeal => ({
   headShipVia: r.head_ship_via ?? null,
   headBalanceRemarks: r.head_balance_remarks ?? null,
   headSeparateInvoice: r.head_separate_invoice ?? null,
+  headInvoiceQty: r.head_invoice_qty ?? null,
+  headInvoiceAmount: r.head_invoice_amount ?? null,
 
+  dryerShipMode: r.dryer_ship_mode ?? null,
+  dryerShipVia: r.dryer_ship_via ?? null,
+  dryerSeparateInvoice: r.dryer_separate_invoice ?? null,
+  dryerInvoiceQty: r.dryer_invoice_qty ?? null,
+  dryerInvoiceAmount: r.dryer_invoice_amount ?? null,
+
+  sparesShipMode: r.spares_ship_mode ?? null,
+  sparesShipVia: r.spares_ship_via ?? null,
+  sparesSeparateInvoice: r.spares_separate_invoice ?? null,
+  sparesInvoiceQty: r.spares_invoice_qty ?? null,
+  sparesInvoiceAmount: r.spares_invoice_amount ?? null,
+
+  centeringShipMode: r.centering_ship_mode ?? null,
+  centeringShipVia: r.centering_ship_via ?? null,
+  centeringSeparateInvoice: r.centering_separate_invoice ?? null,
+  centeringInvoiceQty: r.centering_invoice_qty ?? null,
+  centeringInvoiceAmount: r.centering_invoice_amount ?? null,
+
+  dryerName: r.dryer_name ?? null,
+  dryerIncluded: r.dryer_included ?? null,
+  dryerPrice: r.dryer_price ?? null,
+  dryerValueInr: r.dryer_value_inr ?? null,
+  dryerGstInr: r.dryer_gst_inr ?? null,
+  grandTotalInr: r.grand_total_inr ?? null,
   dryerChambers: r.dryer_chambers ?? null,
   heatingMode: r.heating_mode ?? null,
   platterDetails: r.platter_details ?? null,
@@ -384,7 +457,8 @@ const mapNotification = (r: any): OcpiNotification => ({
 /** Load the whole module in one snapshot. */
 export async function fetchOcpiData(): Promise<OcpiData> {
   const [ownerRows, configRows, profileRows, machineRows, sectionRows, dealRows, versionRows, notifRows,
-         headRows, inkRows, dryerRows, managerRows, masterReqRows] =
+         headRows, inkRows, dryerRows, managerRows, masterReqRows,
+         categoryRows, dryerModelRows, machineHeadRows] =
     await Promise.all([
       fetchAll("fms_ocpi_step_owners"),
       fetchAll("fms_ocpi_config", "key"),
@@ -399,6 +473,9 @@ export async function fetchOcpiData(): Promise<OcpiData> {
       fetchAll("fms_ocpi_dryer_types", "sort_order"),
       fetchAll("fms_ocpi_master_managers"),
       fetchAll("fms_ocpi_master_requests"),
+      fetchAll("fms_ocpi_machine_categories", "sort_order"),
+      fetchAll("fms_ocpi_dryers", "sort_order"),
+      fetchAll("fms_ocpi_machine_head_types", "sort_order"),
     ]);
 
   const cfg = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -409,6 +486,12 @@ export async function fetchOcpiData(): Promise<OcpiData> {
       processCoordinatorIds: cfg.get("process_coordinators")?.user_ids ?? [],
       quotationValidityDays: cfg.get("quotation_validity_days")?.days ?? 30,
       defaultGstRate: cfg.get("default_gst_rate")?.rate ?? 18,
+      // The fallbacks are the client's settled figures, so a database where the
+      // migration has not run still prints the right periods rather than a blank.
+      warranty: {
+        machineMonths: cfg.get("warranty_periods")?.machine_months ?? 12,
+        headMonths: cfg.get("warranty_periods")?.head_months ?? 18,
+      },
       // Missing row and `{"confirmed": false}` mean the same thing on purpose:
       // nobody has checked. Defaulting to `true` here would silence the warning
       // on any database where the migration had not run — the exact case where
@@ -445,6 +528,9 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     headTypes: headRows.map(mapNamed),
     inkTypes: inkRows.map(mapNamed),
     dryerTypes: dryerRows.map(mapNamed),
+    machineCategories: categoryRows.map(mapNamed),
+    dryers: dryerModelRows.map(mapDryer),
+    machineHeads: machineHeadRows.map(mapMachineHead),
     masterManagers: managerRows.map(mapManager),
     masterRequests: masterReqRows.map(mapMasterRequest),
   };

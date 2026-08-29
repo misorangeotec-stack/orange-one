@@ -9,7 +9,7 @@ import { CompanyProfileWarning, QuotationSeriesWarning } from "../../components/
 import { useOcpiStore } from "../../store";
 import { submitQuotation } from "../../data/ocpiWrites";
 import { useQuotationDraft, type GeneratedPapers } from "./useQuotationDraft";
-import { missingForDetailSheet } from "../../lib/fieldSpec";
+import { machineFacts, missingForDetailSheet } from "../../lib/fieldSpec";
 
 /**
  * Write a quotation — the same screen whether it is new or a draft being
@@ -43,7 +43,9 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
   const canGenerate = q.missing.length === 0;
 
   /** Which lines the DETAILED sheet will print blank. A warning, never a gate. */
-  const blankOnDetailSheet = useMemo(() => missingForDetailSheet(q.draft), [q.draft]);
+  const blankOnDetailSheet = useMemo(() => missingForDetailSheet(q.draft, machineFacts(s.machineById(q.draft.machineId || null))),
+    [q.draft, s],
+  );
 
   /*
     ⚠ 18 OF THE 28 MACHINES HAVE NO DETAILED TEMPLATE YET, and that is a state of

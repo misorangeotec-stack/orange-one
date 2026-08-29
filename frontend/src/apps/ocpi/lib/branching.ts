@@ -1,4 +1,10 @@
-import type { QuotationDraft } from "./fieldSpec";
+import {
+  canCarry,
+  isUsdDeal,
+  NO_MACHINE_FACTS,
+  type MachineFacts,
+  type QuotationDraft,
+} from "./fieldSpec";
 
 /**
  * The conditional rules from the Microsoft form, as data.
@@ -6,7 +12,7 @@ import type { QuotationDraft } from "./fieldSpec";
  * The live form ("New Printer Quotation Form", 47 questions) carries eight
  * branch rules. They are reproduced here so the module asks the same questions
  * in the same order — with THREE DELIBERATE CORRECTIONS to the form itself, and
- * THREE RULES OF OUR OWN added by the revision.
+ * FIVE RULES OF OUR OWN added by the revision.
  *
  * ⚠ THIS IS THE COURTESY COPY. The same clearing happens server-side, in
  *   public.fms_ocpi_write_quotation for part A and public.fms_ocpi_write_oc for
@@ -34,27 +40,71 @@ import type { QuotationDraft } from "./fieldSpec";
  * 3. "Dryer = Not Applicable" must NOT ask for a dryer warranty period.
  *    The form skips chambers and heating mode but still asks the warranty, which
  *    would print a warranty for equipment that is not in the deal.
+ *    ⚠ SUPERSEDED TWICE. First (OCPI-3, stage D) there stopped being a dryer
+ *      warranty question at all — the client offers no dryer warranty. Then
+ *      (stage E) the DEAL stopped deciding whether there is a dryer at all; see
+ *      RULE 7. Kept because the correction explains why the ORIGINAL form was
+ *      wrong, which is still worth knowing if anybody works from it again.
  *
- * ── AND THREE RULES THAT ARE OURS ──────────────────────────────────────────
+ * ── AND FIVE RULES THAT ARE OURS ───────────────────────────────────────────
  *
  * 4. The dollar-exchange clause is asked ONLY on a dollar deal. It is a USD
  *    term, and a rupee customer was being asked to agree to something that could
- *    not apply to them — then having their answer printed. (Stage B.)
+ *    not apply to them. (Stage B.)
  *
  * 5. High Seas attracts NO GST, so no rate is asked for. (Stage C.)
  *
  * 6. The FX position exists only for a dollar deal. (Stage C.)
  *
- * All six are recorded in OCPI.md. If any turns out to be unwanted, delete it
+ * 7. THE MACHINE DECIDES WHAT IS ASKED, NOT THE SALESPERSON. Whether there is a
+ *    dryer, and which of the four extras apply, are properties of the model —
+ *    mapped once on the Machine master from the client's own sheet. (Stage E,
+ *    and the reason `isVisible` now takes a second argument; see below.)
+ *
+ * 8. Shipment & invoice asks four items the same four questions, each on its
+ *    own condition — two of them the machine’s. (Stage F; written out in full
+ *    beside the rules themselves, since the four conditions differ.)
+ *
+ * All eight are recorded in OCPI.md. If any turns out to be unwanted, delete it
  * here AND in the matching SQL writer — they must not disagree.
  */
 
-/** A field is either shown or hidden; nothing is ever disabled-but-visible. */
-export type Visibility = (d: QuotationDraft) => boolean;
+/**
+ * A field is either shown or hidden; nothing is ever disabled-but-visible.
+ *
+ * ⚠ TWO ARGUMENTS SINCE STAGE E. A rule may need the chosen MACHINE's mapping as
+ *   well as the draft, and `machineFacts` (fieldSpec.ts) is how it gets there —
+ *   deliberately a small flat record rather than the whole `OcpiMachine`, so
+ *   that what the branches may depend on is visible at a glance and matches the
+ *   five columns `fms_ocpi_write_oc` actually reads.
+ */
+export type Visibility = (d: QuotationDraft, m: MachineFacts) => boolean;
 
-/** Does this deal actually carry a dryer? "Not Applicable" is a real answer. */
-const hasDryer = (d: QuotationDraft): boolean =>
-  !!d.dryerType && d.dryerType !== "Not Applicable";
+/**
+ * Does this deal carry a dryer?
+ *
+ * ⚠ THIS MOVED OFF THE DEAL AND ONTO THE MACHINE (OCPI-3, stage E). It used to
+ *   read `dryerType !== 'Not Applicable'` — the salesperson's own answer to a
+ *   "Dryer required" dropdown. The client's sheet settles it per model instead,
+ *   so `dryerType` now means the dryer's CATEGORY and this flag comes from the
+ *   machine.
+ *
+ * ⚠ CHANGE THIS AND CHANGE `fms_ocpi_write_oc` IN THE SAME BREATH. The SQL reads
+ *   `m.needs_dryer` through a left join and nulls every dryer column when it is
+ *   not true. If the two ever disagree the server erases answers the form is
+ *   still showing, on every save, with no error.
+ *
+ * ⚠ NULL IS "NO". An unmapped machine, or no machine yet, asks nothing — which
+ *   is also why the Machine master requires the flag.
+ */
+const hasDryer = (_d: QuotationDraft, m: MachineFacts): boolean => m.needsDryer === true;
+
+/*
+ * `isUsdDeal` lives in fieldSpec.ts, beside the currency list and the
+ * submit check that also depends on it. High Seas counts as a dollar deal from
+ * the moment the type is picked, not from the moment a save comes back — read
+ * its header for why, and for what printed blank before it existed.
+ */
 
 /**
  * Which fields are conditional, and on what.
@@ -77,23 +127,102 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
 
   // CORRECTION 2 — the head count and the whole shipment group.
   headsIncluded: (d) => d.inclHead === true,
-  headShipMode: (d) => d.inclHead === true,
-  headSeparateInvoice: (d) => d.inclHead === true,
-  headBalanceRemarks: (d) => d.inclHead === true,
-  // Only a SEPARATE shipment needs a route.
-  headShipVia: (d) => d.inclHead === true && d.headShipMode === "separate",
 
-  // CORRECTION 3 — no dryer, no dryer questions, warranty included.
+  /*
+    ⚠ THIS RULE STAYS, THOUGH THE BOX IS GONE (OCPI-3, stage H) — and my own task
+      list was wrong to call it an orphan.
+
+      The balance-heads box was removed from the form, so `isVisible` is never
+      asked about it any more. But `clearHidden` iterates EVERY key in this map,
+      not the ones the form happens to render, so the rule is still live: it is
+      what blanks the stored text when a deal that had a head stops including
+      one. 13 of the 18 deals on record hold something here, and they can still
+      be edited.
+
+      Delete this and that text survives a change it contradicts, invisibly,
+      and prints on the next generated paper. `fms_ocpi_write_oc` keeps the
+      matching branch for the same reason.
+  */
+  headBalanceRemarks: (d) => d.inclHead === true,
+
+  /* ── RULE 8 · Shipment & invoice, one row per item ────────────────────────
+   *
+   * Four items ask the same four questions, and each hangs off a DIFFERENT
+   * condition. Reading them together is the point of listing them together:
+   *
+   *   head              the deal includes a head        d.inclHead
+   *   dryer             the MACHINE takes a dryer       m.needsDryer
+   *   spare parts       the deal includes spares        d.inclSpares
+   *   centering device  the MACHINE can carry one       m.optExternalCentering
+   *
+   * Two of the four are the machine's answer, not the salesperson's — so a
+   * salesperson cannot open the dryer's shipping questions by naming a dryer,
+   * and cannot open the centering device's by ticking "external centering
+   * system". The client asked for that tick and this device to stay separate;
+   * they read the same capability but they are different questions.
+   *
+   * Within each row:
+   *   · the ROUTE is asked only of a SEPARATE shipment — nothing to route when
+   *     it travels with the machine;
+   *   · QUANTITY and AMOUNT are asked only of a SEPARATE INVOICE, because that
+   *     is the only document they would appear on. Asking otherwise invites a
+   *     figure being quoted twice, once inside the deal value and once beside it.
+   *
+   * Every line below has its twin in fms_ocpi_write_oc. Change one, change both.
+   */
+  headShipMode: (d) => d.inclHead === true,
+  headShipVia: (d) => d.inclHead === true && d.headShipMode === "separate",
+  headSeparateInvoice: (d) => d.inclHead === true,
+  headInvoiceQty: (d) => d.inclHead === true && d.headSeparateInvoice === true,
+  headInvoiceAmount: (d) => d.inclHead === true && d.headSeparateInvoice === true,
+
+  dryerShipMode: hasDryer,
+  dryerShipVia: (d, m) => hasDryer(d, m) && d.dryerShipMode === "separate",
+  dryerSeparateInvoice: hasDryer,
+  dryerInvoiceQty: (d, m) => hasDryer(d, m) && d.dryerSeparateInvoice === true,
+  dryerInvoiceAmount: (d, m) => hasDryer(d, m) && d.dryerSeparateInvoice === true,
+
+  sparesShipMode: (d) => d.inclSpares === true,
+  sparesShipVia: (d) => d.inclSpares === true && d.sparesShipMode === "separate",
+  sparesSeparateInvoice: (d) => d.inclSpares === true,
+  sparesInvoiceQty: (d) => d.inclSpares === true && d.sparesSeparateInvoice === true,
+  sparesInvoiceAmount: (d) => d.inclSpares === true && d.sparesSeparateInvoice === true,
+
+  centeringShipMode: (_d, m) => canCarry(m.optExternalCentering),
+  centeringShipVia: (d, m) => canCarry(m.optExternalCentering) && d.centeringShipMode === "separate",
+  centeringSeparateInvoice: (_d, m) => canCarry(m.optExternalCentering),
+  centeringInvoiceQty: (d, m) =>
+    canCarry(m.optExternalCentering) && d.centeringSeparateInvoice === true,
+  centeringInvoiceAmount: (d, m) =>
+    canCarry(m.optExternalCentering) && d.centeringSeparateInvoice === true,
+
+  // RULE 7 — the whole Dryer details section, machine-driven. `dryerType` is in
+  // here too: the CATEGORY is only asked of a machine that takes a dryer, which
+  // is why fms_ocpi_write_quotation had to learn the same rule — it owns that
+  // column, and write_oc owns the rest.
+  dryerType: hasDryer,
+  dryerName: hasDryer,
   dryerChambers: hasDryer,
   heatingMode: hasDryer,
-  dryerWarranty: hasDryer,
+  dryerIncluded: hasDryer,
+  // A price only when the dryer is NOT part of the deal — otherwise the sheet
+  // would carry a charge for something the customer is not being charged for.
+  dryerPrice: (d, m) => hasDryer(d, m) && d.dryerIncluded === false,
+
+  // RULE 7 again — the four extras. "no" or unmapped means the machine cannot
+  // take it, so the question never appears; "yes" is standard equipment and is
+  // still asked, because the deal has to record that it is included.
+  airBlade: (_d, m) => canCarry(m.optAirBlade),
+  externalCentering: (_d, m) => canCarry(m.optExternalCentering),
+  inkDustExhauster: (_d, m) => canCarry(m.optInkDustExhauster),
+  chillingSystem: (_d, m) => canCarry(m.optChillingSystem),
 
   highSeasVia: (d) => d.transportTerms === "high_seas",
   highSeasCostBy: (d) => d.transportTerms === "high_seas",
   localCostBy: (d) => d.transportTerms === "local",
 
   // RULE 4 — a dollar term, asked only of dollar deals.
-  dollarClauseAgreed: (d) => d.dealValueCurrency === "USD",
+  dollarClauseAgreed: isUsdDeal,
 
   // RULE 5 — HIGH SEAS ATTRACTS NO GST, so there is no rate to ask for. The
   // server sets gst_rate NULL rather than 0 on such a deal, and the papers omit
@@ -101,14 +230,20 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   // different claim from no line, and only one of them is true.
   gstRate: (d) => d.transportTerms !== "high_seas",
 
-  // RULE 6 — the FX position only exists for a dollar deal.
-  fxRate: (d) => d.dealValueCurrency === "USD",
+  // RULE 6 — the FX position only exists for a dollar deal. See `isUsdDeal`:
+  // High Seas qualifies from the moment the deal type is picked, not from the
+  // moment the save comes back with the currency corrected.
+  fxRate: isUsdDeal,
 };
 
 /** Is this field currently askable? */
-export function isVisible(field: keyof QuotationDraft, draft: QuotationDraft): boolean {
+export function isVisible(
+  field: keyof QuotationDraft,
+  draft: QuotationDraft,
+  facts: MachineFacts = NO_MACHINE_FACTS,
+): boolean {
   const rule = PART_A_VISIBILITY[field];
-  return rule ? rule(draft) : true;
+  return rule ? rule(draft, facts) : true;
 }
 
 /**
@@ -121,11 +256,19 @@ export function isVisible(field: keyof QuotationDraft, draft: QuotationDraft): b
  * A hidden boolean is cleared to null and a hidden string to "": the two are
  * different absences, and collapsing them would turn an unanswered yes/no into
  * an empty string the row cannot store.
+ *
+ * ⚠ PASS THE MACHINE'S FACTS. The default is the CLOSED set, which would blank
+ *   every dryer answer and every extra — right for "no machine chosen", wrong
+ *   for a caller that simply forgot. `useQuotationDraft` reads them off the
+ *   draft's own machine; there is one caller and it does.
  */
-export function clearHidden(draft: QuotationDraft): QuotationDraft {
+export function clearHidden(
+  draft: QuotationDraft,
+  facts: MachineFacts = NO_MACHINE_FACTS,
+): QuotationDraft {
   const out = { ...draft };
   for (const key of Object.keys(PART_A_VISIBILITY) as (keyof QuotationDraft)[]) {
-    if (!isVisible(key, draft)) {
+    if (!isVisible(key, draft, facts)) {
       const current = draft[key];
       (out[key] as unknown) = typeof current === "boolean" || current === null ? null : "";
     }

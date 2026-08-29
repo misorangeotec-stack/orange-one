@@ -122,6 +122,7 @@ export default function ApprovalPanel({
               sections: s.sectionsFor(machine.id),
               profile: s.profileFor(deal.companyId),
               validityDays: s.config.quotationValidityDays,
+              warranty: s.config.warranty,
             }),
           );
           if (!cancelled) setRebuilt(true);
@@ -172,6 +173,7 @@ export default function ApprovalPanel({
         sections: s.sectionsFor(m.id),
         profile,
         validityDays,
+        warranty: s.config.warranty,
       };
       document = resolvedOcDocument(input);
       detailPath = await uploadOcPdf(fresh.id, await ocPdfBlob(input), ocFileName(fresh));

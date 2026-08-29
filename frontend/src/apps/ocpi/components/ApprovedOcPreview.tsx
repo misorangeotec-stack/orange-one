@@ -82,6 +82,7 @@ export default function ApprovedOcPreview({
               sections: s.sectionsFor(machine.id),
               profile: s.profileFor(deal.companyId),
               validityDays: s.config.quotationValidityDays,
+              warranty: s.config.warranty,
             }),
           );
           if (!cancelled) setRebuilt(true);

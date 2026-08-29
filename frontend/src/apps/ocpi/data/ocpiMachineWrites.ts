@@ -22,6 +22,13 @@ import type { OcpiMachine, OcpiMachineSection } from "../types";
 
 export interface MachineInput {
   name: string;
+  billingName: string | null;
+  categoryId: string | null;
+  needsDryer: boolean | null;
+  optAirBlade: string | null;
+  optExternalCentering: string | null;
+  optInkDustExhauster: string | null;
+  optChillingSystem: string | null;
   docTitle: string;
   introText: string | null;
   machineModelNo: string | null;
@@ -37,6 +44,13 @@ export interface MachineInput {
 
 const toRow = (m: MachineInput) => ({
   name: m.name.trim(),
+  billing_name: m.billingName?.trim() || null,
+  category_id: m.categoryId || null,
+  needs_dryer: m.needsDryer,
+  opt_air_blade: m.optAirBlade || null,
+  opt_external_centering: m.optExternalCentering || null,
+  opt_ink_dust_exhauster: m.optInkDustExhauster || null,
+  opt_chilling_system: m.optChillingSystem || null,
   doc_title: m.docTitle,
   intro_text: m.introText?.trim() || null,
   machine_model_no: m.machineModelNo?.trim() || null,
@@ -62,6 +76,13 @@ export async function updateMachine(id: string, input: Partial<MachineInput>): P
   // Only send what the caller actually set — a partial edit from the master
   // screen must not blank the spec rows it never showed.
   if (input.name !== undefined) row.name = full.name.trim();
+  if (input.billingName !== undefined) row.billing_name = full.billingName?.trim() || null;
+  if (input.categoryId !== undefined) row.category_id = full.categoryId || null;
+  if (input.needsDryer !== undefined) row.needs_dryer = full.needsDryer;
+  if (input.optAirBlade !== undefined) row.opt_air_blade = full.optAirBlade || null;
+  if (input.optExternalCentering !== undefined) row.opt_external_centering = full.optExternalCentering || null;
+  if (input.optInkDustExhauster !== undefined) row.opt_ink_dust_exhauster = full.optInkDustExhauster || null;
+  if (input.optChillingSystem !== undefined) row.opt_chilling_system = full.optChillingSystem || null;
   if (input.docTitle !== undefined) row.doc_title = full.docTitle;
   if (input.introText !== undefined) row.intro_text = full.introText?.trim() || null;
   if (input.machineModelNo !== undefined) row.machine_model_no = full.machineModelNo?.trim() || null;

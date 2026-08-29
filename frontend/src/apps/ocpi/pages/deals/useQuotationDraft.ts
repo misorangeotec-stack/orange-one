@@ -13,7 +13,8 @@ import {
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
 import { docHeading } from "../../lib/format";
 import {
-  EMPTY_DRAFT, draftFromDeal, missingForSubmit, payloadFromDraft, type QuotationDraft,
+  EMPTY_DRAFT, draftFromDeal, machineFacts, missingForSubmit, payloadFromDraft,
+  type QuotationDraft,
 } from "../../lib/fieldSpec";
 
 /**
@@ -98,7 +99,7 @@ export function useQuotationDraft(dealId?: string) {
     setBusy(true);
     setError(null);
     try {
-      const payload = payloadFromDraft(clearHidden(draft));
+      const payload = payloadFromDraft(clearHidden(draft, machineFacts(s.machineById(draft.machineId || null))));
       const id = await saveDraftWrite(payload, savedId);
       setSavedId(id);
       setSavedAt(new Date().toISOString());
@@ -127,7 +128,7 @@ export function useQuotationDraft(dealId?: string) {
     setBusy(true);
     setError(null);
     try {
-      const payload = payloadFromDraft(clearHidden(draft));
+      const payload = payloadFromDraft(clearHidden(draft, machineFacts(s.machineById(draft.machineId || null))));
       const id = await saveDraftWrite(payload, savedId);
       setSavedId(id);
 
@@ -135,6 +136,7 @@ export function useQuotationDraft(dealId?: string) {
       const profile = s.profileFor(draft.companyId || null);
       const sections = machine ? s.sectionsFor(machine.id) : [];
       const validityDays = s.config.quotationValidityDays;
+      const warranty = s.config.warranty;
 
       // ⚠ RE-READ THE ROW AFTER THE SAVE AND BEFORE THE FREEZE. The rupee value
       //   of a dollar deal, the GST amount and the total are DERIVED server-side
@@ -181,7 +183,7 @@ export function useQuotationDraft(dealId?: string) {
       */
       const ocDocumentPayload =
         machine && machine.hasTemplate
-          ? resolvedOcDocument({ deal: saved, machine, sections, profile, validityDays })
+          ? resolvedOcDocument({ deal: saved, machine, sections, profile, validityDays, warranty })
           : {};
 
       const versionNo = await generateWrite(id, payload, documentPayload, ocDocumentPayload);
@@ -197,7 +199,7 @@ export function useQuotationDraft(dealId?: string) {
       const summary = await quotationPdfBlob({ deal: rendered, machine, profile, versionNo });
       const detail =
         machine && machine.hasTemplate
-          ? await ocPdfBlob({ deal: rendered, machine, sections, profile, validityDays })
+          ? await ocPdfBlob({ deal: rendered, machine, sections, profile, validityDays, warranty })
           : null;
 
       // A failed upload does not unwind the revision: it is already frozen, and
