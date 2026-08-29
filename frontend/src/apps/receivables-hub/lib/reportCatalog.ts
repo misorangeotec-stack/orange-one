@@ -5,6 +5,7 @@ import {
   Boxes,
   Calculator,
   CalendarClock,
+  CreditCard,
   Crown,
   FolderTree,
   Gauge,
@@ -517,6 +518,20 @@ export const REPORTS: ReportEntry[] = [
     source: "pipeline",
     status: "live",
     keywords: ["days sales outstanding", "countback", "credit period"],
+  },
+  {
+    id: "credit-terms",
+    scoping: "party-client",
+    title: "Credit Terms Not Set",
+    purpose:
+      "Customers with no credit limit or credit days in Tally, company by company, with what they owe.",
+    category: "receivables",
+    path: "reports/credit-terms",
+    icon: CreditCard,
+    source: "tally", // Live (Tally) only — credit limit and credit period are Tally ledger fields.
+    status: "live",
+    keywords: ["credit limit", "credit days", "credit period", "terms", "not set", "blank",
+               "setup", "company-wise", "master data"],
   },
 
   // ── Collections ────────────────────────────────────────────────────────────
