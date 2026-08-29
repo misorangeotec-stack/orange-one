@@ -1657,7 +1657,7 @@ All data in the module is **dummy** (client confirmed 27-Aug-2026).
   Three things the run turned up, none of them a branch fault:
 
   - 🔴 **The register exported a quantity for the print head only.** The form asks a quantity on all four rows and the contract's SHIPMENT & INVOICE table prints all four, but `exportRegister.ts` carried `Head invoice qty` and no other. A finance reader reconciling a second bill against the register would have found the amount with no quantity beside it on three of the four rows. **Fixed** — `Dryer invoice qty`, `Spares invoice qty` and `Centering invoice qty` added beside their amounts, build green.
-  - ⚠ **The dryer master is EMPTY.** `fms_ocpi_dryers` has zero rows, so on all **11** machines that take a dryer the *Dryer* dropdown reads *"None set up in this category"* and no dryer can be named. The three categories exist (Indian · Chinese · Not Applicable) and the Masters screen can add them — nobody has. Not a code fault; a **go-live prerequisite** for the business, and the reason `dryer_name` could not be exercised in this run (it is gated identically to the fields that were).
+  - ⚠ **The dryer master was EMPTY.** `fms_ocpi_dryers` had zero rows, so on all **11** machines that take a dryer the *Dryer* dropdown read *"None set up in this category"* and no dryer could be named. *(Six `[SAMPLE]` dryers were added the same day at the client's request — see the summary at the foot of this file.)* The three categories exist (Indian · Chinese · Not Applicable) and the Masters screen can add them — nobody has. Not a code fault; a **go-live prerequisite** for the business, and the reason `dryer_name` could not be exercised in this run (it is gated identically to the fields that were).
   - The machine-category filter **seeds itself from the saved machine** when a draft is reopened, so the model list opens narrowed. It clears from the box's own ✕, so nothing is unreachable.
 
 ### Stage A · Database foundations (one migration)  `[x]` — applied & verified 27-Aug-2026
@@ -1776,10 +1776,27 @@ Two things remain, neither of them code:
    centering questions should hide together. All four are listed with full wording in
    **WORKLIST.md → To discuss with Ritesh Bhai**, and none of them blocks anything: the module runs
    today on the assumption recorded against each.
-2. ⚠ **The dryer master is empty.** `fms_ocpi_dryers` holds zero rows, so on all **11** machines that
-   take a dryer the *Dryer* dropdown reads *"None set up in this category"*. The categories exist and
-   the Masters screen can add dryers — the names have simply never been entered. **A go-live
-   prerequisite for the business, not a build task.**
+2. ⚠ **The dryer master holds SIX PLACEHOLDERS, not the real list.** It was empty — zero rows — so on
+   all **11** machines that take a dryer the *Dryer* dropdown read *"None set up in this category"*,
+   and `missingForDetailSheet` asked for a name that could not be given. On 29-Aug the client asked for
+   samples until the real names arrive, so three Indian and three Chinese were added: *2-Chamber
+   Electric*, *3-Chamber Thermic Fluid*, *4-Chamber Gas Fired*.
+
+   They are prefixed **`[SAMPLE]`** deliberately — a dryer name **prints on the customer's quotation**,
+   so accidental use shows on the paper instead of passing silently. Removal is one statement:
+
+   ```sql
+   delete from fms_ocpi_dryers where name like '[SAMPLE]%';   -- Postgres LIKE: [ is literal
+   ```
+
+   `fms_ocpi_deals.dryer_name` stores the **text**, not an id, so deleting them cannot break a saved
+   quotation — but a frozen revision would keep printing `[SAMPLE]`. **Getting the real names is still
+   a go-live prerequisite for the business, not a build task.**
+
+   ⚠ **The "Not Applicable" dryer category has no dryers and cannot sensibly have one.** Picking it on
+   a machine that needs a dryer leaves the name unfillable and the completeness warning standing. That
+   guides rather than blocks — Indian or Chinese is the right pick — but somebody will report it as a
+   fault. Whether a dryer machine should be offered "Not Applicable" at all is a business decision.
 
 ## Open with the client — none blocks anything; all stages are built
 1. Replacement wording for the two clauses *(blocks J only)*
