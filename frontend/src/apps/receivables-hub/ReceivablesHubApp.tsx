@@ -40,6 +40,7 @@ import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport"
 import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
 import CustomerCategoryReport from "@hub/pages/CustomerCategoryReport";
 import DsoReport from "@hub/pages/DsoReport";
+import CreditTermsReport from "@hub/pages/CreditTermsReport";
 import BalanceSheetReport from "@hub/pages/BalanceSheetReport";
 import ProfitLossReport from "@hub/pages/ProfitLossReport";
 import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
@@ -207,6 +208,10 @@ function HubRoutes() {
                   of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
                   a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
               <Route path="reports/dso" element={<DsoReport />} />
+              {/* Which customers carry no credit limit / credit days in Tally, company by company.
+                  Live (Tally) only — both fields are ledger master data. Treats a limit of ₹1 as NOT
+                  set: it is the legacy "blocked" marker, not a limit. See pages/CreditTermsReport.tsx. */}
+              <Route path="reports/credit-terms" element={<CreditTermsReport />} />
               {/* These three used to sit behind an extra `RequireHubMenu menu="reports" full`
                   wrapper (and before that, role = admin). Both gates are gone: withholding the
                   per-report grant IS the restriction now, and it applies to every report rather
