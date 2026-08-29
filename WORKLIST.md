@@ -46,6 +46,164 @@ Work held up because someone owes us something. If a task is late, this is the f
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | The filled asset register sheet (vehicles, IT, air conditioners) | Ritesh Bhai / Finance | **AM-2** | 2026-08-29 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
+| The dryer names to load, Indian and Chinese — the dryer master is EMPTY, so no dryer can be named on any of the 11 machines that take one | Ritesh Bhai / Bushra | **OCPI-3 go-live** | 2026-08-29 |
+
+---
+
+## To discuss with Ritesh Bhai
+
+A running list. Ask for it by name — *"what needs discussing with Ritesh Bhai?"* — and this is what
+comes back. Two kinds of item live here and they are marked differently:
+
+- **`[decided]`** — already agreed and already applied. Listed so it can be confirmed, and so the
+  exact wording is on record if it is ever queried.
+- **`[open]`** — nothing built either way; the answer changes what gets built.
+
+### OCPI
+
+**1. `[decided]` The print-head price sentence — reworded on 4 machines.** *(29-Aug-2026)*
+
+The client asked for the *"head price after the warranty"* box to be removed from the quotation form.
+It could not go while the clause that used it still asked for a figure — an unfilled placeholder prints
+as a ruled blank, so every contract on those machines would have read *"priced at INR ________ plus
+GST"*.
+
+Machines affected: **Homer K24 · Homer K32 · P8D · P8S** — clause *PRINT HEAD POLICY PROGRAM*.
+
+> **Was:** "After that period a New Print Head will be priced at INR `{{post_warranty_head_price}}` plus
+> GST, on the new machine, first time installed head."
+>
+> **Now:** "After that period, **replacement print heads will be supplied at the prices prevailing at
+> the time of purchase**, on the new machine, first time installed head."
+
+Approved by the client and applied (migration `20261021150000`). The form field and its placeholder were
+removed afterwards, in that order. **Contracts already issued are unchanged** — every revision freezes
+its own document, so only the next generation picks this up.
+
+*For Ritesh Bhai: confirm the new sentence is acceptable commercially. If not, it is one string to swap
+back.*
+
+**2. `[decided]` The delivery term stays on the quotation form.** *(29-Aug-2026)*
+
+The original instruction was to remove the **Delivery term** dropdown (Ex-Work Surat / CIF / FOB / EX
+Factory), because delivery is "already covered in commercial terms". Checking it showed that it is not,
+and the field stays. Three findings:
+
+- It is the **only place an ordinary sale records a delivery route.** Commercial terms asks *"how is the
+  printer delivered?"* on a **High Seas deal only**. **11 of the 12 ordinary deals on record had filled
+  this dropdown in**, all with *"Ex-Work Surat"*.
+- The words in it print on the contract as **"Delivery Terms: Ex-Work Surat"**, on all ten machine
+  templates. Removing the dropdown first would have printed **"Delivery Terms: ________"** there.
+- ⚠ **The two papers were never saying the same thing.** The **quotation** prints *"Term of Delivery:
+  Local Delivery · cost by Customer"* — built from the deal type and who pays. The **contract** prints
+  *"Delivery Terms: Ex-Work Surat"* — this dropdown. Two different facts, two similar headings, on two
+  papers. That is what made "already covered" look true when it was not.
+
+*For Ritesh Bhai: nothing needs doing. But it may be worth deciding whether those two lines SHOULD say
+the same thing — e.g. the contract reading "Ex-Work Surat, cost borne by Customer". That is a wording
+question about the papers, not a question about the form, and nothing is broken either way.*
+
+**3. `[open]` Should "Platter" be asked on every quotation, or set once per machine?**
+
+*Asked in these words on 29-Aug-2026; still waiting for an answer, so nothing has been built.*
+
+There is a dropdown on the quotation called **Platter** — *With Platter / Without Platter / Not
+Applicable*. Nobody has ever mentioned it in any instruction, and it is in no pointer and nowhere else
+in this work list.
+
+But the client's own machine sheet has a **PLATTE column sitting among the machine's features**, between
+*Heating Media* and *Air Blade* — next to the air blade and the chilling system, which are all set once
+per machine. So the sheet treats it as part of the machine, not as something agreed deal by deal.
+
+**The three choices, in plain words:**
+
+- **A.** It is a **machine feature**, like the air blade — tick it once per machine and stop asking on
+  every quotation.
+- **B.** It is a **per-deal choice** — leave it as a dropdown on the quotation, exactly as it is now.
+- **C.** **Drop it** — nobody uses it.
+
+**My recommendation: A.** A platter is part of the machine, not something negotiated on each deal, and
+the client's own sheet already files it with the machine's features.
+
+⚠ **One thing to know before choosing A:** that PLATTE column is **empty for all 28 machines**, so there
+is nothing to load. Someone would have to go through the list and say which machines have one. Until
+that is done the question would simply stop appearing anywhere.
+
+*For Ritesh Bhai: A, B or C. If A, we also need somebody to fill in which machines have a platter.*
+
+**4. `[open]` One head-name check left. Two are settled.**
+
+- **`[decided]` The Fab Pro's Ricoh IS a "Gen 6".** *(29-Aug-2026)* The sheet says only *"RICHO HEAD"*,
+  with no generation. **Fab Pro 1I, 2I and 3I** were mapped to the existing *RICOH GEN 6 HEAD* and the
+  client has confirmed that is right for now, and will tell us if it ever changes. The name prints on
+  the quotation, so it was worth asking. Nothing to change.
+- **`[open]` Is "Homer" a print head, or the machine brand typed into the head column?** *(put to the
+  client 29-Aug-2026 — they do not know; it needs Ritesh Bhai.)*
+
+  Three machines — **Homer K24, Homer K32 and K64** — have *"EX600 RC KATAN & HOMER"* in the head column
+  of the sheet. *Katan* is certainly a head. But **Homer is also a machine brand** — two of those three
+  machines are called Homer. So is Homer a **second print head**, or did somebody type the machine's
+  brand into the head column by mistake?
+
+  **We have assumed it is a head**, and added *Homer* as a new head name linked to those three machines.
+  Two reasons: the other machines are written the same way — *"EX600 RC KATAN & KYOCERA"*, *"MS &
+  KYOCERA BOTH"* — and there both names are heads; and it also appears on **K64**, which is not a Homer
+  machine at all.
+
+  *For Ritesh Bhai: is Homer a print head, yes or no? If no, we delete the head name and those three
+  machines keep Katana only — a few minutes of work, no rebuild. The name prints on the customer's
+  quotation, which is why it is worth confirming.*
+- **`[decided]` Rocket's Kyocera is 300 DPI.** *Resolved from the sheet's own pattern:* P8D reads head
+  *"300 DPI KYOCERA"* with DPI *300*; P8S reads *"EX600 RC KATAN & KYOCERA"* with DPI *600*. The DPI
+  column tracks the **Kyocera** head. Rocket reads *"EX600 RC & KYOCERA"* with DPI **300**, so RC 600 +
+  Kyocera 300 is consistent. Mapped that way; mention only if it looks wrong.
+
+**5. `[open]` What is "JAY"?**
+
+The machine sheet's TYPE OF MACHINE column reads DIRECT (10), SUBLIMATION (12), OTHER (4) — and **JAY
+(2)**. The two are **Label Printer** and **Book Printer**. "JAY" sits where a machine type goes and is
+not one, so it reads like a name typed into the wrong cell. Both machines are left **uncategorised**;
+they are still fully quotable, since the machine list shows all 28 when no category is chosen.
+
+**6. `[decided]` A separately-charged dryer DOES attract GST.** *(29-Aug-2026)*
+
+When the dryer is not part of the deal it carries its own price. The question was whether tax applies to
+it. **Answer: yes, at the same rate as the machine.** On a ₹10,00,000 machine with a ₹1,25,000 dryer at
+18%, the papers now print:
+
+> Machine Total: **₹11,80,000**  ·  Dryer Value: **₹1,25,000**  ·  Dryer GST @18%: **₹22,500**  ·  **Final Total: ₹13,27,500**
+
+Built and verified against those exact figures. Two things came out of doing it properly:
+
+- **The arithmetic moved into the database**, where the rest of the money already lives. The papers had
+  been adding two numbers in the browser as a holding position. Only the database knows that a High Seas
+  deal attracts **no GST at all** — so there the dryer gets none either, and no zero-tax line is printed.
+- **A dollar deal converts the dryer at the same frozen rate as the machine.** A $1,500 dryer at ₹83.50
+  prints as ₹1,25,250, not ₹1,500. Reading it as rupees would have been an ~85× error on a contract.
+
+*For Ritesh Bhai: confirm the dryer is taxed at the same rate as the machine, rather than at a rate of
+its own.*
+
+**7. `[open]` On a machine that takes no centering device, should BOTH centering questions disappear?**
+*(put to the client 29-Aug-2026 — they do not know; it needs Ritesh Bhai.)*
+
+There are **two** centering questions on the quotation, and the client asked for them to be kept
+separate. They are separate:
+
+1. **"External centering system"** — a yes/no tick under *Deal inclusions*. Asks: *is it part of this
+   deal?*
+2. **"Centering device"** — a row under *Shipment & invoice*. Asks: *how does it ship, and is it billed
+   on its own invoice?*
+
+**But both of them only appear when the machine is marked as able to take a centering device.** So on a
+machine marked **"No"**, **neither** question shows.
+
+*For Ritesh Bhai: is that correct?*
+
+- **Yes** → nothing to do. This is how it is built today.
+- **No** → i.e. there is a case where a customer is billed for a centering device on a machine that does
+  not normally take one (or the reverse). Then the machine list needs a **second tick**, so the two can
+  be set independently — a small build change in the machine master and in both rule engines.
 
 ---
 
@@ -926,6 +1084,602 @@ proof-read, and which selling entities actually raise OCPIs.
 flow uses; who supplies the 18 missing detailed-sheet templates; whether an *Others* deal quoted in
 USD really attracts GST; and the client's own remaining feedback.
 
+
+### OCPI-3 · Machine categorisation, derived head + warranty defaults, and a dryer section of its own  `[x]`  — built, green and browser-verified 29-Aug-2026
+*Raised 2026-08-27 · **Batch 1 of a larger set** — the client is still giving pointers, so this entry
+is open and will grow. The audit of what it reaches:
+`C:\Users\Admin\.claude\plans\now-there-are-a-precious-bear.md`*
+
+**Build progress (29-Aug-2026): ALL STAGES DONE — 0 and A–J, built, green, and verified in the
+browser.** Both remaining checks were run on 29-Aug: the High Seas rate now appears and is demanded,
+and a dryer draft survives a save/reload while a switch to a no-dryer machine clears exactly what the
+form hid and keeps the chilling system. The tickable master list — what each stage actually changed and how it was
+verified — is in [OCPI.md](OCPI.md) under *"OCPI-3 · the build"*. Read that for state; this entry
+stays the SPEC.
+
+The machine master grows a billing name and a category; **type of head stops being a free choice** and
+becomes a property of the machine; the dryer questions leave the bottom of the form and become a
+**Dryer details section** of their own; and — for the first time since OCPI-2 declared *"all pricing is
+phase 2"* — a deal can carry **a second price**, for a dryer sold outside it.
+
+Section **E**, added on the second pointer, is a different kind of item: it asks for a rule that is
+already built everywhere except the form — where the gap prints a **High Seas contract with no rupee
+total on it**. Read it before the rest; it is the only part of this entry that can hurt a live deal.
+
+🔴 **READ SECTION M FIRST.** Six later conversations amended A–J — warranties became fixed rather than
+mapped, the shipping questions collapsed into one section, and the dryer flag moved from the category
+to the machine. **M lists what supersedes what.** The build order and live checklist are in
+[OCPI.md](OCPI.md) under *"OCPI-3 · the build"*.
+
+**A · Machine master** ([Machines.tsx](frontend/src/apps/ocpi/pages/machines/Machines.tsx) · `fms_ocpi_machines`)
+
+1. Add a **machine name / billing name** column beside the existing one. What is in the master today
+   **is the machine code and stays exactly as it is** — nothing re-keyed, no back-fill; the new field
+   is added next to it. **Both** names print on the papers and show in the register.
+2. New **machine category** master; every machine maps to one category.
+3. Map **type of head** against each machine.
+4. Map **dryer required (yes / no)** on the **machine category** — every machine in it inherits.
+
+**B · Dryer masters**
+
+5. `fms_ocpi_dryer_types` is relabelled **Dryer category** (Indian / Chinese) everywhere it shows.
+6. New **dryer name** master, each name mapped to a dryer category.
+
+**C · Quotation form — Machine details, section A**
+([QuotationForm.tsx:361-495](frontend/src/apps/ocpi/components/QuotationForm.tsx#L361-L495))
+
+7. The first row becomes **Machine category · Machine · Type of head**.
+8. The machine list filters to the chosen category.
+9. **Type of head is display-only**, read from the machine's mapping — the user cannot change it.
+10. Then No. of machines · No. of print heads required.
+11. Then Type of ink · **Ink selling price** (rename of "Ink price") · Ink credit terms.
+12. "Dryer required" leaves section A entirely.
+
+**D · Quotation form — a new Dryer details section, below Machine details**
+
+13. Shown only when the machine's **category** says a dryer is required; hidden otherwise.
+14. **Dryer category**, then **Dryer name** filtered by that category.
+15. Move in from the detail card
+    ([QuotationForm.tsx:938-978](frontend/src/apps/ocpi/components/QuotationForm.tsx#L938-L978)): how many chambers ·
+    **Heating medium** (rename of "Heating mode"). ⚠ **AMENDED by the third pointer — the dryer
+    warranty does NOT come here.** It moves to *Warranty & service* instead; see **F** below. This
+    point originally listed it, and the two would contradict each other.
+16. Move the **Options included** block in as well
+    ([QuotationForm.tsx:980-1008](frontend/src/apps/ocpi/components/QuotationForm.tsx#L980-L1008)).
+17. New: **is the dryer part of the deal?** If it is not inclusive, ask for a **dryer price**.
+18. The PDF money block reads in three lines — **machine total → dryer total → final total**.
+
+**E · Commercial terms — the dollar position**  *(added 27-Aug-2026, second pointer)*
+
+19. **High Seas is always a USD deal**, and its value is always exclusive of GST.
+20. The **USD → INR rate belongs to any dollar deal**, High Seas or Others alike — not to one of them.
+21. Wherever a deal is in USD, the papers show **both USD and INR**.
+
+⚠ **MOSTLY ALREADY BUILT — the requirement is met everywhere except the form, where it fails
+completely.** Checked in full on 27-Aug-2026:
+
+- *Already correct:* High Seas ⇒ USD is **forced server-side** in `fms_ocpi_write_quotation`
+  ([20261019120200:70-71](supabase/migrations/20261019120200_fms_ocpi_commercial_terms.sql#L70-L71)) — `case when v_transport = 'high_seas'
+  then 'USD'` — with a comment saying it is forced rather than defaulted *"so a stale INR left on the
+  row cannot survive the switch"*. High Seas carries no GST ([branching.ts:102](frontend/src/apps/ocpi/lib/branching.ts#L102), `gst_rate`
+  null and not zero, both papers omitting the tax row). The value field already reads **"Total deal
+  value (excluding GST)"**. The rate is **not** gated on deal type — [branching.ts:105](frontend/src/apps/ocpi/lib/branching.ts#L105) tests the
+  currency alone. And both papers already print both currencies with the frozen rate beside them:
+  summary [quotationPdf.ts:98-107](frontend/src/apps/ocpi/lib/quotationPdf.ts#L98-L107), detailed [ocPdf.ts:253-262](frontend/src/apps/ocpi/lib/ocPdf.ts#L253-L262). **Nothing to add
+  for point 21.**
+- 🔴 *The defect.* **The form never sets the draft's currency to USD when High Seas is picked.**
+  `EMPTY_DRAFT.dealValueCurrency` is `"INR"`; the picker is `disabled={disabled || isHighSeas}`
+  ([QuotationForm.tsx:631-638](frontend/src/apps/ocpi/components/QuotationForm.tsx#L631-L638)) but **nothing patches the value**, and there is no
+  `useEffect` in the file at all. So a High Seas deal shows **Currency: INR**, greyed out, directly
+  under a note reading *"A high seas sale is in US dollars … Both are set for you"* — and, because
+  `show("fxRate")` tests `dealValueCurrency === "USD"`, **the USD → INR rate box never renders**.
+  High Seas, the one deal type that is *always* a dollar deal, is the only one where the rate cannot
+  be fetched or typed.
+
+  **What that costs, end to end:** no rate is required anywhere — not in `missingForSubmit`
+  ([fieldSpec.ts:600-630](frontend/src/apps/ocpi/lib/fieldSpec.ts#L600-L630)), not in the `fms_ocpi_complete_when_submitted` check constraint
+  ([20261019120100:240-266](supabase/migrations/20261019120100_fms_ocpi_merged_form_writes.sql#L240-L266)) — so the deal submits happily. The server then
+  forces the row to USD with `fx_rate` null, so `deal_value_inr` is null
+  ([:126-127](supabase/migrations/20261019120200_fms_ocpi_commercial_terms.sql#L126-L127)), so `write_oc`'s `v_value` is null, so
+  `machine_value_inr`, `gst_amount_inr` and `total_inr` are **all null**. Both papers take the USD
+  branch and print **"Value in INR" blank and "Total Value INR" blank** — including the orange total
+  strip on the detailed sheet. **A High Seas contract goes to a customer with no rupee total on it.**
+  It self-corrects only if somebody saves, reloads, notices the rate box has appeared, and
+  regenerates.
+
+  **The fix is small and belongs in two places, not one:** coerce `dealValueCurrency` to `"USD"` when
+  the deal type becomes High Seas (mirroring what the SQL already does, so form and server agree —
+  the same two-engines trap as the dryer branch above), and make the rate **required to submit** on
+  any USD deal, in `missingForSubmit` and in the check constraint. This is a **defect, not new
+  work** — move it to [Fixes](#fixes) once it is repaired and stamped.
+
+
+**F · Warranty & service — defaults per machine, and no post-warranty price**  *(added 27-Aug-2026, third pointer)*
+
+The block at [QuotationForm.tsx:815-865](frontend/src/apps/ocpi/components/QuotationForm.tsx#L815-L865) today asks: printer warranty period ·
+print-head warranty period · **head price after the warranty** · consumables supplier · the insurance
+clause. It becomes the one place every warranty is asked.
+
+22. **Add a spare-parts warranty** — a wholly new field; nothing like it exists on the deal today.
+23. **Move the dryer warranty here**, out of the dryer questions. *(This is why point 15 above is
+    amended: the dryer section takes chambers and heating medium only.)*
+24. **Map a default warranty against each machine in the master** — printer, print head, spare parts
+    and dryer, each *where applicable*. **The client will supply the default values per machine.**
+25. Selecting a machine **pre-fills all four** from its mapping.
+26. The user **may overwrite** any of them and pick another option.
+27. **An overridden warranty must be highlighted at approval**, so the Directors can see the default
+    was departed from.
+28. **Remove "Head price after the warranty" entirely.** No price after the warranty anywhere.
+
+⚠ **Point 28 is not a field deletion — it leaves a ruled blank inside a live contract clause.**
+`{{post_warranty_head_price}}` is embedded in the **PRINT HEAD POLICY PROGRAM** section body of **four
+machines in the live database** — *Homer K24, Homer K32, P8D and P8S* (checked 27-Aug-2026: 4 of 82
+machine sections; `{{dryer_warranty}}` is used by **none**, so point 23 is token-safe). The clause
+reads:
+
+> *"…After that period a New Print Head will be priced at INR {{post_warranty_head_price}} plus GST, on
+> the new machine, first time installed head."*
+
+An unresolved token renders as a **ruled blank**, deliberately ([tokens.ts](frontend/src/apps/ocpi/lib/tokens.ts) — so a wrong token name
+degrades to "somebody must fill this in" rather than leaking braces). Delete the field alone and those
+four contracts print *"priced at INR ______ plus GST"*. **The four clause bodies must be reworded as
+live data** through the Machine template screen — the seed migration is history and editing it changes
+nothing — and the token retired from `tokensFor` and `TOKEN_HELP`. The `post_warranty_head_price`
+column itself **stays** (additive-only); it simply stops being asked and written. This is CLAUDE.md's
+container rule again: removing the control is the easy half.
+
+⚠ **Point 27 has nowhere obvious to go, and the reason is deliberate.** `ApprovalPanel`'s own header
+states the rule: *"THE DOCUMENTS ARE RENDERED, NOT SUMMARISED — approving here issues a contract; doing
+it from a list of field values would mean confirming something nobody had read."* There is no field
+table on that screen to highlight in. So the override notice has to be a **callout above the rendered
+papers** — an annotation beside the documents, not a substitute for reading them — naming each
+overridden warranty, the value chosen and the machine's default. Printing it on the paper itself would
+put an internal control note on a customer's contract; do not.
+
+✅ **The pattern to copy already exists in this module: `fxRateOverridden`.** A boolean on the deal,
+set by the form the moment a person replaces a fetched value, frozen onto the revision, and carrying a
+`FIELD_LABEL` ("Rate entered by hand") so it also surfaces in the revision diff. Four warranty
+overrides should take exactly that shape — one flag each, set on change, labelled, frozen. Do not
+invent a second mechanism.
+
+**Other things this touches**
+
+- The warranty option lists are **code constants**, not masters — `WARRANTY_MONTHS` and
+  `PRINTER_WARRANTY` ([fieldSpec.ts:278-289](frontend/src/apps/ocpi/lib/fieldSpec.ts#L278-L289)). A default held on the machine master must
+  draw from the same vocabulary, or the two will drift — which is the exact failure `fieldSpec.ts`'s
+  own header describes for the head/ink/dryer lists that were promoted to masters. Decide before
+  building whether these become masters too, or whether the master field is a `select` bound to the
+  constants.
+- **Spare-parts warranty is a new column**, so it needs: a nullable column on `fms_ocpi_deals`, an
+  entry in `payloadFromDraft` **and** `FIELD_LABEL` (or the revision diff shows a raw key), a place in
+  the **part-B key-sniff array** in `fms_ocpi_save_draft`, and a line in `fms_ocpi_write_oc`. Same four
+  places every new field in this entry needs.
+- A `{{spare_warranty}}` token is worth adding alongside `{{machine_warranty_months}}` and
+  `{{head_warranty_months}}` if any template should quote it.
+- Moving the dryer warranty out of the dryer block means the **branch rule changes**: `dryerWarranty`
+  is currently gated on `hasDryer` in [branching.ts:89](frontend/src/apps/ocpi/lib/branching.ts#L89) *and* nulled by `fms_ocpi_write_oc`. In
+  Warranty & service it should still only be asked when the machine's category carries a dryer — so it
+  keeps a branch, but on the new category mapping, **in both engines**.
+
+
+**G · Delete the "Delivery & tax" block from Document details**  *(added 27-Aug-2026, fourth pointer)*
+
+29. **Delivery days** moves out of Document details into **Commercial terms**.
+30. **Delivery term** (`tradeTerm`) is **removed** — the client's reading is that Commercial terms
+    already covers it.
+31. The **Delivery & tax** block itself then goes.
+
+🔴 **THE BLOCK HOLDS THREE CONTROLS AND THE POINTER NAMED TWO. The third is GST %.**
+[QuotationForm.tsx:867-900](frontend/src/apps/ocpi/components/QuotationForm.tsx#L867-L900) is Delivery days · Delivery term · **GST %** — the last
+hidden on a High Seas sale, which is why it is easy to miss when reading the screen. **GST % must move
+to Commercial terms with the delivery days, not go with the block.** It is the rate that produces
+`gst_amount_inr` and `total_inr` on every *Others* deal. Delete it and nothing breaks, nothing fails to
+compile, and every deal is quoted at 18% forever — `EMPTY_DRAFT.gstRate` is `"18"` and `draftFromDeal`
+falls back to `"18"`, so the value keeps being sent, silently, with no way to change it. That is the
+[FIX-4](#fixes) signature exactly: the trigger removed, everything behind it intact, the build green.
+Commercial terms is where it belongs anyway — it is tax on a price, and the price is already there.
+
+⚠ **"Already covered in commercial terms" is true for High Seas and false for Others.** `TRADE_TERMS`
+is `Ex-Work Surat · CIF · FOB · EX Factory`. Commercial terms carries **High seas delivery via**
+(`CIF · EX Factory · FOB`) — but [branching.ts:91](frontend/src/apps/ocpi/lib/branching.ts#L91) shows it **only on a High Seas deal**. An
+*Others* deal gets only *Local delivery cost borne by*, which is a **cost bearer, not a delivery term**.
+So after this change an Others deal would carry no delivery term at all. Either widen the high-seas
+field to every deal type, or accept that Others deals stop stating one. **Worth putting back to the
+client before building.**
+
+⚠ **`{{trade_term}}` is in a live clause on ALL TEN templates that exist.** Checked 27-Aug-2026:
+10 of 10 machines with a template carry it in **SALE CONDITIONS OF THE SUPPLY**, which reads:
+
+> Delivery Terms: `{{trade_term}}`
+> Delivery Days: `{{delivery_days}}`
+> Payment terms: `{{payment_terms}}`
+> Insurance: Product Insurance borne by Customer.
+
+Unresolved tokens print as ruled blanks, so removing the field puts **"Delivery Terms: ______" on every
+detailed sheet the module can produce**. The line must be deleted from all ten section bodies as **live
+data**, through the Machine template screen. (`{{delivery_days}}` is unaffected — that field survives,
+it only moves.) This is the second time in this entry that removing a field would blank a contract
+clause; see also point 28.
+
+**The orphan sweep for this one** — per CLAUDE.md, every control accounted for:
+
+| In the block | Where it goes |
+|---|---|
+| Delivery days | → Commercial terms (point 29) |
+| Delivery term | → removed (point 30) |
+| **GST %** | → **Commercial terms** — *not named by the client, must not be dropped* |
+
+And what `tradeTerm` leaves behind once the field is gone:
+- `missingForDetailSheet` warns when it is blank ([fieldSpec.ts:653](frontend/src/apps/ocpi/lib/fieldSpec.ts#L653)) — **remove that check too**, or the
+  salesperson is warned that a field they cannot see is empty.
+- The Deal Register's **"Delivery term"** column ([exportRegister.ts:71](frontend/src/apps/ocpi/lib/exportRegister.ts#L71)) — keep it for deals
+  raised before the change, or drop it; a decision, not an oversight.
+- The `trade_term` token in `tokensFor` and its `TOKEN_HELP` entry ([tokens.ts:68,137](frontend/src/apps/ocpi/lib/tokens.ts#L68)) — retire
+  both once the ten clause bodies no longer reference it, and **in that order**.
+- The `trade_term` column **stays** (additive-only), and so does its key in `payloadFromDraft` and the
+  part-B sniff array until the writers stop setting it.
+
+
+**H · WHERE the mapped data lives — master, or template?**  *(design decision, 27-Aug-2026)*
+
+The client asked this directly, wanting the machine master not to be loaded up unnecessarily. The
+answer is **all of it in the masters, none of it in the template — but split across two masters, not
+piled onto one.**
+
+**The test that decides it.** Both screens edit *the same table* — `fms_ocpi_machines` carries the
+identity columns *and* the template columns, with `fms_ocpi_machine_sections` as its child. So this is
+not a schema question, it is a question of what the value **does**:
+
+> **Does it drive the form, or does it appear as prose in the document?**
+> Drives the form → **master** (read live, every time the form renders).
+> Appears in document prose → **template** (frozen onto each version at generate time).
+
+Every item across batches 1–3 — category, type of head, dryer-required, the four warranty defaults,
+the billing name — **drives the form**. None of them is document prose. So none belongs in the
+template.
+
+**Three reasons the template is not merely a worse home but a wrong one:**
+
+1. **The template is frozen per version, by design.** `MachineTemplate.tsx`'s own header: *"editing here
+   changes what future documents say, not past ones — every finalised quotation freezes the resolved
+   template into its own version row."* A default read out of frozen text would be the default as of
+   the last generation, not the one in force now.
+2. **It holds prose, not values.** A warranty written into a clause body is a sentence. It cannot
+   prefill a `Combobox`, and — fatally for point 27 — there is **nothing to compare against** to detect
+   that the salesperson overrode it.
+3. **18 of the 28 machines have no template at all** (checked 27-Aug-2026: 28 machines, 10 with a
+   template, 18 without, all 28 active). Those 18 are fully quotable today — a machine with no template
+   still issues the summary sheet. Put the mapping in the template and **two thirds of the catalogue
+   cannot be mapped**.
+
+**The proposed split**
+
+| Where | What it holds | Why |
+|---|---|---|
+| **Machine category master** *(new, a handful of rows)* | category name · sort order · **dryer required** | Already settled: dryer-required is a category property. Anything constant across a category belongs here — one edit covers every machine in it. |
+| **Machine master** *(28 rows)* | **billing name** · category *(FK)* · **type of head** *(FK)* · warranty defaults **only if they vary machine by machine** | Identity and the per-model facts the form reads. |
+| **Machine template** | unchanged — spec rows, composition, clause bodies | Document text only. |
+
+**This is also the answer to "don't load up the machine master".** The way to keep it light is not to
+move data to the template — it is to push whatever is *constant per category* up to the category
+master. If the four warranties are the same for every machine in a category, that is **~6 categories ×
+4 values ≈ 24 entries instead of 28 machines × 4 ≈ 112**, and one correction fixes a whole family.
+Where a single machine genuinely differs, it overrides — the same category-default-plus-override shape
+the warranties already need for the salesperson.
+
+**What the Excel sheet decides** *(client is sending it)*: whether each warranty is constant per
+category or genuinely per machine — which is the only open input to the table above; how many
+categories there actually are; whether *type of head* is truly one per machine or one per category; and
+which machines have no dryer/spare warranty at all, since the client said *"if applicable"*. Nothing
+else in this entry is blocked on it, so the sheet can arrive whenever it is ready.
+
+⚠ Whatever the sheet says, the **28 existing machines still need back-filling** before a
+category-filtered picker returns anything — already on the discuss list.
+
+
+**I · The head and the centering device get sections of their own**  *(added 27-Aug-2026, fifth pointer)*
+
+The form's order becomes **Machine details → Dryer details → Head → Centering device**, and the three
+equipment sections share one shape: *how it ships*, and *whether it is invoiced separately*.
+
+32. **Move "The head" out of Document details** ([QuotationForm.tsx:902-936](frontend/src/apps/ocpi/components/QuotationForm.tsx#L902-L936)) into its own
+    section, placed **after** the Dryer section.
+33. **Reword it** so the section covers both the shipment questions and the invoice question, rather
+    than reading as shipping alone.
+34. **The Dryer section gains the same pair** — *how to ship the dryer* and *separate invoice for the
+    dryer* — and its wording likewise covers both. *(Confirmed 27-Aug-2026.)*
+35. **A new, small Centering device section** after the head: *how to ship* and *separate invoice for
+    the centering device*. Two questions, as specified.
+36. The centering section applies to the **K64 only**.
+37. **The "External centering system" tick stays where it is** — it travels with the other three
+    *Options included* ticks into the Dryer section (point 16). *(Confirmed 27-Aug-2026: "that is a
+    separate option, and this is a separate thing".)* The new section does **not** branch on it.
+
+🔴 **THESE ANSWERS CURRENTLY PRINT NOWHERE — ON EITHER PAPER.** Swept 27-Aug-2026: `head_ship_mode`,
+`head_ship_via` and `head_separate_invoice` appear in the form, the field spec, the branch rules, the
+fetch mapping and both SQL writers — and in **neither** [quotationPdf.ts](frontend/src/apps/ocpi/lib/quotationPdf.ts) nor
+[ocPdf.ts](frontend/src/apps/ocpi/lib/ocPdf.ts), in no template token, and in no register column. They are asked, stored,
+and frozen onto every revision, and then no document ever says what was agreed. Giving them a section
+of their own makes them **more** prominent on screen while they remain invisible on the contract.
+**Decide where they print before building this** — most likely a shipment/invoicing block on the
+detailed sheet, alongside the money rows. The same decision covers the new dryer and centering
+answers, which would otherwise join them.
+
+⚠ **K64 has no template**, so it issues the summary sheet alone (10 of 28 machines have a template;
+K64 is one of the 18 without). Even once the above is fixed, a centering answer with nowhere to print
+on a *detailed* sheet still prints nowhere for the one machine the section exists for — unless it goes
+on the **summary** sheet, or K64 gets a template. This is the sharper half of the finding.
+
+🔴 **DO NOT HARD-CODE `machine.name === "K64"`.** Section **H** settled the principle and it applies
+directly: this is a **machine-master flag**, not a name check. A literal name breaks the moment the row
+is renamed, a variant is added, or a second machine gets a centering device. Add one nullable boolean
+to the machine master — *centering device applicable* — false by default, true on K64, and the rule
+becomes data the client can maintain. One column, no code change ever again.
+
+⚠ **The master row is named `K64`, not "Homer K64".** The client said *"Hammer K64"*; the live row is
+bare **`K64`** — `has_template = false`, `sort_order = 900`, active — while its siblings are **"Homer
+K24"** and **"Homer K32"**. Confirm this is the right row, and consider renaming it *Homer K64* for
+consistency. (With the flag above, a rename is harmless; with a name check it would silently disable
+the feature — which is the argument for the flag in one sentence.)
+
+**What this costs in the four usual places.** Four new nullable columns —
+`dryer_ship_mode`, `dryer_separate_invoice`, `centering_ship_mode`, `centering_separate_invoice` —
+each needing its column, an entry in `payloadFromDraft` **and** `FIELD_LABEL`, a place in the part-B
+key-sniff array, a line in `fms_ocpi_write_oc`, and a branch rule **in both engines**. Plus the one
+machine-master flag.
+
+**Reuse, do not re-declare.** `HEAD_SHIP_MODES` (*With the machine* / *Separate shipment*) and
+`HEAD_SHIP_VIA` are code constants in [fieldSpec.ts](frontend/src/apps/ocpi/lib/fieldSpec.ts). The dryer and the centering device should
+read the **same** lists rather than gaining parallel copies — three lists of one vocabulary is the
+exact drift `fieldSpec.ts`'s own header warns about.
+
+**Branching that must move with the block.** The head questions are gated on `incl_head = true` in
+[branching.ts:79-84](frontend/src/apps/ocpi/lib/branching.ts#L79-L84) *and* nulled again by `fms_ocpi_write_oc`. Moving the block changes where
+it renders, not what governs it — **both** engines keep the rule. The new sections need the same
+treatment: the dryer pair gated on the machine category carrying a dryer, the centering pair on the
+new machine flag.
+
+⚠ **Centering is now asked about in two places on one form** — the *Options included* tick in the
+Dryer section, and this section. That is the client's explicit decision, recorded here so it reads as
+intended rather than as a duplication somebody later "tidies up". Note the tick alone drives the
+printed **"External Centring Device"** composition line ([ocPdf.ts:57-64](frontend/src/apps/ocpi/lib/ocPdf.ts#L57-L64)); the new section
+drives nothing printed at all until the finding above is settled.
+
+
+**J · Special remarks — one box, entered point-wise**  *(added 27-Aug-2026, sixth pointer)*
+
+38. **Remove "Remarks — balance heads to be sold later"** (`headBalanceRemarks`).
+39. **Remove "Any other commitments on charges made by us"** (`otherCommitments`).
+40. **Keep "Special remarks"** and tell the user, prominently, to enter every remark **point-wise** —
+    a stronger hint on the field and a placeholder that shows the shape.
+
+**The orphan sweep** — per CLAUDE.md, the card holds **four** controls, not three:
+
+| In the Special remarks card | Outcome |
+|---|---|
+| Special remarks (`remarks`) | stays, with point-wise guidance |
+| Balance heads to be sold later | removed (point 38) |
+| Any other commitments | removed (point 39) |
+| **Dollar-exchange clause + "Agreed with the customer"** (`dollarClauseAgreed`) | **stays** — shown on USD deals only ([QuotationForm.tsx:779-786](frontend/src/apps/ocpi/components/QuotationForm.tsx#L779-L786)) |
+
+The client's wording was precise and the fourth control is safe; it is listed because proving it is the
+rule, not because it was in doubt.
+
+🔴 **THE FIELD'S OWN HINT IS ALREADY A FALSE PROMISE, AND THIS MAKES IT WORSE.** Special remarks is
+labelled `hint="prints on both sheets"` — and the **detailed sheet prints no remarks at all**. There is
+no code path for it in [ocPdf.ts](frontend/src/apps/ocpi/lib/ocPdf.ts) and **no `{{remarks}}` token exists**, so no machine template can
+reference it either (swept 27-Aug-2026). It prints on the summary sheet only. This pointer makes
+Special remarks the *sole* surviving free-text box and asks to give it more prominence, so the
+salesperson is being pushed to put more into a field that reaches half the places the form claims.
+**Either print remarks on the detailed sheet, or correct the hint** — but not neither.
+
+✅ **Point-wise text will survive onto the summary sheet — verified.** `wrapText` calls
+`pdf.splitTextToSize`, which honours `\n`, and `safeText` only substitutes specific glyphs (arrows, Δ,
+fullwidth brackets) — it does **not** strip newlines ([pdfBrand.ts:125](frontend/src/shared/lib/pdfBrand.ts#L125)). So one point per line
+renders as one line per point. No renderer change is needed for the format itself.
+
+⚠ **But a long point-wise block can run off the page.** A row's height is `max(17, 7 + lines × 10)`
+and the page-break check moves the **whole row** to a fresh page — it never *splits* a row
+([quotationPdf.ts:296-317](frontend/src/apps/ocpi/lib/quotationPdf.ts#L296-L317)). A remarks block taller than the body area therefore overflows the
+bottom silently. Today that is unreachable in practice because the box is three rows and people write
+a sentence; **encouraging point-wise entry is exactly what makes it reachable.** Either cap the input,
+or teach the renderer to split a tall row across pages. Worth doing at the same time.
+
+⚠ **This partly reverses OCPI-2's point 5**, which deliberately *gathered* the master form's three
+scattered remark boxes — Q23 (balance heads), Q43 (other commitments), Q46 (remarks) — into one group
+so a salesperson no longer had to remember which heading a note belonged under. Two of the three now
+go away entirely. That is a legitimate change of mind, but **the comment at
+[QuotationForm.tsx:737-742](frontend/src/apps/ocpi/components/QuotationForm.tsx#L737-L742) explains the gathering and would be left describing a form that
+no longer exists** — rewrite it, do not leave it.
+
+**What else moves**
+
+- **Section D of the summary sheet drops to one row.** [quotationPdf.ts:137-145](frontend/src/apps/ocpi/lib/quotationPdf.ts#L137-L145) builds it from
+  three; the balance-heads row and its `inclHead === true` guard go with the field.
+- **A branch rule is orphaned.** `headBalanceRemarks: (d) => d.inclHead === true`
+  ([branching.ts:82](frontend/src/apps/ocpi/lib/branching.ts#L82)) becomes a visibility rule for a field nobody can see — remove it there
+  **and** the matching null in `fms_ocpi_write_oc`, the usual pair.
+- **Both columns stay** (additive-only), as do their keys in `payloadFromDraft` and the part-B sniff
+  array until the writers stop setting them. Deals already raised keep their text, and their **stored**
+  papers are untouched — but a re-render of an old deal would silently drop those two rows, since
+  `sectionRows` builds from the live row. Acceptable; worth knowing before somebody regenerates one.
+
+
+**K · The machine sheet — what it gives us**  *(27-Aug-2026)*
+
+Source: `Misc/Bushra Reports/OCPI/OCPI Machine Templates.xlsx`, sheet **Machines**, 28 rows × 20
+columns. ⚠ An older copy sits at the repo root — the OCPI-folder one is live.
+
+✅ **All 28 machine names match the live master exactly**, so it imports by name.
+
+| Sheet column | Fills | Coverage |
+|---|---|---|
+| PRODUCT NAME - AS PER INVOICE | billing name (point 1) | 21 of 28 |
+| TYPE OF MACHINE | category (point 2) | 28 — Direct 10 · Sublimation 12 · Other 4 · "JAY" 2 |
+| DRYER | dryer required (point 4) | 28 — yes on 11, no on 17 |
+| TYPE OF HEAD | print heads (point 3) | 22 of 28 |
+| MACHINE / HEAD WARRANTY | — | 5 of 28 — **now irrelevant, see M** |
+
+🟢 **A good idea nobody asked for.** The four extras — air blade, external centering, ink dust
+exhauster, chilling system — are given per machine as **Yes / No / Optional**. That third value says
+*whether to ask at all*: No = the machine cannot carry it, never show the question; Optional = ask.
+Today all four are asked on every deal regardless. **Adopted.**
+
+Also present, not requested: **SUPPLIER NAME** (11 distinct) and **HEAD DPI**, which overlaps TYPE OF
+HEAD. **CHAMBER · HEATING MEDIA · PLATTE** appear as machine columns but are blank for every machine
+that has a dryer, so they give no defaults and stay deal-level questions.
+
+🔴 **The sheet overturned the category-level dryer flag.** *Other* is split — Position Printer needs a
+dryer, the three Pengdas do not. **Settled: the flag goes on each machine.** Point 4 is amended.
+
+🔴 **The centering device is not K64-only.** It is *Optional* on Homer K24, K32, K64 and JP7, and *Yes*
+on JPK — five machines. Point 36 is amended: drive it from the machine's capability, never a name check.
+
+**Data to tidy in the sheet:** "JAY" is not a machine type (it is the category on Label Printer and
+Book Printer); 6 machines have no head; 7 have no billing name; the three Fab Pro rows are empty from
+the extras onward; Yes/No values vary in case and padding, so the import must trim and case-fold.
+
+⚠ **The sheet claims 21 templates; the system has 10**, and the eleven missing decks are not in the
+folder either. This names them for OCPI-1's standing question: **K64, JP7, JPK, Fab Pro 1I, Fab Pro 2I,
+Position Printer, KoloRado Alpha 3 (12 heads), KoloRado Alpha 3.2 (8 heads), Pengda PD-1700XD-800,
+Pengda PD-1800XD-800, Rocket.**
+
+**L · Print heads are many-per-machine, and the name mapping**  *(settled 27-Aug-2026)*
+
+41. **A machine may carry several heads**, and the quotation shows **all** of them. Point 3 assumed one;
+    it is amended. Machine→heads becomes a link table; the deal keeps storing the names as joined text,
+    so old quotations still read correctly and the revision diff is unaffected.
+
+The sheet and `fms_ocpi_head_types` share **no** common value. The mapping below is mine, proposed at
+the client's request; the supplier column supports it — every "EX600 RC Katan" machine is a Han Glory
+machine, and the system's Katana and RC rows are both Hanglory.
+
+| Sheet value | Machines | Becomes | In the system? |
+|---|---|---|---|
+| I3200 | 9 Kolorado + Foil | Epson I3200 | ✅ *EPSON PRINTHEAD I 3200* |
+| 300 DPI KYOCERA | P8D | Kyocera 300 | ✅ *300DPI - KJ4B* (KJ4B is Kyocera) |
+| EX600 RC KATAN & KYOCERA | P8S | Katana 600 **+** Kyocera 600 | ✅ both |
+| EX600 RC KATAN & HOMER | Homer K24, K32, K64 | Katana 600 **+** Homer | ✅ Katana · ❌ **Homer new** |
+| MS & KYOCERA BOTH | JP7, JPK | MS **+** Kyocera 600 | ❌ **MS new** · ✅ KJ4B |
+| MS HEAD | Mini Lario | MS | ❌ **MS new** |
+| EX600 RC & KYOCERA | Rocket | RC 600 **+** Kyocera | ✅ both |
+| RICHO HEAD | Fab Pro 1I/2I/3I | Ricoh | ✅ *RICOH GEN 6 HEAD* ("Richo" = Ricoh) |
+| "NO" / blank | 3 Pengdas, Position, Label, Book | none | — |
+
+**All six existing rows are used; only two new ones are needed — "MS" and "Homer".**
+
+⚠ Three doubts, all data corrections rather than build changes: is **"Homer"** a head or the machine
+brand written into the head column; is the Fab Pro's Ricoh really a **Gen 6**; and **Rocket** says
+"EX600" in the head column but **300** in the DPI column — which is right?
+
+**M · What the later pointers changed — read this before building A–J**
+
+Six conversations amended earlier sections. The current shape is:
+
+- **Warranties are FIXED, not mapped** — machine **12 months**, head **18 months**, **no** dryer or
+  spare-parts warranty. No dropdown, no per-machine default, **no override highlight at approval**.
+  An exception is written into Special remarks. Section **F** points 22–27 are withdrawn; only point
+  28 (remove the post-warranty price) survives. The periods become **settings**, like quotation
+  validity. 🔴 The machine-warranty placeholder is in **all ten** templates and the head-warranty one
+  in **four** — re-point them at the settings *before* removing the fields, or every detailed sheet
+  prints a blank warranty.
+- **Shipment and invoice become ONE section**, not questions scattered per item. Sections **D** and
+  **I**'s separate Head and Centering sections collapse into it. A row per item that is in the deal —
+  **head · dryer · spare parts · centering device** — each asking how it ships, the route when
+  separate, whether it is separately invoiced, and **if yes, quantity and total amount excluding tax**.
+  Spare parts gain shipment and invoicing for the first time.
+- **The shipping and billing block prints on the DETAILED paper** *(settled)* — which answers the open
+  question about answers that were collected and never printed.
+- **The dryer flag is per machine**, not per category (section K).
+- **A machine may have several heads** (section L).
+- **All data in the system is dummy**, confirmed by the client, so no change here has to protect live
+  customer work.
+
+**Settled with the client 27-Aug-2026**, recorded as decisions rather than questions: dryer-required is
+mapped on the **category**, not the machine; **both** names print, and the existing master value *is*
+the code and is left untouched; the money block is machine total · dryer total · final total.
+
+**What this reaches beyond the form.** Five findings from the audit, each of which loses data silently
+if it is missed:
+
+- **There are two branch engines and they must change together.** `hasDryer` lives in
+  [branching.ts:56](frontend/src/apps/ocpi/lib/branching.ts#L56) *and again in SQL*, in `fms_ocpi_write_oc`
+  ([20261019120200:197-202](supabase/migrations/20261019120200_fms_ocpi_commercial_terms.sql#L197-L202)), both keyed on the
+  string `dryer_type = 'Not Applicable'`. The server **nulls `dryer_chambers`, `heating_mode` and
+  `dryer_warranty` on every write** it believes is dryer-less. Move the condition to the category
+  mapping in TypeScript alone and the server erases the answers on save. `branching.ts`'s own header
+  says it: *"delete it here AND in the matching SQL writer — they must not disagree."*
+- **`fms_ocpi_save_draft` sniffs for part-B keys by name** —
+  [20261019120100:112-120](supabase/migrations/20261019120100_fms_ocpi_merged_form_writes.sql#L112-L120) lists 26 literal keys and calls
+  `write_oc` only when one of them is present. Every new dryer field must join that array, or a payload
+  carrying only them never reaches the writer.
+- **The money is derived server-side and has no room for a second price.** `write_oc` computes
+  `machine_value_inr`, `gst_amount_inr` and `total_inr = value + gst`; the browser never holds them. A
+  dryer price needs its own column and a new derived grand total, in that function.
+- **The frozen payload is enumerated by hand, in two places** — `payloadFromDraft` and `FIELD_LABEL`
+  ([fieldSpec.ts](frontend/src/apps/ocpi/lib/fieldSpec.ts)). [revisionDiff.ts](frontend/src/apps/ocpi/lib/revisionDiff.ts) takes both its
+  labels **and its display order** from `FIELD_LABEL` by camel→snake. A field missing from either shows
+  in the revision history as a raw `dryer_price`, or not at all.
+- **`machine_name` is frozen onto each version at generate time**
+  ([useQuotationDraft.ts:149](frontend/src/apps/ocpi/pages/deals/useQuotationDraft.ts#L149)). If the billing name prints it must be
+  frozen alongside — and every version generated before this change carries only the code, so the
+  renderer needs a fallback rather than a blank.
+
+**Smaller things the build should not have to rediscover.** The options-included ticks are **machine**
+options in the printed document — `optionalExtras()` ([ocPdf.ts:57-64](frontend/src/apps/ocpi/lib/ocPdf.ts#L57-L64)) appends them to the
+machine's *composition* list, so moving the block changes where it is asked, not where it prints.
+`OcpiMasterType` is a four-value union mirrored in **six** places (the type, two SQL `check`
+constraints, the `elsif` chain in `fms_ocpi_resolve_master_request`, Settings → Master owners, and
+`RequireMasterOwner`), so making the two new masters *requestable* touches all six and making them
+admin-only touches none. `fms_ocpi_machines.name` is `unique` and referenced `on delete restrict` — the
+new name column must **not** be unique, since two machines may share a billing name. `MasterCrud` has
+no boolean field type, so "dryer required" is a Yes/No `select`, and the category-filtered dryer picker
+is a `custom` field — whose `render` already receives sibling values and a `setField` to clear a choice
+its narrowing has invalidated. Master import/export columns derive from `fields` automatically, so the
+client's own `OCPI Machine Templates.xlsx` will be a column short. And per CLAUDE.md's container rule:
+moving the head-type Combobox out of the form was checked — its master-request path survives via
+[MasterRequests.tsx:173](frontend/src/apps/ocpi/pages/MasterRequests.tsx#L173) — but the same check is owed to `dryer_type` when its
+Combobox moves.
+
+**Supabase stays additive-only.** New nullable columns and new tables; never a rename of `dryer_type`,
+`heating_mode` or `ink_price`. The labels move, the columns do not.
+
+**To discuss with the client**
+
+- [ ] **Does the dryer price attract GST**, and is the "final total" before or after tax? Three lines
+      were specified; where GST sits among them was not.
+- [ ] **Where should the options-included ticks print?** They are asked in the dryer section now but
+      print under the machine's composition. Moving the printing is a second change.
+- [ ] **Are machine-category and dryer-name requestable masters**, or admin-only? Requestable costs six
+      touch points; admin-only costs none.
+- [ ] **Who back-fills the 28 machines** with a category and a head mapping? Until somebody does, a
+      category-filtered machine picker shows nothing.
+- [ ] **What happens to deals already raised** whose `head_type` was typed free-hand and no longer
+      matches the machine's mapping — read-only history, or re-derived on the next revision?
+- [ ] **The default warranty values per machine** — printer, print head, spare parts, dryer. The
+      client said they would share these; nothing can be mapped until they arrive.
+- [ ] **How the four warranty clauses should read once the post-warranty price is gone.** Removing the
+      field leaves a ruled blank mid-sentence on Homer K24, Homer K32, P8D and P8S — somebody has to
+      supply the replacement wording, and it is contract text, not a code decision.
+- [ ] **Do the warranty option lists become masters**, or stay as code constants the machine master
+      selects from? Two copies of one vocabulary will drift.
+- [ ] **Is the GST % meant to survive?** It sits inside the Delivery & tax block being deleted and was
+      not named. It must move to Commercial terms, or every *Others* deal is pinned at 18% with no way
+      to change it.
+- [ ] **Does an *Others* deal still need a delivery term?** Removing `trade_term` leaves High Seas
+      covered (via *High seas delivery via*) and Others with nothing but a cost bearer.
+- [ ] **The replacement wording for "Delivery Terms:" on all ten templates** — the line has to be
+      removed from *SALE CONDITIONS OF THE SUPPLY*, and that is contract text.
+- [ ] 🔴 **Where should the shipment and separate-invoice answers PRINT?** Head, dryer and centering
+      are all captured and stored today and appear on **neither** paper. A section of their own makes
+      them prominent on screen and still invisible on the contract.
+- [ ] **K64 has no template**, so it issues the summary sheet only — the centering answers have no
+      detailed sheet to print on even once the above is decided. Summary sheet, or give K64 a template?
+- [ ] **Is the master row `K64` the right machine**, and should it be renamed *Homer K64* to match
+      Homer K24 / K32?
+- [ ] **Should Special remarks print on the detailed sheet?** The field's hint already claims it prints
+      on both; it does not, and there is no token for it. Now that it is the only remark box, decide:
+      add it to the detailed sheet, or correct the hint.
 
 ---
 
@@ -1880,8 +2634,8 @@ gate wants — armed, both switches, a Saturday, 63 recipients — was already c
 ---
 
 ### RC-10 · The reports are Customer-wise; the dashboard is Customer Group-wise  🔴  `[x]`
-*Raised 2026-08-29 · called critical · **built and verified against live data 2026-08-29** · in the
-working tree, not yet merged to `master`*
+*Raised 2026-08-29 · called critical · **LIVE on `master` 2026-08-29**, Vercel deploy green ·
+`collectionsExport.ts`, `exportCollectionsPdf.ts`, `pdfBrand.ts`*
 
 **Proved by running the real builder locally in `MODE=dry-run` — 0 mails queued.** Not a mock: the
 same `entry.ts` the runner executes, against live ConnectWave, writing the actual PDF and workbook.
