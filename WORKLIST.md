@@ -1772,6 +1772,48 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
+### RC-11 · One storage blip cost half the send, and nothing said so  🔴  `[x]`
+*Raised and fixed 2026-08-29, off a failure seen in this session's own testing · **live** ·
+`entry.ts` + migration `20261022130000`*
+
+**What happened.** A run threw `could not upload …: <none>` — an error carrying **no message**, the
+storage API answering with nothing rather than refusing. The identical run seconds later succeeded
+untouched. A blip, not a fault.
+
+**What the blip cost is the point.** That throw escapes the per-recipient try/catch and kills the
+run, so every salesperson still queued gets nothing — while the ones already mailed keep their copy,
+and the `finally` claims the slot because `queued > 0` (it must, or a retry would double-send to
+them). The result is a **half-delivered report recorded as sent**, which will never be retried.
+On a real Saturday that is ~30 of 63 people served and 33 silently missing.
+
+**And the watchdog could not see it.** It speaks when a slot goes **unserved**; here the slot has a
+row, so it stayed quiet. **Half looked exactly like success** — the same silent-failure shape the
+watchdog exists for, one level in.
+
+**Two changes, because either alone leaves the hole open:**
+- `upload()` **retries three times** with a widening pause. A repeat that comes back *already
+  exists* counts as **success**: on a retry that is our own earlier attempt landing after its
+  response was lost, not the two-runs-racing case `upsert: false` guards — that guard is about the
+  per-run id in the prefix, which is ours alone. Anything still failing after three tries throws.
+- the watchdog now **reads the send log's note**. `collections_report_mark_sent` has always written
+  `… 3 FAILED: …` into it, so the evidence was being recorded and never read. A row whose note
+  carries `FAILED` now raises an alert saying it went out **partly** and **will not retry**.
+
+The partial alert's wording lives in `reason` rather than in the mailer, so this needed **no
+redeploy of `send-email`** — which currently also carries another session's unmerged work. The
+consequence is that the alert's body headline still reads "was not sent"; the subject line and the
+facts list are accurate. Worth tightening the next time that function is deployed for its own
+reasons.
+
+**Verified.** The partial branch end to end — subject *"Collection report only PARTLY sent - 29
+Aug"*, `partial=true`, `queued=30`, delivered — simulated inside **one transaction** that put the
+send log back, so the 29-Aug slot stayed unclaimed. Then a live sample from `master` (07:45 IST,
+book + NAKUL JI, both `sent`) proving ordinary uploads still pass through the retry.
+⚠ The retry's *failure* branch is not directly exercised — forcing a storage outage is not
+something to do on the live bucket.
+
+---
+
 ### RC-9 · The Saturday send was missed — GitHub's clock stopped  🔴  `[x]`
 *Raised and fixed 2026-08-29 · **Live 2026-08-29, 11:00 IST** · migration
 `20261022120000_collections_report_kick.sql`, `send-email` v30*
