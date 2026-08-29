@@ -1278,6 +1278,31 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     const groups = groupBySaleType(open);
 
     /**
+     * LEDGER FIRST, SALE TYPE INSIDE IT — on a group that holds more than one ledger.
+     *
+     * The rows that link here are customer GROUPS, so a page can span several ledgers. Banding by
+     * sale type alone interleaved them: forty-six INK bills belonging to three different accounts,
+     * one after another, with only a repeated Ledger column to tell them apart. You cannot work
+     * that page — chasing is done one ACCOUNT at a time, and the question is always "what does
+     * THIS ledger owe, and for what". So the ledger opens the section and its sale types sit
+     * inside it, which also lets the ledger's own totals ride on its band and removes the column.
+     *
+     * Ledgers heaviest first, on pending — the same rule the rest of the document is ordered by.
+     * Ties break on name so two exports of the same data come out identical.
+     *
+     * A single-ledger page (the large majority) takes the `else` and is BYTE-IDENTICAL to before:
+     * no ledger band, no extra column, sale-type bands exactly where they were.
+     */
+    const pendingOf = (bs: readonly PdfBillRow[]) => bs.reduce((s, b) => s + b.pending, 0);
+    const ledgerNames = [...new Set(open.map((b) => b.ledger).filter(Boolean))] as string[];
+    const byLedger = ledgerNames.length > 1
+      ? ledgerNames
+          .map((name) => ({ name, bills: open.filter((b) => b.ledger === name) }))
+          .sort((a, b) => pendingOf(b.bills) - pendingOf(a.bills) || a.name.localeCompare(b.name))
+      : [{ name: "", bills: open }];
+    const multiLedger = byLedger.length > 1;
+
+    /**
      * The biggest fifth of the bills, flagged where they sit.
      *
      * The list is ordered by DATE — oldest first, inside each sale type — which is the order you
@@ -1302,7 +1327,11 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     cy = sectionHeading(
       pdf, MARGIN, cy,
       `${open.length} open past-due bill${open.length === 1 ? "" : "s"}` +
-      `${groups.length > 1 ? ` across ${groups.length} sale types` : ""}` +
+      // The ledger count leads when there is more than one: it is the page's OUTER grouping now,
+      // and a reader who sees "46 bills across 3 sale types" on a three-ledger page will read the
+      // first band as a sale type and lose their place.
+      `${multiLedger ? ` across ${byLedger.length} ledgers` : ""}` +
+      `${groups.length > 1 ? `${multiLedger ? " and" : " across"} ${groups.length} sale types` : ""}` +
       `${onAccount.length ? " · plus On Account credit" : ""}`,
     ) + 7;
 
@@ -1321,8 +1350,21 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       bill?: PdfBillRow;
       /** A sale-type heading. Carries a label and no figures. */
       band?: string;
+      /**
+       * A LEDGER heading, on a group holding more than one. Carries that ledger's own figures, so
+       * the section states its total without a third tier of subtotal rows under it.
+       */
+      ledger?: { name: string; count: number; amount: number; received: number; pending: number };
       /** That sale type's own total, drawn under its bills. */
       subtotal?: BillSubtotal;
+      /**
+       * A blank line, drawn between a closed section and the next heading.
+       *
+       * A subtotal is a filled row and so is the band beneath it, so back to back they abutted
+       * into one slab and "INK subtotal" ran straight into "SPARE PARTS" with nothing between
+       * them. The gap is what makes the sections read as separate.
+       */
+      spacer?: boolean;
       /** The customer's bottom line — the existing row, unchanged. */
       total?: boolean;
     }
@@ -1334,19 +1376,30 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     // A lone group gets its band but NO subtotal — with nothing to compare it against it would
     // simply restate the TOTAL two rows below it.
     const billRows: BillLine[] = [];
-    for (const g of groups) {
-      billRows.push({ band: g.label });
-      for (const bill of g.bills) billRows.push({ bill });
-      if (groups.length > 1) {
-        billRows.push({
-          subtotal: {
-            count: g.bills.length,
-            amount: g.bills.reduce((s, b) => s + b.amount, 0),
-            received: g.bills.reduce((s, b) => s + b.received, 0),
-            pending: g.bills.reduce((s, b) => s + b.pending, 0),
-          },
-        });
+    const sums = (bs: readonly PdfBillRow[]) => ({
+      count: bs.length,
+      amount: bs.reduce((s, b) => s + b.amount, 0),
+      received: bs.reduce((s, b) => s + b.received, 0),
+      pending: bs.reduce((s, b) => s + b.pending, 0),
+    });
+    let firstSection = true;
+    for (const led of byLedger) {
+      const gs = groupBySaleType(led.bills);
+      if (multiLedger) {
+        if (!firstSection) billRows.push({ spacer: true });
+        billRows.push({ ledger: { name: led.name, ...sums(led.bills) } });
+        firstSection = false;
       }
+      let firstGroup = true;
+      for (const g of gs) {
+        // Never between a ledger band and its own first sale type — those belong together.
+        if (!firstGroup) billRows.push({ spacer: true });
+        billRows.push({ band: g.label });
+        firstGroup = false;
+        for (const bill of g.bills) billRows.push({ bill });
+        if (gs.length > 1) billRows.push({ subtotal: sums(g.bills) });
+      }
+      if (!multiLedger) firstSection = false;
     }
     for (const bill of onAccount) billRows.push({ bill });
     billRows.push({ total: true });
@@ -1360,9 +1413,11 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     // only one whose content is a name rather than a figure.
     const billCols: PdfColumn<BillLine>[] = [
       {
-        header: "Bill No", width: 22,
+        header: "Bill No", width: 28,
         value: (r) =>
-          r.total ? "TOTAL"
+          r.spacer ? ""
+          : r.total ? "TOTAL"
+          : r.ledger ? r.ledger.name
           : r.band ? r.band.toUpperCase()
           // "Subtotal", NOT "<sale type> subtotal": the band two rows up already names the type in
           // full, and the longer captions did not fit this column — "Non-product income subtotal"
@@ -1371,29 +1426,20 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
           : r.bill!.number,
         color: (r) => (r.bill?.isOnAccount ? BRAND.green : undefined),
       },
-      // The LEDGER, and only on a group that holds more than one.
+      // ── THE SALE TYPE COLUMN IS GONE, AND ITS WIDTH PAID FOR THE DATES ────────────────
       //
-      // The rows on the table that linked here are customer GROUPS, so this page can span several
-      // ledgers — and merged into one list with nothing to separate them, "which account is this
-      // bill against?" becomes unanswerable at exactly the moment somebody picks up the phone.
-      // `billsFor` sets `ledger` only for a multi-ledger group, so a single-ledger page (the large
-      // majority) drops the column entirely rather than repeating its own heading down every row.
+      // It repeated its own band on every single row: under "INK" every cell said "Ink", under
+      // "SPARE PARTS" every cell said "Spare Par…" — ellipsized, because the column it needed was
+      // being spent restating the heading eight rows above it. Its width went to the dates AND to
+      // Bill No, which now also has to hold a LEDGER NAME on a band row - the longest text on the
+      // page and the one an ellipsis hurts most. The band names the type once, which
+      // is the only place it means anything.
       //
-      // Column widths are ratios normalised across the set (`totalRatio` in pdfBrand), so adding
-      // one here simply rescales the rest — no other width needs touching.
-      ...(bills.some((b) => b.ledger)
-        ? [{
-            header: "Ledger", width: 20,
-            // Blank on band, subtotal and TOTAL rows: those speak in the Bill No column, and a
-            // ledger name against a sale-type subtotal would read as if the subtotal were that
-            // ledger's.
-            value: (r: BillLine) => (r.bill ? r.bill.ledger || "" : ""),
-          }]
-        : []),
-      // 13, not 12: a dd-mm-yyyy of all-wide digits needs ~47pt of cell and 12 gives 47 exactly,
-      // so some dates ellipsized and others did not. See the Last Receipt column's note.
-      { header: "Bill Date", width: 13, align: "right", value: (r) => (r.bill ? r.bill.date || NIL : "") },
-      { header: "Due Date", width: 13, align: "right", value: (r) => (r.bill ? r.bill.dueDate || NIL : "") },
+      // What it funded: dd-mm-yyyy was clipping to "03-07-2…" — a truncated date is not a shorter
+      // date, it is an unreadable one, and both date columns had it. 13 → 14 on a smaller total
+      // ratio is ~20% more room each, which fixes it on WIDTH rather than by shrinking the type.
+      { header: "Bill Date", width: 14, align: "right", value: (r) => (r.bill ? r.bill.date || NIL : "") },
+      { header: "Due Date", width: 14, align: "right", value: (r) => (r.bill ? r.bill.dueDate || NIL : "") },
       {
         header: "Due Days", width: 10, align: "right",
         // NIL is for a BILL whose due days we do not have. A band, a subtotal or the TOTAL has no
@@ -1401,25 +1447,34 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
         value: (r) => (r.bill ? (r.bill.overdueDays !== null ? String(r.bill.overdueDays) : NIL) : ""),
         color: (r) => (r.bill && (r.bill.overdueDays ?? 0) > 180 ? BRAND.red : undefined),
       },
-      // Blank on a band row: the band IS the sale type, and repeating it down the column it
-      // heads would say the same thing twice.
-      { header: "Sale Type", width: 13, value: (r) => (r.bill ? r.bill.saleType || NIL : "") },
       {
-        header: "Amount", width: 13, align: "right",
+        header: "Amount", width: 12, align: "right",
         value: (r) =>
-          r.band ? "" : money(r.total ? sum((b) => b.amount) : r.subtotal ? r.subtotal.amount : r.bill!.amount),
+          r.spacer || r.band ? ""
+          : money(r.total ? sum((b) => b.amount)
+                : r.ledger ? r.ledger.amount
+                : r.subtotal ? r.subtotal.amount
+                : r.bill!.amount),
       },
       {
-        header: "Received", width: 13, align: "right",
+        header: "Received", width: 12, align: "right",
         value: (r) =>
-          r.band ? "" : money(r.total ? sum((b) => b.received) : r.subtotal ? r.subtotal.received : r.bill!.received),
+          r.spacer || r.band ? ""
+          : money(r.total ? sum((b) => b.received)
+                : r.ledger ? r.ledger.received
+                : r.subtotal ? r.subtotal.received
+                : r.bill!.received),
       },
       {
         // The TOTAL of this column IS the customer's Overdue on the table that linked here, which
         // is the whole point of putting the On Account line in the list rather than in a footnote.
-        header: "Pending", width: 13, align: "right",
+        header: "Pending", width: 12, align: "right",
         value: (r) =>
-          r.band ? "" : money(r.total ? sum((b) => b.pending) : r.subtotal ? r.subtotal.pending : r.bill!.pending),
+          r.spacer || r.band ? ""
+          : money(r.total ? sum((b) => b.pending)
+                : r.ledger ? r.ledger.pending
+                : r.subtotal ? r.subtotal.pending
+                : r.bill!.pending),
         color: (r) => (r.bill ? (r.bill.isOnAccount ? BRAND.green : BRAND.red) : undefined),
       },
     ];
@@ -1430,9 +1485,13 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       rows: billRows,
       rowKind: (r) =>
         r.total ? "total"
-        // Band, subtotal and total are three different weights on purpose — see `drawTable`. The
-        // On Account credit KEEPS "muted": it is an aside rather than a sum, and its green figure
-        // needs the quiet ground to read.
+        // A spacer is an ordinary empty row, so it paints nothing — that blank ground IS the gap
+        // between one section's subtotal and the next section's band.
+        : r.spacer ? "normal"
+        // Ledger, band, subtotal and total are four different weights on purpose — see
+        // `drawTable`. The On Account credit KEEPS "muted": it is an aside rather than a sum, and
+        // its green figure needs the quiet ground to read.
+        : r.ledger ? "ledger"
         : r.band ? "band"
         : r.subtotal ? "subtotal"
         : r.bill?.isOnAccount ? "muted"
