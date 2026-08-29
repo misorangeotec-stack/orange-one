@@ -1,4 +1,4 @@
-import type { OcpiDeal } from "../types";
+import type { MachineOption, OcpiDeal, OcpiMachine } from "../types";
 
 /**
  * The quotation form's fields, declared once.
@@ -101,10 +101,56 @@ export interface QuotationDraft {
   /* ── Detail fields · OPTIONAL ───────────────────────────────────────────
    * Everything the DETAILED sheet needs and the summary does not. Was
    * ocFieldSpec.ts's OcDraft. None of these blocks a quotation. */
+  /* ── Shipment & invoice ───────────────────────────────────────────────────
+   * Four items can leave the factory on their own terms: the print head, the
+   * dryer, the spare parts and the centering device. Each answers the SAME four
+   * questions — how it ships, the route when it ships separately, whether it is
+   * invoiced separately, and (only then) the quantity and the amount EXCLUDING
+   * tax.
+   *
+   * ⚠ FLAT COLUMNS PER ITEM, NOT A CHILD TABLE. `payloadFromDraft`, the frozen
+   *   `field_payload` and `revisionDiff` are all flat key/value, so a child
+   *   table would simply vanish from the revision comparison — a reader would
+   *   see "nothing changed" between two quotations that ship the head
+   *   differently. The repetition is the price of the diff working.
+   *
+   * ⚠ EACH ITEM BRANCHES ON ITS OWN CONDITION, and they are not the same one:
+   *   the head on "deal includes a head", spares on "deal includes spare parts",
+   *   the dryer on the MACHINE's needs_dryer flag, and the centering device on
+   *   the machine's opt_external_centering capability. See branching.ts. */
   headShipMode: string;
   headShipVia: string;
   headSeparateInvoice: boolean | null;
+  headInvoiceQty: string;
+  headInvoiceAmount: string;
 
+  dryerShipMode: string;
+  dryerShipVia: string;
+  dryerSeparateInvoice: boolean | null;
+  dryerInvoiceQty: string;
+  dryerInvoiceAmount: string;
+
+  sparesShipMode: string;
+  sparesShipVia: string;
+  sparesSeparateInvoice: boolean | null;
+  sparesInvoiceQty: string;
+  sparesInvoiceAmount: string;
+
+  centeringShipMode: string;
+  centeringShipVia: string;
+  centeringSeparateInvoice: boolean | null;
+  centeringInvoiceQty: string;
+  centeringInvoiceAmount: string;
+
+  /* ── Dryer details ────────────────────────────────────────────────────────
+   * `dryerType` sits up in part A and now means the dryer's CATEGORY (Indian /
+   * Chinese); `dryerName` is the model inside that category, from the new
+   * fms_ocpi_dryers master. Whether the section is asked at all is decided by
+   * the MACHINE's `needs_dryer` flag — see branching.ts. */
+  dryerName: string;
+  /** Is the dryer part of the deal? If not, it is charged — `dryerPrice`. */
+  dryerIncluded: boolean | null;
+  dryerPrice: string;
   dryerChambers: string;
   heatingMode: string;
   dryerWarranty: string;
@@ -181,6 +227,26 @@ export const EMPTY_DRAFT: QuotationDraft = {
   headShipMode: "",
   headShipVia: "",
   headSeparateInvoice: null,
+  headInvoiceQty: "",
+  headInvoiceAmount: "",
+  dryerShipMode: "",
+  dryerShipVia: "",
+  dryerSeparateInvoice: null,
+  dryerInvoiceQty: "",
+  dryerInvoiceAmount: "",
+  sparesShipMode: "",
+  sparesShipVia: "",
+  sparesSeparateInvoice: null,
+  sparesInvoiceQty: "",
+  sparesInvoiceAmount: "",
+  centeringShipMode: "",
+  centeringShipVia: "",
+  centeringSeparateInvoice: null,
+  centeringInvoiceQty: "",
+  centeringInvoiceAmount: "",
+  dryerName: "",
+  dryerIncluded: null,
+  dryerPrice: "",
   dryerChambers: "",
   heatingMode: "",
   dryerWarranty: "",
@@ -260,6 +326,81 @@ export const COST_BEARERS = [
  */
 export const CURRENCIES = ["INR", "USD"] as const;
 
+/**
+ * Is this a dollar deal?
+ *
+ * ⚠ HIGH SEAS COUNTS EVEN BEFORE THE CURRENCY SAYS SO, and that is the whole
+ *   point of this predicate. `fms_ocpi_write_quotation` forces
+ *   `deal_value_currency = 'USD'` on a high-seas deal — but only ON SAVE. Every
+ *   caller here used to test the currency alone, so between choosing High Seas
+ *   and saving, the draft still read "INR": the currency box sat greyed out
+ *   showing rupees underneath a note promising dollars, and the FX block never
+ *   rendered. That left NO WAY TO ENTER A RATE on the one deal type that is
+ *   always in dollars. The deal then saved as USD with a null rate, which nulls
+ *   `deal_value_inr`, which nulls `machine_value_inr`, `gst_amount_inr` and
+ *   `total_inr` in fms_ocpi_write_oc — and BOTH PAPERS PRINTED A BLANK TOTAL.
+ *
+ *   Mirrors the SQL's own `case when v_transport = 'high_seas' then 'USD'`.
+ *   The two must agree: change one and change the other.
+ */
+export const isUsdDeal = (d: QuotationDraft): boolean =>
+  d.dealValueCurrency === "USD" || d.transportTerms === "high_seas";
+
+/**
+ * What the CHOSEN MACHINE says this deal can have.
+ *
+ * ⚠ THE DRAFT ALONE NO LONGER DECIDES WHAT IS ASKED (OCPI-3, stage E). Whether
+ *   there is a dryer, and which of the four extras apply, is a property of the
+ *   machine — mapped once on the Machine master from the client's own sheet —
+ *   not something the salesperson answers deal by deal. `fms_ocpi_write_oc`
+ *   reads exactly these columns off `fms_ocpi_machines` to decide what to keep,
+ *   so the browser has to read the same ones or the two engines disagree and
+ *   the server silently erases answers the form is still showing.
+ *
+ * ⚠ NULL IS "DO NOT ASK", NOT "MAYBE". A machine with the flag unset, or no
+ *   machine chosen yet, produces no dryer questions and no extras. That matches
+ *   `coalesce(v_centering, 'no') = 'no'` in the SQL. It is also why the Machine
+ *   master now REQUIRES the dryer flag: leaving it blank there would quietly
+ *   make a whole section unreachable.
+ */
+export interface MachineFacts {
+  needsDryer: boolean | null;
+  optAirBlade: MachineOption | null;
+  optExternalCentering: MachineOption | null;
+  optInkDustExhauster: MachineOption | null;
+  optChillingSystem: MachineOption | null;
+}
+
+/** No machine chosen — every machine-driven question is shut. */
+export const NO_MACHINE_FACTS: MachineFacts = {
+  needsDryer: null,
+  optAirBlade: null,
+  optExternalCentering: null,
+  optInkDustExhauster: null,
+  optChillingSystem: null,
+};
+
+/** Read the facts off a machine row, or the closed set when there is none. */
+export function machineFacts(m: OcpiMachine | null | undefined): MachineFacts {
+  if (!m) return NO_MACHINE_FACTS;
+  return {
+    needsDryer: m.needsDryer,
+    optAirBlade: m.optAirBlade,
+    optExternalCentering: m.optExternalCentering,
+    optInkDustExhauster: m.optInkDustExhauster,
+    optChillingSystem: m.optChillingSystem,
+  };
+}
+
+/**
+ * Can the machine carry this extra at all?
+ *
+ * `"optional"` and `"yes"` both mean ASK — "yes" is standard equipment, and the
+ * deal still has to record that it is included. `"no"` and an unmapped machine
+ * mean the question never appears.
+ */
+export const canCarry = (o: MachineOption | null): boolean => o === "optional" || o === "yes";
+
 /* ── Detail-field option lists (were ocFieldSpec.ts) ──────────────────────── */
 
 export const HEAD_SHIP_MODES = [
@@ -275,14 +416,24 @@ export const HEAD_SHIP_VIA = [
 
 export const PLATTER_OPTIONS = ["With Platter", "Without Platter", "Not Applicable"] as const;
 
-export const WARRANTY_MONTHS = ["12 Months", "18 Months", "24 Months"] as const;
+/*
+  ⚠ WARRANTY_MONTHS AND PRINTER_WARRANTY ARE GONE (OCPI-3, stage D), and are
+    recorded here rather than silently deleted because their SHAPE was the bug.
 
-export const PRINTER_WARRANTY = [
-  "12 months warranty → maximum 13 months from the invoice date",
-  "18 months warranty → maximum 19 months from the invoice date",
-  "24 months warranty → maximum 25 months from the invoice date",
-  "36 months warranty → maximum 37 months from the invoice date",
-] as const;
+    They were the option lists behind two dropdowns on the quotation. The
+    template clauses read "will be of {{machine_warranty_months}} months from the
+    date of installation" and "a Print Head Warranty of {{head_warranty_months}}
+    months", so a real contract printed:
+
+      "will be of 24 months warranty → maximum 25 months from the invoice date
+       months from the date of installation"        (from PRINTER_WARRANTY)
+      "of 24 Months months starting from …"          (from WARRANTY_MONTHS)
+
+    Warranty is now a fixed company setting — machine 12 months, head 18 — read
+    by lib/tokens.ts as a bare number, which is what the sentences expect. There
+    is no dryer or spare-parts warranty at all. Do not reintroduce a list of
+    prose warranty options: whatever fills these tokens must be a NUMBER.
+*/
 
 export const TRADE_TERMS = ["Ex-Work Surat", "CIF", "FOB", "EX Factory"] as const;
 
@@ -341,15 +492,15 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   headType: "Type of head",
   headCount: "No. of print heads required",
   inkType: "Type of ink",
-  inkPrice: "Ink price",
+  inkPrice: "Ink selling price",
   inkCreditTerms: "Ink credit terms (future)",
   inclInk: "Deal includes ink",
   inkQtyIncluded: "Quantity of ink included",
   inclSpares: "Deal includes spare parts",
-  spareDetails: "Spare part details",
+  spareDetails: "Spare part details and quantity",
   inclHead: "Deal includes head",
   headsIncluded: "No. of heads included",
-  dryerType: "Dryer required",
+  dryerType: "Dryer category",
   dealValueCurrency: "Currency",
   dealValueAmount: "Total deal value (excl. GST)",
   paymentType: "Type of payment",
@@ -371,11 +522,40 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
 
   dollarClauseAgreed: "Dollar-exchange clause agreed",
 
-  headShipMode: "How to ship the included head",
-  headShipVia: "Later shipment sent via",
-  headSeparateInvoice: "Separate invoice for the head",
+  // ── Shipment & invoice ──────────────────────────────────────────────────
+  // ⚠ THESE LABELS ARE ALSO THE REVISION DIFF'S HEADINGS AND ITS ORDER
+  //   (revisionDiff.ts derives both from this object by camel→snake), so each
+  //   one names its ITEM as well as its question. "Sent via" alone, repeated
+  //   four times, would tell a reader comparing two quotations nothing.
+  headShipMode: "Head — how it ships",
+  headShipVia: "Head — separate shipment sent via",
+  headSeparateInvoice: "Head — separate invoice",
+  headInvoiceQty: "Head — invoice quantity",
+  headInvoiceAmount: "Head — invoice amount (excl. tax)",
+
+  dryerShipMode: "Dryer — how it ships",
+  dryerShipVia: "Dryer — separate shipment sent via",
+  dryerSeparateInvoice: "Dryer — separate invoice",
+  dryerInvoiceQty: "Dryer — invoice quantity",
+  dryerInvoiceAmount: "Dryer — invoice amount (excl. tax)",
+
+  sparesShipMode: "Spare parts — how they ship",
+  sparesShipVia: "Spare parts — separate shipment sent via",
+  sparesSeparateInvoice: "Spare parts — separate invoice",
+  sparesInvoiceQty: "Spare parts — invoice quantity",
+  sparesInvoiceAmount: "Spare parts — invoice amount (excl. tax)",
+
+  centeringShipMode: "Centering device — how it ships",
+  centeringShipVia: "Centering device — separate shipment sent via",
+  centeringSeparateInvoice: "Centering device — separate invoice",
+  centeringInvoiceQty: "Centering device — invoice quantity",
+  centeringInvoiceAmount: "Centering device — invoice amount (excl. tax)",
+
+  dryerName: "Dryer",
+  dryerIncluded: "Dryer included in the deal",
+  dryerPrice: "Dryer price (excl. GST)",
   dryerChambers: "How many chambers with the dryer",
-  heatingMode: "Heating mode",
+  heatingMode: "Heating medium",
   dryerWarranty: "Dryer warranty period",
   platterDetails: "Platter",
   airBlade: "Air blade",
@@ -452,6 +632,26 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     headShipMode: s(d.headShipMode),
     headShipVia: s(d.headShipVia),
     headSeparateInvoice: d.headSeparateInvoice,
+    headInvoiceQty: s(d.headInvoiceQty),
+    headInvoiceAmount: s(d.headInvoiceAmount),
+    dryerShipMode: s(d.dryerShipMode),
+    dryerShipVia: s(d.dryerShipVia),
+    dryerSeparateInvoice: d.dryerSeparateInvoice,
+    dryerInvoiceQty: s(d.dryerInvoiceQty),
+    dryerInvoiceAmount: s(d.dryerInvoiceAmount),
+    sparesShipMode: s(d.sparesShipMode),
+    sparesShipVia: s(d.sparesShipVia),
+    sparesSeparateInvoice: d.sparesSeparateInvoice,
+    sparesInvoiceQty: s(d.sparesInvoiceQty),
+    sparesInvoiceAmount: s(d.sparesInvoiceAmount),
+    centeringShipMode: s(d.centeringShipMode),
+    centeringShipVia: s(d.centeringShipVia),
+    centeringSeparateInvoice: d.centeringSeparateInvoice,
+    centeringInvoiceQty: s(d.centeringInvoiceQty),
+    centeringInvoiceAmount: s(d.centeringInvoiceAmount),
+    dryerName: s(d.dryerName),
+    dryerIncluded: d.dryerIncluded,
+    dryerPrice: s(d.dryerPrice),
     dryerChambers: s(d.dryerChambers),
     heatingMode: s(d.heatingMode),
     dryerWarranty: s(d.dryerWarranty),
@@ -539,6 +739,26 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     head_ship_via: d.headShipVia,
     head_balance_remarks: d.headBalanceRemarks,
     head_separate_invoice: d.headSeparateInvoice,
+    head_invoice_qty: d.headInvoiceQty,
+    head_invoice_amount: d.headInvoiceAmount,
+    dryer_ship_mode: d.dryerShipMode,
+    dryer_ship_via: d.dryerShipVia,
+    dryer_separate_invoice: d.dryerSeparateInvoice,
+    dryer_invoice_qty: d.dryerInvoiceQty,
+    dryer_invoice_amount: d.dryerInvoiceAmount,
+    spares_ship_mode: d.sparesShipMode,
+    spares_ship_via: d.sparesShipVia,
+    spares_separate_invoice: d.sparesSeparateInvoice,
+    spares_invoice_qty: d.sparesInvoiceQty,
+    spares_invoice_amount: d.sparesInvoiceAmount,
+    centering_ship_mode: d.centeringShipMode,
+    centering_ship_via: d.centeringShipVia,
+    centering_separate_invoice: d.centeringSeparateInvoice,
+    centering_invoice_qty: d.centeringInvoiceQty,
+    centering_invoice_amount: d.centeringInvoiceAmount,
+    dryer_name: d.dryerName,
+    dryer_included: d.dryerIncluded,
+    dryer_price: d.dryerPrice,
     dryer_chambers: d.dryerChambers,
     heating_mode: d.heatingMode,
     dryer_warranty: d.dryerWarranty,
@@ -566,23 +786,24 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
   };
 }
 
-/**
- * Work out the GST and the total from the machine value.
- *
- * ⚠ COMPUTED HERE AND STORED, NOT DERIVED WHEN THE DOCUMENT PRINTS. A signed
- *   contract has to keep the arithmetic it was signed under; recomputing from a
- *   rate somebody edits next quarter would silently restate a total the customer
- *   agreed to.
- */
-export function withGst(d: QuotationDraft): QuotationDraft {
-  const value = Number(d.machineValueInr);
-  const rate = Number(d.gstRate);
-  if (!Number.isFinite(value) || !Number.isFinite(rate) || d.machineValueInr.trim() === "") {
-    return { ...d, gstAmountInr: "", totalInr: "" };
-  }
-  const gst = Math.round(value * rate) / 100;
-  return { ...d, gstAmountInr: String(gst), totalInr: String(value + gst) };
-}
+/*
+  ⚠ `withGst` IS GONE (OCPI-3, stage E), and it is recorded here rather than
+    silently deleted because of what it was about to cost.
+
+    It recomputed the GST amount and the total in the browser from
+    `machine_value_inr × gst_rate`. NOTHING CALLED IT — checked across all of
+    src — and nothing should have: those three figures are DERIVED SERVER-SIDE
+    in fms_ocpi_write_oc, which alone knows that a High Seas deal attracts no
+    GST at all and that a USD deal is valued at amount × fx_rate rather than at
+    the amount itself. This function knew neither, so wiring it up would have
+    produced a SECOND, different answer for one price — on a contract.
+
+    `noUnusedLocals` is false in this project and there is no test runner, so an
+    exported function nobody calls fails nothing and still reads as live code.
+    If the browser ever needs the total, read it back off the row after the
+    save — useQuotationDraft.generate already does exactly that, and its comment
+    says why.
+*/
 
 /**
  * What still has to be answered before this quotation can be finalised.
@@ -622,6 +843,12 @@ export function missingForSubmit(d: QuotationDraft): string[] {
   }
   if (!d.dealValueCurrency) out.push("the currency");
   if (!d.dealValueAmount.trim()) out.push("the total deal value");
+  // ⚠ A DOLLAR DEAL WITHOUT A RATE PRINTS A BLANK TOTAL. The rupee value is
+  //   derived from amount × rate server-side; with no rate it is null, and the
+  //   null carries all the way through to "Total Value (INR)" on both papers.
+  //   Nothing used to require it — not here, and not in the table's
+  //   `fms_ocpi_complete_when_submitted` check, which now asks for it too.
+  if (isUsdDeal(d) && !d.fxRate.trim()) out.push("the USD to INR rate");
   if (!d.paymentType) out.push("the type of payment");
   if (!d.paymentTerms.trim()) out.push("the terms of payment");
   if (!d.deliveryDate) out.push("the machine delivery date");
@@ -643,17 +870,26 @@ export function missingForSubmit(d: QuotationDraft): string[] {
  * missingForSubmit skips them: a deal with no dryer has no dryer warranty to be
  * missing.
  */
-export function missingForDetailSheet(d: QuotationDraft): string[] {
+export function missingForDetailSheet(d: QuotationDraft, facts: MachineFacts): string[] {
   const out: string[] = [];
-  const hasDryer = !!d.dryerType && d.dryerType !== "Not Applicable";
 
-  if (!d.printerWarranty.trim()) out.push(FIELD_LABEL.printerWarranty);
-  if (!d.headWarranty.trim()) out.push(FIELD_LABEL.headWarranty);
+  // ⚠ THE THREE WARRANTY CHECKS ARE GONE, and their absence is the point. The
+  //   machine and head warranties are now a fixed SETTING, so they can never be
+  //   blank on the sheet; the dryer warranty is not offered at all. Warning a
+  //   salesperson that a field they can no longer see is empty would be worse
+  //   than silence — it is a warning they cannot act on.
   if (!d.deliveryDays.trim()) out.push(FIELD_LABEL.deliveryDays);
   if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
   if (d.inclHead === true && !d.headShipMode) out.push(FIELD_LABEL.headShipMode);
-  if (hasDryer && !d.dryerChambers.trim()) out.push(FIELD_LABEL.dryerChambers);
-  if (hasDryer && !d.dryerWarranty.trim()) out.push(FIELD_LABEL.dryerWarranty);
+
+  // ⚠ THE DRYER IS THE MACHINE'S ANSWER NOW, not the deal's. This used to read
+  //   `dryerType !== 'Not Applicable'` — the salesperson's own pick — so a
+  //   machine that takes no dryer could still be nagged for chamber count.
+  //   Same rule, same source, as branching.ts and fms_ocpi_write_oc.
+  if (facts.needsDryer === true) {
+    if (!d.dryerName.trim()) out.push(FIELD_LABEL.dryerName);
+    if (!d.dryerChambers.trim()) out.push(FIELD_LABEL.dryerChambers);
+  }
 
   return out;
 }

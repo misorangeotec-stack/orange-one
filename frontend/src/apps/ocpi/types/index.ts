@@ -145,11 +145,70 @@ export interface OcpiDeal {
   remarks: string | null;
   dollarClauseAgreed: boolean | null;
 
+  /* ── Shipment & invoice ───────────────────────────────────────────────────
+   * Four items, the same four questions each. `HeadShipMode` / `HeadShipVia`
+   * keep their names — they were the head's alone before this — but the
+   * vocabulary is shared by all four, so they are used across the group rather
+   * than copied per item. */
   headShipMode: HeadShipMode | null;
   headShipVia: HeadShipVia | null;
   headBalanceRemarks: string | null;
   headSeparateInvoice: boolean | null;
+  /** Quantity and amount exist ONLY on a separate invoice — see fms_ocpi_write_oc. */
+  headInvoiceQty: number | null;
+  headInvoiceAmount: number | null;
 
+  dryerShipMode: HeadShipMode | null;
+  dryerShipVia: HeadShipVia | null;
+  dryerSeparateInvoice: boolean | null;
+  dryerInvoiceQty: number | null;
+  dryerInvoiceAmount: number | null;
+
+  sparesShipMode: HeadShipMode | null;
+  sparesShipVia: HeadShipVia | null;
+  sparesSeparateInvoice: boolean | null;
+  sparesInvoiceQty: number | null;
+  sparesInvoiceAmount: number | null;
+
+  centeringShipMode: HeadShipMode | null;
+  centeringShipVia: HeadShipVia | null;
+  centeringSeparateInvoice: boolean | null;
+  centeringInvoiceQty: number | null;
+  centeringInvoiceAmount: number | null;
+
+  /**
+   * The dryer model, inside the category `dryerType` names.
+   *
+   * ⚠ TEXT, NOT A FOREIGN KEY, exactly like `headType` / `inkType` / `dryerType`
+   *   beside it. A deal is a frozen record of what was quoted; renaming or
+   *   retiring a dryer in the master must not rewrite a contract already signed.
+   */
+  dryerName: string | null;
+  /** Is the dryer part of the deal? If not, `dryerPrice` is what it costs. */
+  dryerIncluded: boolean | null;
+  /**
+   * The dryer’s price when it is NOT part of the deal, IN THE DEAL’S CURRENCY.
+   *
+   * ⚠ IT DOES ATTRACT GST — client-answered 29-Aug-2026, reversing the holding
+   *   position this comment used to describe. `dryerGstInr` carries the tax and
+   *   `grandTotalInr` the sum; `totalInr` still means the MACHINE total alone,
+   *   so the papers can print machine total → dryer total → final total.
+   */
+  dryerPrice: number | null;
+  /**
+   * The dryer money, DERIVED server-side like the machine’s (29-Aug-2026).
+   *
+   * ⚠ `dryerPrice` is in the DEAL’S CURRENCY; `dryerValueInr` is the rupee
+   *   figure, converted at the same frozen rate as `machineValueInr`. Reading
+   *   the price as rupees on a dollar deal would be an ~85x error on a contract.
+   *
+   * ⚠ `totalInr` STILL MEANS THE MACHINE TOTAL. `grandTotalInr` is what the
+   *   customer pays: machine + its GST + dryer + its GST. The papers print all
+   *   three lines, and read these figures rather than adding any of them.
+   */
+  dryerValueInr: number | null;
+  dryerGstInr: number | null;
+  grandTotalInr: number | null;
   dryerChambers: string | null;
   heatingMode: string | null;
   platterDetails: string | null;
@@ -294,9 +353,47 @@ export interface QuotationVersion {
 }
 
 /** A machine, which is also its order-confirmation template. */
+/**
+ * Whether a machine can carry an optional extra at all.
+ *
+ * ⚠ THREE STATES, NOT A BOOLEAN, and the third is the useful one. It is the
+ *   client's own vocabulary from the machine sheet: `no` means the machine
+ *   cannot have it, so the question is never asked; `optional` means ask the
+ *   salesperson; `yes` means it is always included. Before this, all four
+ *   extras were asked on every deal regardless of what the machine can take.
+ */
+export type MachineOption = "no" | "optional" | "yes";
+
+export const MACHINE_OPTIONS: { value: MachineOption; label: string }[] = [
+  { value: "no", label: "No — never offered" },
+  { value: "optional", label: "Optional — ask on the quotation" },
+  { value: "yes", label: "Yes — always included" },
+];
+
 export interface OcpiMachine {
   id: string;
+  /**
+   * The machine CODE, and what the quotation dropdown has always shown.
+   * ⚠ Untouched by OCPI-3 — `billingName` was added beside it, not over it.
+   */
   name: string;
+  /** The full product name as it reads on an invoice. NOT unique. */
+  billingName: string | null;
+  /** Direct / Sublimation / Other. Chosen first on the quotation; narrows the list. */
+  categoryId: string | null;
+  /**
+   * Does this machine take a dryer?
+   *
+   * ⚠ PER MACHINE, NOT PER CATEGORY. It was specified on the category and the
+   *   client's own sheet disproved it: in "Other", Position Printer needs one
+   *   while all three Pengda machines do not.
+   */
+  needsDryer: boolean | null;
+  optAirBlade: MachineOption | null;
+  /** Also decides whether the centering device is asked about at all. */
+  optExternalCentering: MachineOption | null;
+  optInkDustExhauster: MachineOption | null;
+  optChillingSystem: MachineOption | null;
   docTitle: "ORDER CONFIRMATION" | "OFFER QUOTE";
   introText: string | null;
   machineModelNo: string | null;
@@ -308,6 +405,35 @@ export interface OcpiMachine {
   /** False ⇒ quotable, and issued on the summary sheet alone — nothing is blocked. */
   hasTemplate: boolean;
   active: boolean;
+  sortOrder: number;
+}
+
+/**
+ * A dryer model, belonging to one dryer CATEGORY.
+ *
+ * `fms_ocpi_dryer_types` holds the categories — Indian / Chinese / Not
+ * Applicable — and keeps its table name; this is the list of actual dryers
+ * within each. The quotation picks the category first and filters this by it.
+ */
+export interface OcpiDryer {
+  id: string;
+  dryerTypeId: string;
+  name: string;
+  active: boolean;
+  sortOrder: number;
+}
+
+/**
+ * One machine ↔ one print head. A machine may have SEVERAL.
+ *
+ * ⚠ The client's sheet lists two heads in a single cell for five machines
+ *   ("EX600 RC Katan & Homer", "MS & Kyocera both"), and confirmed a machine
+ *   genuinely offers more than one. The quotation shows them all and the
+ *   salesperson does not choose.
+ */
+export interface OcpiMachineHead {
+  machineId: string;
+  headTypeId: string;
   sortOrder: number;
 }
 

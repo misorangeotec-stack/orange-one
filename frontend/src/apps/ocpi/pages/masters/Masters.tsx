@@ -3,16 +3,43 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import { useOcpiStore } from "../../store";
-import { insertNamedMaster, updateNamedMaster } from "../../data/ocpiMasterWrites";
-import type { OcpiMasterType, OcpiNamedMaster } from "../../types";
+import {
+  insertNamedMaster, updateNamedMaster,
+  insertMachineCategory, updateMachineCategory,
+  insertDryer, updateDryer,
+} from "../../data/ocpiMasterWrites";
+import type { OcpiDryer, OcpiMasterType, OcpiNamedMaster } from "../../types";
 
-type Tab = Exclude<OcpiMasterType, "machine">;
+/**
+ * ⚠ TWO OF THESE TABS ARE NOT MASTER *TYPES*.
+ *
+ *   `machine_category` and `dryer` are screens, not entries in
+ *   `OcpiMasterType` — that union is a wire contract mirrored in six places
+ *   (the type, two SQL check constraints, the elsif chain in
+ *   fms_ocpi_resolve_master_request, Settings → Master owners, and
+ *   RequireMasterOwner), and widening it would buy a "request a new category"
+ *   flow nobody asked for. They borrow an existing owner instead, and
+ *   `OWNED_BY` below is the single place that says which — it must agree with
+ *   the RLS policies in migration 20261021130000.
+ */
+type Tab = Exclude<OcpiMasterType, "machine"> | "machine_category" | "dryer";
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: "machine_category", label: "Machine categories" },
   { key: "head_type", label: "Print-head types" },
   { key: "ink_type", label: "Ink types" },
-  { key: "dryer_type", label: "Dryer types" },
+  { key: "dryer_type", label: "Dryer categories" },
+  { key: "dryer", label: "Dryers" },
 ];
+
+/** Which master's owner may edit each tab. Mirrors the RLS in 20261021130000. */
+const OWNED_BY: Record<Tab, OcpiMasterType> = {
+  head_type: "head_type",
+  ink_type: "ink_type",
+  dryer_type: "dryer_type",
+  machine_category: "machine",
+  dryer: "dryer_type",
+};
 
 /**
  * The OCPI setup masters.
@@ -40,7 +67,15 @@ export default function Masters() {
   const [tab, setTab] = useState<Tab>("head_type");
 
   const rowsFor = (t: Tab): OcpiNamedMaster[] =>
-    t === "head_type" ? s.headTypes : t === "ink_type" ? s.inkTypes : s.dryerTypes;
+    t === "head_type" ? s.headTypes
+      : t === "ink_type" ? s.inkTypes
+        : t === "machine_category" ? s.machineCategories
+          : s.dryerTypes;
+
+  const canManage = s.canManageMaster(OWNED_BY[tab]);
+
+  /** A dryer category name, for the Dryers tab. */
+  const categoryOf = (id: string) => s.dryerTypes.find((d) => d.id === id)?.name ?? "—";
 
   const columns: MasterColumn<OcpiNamedMaster>[] = [
     { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
@@ -61,8 +96,9 @@ export default function Masters() {
         <h1 className="text-[22px] font-bold text-navy">Masters</h1>
         <p className="mt-1 text-[13.5px] text-grey-2">
           The lists a quotation picks from. Editable by admins and by each list&rsquo;s owner
-          (Settings → Master owners); anyone else can ask for an entry and it appears under
-          Master requests.
+          (Settings → Master owners). For print heads, inks and dryer categories, anyone else can ask
+          for an entry and it appears under Master requests &mdash; <b className="text-navy">machine
+          categories and dryers cannot be requested</b>, so an owner adds those directly.
         </p>
       </div>
 
@@ -95,32 +131,92 @@ export default function Masters() {
         ))}
       </div>
 
-      <MasterCrud<OcpiNamedMaster>
-        key={tab}
-        singular={singular}
-        rows={rowsFor(tab)}
-        columns={columns}
-        fields={fields}
-        searchText={(r) => r.name}
-        defaultOrder={(r) => r.sortOrder}
-        canManage={s.canManageMaster(tab)}
-        emptyValues={{ name: "", sortOrder: "0" }}
-        toValues={(r) => ({ name: r.name, sortOrder: String(r.sortOrder) })}
-        onSubmit={async (id, v, active) => {
-          const input = {
-            name: v.name.trim(),
-            active,
-            sortOrder: Math.max(0, Math.floor(Number(v.sortOrder) || 0)),
-          };
-          if (id) await updateNamedMaster(tab, id, input);
-          else await insertNamedMaster(tab, input);
-          await s.refresh();
-        }}
-        onToggleActive={async (row, active) => {
-          await updateNamedMaster(tab, row.id, { name: row.name, active, sortOrder: row.sortOrder });
-          await s.refresh();
-        }}
-      />
+      {tab === "dryer" ? (
+        /*
+          ⚠ ITS OWN INSTANCE, because a dryer is the one list here that is not
+            just a name — it belongs to a dryer CATEGORY, and the quotation
+            filters this list by the category the salesperson picked. Casting it
+            through the name-only MasterCrud above would have hidden that field.
+        */
+        <MasterCrud<OcpiDryer>
+          key={tab}
+          singular="dryer"
+          rows={s.dryers}
+          columns={[
+            { header: "Dryer", render: (r) => <span className="font-medium text-navy">{r.name}</span>,
+              filter: { get: (r) => r.name } },
+            { header: "Category", render: (r) => categoryOf(r.dryerTypeId),
+              filter: { get: (r) => categoryOf(r.dryerTypeId) } },
+            { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
+          ]}
+          fields={[
+            { key: "name", label: "Dryer name", type: "text", required: true,
+              hint: "Exactly as it should read on the quotation." },
+            { key: "dryerTypeId", label: "Dryer category", type: "select", required: true,
+              options: s.dryerTypes
+                .filter((d) => d.active && d.name !== "Not Applicable")
+                .map((d) => ({ value: d.id, label: d.name })),
+              hint: "Indian or Chinese. The quotation asks for the category first, then offers only the dryers inside it." },
+            { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0" },
+          ]}
+          searchText={(r) => `${r.name} ${categoryOf(r.dryerTypeId)}`}
+          defaultOrder={(r) => r.sortOrder}
+          canManage={canManage}
+          emptyValues={{ name: "", dryerTypeId: "", sortOrder: "0" }}
+          toValues={(r) => ({
+            name: r.name, dryerTypeId: r.dryerTypeId, sortOrder: String(r.sortOrder),
+          })}
+          onSubmit={async (id, v, active) => {
+            const input = {
+              name: v.name.trim(),
+              dryerTypeId: v.dryerTypeId,
+              active,
+              sortOrder: Math.max(0, Math.floor(Number(v.sortOrder) || 0)),
+            };
+            if (id) await updateDryer(id, input);
+            else await insertDryer(input);
+            await s.refresh();
+          }}
+          onToggleActive={async (row, active) => {
+            await updateDryer(row.id, {
+              name: row.name, dryerTypeId: row.dryerTypeId, active, sortOrder: row.sortOrder,
+            });
+            await s.refresh();
+          }}
+        />
+      ) : (
+        <MasterCrud<OcpiNamedMaster>
+          key={tab}
+          singular={singular}
+          rows={rowsFor(tab)}
+          columns={columns}
+          fields={fields}
+          searchText={(r) => r.name}
+          defaultOrder={(r) => r.sortOrder}
+          canManage={canManage}
+          emptyValues={{ name: "", sortOrder: "0" }}
+          toValues={(r) => ({ name: r.name, sortOrder: String(r.sortOrder) })}
+          onSubmit={async (id, v, active) => {
+            const input = {
+              name: v.name.trim(),
+              active,
+              sortOrder: Math.max(0, Math.floor(Number(v.sortOrder) || 0)),
+            };
+            if (tab === "machine_category") {
+              if (id) await updateMachineCategory(id, input);
+              else await insertMachineCategory(input);
+            } else if (id) await updateNamedMaster(tab, id, input);
+            else await insertNamedMaster(tab, input);
+            await s.refresh();
+          }}
+          onToggleActive={async (row, active) => {
+            const input = { name: row.name, active, sortOrder: row.sortOrder };
+            if (tab === "machine_category") await updateMachineCategory(row.id, input);
+            else await updateNamedMaster(tab, row.id, input);
+            await s.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

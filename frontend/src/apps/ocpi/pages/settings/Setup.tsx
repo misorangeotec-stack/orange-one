@@ -5,6 +5,7 @@ import MasterOwnersSection from "./MasterOwnersSection";
 import QuotationNumberingSection from "./QuotationNumberingSection";
 import OcNumberingSection from "./OcNumberingSection";
 import QuotationValiditySection from "./QuotationValiditySection";
+import WarrantySection from "./WarrantySection";
 import CompanyProfilesSection from "./CompanyProfilesSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 
@@ -38,6 +39,7 @@ export default function Setup() {
       <QuotationNumberingSection />
       <OcNumberingSection />
       <QuotationValiditySection />
+      <WarrantySection />
       <CompanyProfilesSection />
       <EmailNotificationsSection />
     </div>

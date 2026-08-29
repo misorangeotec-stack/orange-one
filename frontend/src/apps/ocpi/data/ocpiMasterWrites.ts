@@ -125,3 +125,73 @@ export async function setMasterManagers(
     .insert(userIds.map((id) => ({ master_type: type, manager_user_id: id })));
   if (error) throw new Error(error.message);
 }
+
+/* ── OCPI-3 · machine categories, dryer models, machine↔head links ──────────
+ *
+ * ⚠ THESE ARE NOT NEW MASTER *TYPES*. `OcpiMasterType` is a four-value union
+ *   mirrored in six places — the type itself, two SQL check constraints, the
+ *   elsif chain in fms_ocpi_resolve_master_request, Settings → Master owners
+ *   and RequireMasterOwner. Widening it would cost all six and buy a "request a
+ *   new category" flow nobody asked for. Instead their RLS borrows an existing
+ *   owner: categories and the head links follow whoever owns `machine`, dryer
+ *   models follow whoever owns `dryer_type`. Same reasoning as
+ *   fms_ocpi_machine_sections, which has always followed its machine's owner.
+ */
+
+export async function insertMachineCategory(input: NamedMasterInput): Promise<void> {
+  const { error } = await db.from("fms_ocpi_machine_categories").insert({
+    name: input.name, active: input.active, sort_order: input.sortOrder,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateMachineCategory(id: string, input: NamedMasterInput): Promise<void> {
+  const { error } = await db.from("fms_ocpi_machine_categories").update({
+    name: input.name, active: input.active, sort_order: input.sortOrder,
+  }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export interface DryerInput extends NamedMasterInput {
+  dryerTypeId: string;
+}
+
+export async function insertDryer(input: DryerInput): Promise<void> {
+  const { error } = await db.from("fms_ocpi_dryers").insert({
+    name: input.name, active: input.active, sort_order: input.sortOrder,
+    dryer_type_id: input.dryerTypeId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateDryer(id: string, input: DryerInput): Promise<void> {
+  const { error } = await db.from("fms_ocpi_dryers").update({
+    name: input.name, active: input.active, sort_order: input.sortOrder,
+    dryer_type_id: input.dryerTypeId,
+  }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Replace a machine's whole head list.
+ *
+ * ⚠ DELETE-THEN-INSERT, deliberately, and for the same reason `replaceSections`
+ *   does it: the set is what the editor is showing. A per-row upsert would leave
+ *   a de-selected head behind whenever the editor also added one, and a
+ *   quotation would then print a head nobody meant to offer.
+ *
+ * An empty list is legitimate — six machines in the client's sheet have no head
+ * at all (the three Pengdas say "NO"; Position, Label and Book Printer are
+ * blank) — so this must be callable with `[]` and simply clear the row.
+ */
+export async function replaceMachineHeads(machineId: string, headTypeIds: string[]): Promise<void> {
+  const del = await db.from("fms_ocpi_machine_head_types").delete().eq("machine_id", machineId);
+  if (del.error) throw new Error(del.error.message);
+  if (headTypeIds.length === 0) return;
+  const { error } = await db.from("fms_ocpi_machine_head_types").insert(
+    headTypeIds.map((headTypeId, i) => ({
+      machine_id: machineId, head_type_id: headTypeId, sort_order: i,
+    })),
+  );
+  if (error) throw new Error(error.message);
+}

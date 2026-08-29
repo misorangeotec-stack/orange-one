@@ -37,6 +37,8 @@ export function exportDealRegister(
   filters: string[] = [],
 ): void {
   const machine = (d: OcpiDeal) => deps.machineById(d.machineId)?.name ?? "";
+  const billingName = (d: OcpiDeal) => deps.machineById(d.machineId)?.billingName ?? "";
+  const yesNo = (v: boolean | null) => (v === null ? "" : v ? "Yes" : "No");
 
   const columns: ExportColumn<OcpiDeal>[] = [
     { header: "Quotation No.", width: 14, value: (d) => d.quotationNo ?? "" },
@@ -52,8 +54,15 @@ export function exportDealRegister(
     { header: "Salesperson", width: 20, value: (d) => d.salespersonName ?? "" },
     { header: "Raised by", width: 20, value: (d) => deps.personName(d.raisedBy) },
     { header: "Machine", width: 30, value: (d) => machine(d) },
+    // ⚠ BOTH NAMES (OCPI-3, stage I). "Machine" is the CODE the register has
+    //   always carried; this is the product description the INVOICE will show,
+    //   which is what somebody reconciling this register against Tally needs.
+    //   Read from the machine, so it follows a re-description — unlike the
+    //   contract, which keeps the name it was issued under.
+    { header: "Billing name", width: 44, value: (d) => billingName(d) },
     { header: "Machines", width: 9, value: (d) => d.machineCount ?? "" },
     { header: "Print heads", width: 11, value: (d) => d.headCount ?? "" },
+    { header: "Type of head", width: 26, value: (d) => d.headType ?? "" },
     // See the header: the figure and the unit it is in are two columns on
     // purpose, so the numeric column can be summed without lying.
     { header: "Currency", width: 9, value: (d) => d.dealValueCurrency ?? "" },
@@ -67,7 +76,62 @@ export function exportDealRegister(
     { header: "Machine value (INR)", width: 17, value: (d) => d.machineValueInr ?? "" },
     { header: "GST (INR)", width: 14, value: (d) => d.gstAmountInr ?? "" },
     { header: "Total (INR)", width: 15, value: (d) => d.totalInr ?? "" },
+    /*
+      ⚠ THE DRYER IS ITS OWN MONEY AND ITS OWN COLUMNS. It is NOT inside
+        "Total (INR)", which is and always was the MACHINE total — so a register
+        showing only that would understate what the customer was asked to pay on
+        every deal where a dryer is sold outside the deal. "Grand total (INR)"
+        below is the figure the customer pays.
+
+      ⚠ THE PRICE IS IN THE DEAL’S CURRENCY and the rupee figure is beside it,
+        for the same reason the machine has both: a numeric column mixing dollars
+        and rupees with no way to tell which is which is worse than no column.
+        All four are DERIVED server-side; the client settled the dryer’s GST on
+        29-Aug-2026 — it applies, at the deal’s own rate.
+    */
+    { header: "Dryer category", width: 14, value: (d) => d.dryerType ?? "" },
+    { header: "Dryer", width: 22, value: (d) => d.dryerName ?? "" },
+    { header: "Dryer in deal", width: 12, value: (d) => yesNo(d.dryerIncluded) },
+    { header: "Dryer price (deal currency)", width: 20, value: (d) => d.dryerPrice ?? "" },
+    { header: "Dryer value (INR)", width: 17, value: (d) => d.dryerValueInr ?? "" },
+    { header: "Dryer GST (INR)", width: 15, value: (d) => d.dryerGstInr ?? "" },
+    // What the customer actually pays: machine + its GST + dryer + its GST.
+    // "Total (INR)" above is the MACHINE total and always was.
+    { header: "Grand total (INR)", width: 17, value: (d) => d.grandTotalInr ?? "" },
+    /*
+      ⚠ SEPARATELY-INVOICED ITEMS, three columns each — billed separately, the
+        quantity, and the amount. These were captured, stored and frozen from the
+        revision onward and appeared in NO register column — the same gap the
+        detailed sheet had. A finance reader reconciling invoices against this
+        register could not see which deals would produce a second bill, or for
+        how much.
+
+      ⚠ ALL FOUR CARRY A QUANTITY, not just the head. The form asks it of every
+        row and the contract's SHIPMENT & INVOICE table prints all four, so a
+        register that exported the head's quantity alone would disagree with the
+        paper it is meant to reconcile — on the three rows where a reader is most
+        likely to be checking a second bill line by line.
+    */
+    { header: "Head invoiced separately", width: 19, value: (d) => yesNo(d.headSeparateInvoice) },
+    { header: "Head invoice qty", width: 14, value: (d) => d.headInvoiceQty ?? "" },
+    { header: "Head invoice amount", width: 18, value: (d) => d.headInvoiceAmount ?? "" },
+    { header: "Dryer invoiced separately", width: 19, value: (d) => yesNo(d.dryerSeparateInvoice) },
+    { header: "Dryer invoice qty", width: 14, value: (d) => d.dryerInvoiceQty ?? "" },
+    { header: "Dryer invoice amount", width: 18, value: (d) => d.dryerInvoiceAmount ?? "" },
+    { header: "Spares invoiced separately", width: 20, value: (d) => yesNo(d.sparesSeparateInvoice) },
+    { header: "Spares invoice qty", width: 14, value: (d) => d.sparesInvoiceQty ?? "" },
+    { header: "Spares invoice amount", width: 18, value: (d) => d.sparesInvoiceAmount ?? "" },
+    { header: "Centering invoiced separately", width: 22, value: (d) => yesNo(d.centeringSeparateInvoice) },
+    { header: "Centering invoice qty", width: 16, value: (d) => d.centeringInvoiceQty ?? "" },
+    { header: "Centering invoice amount", width: 20, value: (d) => d.centeringInvoiceAmount ?? "" },
     { header: "Payment terms", width: 24, value: (d) => d.paymentTerms ?? "" },
+    /*
+      ⚠ "Delivery term" STAYS — settled with the client on 29-Aug-2026, after an
+        earlier instruction to remove it. It is the only delivery route an
+        "Others" deal records anywhere: commercial terms asks a route on High
+        Seas deals alone, and 11 of the 12 ordinary deals on record had filled
+        this in. It also feeds "Delivery Terms:" on all ten contract templates.
+    */
     { header: "Delivery term", width: 16, value: (d) => d.tradeTerm ?? "" },
     { header: "Delivery days", width: 13, value: (d) => d.deliveryDays ?? "" },
     { header: "Delivery date", width: 13, value: (d) => dmy(d.deliveryDate) },

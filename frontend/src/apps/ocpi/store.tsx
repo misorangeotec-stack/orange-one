@@ -16,6 +16,7 @@ import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection, OcpiNotification,
   OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiMasterType, OcpiNamedMaster,
+  OcpiDryer, OcpiMachineHead,
 } from "./types";
 
 /**
@@ -79,6 +80,11 @@ interface OcpiStoreValue {
   headTypes: OcpiNamedMaster[];
   inkTypes: OcpiNamedMaster[];
   dryerTypes: OcpiNamedMaster[];
+  /** Direct / Sublimation / Other. Chosen first on the quotation. */
+  machineCategories: OcpiNamedMaster[];
+  /** Dryer models, each belonging to one dryer category. */
+  dryers: OcpiDryer[];
+  machineHeads: OcpiMachineHead[];
   masterManagers: OcpiMasterManager[];
   masterRequests: OcpiMasterRequest[];
 
@@ -108,6 +114,10 @@ interface OcpiStoreValue {
   ownersOf: (step: StepKey) => string[];
   machineById: (id: string | null) => OcpiMachine | undefined;
   sectionsFor: (machineId: string) => OcpiMachineSection[];
+  /** Every print head a machine can be built with — a machine may have several. */
+  headsFor: (machineId: string | null) => OcpiNamedMaster[];
+  /** Dryer models within one dryer category, active first. */
+  dryersFor: (dryerTypeId: string | null) => OcpiDryer[];
   /** The selling entity's identity for a deal's company, falling back to the default row. */
   profileFor: (companyId: string | null) => OcpiCompanyProfile | undefined;
   /** The same, plus whether the answer came from the default rather than the deal's own company. */
@@ -124,6 +134,14 @@ interface OcpiStoreValue {
   setCoordinators: (userIds: string[]) => Promise<void>;
   /** How many days a quotation stands — the {{quotation_validity_days}} token. */
   setQuotationValidityDays: (days: number) => Promise<void>;
+  /**
+   * The two fixed warranty periods, in months.
+   *
+   * ⚠ COMPANY-WIDE POLICY, NOT A PER-DEAL ANSWER. Changing these changes what
+   *   every future contract prints; papers already issued keep the periods they
+   *   were issued under, because each revision freezes its own resolved document.
+   */
+  setWarranty: (machineMonths: number, headMonths: number) => Promise<void>;
   /** Admin: confirm the last quotation number already issued. Forward-only. */
   setQuotationSeries: (lastUsed: number) => Promise<number>;
   /** Move the order-confirmation series for one financial year. */
@@ -137,6 +155,9 @@ const EMPTY_CONFIG: OcpiConfig = {
   processCoordinatorIds: [],
   quotationValidityDays: 30,
   defaultGstRate: 18,
+  // The client's settled figures, so even a store that has not loaded yet names
+  // the right periods rather than a zero.
+  warranty: { machineMonths: 12, headMonths: 18 },
   quotationSeries: { confirmed: false, confirmedAtValue: null, confirmedAt: null, confirmedBy: null },
   ocSeries: {},
 };
@@ -209,6 +230,9 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
     const headTypes = data?.headTypes ?? [];
     const inkTypes = data?.inkTypes ?? [];
     const dryerTypes = data?.dryerTypes ?? [];
+    const machineCategories = data?.machineCategories ?? [];
+    const dryers = data?.dryers ?? [];
+    const machineHeads = data?.machineHeads ?? [];
     const masterManagers = data?.masterManagers ?? [];
     const masterRequests = data?.masterRequests ?? [];
 
@@ -225,6 +249,37 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       machineSections
         .filter((s) => s.machineId === machineId && s.active)
         .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    /*
+      Every head a machine can be built with, in the order they were mapped.
+
+      ⚠ A MACHINE MAY HAVE SEVERAL, so this returns a LIST and callers must not
+        assume one. Five machines on the client's sheet carry two — "EX600 RC
+        Katan & Homer", "MS & Kyocera both" — and six carry none at all, which
+        is equally legitimate: the three Pengdas say "NO" and Position, Label and
+        Book Printer are blank. An empty list means "this machine has no head to
+        show", not "not mapped yet".
+
+        Deactivated heads are kept: a machine mapped to a head somebody has since
+        retired should still say so, rather than silently losing it.
+    */
+    const headsFor = (machineId: string | null): OcpiNamedMaster[] => {
+      if (!machineId) return [];
+      const links = machineHeads
+        .filter((h) => h.machineId === machineId)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      return links
+        .map((l) => headTypes.find((h) => h.id === l.headTypeId))
+        .filter((h): h is OcpiNamedMaster => !!h);
+    };
+
+    /** Dryer models inside one category — what the quotation offers once a category is picked. */
+    const dryersFor = (dryerTypeId: string | null): OcpiDryer[] =>
+      dryerTypeId
+        ? dryers
+            .filter((d) => d.dryerTypeId === dryerTypeId && d.active)
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+        : [];
 
     const profileFor = (companyId: string | null) =>
       (companyId ? companyProfiles.find((p) => p.companyId === companyId && p.active) : undefined) ??
@@ -280,6 +335,9 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       headTypes,
       inkTypes,
       dryerTypes,
+      machineCategories,
+      dryers,
+      machineHeads,
       masterManagers,
       masterRequests,
       canManageMaster,
@@ -295,6 +353,8 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       ownersOf,
       machineById,
       sectionsFor,
+      headsFor,
+      dryersFor,
       profileFor,
       profileStatusFor,
 
@@ -312,6 +372,10 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       },
       setQuotationValidityDays: async (days) => {
         await setConfigWrite('quotation_validity_days', { days });
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      setWarranty: async (machineMonths, headMonths) => {
+        await setConfigWrite('warranty_periods', { machine_months: machineMonths, head_months: headMonths });
         await qc.invalidateQueries({ queryKey: QK });
       },
       setQuotationSeries: async (lastUsed) => {

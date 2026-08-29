@@ -19,10 +19,13 @@ import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection } fr
  *   it, and hard-codes none of it.
  *
  * ⚠ EVERY BLANK IS A TOKEN. The decks carry literal fill-in gaps — "warranty of
- *   _______months", "INR ____________ plus GST" — and those are now
- *   {{machine_warranty_months}} and {{post_warranty_head_price}}. An unanswered
- *   token prints as a ruled blank, exactly as the paper version does, never as
- *   the braces themselves.
+ *   _______months" — and those are now {{machine_warranty_months}} and the rest
+ *   of the list in tokens.ts. An unanswered token prints as a ruled blank,
+ *   exactly as the paper version does, never as the braces themselves.
+ *
+ *   (The deck’s other gap, "INR ____________ plus GST", was
+ *   {{post_warranty_head_price}} until stage J.1 replaced the sentence around it
+ *   with one that needs no figure. Both the token and the field are gone.)
  *
  * ⚠ OPTIONAL EQUIPMENT IS APPENDED FROM THE DEAL, not baked into the machine.
  *   K32's own deck lists an air blade and a centring device as though every K32
@@ -37,6 +40,8 @@ export interface OcDocInput {
   profile?: OcpiCompanyProfile;
   /** From module config, for the {{quotation_validity_days}} token. */
   validityDays?: number;
+  /** From module config, for the two warranty tokens. Fixed company policy. */
+  warranty?: { machineMonths: number; headMonths: number };
 }
 
 const dmy = (iso: string | null): string => {
@@ -52,6 +57,61 @@ const inr = (n: number | null): string =>
 
 const usd = (n: number | null): string =>
   n === null ? "" : `$ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
+/** How a shipment mode / route reads on a contract, not as it is stored. */
+const SHIP_MODE_TEXT: Record<string, string> = {
+  with_machine: "With the machine",
+  separate: "Separate shipment",
+};
+const SHIP_VIA_TEXT: Record<string, string> = {
+  directly: "Directly",
+  hss: "High Seas Sale (HSS)",
+  local_sales: "Local sales",
+};
+
+export interface ShipmentLine {
+  item: string;
+  mode: string;
+  via: string;
+  separateInvoice: boolean | null;
+  qty: number | null;
+  amount: number | null;
+}
+
+/**
+ * What ships on its own terms, and what is billed on its own.
+ *
+ * ⚠ THIS ANSWERS A GAP, NOT A REQUEST FOR MORE DETAIL. Before stage I these
+ *   answers were asked on the form, branch-gated in BOTH engines, written by
+ *   fms_ocpi_write_oc and frozen into every revision payload — and printed in
+ *   NEITHER paper, in no template token, and in no register column. Four
+ *   questions a salesperson answered on every head-inclusive deal, and no
+ *   document ever stated what was agreed.
+ *
+ * ⚠ A LINE APPEARS ONLY IF THE DEAL CARRIES ONE. The branch rules already
+ *   guarantee a null for anything that does not apply — the head's columns are
+ *   nulled when no head is included, the dryer's when the machine takes none —
+ *   so an empty line here means the question was not answered, not that it was
+ *   inapplicable, and it is left off rather than printed as a ruled blank.
+ */
+export function shipmentLines(d: OcpiDeal): ShipmentLine[] {
+  const rows: [string, string | null, string | null, boolean | null, number | null, number | null][] = [
+    ["Print head", d.headShipMode, d.headShipVia, d.headSeparateInvoice, d.headInvoiceQty, d.headInvoiceAmount],
+    ["Dryer", d.dryerShipMode, d.dryerShipVia, d.dryerSeparateInvoice, d.dryerInvoiceQty, d.dryerInvoiceAmount],
+    ["Spare parts", d.sparesShipMode, d.sparesShipVia, d.sparesSeparateInvoice, d.sparesInvoiceQty, d.sparesInvoiceAmount],
+    ["Centering device", d.centeringShipMode, d.centeringShipVia, d.centeringSeparateInvoice, d.centeringInvoiceQty, d.centeringInvoiceAmount],
+  ];
+  return rows
+    .filter(([, mode, , inv]) => !!mode || inv !== null)
+    .map(([item, mode, via, inv, qty, amount]) => ({
+      item,
+      mode: mode ? (SHIP_MODE_TEXT[mode] ?? mode) : "",
+      via: via ? (SHIP_VIA_TEXT[via] ?? via) : "",
+      separateInvoice: inv,
+      qty,
+      amount,
+    }));
+}
 
 /** What this deal adds to the machine's standard composition. */
 export function optionalExtras(d: OcpiDeal): string[] {
@@ -72,12 +132,22 @@ export function optionalExtras(d: OcpiDeal): string[] {
 export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
   const { deal, machine, sections, profile } = input;
   const tokens = {
-    ...tokensFor({ deal, profile }),
+    ...tokensFor({ deal, profile, warranty: input.warranty }),
     quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
   };
   return {
     doc_title: docHeading(deal),
     oc_no: deal.ocNo,
+    /*
+      ⚠ BOTH NAMES ARE FROZEN, not just the code (OCPI-3, stage I). The billing
+        name is read off the MACHINE at render time, so a machine renamed or
+        re-described next year would otherwise change what an already-issued
+        contract appears to have said. Revisions frozen BEFORE this carry
+        neither key — they are simply absent, which is honest; there is nothing
+        to invent them from.
+    */
+    machine_name: machine.name,
+    machine_billing_name: machine.billingName,
     intro_text: machine.introText ? resolve(machine.introText, tokens).text : null,
     header_fields: machine.headerFields,
     signoff_style: machine.signoffStyle,
@@ -106,6 +176,34 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
       gst_rate: deal.gstRate,
       gst_amount_inr: deal.gstAmountInr,
       total_inr: deal.totalInr,
+      /*
+        ⚠ THE DRYER MONEY IS PART OF THE MONEY. A snapshot recording only
+          `total_inr` could not afterwards say what the customer was actually
+          asked to pay, which is the one thing a disputed total turns on.
+          `total_inr` is the MACHINE total; `grand_total_inr` is the sum.
+          `dryer_price` is in the DEAL’S CURRENCY and `dryer_value_inr` is the
+          rupee figure it converted to — both are frozen, because the second
+          cannot be re-derived once a rate moves.
+      */
+      dryer_price: deal.dryerPrice,
+      dryer_included: deal.dryerIncluded,
+      dryer_value_inr: deal.dryerValueInr,
+      dryer_gst_inr: deal.dryerGstInr,
+      grand_total_inr: deal.grandTotalInr,
+    },
+    /*
+      ⚠ FROZEN BECAUSE IT NOW PRINTS. Before stage I these answers were frozen
+        into `field_payload` but appeared on no document; they are part of the
+        resolved contract now, so the snapshot has to carry what was printed.
+    */
+    shipment: shipmentLines(deal),
+    dryer: {
+      category: deal.dryerType,
+      name: deal.dryerName,
+      chambers: deal.dryerChambers,
+      heating_medium: deal.heatingMode,
+      included: deal.dryerIncluded,
+      price: deal.dryerPrice,
     },
     company_profile: profile
       ? {
@@ -130,7 +228,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   const left = MARGIN;
 
   const tokens = {
-    ...tokensFor({ deal, profile }),
+    ...tokensFor({ deal, profile, warranty: input.warranty }),
     quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
   };
 
@@ -164,6 +262,22 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   if (wants("date")) header.push(["Date:", dmy(deal.ocAt ?? new Date().toISOString())]);
   if (wants("ref")) header.push(["Ref:", deal.refNo ?? ""]);
   if (wants("address")) header.push(["Address:", [deal.customerName, deal.customerAddress].filter(Boolean).join(", ")]);
+
+  /*
+    ⚠ THE BILLING NAME IS NOT IN `headerFields`, AND THAT IS THE POINT (OCPI-3,
+      stage I). Those four — attn, date, ref, address — are a per-machine choice
+      about what a given deck happens to want at the top. This is not optional in
+      the same way: it is the product description the INVOICE will carry, and a
+      contract that does not state it cannot be matched against the bill it
+      produces.
+
+      The machine CODE is already on this paper — every one of the ten intros
+      reads "we are glad to confirm the supply of <code> Digital Printing
+      Machine…", and each deck carries two naming spec rows — so only the billing
+      name was missing. Nothing prints when the machine has no billing name; 21
+      of the 28 are mapped.
+  */
+  if (machine.billingName) header.push(["Product:", machine.billingName]);
 
   for (const [label, value] of header) {
     const lines = wrapText(pdf, value, cw - 62, 9);
@@ -265,7 +379,32 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   if (deal.gstRate !== null) {
     moneyRows.push([`+ ${deal.gstRate}% GST Value INR`, inr(deal.gstAmountInr), false]);
   }
-  moneyRows.push(["Total Value INR", inr(deal.totalInr), true]);
+  /*
+    ⚠ MACHINE TOTAL → DRYER TOTAL → FINAL TOTAL when a dryer is charged outside
+      the deal, exactly as the client specified, and matching the summary sheet
+      row for row.
+
+    ⚠ EVERY FIGURE IS READ, NOT COMPUTED. The dryer's rupee value, its GST and
+      the grand total are derived in `fms_ocpi_write_oc` and stored, like the
+      machine's. Stage I added them in the browser as a holding position while
+      the dryer's tax treatment was unanswered; the client settled it on
+      29-Aug-2026 — GST applies, at the same rate — and the arithmetic moved to
+      the server. Only the server knows that High Seas carries no GST at all and
+      that a dollar deal's dryer converts at the rate frozen onto the revision.
+  */
+  const dryerCharged = deal.dryerValueInr !== null && deal.dryerValueInr > 0;
+  if (dryerCharged) {
+    moneyRows.push(["Machine Total INR", inr(deal.totalInr), false]);
+    moneyRows.push(["Dryer Value INR", inr(deal.dryerValueInr), false]);
+    // Omitted, not zeroed, on a High Seas deal — see the note above the machine's
+    // own tax row for why a zero-tax line is a different claim from no line.
+    if (deal.dryerGstInr !== null) {
+      moneyRows.push([`+ ${deal.gstRate}% GST on Dryer INR`, inr(deal.dryerGstInr), false]);
+    }
+    moneyRows.push(["Final Total INR", inr(deal.grandTotalInr), true]);
+  } else {
+    moneyRows.push(["Total Value INR", inr(deal.totalInr), true]);
+  }
   for (const [label, value, strong] of moneyRows) {
     y = room(y, 18);
     if (strong) {
@@ -277,6 +416,78 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
     y += 18;
   }
   y += 12;
+
+  /*
+    ── Shipment & invoice ───────────────────────────────────────────────────
+
+    ⚠ THE CLIENT ASKED FOR THESE ANSWERS TO PRINT ON THE DETAILED PAPER, and
+      until now they printed on neither. See `shipmentLines` for what was
+      missing. Five columns, because "invoiced separately: yes" without the
+      quantity and the amount states an intention and not a term.
+
+    ⚠ AMOUNTS ARE EXCLUSIVE OF TAX, by instruction, and the heading says so —
+      an amount on a contract with no tax status is not a figure anybody can act
+      on. They are NOT added into the totals above: a separately-invoiced item is
+      billed on its own document, and rolling it into this one would double it.
+  */
+  const shipment = shipmentLines(deal);
+  if (shipment.length > 0) {
+    const COLS: [string, number][] = [
+      ["Item", 0.24], ["How it ships", 0.2], ["Sent via", 0.19],
+      ["Separate invoice", 0.13], ["Qty", 0.08], ["Amount (excl. tax)", 0.16],
+    ];
+    // Fractions sum to 1, so the six columns fill the content width exactly.
+    const w = COLS.map(([, f]) => cw * f);
+    const x: number[] = [];
+    for (let i = 0, at = left; i < w.length; at += w[i], i++) x.push(at);
+
+    y = room(y, 46);
+    text(pdf, "SHIPMENT & INVOICE", left, y, { size: 9.5, bold: true });
+    y += 6;
+    text(pdf, "Amounts exclude tax and are billed on their own invoice.", left, y + 5, {
+      size: 8, color: BRAND.grey,
+    });
+    y += 14;
+
+    setFill(pdf, BRAND.navy);
+    pdf.rect(left, y, cw, 16, "F");
+    COLS.forEach(([label], i) =>
+      text(pdf, label, x[i] + 5, y + 11, { size: 7.5, bold: true, color: BRAND.white }),
+    );
+    y += 16;
+
+    for (const line of shipment) {
+      const cells = [
+        line.item,
+        line.mode,
+        line.via,
+        line.separateInvoice === null ? "" : line.separateInvoice ? "Yes" : "No",
+        line.qty === null ? "" : String(line.qty),
+        line.amount === null ? "" : inr(line.amount),
+      ];
+      const wrapped = cells.map((c, i) => wrapText(pdf, c, w[i] - 10, 8.5));
+      const h = Math.max(17, 7 + Math.max(...wrapped.map((l) => l.length)) * 10);
+      y = room(y, h);
+
+      setDraw(pdf, BRAND.line);
+      pdf.setLineWidth(0.6);
+      pdf.rect(left, y, cw, h);
+      wrapped.forEach((lines, i) => {
+        if (i > 0) pdf.line(x[i], y, x[i], y + h);
+        // The two numeric columns right-align, so figures line up to be read
+        // down the column rather than compared character by character.
+        const numeric = i >= 4;
+        lines.forEach((l, k) =>
+          text(pdf, l, numeric ? x[i] + w[i] - 5 : x[i] + 5, y + 11 + k * 10, {
+            size: 8.5,
+            align: numeric ? "right" : undefined,
+          }),
+        );
+      });
+      y += h;
+    }
+    y += 14;
+  }
 
   // ── The machine's own sections, in its own order ─────────────────────────
   for (const sec of sections) {

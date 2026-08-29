@@ -66,6 +66,23 @@ const rateText = (n: number | null): string => (n === null ? "" : n.toFixed(4));
 /** A label/value pair for the boxed sections. */
 type Row = { label: string; value: string; wide?: boolean };
 
+/**
+ * What the label cell says on the second and later slices of a split row.
+ *
+ * Not the label again: repeating "Special Remarks" on page 3 reads as a second
+ * remarks field rather than the rest of the first one.
+ */
+const CONTINUED = ["… continued"];
+
+/**
+ * The fewest value lines a page-foot fragment may carry.
+ *
+ * One orphan line under a heading is worse than starting the row on the next
+ * page, and this loop only ever splits a row that cannot fit a whole page
+ * anyway — so the floor costs nothing in the common case.
+ */
+const MIN_SPLIT = 3;
+
 function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows: Row[] }[] {
   const isHighSeas = d.transportTerms === "high_seas";
   const isUsd = d.dealValueCurrency === "USD";
@@ -108,7 +125,35 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
   if (d.gstRate !== null) {
     commercial.push({ label: `GST @ ${d.gstRate}%`, value: inr(d.gstAmountInr) });
   }
-  commercial.push({ label: "Total Value (INR)", value: inr(d.totalInr) });
+  /*
+    ⚠ THREE LINES WHEN A DRYER IS CHARGED SEPARATELY: machine total → dryer total
+      → final total, exactly as the client specified.
+
+    ⚠ EVERY FIGURE HERE IS READ, NOT COMPUTED. The dryer's rupee value, its GST
+      and the grand total are all derived in `fms_ocpi_write_oc` and stored, the
+      same way the machine's already were. Stage I added the two numbers in the
+      browser as a HOLDING POSITION, because nobody had said whether a separately
+      charged dryer attracted tax; the client answered on 29-Aug-2026 that it
+      does, at the same rate, and the arithmetic moved to the server where the
+      rest of the money lives.
+
+      That matters beyond tidiness: only the server knows a High Seas deal
+      attracts no GST at all, and that a dollar deal's dryer price must convert
+      at the rate frozen onto the revision. A browser-side sum knew neither.
+  */
+  const dryerCharged = d.dryerValueInr !== null && d.dryerValueInr > 0;
+  if (dryerCharged) {
+    commercial.push({ label: "Machine Total (INR)", value: inr(d.totalInr) });
+    commercial.push({ label: "Dryer Value (INR)", value: inr(d.dryerValueInr) });
+    // No tax row on a High Seas deal, which carries none — a zero-GST line and
+    // no line are different claims, and only one of them is true.
+    if (d.dryerGstInr !== null) {
+      commercial.push({ label: `Dryer GST @ ${d.gstRate}% (INR)`, value: inr(d.dryerGstInr) });
+    }
+    commercial.push({ label: "Final Total (INR)", value: inr(d.grandTotalInr) });
+  } else {
+    commercial.push({ label: "Total Value (INR)", value: inr(d.totalInr) });
+  }
   commercial.push({
     label: "Term of Payment",
     value:
@@ -135,36 +180,102 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
       blank for a question it was never asked.
   */
   const remarks: Row[] = [{ label: "Special Remarks", value: d.remarks ?? "", wide: true }];
-  if (d.inclHead === true) {
+
+  /*
+    ⚠ THE OTHER TWO BOXES PRINT ONLY IF THEY HOLD SOMETHING (OCPI-3, stage H).
+      The client removed them from the form; their columns remain, and 13 of the
+      18 deals on record carry balance-head remarks with 14 carrying other
+      commitments. Two rules are in tension here and both are honoured:
+
+        · A RETIRED QUESTION MUST NOT PRINT A RULED BLANK. Every other row on
+          this sheet prints its blank deliberately, so the reader can see what
+          was not answered. A question nobody can answer any more is different —
+          its blank says "we forgot" about something that was withdrawn.
+
+        · WHAT A DEAL ALREADY RECORDED MUST NOT VANISH. Silently dropping the
+          row would remove text from the next generated paper of a deal that had
+          it, with nothing to say why.
+
+      So: content prints, emptiness does not. The head condition goes with it —
+      it only ever existed to avoid exactly the ruled blank now handled here.
+  */
+  if (d.headBalanceRemarks?.trim()) {
     remarks.push({
       label: "Balance Heads to be Sold Later",
-      value: d.headBalanceRemarks ?? "",
+      value: d.headBalanceRemarks,
       wide: true,
     });
   }
-  remarks.push({ label: "Any Other Commitments", value: d.otherCommitments ?? "", wide: true });
+  if (d.otherCommitments?.trim()) {
+    remarks.push({ label: "Any Other Commitments", value: d.otherCommitments, wide: true });
+  }
+
+  /*
+    ⚠ BOTH NAMES PRINT (OCPI-3, stage I). "Machine Name" is the CODE the module
+      has always shown — "Homer K24", "P8S". The billing name is the full product
+      description that will appear on the invoice: "LARGE FORMAT INKJET PRINTER
+      WITH 24 HEADS WITH STD. ACCESSORIES". A customer matching this quotation
+      against the invoice it produces needs the second, and until now the paper
+      carried only the first.
+
+    ⚠ IT PRINTS ONLY IF THE MACHINE HAS ONE. 21 of the 28 machines are mapped;
+      an unmapped machine gets no row rather than a ruled blank, since this is
+      not a question anyone failed to answer. It is `wide` because these run to
+      ~100 characters and would wrap to four lines in a half-width cell.
+
+    ⚠ NOT AVAILABLE ON A REVISION FROZEN BEFORE THIS. The name is read from the
+      machine at render time, so regenerating an old deal picks it up, but a
+      revision already frozen keeps the document it was issued with — which is
+      the freeze rule the whole module runs on, and the right behaviour.
+  */
+  const machineRows: Row[] = [{ label: "Machine Name", value: machine?.name ?? "" }];
+  if (machine?.billingName) {
+    machineRows.push({ label: "Billing Name", value: machine.billingName, wide: true });
+  }
+  machineRows.push(
+    { label: "No. of Print Heads Required", value: d.headCount === null ? "" : String(d.headCount) },
+    { label: "Type of Head", value: d.headType ?? "" },
+    { label: "Type of Ink Used", value: d.inkType ?? "" },
+    { label: "Ink Selling Price", value: d.inkPrice ?? "" },
+    { label: "Credit Terms for Included Ink", value: d.inkCreditTerms ?? "" },
+    { label: "No. of Machines", value: d.machineCount === null ? "" : String(d.machineCount) },
+  );
+
+  /*
+    ⚠ THE DRYER ROWS ARE CONDITIONAL NOW, and there used to be exactly one of
+      them ("Dryer Required") printed on every deal — a ruled blank on the 17
+      machines that take no dryer, asking a question that cannot apply to them.
+
+      Shown when the MACHINE takes a dryer, or when the deal holds a dryer answer
+      of its own. The second half matters for a deal quoted before the mapping
+      existed: its answers must not disappear because the model was later flagged
+      as needing none. Same rule as the retired remark boxes in stage H —
+      content prints, emptiness does not.
+  */
+  const showsDryer =
+    machine?.needsDryer === true || !!d.dryerType || !!d.dryerName || !!d.dryerChambers;
+  if (showsDryer) {
+    machineRows.push(
+      { label: "Dryer Category", value: d.dryerType ?? "" },
+      { label: "Dryer", value: d.dryerName ?? "" },
+      { label: "No. of Chambers", value: d.dryerChambers ?? "" },
+      { label: "Heating Medium", value: d.heatingMode ?? "" },
+      { label: "Dryer Included in the Deal", value: yesNo(d.dryerIncluded) },
+    );
+  }
+  if (d.platterDetails) {
+    machineRows.push({ label: "Platter", value: d.platterDetails });
+  }
 
   return [
-    {
-      title: "A.  Machine Details",
-      rows: [
-        { label: "Machine Name", value: machine?.name ?? "" },
-        { label: "No. of Print Heads Required", value: d.headCount === null ? "" : String(d.headCount) },
-        { label: "Type of Head", value: d.headType ?? "" },
-        { label: "Type of Ink Used", value: d.inkType ?? "" },
-        { label: "Ink Price", value: d.inkPrice ?? "" },
-        { label: "Credit Terms for Included Ink", value: d.inkCreditTerms ?? "" },
-        { label: "Dryer Required", value: d.dryerType ?? "" },
-        { label: "No. of Machines", value: d.machineCount === null ? "" : String(d.machineCount) },
-      ],
-    },
+    { title: "A.  Machine Details", rows: machineRows },
     {
       title: "B.  Deal Inclusions",
       rows: [
         { label: "Inclusive of Ink?", value: yesNo(d.inclInk) },
         { label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded ?? "" },
         { label: "Inclusive of Spare Parts?", value: yesNo(d.inclSpares) },
-        { label: "Spare Part Details", value: d.spareDetails ?? "" },
+        { label: "Spare Part Details and Quantity", value: d.spareDetails ?? "" },
         { label: "Inclusive of Head?", value: yesNo(d.inclHead) },
         { label: "No. of Heads Included in Deal", value: d.headsIncluded === null ? "" : String(d.headsIncluded) },
       ],
@@ -279,6 +390,41 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
   const LABEL_W = cw * 0.38;
   const HALF = cw / 2;
 
+  /**
+   * Draw one row, or one slice of a row that is being split across pages.
+   *
+   * Pulled out of the loop below so the whole-row case and the split case draw
+   * through exactly the same code — two drawing routines for one box is how the
+   * split half ends up with a different border weight from the whole one.
+   */
+  const drawChunk = (
+    a: Row,
+    b: Row | null,
+    labelA: string[],
+    labelB: string[],
+    valA: string[],
+    valB: string[],
+    h: number,
+    cellW: number,
+    aLabelW: number,
+    bLabelW: number,
+  ) => {
+    setDraw(pdf, BRAND.line);
+    pdf.setLineWidth(0.6);
+    pdf.rect(left, y, cellW, h);
+    pdf.line(left + aLabelW, y, left + aLabelW, y + h);
+    labelA.forEach((l, k) => text(pdf, l, left + 6, y + 11 + k * 10, { size: 8, bold: true }));
+    valA.forEach((l, k) => text(pdf, l, left + aLabelW + 6, y + 11 + k * 10, { size: 8.5 }));
+
+    if (b) {
+      const bx = left + HALF;
+      pdf.rect(bx, y, HALF, h);
+      pdf.line(bx + bLabelW, y, bx + bLabelW, y + h);
+      labelB.forEach((l, k) => text(pdf, l, bx + 6, y + 11 + k * 10, { size: 8, bold: true }));
+      valB.forEach((l, k) => text(pdf, l, bx + bLabelW + 6, y + 11 + k * 10, { size: 8.5 }));
+    }
+  };
+
   for (const sec of sectionRows(deal, machine)) {
     if (y + 46 > bodyBottom(pdf)) y = newPage(letterhead);
 
@@ -306,29 +452,83 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
       //   16pt row and print on top of the row beneath it.
       const aLabelLines = wrapText(pdf, a.label, aLabelW - 10, 8, true);
       const bLabelLines = b ? wrapText(pdf, b.label, bLabelW - 10, 8, true) : [];
-      const aLines = wrapText(pdf, a.value, aValW, 8.5);
-      const bLines = b ? wrapText(pdf, b.value, bValW, 8.5) : [];
-      const tallest = Math.max(aLabelLines.length, bLabelLines.length, aLines.length, bLines.length);
-      const rowH = Math.max(17, 7 + tallest * 10);
+      let aRest = wrapText(pdf, a.value, aValW, 8.5);
+      let bRest = b ? wrapText(pdf, b.value, bValW, 8.5) : [];
 
-      if (y + rowH > bodyBottom(pdf)) y = newPage(letterhead);
+      /*
+        ⚠ A ROW TALLER THAN A PAGE IS NOW SPLIT ACROSS PAGES (OCPI-3, stage H).
 
-      setDraw(pdf, BRAND.line);
-      pdf.setLineWidth(0.6);
-      pdf.rect(left, y, cellW, rowH);
-      pdf.line(left + aLabelW, y, left + aLabelW, y + rowH);
-      aLabelLines.forEach((l, k) => text(pdf, l, left + 6, y + 11 + k * 10, { size: 8, bold: true }));
-      aLines.forEach((l, k) => text(pdf, l, left + aLabelW + 6, y + 11 + k * 10, { size: 8.5 }));
+          This loop used to size the row and, if it would not fit, move the WHOLE
+          row to a fresh page — with no logic to split one. A row taller than the
+          body area therefore overflowed the new page too, and ran off the bottom
+          SILENTLY: no error, no marker, the text simply stopped existing below
+          the fold.
 
-      if (b) {
-        const bx = left + HALF;
-        pdf.rect(bx, y, HALF, rowH);
-        pdf.line(bx + bLabelW, y, bx + bLabelW, y + rowH);
-        bLabelLines.forEach((l, k) => text(pdf, l, bx + 6, y + 11 + k * 10, { size: 8, bold: true }));
-        bLines.forEach((l, k) => text(pdf, l, bx + bLabelW + 6, y + 11 + k * 10, { size: 8.5 }));
+          That was unreachable while the free-text boxes held a sentence. It
+          became reachable the moment the client asked for Special remarks to be
+          entered POINT BY POINT — a dozen numbered lines is a tall row, and
+          warranty exceptions now land in that same box by instruction, since
+          there is no warranty field any more.
+
+          Continuations repeat nothing and re-label the cell "… continued", so a
+          reader meeting the second half on page 3 knows it is not a new field.
+      */
+      let firstChunk = true;
+      for (;;) {
+        const labelA = firstChunk ? aLabelLines : CONTINUED;
+        const labelB = b ? (firstChunk ? bLabelLines : CONTINUED) : [];
+        const need = Math.max(labelA.length, labelB.length, aRest.length, bRest.length);
+        const fullH = Math.max(17, 7 + need * 10);
+
+        // 1. Fits where we are — the ordinary case, and the only one before this.
+        if (fullH <= bodyBottom(pdf) - y) {
+          drawChunk(a, b, labelA, labelB, aRest, bRest, fullH, cellW, aLabelW, bLabelW);
+          y += fullH;
+          break;
+        }
+
+        // 2. Fits on a page of its own — move it whole. A break is always tidier
+        //    than a split, and this is what the old code did (correctly) for
+        //    every row that was merely awkwardly placed.
+        if (fullH <= bodyBottom(pdf) - BODY_TOP) {
+          y = newPage(letterhead);
+          drawChunk(a, b, labelA, labelB, aRest, bRest, fullH, cellW, aLabelW, bLabelW);
+          y += fullH;
+          break;
+        }
+
+        // 3. Taller than ANY page, so it must be split. THIS is the case the old
+        //    code had no answer for: it moved the row to a fresh page and let the
+        //    overflow run off the bottom.
+        //
+        //    ⚠ THE TEST IS "TALLER THAN AN EMPTY PAGE", NOT "TALLER THAN WHAT IS
+        //      LEFT" — otherwise a row that merely sat low on the page would be
+        //      split when moving it whole would do, and every long remark would
+        //      arrive in two pieces for no reason.
+        let lines = Math.floor((bodyBottom(pdf) - y - 7) / 10);
+        const floorLines = Math.max(labelA.length, labelB.length, MIN_SPLIT);
+        if (lines < floorLines) {
+          // Too little left here to be worth a fragment; start the slice on a
+          // fresh page instead. Never reached on a page that is already fresh.
+          y = newPage(letterhead);
+          lines = Math.floor((bodyBottom(pdf) - y - 7) / 10);
+        }
+        lines = Math.max(1, lines); // cannot happen on A4; guards the loop's exit
+        const h = 7 + lines * 10;
+        drawChunk(
+          a, b, labelA, labelB,
+          aRest.slice(0, lines), bRest.slice(0, lines),
+          h, cellW, aLabelW, bLabelW,
+        );
+        aRest = aRest.slice(lines);
+        bRest = bRest.slice(lines);
+        y += h;
+        firstChunk = false;
+        // Only turn the page if something is actually left to draw on it.
+        if (!aRest.length && !bRest.length) break;
+        y = newPage(letterhead);
       }
 
-      y += rowH;
       i += b ? 2 : 1;
     }
     y += 10;
