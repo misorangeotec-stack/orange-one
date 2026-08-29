@@ -656,11 +656,16 @@ export function applyDeferredLinks(
  *            without breaking it into separate `drawTable` calls, which would lose the shared
  *            header and the page-break handling.
  *   subtotal · the row that CLOSES a section, under the bills it sums.
+ *   ledger · a band ABOVE a band, for a table grouped two deep. It opens an outer section whose
+ *            inner sections are ordinary `band`s, so it has to out-rank one while still reading as
+ *            a heading rather than a sum: same darker ground as a subtotal, but with an orange rail
+ *            instead of the subtotal's navy top rule, which is what tells the two apart when a
+ *            subtotal closes the last inner section immediately above it.
  *   big    · an ordinary row FLAGGED as one of the large ones. It is still a data row — it sums
  *            nothing and concludes nothing — so it wears a rail and a wash rather than a
  *            total's fill. Only meaningful where the caller has ranked the rows.
  */
-export type RowKind = "normal" | "total" | "muted" | "grand" | "band" | "subtotal" | "big";
+export type RowKind = "normal" | "total" | "muted" | "grand" | "band" | "subtotal" | "big" | "ledger";
 
 export interface TableOpts<T> {
   x: number;
@@ -752,6 +757,16 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
       pdf.setLineWidth(0.7);
       pdf.line(x, y, x + width, y);
     }
+    // The OUTER band of a two-deep table, which has to sit above an ordinary `band` without being
+    // mistaken for the `subtotal` that usually precedes it. Same darker ground as a subtotal, but
+    // opened by an orange rail rather than closed by a navy rule — the rail reads as "a section
+    // starts here", which is exactly the difference.
+    else if (kind === "ledger") {
+      setFill(pdf, BRAND.lineStrong);
+      pdf.rect(x, y, width, rowH, "F");
+      setFill(pdf, BRAND.orange);
+      pdf.rect(x, y + 1, 2.4, rowH - 2, "F");
+    }
     // A flagged row: faint wash plus an orange rail down its left edge. The rail is what does the
     // work — a wash pale enough not to be mistaken for a total is also pale enough to miss when
     // scanning, and the rail is the same mark the cards use for "look here".
@@ -768,7 +783,8 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
     columns.forEach((c, i) => {
       const right = (c.align ?? "left") === "right";
       const bold =
-        kind === "grand" || kind === "total" || kind === "band" || kind === "subtotal" || kind === "big";
+        kind === "grand" || kind === "total" || kind === "band" || kind === "subtotal" ||
+        kind === "big" || kind === "ledger";
       const color = (kind === "grand" ? undefined : c.color?.(row)) ?? baseColor;
       const raw = c.value(row);
       const shown = ellipsize(pdf, raw, widths[i] - pad * 2, bodySize, bold);
