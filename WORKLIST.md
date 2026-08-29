@@ -46,7 +46,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | The filled asset register sheet (vehicles, IT, air conditioners) | Ritesh Bhai / Finance | **AM-2** | 2026-08-29 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
-| The dryer names to load, Indian and Chinese — the dryer master is EMPTY, so no dryer can be named on any of the 11 machines that take one | Ritesh Bhai / Bushra | **OCPI-3 go-live** | 2026-08-29 |
+| The REAL dryer names, Indian and Chinese — six `[SAMPLE]` placeholders are standing in so the 11 machines that take a dryer can name one | Ritesh Bhai / Bushra | **OCPI-3 go-live** | 2026-08-29 |
 
 ---
 
