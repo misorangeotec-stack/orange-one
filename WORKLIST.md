@@ -1166,8 +1166,32 @@ template is the deliverable and the bulk importer is how it comes back.
   masters gives **3 assets, 7 tracks, 0 rejected**, unchanged with 200 blank rows appended.
   Nothing was committed to the register.
 
-**Round one is vehicles, IT equipment and air conditioners only.** The other four categories are a
-re-send of the same 27 columns, not a redesign.
+**Round one is vehicles, IT equipment and air conditioners only** — Vehicle, Computer & IT, Air
+Conditioner. Sheet sent to Ritesh Bhai on 2026-08-29.
+
+### AM-3 · Round two: the remaining four asset categories  `[ ]`
+*Raised 2026-08-29 · **Sequenced behind AM-2** — do not start until round one is back and loaded.*
+
+Machinery, Electrical, Furniture and Safety Equipment. Deliberately held back so the first ask
+stays small: a short sheet gets filled and returned, and we find out whether the format survives
+contact with a field team before anyone is asked to list everything the company owns.
+
+**Nothing new to build.** Same workbook, same 27 columns, same importer. The Picklists tab already
+carries all seven categories, so a machine filled in today would load perfectly well — the only
+thing scoping round one to three categories is the covering note and which examples the Sample tab
+happens to show.
+
+**The one change worth making first:** swap two Sample rows to a machine instead of the laptop.
+Machinery meters in **Hours** rather than KM and carries **Calibration** and **Statutory
+Inspection** tracks, none of which round one's examples demonstrate. That is an edit to `SAMPLE` in
+[build-asset-template.mjs](frontend/scripts/build-asset-template.mjs) and to `sampleRows()` in
+[importTemplate.ts](frontend/src/apps/asset-maintenance/lib/importTemplate.ts), then
+`npm run asset-template`. Half an hour, not a rebuild.
+
+**Do this before sending round two, not after:** re-run the masters query in the generator's header
+comment and refresh the `PICKLISTS` snapshot. Round one will have added makes, locations and
+vendors through the "Values we do not have yet" box, and a stale snapshot would send the teams a
+dropdown that is missing values we have only just created.
 
 **Two traps the Read Me warns about, because neither gives a usable error:**
 - A serial number identifies one physical unit. Give two different assets the same one and the
