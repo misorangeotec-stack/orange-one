@@ -1966,3 +1966,502 @@ right for an 800 drum. A real 800 spec sheet is still needed.
 Alpha 3.2 templates that exist differ materially — 8 heads is **1800 | 2200 mm** with a 1000 Meter roll
 and no front dryer, 24 heads is **3200 mm** with a 10000 Meter roll and a front dryer. The client is
 supplying the detail.
+
+---
+
+# OCPI-7 · A "no" is not the end of the conversation — 31-Aug-2026
+
+**Tracked in WORKLIST.md as:** OCPI-7 · *Asked for by Ritesh Bhai*
+
+Section B asks three questions — *deal includes ink · spare parts · head* — and a **No** used to end
+the conversation. It should not: *"not included in the machine price"* is not *"not being sold"*. The
+customer still buys ink and still buys heads, and the rate is agreed at the same table as the machine.
+That agreement lived nowhere, so it was re-negotiated later from memory.
+
+```
+Deal includes ink?  ── Yes ──▶ Quantity of ink included        (unchanged)
+                    ├─ No  ──▶ Offered at a subsidized rate?
+                    │            ├─ No  ──▶ nothing further
+                    │            └─ Yes ──▶ Quantity · Rate · Sub-total
+                    └─ null ─▶ nothing at all
+```
+
+**INK AND HEAD ONLY.** The client narrowed it mid-build: *spare parts keeps today's behaviour, a No
+ends it*. That removed a whole column family and the description field spares would have needed.
+
+### Settled with the client, 31-Aug-2026
+
+| | |
+|---|---|
+| The second question's wording | **"Offered at a subsidized rate?"** — their words, and it prints |
+| Prints on | the **quotation** only, never the OC |
+| What prints | **the final price alone.** Quantity and rate are captured and diffed, not printed |
+| Units | ink in **litres** (rate per litre, decimal); head a **plain count** (rate per head) |
+| Currency | the **deal's own** `deal_value_currency`. No second currency, and nothing is converted |
+
+### 🔴 The rule this feature exists under
+
+**The sub-total is NOT part of the deal value and must never be added to it.** The reasoning is the
+branch's own — this is only ever asked when the item is **not** in the deal, so its money is not the
+deal's money. `deal_value_amount`, `deal_value_inr`, `machine_value_inr`, `gst_amount_inr`,
+`total_inr`, `dryer_value_inr`, `dryer_gst_inr` and `grand_total_inr` all exclude it by construction.
+
+⚠ **It is not even in rupees**, which is the second and independent reason it can never join that
+family: it follows the deal's currency and is never converted at `fx_rate`, so adding it to a rupee
+total would be an ~85× error on a dollar deal. That is why **not one of the eight columns carries the
+`_inr` suffix**, which in this module marks "on the money path". Said in every column comment, so the
+next person reads it before they add it up.
+
+## What was built
+
+**Migration `20261024120000_fms_ocpi_a_no_may_still_carry_a_rate.sql`** — additive only. Eight
+nullable columns (`ink_offer_agreed/qty/rate/subtotal`, `head_offer_*`), the completeness constraint
+replaced, and `fms_ocpi_write_quotation` re-issued **from its live body**.
+
+- 🔴 **The first branches in this module that fire on FALSE.** Every other guard reads
+  `is distinct from true`; these read `is distinct from false`, which stores nothing for TRUE **and
+  for NULL** alike. An unanswered inclusion must not present a rate question as though the system had
+  already decided the answer was No. The browser twin in `branching.ts` uses `=== false` for the same
+  reason — `!d.inclInk` would be true for `null` and is the wrong shorthand here.
+- **One writer, not two.** Section B is part A, so `fms_ocpi_write_quotation` owns all eight and
+  `fms_ocpi_write_oc` was deliberately **not** re-issued — their column separation is what keeps
+  saving one from blanking the other, and `write_oc` is one revision ahead of the file that last
+  defined both. It also makes the exclusion invariant **structural**: `incl_head` and the offer
+  columns are set by ONE statement, so `head_invoice_*` (kept only on TRUE) and `head_offer_*` (kept
+  only on FALSE) can never both survive on a row.
+- **No cross-column CHECK enforces that invariant, on purpose.** A CHECK is evaluated at
+  end-of-statement and cannot be deferred, so inside a single `save_draft` that flips a head from Yes
+  to No it would fire on the transient state between the two writers and fail the save. Asserted
+  against the data instead.
+- **The sub-total is DERIVED in the RPC and never sent from the browser.** Six payload keys, not
+  eight. A browser-computed twin would be a second, different answer for one price on a contract —
+  the `withGst` mistake deleted in stage E. The form shows a live preview; the paper prints the
+  stored column.
+- **`fms_ocpi_save_draft` needed no change** — its sniff array gates only `write_oc`;
+  `write_quotation` is called unconditionally. ⚠ But the part-A twin of that trap is **worse** and
+  lives in the browser: a part-B key missing from the sniff array is silently never written and the
+  old value survives, whereas a part-A key missing from `payloadFromDraft` is **blanked on every
+  save** — no error, nothing in a log.
+
+**The completeness gate is tightened only where it is vacuous on existing rows.** A Yes must carry its
+quantity and rate; **answering the question at all is optional**. Requiring an answer was considered
+and rejected: a CHECK is re-validated on every UPDATE, and `ink_offer_agreed` is null on every deal on
+record — four already answer No to head — so it would make every one of them un-updatable, and every
+approval, signature stamp, hold and cancel on those rows would throw. Backfilling `false` asserts a
+commercial fact nobody stated. **Silence means "not discussed".**
+
+**Form** — one `RateOffer` component, **two callers**, modelled prop-for-prop on `ShipmentRow`
+(*visibility decided by the caller, every binding passed explicitly*). Sub-total read-only and derived,
+recomputing live, and **empty rather than `₹ 0`** while either factor is blank — a zero is a claim, a
+blank is not.
+
+**Quotation PDF** — Section B became a built array rather than a flat literal. Each follow-up sits
+immediately after its own question and appears only when the rate question was actually answered, so
+**a deal saved before this existed still prints exactly the six rows it always did**. The label is
+*"Subsidized Ink Price"*, not *"Ink Price"* — Section A already prints *"Ink Selling Price"*.
+
+**Deal Register** — eight columns, placed at the far end of the sheet and nowhere near the deal-value
+block, precisely so no reader drags a contiguous numeric range into a sum.
+
+**`revisionDiff.ts` — nothing.** It derives label *and* order from `FIELD_LABEL`.
+
+### Verify — OCPI-7
+
+- [x] `cd frontend && npm run build` green (tsc strict; there is no test runner)
+- [x] **The full truth table, proved against the live writer** on a scratch deal, not on the screen:
+      `No + Yes` stores and derives (500.5 × 900 = **450,450.00**; 4 × 125,000 = **500,000.00**);
+      `No + No` keeps the flag and drops the numbers; `No + unanswered` stores nothing;
+      **an unanswered inclusion stores nothing even when rate answers are sent**
+- [x] 🔴 **The switch-back test.** Rate stored, inclusion flipped to Yes with the rate still in the
+      payload → all four fields **null on the row**, and the Yes-branch details (`200 litres`, `2`)
+      came back. Checked in SQL
+- [x] 🔴 **The money guard.** Both blocks filled with 10,00,000 and 1,00,00,000 of subsidized rates and
+      `write_oc` re-run: `deal_value_amount`, `deal_value_inr`, `machine_value_inr`, `gst_rate`,
+      `gst_amount_inr`, `total_inr`, `dryer_value_inr`, `dryer_gst_inr`, `grand_total_inr` **all
+      byte-identical**
+- [x] **The completeness gate, all three ways.** A subsidized Yes with no figures is **refused**
+      (asserted, not merely noticed); it is accepted once quantity and rate are given; and an
+      unanswered rate question does not block submission
+- [x] **Browser, on `ZZ TEST Saraswati Fabrics`** (nothing saved; the row is unchanged). Head answers
+      No → the question shows alone; Yes → quantity · rate · sub-total; `4 × 125,000` → `$ 5,00,000`
+      live, `$ 5,20,000` when the rate changed, **empty** when the quantity was cleared. Ink toggled
+      to No → the litres block appeared and *Quantity of ink included* disappeared with it. The
+      integer guard strips `.` and letters from a head count; the decimal one keeps `500.5`
+- [x] **The currency rule, proved by accident.** That deal is a **USD** high-seas sale, and the
+      sub-total rendered `$ 4,50,450` — matching the server's `450450.00` exactly
+- [x] Constraint pre-flight: 0 of the 19 existing deals violate the new predicate; 19 deals before and
+      after, no scratch rows left
+
+### Found while doing this
+
+⚠ **The live `fms_ocpi_write_quotation` body differed from the newest migration file.** Pulled with
+`pg_get_functiondef` before writing anything: it differs from `20261021140000` in **two comments** (one
+reworded, one with its `⚠` dropped) while **every executable line is identical**. Harmless this time,
+but it is exactly the drift the work list warned about, and the new migration was based on the live
+text rather than the file. ⚠ Note also that the applied migration *versions* are wall-clock stamps
+(`20260827…`, `20260829…`) and do **not** match the repo's logical filenames.
+
+🔴 **The first apply of this migration aborted on its own assertion, and the assertion was wrong.**
+It looked for `'%offer%>= 0%'` in `pg_get_constraintdef`, but Postgres re-renders the bound in the
+column's own type: the one integer column reads `>= 0` and every numeric one reads `>= (0)::numeric`.
+One of six matched, the migration raised and **rolled back cleanly** — no partial state. Fixed to match
+the column name and `>=` separately. Worth keeping: a tail assertion stricter than the schema it
+guards is a migration that cannot be applied.
+
+⚠ **`ink_qty_included` is NOT reliably litres, so it was NOT labelled "litres".** The work list asked
+for the unit on both fields. The data refuses: of the 17 deals carrying a value, 15 say litres and two
+say **"25 Kgs"** and **"3000kg"**. `FIELD_LABEL` is also the revision diff's heading, so labelling it
+`(litres)` would restate two real deals in a unit they never agreed to. The free-text field's hint asks
+the salesperson to **state the unit**; only the new numeric field, which the client fixed at litres,
+names one. The two sit three rows apart on the same card, which is why either had to say something.
+
+### Open
+
+- **`ink_price` ("Ink Selling Price", Section A) and the new subsidized ink rate sit on one form and
+  are different figures.** Nobody has said how they relate. Worth asking before a customer does.
+- Whether the sub-total should ever appear on the **OC**. Today it is quotation-only by instruction.
+
+## OCPI-7 · three answers from the client, same day — 31-Aug-2026
+
+Migration `20261024130000_fms_ocpi_a_subsidized_rate_is_always_rupees.sql` (comments only).
+
+**1 · The two ink prices are separate things.** `ink_price` (*"Ink Selling Price"*, Section A) and the
+new subsidized rate are unrelated figures and both stay. The open question logged above is closed.
+
+**2 · 🔴 The subsidized rate is ALWAYS IN RUPEES — this reverses the same day's earlier answer.** It
+first followed the deal's own `deal_value_currency`. It does not: a machine may be sold in dollars,
+but ink and heads are bought here and are rated in rupees regardless. So a High Seas sheet now carries
+a **dollar machine price and a rupee ink price on one page**, each printing its own symbol. Nothing is
+converted — `fx_rate` is not consulted by the writer or by either renderer, so these figures cannot
+move when an exchange rate moves.
+
+⚠ **No data or arithmetic changed, only the description.** The stored figures were never converted, so
+`round(qty * rate, 2)` was already right and every value already means what it now says. The migration
+is comments alone — but a wrong comment on a money column earns its own migration, because it is what
+the next person reads before deciding whether to sum it.
+
+🔴 **One line of defence is gone, and it is worth stating plainly.** The original comments argued the
+sub-total could never join `total_inr` *partly because it was not in rupees* — adding it would have
+been an ~85× error on a dollar deal, the kind of mistake that announces itself. It is now rupees, in
+the same unit as every figure on the money path, so a wrong sum would look **plausible**. What still
+holds:
+
+- the column comments, which say so outright;
+- the names, which deliberately carry **no `_inr` suffix** — in this module that suffix marks the
+  *derived money path* (`machine_value_inr`, `gst_amount_inr`, `total_inr`, `grand_total_inr`), and
+  these are rupees but are **not** on it;
+- the assertion in `20261024120000`, which **fails the deploy** if `fms_ocpi_write_oc` ever so much as
+  mentions an offer column.
+
+That third one is now the load-bearing guard. Do not weaken it.
+
+**3 · A rate now carries the quantity it is bounded by.** `SUBSIDIZED_RATE_NOTE` in `fieldSpec.ts`,
+alongside `DOLLAR_CLAUSE` and `INSURANCE_CLAUSE` — the module's existing pattern for a standing
+sentence. It shows **on the form, under the rate as it is typed**, so the salesperson sees what they
+are committing to before writing the figure down, and the same words print on the quotation:
+
+> *"This is a subsidized rate, agreed for 500 litres and valid for that quantity only. Any further
+> quantity will be charged at the rate prevailing at the time of that order."*
+
+⚠ **A rate with no quantity beside it is an open-ended commitment.** "Ink at ₹900 a litre" on a signed
+quotation, unqualified, is a price the customer can hold the company to for any quantity and
+indefinitely. The rate is agreed against a specific quantity at the table; the paper now says so.
+
+⚠ **The printed sentence NAMES the quantity, which bends the "final price only" rule — deliberately.**
+A note reading *"valid for the stated quantity"* is empty when the quantity appears nowhere on the
+page: it would bound the price by something the customer cannot see. So the quantity is written into
+the sentence rather than given a ruled row of its own, and the sheet still shows exactly one price
+figure per item. Trailing zeros are trimmed — `numeric(12,3)` renders 500 litres as `500.000`, which
+reads as false precision on a contract.
+
+### Verify — the follow-up
+
+- [x] `npm run build` green in the master worktree
+- [x] Comments-only migration applied; no column, constraint or function touched
+- [x] The form's sub-total and the printed price both render `₹` on a **USD** deal — the case that
+      previously showed `$`
+
+---
+
+# OCPI-10 · Section B becomes seven pointers plus Others — 31-Aug-2026
+
+Asked for by Ritesh Bhai. *Deal inclusions* (section B) asked three questions — ink, spare parts,
+head. Four more — **air blade, external centering, ink dust exhauster, chilling system** — were asked
+in a different card entirely, under a heading "Options included" in *Document details*, where a
+salesperson filling in a deal never thought to look. All four moved into section B, which now reads
+as **seven pointers**, plus a free-text eighth, **Other inclusions**.
+
+## What was built
+
+**Migration `20261025120000_fms_ocpi_extras_stop_being_gated.sql`** — applied, seven machine checks
+pass. New nullable `fms_ocpi_deals.other_inclusions`; `fms_ocpi_write_oc` and `fms_ocpi_save_draft`
+replaced from the bodies pulled out of the **live database**, not from a migration file.
+
+**Seven frontend files** — `branching.ts` (three rules deleted, one kept), `QuotationForm.tsx` (the
+block moved, `anyExtra` deleted, the Others box added), `fieldSpec.ts` / `types/index.ts` /
+`ocpiFetch.ts` (the new field), `quotationPdf.ts` and `ocPdf.ts` (both papers), `Machines.tsx` (the
+master hints).
+
+## 🔴 The clearing trap — what made this more than a move
+
+`fms_ocpi_write_oc` carried, for each of the four:
+
+```sql
+air_blade = case when coalesce(v_air, 'no') = 'no' then null else (p->>'air_blade')::boolean end
+```
+
+The capability is read off the **machine**, and the client's sheet says `no` or is blank for the air
+blade on **25 of the 28 machines**. So on almost every deal the question could be answered, saved,
+and silently discarded — no error, nothing in a log. Ungating the form without this migration would
+have shipped a feature that appeared to work and stored nothing. The gate and the clearing came out
+together, in one change.
+
+## Centering is the exception, and it is deliberate
+
+Ritesh Bhai, 31-Aug: the centering system follows the dryer's logic — **if the machine backs it, show
+it; otherwise do not** — and that covers **both** the tick and the centering shipment questions.
+
+| Pointer | Gate | Shows on |
+|---|---|---|
+| Air blade · Ink dust exhauster · Chilling system | none | all 28 |
+| **External centering — tick and shipment block** | **the machine** | **5** — Homer K24, K32, JP7, JPK, K64 |
+
+So section B holds **seven pointers on 5 machines and six on the other 23**. That is correct. Do not
+"fix" it by always rendering the centering row, and do not tidy the other three into matching it.
+`branching.ts`'s `externalCentering` rule, its five `centering*` shipment rules, and the RPC's
+`external_centering` clearing were all left exactly as they were.
+
+## Three corrections to the brief, found in the live database
+
+1. **"Both write RPCs" was one.** Of 40 `fms_ocpi_*` functions only `fms_ocpi_write_oc` clears.
+   `fms_ocpi_save_draft` names the four only in its part-B **key-sniff array** — so its job here was
+   to *gain* `'other_inclusions'`, without which a payload carrying only that key would never reach
+   `write_oc` at all.
+2. **`v_centering` had to survive.** `v_air`, `v_exhauster` and `v_chilling` were read only on the
+   three gate lines and came out with them. `v_centering` is read **six** times — the tick plus the
+   five shipment clearings — so removing all four together would have broken the centering shipment
+   block silently. The select and into lists were edited in step; **assertion 4** in the migration is
+   what proves `v_centering` is still fed by `opt_external_centering` and not by a neighbour that
+   shifted up.
+3. 🔴 **The quotation paper was not in the brief and had to be.** `quotationPdf.ts` prints a boxed
+   *B. Deal Inclusions* section, and it prints **No as well as Yes**. The four extras appeared on no
+   quotation at all — only on the order confirmation, as composition bullets, and only when true.
+   Left alone, section B would have asked seven questions and printed three.
+
+⚠ **A trap this migration set for itself, worth knowing before editing it.** Assertion 2 greps
+`fms_ocpi_write_oc`'s own definition for `v_air` / `v_exhauster` / `v_chilling` to catch an older body
+being restored — and `pg_get_functiondef` returns the **comments** too. A helpful note inside the
+function naming the three removed variables fails the migration. It is the same shape as OCPI-7's
+money guard, which warns the same thing. The comments there are worded around it deliberately.
+
+## What prints where — settled with the client, 31-Aug
+
+| | Quotation (`quotationPdf.ts`) | Order confirmation (`ocPdf.ts`) |
+|---|---|---|
+| The seven pointers | **all seven, Yes and No** | a Yes adds a composition bullet; **a No prints nothing** |
+| Centering row | machine-gated, matching the form | machine-gated |
+| Other inclusions | a `wide` row in the B box | a composition bullet |
+
+The OC asymmetry is deliberate: `optionalExtras()` feeds *"THE MACHINE IS COMPOSED AS FOLLOWS"*, a
+list of what the machine **has**. "Air Blade: No" is not a thing the machine has. The quotation is
+where the answers are stated in full; the OC states the outcome.
+
+## What the machine master's four columns are for now
+
+They no longer hide three of the four questions, so this was settled rather than left to rot into
+fields that do nothing. They keep **two** jobs: `"yes"` still puts the *"standard on this machine"*
+note beside the question on all four, and the column is still the **gate** on external centering
+alone. `Machines.tsx`'s hints were reworded to say exactly that, so the screen stops implying a gate
+that only one of them has. `standardHint` itself is unchanged — it is a hint, never a default answer.
+
+## Other inclusions is a NEW field
+
+Not `other_commitments`, which is **retired**: it still prints on old deals that carry a value and the
+form renders it read-only under a "retired" notice, but there has been no input for it for some time.
+Reusing it would have un-retired something the module deliberately withdrew.
+
+The real neighbour is **`remarks` (Special remarks, section D)**, which is live and adjacent — the
+field `other_commitments` was retired *in favour of*. Both boxes now carry a hint pointing at the
+other: Other inclusions asks what is **in** the deal, Special remarks takes anything **about** it.
+Without that, the same sentence gets typed into whichever box the eye lands on first.
+
+## Verify — OCPI-10
+
+- [x] `npm run build` green
+- [x] **Exactly one render** of each of `airBlade` / `externalCentering` / `inkDustExhauster` /
+      `chillingSystem` / `otherInclusions` in `QuotationForm.tsx` — the move left no copy behind
+- [x] CLAUDE.md's orphan sweep over `apps/ocpi` — clean; `anyExtra` deleted as genuinely orphaned
+- [x] 🔴 **The persistence test, through the real form.** ZZ TEST Bhavani Prints (Homer K24: air `no`,
+      exhauster `no`) — answered Yes / Yes / **No** / Yes plus Other inclusions, saved, re-opened, and
+      read the row in SQL: `air_blade=true`, `ink_dust_exhauster=false`, `chilling_system=true`,
+      `external_centering=true`, text stored. **Before this change the first two would have been
+      NULL.** The deliberate No is the part that matters — `false`, not `null`, is what proves the
+      answer was kept rather than merely not cleared
+- [x] **The gate still bites.** A rolled-back RPC test on Rocket (centering `no`) sent all four as
+      true: `external_centering` came back **NULL**, the other three stored
+- [x] **Centering absent on a machine that cannot carry one** — Rocket shows six pointers, no centering
+      row, and the centering shipment block hidden too; its quotation prints no centering row
+- [x] **An older deal still opens and still prints** — ZZ TEST Laxmi Fabrics (QT-M0027, JP7, awaiting
+      customer sign) renders read-only with all seven, prints two pages, OC bullets correct
+- [x] **Both papers read back with pdf.js**, not eyeballed. jsPDF embeds a subset font, so the text is
+      glyph-encoded and a plain string search of the content stream finds **nothing — including rows
+      that are definitely there**. Extract with pdf.js or the check is worthless
+
+## Open
+
+⚠ **Fab Pro 1I / 2I / 3I are blank for all four extras**, and blank reads as `no`. They are therefore
+the three machines whose centering shipment block can never appear — **a data gap, not a decision**,
+and it now rests on that column alone. Worth confirming with Bushra rather than baking the gap in.
+
+⚠ **This deliberately reverses OCPI-3 stage E for three of the four.** That gating came from the
+client's own machine sheet and was recorded here as *"a good idea nobody asked for… Adopted."* It was
+undone on the client's instruction, with the reasoning in view: asking about a chilling system on a
+machine that cannot take one was judged the smaller cost against a section B that reads consistently.
+
+---
+
+# OCPI-11 · Shipment & invoice becomes a table, gains an Ink row, and calculates a sub-total — 31-Aug-2026
+
+*Asked for by Ritesh Bhai. Sequenced LAST, after OCPI-7 and OCPI-10, because all three edit
+`QuotationForm.tsx` and the same write path.*
+
+## What was built
+
+**Ink got a row.** The head, dryer, spare parts and centering device each carried five shipment
+columns; ink carried none. Five new nullable columns (`ink_ship_mode`, `ink_ship_via`,
+`ink_separate_invoice`, `ink_invoice_qty`, `ink_invoice_amount`), a new branch group in `branching.ts`,
+the six `fieldSpec.ts` touch-points, and new handling in `fms_ocpi_write_oc`. This was the bulk of the
+work — the layout change was the smaller half.
+
+**The section became a table** — items down the left, questions across the top, ordered **Head · Ink ·
+Dryer · Spare parts · Centering device**. `ShipmentRow` is still ONE component, now with FIVE callers
+and rendering a `<tr>`; every binding is still passed in explicitly, for the reason its own comment
+gives.
+
+**Each row gained a sub-total**, `round(qty * amount, 2)`, derived in `fms_ocpi_write_oc` and stored in
+five new columns. The form recomputes the same product live, but only as a preview: the paper prints
+the stored figure, so one price can never have two answers — OCPI-7's rule, and the one `withGst` was
+deleted for in stage E.
+
+Migration: `20261026120000_fms_ocpi_shipment_becomes_a_table.sql`, ten new columns, ten assertions.
+
+## 🔴 A THIRD write function, which nothing in the brief mentioned
+
+The brief and the work list both said "both write RPCs". There are **three** functions in the save
+path, and the third is the dangerous one:
+
+```
+fms_ocpi_save_draft
+  ├─ perform fms_ocpi_write_quotation      -- part A, always
+  └─ if p ?| array['head_ship_mode', … ]   -- ~46 LITERAL key names
+       perform fms_ocpi_write_oc           -- part B, gated
+```
+
+Its own comment calls this *"the easiest thing in this module to miss"*: a new part-B key left off that
+array is never written, with no error and no warning. The five ink keys were added to it. In practice
+the form always sends the whole bag so ink would have ridden in on a neighbour — but a payload of only
+ink shipment answers would have vanished silently, and nothing would have said so.
+
+## ✅ The two-ink-pairs trap is structurally closed, not merely mitigated
+
+The work list called this *"the strongest argument for doing OCPI-7 first"*. Having done it, the danger
+is smaller than it looked, and for a structural reason worth recording:
+
+| | asked when | fields |
+|---|---|---|
+| Section B offer (OCPI-7) | `inclInk === false` | `inkOfferQty` / `inkOfferRate` |
+| Shipment row (OCPI-11) | `inclInk === true` | `inkInvoiceQty` / `inkInvoiceAmount` |
+
+**They are mutually exclusive by construction.** A salesperson can never see both, and no deal row can
+hold both. The same is true of the head. Labels still differ — "invoice" against "subsidized" — because
+a missing-fields list shows the label and nothing else. On today's data the offer branch fires on **no
+deal at all**: 17 of the 19 include ink and none exclude it.
+
+## Cells that do not apply are greyed with a reason, never blank
+
+Each row still has three nested conditions: the row itself, *Ship via* only for a separate shipment,
+and *Qty / Amount / Sub-total* only for a separate invoice. In stacked boxes those simply vanished. In a
+grid a blank cell is indistinguishable from one nobody filled in — and this section exists to record
+what was agreed. So they render as a muted dash with the reason on hover (`NotAsked`). Column widths
+stay steady and the row does not appear to break up mid-grid.
+
+## ⚠ `table-fixed` is load-bearing, and a `min-w` on the cell is not a substitute
+
+The two pickers are `Combobox`, not `ChoiceButtons` — the one deliberate departure from the rest of the
+form. Button strips for a 2-option and a 3-option vocabulary measure ~520px between them and push the
+table past 1100px, so Amount falls off a laptop screen. A table you scroll sideways to fill in is worse
+than the boxes it replaced.
+
+That left the Yes/No column, and a trap: `ChoiceButtons` gives every option `min-w-[72px]` and **wraps
+internally**, so under the default auto table layout its min-content width is ONE button. A `<th>` width
+is only a hint there, so the column quietly collapsed on anything below ~1400px and the pair stacked —
+taking every row from **73px to 138px**. Putting `min-w-[152px]` on the cell did **not** fix it; auto
+layout prefers the content minimum. `table-fixed` honours the declared widths and does.
+
+Measured after the fix — no wrap and 73px rows at every width:
+
+| viewport | content | table overflows | page scrolls sideways |
+|---|---|---|---|
+| 1440 | 1050 | no | no |
+| 1366 | 976 | no | no |
+| 1280 | 890 | no | no |
+| 1200 | 810 | yes → `ScrollableTable` | **no** |
+| 1024 | 634 | yes → `ScrollableTable` | **no** |
+
+Trap 6's keyboard half needed nothing: `ChoiceButtons`, `Combobox` and `ScrollableTable` already carry
+the arrow-key guards between them, and `ScrollableTable` ignores arrows while focus is in a text box.
+
+## 🔴 The money guard
+
+The sub-totals are **not** in `total_inr` or `grand_total_inr` and must never be. A separately-invoiced
+item is billed on its own document; adding it here would charge the customer twice. Assertion 5 pins
+both expressions **character for character, including their trailing `end,` and `end;`** — with a bare
+`end%` tail the pattern would happily accept `… end + coalesce(head_invoice_subtotal, 0)`, which is the
+exact thing it exists to forbid.
+
+Proved on ZZ TEST Suryodaya Prints: 62.35 lakh of sub-totals filled across the grid, and deal value
+52,00,000 / GST 9,36,000 / total 61,36,000 unchanged — at the SQL level and again after a form save.
+
+⚠ Two of this migration's own assertions **failed on correct code** before landing, both the same bug:
+`like '%A%B%'` spans the WHOLE definition, so `'%v_grand :=%invoice_subtotal%'` matches any body that
+mentions `v_grand` anywhere before a sub-total anywhere — which every correct body does. Both are now
+named one at a time, with a comment saying not to "helpfully" restore the wildcard version.
+
+## What was carried forward, and one count that moved
+
+`write_oc` was rebuilt from the **live** body pulled the same day, not from a migration file — it had
+been redefined six times. OCPI-10's work is intact and assertions 6–8 re-state its own checks. One
+number deliberately changes: OCPI-10 required exactly six uses of `coalesce(v_centering` (one tick plus
+five shipment lines); the centering row gained a sub-total, so the correct count is now **seven**.
+
+## Verify — OCPI-11
+
+- [x] `npm run build` clean
+- [x] Orphan sweep over `apps/ocpi` — nothing; `anyShipment` and the `why` prop both kept, `why` now a
+      grey second line under each item name
+- [x] **All five rows** on ZZ TEST Suryodaya Prints (Homer K24), in the agreed order
+- [x] **Every nested condition toggles** — set Separate invoice to No and qty/amount/sub-total became
+      dashes with reasons; set How-it-ships to "With the machine" and Ship via did too; neighbouring
+      rows unaffected
+- [x] **Sub-totals recompute live** — 250100 × 5000 rendered instantly; and blank rather than "₹ 0"
+      while either factor is empty, tested three ways
+- [x] **Saved through the form, re-read in SQL** — `separate` / `directly` / true / 175 / 4200 persisted
+      and `ink_invoice_subtotal` came back as the server's own 7,35,000
+- [x] **The clearing twin bites both ways** — flipping `incl_ink` to false nulled all six ink columns
+      while the head's and centering's sub-totals survived untouched
+- [x] **An older deal still opens and still prints** — QT-M0026 (Kolorado Alpha 15) shows three rows,
+      no dryer and no centering, Ink blank; `ocPdfBlob` regenerates at 245 KB with seven columns
+- [x] PDF column fractions re-balanced and still sum to exactly 1.00
+
+## Open
+
+📋 **Existing deals that include ink now show an Ink row with every cell blank.** Correct rather than a
+regression — the question did not exist when they were filled — but it is 17 of the 19 deals on record,
+so the first person to reopen an old deal will meet five empty cells. Worth a word to the team.
+
+⚠ **The two dropdowns truncate their longest labels** ("Separate shipm…", "High Seas Sale (H…"). Not
+fixable by widening: the chevron and clear-✕ eat ~48px of any sane column, and the full value is on the
+trigger's `title` on hover. Flagged rather than fixed.
+
+⚠ **The register exports the sub-totals** beside "Total (INR)" — which is exactly where somebody
+eventually writes `=SUM()` across a row. The column comments say so; the spreadsheet cannot.

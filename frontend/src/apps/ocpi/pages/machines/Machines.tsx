@@ -118,7 +118,9 @@ export default function Machines() {
   );
 
   const optionField = (key: string, label: string, hint?: string): MasterFieldDef => ({
-    key, label, type: "select", hint,
+    // No / Optional / Yes — a fixed vocabulary, and asked FOUR times on this
+    // form, so it is the clearest case on the screen for showing the answers.
+    key, label, type: "choice", hint,
     options: MACHINE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
   });
 
@@ -159,15 +161,28 @@ export default function Machines() {
     //   silently unreachable for that model, with no error anywhere. All 28
     //   machines carry an answer today — this keeps the 29th from arriving
     //   without one.
-    { key: "needsDryer", label: "Takes a dryer", type: "select", required: true,
+    { key: "needsDryer", label: "Takes a dryer", type: "choice", required: true,
       options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
       hint: "Per machine, not per category — the client sheet has Position Printer needing one while the three Pengdas in the same category do not. Decides whether the quotation shows the dryer section at all, so it must be answered." },
-    optionField("optAirBlade", "Air blade"),
+    /*
+      ⚠ WHAT THESE FOUR STILL DO, now that three of them no longer hide
+        anything (OCPI-10). They were the gate on all four questions; they are
+        now the gate on ONE. The other three keep a smaller but real job: "yes"
+        puts a "standard on this machine" note beside the question on the
+        quotation, which is how a salesperson tells a genuinely optional extra
+        from one the model always ships with. Left blank they say nothing, and
+        the question is still asked. So none of the four is a field that does
+        nothing — but only external centering changes what the form shows.
+    */
+    optionField("optAirBlade", "Air blade",
+      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked — air blade is asked on every deal."),
     optionField("optExternalCentering", "External centering",
-      "Also decides whether the quotation asks how the centering device ships and whether it is invoiced separately."),
-    optionField("optInkDustExhauster", "Ink dust exhauster"),
-    optionField("optChillingSystem", "Chilling system"),
-    { key: "docTitle", label: "Document heading", type: "select", required: true,
+      "THE ONE EXTRA THAT IS STILL A GATE. Decides whether the quotation asks about the centering system at all — both the tick in Deal inclusions and how the device ships and is invoiced. “No” or blank hides all of it."),
+    optionField("optInkDustExhauster", "Ink dust exhauster",
+      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
+    optionField("optChillingSystem", "Chilling system",
+      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
+    { key: "docTitle", label: "Document heading", type: "choice", required: true,
       options: [
         { value: "ORDER CONFIRMATION", label: "ORDER CONFIRMATION" },
         { value: "OFFER QUOTE", label: "OFFER QUOTE" },
@@ -175,7 +190,7 @@ export default function Machines() {
       hint: "P8D's deck is headed OFFER QUOTE — check before changing." },
     { key: "machineModelNo", label: "Manufacturer's model no.", type: "text",
       hint: "e.g. HM1800B-TK24. Available in templates as {{machine_model_no}}." },
-    { key: "signoffStyle", label: "Sign-off wording", type: "select",
+    { key: "signoffStyle", label: "Sign-off wording", type: "choice",
       options: [
         { value: "approved_by", label: "Prepared By / Approved By" },
         { value: "checked_by", label: "Prepared By / Checked By" },

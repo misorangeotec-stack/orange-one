@@ -115,6 +115,21 @@ const LOCK: Record<QueueStep, { open: ProductionStatus; what: string; nextWhat: 
 export const stepDoneAt = (step: QueueStep, r: ProductionRequest): string | null => AT[step](r);
 export const stepDoneBy = (step: QueueStep, r: ProductionRequest): string | null => BY[step](r);
 
+/**
+ * When the card ENTERED this step — i.e. the previous step's completion.
+ *
+ * The twin of `stepDoneAt`, exposed for the cycle-time report. There is no
+ * `entered_at` column anywhere in this FMS; a step's start is only ever derivable as
+ * its anchor's completion, and `ANCHOR_AT` above is already that map. Anything
+ * measuring how long a card sat at a step reads THIS, so a second hand-rolled copy of
+ * the chain cannot drift away from the one the due dates use.
+ *
+ * ⚠ `additional_issue_slip` returns `qcActualDate` — a DATE, not a timestamp. That is
+ * right for a due date and wrong for a duration (it drops the time of day and can land
+ * after `aisAt`). See cycleTime.ts, which substitutes `qcAt` for that one leg.
+ */
+export const stepStartedAt = (step: QueueStep, r: ProductionRequest): string | null => ANCHOR_AT[step](r);
+
 /** Still someone's work — a held / closed / cancelled card leaves every queue. */
 export const isOpenRequest = (r: ProductionRequest): boolean => STATUS_STEP[r.status] !== undefined;
 

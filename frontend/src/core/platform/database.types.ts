@@ -6715,7 +6715,9 @@ export type Database = {
           designation: string | null
           designation_id: string | null
           email: string | null
+          date_of_birth: string | null
           employee_code: string | null
+          gender: string | null
           id: string
           last_active_at: string | null
           name: string
@@ -6737,7 +6739,9 @@ export type Database = {
           designation?: string | null
           designation_id?: string | null
           email?: string | null
+          date_of_birth?: string | null
           employee_code?: string | null
+          gender?: string | null
           id: string
           last_active_at?: string | null
           name?: string
@@ -6759,7 +6763,9 @@ export type Database = {
           designation?: string | null
           designation_id?: string | null
           email?: string | null
+          date_of_birth?: string | null
           employee_code?: string | null
+          gender?: string | null
           id?: string
           last_active_at?: string | null
           name?: string

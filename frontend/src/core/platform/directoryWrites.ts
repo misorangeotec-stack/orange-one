@@ -130,7 +130,7 @@ export async function updateBand(id: string, patch: { bandNo?: number; name?: st
 /** Update an existing user's profile fields (admin-only under RLS). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; designationId?: string | null; departmentId?: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; avatarColor?: string; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; receivablesAllowPipeline?: boolean }
+  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; designationId?: string | null; departmentId?: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; gender?: "male" | "female" | "other" | null; dateOfBirth?: string | null; avatarColor?: string; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; receivablesAllowPipeline?: boolean }
 ): Promise<void> {
   const fields: ProfileUpdate = {};
   if (patch.name !== undefined) fields.name = patch.name;
@@ -144,6 +144,11 @@ export async function updateUserProfile(
   if (patch.subDepartmentId !== undefined) fields.sub_department_id = patch.subDepartmentId;
   if (patch.bandId !== undefined) fields.band_id = patch.bandId;
   if (patch.employeeCode !== undefined) fields.employee_code = patch.employeeCode;
+  // Ticketing details. Not guarded by guard_profile_org_fields() - see the note
+  // on Profile.gender: these decide no entitlement, so the person they describe
+  // may correct their own.
+  if (patch.gender !== undefined) fields.gender = patch.gender;
+  if (patch.dateOfBirth !== undefined) fields.date_of_birth = patch.dateOfBirth;
   if (patch.avatarColor !== undefined) fields.avatar_color = patch.avatarColor;
   if (patch.receivablesSalespersons !== undefined) fields.receivables_salespersons = patch.receivablesSalespersons;
   if (patch.receivablesHiddenMenus !== undefined) fields.receivables_hidden_menus = patch.receivablesHiddenMenus;

@@ -595,6 +595,69 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
 
+  // ---- the Collection report DID NOT GO OUT --------------------------------
+  // Queued by pg_cron (collections_report_watchdog) once the slot's grace window
+  // has closed with no row in collections_report_send_log.
+  //
+  // ⚠ THIS BRANCH IS THE WHOLE POINT OF THE WATCHDOG. The chain below ends in
+  //   markSkipped(row, "unknown kind ..."), and `receivables_` is NOT in the
+  //   generic prefix list — so without a branch here the one mail that reports a
+  //   silent failure would itself be dropped silently. Tested by queueing a row
+  //   and checking it leaves as `sent`, not `skipped`.
+  //
+  // Deliberately plain: no tiles, no table. It is read on a phone by someone who
+  // needs one fact (nothing went out) and one instruction (what to do about it).
+  if (row.kind === "collections_report_missed") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
+
+    const forDate = str(p.for_date);
+    const dateLabel = forDate ? ddmmyyyy(forDate) : "";
+    const slot = str(p.slot_ist, "08:00");
+    const grace = num(p.grace_minutes) || 120;
+    const reason = str(p.reason, "unknown");
+    const lastKick = str(p.last_kick_at);
+
+    const headline = `Collection report was not sent${dateLabel ? ` on ${dateLabel}` : ""}`;
+
+    const facts = itemList([
+      { name: "Slot", value: `${slot} IST`, meta: dateLabel },
+      { name: "Grace window", value: `${grace} min`, meta: "closed with nothing sent" },
+      { name: "The gate now says", value: reason },
+      ...(lastKick ? [{ name: "Last attempt to wake the runner", value: lastKick }] : []),
+    ]);
+
+    const inner =
+      noteBox(
+        "What this means",
+        "The report was due and nobody received it. Recipients are not aware of this — " +
+          "no failure is recorded anywhere, because a run that never happens cannot fail.",
+      ) +
+      facts +
+      noteBox(
+        "To send it now",
+        "The grace window has closed, so a plain re-run will refuse. Widen grace_minutes " +
+          "first, then dispatch the workflow with mode=scheduled. It cannot double-send: " +
+          "the send log claims the slot.",
+      );
+
+    return {
+      subject: str(row.subject, headline),
+      html: emailShell({
+        eyebrow: "Receivables",
+        headline,
+        inner,
+        tag: "Outstanding Dashboard",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; scheduled send watchdog.<br>You're receiving this because you are the alert address for the Collection report.`,
+      }),
+      text:
+        `${headline}\n\nSlot: ${slot} IST${dateLabel ? ` on ${dateLabel}` : ""}\n` +
+        `Grace: ${grace} min, closed with nothing sent\nGate now says: ${reason}\n` +
+        (lastKick ? `Last attempt to wake the runner: ${lastKick}\n` : ""),
+    };
+  }
+
   // ---- the MASTER REPORT one-pager ----------------------------------------
   // Queued two ways, rendered one way:
   //   · pg_cron at 08:00 IST (master_report_enqueue_daily) — no attachments;
@@ -1121,7 +1184,7 @@ async function compose(row: Row): Promise<Composed | null> {
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_") || row.kind.startsWith("travel_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
@@ -1148,9 +1211,14 @@ async function compose(row: Row): Promise<Composed | null> {
     // in rather than a queue. It is also the only sender here whose CTA can be
     // a document page rather than a step queue.
     const isOcpi = row.kind.startsWith("ocpi_");
-    const appLabel = isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    // Travel Desk mails a named individual about THEIR OWN money - an advance,
+    // an allowance, what was disallowed and what was finally paid. Its payload
+    // deliberately keeps every figure out of the subject line, so the shell must
+    // not put one back: the subject is used verbatim.
+    const isTravel = row.kind.startsWith("travel_");
+    const appLabel = isTravel ? "Travel Desk" : isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isTravel ? "/travel-desk" : isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isTravel ? "HR · Travel Desk" : isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -1176,7 +1244,12 @@ async function compose(row: Row): Promise<Composed | null> {
             ? `You're receiving this because you're on the panel for this interview.`
             : isHr || isExit
             ? `You're receiving this because you own this master, or you raised the request.`
-            : `You're receiving this because you're the next actor on this ${appLabel} document.`
+            : isTravel
+              // Half of these go to the TRAVELLER, who is not the next actor on
+              // anything - they are the person whose trip it is. Telling them they
+              // are the next actor sends them looking for a button that is not there.
+              ? `You're receiving this because it's your trip, or the next step is yours.`
+              : `You're receiving this because you're the next actor on this ${appLabel} document.`
         } Replies reach the person who acted.`,
       }),
       text: `${actorName}: ${headline}${p.docLabel ? `\n${str(p.docLabel)}` : ""}\n\nOpen: ${link}`,
