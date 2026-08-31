@@ -112,18 +112,41 @@ export function exportDealRegister(
         paper it is meant to reconcile — on the three rows where a reader is most
         likely to be checking a second bill line by line.
     */
+    /*
+      ⚠ EACH ITEM EXPORTS FOUR COLUMNS, NOT THREE (OCPI-11). The sub-total is
+        derived by fms_ocpi_write_oc, so exporting it costs nothing and saves the
+        reader multiplying five pairs by hand to reconcile a second bill.
+
+      🔴 NONE OF THE SUB-TOTALS BELONGS IN A DEAL TOTAL. They sit beside
+        "Total (INR)" in this sheet, which is exactly where somebody eventually
+        writes =SUM() across a row. A separately-invoiced item is billed on its
+        own document; adding it to the contract value would count it twice.
+    */
     { header: "Head invoiced separately", width: 19, value: (d) => yesNo(d.headSeparateInvoice) },
     { header: "Head invoice qty", width: 14, value: (d) => d.headInvoiceQty ?? "" },
     { header: "Head invoice amount", width: 18, value: (d) => d.headInvoiceAmount ?? "" },
+    { header: "Head invoice sub-total", width: 20, value: (d) => d.headInvoiceSubtotal ?? "" },
+    /* Ink that IS included and billed on its own document — NOT the subsidized
+       columns further down, which are ink the deal does not include at all.
+       Mode and route are left out to match the other four items: this register
+       has never exported them for any row, and adding them for ink alone would
+       make the sheet inconsistent rather than more complete. */
+    { header: "Ink invoiced separately", width: 20, value: (d) => yesNo(d.inkSeparateInvoice) },
+    { header: "Ink invoice qty", width: 14, value: (d) => d.inkInvoiceQty ?? "" },
+    { header: "Ink invoice amount", width: 18, value: (d) => d.inkInvoiceAmount ?? "" },
+    { header: "Ink invoice sub-total", width: 20, value: (d) => d.inkInvoiceSubtotal ?? "" },
     { header: "Dryer invoiced separately", width: 19, value: (d) => yesNo(d.dryerSeparateInvoice) },
     { header: "Dryer invoice qty", width: 14, value: (d) => d.dryerInvoiceQty ?? "" },
     { header: "Dryer invoice amount", width: 18, value: (d) => d.dryerInvoiceAmount ?? "" },
+    { header: "Dryer invoice sub-total", width: 20, value: (d) => d.dryerInvoiceSubtotal ?? "" },
     { header: "Spares invoiced separately", width: 20, value: (d) => yesNo(d.sparesSeparateInvoice) },
     { header: "Spares invoice qty", width: 14, value: (d) => d.sparesInvoiceQty ?? "" },
     { header: "Spares invoice amount", width: 18, value: (d) => d.sparesInvoiceAmount ?? "" },
+    { header: "Spares invoice sub-total", width: 20, value: (d) => d.sparesInvoiceSubtotal ?? "" },
     { header: "Centering invoiced separately", width: 22, value: (d) => yesNo(d.centeringSeparateInvoice) },
     { header: "Centering invoice qty", width: 16, value: (d) => d.centeringInvoiceQty ?? "" },
     { header: "Centering invoice amount", width: 20, value: (d) => d.centeringInvoiceAmount ?? "" },
+    { header: "Centering invoice sub-total", width: 22, value: (d) => d.centeringInvoiceSubtotal ?? "" },
     /*
       ── The NO branch (OCPI-7) ──────────────────────────────────────────────
 

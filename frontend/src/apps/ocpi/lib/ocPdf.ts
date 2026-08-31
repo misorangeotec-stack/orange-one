@@ -76,6 +76,20 @@ export interface ShipmentLine {
   separateInvoice: boolean | null;
   qty: number | null;
   amount: number | null;
+  /**
+   * DERIVED SERVER-SIDE by `fms_ocpi_write_oc` as round(qty * amount, 2), and
+   * printed from the stored column — never recomputed here.
+   *
+   * ⚠ One price, one answer. The form shows the same product live while the
+   *   figures are typed, but that is a preview; if this file multiplied the two
+   *   again, a contract could print an arithmetic the database disagrees with.
+   *   Same rule that had `withGst` deleted in stage E.
+   *
+   * 🔴 NOT PART OF ANY TOTAL. It is not in `total_inr` or `grand_total_inr` and
+   *   must never be: a separately-invoiced item is billed on its own document,
+   *   so adding it to this contract would charge the customer twice.
+   */
+  subtotal: number | null;
 }
 
 /**
@@ -95,21 +109,25 @@ export interface ShipmentLine {
  *   inapplicable, and it is left off rather than printed as a ruled blank.
  */
 export function shipmentLines(d: OcpiDeal): ShipmentLine[] {
-  const rows: [string, string | null, string | null, boolean | null, number | null, number | null][] = [
-    ["Print head", d.headShipMode, d.headShipVia, d.headSeparateInvoice, d.headInvoiceQty, d.headInvoiceAmount],
-    ["Dryer", d.dryerShipMode, d.dryerShipVia, d.dryerSeparateInvoice, d.dryerInvoiceQty, d.dryerInvoiceAmount],
-    ["Spare parts", d.sparesShipMode, d.sparesShipVia, d.sparesSeparateInvoice, d.sparesInvoiceQty, d.sparesInvoiceAmount],
-    ["Centering device", d.centeringShipMode, d.centeringShipVia, d.centeringSeparateInvoice, d.centeringInvoiceQty, d.centeringInvoiceAmount],
+  // Ordered head · ink · dryer · spare parts · centering device, matching the
+  // form's table and the client's stated order (OCPI-11).
+  const rows: [string, string | null, string | null, boolean | null, number | null, number | null, number | null][] = [
+    ["Print head", d.headShipMode, d.headShipVia, d.headSeparateInvoice, d.headInvoiceQty, d.headInvoiceAmount, d.headInvoiceSubtotal],
+    ["Ink", d.inkShipMode, d.inkShipVia, d.inkSeparateInvoice, d.inkInvoiceQty, d.inkInvoiceAmount, d.inkInvoiceSubtotal],
+    ["Dryer", d.dryerShipMode, d.dryerShipVia, d.dryerSeparateInvoice, d.dryerInvoiceQty, d.dryerInvoiceAmount, d.dryerInvoiceSubtotal],
+    ["Spare parts", d.sparesShipMode, d.sparesShipVia, d.sparesSeparateInvoice, d.sparesInvoiceQty, d.sparesInvoiceAmount, d.sparesInvoiceSubtotal],
+    ["Centering device", d.centeringShipMode, d.centeringShipVia, d.centeringSeparateInvoice, d.centeringInvoiceQty, d.centeringInvoiceAmount, d.centeringInvoiceSubtotal],
   ];
   return rows
     .filter(([, mode, , inv]) => !!mode || inv !== null)
-    .map(([item, mode, via, inv, qty, amount]) => ({
+    .map(([item, mode, via, inv, qty, amount, subtotal]) => ({
       item,
       mode: mode ? (SHIP_MODE_TEXT[mode] ?? mode) : "",
       via: via ? (SHIP_VIA_TEXT[via] ?? via) : "",
       separateInvoice: inv,
       qty,
       amount,
+      subtotal,
     }));
 }
 
@@ -448,10 +466,15 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   const shipment = shipmentLines(deal);
   if (shipment.length > 0) {
     const COLS: [string, number][] = [
-      ["Item", 0.24], ["How it ships", 0.2], ["Sent via", 0.19],
-      ["Separate invoice", 0.13], ["Qty", 0.08], ["Amount (excl. tax)", 0.16],
+      ["Item", 0.2], ["How it ships", 0.17], ["Sent via", 0.16],
+      ["Separate invoice", 0.11], ["Qty", 0.07], ["Amount (excl. tax)", 0.14],
+      ["Sub-total", 0.15],
     ];
-    // Fractions sum to 1, so the six columns fill the content width exactly.
+    // ⚠ FRACTIONS MUST SUM TO 1, so the seven columns fill the content width
+    //   exactly. They were six until OCPI-11 added the sub-total; every other
+    //   fraction was reduced to make room rather than the new one being
+    //   squeezed in, because a column narrower than its figures wraps every
+    //   row and doubles the height of the table.
     const w = COLS.map(([, f]) => cw * f);
     const x: number[] = [];
     for (let i = 0, at = left; i < w.length; at += w[i], i++) x.push(at);
@@ -459,9 +482,14 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
     y = room(y, 46);
     text(pdf, "SHIPMENT & INVOICE", left, y, { size: 9.5, bold: true });
     y += 6;
-    text(pdf, "Amounts exclude tax and are billed on their own invoice.", left, y + 5, {
-      size: 8, color: BRAND.grey,
-    });
+    // ⚠ THE CAPTION HAS TO SAY THE SUB-TOTALS ARE NOT IN THE TOTAL. This table
+    //   sits below the deal's own money on the same page, and a rupee column a
+    //   customer cannot account for reads as an unexplained extra charge.
+    text(
+      pdf,
+      "Amounts exclude tax and are billed on their own invoice. Sub-totals are not included in the totals above.",
+      left, y + 5, { size: 8, color: BRAND.grey },
+    );
     y += 14;
 
     setFill(pdf, BRAND.navy);
@@ -479,6 +507,8 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
         line.separateInvoice === null ? "" : line.separateInvoice ? "Yes" : "No",
         line.qty === null ? "" : String(line.qty),
         line.amount === null ? "" : inr(line.amount),
+        // The STORED figure, not a fresh multiplication — see ShipmentLine.
+        line.subtotal === null ? "" : inr(line.subtotal),
       ];
       const wrapped = cells.map((c, i) => wrapText(pdf, c, w[i] - 10, 8.5));
       const h = Math.max(17, 7 + Math.max(...wrapped.map((l) => l.length)) * 10);
@@ -489,8 +519,10 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
       pdf.rect(left, y, cw, h);
       wrapped.forEach((lines, i) => {
         if (i > 0) pdf.line(x[i], y, x[i], y + h);
-        // The two numeric columns right-align, so figures line up to be read
+        // The three numeric columns right-align, so figures line up to be read
         // down the column rather than compared character by character.
+        // (Two until OCPI-11 added the sub-total; the index is unchanged
+        // because the sub-total was appended after Amount.)
         const numeric = i >= 4;
         lines.forEach((l, k) =>
           text(pdf, l, numeric ? x[i] + w[i] - 5 : x[i] + 5, y + 11 + k * 10, {

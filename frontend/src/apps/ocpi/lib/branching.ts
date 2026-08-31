@@ -177,19 +177,27 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
 
   /* ── RULE 8 · Shipment & invoice, one row per item ────────────────────────
    *
-   * Four items ask the same four questions, and each hangs off a DIFFERENT
-   * condition. Reading them together is the point of listing them together:
+   * FIVE items ask the same five questions, and each hangs off a DIFFERENT
+   * condition. Reading them together is the point of listing them together,
+   * and they are listed in the order the table shows them (OCPI-11):
    *
    *   head              the deal includes a head        d.inclHead
+   *   ink               the deal includes ink           d.inclInk
    *   dryer             the MACHINE takes a dryer       m.needsDryer
    *   spare parts       the deal includes spares        d.inclSpares
    *   centering device  the MACHINE can carry one       m.optExternalCentering
    *
-   * Two of the four are the machine's answer, not the salesperson's — so a
+   * Two of the five are the machine's answer, not the salesperson's — so a
    * salesperson cannot open the dryer's shipping questions by naming a dryer,
    * and cannot open the centering device's by ticking "external centering
    * system". The client asked for that tick and this device to stay separate;
    * they read the same capability but they are different questions.
+   *
+   * ⚠ THE ROW COUNT VARIES BY DEAL, and that is the design, not a fault. The
+   *   section lists only the parts a deal actually carries — five rows on the 5
+   *   machines that can take a centering device, four on the other 23, fewer
+   *   again when a deal has no head or no spares. Making the table always show
+   *   five would invite answers that fms_ocpi_write_oc then discards.
    *
    * Within each row:
    *   · the ROUTE is asked only of a SEPARATE shipment — nothing to route when
@@ -205,6 +213,23 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   headSeparateInvoice: (d) => d.inclHead === true,
   headInvoiceQty: (d) => d.inclHead === true && d.headSeparateInvoice === true,
   headInvoiceAmount: (d) => d.inclHead === true && d.headSeparateInvoice === true,
+
+  /*
+    ⚠ INK'S ROW IS THE MIRROR OF THE SUBSIDIZED-RATE BLOCK ABOVE, not a second
+      copy of it. `inkOfferAgreed` fires on `inclInk === false`; these fire on
+      `inclInk === true`. The two can therefore NEVER be on screen together, and
+      no deal can hold both — which is what stops a salesperson pricing ink the
+      deal never included. Labels still differ ("invoice" against "subsidized"),
+      because a missing-fields list shows the label and nothing else.
+
+      This is also the row that shows most often: 17 of the 19 deals on record
+      include ink, and none exclude it.
+  */
+  inkShipMode: (d) => d.inclInk === true,
+  inkShipVia: (d) => d.inclInk === true && d.inkShipMode === "separate",
+  inkSeparateInvoice: (d) => d.inclInk === true,
+  inkInvoiceQty: (d) => d.inclInk === true && d.inkSeparateInvoice === true,
+  inkInvoiceAmount: (d) => d.inclInk === true && d.inkSeparateInvoice === true,
 
   dryerShipMode: hasDryer,
   dryerShipVia: (d, m) => hasDryer(d, m) && d.dryerShipMode === "separate",

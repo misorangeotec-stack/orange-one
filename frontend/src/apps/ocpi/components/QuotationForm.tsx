@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useOcpiStore } from "../store";
 import { OCPI_MASTERS_QK, fetchOcpiMasters } from "../data/ocpiMasters";
 import CustomerPicker from "./CustomerPicker";
@@ -35,6 +36,57 @@ import type { MachineOption, OcpiMasterType } from "../types";
  */
 
 /** A yes/no, as the source form asks them. Null until answered — not false. */
+/**
+ * The Yes/No pair on its own, with no label around it.
+ *
+ * ⚠ SPLIT OUT OF `YesNo`, NOT COPIED FROM IT (OCPI-11). The shipment table
+ *   needs this control inside a `<td>` that already has a column header, so it
+ *   cannot use the `FieldLabel` wrapper — but two hand-written copies would be
+ *   two places for the selected-state colours to drift apart. `YesNo` below is
+ *   now this plus a label.
+ *
+ * ⚠ THE PAIR NEEDS 152px (72 + 8 + 72) AND WILL WRAP BELOW IT. That is why the
+ *   shipment table sets `table-fixed` and a 164px column: under auto layout the
+ *   browser reads this control's minimum as ONE button and collapses the
+ *   column, stacking the pair and doubling every row's height.
+ */
+function YesNoControl({
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+}: {
+  value: boolean | null;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <div className="flex gap-2" role="group" aria-label={ariaLabel}>
+      {[
+        { v: true, t: "Yes" },
+        { v: false, t: "No" },
+      ].map((o) => (
+        <button
+          key={o.t}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(o.v)}
+          className={[
+            "h-9 min-w-[72px] rounded-lg border px-3 text-[13px] font-medium transition",
+            value === o.v
+              ? "border-orange bg-orange text-white"
+              : "border-line bg-white text-navy hover:border-orange/50",
+            disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+          ].join(" ")}
+        >
+          {o.t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function YesNo({
   label,
   hint,
@@ -50,28 +102,7 @@ function YesNo({
 }) {
   return (
     <FieldLabel label={label} hint={hint}>
-      <div className="flex gap-2">
-        {[
-          { v: true, t: "Yes" },
-          { v: false, t: "No" },
-        ].map((o) => (
-          <button
-            key={o.t}
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(o.v)}
-            className={[
-              "h-9 min-w-[72px] rounded-lg border px-3 text-[13px] font-medium transition",
-              value === o.v
-                ? "border-orange bg-orange text-white"
-                : "border-line bg-white text-navy hover:border-orange/50",
-              disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-            ].join(" ")}
-          >
-            {o.t}
-          </button>
-        ))}
-      </div>
+      <YesNoControl value={value} onChange={onChange} disabled={disabled} ariaLabel={label} />
     </FieldLabel>
   );
 }
@@ -106,12 +137,51 @@ const standardHint = (o: MachineOption | null): string | undefined =>
   o === "yes" ? "standard on this machine" : undefined;
 
 /**
- * One item's shipping and invoicing answers.
+ * Blank, or anything that is not a number, is "not answered yet" — NOT zero.
  *
- * ⚠ ONE COMPONENT, FOUR CALLERS, so the head, the dryer, the spare parts and
- *   the centering device cannot drift apart. They ask the same four questions by
- *   instruction; four hand-written copies would be four places to forget the
- *   "excluding tax" wording, or to add a fifth question to only three of them.
+ * ⚠ MODULE SCOPE, ONE COPY, TWO CALLERS. Both the shipment table and
+ *   `RateOffer` show a live product of two typed factors, and both must agree
+ *   with the SQL that derives the stored figure. A second private copy of this
+ *   arithmetic is how one of them starts rounding differently.
+ */
+const asNumber = (v: string): number | null => {
+  const n = Number(v);
+  return v.trim() === "" || Number.isNaN(n) ? null : n;
+};
+
+/** Quantity × amount, or null while either factor is still blank. */
+const lineSubtotal = (qty: string, amount: string): number | null => {
+  const q = asNumber(qty);
+  const a = asNumber(amount);
+  return q === null || a === null ? null : Math.round(q * a * 100) / 100;
+};
+
+/**
+ * A cell whose question does not apply to this row yet, and why.
+ *
+ * ⚠ A DASH AND A REASON, NOT AN EMPTY CELL. In the stacked boxes these controls
+ *   simply vanished and the box closed up around them. In a grid a blank cell
+ *   is indistinguishable from one somebody forgot to fill in — and this section
+ *   exists to record what was agreed, so "not asked" and "not answered" must
+ *   not look alike. The reason is on hover rather than always on, because seven
+ *   columns of explanatory text would bury the answers themselves.
+ */
+function NotAsked({ reason }: { reason: string }) {
+  return (
+    <span className="cursor-help text-[13px] text-grey-2" title={reason} aria-label={reason}>
+      —
+    </span>
+  );
+}
+
+/**
+ * One item's shipping and invoicing answers — one row of the table.
+ *
+ * ⚠ ONE COMPONENT, FIVE CALLERS, so the head, the ink, the dryer, the spare
+ *   parts and the centering device cannot drift apart. They ask the same five
+ *   questions by instruction; five hand-written copies would be five places to
+ *   forget the "excluding tax" wording, or to add a sixth question to only four
+ *   of them.
  *
  * ⚠ EVERY BINDING IS PASSED IN EXPLICITLY rather than derived from a key prefix.
  *   A `draft[`${prefix}ShipMode`]` lookup would compile — and would silently
@@ -121,6 +191,17 @@ const standardHint = (o: MachineOption | null): string | undefined =>
  * ⚠ VISIBILITY IS DECIDED BY THE CALLER, not here. `branching.ts` owns every
  *   condition in this module and has the SQL's twin beside it; a second opinion
  *   living in a presentational component is how the two engines drift.
+ *
+ * ⚠ THE TWO PICKERS MUST STAY COMBOBOXES, not `ChoiceButtons` (OCPI-11). They
+ *   already were, and in a table it stops being a matter of taste: button
+ *   strips for a two-option and a three-option vocabulary measure about 520px
+ *   between them and would push the table past 1100px, so the Amount column
+ *   falls off a laptop screen and has to be scrolled to. A table you scroll
+ *   sideways to fill in is worse than the stacked boxes it replaced. Both
+ *   vocabularies are 6 options or fewer, so no search box appears and each
+ *   reads as a plain dropdown. `Combobox` carries the same arrow-key
+ *   `stopPropagation` guard `ChoiceButtons` does, so neither steals ↓ from the
+ *   scroll container.
  */
 function ShipmentRow({
   title,
@@ -159,69 +240,121 @@ function ShipmentRow({
   onAmount: (v: string) => void;
 }) {
   if (!shown) return null;
-  return (
-    <div className="space-y-3 rounded-lg border border-line p-3.5">
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
-        <span className="text-[11.5px] text-grey-2">asked because {why}</span>
-      </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FieldLabel label="How it ships">
+  // A PREVIEW of what fms_ocpi_write_oc will store, recomputed as either factor
+  // changes. Empty rather than "₹ 0" while either is blank: a zero is a claim,
+  // a blank is not.
+  const subtotal = lineSubtotal(qty, amount);
+
+  return (
+    <tr className="border-t border-line align-middle">
+      <th scope="row" className="py-2.5 pr-3 text-left font-normal">
+        <span className="block text-[13px] font-semibold text-ink">{title}</span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-grey-2">
+          asked because {why}
+        </span>
+      </th>
+
+      {/*
+        No explicit aria-label on either picker: the column header and the row's
+        own <th> already name the cell for a screen reader, and a third name
+        would be read out on top of them.
+      */}
+      <td className="px-1.5 py-2.5">
+        <Combobox
+          value={mode}
+          onChange={onMode}
+          options={optsKV(HEAD_SHIP_MODES)}
+          placeholder="Choose"
+          clearable
+          disabled={disabled}
+          triggerClassName="w-full"
+        />
+      </td>
+
+      {/* Nothing to route when it travels with the machine. */}
+      <td className="px-1.5 py-2.5">
+        {showVia ? (
           <Combobox
-            value={mode}
-            onChange={onMode}
-            options={optsKV(HEAD_SHIP_MODES)}
+            value={via}
+            onChange={onVia}
+            options={optsKV(HEAD_SHIP_VIA)}
             placeholder="Choose"
             clearable
             disabled={disabled}
+            triggerClassName="w-full"
           />
-        </FieldLabel>
-        {/* Nothing to route when it travels with the machine. */}
-        {showVia && (
-          <FieldLabel label="Separate shipment sent via">
-            <Combobox
-              value={via}
-              onChange={onVia}
-              options={optsKV(HEAD_SHIP_VIA)}
-              placeholder="Choose"
-              clearable
-              disabled={disabled}
-            />
-          </FieldLabel>
+        ) : (
+          <NotAsked reason="Asked only of a separate shipment — there is nothing to route when it travels with the machine." />
         )}
-      </div>
+      </td>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <YesNo label="Separate invoice" value={inv} onChange={onInv} disabled={disabled} />
-        {/*
-          ⚠ QUANTITY AND AMOUNT ONLY ON A SEPARATE INVOICE. That is the only
-            document they would appear on; asking otherwise invites the same
-            figure being quoted twice, once inside the deal value and once
-            beside it. fms_ocpi_write_oc nulls them on the same condition.
-        */}
-        {showInvoiceLines && (
-          <>
-            <FieldLabel label="Quantity">
-              <TextInput
-                inputMode="numeric"
-                value={qty}
-                onChange={(e) => onQty(e.target.value.replace(/\D/g, ""))}
-                disabled={disabled}
-              />
-            </FieldLabel>
-            <FieldLabel label="Amount" hint="excluding tax">
-              <TextInput
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => onAmount(e.target.value.replace(/[^\d.]/g, ""))}
-                disabled={disabled}
-              />
-            </FieldLabel>
-          </>
+      <td className="px-1.5 py-2.5">
+        <YesNoControl
+          value={inv}
+          onChange={onInv}
+          disabled={disabled}
+          ariaLabel={`${title} — separate invoice`}
+        />
+      </td>
+
+      {/*
+        ⚠ QUANTITY AND AMOUNT ONLY ON A SEPARATE INVOICE. That is the only
+          document they would appear on; asking otherwise invites the same
+          figure being quoted twice, once inside the deal value and once
+          beside it. fms_ocpi_write_oc nulls them on the same condition.
+      */}
+      <td className="px-1.5 py-2.5">
+        {showInvoiceLines ? (
+          <TextInput
+            inputMode="numeric"
+            value={qty}
+            onChange={(e) => onQty(e.target.value.replace(/\D/g, ""))}
+            disabled={disabled}
+            aria-label={`${title} — invoice quantity`}
+          />
+        ) : (
+          <NotAsked reason="Asked only when this item is billed on its own invoice." />
         )}
-      </div>
-    </div>
+      </td>
+
+      <td className="px-1.5 py-2.5">
+        {showInvoiceLines ? (
+          <TextInput
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => onAmount(e.target.value.replace(/[^\d.]/g, ""))}
+            disabled={disabled}
+            aria-label={`${title} — invoice amount, excluding tax`}
+          />
+        ) : (
+          <NotAsked reason="Asked only when this item is billed on its own invoice." />
+        )}
+      </td>
+
+      {/*
+        ⚠ READ-ONLY AND DERIVED, NEVER TYPED. A typed sub-total that disagrees
+          with its own two factors is a contradiction printed on a contract.
+          The figure that prints is the one fms_ocpi_write_oc stores; this is
+          the same arithmetic shown early so the salesperson sees the number
+          before they commit to it. It is NOT added to the deal value, the GST
+          or the printed total — a separately-invoiced item is billed on its
+          own document, and counting it here would charge it twice.
+      */}
+      <td className="px-1.5 py-2.5 text-right">
+        {showInvoiceLines ? (
+          <span className="text-[13px] font-semibold tabular-nums text-ink">
+            {subtotal === null ? (
+              <span className="font-normal text-grey-2">—</span>
+            ) : (
+              fmtDealValue(subtotal, "INR")
+            )}
+          </span>
+        ) : (
+          <NotAsked reason="Asked only when this item is billed on its own invoice." />
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -303,14 +436,9 @@ function RateOffer({
 }) {
   if (!shown) return null;
 
-  // Blank, or anything that is not a number, is "not answered yet" — not zero.
-  const asNumber = (v: string): number | null => {
-    const n = Number(v);
-    return v.trim() === "" || Number.isNaN(n) ? null : n;
-  };
-  const q = asNumber(qty);
-  const r = asNumber(rate);
-  const subtotal = q === null || r === null ? null : Math.round(q * r * 100) / 100;
+  // Shares `lineSubtotal` with the shipment table above rather than keeping a
+  // private copy — see the note on `asNumber`. Blank stays blank, never zero.
+  const subtotal = lineSubtotal(qty, rate);
 
   return (
     <div className="space-y-3 rounded-lg border border-line p-3.5">
@@ -657,11 +785,17 @@ export default function QuotationForm({
    * Does this deal ship ANYTHING on its own terms? If not, the whole card goes.
    *
    * An empty "Shipment & invoice" heading over nothing would read as a section
-   * that failed to load. A deal with no head, no dryer, no spares and a machine
-   * that takes no centering device genuinely has nothing to answer here.
+   * that failed to load. A deal with no head, no ink, no dryer, no spares and a
+   * machine that takes no centering device genuinely has nothing to answer here.
+   *
+   * ⚠ NOT ORPHANED BY THE TABLE (OCPI-11). It now guards the table's header row
+   *   as well: a `<thead>` of seven column titles above an empty `<tbody>` reads
+   *   worse than the bare heading it used to prevent. Ink joined the list, and
+   *   because 17 of the 19 deals on record include ink this is now the term most
+   *   likely to be the one keeping the card on screen.
    */
   const anyShipment =
-    show("headShipMode") || show("dryerShipMode") ||
+    show("headShipMode") || show("inkShipMode") || show("dryerShipMode") ||
     show("sparesShipMode") || show("centeringShipMode");
 
   return (
@@ -1295,21 +1429,32 @@ export default function QuotationForm({
       {/*
         ── Shipment & invoice ─────────────────────────────────────────────────
 
-        ⚠ ONE SECTION, NOT FOUR SCATTERED ONES (OCPI-3, stage F). "The head" used
+        ⚠ ONE SECTION, NOT FIVE SCATTERED ONES (OCPI-3, stage F). "The head" used
           to sit near the bottom of Document details with three questions; the
-          centering device had none anywhere. The client asked for the head, the
-          dryer, the spare parts and the centering device to be asked the SAME
-          four things in ONE place — so a reader can see, in one glance, what
-          leaves the factory separately and what is billed separately.
+          centering device had none anywhere, and ink had none at all until
+          OCPI-11. The client asked for every part to be asked the SAME five
+          things in ONE place — so a reader can see, in one glance, what leaves
+          the factory separately and what is billed separately.
+
+        ⚠ A TABLE, NOT STACKED BOXES (OCPI-11). Items down the left, the
+          questions across the top, in the order the client gave: head, ink,
+          dryer, spare parts, centering device.
 
         ⚠ EACH ROW APPEARS ON ITS OWN CONDITION, and they are not the same one.
           Two are the machine's answer rather than the salesperson's; the list is
           written out in branching.ts beside the rules. Every rule here has its
           twin in fms_ocpi_write_oc, which nulls what it hides on every save.
 
-        ⚠ AMOUNTS ARE EXCLUSIVE OF TAX, by instruction, and every row says so.
-          They are stored and printed as given; nothing here is added to
-          `total_inr`, which is derived server-side from the deal value alone.
+          So THE ROW COUNT VARIES BY DEAL — five rows on the 5 machines that can
+          take a centering device, four on the other 23, fewer again without a
+          head or spares. That is the section's design, not a fault: showing all
+          five always would invite answers the writer then discards.
+
+        ⚠ AMOUNTS ARE EXCLUSIVE OF TAX, by instruction, and the heading says so.
+          They are stored and printed as given; NOTHING HERE — the sub-totals
+          included — is added to `total_inr`, which is derived server-side from
+          the deal value alone. A separately-invoiced item is billed on its own
+          document, so rolling it into this contract would charge it twice.
       */}
       {anyShipment && (
         <Card className="space-y-4 p-5">
@@ -1317,10 +1462,49 @@ export default function QuotationForm({
             <h2 className="text-[15px] font-bold text-navy">Shipment &amp; invoice</h2>
             <p className="mt-0.5 text-[12.5px] text-grey">
               How each part of the deal travels, and whether it is billed on its own. Only the parts
-              this deal actually carries are listed.
+              this deal actually carries are listed. Amounts exclude tax, and no figure here is added
+              to the deal value or its total.
             </p>
           </div>
 
+          {/*
+            ⚠ `ScrollableTable` RATHER THAN A BARE OVERFLOW DIV, per CLAUDE.md.
+              Seven columns of controls is the one real risk in this layout, so
+              the two pickers stay Comboboxes rather than button strips to keep
+              the table inside a laptop screen — see the note on `ShipmentRow`.
+              The wrapper is still here for the narrow windows where it does
+              overflow, and it already ignores arrow keys while focus is in a
+              text box, so typing a quantity never scrolls the table.
+
+            ⚠ THE WIDTHS SUM TO THE min-w (132+140+148+164+74+104+104 = 866).
+              Change one and change that, or the columns stop matching their
+              headers once the table is narrower than its content.
+
+            ⚠ `table-fixed` IS LOAD-BEARING, not tidiness. Under the default
+              auto layout these widths are only hints: the browser re-derives
+              each column from its content's minimum, and the Yes/No control's
+              minimum is ONE button (72px). So the Separate-invoice column
+              quietly collapsed on any screen below ~1400px and the pair
+              stacked, taking every row from 73px to 138px. A `min-w` on that
+              cell does not fix it — auto layout ignores it in favour of the
+              content minimum. Fixed layout honours the declared widths, so the
+              pair stays on one line at every width and `ScrollableTable`
+              handles the rest.
+          */}
+          <ScrollableTable>
+            <table className="w-full min-w-[866px] table-fixed border-collapse text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[11.5px] uppercase tracking-wide text-grey-2">
+                  <th scope="col" className="w-[132px] pb-2 pr-3 font-semibold">Item</th>
+                  <th scope="col" className="w-[140px] px-1.5 pb-2 font-semibold">How it ships</th>
+                  <th scope="col" className="w-[148px] px-1.5 pb-2 font-semibold">Ship via</th>
+                  <th scope="col" className="w-[164px] px-1.5 pb-2 font-semibold">Separate invoice</th>
+                  <th scope="col" className="w-[74px] px-1.5 pb-2 font-semibold">Qty</th>
+                  <th scope="col" className="w-[104px] px-1.5 pb-2 font-semibold">Amount</th>
+                  <th scope="col" className="w-[104px] px-1.5 pb-2 text-right font-semibold">Sub-total</th>
+                </tr>
+              </thead>
+              <tbody>
           <ShipmentRow
             title="Print head"
             why="the deal includes a head"
@@ -1338,6 +1522,33 @@ export default function QuotationForm({
             onQty={(v) => patch({ headInvoiceQty: v })}
             amount={draft.headInvoiceAmount}
             onAmount={(v) => patch({ headInvoiceAmount: v })}
+          />
+
+          {/*
+            ⚠ NOT the subsidized quantity and rate in Deal inclusions above.
+              Those are ink the deal does NOT include, offered at a rate; this
+              is ink that IS included and billed on its own document. The two
+              are mutually exclusive by construction — that block needs
+              `inclInk` false, this row needs it true — so they can never be on
+              screen together.
+          */}
+          <ShipmentRow
+            title="Ink"
+            why="the deal includes ink"
+            shown={show("inkShipMode")}
+            disabled={disabled}
+            mode={draft.inkShipMode}
+            onMode={(v) => patch({ inkShipMode: v })}
+            via={draft.inkShipVia}
+            onVia={(v) => patch({ inkShipVia: v })}
+            showVia={show("inkShipVia")}
+            inv={draft.inkSeparateInvoice}
+            onInv={(v) => patch({ inkSeparateInvoice: v })}
+            showInvoiceLines={show("inkInvoiceQty")}
+            qty={draft.inkInvoiceQty}
+            onQty={(v) => patch({ inkInvoiceQty: v })}
+            amount={draft.inkInvoiceAmount}
+            onAmount={(v) => patch({ inkInvoiceAmount: v })}
           />
 
           <ShipmentRow
@@ -1404,6 +1615,9 @@ export default function QuotationForm({
             amount={draft.centeringInvoiceAmount}
             onAmount={(v) => patch({ centeringInvoiceAmount: v })}
           />
+              </tbody>
+            </table>
+          </ScrollableTable>
         </Card>
       )}
 

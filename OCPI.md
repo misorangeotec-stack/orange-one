@@ -2158,3 +2158,154 @@ and it now rests on that column alone. Worth confirming with Bushra rather than 
 client's own machine sheet and was recorded here as *"a good idea nobody asked for… Adopted."* It was
 undone on the client's instruction, with the reasoning in view: asking about a chilling system on a
 machine that cannot take one was judged the smaller cost against a section B that reads consistently.
+
+---
+
+# OCPI-11 · Shipment & invoice becomes a table, gains an Ink row, and calculates a sub-total — 31-Aug-2026
+
+*Asked for by Ritesh Bhai. Sequenced LAST, after OCPI-7 and OCPI-10, because all three edit
+`QuotationForm.tsx` and the same write path.*
+
+## What was built
+
+**Ink got a row.** The head, dryer, spare parts and centering device each carried five shipment
+columns; ink carried none. Five new nullable columns (`ink_ship_mode`, `ink_ship_via`,
+`ink_separate_invoice`, `ink_invoice_qty`, `ink_invoice_amount`), a new branch group in `branching.ts`,
+the six `fieldSpec.ts` touch-points, and new handling in `fms_ocpi_write_oc`. This was the bulk of the
+work — the layout change was the smaller half.
+
+**The section became a table** — items down the left, questions across the top, ordered **Head · Ink ·
+Dryer · Spare parts · Centering device**. `ShipmentRow` is still ONE component, now with FIVE callers
+and rendering a `<tr>`; every binding is still passed in explicitly, for the reason its own comment
+gives.
+
+**Each row gained a sub-total**, `round(qty * amount, 2)`, derived in `fms_ocpi_write_oc` and stored in
+five new columns. The form recomputes the same product live, but only as a preview: the paper prints
+the stored figure, so one price can never have two answers — OCPI-7's rule, and the one `withGst` was
+deleted for in stage E.
+
+Migration: `20261026120000_fms_ocpi_shipment_becomes_a_table.sql`, ten new columns, ten assertions.
+
+## 🔴 A THIRD write function, which nothing in the brief mentioned
+
+The brief and the work list both said "both write RPCs". There are **three** functions in the save
+path, and the third is the dangerous one:
+
+```
+fms_ocpi_save_draft
+  ├─ perform fms_ocpi_write_quotation      -- part A, always
+  └─ if p ?| array['head_ship_mode', … ]   -- ~46 LITERAL key names
+       perform fms_ocpi_write_oc           -- part B, gated
+```
+
+Its own comment calls this *"the easiest thing in this module to miss"*: a new part-B key left off that
+array is never written, with no error and no warning. The five ink keys were added to it. In practice
+the form always sends the whole bag so ink would have ridden in on a neighbour — but a payload of only
+ink shipment answers would have vanished silently, and nothing would have said so.
+
+## ✅ The two-ink-pairs trap is structurally closed, not merely mitigated
+
+The work list called this *"the strongest argument for doing OCPI-7 first"*. Having done it, the danger
+is smaller than it looked, and for a structural reason worth recording:
+
+| | asked when | fields |
+|---|---|---|
+| Section B offer (OCPI-7) | `inclInk === false` | `inkOfferQty` / `inkOfferRate` |
+| Shipment row (OCPI-11) | `inclInk === true` | `inkInvoiceQty` / `inkInvoiceAmount` |
+
+**They are mutually exclusive by construction.** A salesperson can never see both, and no deal row can
+hold both. The same is true of the head. Labels still differ — "invoice" against "subsidized" — because
+a missing-fields list shows the label and nothing else. On today's data the offer branch fires on **no
+deal at all**: 17 of the 19 include ink and none exclude it.
+
+## Cells that do not apply are greyed with a reason, never blank
+
+Each row still has three nested conditions: the row itself, *Ship via* only for a separate shipment,
+and *Qty / Amount / Sub-total* only for a separate invoice. In stacked boxes those simply vanished. In a
+grid a blank cell is indistinguishable from one nobody filled in — and this section exists to record
+what was agreed. So they render as a muted dash with the reason on hover (`NotAsked`). Column widths
+stay steady and the row does not appear to break up mid-grid.
+
+## ⚠ `table-fixed` is load-bearing, and a `min-w` on the cell is not a substitute
+
+The two pickers stay `Combobox`, not button strips. In a table that stops being a matter of taste:
+`ChoiceButtons` for a 2-option and a 3-option vocabulary measure ~520px between them and would push the
+table past 1100px, so Amount falls off a laptop screen. A table you scroll sideways to fill in is worse
+than the boxes it replaced.
+
+That left the Yes/No column, and a trap: the pair needs 152px (two 72px buttons plus their gap) and
+**wraps below it**, so under the default auto table layout its min-content width is ONE button. A `<th>`
+width is only a hint there, so the column quietly collapsed on anything below ~1400px and the pair
+stacked — taking every row from **73px to 138px**. Putting `min-w-[152px]` on the cell did **not** fix
+it; auto layout prefers the content minimum. `table-fixed` honours the declared widths and does.
+
+Measured after the fix — no wrap and 73px rows at every width:
+
+| viewport | content | table overflows | page scrolls sideways |
+|---|---|---|---|
+| 1440 | 1050 | no | no |
+| 1366 | 976 | no | no |
+| 1280 | 890 | no | no |
+| 1200 | 810 | yes → `ScrollableTable` | **no** |
+| 1024 | 634 | yes → `ScrollableTable` | **no** |
+
+The keyboard half of that risk needed nothing: `Combobox` and `ScrollableTable` already carry the
+arrow-key guards between them, and `ScrollableTable` ignores arrows while focus is in a text box.
+
+`YesNo` was split into `YesNoControl` + a label wrapper rather than the buttons being copied into the
+table cell, so the two cannot drift apart.
+
+## 🔴 The money guard
+
+The sub-totals are **not** in `total_inr` or `grand_total_inr` and must never be. A separately-invoiced
+item is billed on its own document; adding it here would charge the customer twice. Assertion 5 pins
+both expressions **character for character, including their trailing `end,` and `end;`** — with a bare
+`end%` tail the pattern would happily accept `… end + coalesce(head_invoice_subtotal, 0)`, which is the
+exact thing it exists to forbid.
+
+Proved on ZZ TEST Suryodaya Prints: 62.35 lakh of sub-totals filled across the grid, and deal value
+52,00,000 / GST 9,36,000 / total 61,36,000 unchanged — at the SQL level and again after a form save.
+
+⚠ Two of this migration's own assertions **failed on correct code** before landing, both the same bug:
+`like '%A%B%'` spans the WHOLE definition, so `'%v_grand :=%invoice_subtotal%'` matches any body that
+mentions `v_grand` anywhere before a sub-total anywhere — which every correct body does. Both are now
+named one at a time, with a comment saying not to "helpfully" restore the wildcard version.
+
+## What was carried forward, and one count that moved
+
+`write_oc` was rebuilt from the **live** body pulled the same day, not from a migration file — it had
+been redefined six times. OCPI-10's work is intact and assertions 6–8 re-state its own checks. One
+number deliberately changes: OCPI-10 required exactly six uses of `coalesce(v_centering` (one tick plus
+five shipment lines); the centering row gained a sub-total, so the correct count is now **seven**.
+
+## Verify — OCPI-11
+
+- [x] `npm run build` clean
+- [x] Orphan sweep over `apps/ocpi` — nothing; `anyShipment` and the `why` prop both kept, `why` now a
+      grey second line under each item name
+- [x] **All five rows** on ZZ TEST Suryodaya Prints (Homer K24), in the agreed order
+- [x] **Every nested condition toggles** — set Separate invoice to No and qty/amount/sub-total became
+      dashes with reasons; set How-it-ships to "With the machine" and Ship via did too; neighbouring
+      rows unaffected
+- [x] **Sub-totals recompute live** — 250100 × 5000 rendered instantly; and blank rather than "₹ 0"
+      while either factor is empty, tested three ways
+- [x] **Saved through the form, re-read in SQL** — `separate` / `directly` / true / 175 / 4200 persisted
+      and `ink_invoice_subtotal` came back as the server's own 7,35,000
+- [x] **The clearing twin bites both ways** — flipping `incl_ink` to false nulled all six ink columns
+      while the head's and centering's sub-totals survived untouched
+- [x] **An older deal still opens and still prints** — QT-M0026 (Kolorado Alpha 15) shows three rows,
+      no dryer and no centering, Ink blank; `ocPdfBlob` regenerates at 245 KB with seven columns
+- [x] PDF column fractions re-balanced and still sum to exactly 1.00
+
+## Open
+
+📋 **Existing deals that include ink now show an Ink row with every cell blank.** Correct rather than a
+regression — the question did not exist when they were filled — but it is 17 of the 19 deals on record,
+so the first person to reopen an old deal will meet five empty cells. Worth a word to the team.
+
+⚠ **The two dropdowns truncate their longest labels** ("Separate shipm…", "High Seas Sale (H…"). Not
+fixable by widening: the chevron and clear-✕ eat ~48px of any sane column, and the full value is on the
+trigger's `title` on hover. Flagged rather than fixed.
+
+⚠ **The register exports the sub-totals** beside "Total (INR)" — which is exactly where somebody
+eventually writes `=SUM()` across a row. The column comments say so; the spreadsheet cannot.

@@ -128,14 +128,29 @@ export interface QuotationDraft {
    *   differently. The repetition is the price of the diff working.
    *
    * ⚠ EACH ITEM BRANCHES ON ITS OWN CONDITION, and they are not the same one:
-   *   the head on "deal includes a head", spares on "deal includes spare parts",
-   *   the dryer on the MACHINE's needs_dryer flag, and the centering device on
-   *   the machine's opt_external_centering capability. See branching.ts. */
+   *   the head on "deal includes a head", ink on "deal includes ink", spares on
+   *   "deal includes spare parts", the dryer on the MACHINE's needs_dryer flag,
+   *   and the centering device on the machine's opt_external_centering
+   *   capability. See branching.ts.
+   *
+   * ⚠ NO SUB-TOTAL LIVES HERE. Each row's sub-total is derived by
+   *   fms_ocpi_write_oc from the qty and amount below and lives on `OcpiDeal`
+   *   alone, so there is exactly one answer for one price. The form recomputes
+   *   the same product live as a preview and never sends it up. */
   headShipMode: string;
   headShipVia: string;
   headSeparateInvoice: boolean | null;
   headInvoiceQty: string;
   headInvoiceAmount: string;
+
+  /* ⚠ NOT `inkOfferQty` / `inkOfferRate` above — those are ink the deal does
+   *   NOT include, offered at a subsidized rate. These are ink that IS included
+   *   and billed on its own invoice. Mutually exclusive by construction. */
+  inkShipMode: string;
+  inkShipVia: string;
+  inkSeparateInvoice: boolean | null;
+  inkInvoiceQty: string;
+  inkInvoiceAmount: string;
 
   dryerShipMode: string;
   dryerShipVia: string;
@@ -249,6 +264,11 @@ export const EMPTY_DRAFT: QuotationDraft = {
   headSeparateInvoice: null,
   headInvoiceQty: "",
   headInvoiceAmount: "",
+  inkShipMode: "",
+  inkShipVia: "",
+  inkSeparateInvoice: null,
+  inkInvoiceQty: "",
+  inkInvoiceAmount: "",
   dryerShipMode: "",
   dryerShipVia: "",
   dryerSeparateInvoice: null,
@@ -592,6 +612,17 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   headInvoiceQty: "Head — invoice quantity",
   headInvoiceAmount: "Head — invoice amount (excl. tax)",
 
+  /* ⚠ "INVOICE", NOT "SUBSIDIZED". `inkOfferQty` / `inkOfferRate` above read
+   *   "Ink — subsidized quantity / rate" and mean the opposite: ink the deal
+   *   does NOT include. These two are the included ink's own invoice. The
+   *   wording is the only thing separating them in an error message, since a
+   *   missing-fields list gives no other context. */
+  inkShipMode: "Ink — how it ships",
+  inkShipVia: "Ink — separate shipment sent via",
+  inkSeparateInvoice: "Ink — separate invoice",
+  inkInvoiceQty: "Ink — invoice quantity",
+  inkInvoiceAmount: "Ink — invoice amount (excl. tax)",
+
   dryerShipMode: "Dryer — how it ships",
   dryerShipVia: "Dryer — separate shipment sent via",
   dryerSeparateInvoice: "Dryer — separate invoice",
@@ -704,6 +735,11 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     headSeparateInvoice: d.headSeparateInvoice,
     headInvoiceQty: s(d.headInvoiceQty),
     headInvoiceAmount: s(d.headInvoiceAmount),
+    inkShipMode: s(d.inkShipMode),
+    inkShipVia: s(d.inkShipVia),
+    inkSeparateInvoice: d.inkSeparateInvoice,
+    inkInvoiceQty: s(d.inkInvoiceQty),
+    inkInvoiceAmount: s(d.inkInvoiceAmount),
     dryerShipMode: s(d.dryerShipMode),
     dryerShipVia: s(d.dryerShipVia),
     dryerSeparateInvoice: d.dryerSeparateInvoice,
@@ -831,6 +867,14 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     head_separate_invoice: d.headSeparateInvoice,
     head_invoice_qty: d.headInvoiceQty,
     head_invoice_amount: d.headInvoiceAmount,
+    // ⚠ THESE FIVE KEY NAMES ARE ALSO IN fms_ocpi_save_draft's part-B array.
+    //   That array is what decides whether write_oc runs at all; a key missing
+    //   from it is never written and says nothing about it.
+    ink_ship_mode: d.inkShipMode,
+    ink_ship_via: d.inkShipVia,
+    ink_separate_invoice: d.inkSeparateInvoice,
+    ink_invoice_qty: d.inkInvoiceQty,
+    ink_invoice_amount: d.inkInvoiceAmount,
     dryer_ship_mode: d.dryerShipMode,
     dryer_ship_via: d.dryerShipVia,
     dryer_separate_invoice: d.dryerSeparateInvoice,
@@ -991,6 +1035,9 @@ export function missingForDetailSheet(d: QuotationDraft, facts: MachineFacts): s
   if (!d.deliveryDays.trim()) out.push(FIELD_LABEL.deliveryDays);
   if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
   if (d.inclHead === true && !d.headShipMode) out.push(FIELD_LABEL.headShipMode);
+  // Ink's row is asked of nearly every deal — 17 of the 19 on record include
+  // ink — so this is the shipment question a salesperson meets most often.
+  if (d.inclInk === true && !d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
 
   // ⚠ THE DRYER IS THE MACHINE'S ANSWER NOW, not the deal's. This used to read
   //   `dryerType !== 'Not Applicable'` — the salesperson's own pick — so a
