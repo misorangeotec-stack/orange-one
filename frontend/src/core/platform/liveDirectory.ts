@@ -25,7 +25,7 @@ export async function fetchDirectory(): Promise<DirectoryData> {
   // The profiles select is an EXPLICIT column list — a new profiles column that
   // isn't added here simply never reaches the browser.
   const [profilesRes, deptsRes, subDeptsRes, desigRes, bandsRes, rolesRes, hodsRes, accessRes] = await Promise.all([
-    supabase.from("profiles").select("id,name,email,phone,designation,designation_id,avatar_color,department_id,sub_department_id,band_id,employee_code,receivables_salespersons,receivables_hidden_menus,receivables_admin_menus,receivables_allowed_reports,receivables_allow_pipeline,last_active_at"),
+    supabase.from("profiles").select("id,name,email,phone,designation,designation_id,avatar_color,department_id,sub_department_id,band_id,employee_code,gender,date_of_birth,receivables_salespersons,receivables_hidden_menus,receivables_admin_menus,receivables_allowed_reports,receivables_allow_pipeline,last_active_at"),
     supabase.from("departments").select("id,name,description,active,sort_order,source,hr_sheet_name"),
     supabase.from("sub_departments").select("id,department_id,name,active,sort_order"),
     supabase.from("designations").select("id,name,active,sort_order"),
@@ -97,7 +97,7 @@ export async function fetchDirectory(): Promise<DirectoryData> {
     .sort((a, b) => a.bandNo - b.bandNo);
 
   const profiles: Profile[] = ((profilesRes.data ?? []) as {
-    id: string; name: string; email: string | null; phone: string | null; designation: string | null; designation_id: string | null; avatar_color: string | null; department_id: string | null; sub_department_id: string | null; band_id: string | null; employee_code: string | null; receivables_salespersons: string[] | null; receivables_hidden_menus: string[] | null; receivables_admin_menus: string[] | null; receivables_allowed_reports: string[] | null; receivables_allow_pipeline: boolean | null; last_active_at: string | null;
+    id: string; name: string; email: string | null; phone: string | null; designation: string | null; designation_id: string | null; avatar_color: string | null; department_id: string | null; sub_department_id: string | null; band_id: string | null; employee_code: string | null; gender: string | null; date_of_birth: string | null; receivables_salespersons: string[] | null; receivables_hidden_menus: string[] | null; receivables_admin_menus: string[] | null; receivables_allowed_reports: string[] | null; receivables_allow_pipeline: boolean | null; last_active_at: string | null;
   }[])
     .map((p) => ({
       id: p.id,
@@ -111,6 +111,8 @@ export async function fetchDirectory(): Promise<DirectoryData> {
       subDepartmentId: p.sub_department_id,
       bandId: p.band_id,
       employeeCode: p.employee_code,
+      gender: (p.gender ?? null) as Profile["gender"],
+      dateOfBirth: p.date_of_birth ?? null,
       role: roleByUser.get(p.id) ?? "employee",
       hodIds: hodsByUser.get(p.id) ?? [],
       moduleAccess: accessByUser.get(p.id) ?? [],

@@ -6,6 +6,7 @@ import { procurementApp } from "./procurement/meta";
 import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
+import { travelDeskApp } from "./travel-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { productionEntryApp } from "./production-entry/meta";
@@ -44,6 +45,11 @@ export const apps: AppManifest[] = [
   // Granted per user like every other module (was universal — see apps/universal.ts —
   // but that let everyone see it regardless of their grant, which admins didn't want).
   hrExitApp,
+  // Travel Desk FMS — separate module (own fms_travel_* tables), granted per user
+  // to whoever travels, approves, books and pays. ONE TRIP carries the request,
+  // every booked leg, the advance, the expense claim and the settlement, so the
+  // entitlement checked before booking is the one enforced on the claim.
+  travelDeskApp,
   // Granted per user like every other module (was universal — see apps/universal.ts).
   officeSuppliesApp,
   // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to

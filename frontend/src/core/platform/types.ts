@@ -125,6 +125,22 @@ export interface Profile {
   bandId: string | null;
   /** HR employee code (e.g. OTPL-S-10092). Null for service accounts. */
   employeeCode: string | null;
+  /**
+   * Passenger gender and date of birth, as every airline and rail operator
+   * demands them to issue a ticket.
+   *
+   * ⚠ THESE ARE NOT ORG FIELDS, and they are deliberately outside
+   *   `guard_profile_org_fields()`. Department, designation and band decide what
+   *   somebody is ENTITLED to and are admin-only for that reason; these decide
+   *   nothing. They are personal details whose only victim, if wrong, is the
+   *   person who owns them - so they are editable by that person and by an
+   *   administrator, exactly as `name` and `phone` already are.
+   *
+   * Added for Travel Desk (20261005120600); nothing else reads them yet.
+   */
+  gender: "male" | "female" | "other" | null;
+  /** ISO date (yyyy-mm-dd). */
+  dateOfBirth: string | null;
   /** Effective role (from user_roles). */
   role: AppRole;
   /** employee_id → hod_id links (user_hods); an employee may report to many HODs. */

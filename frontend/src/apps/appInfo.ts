@@ -141,6 +141,14 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/hr-exit",
     category: "hr",
   },
+  // Official travel end to end: the request, the band-wise entitlement, the
+  // approval, the booking, the advance, the expense claim and the settlement —
+  // one trip, one row. Third HR module, after joining and leaving.
+  "travel-desk": {
+    name: "Travel Desk",
+    basePath: "/travel-desk",
+    category: "hr",
+  },
   "leads-dashboard": {
     name: "Leads Dashboard",
     basePath: "/leads-dashboard",

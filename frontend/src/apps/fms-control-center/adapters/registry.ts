@@ -1,5 +1,6 @@
 import { hrAdapter } from "./hr";
 import { hrExitAdapter } from "./hr-exit";
+import { travelDeskAdapter } from "./travel-desk";
 import { officeSuppliesAdapter } from "./office-supplies";
 import { samplingAdapter } from "./sampling";
 import { productionEntryAdapter } from "./production-entry";
@@ -23,4 +24,4 @@ import type { FmsAdapter } from "./types";
  *   { key: "sales", name: "Sales FMS", controlCenterPath: "", status: "coming-soon",
  *     useSnapshot: () => ({ snapshot: null, isLoading: false, error: null }) }
  */
-export const fmsAdapters: FmsAdapter[] = [purchaseAdapter, importAdapter, hrAdapter, hrExitAdapter, officeSuppliesAdapter, samplingAdapter, productionEntryAdapter, orderToDispatchAdapter, assetMaintenanceAdapter, ocpiAdapter];
+export const fmsAdapters: FmsAdapter[] = [purchaseAdapter, importAdapter, hrAdapter, hrExitAdapter, travelDeskAdapter, officeSuppliesAdapter, samplingAdapter, productionEntryAdapter, orderToDispatchAdapter, assetMaintenanceAdapter, ocpiAdapter];

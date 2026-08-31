@@ -6711,11 +6711,13 @@ export type Database = {
           avatar_color: string | null
           band_id: string | null
           created_at: string
+          date_of_birth: string | null
           department_id: string | null
           designation: string | null
           designation_id: string | null
           email: string | null
           employee_code: string | null
+          gender: string | null
           id: string
           last_active_at: string | null
           name: string
@@ -6733,11 +6735,13 @@ export type Database = {
           avatar_color?: string | null
           band_id?: string | null
           created_at?: string
+          date_of_birth?: string | null
           department_id?: string | null
           designation?: string | null
           designation_id?: string | null
           email?: string | null
           employee_code?: string | null
+          gender?: string | null
           id: string
           last_active_at?: string | null
           name?: string
@@ -6755,11 +6759,13 @@ export type Database = {
           avatar_color?: string | null
           band_id?: string | null
           created_at?: string
+          date_of_birth?: string | null
           department_id?: string | null
           designation?: string | null
           designation_id?: string | null
           email?: string | null
           employee_code?: string | null
+          gender?: string | null
           id?: string
           last_active_at?: string | null
           name?: string

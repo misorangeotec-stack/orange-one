@@ -30,6 +30,7 @@ import { samplingProvider } from "./providers/sampling";
 import { productionEntryProvider } from "./providers/production-entry";
 import { orderToDispatchProvider } from "./providers/order-to-dispatch";
 import { assetMaintenanceProvider } from "./providers/asset-maintenance";
+import { travelDeskProvider } from "./providers/travel-desk";
 
 export const myWorkProviders: MyWorkProvider[] = [
   tasksProvider,
@@ -43,4 +44,5 @@ export const myWorkProviders: MyWorkProvider[] = [
   productionEntryProvider,
   orderToDispatchProvider,
   assetMaintenanceProvider,
+  travelDeskProvider,
 ];

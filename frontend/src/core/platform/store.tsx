@@ -83,7 +83,7 @@ export interface DirectoryValue {
    *   `moduleAccess` is deliberately NOT accepted here: two ways to say the same
    *   thing is how the id list and the levels drift apart.
    */
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "gender" | "dateOfBirth" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, levels: Record<string, ModuleLevel>) => Promise<void>;
 }
@@ -325,6 +325,8 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           subDepartmentId: patch.subDepartmentId,
           bandId: patch.bandId,
           employeeCode: patch.employeeCode,
+          gender: patch.gender,
+          dateOfBirth: patch.dateOfBirth,
           avatarColor: patch.avatarColor,
           receivablesSalespersons: patch.receivablesSalespersons,
           receivablesHiddenMenus: patch.receivablesHiddenMenus,
