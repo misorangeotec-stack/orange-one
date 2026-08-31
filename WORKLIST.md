@@ -1038,6 +1038,35 @@ applicable"* where the five say **no** AMC applies if the customer uses Orange i
 with *"Once order is placed; it will not be cancelled"*. Transcribed as the decks read, so seven Alpha
 machines now carry two different sets of terms. Worth a decision.
 
+#### Follow-up the same day — two siblings copied, 19 become 21
+
+`20261023130000_seed_fms_ocpi_machine_templates_batch2b.sql`. **Fab Pro 3I ← Fab Pro 2I** and
+**Kolorado Alpha 16 ← Kolorado Alpha 15**, asked for as "copy the sibling, change the model code".
+Neither has a deck, so ⚠ **this content is not transcribed from a source document** — it is a sibling's
+text with the model name changed, on the instruction that the specs are otherwise the same. Both clause
+sets were checked to mention no model name or head count, then copied in SQL rather than retyped. Both
+render clean (4 and 3 pages, 0 errors, 0 unresolved tokens, 0 ruled blanks, no stale "2i"/"15" left).
+
+🔴 **Confirm Fab Pro 3I's rows and installable heads.** It carries 2I's figures verbatim — *Two* rows,
+*16 Heads* installable, *(16H)* in the composition — but the family scales 1i = one row / 8 heads,
+2i = Two / 16, so a 3i would normally be **Three rows / 24 heads**. Three figures on that contract are
+wrong if so. Left as instructed. What the customer buys is safe either way: that row is `{{head_count}}`.
+
+⚠ On **Alpha 16**, "15"/"16" is the model designation, **not a head count** — Alpha 15's own head row is
+already `{{head_count}}`, so no head figure is fixed anywhere.
+
+**Held deliberately (7 of 28 still without a template):**
+- 🔴 **`PENGDA 800 DIA.pptx` cannot supply the two 800 machines** — fingerprinted 31-Aug-2026. Slides 1
+  and 3 are **byte-identical** to the 1000 deck; slides 2 and 4 differ only by two boilerplate typos.
+  Its spec table reads **Model: Pengda PD-1700XD-1000, Drum Diameter: 1000 mm** — no 800 data at all.
+  Reading the naming as **PD-{working width}XD-{drum diameter}**, what is missing is the dimensions,
+  initial power and voltage; the 1000's (2750×1750×2250 mm, 71 KW, 42 KW) will not fit an 800 drum.
+  **A real 800 spec sheet is still needed.**
+- **`KoloRado Alpha 3.2 — 16 heads`** — there is no "3.2 — 15 heads" to copy from, and the two that
+  exist differ materially: 8 heads is 1800 | 2200 mm, 1000 Meter roll, no front dryer; 24 heads is
+  3200 mm, 10000 Meter roll, with front dryer. **Client is supplying the detail.**
+- `Mini Lario`, `Foil Machine`, `Label Printer`, `Book Printer` — never had a deck.
+
 **Module gaps the decks expose, none blocking this import:**
 - **JPK is priced in EURO.** The module supports **INR and USD only**. A JPK deal cannot be quoted in
   its own currency today.

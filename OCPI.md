@@ -1920,3 +1920,49 @@ the deck's 16. **All six affected deals are `ZZ TEST`; no real contract is invol
 10. **JP7 cites an enclosed print-head policy document** that is not in the folder.
 
 ⚠ **These nine, like the first ten, are an agent's transcription and Bushra has not proof-read them.**
+
+### Follow-up the same day — two siblings copied, 19 become 21
+
+*`supabase/migrations/20261023130000_seed_fms_ocpi_machine_templates_batch2b.sql`.*
+
+**Fab Pro 3I ← Fab Pro 2I** and **Kolorado Alpha 16 ← Kolorado Alpha 15**, asked for as "copy the
+sibling, change the model code". Neither has a deck — the sheet marks both *Template available: No* and
+there is no file for either in the source folder — so unlike the nine, **this content is not transcribed
+from a source document**; it is a sibling's text with the model name changed, on the instruction that
+the specs are otherwise the same. Both clause sets were checked first: not one of Fab Pro 2I's nine
+bodies nor Alpha 15's eight mentions a model name, a head count or "2i"/"15", so they copy across
+unchanged in SQL rather than being retyped.
+
+🔴 **One figure to confirm on Fab Pro 3I.** It carries 2I's specs verbatim, including *"Number of
+installable rows: Two"*, *"Number of installable printing heads: 16 Heads"* and *"(16H)"* in the
+composition. The family scales 1i = one row / 8 heads, 2i = Two rows / 16 heads, so a 3i would normally
+read **Three rows / 24 heads**. If it does, three figures on that contract are wrong. Left exactly as
+instructed. (What the customer is actually buying is safe either way — that row is `{{head_count}}`,
+off the deal.)
+
+On Alpha 16, "15"/"16" is the **model designation, not a head count** — Alpha 15's own *Number of print
+heads* row is already `{{head_count}}`. So the change is the model name throughout and no head figure is
+fixed anywhere.
+
+Both verified by rendering through the app's own `buildOcPdf` against live data: 4 and 3 pages,
+9 and 8 sections, **0 errors, 0 unresolved `{{…}}`, 0 ruled blanks**, and no stale "Fab Pro 2i" or
+"Alpha 15" string left in either resolved document.
+
+### Still without a template — 7 of 28
+
+`Mini Lario` · `KoloRado Alpha 3.2 — 16 heads` · `Pengda PD-1700XD-800` · `Pengda PD-1800XD-800` ·
+`Foil Machine` · `Label Printer` · `Book Printer`.
+
+⚠ **`PENGDA 800 DIA.pptx` cannot supply the two 800s — confirmed 31-Aug-2026 by fingerprinting both
+decks.** Slides 1 and 3 are **byte-identical** to the 1000 deck; only slides 2 and 4 differ, and only by
+two boilerplate typos (*"Machine Warranty months"* vs *"_months"*, *"After completion of _year"* vs
+*"1 year"*, and a missing `M/S.` on the signature line). Its spec table reads **Model: Pengda
+PD-1700XD-1000, Drum Diameter: 1000 mm** — there is no 800 data in the file at all. Reading the naming
+as **PD-{working width}XD-{drum diameter}**, what is genuinely missing for the two 800s is the machine
+dimensions, initial power and voltage; the 1000's figures (2750×1750×2250 mm, 71 KW, 42 KW) will not be
+right for an 800 drum. A real 800 spec sheet is still needed.
+
+`KoloRado Alpha 3.2 — 16 heads` is held deliberately: there is no "3.2 — 15 heads" to copy, and the two
+Alpha 3.2 templates that exist differ materially — 8 heads is **1800 | 2200 mm** with a 1000 Meter roll
+and no front dryer, 24 heads is **3200 mm** with a 10000 Meter roll and a front dryer. The client is
+supplying the detail.
