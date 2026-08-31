@@ -24,6 +24,8 @@ import FgTransferQueue from "./pages/queues/FgTransferQueue";
 import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
+import LotCycleTime from "./pages/reports/LotCycleTime";
+import StageCycleTime from "./pages/reports/StageCycleTime";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
@@ -95,6 +97,8 @@ export default function ProductionEntryApp() {
           <Route path="queues/ready-to-dispatch" element={<RequireQueue step="ready_to_dispatch"><ReadyToDispatchQueue /></RequireQueue>} />
           <Route path="queues/fg-transfer" element={<RequireQueue step="fg_transfer"><FgTransferQueue /></RequireQueue>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
+          <Route path="reports/lots" element={<RequireMonitor><LotCycleTime /></RequireMonitor>} />
+          <Route path="reports/stages" element={<RequireMonitor><StageCycleTime /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
