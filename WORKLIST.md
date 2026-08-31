@@ -3427,6 +3427,16 @@ Removing the container and orphaning its contents compiles, ships, and looks fin
       approval carries no rate or value, and **no `sourcing` step owner is configured**, so the
       stage feeds nothing Import currently routes on — which argues for retiring it. Rebuilding
       needs a new request-scoped RPC.
+- [ ] **Production Entry's step "status" field is UNREACHABLE.** `StepFieldKind` in
+      [stepConfig.ts](frontend/src/apps/production-entry/lib/stepConfig.ts) declares `"status"`, and
+      [StepModal.tsx](frontend/src/apps/production-entry/components/StepModal.tsx) renders a
+      `STATUS_OPTIONS` dropdown (Completed / Pending / Not Applicable) for it — but **no field
+      anywhere declares `kind: "status"`**, so the branch has never run. Found 29-Aug-2026 while
+      sweeping short dropdowns for the buttons change; it was deliberately NOT converted, because
+      converting a control nobody can reach only hides the question. **Decide: wire it up to the
+      steps that were meant to have it, or delete the kind, the branch and `STATUS_OPTIONS`
+      together.** Classic FIX-4 shape — everything behind the trigger is intact and the trigger was
+      never built. `noUnusedLocals` is false, so it fails nothing.
 - [ ] `importWrites.ts`'s `announce` doc still says recipients equal to the actor are skipped
       server-side; untrue since `20260726150000`. The RM Domestic twin was corrected in `3c71504`;
       Import's was left out of that commit because the file also held an unrelated in-flight change
