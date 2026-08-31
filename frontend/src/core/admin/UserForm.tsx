@@ -100,6 +100,11 @@ export default function UserForm() {
   const [subDepartmentId, setSubDepartmentId] = useState(editing?.subDepartmentId ?? "");
   const [bandId, setBandId] = useState(editing?.bandId ?? "");
   const [employeeCode, setEmployeeCode] = useState(editing?.employeeCode ?? "");
+  // Ticketing details (Travel Desk). An airline will not issue a ticket without
+  // both, and the alternative was every traveller retyping their own date of
+  // birth on every trip - where one typo becomes a denied boarding.
+  const [gender, setGender] = useState<string>(editing?.gender ?? "");
+  const [dateOfBirth, setDateOfBirth] = useState(editing?.dateOfBirth ?? "");
   const [hodIds, setHodIds] = useState<string[]>(editing?.hodIds ?? []);
   // ONE piece of state for both questions "which apps" and "how much of each" —
   // an id is granted iff it has a key here. Two collections (a granted list plus
@@ -322,6 +327,8 @@ export default function UserForm() {
       subDepartmentId: subDepartmentId || null,
       bandId: bandId || null,
       employeeCode: employeeCode.trim() || null,
+      gender: (gender || null) as "male" | "female" | "other" | null,
+      dateOfBirth: dateOfBirth || null,
       hodIds,
       moduleLevels,
       // The tag survives for an admin — it decides which report is MAILED to them, a question
@@ -415,6 +422,32 @@ export default function UserForm() {
             </FieldLabel>
             <FieldLabel label="Employee code" hint="optional">
               <TextInput value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. OTPL-S-10092" />
+            </FieldLabel>
+          </div>
+          {/*
+            Gender and date of birth are what an airline or a rail operator needs
+            to issue a ticket, and the portal held neither. Unlike department,
+            designation and band - which the `guard_profile_org_fields` trigger
+            reserves to an administrator because they decide entitlement - these
+            decide nothing, so the person they describe can also correct their own
+            under Account.
+          */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <FieldLabel label="Gender" hint="for travel bookings">
+              <Combobox
+                value={gender}
+                onChange={setGender}
+                clearable
+                placeholder="— Not recorded —"
+                options={[
+                  { value: "male", label: "Male" },
+                  { value: "female", label: "Female" },
+                  { value: "other", label: "Other" },
+                ]}
+              />
+            </FieldLabel>
+            <FieldLabel label="Date of birth" hint="for travel bookings">
+              <TextInput type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
             </FieldLabel>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">

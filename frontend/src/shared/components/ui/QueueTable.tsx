@@ -163,10 +163,30 @@ interface QueueTableProps<T> {
    * happen to share column keys don't overwrite each other.
    */
   columnPicker?: { storageKey: string };
+  /**
+   * Draw a hairline between columns.
+   *
+   * OPT-IN, and deliberately so. Most queues are narrow enough that the row
+   * separators alone keep the eye on line, and ruling them would only add noise.
+   * It earns its place on a genuinely WIDE table — Production's lot cycle time
+   * runs past twenty columns, where tracking one lot across eleven step durations
+   * is exactly the job a vertical rule does.
+   *
+   * Make it the default if it proves itself there; until then no existing table
+   * changes.
+   */
+  columnRules?: boolean;
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
 type FilterVal = string | string[] | { min: string; max: string } | { from: string; to: string };
+
+/**
+ * The rule between two columns. `border-line/60`, not `border-line`: it has to
+ * separate without competing with the row borders it crosses, which sit at /70.
+ * A rule you notice is a rule that is too dark.
+ */
+const RULE = "border-r border-line/60";
 
 const inputBase =
   "h-8 w-full min-w-0 rounded-lg border border-line bg-white px-2.5 text-[12.5px] text-ink placeholder:text-grey-2/60 focus:outline-none focus:ring-2 focus:ring-orange/25 focus:border-orange/50";
@@ -252,6 +272,7 @@ export default function QueueTable<T>({
   readOnly,
   hideGroupHeaders,
   columnPicker,
+  columnRules,
 }: QueueTableProps<T>) {
   // ⚠ Applied HERE, once, rather than at each of the ~80 `actions={...}` call
   //   sites. Everything below — the Actions header, the per-row cell, the
@@ -439,6 +460,9 @@ export default function QueueTable<T>({
   }, [sorted]);
 
   const pg = usePagination(sorted, { resetKey: `${JSON.stringify(filters)}|${group}|${sort?.key}|${sort?.dir}` });
+  /** A rule after every column but the last — the table's own edge closes that side. */
+  const rule = (i: number): string => (columnRules && i < shownColumns.length - 1 ? RULE : "");
+
   const colSpan = shownColumns.length + (actions ? 1 : 0) + (selectable ? 1 : 0);
 
   // Row multi-select (opt-in). Selection is over the currently filtered rows.
@@ -701,8 +725,8 @@ export default function QueueTable<T>({
                     </th>
                   )}
                   {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line w-px whitespace-nowrap">Actions</th>}
-                  {shownColumns.map((c) => (
-                    <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${c.align === "right" ? "text-right" : ""}`}>
+                  {shownColumns.map((c, i) => (
+                    <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${rule(i)} ${c.align === "right" ? "text-right" : ""}`}>
                       {c.sortValue ? (
                         <button onClick={() => onSort(c.key)} className={`inline-flex items-center gap-1 hover:text-navy ${sort?.key === c.key ? "text-navy" : ""}`}>
                           {c.header}
@@ -718,8 +742,8 @@ export default function QueueTable<T>({
                 <tr className="bg-page/50">
                   {selectable && <th className="px-3 py-2.5 border-b border-line" />}
                   {actions && <th className="px-3 py-2.5 border-b border-line" />}
-                  {shownColumns.map((c) => (
-                    <th key={c.key} className="px-3 py-2.5 border-b border-line align-middle font-normal">
+                  {shownColumns.map((c, i) => (
+                    <th key={c.key} className={`px-3 py-2.5 border-b border-line align-middle font-normal ${rule(i)}`}>
                       {renderFilter(c)}
                     </th>
                   ))}
@@ -758,8 +782,8 @@ export default function QueueTable<T>({
                             </td>
                           )}
                           {actions && <td className="px-4 py-3 border-b border-line/70 whitespace-nowrap">{actions(row)}</td>}
-                          {shownColumns.map((c) => (
-                            <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>
+                          {shownColumns.map((c, i) => (
+                            <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${rule(i)} ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>
                               {c.cell(row)}
                             </td>
                           ))}

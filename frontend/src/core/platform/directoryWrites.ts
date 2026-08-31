@@ -144,9 +144,9 @@ export async function updateUserProfile(
   if (patch.subDepartmentId !== undefined) fields.sub_department_id = patch.subDepartmentId;
   if (patch.bandId !== undefined) fields.band_id = patch.bandId;
   if (patch.employeeCode !== undefined) fields.employee_code = patch.employeeCode;
-  // Ticketing details. Not guarded by guard_profile_org_fields() - see the note
-  // on Profile.gender: these decide no entitlement, so the person they describe
-  // may correct their own.
+  // NOT org fields, and deliberately outside guard_profile_org_fields() - see the note
+  // on Profile.gender: these decide no entitlement, so the person they describe may
+  // edit them, exactly as they may edit their own name and phone.
   if (patch.gender !== undefined) fields.gender = patch.gender;
   if (patch.dateOfBirth !== undefined) fields.date_of_birth = patch.dateOfBirth;
   if (patch.avatarColor !== undefined) fields.avatar_color = patch.avatarColor;

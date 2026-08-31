@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import Logo from "@/shared/components/ui/Logo";
 import { HOME_LABEL } from "@/shared/components/layout/types";
-import { FieldLabel, TextInput, PasswordInput } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput, PasswordInput, Select } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { supabase } from "@/core/platform/supabase";
@@ -21,6 +21,15 @@ export default function Account() {
   const me = profileById(user.id) ?? user;
 
   const [name, setName] = useState(me.name);
+  /**
+   * Ticketing details, and the ONLY org-adjacent fields on this screen that are
+   * editable. Everything else here is admin-set because it decides an
+   * entitlement; gender and date of birth decide nothing, and the person whose
+   * ticket is denied for a wrong date of birth is the person best placed to fix
+   * it. The `guard_profile_org_fields` trigger deliberately does not cover them.
+   */
+  const [gender, setGender] = useState<string>(me.gender ?? "");
+  const [dateOfBirth, setDateOfBirth] = useState(me.dateOfBirth ?? "");
   const email = me.email ?? ""; // display only — see the field below
   /**
    * Display only. Designation is now a master (Admin → Organisation) and the
@@ -48,7 +57,12 @@ export default function Account() {
     setSavingProfile(true);
     setProfileErr("");
     try {
-      await updateUser(me.id, { name: name.trim(), email: email.trim() || null });
+      await updateUser(me.id, {
+        name: name.trim(),
+        email: email.trim() || null,
+        gender: (gender || null) as "male" | "female" | "other" | null,
+        dateOfBirth: dateOfBirth || null,
+      });
       setSavedProfile(true);
       setTimeout(() => setSavedProfile(false), 2500);
     } catch (err) {
@@ -114,6 +128,19 @@ export default function Account() {
               <div className="grid sm:grid-cols-2 gap-4">
                 <FieldLabel label="Designation" hint="set by admin"><TextInput value={designation} disabled /></FieldLabel>
                 <FieldLabel label="Role" hint="set by admin"><TextInput value={roleLabel} disabled /></FieldLabel>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <FieldLabel label="Gender" hint="used on travel tickets">
+                  <Select value={gender} onChange={(e) => setGender(e.target.value)}>
+                    <option value="">— Not recorded —</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </Select>
+                </FieldLabel>
+                <FieldLabel label="Date of birth" hint="used on travel tickets">
+                  <TextInput type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+                </FieldLabel>
               </div>
               <div className="flex items-center justify-end gap-3 pt-1">
                 {!canEditOwnProfile && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}

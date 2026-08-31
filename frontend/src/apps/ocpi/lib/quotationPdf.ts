@@ -4,7 +4,7 @@ import {
   setDraw, setFill, text, widthOf, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { DOLLAR_CLAUSE, INSURANCE_CLAUSE } from "./fieldSpec";
+import { DOLLAR_CLAUSE, INSURANCE_CLAUSE, SUBSIDIZED_RATE_NOTE, canCarry } from "./fieldSpec";
 import { docHeading, fmtDealValue } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
@@ -62,6 +62,30 @@ const inr = (n: number | null): string =>
  * figure that does not reproduce from the rate printed beside it.
  */
 const rateText = (n: number | null): string => (n === null ? "" : n.toFixed(4));
+
+/**
+ * The subsidized-rate note, with the quantity it is bounded by written into it.
+ *
+ * ⚠ A RATE ON A SIGNED QUOTATION WITH NO LIMIT IS AN OPEN COMMITMENT. The rate
+ *   was agreed for a particular quantity at the table; without this sentence the
+ *   paper offers it for any quantity, indefinitely.
+ *
+ * ⚠ THE QUANTITY IS SPELT OUT HERE because it prints nowhere else on the sheet —
+ *   the client asked for the price alone. A note bounding the rate to a quantity
+ *   the reader cannot see would bound nothing.
+ *
+ * Trailing zeros are trimmed: `ink_offer_qty` is `numeric(12,3)`, so 500 litres
+ * arrives as "500.000" and would otherwise read as false precision on a contract.
+ */
+const rateNote = (qty: number | null, unit: string): string => {
+  if (qty === null) return SUBSIDIZED_RATE_NOTE;
+  const n = qty.toLocaleString("en-IN", { maximumFractionDigits: 3 });
+  return (
+    `This is a subsidized rate, agreed for ${n} ${unit}${qty === 1 ? "" : "s"} and valid for ` +
+    `that quantity only. Any further quantity will be charged at the rate prevailing at the ` +
+    `time of that order.`
+  );
+};
 
 /** A label/value pair for the boxed sections. */
 type Row = { label: string; value: string; wide?: boolean };
@@ -267,19 +291,120 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
     machineRows.push({ label: "Platter", value: d.platterDetails });
   }
 
+  /*
+    ⚠ SECTION B GAINED A SECOND BRANCH (OCPI-7). A "No" no longer ends the
+      conversation: the customer still buys ink and still buys heads, and the
+      rate agreed at the same table now prints beside the No that prompted it.
+
+    ⚠ ONE PRICE FIGURE PER ITEM, by the client's instruction — the per-unit rate
+      is captured on the form and carried in the revision diff, but the paper
+      shows the total, not the arithmetic behind it.
+
+    ⚠ THE QUANTITY APPEARS INSIDE THE NOTE, and that is not a breach of the rule
+      above. The client asked for a remark bounding the rate to the quantity it
+      was agreed for; a note reading "valid for the stated quantity" is empty
+      when the quantity is nowhere on the page, and would bound the price by
+      something the customer cannot see. So the sentence names it, rather than a
+      separate ruled row doing so.
+
+    ⚠ ALWAYS RUPEES, never the deal's currency (client, 31-Aug-2026). A machine
+      may be sold in dollars; ink and heads are rated in rupees regardless, so a
+      High Seas sheet carries a dollar machine price and a rupee ink price on one
+      page. Both print their own symbol, and nothing here is converted — `fxRate`
+      is not consulted, so this figure cannot move when a rate does.
+
+    ⚠ THE FIGURE IS READ, NEVER COMPUTED. `*OfferSubtotal` is derived and stored
+      by fms_ocpi_write_quotation. Multiplying qty × rate here would be the
+      `withGst` mistake deleted in stage E: a second, different answer for one
+      price, on a contract.
+
+    ⚠ IT IS NOT PART OF ANY TOTAL, and must never become part of one. Section C
+      is untouched: this money belongs to an item the deal explicitly does NOT
+      include, so adding it to the machine price would be a commercial error.
+      It prints in the deal's own currency and is never converted at fx_rate.
+
+    ⚠ EACH FOLLOW-UP SITS IMMEDIATELY AFTER ITS OWN QUESTION, and appears only
+      when the rate question was actually answered. Both flags are null on every
+      deal saved before this existed, so an older deal still prints exactly the
+      six rows it always did — nothing is pushed. Content prints, emptiness does
+      not, the same rule the retired remark boxes follow.
+
+    ⚠ THE PACKER PUTS TWO ROWS ON A LINE. An item offered at a rate adds two
+      rows and keeps the parity; an item answered "No" adds one and leaves a
+      half-empty final line. That is expected — do not pad it.
+  */
+  const inclusions: Row[] = [
+    { label: "Inclusive of Ink?", value: yesNo(d.inclInk) },
+    { label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded ?? "" },
+  ];
+  if (d.inclInk === false && d.inkOfferAgreed !== null) {
+    inclusions.push({ label: "Ink Offered at a Subsidized Rate?", value: yesNo(d.inkOfferAgreed) });
+    if (d.inkOfferAgreed === true) {
+      // "Subsidized Ink Price", not "Ink Price" — Section A already prints
+      // "Ink Selling Price", which is a different figure entirely.
+      inclusions.push({ label: "Subsidized Ink Price", value: inr(d.inkOfferSubtotal) });
+      inclusions.push({
+        label: "Ink Rate Note",
+        value: rateNote(d.inkOfferQty, "litre"),
+        wide: true,
+      });
+    }
+  }
+  inclusions.push(
+    { label: "Inclusive of Spare Parts?", value: yesNo(d.inclSpares) },
+    { label: "Spare Part Details and Quantity", value: d.spareDetails ?? "" },
+    { label: "Inclusive of Head?", value: yesNo(d.inclHead) },
+    { label: "No. of Heads Included in Deal", value: d.headsIncluded === null ? "" : String(d.headsIncluded) },
+  );
+  if (d.inclHead === false && d.headOfferAgreed !== null) {
+    inclusions.push({ label: "Head Offered at a Subsidized Rate?", value: yesNo(d.headOfferAgreed) });
+    if (d.headOfferAgreed === true) {
+      inclusions.push({ label: "Subsidized Head Price", value: inr(d.headOfferSubtotal) });
+      inclusions.push({
+        label: "Head Rate Note",
+        value: rateNote(d.headOfferQty, "head"),
+        wide: true,
+      });
+    }
+  }
+
+  /*
+    ── The four extras, and the free-text eighth (OCPI-10) ───────────────────
+
+    ⚠ THEY PRINT HERE BECAUSE THEY ARE ASKED HERE. They used to be answered in
+      a different card and appeared on no quotation at all — only later, on the
+      order confirmation, and only when the answer was Yes. Now that section B
+      asks all seven, a reader of the paper section B produces has to find all
+      seven on it, or the form and its own document disagree.
+
+    ⚠ A No PRINTS, exactly as the three rows above it print a No. On this paper
+      "not included" is a term of the deal, not an absence — which is the
+      opposite of the order confirmation, where these four feed a bullet list
+      of what the machine IS composed of and a No is simply no bullet.
+
+    ⚠ THE CENTERING ROW IS MACHINE-GATED, matching the form one for one. It is
+      the one extra still hidden when the machine cannot carry it, so printing
+      it on the other 23 machines would put a question on a customer's paper
+      that was never asked — and answer it, blankly, on their behalf.
+  */
+  inclusions.push({ label: "Inclusive of Air Blade?", value: yesNo(d.airBlade) });
+  if (machine && canCarry(machine.optExternalCentering)) {
+    inclusions.push({
+      label: "Inclusive of External Centering System?",
+      value: yesNo(d.externalCentering),
+    });
+  }
+  inclusions.push(
+    { label: "Inclusive of Ink Dust Exhauster?", value: yesNo(d.inkDustExhauster) },
+    { label: "Inclusive of Chilling System?", value: yesNo(d.chillingSystem) },
+  );
+  if (d.otherInclusions?.trim()) {
+    inclusions.push({ label: "Other Inclusions", value: d.otherInclusions, wide: true });
+  }
+
   return [
     { title: "A.  Machine Details", rows: machineRows },
-    {
-      title: "B.  Deal Inclusions",
-      rows: [
-        { label: "Inclusive of Ink?", value: yesNo(d.inclInk) },
-        { label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded ?? "" },
-        { label: "Inclusive of Spare Parts?", value: yesNo(d.inclSpares) },
-        { label: "Spare Part Details and Quantity", value: d.spareDetails ?? "" },
-        { label: "Inclusive of Head?", value: yesNo(d.inclHead) },
-        { label: "No. of Heads Included in Deal", value: d.headsIncluded === null ? "" : String(d.headsIncluded) },
-      ],
-    },
+    { title: "B.  Deal Inclusions", rows: inclusions },
     { title: "C.  Commercial Terms", rows: commercial },
     { title: "D.  Special Remarks", rows: remarks },
   ];

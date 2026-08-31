@@ -114,10 +114,54 @@ export interface OcpiDeal {
 
   inclInk: boolean | null;
   inkQtyIncluded: string | null;
+  /* ── Ink, the NO branch (OCPI-7) ──────────────────────────────────────────
+   * Asked only when `inclInk` is literally FALSE. "Not included in the machine
+   * price" is not "not being sold" — the customer still buys ink, and the rate
+   * is agreed at the same table. `null` means never asked, which is NOT No.
+   *
+   * ⚠ THE SUB-TOTAL IS NOT PART OF THE DEAL VALUE AND MUST NEVER BE ADDED TO
+   *   IT. This is only ever asked when the item is NOT in the deal, so its
+   *   money is not the deal's money — `dealValueAmount`, the GST derivation,
+   *   the frozen FX conversion, `totalInr` and `grandTotalInr` all exclude it
+   *   by construction. Two sub-totals beside a deal value are an obvious thing
+   *   for a later "grand total" to sweep up, and that would be a commercial
+   *   error on a customer contract, not a display bug.
+   *
+   * ⚠ ALWAYS RUPEES, whatever the deal is quoted in (client, 31-Aug-2026), and
+   *   never converted — `fxRate` is not consulted anywhere in this block. So a
+   *   dollar machine and a rupee ink rate can appear on one sheet, each with its
+   *   own symbol.
+   *
+   * ⚠ IT STILL CARRIES NO `Inr` SUFFIX, and that is deliberate rather than an
+   *   oversight now that it IS rupees: in this module `…Inr` marks a figure on
+   *   the DERIVED MONEY PATH (`machineValueInr`, `gstAmountInr`, `totalInr`,
+   *   `grandTotalInr`). This is rupees but is not on that path, and naming it
+   *   `…Inr` would file it with the very figures it must never join. */
+  inkOfferAgreed: boolean | null;
+  /** Litres. Numeric, unlike the free-text `inkQtyIncluded` of the YES branch. */
+  inkOfferQty: number | null;
+  /** Rupees per litre, always. Not `inkPrice`, which is Section A. */
+  inkOfferRate: number | null;
+  /** DERIVED by `fms_ocpi_write_quotation`, never computed here. Read only. */
+  inkOfferSubtotal: number | null;
   inclSpares: boolean | null;
   spareDetails: string | null;
   inclHead: boolean | null;
   headsIncluded: number | null;
+  /* ── Head, the NO branch (OCPI-7) ─────────────────────────────────────────
+   * ⚠ NOT `headInvoiceQty` / `headInvoiceAmount`, which mean the OPPOSITE: a
+   *   head that IS included but is billed on a separate invoice. These are for
+   *   a head the deal does not include at all. The two pairs are mutually
+   *   exclusive by construction — the invoice pair survives only when
+   *   `inclHead` is true, this pair only when it is false. Same money rule as
+   *   the ink block above. */
+  headOfferAgreed: boolean | null;
+  /** A plain count of heads, like `headsIncluded` next door. */
+  headOfferQty: number | null;
+  /** Rupees per head, always. */
+  headOfferRate: number | null;
+  /** DERIVED by `fms_ocpi_write_quotation`, never computed here. Read only. */
+  headOfferSubtotal: number | null;
   dryerType: string | null;
 
   dealValueCurrency: DealCurrency | null;
@@ -146,10 +190,21 @@ export interface OcpiDeal {
   dollarClauseAgreed: boolean | null;
 
   /* ── Shipment & invoice ───────────────────────────────────────────────────
-   * Four items, the same four questions each. `HeadShipMode` / `HeadShipVia`
-   * keep their names — they were the head's alone before this — but the
-   * vocabulary is shared by all four, so they are used across the group rather
-   * than copied per item. */
+   * FIVE items, the same five questions each, in the order they are asked on
+   * screen: head, ink, dryer, spare parts, centering device. `HeadShipMode` /
+   * `HeadShipVia` keep their names — they were the head's alone before the
+   * section existed — but the vocabulary is shared by all five, so they are
+   * used across the group rather than copied per item.
+   *
+   * ⚠ EACH ROW HANGS OFF A DIFFERENT CONDITION, and two of the five are the
+   *   MACHINE's answer rather than the salesperson's. The list lives in
+   *   branching.ts beside the rules, and every one of them has its twin in
+   *   fms_ocpi_write_oc, which nulls what the form hides on every save.
+   *
+   * ⚠ THE SUB-TOTALS ARE READ-ONLY. They are derived by fms_ocpi_write_oc as
+   *   round(qty * amount, 2) and never sent up — they are absent from
+   *   `QuotationDraft` and from both payloads on purpose. The form recomputes
+   *   the same product live as a PREVIEW; this is the figure that prints. */
   headShipMode: HeadShipMode | null;
   headShipVia: HeadShipVia | null;
   headBalanceRemarks: string | null;
@@ -157,24 +212,48 @@ export interface OcpiDeal {
   /** Quantity and amount exist ONLY on a separate invoice — see fms_ocpi_write_oc. */
   headInvoiceQty: number | null;
   headInvoiceAmount: number | null;
+  /** DERIVED by `fms_ocpi_write_oc`, never computed here. Read only. */
+  headInvoiceSubtotal: number | null;
+
+  /**
+   * ⚠ NOT `inkOfferQty` / `inkOfferRate`, which mean the OPPOSITE: ink the deal
+   *   does NOT include, offered at a subsidized rate. These are ink that IS
+   *   included and is billed on its own invoice. The two can never both hold a
+   *   value — that pair needs `inclInk === false`, this one needs `true` — so a
+   *   salesperson never sees both at once, but the labels still have to differ.
+   */
+  inkShipMode: HeadShipMode | null;
+  inkShipVia: HeadShipVia | null;
+  inkSeparateInvoice: boolean | null;
+  inkInvoiceQty: number | null;
+  inkInvoiceAmount: number | null;
+  /** DERIVED by `fms_ocpi_write_oc`, never computed here. Read only. */
+  inkInvoiceSubtotal: number | null;
 
   dryerShipMode: HeadShipMode | null;
   dryerShipVia: HeadShipVia | null;
   dryerSeparateInvoice: boolean | null;
   dryerInvoiceQty: number | null;
   dryerInvoiceAmount: number | null;
+  /** DERIVED by `fms_ocpi_write_oc`. NOT `dryerValueInr`, which is the dryer's
+   *  own price on the machine contract and IS on the money path. Read only. */
+  dryerInvoiceSubtotal: number | null;
 
   sparesShipMode: HeadShipMode | null;
   sparesShipVia: HeadShipVia | null;
   sparesSeparateInvoice: boolean | null;
   sparesInvoiceQty: number | null;
   sparesInvoiceAmount: number | null;
+  /** DERIVED by `fms_ocpi_write_oc`, never computed here. Read only. */
+  sparesInvoiceSubtotal: number | null;
 
   centeringShipMode: HeadShipMode | null;
   centeringShipVia: HeadShipVia | null;
   centeringSeparateInvoice: boolean | null;
   centeringInvoiceQty: number | null;
   centeringInvoiceAmount: number | null;
+  /** DERIVED by `fms_ocpi_write_oc`, never computed here. Read only. */
+  centeringInvoiceSubtotal: number | null;
 
   /**
    * The dryer model, inside the category `dryerType` names.
@@ -218,6 +297,11 @@ export interface OcpiDeal {
   externalCentering: boolean | null;
   inkDustExhauster: boolean | null;
   chillingSystem: boolean | null;
+
+  /* Section B's eighth pointer (OCPI-10). Free text, asked on every deal.
+   * NOT `otherCommitments` below, which is retired: it still prints on old
+   * deals that carry a value, but the form offers no input for it. */
+  otherInclusions: string | null;
 
   otherCommitments: string | null;
   printerWarranty: string | null;

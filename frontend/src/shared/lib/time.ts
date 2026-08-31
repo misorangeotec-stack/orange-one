@@ -51,6 +51,57 @@ export function timeAgoShort(iso: string): string {
   return `${Math.floor(day / 365)}y`;
 }
 
+/**
+ * A SPAN of time — `6d 4h`, `4h 20m`, `12m`, `<1m` — for a duration the reader
+ * measures, not an age relative to now.
+ *
+ * Deliberately NOT `timeAgoShort`. That one is anchored to `Date.now()` and answers
+ * "how long ago"; this takes a plain millisecond span, so it can render the gap
+ * between two PAST timestamps — which is the whole of a cycle-time report.
+ *
+ * ⚠ A sub-minute span renders `<1m`, never `0m`. Two steps stamped in the same second
+ * were TYPED together; the stage did not take no time. "0h" reads as a fast stage,
+ * which is the opposite of the truth — `<1m` says "too small to have been measured"
+ * and keeps the reader honest.
+ *
+ * Negative spans clamp to zero. A caller that can produce one (a clock skew, a
+ * hand-corrected row) should be FLAGGING that row, not printing `-3h`.
+ */
+export function formatDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) return "—";
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return "<1m";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) {
+    const rem = min % 60;
+    return rem ? `${hr}h ${rem}m` : `${hr}h`;
+  }
+  const day = Math.floor(hr / 24);
+  const rem = hr % 24;
+  return rem ? `${day}d ${rem}h` : `${day}d`;
+}
+
+/**
+ * Whole days between two ISO stamps, or `null` when either is missing or unparseable.
+ *
+ * **SIGNED** — negative when `toIso` precedes `fromIso`. That is the difference from
+ * the private `daysBetween` copies that already live in travel-desk, asset-maintenance
+ * and hr-exit, every one of which clamps at zero. Clamping at the call site is one
+ * `Math.max`; recovering a sign that was thrown away is impossible, and "3 days early"
+ * is exactly what a planned-vs-actual column needs to say.
+ *
+ * Rounds rather than floors, so 20 hours reads as 1 day, not 0.
+ */
+export function daysBetweenIso(fromIso: string | null, toIso: string | null): number | null {
+  if (!fromIso || !toIso) return null;
+  const from = new Date(fromIso).getTime();
+  const to = new Date(toIso).getTime();
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.round((to - from) / 86_400_000);
+}
+
 /** Absolute date + time: dd-mm-yyyy h:mm AM/PM (local time, 12-hour). */
 export function formatDateTime(iso: string | null): string {
   if (!iso) return "—";

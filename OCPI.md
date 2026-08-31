@@ -2387,16 +2387,16 @@ stay steady and the row does not appear to break up mid-grid.
 
 ## ⚠ `table-fixed` is load-bearing, and a `min-w` on the cell is not a substitute
 
-The two pickers are `Combobox`, not `ChoiceButtons` — the one deliberate departure from the rest of the
-form. Button strips for a 2-option and a 3-option vocabulary measure ~520px between them and push the
+The two pickers stay `Combobox`, not button strips. In a table that stops being a matter of taste:
+`ChoiceButtons` for a 2-option and a 3-option vocabulary measure ~520px between them and would push the
 table past 1100px, so Amount falls off a laptop screen. A table you scroll sideways to fill in is worse
 than the boxes it replaced.
 
-That left the Yes/No column, and a trap: `ChoiceButtons` gives every option `min-w-[72px]` and **wraps
-internally**, so under the default auto table layout its min-content width is ONE button. A `<th>` width
-is only a hint there, so the column quietly collapsed on anything below ~1400px and the pair stacked —
-taking every row from **73px to 138px**. Putting `min-w-[152px]` on the cell did **not** fix it; auto
-layout prefers the content minimum. `table-fixed` honours the declared widths and does.
+That left the Yes/No column, and a trap: the pair needs 152px (two 72px buttons plus their gap) and
+**wraps below it**, so under the default auto table layout its min-content width is ONE button. A `<th>`
+width is only a hint there, so the column quietly collapsed on anything below ~1400px and the pair
+stacked — taking every row from **73px to 138px**. Putting `min-w-[152px]` on the cell did **not** fix
+it; auto layout prefers the content minimum. `table-fixed` honours the declared widths and does.
 
 Measured after the fix — no wrap and 73px rows at every width:
 
@@ -2408,8 +2408,11 @@ Measured after the fix — no wrap and 73px rows at every width:
 | 1200 | 810 | yes → `ScrollableTable` | **no** |
 | 1024 | 634 | yes → `ScrollableTable` | **no** |
 
-Trap 6's keyboard half needed nothing: `ChoiceButtons`, `Combobox` and `ScrollableTable` already carry
-the arrow-key guards between them, and `ScrollableTable` ignores arrows while focus is in a text box.
+The keyboard half of that risk needed nothing: `Combobox` and `ScrollableTable` already carry the
+arrow-key guards between them, and `ScrollableTable` ignores arrows while focus is in a text box.
+
+`YesNo` was split into `YesNoControl` + a label wrapper rather than the buttons being copied into the
+table cell, so the two cannot drift apart.
 
 ## 🔴 The money guard
 

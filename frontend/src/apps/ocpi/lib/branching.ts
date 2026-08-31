@@ -129,6 +129,36 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   headsIncluded: (d) => d.inclHead === true,
 
   /*
+    ── OCPI-7 · the NO branch, and the module's first show-on-FALSE group ─────
+
+    Every other rule in this map fires on `=== true`. These six fire on
+    `=== false`, because "not included in the machine price" is not "not being
+    sold": the customer still buys ink and still buys heads, and the rate is
+    agreed at the same table as the machine.
+
+    ⚠ `=== false`, NEVER `!d.inclInk`. The third state is real and load-bearing
+      here. An unanswered inclusion is `null`, and `!null` is true — so the
+      shorthand would present the rate question to somebody who has not
+      answered the inclusion at all, reading as though the system had already
+      decided the answer was No. `null` must show NOTHING.
+
+    ⚠ The precedent is `dryerPrice` further down: a price only when the dryer
+      is NOT part of the deal. Same shape, same reason.
+
+    The rate lines then hang off the rate question, so the chain is
+    inclusion=false → offered=true. `clearHidden` iterates this map, so a rate
+    typed and then hidden is blanked here as well as by the RPC — but the RPC
+    is the authority and carries the inverted guard too.
+  */
+  inkOfferAgreed: (d) => d.inclInk === false,
+  inkOfferQty: (d) => d.inclInk === false && d.inkOfferAgreed === true,
+  inkOfferRate: (d) => d.inclInk === false && d.inkOfferAgreed === true,
+
+  headOfferAgreed: (d) => d.inclHead === false,
+  headOfferQty: (d) => d.inclHead === false && d.headOfferAgreed === true,
+  headOfferRate: (d) => d.inclHead === false && d.headOfferAgreed === true,
+
+  /*
     ⚠ THIS RULE STAYS, THOUGH THE BOX IS GONE (OCPI-3, stage H) — and my own task
       list was wrong to call it an orphan.
 
@@ -147,19 +177,27 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
 
   /* ── RULE 8 · Shipment & invoice, one row per item ────────────────────────
    *
-   * Four items ask the same four questions, and each hangs off a DIFFERENT
-   * condition. Reading them together is the point of listing them together:
+   * FIVE items ask the same five questions, and each hangs off a DIFFERENT
+   * condition. Reading them together is the point of listing them together,
+   * and they are listed in the order the table shows them (OCPI-11):
    *
    *   head              the deal includes a head        d.inclHead
+   *   ink               the deal includes ink           d.inclInk
    *   dryer             the MACHINE takes a dryer       m.needsDryer
    *   spare parts       the deal includes spares        d.inclSpares
    *   centering device  the MACHINE can carry one       m.optExternalCentering
    *
-   * Two of the four are the machine's answer, not the salesperson's — so a
+   * Two of the five are the machine's answer, not the salesperson's — so a
    * salesperson cannot open the dryer's shipping questions by naming a dryer,
    * and cannot open the centering device's by ticking "external centering
    * system". The client asked for that tick and this device to stay separate;
    * they read the same capability but they are different questions.
+   *
+   * ⚠ THE ROW COUNT VARIES BY DEAL, and that is the design, not a fault. The
+   *   section lists only the parts a deal actually carries — five rows on the 5
+   *   machines that can take a centering device, four on the other 23, fewer
+   *   again when a deal has no head or no spares. Making the table always show
+   *   five would invite answers that fms_ocpi_write_oc then discards.
    *
    * Within each row:
    *   · the ROUTE is asked only of a SEPARATE shipment — nothing to route when
@@ -175,6 +213,23 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   headSeparateInvoice: (d) => d.inclHead === true,
   headInvoiceQty: (d) => d.inclHead === true && d.headSeparateInvoice === true,
   headInvoiceAmount: (d) => d.inclHead === true && d.headSeparateInvoice === true,
+
+  /*
+    ⚠ INK'S ROW IS THE MIRROR OF THE SUBSIDIZED-RATE BLOCK ABOVE, not a second
+      copy of it. `inkOfferAgreed` fires on `inclInk === false`; these fire on
+      `inclInk === true`. The two can therefore NEVER be on screen together, and
+      no deal can hold both — which is what stops a salesperson pricing ink the
+      deal never included. Labels still differ ("invoice" against "subsidized"),
+      because a missing-fields list shows the label and nothing else.
+
+      This is also the row that shows most often: 17 of the 19 deals on record
+      include ink, and none exclude it.
+  */
+  inkShipMode: (d) => d.inclInk === true,
+  inkShipVia: (d) => d.inclInk === true && d.inkShipMode === "separate",
+  inkSeparateInvoice: (d) => d.inclInk === true,
+  inkInvoiceQty: (d) => d.inclInk === true && d.inkSeparateInvoice === true,
+  inkInvoiceAmount: (d) => d.inclInk === true && d.inkSeparateInvoice === true,
 
   dryerShipMode: hasDryer,
   dryerShipVia: (d, m) => hasDryer(d, m) && d.dryerShipMode === "separate",
@@ -209,13 +264,34 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   // would carry a charge for something the customer is not being charged for.
   dryerPrice: (d, m) => hasDryer(d, m) && d.dryerIncluded === false,
 
-  // RULE 7 again — the four extras. "no" or unmapped means the machine cannot
-  // take it, so the question never appears; "yes" is standard equipment and is
-  // still asked, because the deal has to record that it is included.
-  airBlade: (_d, m) => canCarry(m.optAirBlade),
+  /*
+    RULE 7 again — ONE extra, where there used to be four (OCPI-10).
+
+    Air blade, ink dust exhauster and chilling system are now asked on EVERY
+    deal and have no rule here at all: `isVisible` returns true for a key it
+    does not know, which is the whole of their change. Removing the rules also
+    takes them out of `clearHidden`'s loop — required, not incidental, or the
+    answer would be blanked client-side before the payload was even built.
+
+    ⚠ EXTERNAL CENTERING KEEPS ITS GATE, and the asymmetry is the client's own
+      decision rather than an oversight. The centering system follows the
+      dryer's logic: if the machine backs it, ask; otherwise do not. So section
+      B shows seven pointers on the 5 machines that can carry a centering
+      device and six on the other 23. Do not "fix" that by always rendering the
+      row, and do not tidy this rule into matching the three that went.
+
+    ⚠ ITS TWIN IS THE SHIPMENT GROUP twenty lines above — `centeringShipMode`
+      and the four beside it read the SAME capability, and the client confirmed
+      the two hide together. Both survive OCPI-10 untouched.
+
+    ⚠ THE SERVER CARRIES THIS RULE TOO. `fms_ocpi_write_oc` still clears
+      `external_centering` on a machine that cannot carry one, and deliberately
+      no longer clears the other three — see
+      20261025120000_fms_ocpi_extras_stop_being_gated.sql. If this rule and
+      that clearing ever disagree, the form asks a question the server throws
+      away, which is exactly the bug OCPI-10 existed to remove.
+  */
   externalCentering: (_d, m) => canCarry(m.optExternalCentering),
-  inkDustExhauster: (_d, m) => canCarry(m.optInkDustExhauster),
-  chillingSystem: (_d, m) => canCarry(m.optChillingSystem),
 
   highSeasVia: (d) => d.transportTerms === "high_seas",
   highSeasCostBy: (d) => d.transportTerms === "high_seas",

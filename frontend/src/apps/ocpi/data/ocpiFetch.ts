@@ -285,10 +285,20 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   inclInk: r.incl_ink ?? null,
   inkQtyIncluded: r.ink_qty_included ?? null,
+  // OCPI-7 · the NO branch. Miss a line here and the column is fetched but
+  // never reaches OcpiDeal — `r` is `any`, so it fails silently as a null.
+  inkOfferAgreed: r.ink_offer_agreed ?? null,
+  inkOfferQty: num(r.ink_offer_qty),
+  inkOfferRate: num(r.ink_offer_rate),
+  inkOfferSubtotal: num(r.ink_offer_subtotal),
   inclSpares: r.incl_spares ?? null,
   spareDetails: r.spare_details ?? null,
   inclHead: r.incl_head ?? null,
   headsIncluded: r.heads_included ?? null,
+  headOfferAgreed: r.head_offer_agreed ?? null,
+  headOfferQty: num(r.head_offer_qty),
+  headOfferRate: num(r.head_offer_rate),
+  headOfferSubtotal: num(r.head_offer_subtotal),
   dryerType: r.dryer_type ?? null,
 
   dealValueCurrency: r.deal_value_currency ?? null,
@@ -314,24 +324,35 @@ const mapDeal = (r: any): OcpiDeal => ({
   headSeparateInvoice: r.head_separate_invoice ?? null,
   headInvoiceQty: r.head_invoice_qty ?? null,
   headInvoiceAmount: r.head_invoice_amount ?? null,
+  headInvoiceSubtotal: r.head_invoice_subtotal ?? null,
+
+  inkShipMode: r.ink_ship_mode ?? null,
+  inkShipVia: r.ink_ship_via ?? null,
+  inkSeparateInvoice: r.ink_separate_invoice ?? null,
+  inkInvoiceQty: r.ink_invoice_qty ?? null,
+  inkInvoiceAmount: r.ink_invoice_amount ?? null,
+  inkInvoiceSubtotal: r.ink_invoice_subtotal ?? null,
 
   dryerShipMode: r.dryer_ship_mode ?? null,
   dryerShipVia: r.dryer_ship_via ?? null,
   dryerSeparateInvoice: r.dryer_separate_invoice ?? null,
   dryerInvoiceQty: r.dryer_invoice_qty ?? null,
   dryerInvoiceAmount: r.dryer_invoice_amount ?? null,
+  dryerInvoiceSubtotal: r.dryer_invoice_subtotal ?? null,
 
   sparesShipMode: r.spares_ship_mode ?? null,
   sparesShipVia: r.spares_ship_via ?? null,
   sparesSeparateInvoice: r.spares_separate_invoice ?? null,
   sparesInvoiceQty: r.spares_invoice_qty ?? null,
   sparesInvoiceAmount: r.spares_invoice_amount ?? null,
+  sparesInvoiceSubtotal: r.spares_invoice_subtotal ?? null,
 
   centeringShipMode: r.centering_ship_mode ?? null,
   centeringShipVia: r.centering_ship_via ?? null,
   centeringSeparateInvoice: r.centering_separate_invoice ?? null,
   centeringInvoiceQty: r.centering_invoice_qty ?? null,
   centeringInvoiceAmount: r.centering_invoice_amount ?? null,
+  centeringInvoiceSubtotal: r.centering_invoice_subtotal ?? null,
 
   dryerName: r.dryer_name ?? null,
   dryerIncluded: r.dryer_included ?? null,
@@ -348,6 +369,7 @@ const mapDeal = (r: any): OcpiDeal => ({
   externalCentering: r.external_centering ?? null,
   inkDustExhauster: r.ink_dust_exhauster ?? null,
   chillingSystem: r.chilling_system ?? null,
+  otherInclusions: r.other_inclusions ?? null,
 
   otherCommitments: r.other_commitments ?? null,
   printerWarranty: r.printer_warranty ?? null,

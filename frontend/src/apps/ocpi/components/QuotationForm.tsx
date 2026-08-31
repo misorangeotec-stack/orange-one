@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import ChoiceButtons, { YesNoButtons } from "@/shared/components/ui/ChoiceButtons";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useOcpiStore } from "../store";
 import { OCPI_MASTERS_QK, fetchOcpiMasters } from "../data/ocpiMasters";
@@ -12,6 +12,7 @@ import GstinField from "./GstinField";
 import RequestMasterModal from "./RequestMasterModal";
 import { isVisible } from "../lib/branching";
 import { fmtDealValue } from "../lib/format";
+import { fetchFxRate } from "@/shared/lib/fx";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
   HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TYPES, PLATTER_OPTIONS,
@@ -34,18 +35,58 @@ import type { MachineOption, OcpiMasterType } from "../types";
  *   row can never keep an answer the form stopped showing.
  */
 
+/** A yes/no, as the source form asks them. Null until answered — not false. */
 /**
- * A yes/no, as the source form asks them. Null until answered — not false.
+ * The Yes/No pair on its own, with no label around it.
  *
- * ⚠ THE BUTTONS THEMSELVES LIVE IN `shared/components/ui/ChoiceButtons` NOW
- *   (OCPI-4, stage 1). This is the label wrapper only. The rendering used to be
- *   written out here, which is what made a form field in OCPI look nothing like
- *   the same question two modules away.
+ * ⚠ SPLIT OUT OF `YesNo`, NOT COPIED FROM IT (OCPI-11). The shipment table
+ *   needs this control inside a `<td>` that already has a column header, so it
+ *   cannot use the `FieldLabel` wrapper — but two hand-written copies would be
+ *   two places for the selected-state colours to drift apart. `YesNo` below is
+ *   now this plus a label.
  *
- * ⚠ NOT `clearable`. `YesNo` never offered a way back to blank and these twelve
- *   questions are all ones a quotation has to answer one way or the other; the ✕
- *   is for OPTIONAL fields, which is why `Combobox.clearable` is opt-in too.
+ * ⚠ THE PAIR NEEDS 152px (72 + 8 + 72) AND WILL WRAP BELOW IT. That is why the
+ *   shipment table sets `table-fixed` and a 164px column: under auto layout the
+ *   browser reads this control's minimum as ONE button and collapses the
+ *   column, stacking the pair and doubling every row's height.
  */
+function YesNoControl({
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+}: {
+  value: boolean | null;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <div className="flex gap-2" role="group" aria-label={ariaLabel}>
+      {[
+        { v: true, t: "Yes" },
+        { v: false, t: "No" },
+      ].map((o) => (
+        <button
+          key={o.t}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(o.v)}
+          className={[
+            "h-9 min-w-[72px] rounded-lg border px-3 text-[13px] font-medium transition",
+            value === o.v
+              ? "border-orange bg-orange text-white"
+              : "border-line bg-white text-navy hover:border-orange/50",
+            disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+          ].join(" ")}
+        >
+          {o.t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function YesNo({
   label,
   hint,
@@ -61,13 +102,7 @@ function YesNo({
 }) {
   return (
     <FieldLabel label={label} hint={hint}>
-      <YesNoButtons
-        value={value}
-        // Not clearable, so `null` never comes back out of the control.
-        onChange={(v) => v !== null && onChange(v)}
-        disabled={disabled}
-        ariaLabel={label}
-      />
+      <YesNoControl value={value} onChange={onChange} disabled={disabled} ariaLabel={label} />
     </FieldLabel>
   );
 }
@@ -157,15 +192,16 @@ function NotAsked({ reason }: { reason: string }) {
  *   condition in this module and has the SQL's twin beside it; a second opinion
  *   living in a presentational component is how the two engines drift.
  *
- * ⚠ THE TWO PICKERS ARE COMBOBOXES, NOT `ChoiceButtons` — the one deliberate
- *   departure from the rest of this form (OCPI-11). Button strips for a
- *   two-option and a three-option vocabulary measure about 520px between them
- *   and push the table past 1100px, so the Amount column falls off a laptop
- *   screen and has to be scrolled to. A table you scroll sideways to fill in is
- *   worse than the stacked boxes it replaced. Both vocabularies are 6 options
- *   or fewer, so no search box appears and each reads as a plain dropdown.
- *   `Combobox` carries the same arrow-key `stopPropagation` guard
- *   `ChoiceButtons` does, so neither steals ↓ from the scroll container.
+ * ⚠ THE TWO PICKERS MUST STAY COMBOBOXES, not `ChoiceButtons` (OCPI-11). They
+ *   already were, and in a table it stops being a matter of taste: button
+ *   strips for a two-option and a three-option vocabulary measure about 520px
+ *   between them and would push the table past 1100px, so the Amount column
+ *   falls off a laptop screen and has to be scrolled to. A table you scroll
+ *   sideways to fill in is worse than the stacked boxes it replaced. Both
+ *   vocabularies are 6 options or fewer, so no search box appears and each
+ *   reads as a plain dropdown. `Combobox` carries the same arrow-key
+ *   `stopPropagation` guard `ChoiceButtons` does, so neither steals ↓ from the
+ *   scroll container.
  */
 function ShipmentRow({
   title,
@@ -219,17 +255,17 @@ function ShipmentRow({
         </span>
       </th>
 
+      {/*
+        No explicit aria-label on either picker: the column header and the row's
+        own <th> already name the cell for a screen reader, and a third name
+        would be read out on top of them.
+      */}
       <td className="px-1.5 py-2.5">
-        {/*
-          No explicit aria-label: the column header and the row's own <th>
-          already name this cell for a screen reader, and a third name would be
-          read out on top of them.
-        */}
         <Combobox
           value={mode}
           onChange={onMode}
           options={optsKV(HEAD_SHIP_MODES)}
-          placeholder="Select…"
+          placeholder="Choose"
           clearable
           disabled={disabled}
           triggerClassName="w-full"
@@ -243,7 +279,7 @@ function ShipmentRow({
             value={via}
             onChange={onVia}
             options={optsKV(HEAD_SHIP_VIA)}
-            placeholder="Select…"
+            placeholder="Choose"
             clearable
             disabled={disabled}
             triggerClassName="w-full"
@@ -254,10 +290,9 @@ function ShipmentRow({
       </td>
 
       <td className="px-1.5 py-2.5">
-        <YesNoButtons
+        <YesNoControl
           value={inv}
-          // Not clearable, so `null` never comes back out of the control.
-          onChange={(v) => v !== null && onInv(v)}
+          onChange={onInv}
           disabled={disabled}
           ariaLabel={`${title} — separate invoice`}
         />
@@ -686,6 +721,37 @@ export default function QuotationForm({
    */
   const isHighSeas = draft.transportTerms === "high_seas";
 
+  const [fxBusy, setFxBusy] = useState(false);
+  const [fxError, setFxError] = useState<string | null>(null);
+
+  /**
+   * Pull the live rate.
+   *
+   * ⚠ A FAILURE MUST NOT BLOCK THE QUOTATION. The field stays editable and the
+   *   error is a sentence under it — a hand-typed rate is always a legitimate
+   *   answer, and often the correct one, since deals are struck at an agreed rate
+   *   rather than at whatever the market says this minute.
+   */
+  const pullRate = async () => {
+    setFxBusy(true);
+    setFxError(null);
+    try {
+      const r = await fetchFxRate("USD", "INR");
+      patch({
+        fxRate: String(r.rate),
+        fxRateSource: r.source,
+        fxRateAt: r.fetchedAt,
+        fxRateOverridden: false,
+      });
+    } catch (e) {
+      setFxError(
+        `${e instanceof Error ? e.message : "Could not fetch a live rate"} — type the rate you agreed instead.`,
+      );
+    } finally {
+      setFxBusy(false);
+    }
+  };
+
   /** The rupee equivalent, shown beside the rate so the figure is never a surprise. */
   const inrEquivalent = useMemo(() => {
     const amt = Number(draft.dealValueAmount);
@@ -713,6 +779,7 @@ export default function QuotationForm({
   }, [s, draft.dryerType, draft.dryerName]);
 
   const show = (k: keyof QuotationDraft) => isVisible(k, draft, facts);
+
 
   /**
    * Does this deal ship ANYTHING on its own terms? If not, the whole card goes.
@@ -1004,13 +1071,13 @@ export default function QuotationForm({
               belongs to the dryer, gate it in BOTH places.
           */}
           <FieldLabel label="Platter">
-            <ChoiceButtons
+            <Combobox
               value={draft.platterDetails}
               onChange={(v) => patch({ platterDetails: v })}
               options={opts(PLATTER_OPTIONS)}
+              placeholder="Choose"
               clearable
               disabled={disabled}
-              ariaLabel="Platter"
             />
           </FieldLabel>
         </div>
@@ -1403,37 +1470,28 @@ export default function QuotationForm({
           {/*
             ⚠ `ScrollableTable` RATHER THAN A BARE OVERFLOW DIV, per CLAUDE.md.
               Seven columns of controls is the one real risk in this layout, so
-              the two pickers are Comboboxes rather than button strips to keep
+              the two pickers stay Comboboxes rather than button strips to keep
               the table inside a laptop screen — see the note on `ShipmentRow`.
               The wrapper is still here for the narrow windows where it does
               overflow, and it already ignores arrow keys while focus is in a
               text box, so typing a quantity never scrolls the table.
+
+            ⚠ THE WIDTHS SUM TO THE min-w (132+140+148+164+74+104+104 = 866).
+              Change one and change that, or the columns stop matching their
+              headers once the table is narrower than its content.
+
+            ⚠ `table-fixed` IS LOAD-BEARING, not tidiness. Under the default
+              auto layout these widths are only hints: the browser re-derives
+              each column from its content's minimum, and the Yes/No control's
+              minimum is ONE button (72px). So the Separate-invoice column
+              quietly collapsed on any screen below ~1400px and the pair
+              stacked, taking every row from 73px to 138px. A `min-w` on that
+              cell does not fix it — auto layout ignores it in favour of the
+              content minimum. Fixed layout honours the declared widths, so the
+              pair stays on one line at every width and `ScrollableTable`
+              handles the rest.
           */}
           <ScrollableTable>
-            {/*
-              ⚠ THE "SEPARATE INVOICE" COLUMN IS THE WIDE ONE, and it has to be.
-                `ChoiceButtons` gives every option `min-w-[72px]` and wraps, so
-                a Yes/No pair needs 72 + 8 + 72 = 152px or it stacks vertically
-                — which does not break anything, but makes every row in the
-                table 101px tall to suit one column. The other six were trimmed
-                to pay for it rather than widening the table, because the total
-                is what decides whether this fits a laptop without scrolling.
-
-              ⚠ THE WIDTHS SUM TO THE min-w BELOW (132+140+148+164+74+104+104 =
-                866). Change one and change that, or the columns stop matching
-                their headers once the table is narrower than its content.
-
-              ⚠ `table-fixed` IS LOAD-BEARING, not tidiness. Under the default
-                auto layout these widths are only hints: the browser re-derives
-                each column from its content's minimum, and because
-                `ChoiceButtons` wraps internally its minimum is ONE button
-                (72px). So the Separate-invoice column quietly collapsed on any
-                screen below ~1400px and the Yes/No pair stacked, taking every
-                row from 73px to 138px. A `min-w` on that cell does not fix it —
-                auto layout ignores it in favour of the content minimum. Fixed
-                layout honours the declared widths, so the pair stays on one
-                line at every width and `ScrollableTable` handles the rest.
-            */}
             <table className="w-full min-w-[866px] table-fixed border-collapse text-[13px]">
               <thead>
                 <tr className="border-b border-line text-left text-[11.5px] uppercase tracking-wide text-grey-2">
@@ -1447,118 +1505,116 @@ export default function QuotationForm({
                 </tr>
               </thead>
               <tbody>
-                <ShipmentRow
-                  title="Print head"
-                  why="the deal includes a head"
-                  shown={show("headShipMode")}
-                  disabled={disabled}
-                  mode={draft.headShipMode}
-                  onMode={(v) => patch({ headShipMode: v })}
-                  via={draft.headShipVia}
-                  onVia={(v) => patch({ headShipVia: v })}
-                  showVia={show("headShipVia")}
-                  inv={draft.headSeparateInvoice}
-                  onInv={(v) => patch({ headSeparateInvoice: v })}
-                  showInvoiceLines={show("headInvoiceQty")}
-                  qty={draft.headInvoiceQty}
-                  onQty={(v) => patch({ headInvoiceQty: v })}
-                  amount={draft.headInvoiceAmount}
-                  onAmount={(v) => patch({ headInvoiceAmount: v })}
-                />
+          <ShipmentRow
+            title="Print head"
+            why="the deal includes a head"
+            shown={show("headShipMode")}
+            disabled={disabled}
+            mode={draft.headShipMode}
+            onMode={(v) => patch({ headShipMode: v })}
+            via={draft.headShipVia}
+            onVia={(v) => patch({ headShipVia: v })}
+            showVia={show("headShipVia")}
+            inv={draft.headSeparateInvoice}
+            onInv={(v) => patch({ headSeparateInvoice: v })}
+            showInvoiceLines={show("headInvoiceQty")}
+            qty={draft.headInvoiceQty}
+            onQty={(v) => patch({ headInvoiceQty: v })}
+            amount={draft.headInvoiceAmount}
+            onAmount={(v) => patch({ headInvoiceAmount: v })}
+          />
 
-                {/*
-                  ⚠ NOT the subsidized quantity and rate in Deal inclusions
-                    above. Those are ink the deal does NOT include, offered at a
-                    rate; this is ink that IS included and billed on its own
-                    document. The two are mutually exclusive by construction —
-                    that block needs `inclInk` false, this row needs it true —
-                    so they can never be on screen together.
-                */}
-                <ShipmentRow
-                  title="Ink"
-                  why="the deal includes ink"
-                  shown={show("inkShipMode")}
-                  disabled={disabled}
-                  mode={draft.inkShipMode}
-                  onMode={(v) => patch({ inkShipMode: v })}
-                  via={draft.inkShipVia}
-                  onVia={(v) => patch({ inkShipVia: v })}
-                  showVia={show("inkShipVia")}
-                  inv={draft.inkSeparateInvoice}
-                  onInv={(v) => patch({ inkSeparateInvoice: v })}
-                  showInvoiceLines={show("inkInvoiceQty")}
-                  qty={draft.inkInvoiceQty}
-                  onQty={(v) => patch({ inkInvoiceQty: v })}
-                  amount={draft.inkInvoiceAmount}
-                  onAmount={(v) => patch({ inkInvoiceAmount: v })}
-                />
+          {/*
+            ⚠ NOT the subsidized quantity and rate in Deal inclusions above.
+              Those are ink the deal does NOT include, offered at a rate; this
+              is ink that IS included and billed on its own document. The two
+              are mutually exclusive by construction — that block needs
+              `inclInk` false, this row needs it true — so they can never be on
+              screen together.
+          */}
+          <ShipmentRow
+            title="Ink"
+            why="the deal includes ink"
+            shown={show("inkShipMode")}
+            disabled={disabled}
+            mode={draft.inkShipMode}
+            onMode={(v) => patch({ inkShipMode: v })}
+            via={draft.inkShipVia}
+            onVia={(v) => patch({ inkShipVia: v })}
+            showVia={show("inkShipVia")}
+            inv={draft.inkSeparateInvoice}
+            onInv={(v) => patch({ inkSeparateInvoice: v })}
+            showInvoiceLines={show("inkInvoiceQty")}
+            qty={draft.inkInvoiceQty}
+            onQty={(v) => patch({ inkInvoiceQty: v })}
+            amount={draft.inkInvoiceAmount}
+            onAmount={(v) => patch({ inkInvoiceAmount: v })}
+          />
 
-                <ShipmentRow
-                  title="Dryer"
-                  why={`${chosenMachine?.name ?? "this machine"} takes a dryer`}
-                  shown={show("dryerShipMode")}
-                  disabled={disabled}
-                  mode={draft.dryerShipMode}
-                  onMode={(v) => patch({ dryerShipMode: v })}
-                  via={draft.dryerShipVia}
-                  onVia={(v) => patch({ dryerShipVia: v })}
-                  showVia={show("dryerShipVia")}
-                  inv={draft.dryerSeparateInvoice}
-                  onInv={(v) => patch({ dryerSeparateInvoice: v })}
-                  showInvoiceLines={show("dryerInvoiceQty")}
-                  qty={draft.dryerInvoiceQty}
-                  onQty={(v) => patch({ dryerInvoiceQty: v })}
-                  amount={draft.dryerInvoiceAmount}
-                  onAmount={(v) => patch({ dryerInvoiceAmount: v })}
-                />
+          <ShipmentRow
+            title="Dryer"
+            why={`${chosenMachine?.name ?? "this machine"} takes a dryer`}
+            shown={show("dryerShipMode")}
+            disabled={disabled}
+            mode={draft.dryerShipMode}
+            onMode={(v) => patch({ dryerShipMode: v })}
+            via={draft.dryerShipVia}
+            onVia={(v) => patch({ dryerShipVia: v })}
+            showVia={show("dryerShipVia")}
+            inv={draft.dryerSeparateInvoice}
+            onInv={(v) => patch({ dryerSeparateInvoice: v })}
+            showInvoiceLines={show("dryerInvoiceQty")}
+            qty={draft.dryerInvoiceQty}
+            onQty={(v) => patch({ dryerInvoiceQty: v })}
+            amount={draft.dryerInvoiceAmount}
+            onAmount={(v) => patch({ dryerInvoiceAmount: v })}
+          />
 
-                <ShipmentRow
-                  title="Spare parts"
-                  why="the deal includes spare parts"
-                  shown={show("sparesShipMode")}
-                  disabled={disabled}
-                  mode={draft.sparesShipMode}
-                  onMode={(v) => patch({ sparesShipMode: v })}
-                  via={draft.sparesShipVia}
-                  onVia={(v) => patch({ sparesShipVia: v })}
-                  showVia={show("sparesShipVia")}
-                  inv={draft.sparesSeparateInvoice}
-                  onInv={(v) => patch({ sparesSeparateInvoice: v })}
-                  showInvoiceLines={show("sparesInvoiceQty")}
-                  qty={draft.sparesInvoiceQty}
-                  onQty={(v) => patch({ sparesInvoiceQty: v })}
-                  amount={draft.sparesInvoiceAmount}
-                  onAmount={(v) => patch({ sparesInvoiceAmount: v })}
-                />
+          <ShipmentRow
+            title="Spare parts"
+            why="the deal includes spare parts"
+            shown={show("sparesShipMode")}
+            disabled={disabled}
+            mode={draft.sparesShipMode}
+            onMode={(v) => patch({ sparesShipMode: v })}
+            via={draft.sparesShipVia}
+            onVia={(v) => patch({ sparesShipVia: v })}
+            showVia={show("sparesShipVia")}
+            inv={draft.sparesSeparateInvoice}
+            onInv={(v) => patch({ sparesSeparateInvoice: v })}
+            showInvoiceLines={show("sparesInvoiceQty")}
+            qty={draft.sparesInvoiceQty}
+            onQty={(v) => patch({ sparesInvoiceQty: v })}
+            amount={draft.sparesInvoiceAmount}
+            onAmount={(v) => patch({ sparesInvoiceAmount: v })}
+          />
 
-                {/*
-                  ⚠ THIS IS NOT THE "External centering system" TICK in Deal
-                    inclusions. The client asked for the two to stay separate:
-                    that tick records whether the deal INCLUDES one, this row
-                    records how it SHIPS and how it is BILLED. Both read the
-                    machine's `opt_external_centering` capability, so a machine
-                    mapped "no" shows neither — 5 of the 28 machines can take
-                    one. This is why the table has five rows on those five and
-                    four on the rest.
-                */}
-                <ShipmentRow
-                  title="Centering device"
-                  why={`${chosenMachine?.name ?? "this machine"} can take one`}
-                  shown={show("centeringShipMode")}
-                  disabled={disabled}
-                  mode={draft.centeringShipMode}
-                  onMode={(v) => patch({ centeringShipMode: v })}
-                  via={draft.centeringShipVia}
-                  onVia={(v) => patch({ centeringShipVia: v })}
-                  showVia={show("centeringShipVia")}
-                  inv={draft.centeringSeparateInvoice}
-                  onInv={(v) => patch({ centeringSeparateInvoice: v })}
-                  showInvoiceLines={show("centeringInvoiceQty")}
-                  qty={draft.centeringInvoiceQty}
-                  onQty={(v) => patch({ centeringInvoiceQty: v })}
-                  amount={draft.centeringInvoiceAmount}
-                  onAmount={(v) => patch({ centeringInvoiceAmount: v })}
-                />
+          {/*
+            ⚠ THIS IS NOT THE "External centering system" TICK in Options
+              included. The client asked for the two to stay separate: that tick
+              records whether the deal INCLUDES one, this row records how it
+              SHIPS and how it is BILLED. Both read the machine's
+              `opt_external_centering` capability, so a machine mapped "no" shows
+              neither — 5 of the 28 machines can take one.
+          */}
+          <ShipmentRow
+            title="Centering device"
+            why={`${chosenMachine?.name ?? "this machine"} can take one`}
+            shown={show("centeringShipMode")}
+            disabled={disabled}
+            mode={draft.centeringShipMode}
+            onMode={(v) => patch({ centeringShipMode: v })}
+            via={draft.centeringShipVia}
+            onVia={(v) => patch({ centeringShipVia: v })}
+            showVia={show("centeringShipVia")}
+            inv={draft.centeringSeparateInvoice}
+            onInv={(v) => patch({ centeringSeparateInvoice: v })}
+            showInvoiceLines={show("centeringInvoiceQty")}
+            qty={draft.centeringInvoiceQty}
+            onQty={(v) => patch({ centeringInvoiceQty: v })}
+            amount={draft.centeringInvoiceAmount}
+            onAmount={(v) => patch({ centeringInvoiceAmount: v })}
+          />
               </tbody>
             </table>
           </ScrollableTable>
@@ -1579,7 +1635,7 @@ export default function QuotationForm({
         */}
         <div className="grid gap-3 sm:grid-cols-2">
           <FieldLabel label="Deal type" required>
-            <ChoiceButtons
+            <Combobox
               value={draft.transportTerms}
               onChange={(v) =>
                 // ⚠ PICKING HIGH SEAS SETS THE CURRENCY HERE, NOT ONLY ON SAVE.
@@ -1598,31 +1654,32 @@ export default function QuotationForm({
                 )
               }
               options={optsKV(TRANSPORT_TERMS)}
+              placeholder="Choose"
+              clearable
               disabled={disabled}
-              ariaLabel="Deal type"
             />
           </FieldLabel>
           {show("highSeasVia") && (
             <FieldLabel label="High seas delivery via">
-              <ChoiceButtons
+              <Combobox
                 value={draft.highSeasVia}
                 onChange={(v) => patch({ highSeasVia: v })}
                 options={opts(HIGH_SEAS_VIA)}
+                placeholder="Choose"
                 clearable
                 disabled={disabled}
-                ariaLabel="High seas delivery via"
               />
             </FieldLabel>
           )}
           {show("highSeasCostBy") && (
             <FieldLabel label="High seas cost borne by">
-              <ChoiceButtons
+              <Combobox
                 value={draft.highSeasCostBy}
                 onChange={(v) => patch({ highSeasCostBy: v })}
                 options={optsKV(COST_BEARERS)}
+                placeholder="Choose"
                 clearable
                 disabled={disabled}
-                ariaLabel="High seas cost borne by"
               />
             </FieldLabel>
           )}
@@ -1631,13 +1688,13 @@ export default function QuotationForm({
               label="Local delivery cost borne by"
               hint="transport, clearance, loading / unloading"
             >
-              <ChoiceButtons
+              <Combobox
                 value={draft.localCostBy}
                 onChange={(v) => patch({ localCostBy: v })}
                 options={optsKV(COST_BEARERS)}
+                placeholder="Choose"
                 clearable
                 disabled={disabled}
-                ariaLabel="Local delivery cost borne by"
               />
             </FieldLabel>
           )}
@@ -1653,12 +1710,11 @@ export default function QuotationForm({
 
         <div className="grid gap-3 sm:grid-cols-3">
           <FieldLabel label="Currency" required hint={isHighSeas ? "fixed by the deal type" : undefined}>
-            <ChoiceButtons
+            <Combobox
               value={draft.dealValueCurrency}
               onChange={(v) => patch({ dealValueCurrency: v })}
               options={opts(CURRENCIES)}
               disabled={disabled || isHighSeas}
-              ariaLabel="Currency"
             />
           </FieldLabel>
           <div className={show("gstRate") ? undefined : "sm:col-span-2"}>
@@ -1699,19 +1755,8 @@ export default function QuotationForm({
         </div>
 
         {/*
-          ⚠ THE RATE IS TYPED, NEVER FETCHED (client's instruction, 29-Aug-2026).
-            A "Get live rate" button used to sit here and fill the box from an FX
-            service. It went because a deal is struck at an AGREED rate, and a
-            market rate offered as the default invites somebody to accept it and
-            misstate the contract. `fetchFxRate` survives in shared/lib/fx for
-            the Import app, which quotes against the market and genuinely wants it.
-
-          ⚠ THE THREE fxRate* COMPANION FIELDS ARE STILL WRITTEN — source
-            "manual", the moment it was typed, and overridden = true. They are
-            stored columns frozen onto every revision and read by the part-B key
-            sniff in `fms_ocpi_save_draft`; dropping them from the payload would
-            silently stop the write. They are now constants, and honest ones.
-
+          ⚠ THE RATE IS A STARTING POINT, NEVER A LOCK. Deals are negotiated at an
+            agreed rate; showing the live one instead would misstate the contract.
             Whichever rate is used is frozen onto the revision when the quotation
             is generated, so a paper keeps the arithmetic it was issued under.
         */}
@@ -1736,6 +1781,9 @@ export default function QuotationForm({
                   />
                 </FieldLabel>
               </div>
+              <Button variant="outline" size="sm" onClick={pullRate} disabled={disabled || fxBusy}>
+                {fxBusy ? "Fetching…" : "Get live rate"}
+              </Button>
               {inrEquivalent && (
                 <p className="pb-2 text-[13px] text-grey">
                   ≈ <span className="font-semibold text-navy">{inrEquivalent}</span>
@@ -1743,22 +1791,26 @@ export default function QuotationForm({
               )}
             </div>
             <p className="text-[12px] text-grey-2">
-              {draft.fxRate
-                ? "This is the rate the papers will use."
-                : "Type the rate you agreed with the customer."}
+              {fxError
+                ? fxError
+                : draft.fxRate
+                  ? draft.fxRateOverridden
+                    ? "Entered by hand. This is the rate the papers will use."
+                    : `Live rate from ${draft.fxRateSource || "the FX service"}${draft.fxRateAt ? ` · ${new Date(draft.fxRateAt).toLocaleString()}` : ""}. Type over it to use the rate you agreed.`
+                  : "Fetch the live rate, or type the rate you agreed with the customer."}
             </p>
           </div>
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <FieldLabel label="Type of payment">
-            <ChoiceButtons
+            <Combobox
               value={draft.paymentType}
               onChange={(v) => patch({ paymentType: v })}
               options={optsKV(PAYMENT_TYPES)}
+              placeholder="Choose"
               clearable
               disabled={disabled}
-              ariaLabel="Type of payment"
             />
           </FieldLabel>
           <FieldLabel label="Machine delivery date" hint="tentative, committed to the customer">

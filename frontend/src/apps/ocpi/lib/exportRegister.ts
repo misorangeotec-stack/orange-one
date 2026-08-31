@@ -112,18 +112,74 @@ export function exportDealRegister(
         paper it is meant to reconcile — on the three rows where a reader is most
         likely to be checking a second bill line by line.
     */
+    /*
+      ⚠ EACH ITEM EXPORTS FOUR COLUMNS, NOT THREE (OCPI-11). The sub-total is
+        derived by fms_ocpi_write_oc, so exporting it costs nothing and saves the
+        reader multiplying five pairs by hand to reconcile a second bill.
+
+      🔴 NONE OF THE SUB-TOTALS BELONGS IN A DEAL TOTAL. They sit beside
+        "Total (INR)" in this sheet, which is exactly where somebody eventually
+        writes =SUM() across a row. A separately-invoiced item is billed on its
+        own document; adding it to the contract value would count it twice.
+    */
     { header: "Head invoiced separately", width: 19, value: (d) => yesNo(d.headSeparateInvoice) },
     { header: "Head invoice qty", width: 14, value: (d) => d.headInvoiceQty ?? "" },
     { header: "Head invoice amount", width: 18, value: (d) => d.headInvoiceAmount ?? "" },
+    { header: "Head invoice sub-total", width: 20, value: (d) => d.headInvoiceSubtotal ?? "" },
+    /* Ink that IS included and billed on its own document — NOT the subsidized
+       columns further down, which are ink the deal does not include at all.
+       Mode and route are left out to match the other four items: this register
+       has never exported them for any row, and adding them for ink alone would
+       make the sheet inconsistent rather than more complete. */
+    { header: "Ink invoiced separately", width: 20, value: (d) => yesNo(d.inkSeparateInvoice) },
+    { header: "Ink invoice qty", width: 14, value: (d) => d.inkInvoiceQty ?? "" },
+    { header: "Ink invoice amount", width: 18, value: (d) => d.inkInvoiceAmount ?? "" },
+    { header: "Ink invoice sub-total", width: 20, value: (d) => d.inkInvoiceSubtotal ?? "" },
     { header: "Dryer invoiced separately", width: 19, value: (d) => yesNo(d.dryerSeparateInvoice) },
     { header: "Dryer invoice qty", width: 14, value: (d) => d.dryerInvoiceQty ?? "" },
     { header: "Dryer invoice amount", width: 18, value: (d) => d.dryerInvoiceAmount ?? "" },
+    { header: "Dryer invoice sub-total", width: 20, value: (d) => d.dryerInvoiceSubtotal ?? "" },
     { header: "Spares invoiced separately", width: 20, value: (d) => yesNo(d.sparesSeparateInvoice) },
     { header: "Spares invoice qty", width: 14, value: (d) => d.sparesInvoiceQty ?? "" },
     { header: "Spares invoice amount", width: 18, value: (d) => d.sparesInvoiceAmount ?? "" },
+    { header: "Spares invoice sub-total", width: 20, value: (d) => d.sparesInvoiceSubtotal ?? "" },
     { header: "Centering invoiced separately", width: 22, value: (d) => yesNo(d.centeringSeparateInvoice) },
     { header: "Centering invoice qty", width: 16, value: (d) => d.centeringInvoiceQty ?? "" },
     { header: "Centering invoice amount", width: 20, value: (d) => d.centeringInvoiceAmount ?? "" },
+    { header: "Centering invoice sub-total", width: 22, value: (d) => d.centeringInvoiceSubtotal ?? "" },
+    /*
+      ── The NO branch (OCPI-7) ──────────────────────────────────────────────
+
+      What an item that is NOT in the deal was offered at instead. Same reason
+      the separate-invoice pairs above exist: the deal records a commercial
+      commitment and a reader reconciling it could not otherwise see it.
+
+      ⚠ THE OPPOSITE OF THE COLUMNS DIRECTLY ABOVE, despite the similar words.
+        "Head invoice qty" is a head that IS in the deal, billed on its own
+        document. "Head subsidized qty" is a head the deal does NOT include, on
+        an agreed rate. They are mutually exclusive on a row by construction.
+
+      ⚠ THESE ARE NOT PART OF ANY TOTAL AND MUST NEVER BE SUMMED INTO ONE.
+        They are placed here, at the far end of the sheet and nowhere near the
+        deal-value block, precisely so no reader drags a contiguous numeric
+        range into a sum. The question is only ever asked when the item is not
+        in the deal, so this money is not the deal's money — adding it to a
+        contract price would be a commercial error, not a display bug.
+
+      ⚠ ALWAYS RUPEES, AND THE "Currency" COLUMN DOES NOT APPLY TO THEM. Every
+        other money column on this sheet is in the deal's currency and is read
+        together with that column; these four are rupees whatever the deal is
+        quoted in, so their headers say INR outright. Reading them against
+        "Currency" on a dollar deal would overstate them by the exchange rate.
+    */
+    { header: "Ink offered at subsidized rate", width: 22, value: (d) => yesNo(d.inkOfferAgreed) },
+    { header: "Ink subsidized qty (litres)", width: 20, value: (d) => d.inkOfferQty ?? "" },
+    { header: "Ink subsidized rate (INR/litre)", width: 22, value: (d) => d.inkOfferRate ?? "" },
+    { header: "Ink subsidized price (INR)", width: 20, value: (d) => d.inkOfferSubtotal ?? "" },
+    { header: "Head offered at subsidized rate", width: 22, value: (d) => yesNo(d.headOfferAgreed) },
+    { header: "Head subsidized qty", width: 16, value: (d) => d.headOfferQty ?? "" },
+    { header: "Head subsidized rate (INR/head)", width: 22, value: (d) => d.headOfferRate ?? "" },
+    { header: "Head subsidized price (INR)", width: 20, value: (d) => d.headOfferSubtotal ?? "" },
     { header: "Payment terms", width: 24, value: (d) => d.paymentTerms ?? "" },
     /*
       ⚠ "Delivery term" STAYS — settled with the client on 29-Aug-2026, after an

@@ -116,12 +116,46 @@ async function upload(
     const path = `${prefix}/${storageSafe(f.filename)}`;
     const body = Buffer.from(await f.blob.arrayBuffer());
     const mime = mimeOf(f.filename);
-    // `upsert: false` deliberately: the prefix already carries a per-run id, so a collision means
-    // two runs are writing the same slot and the second should fail loudly rather than overwrite.
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, body, { contentType: mime, upsert: false });
-    if (error) throw new Error(`could not upload ${f.filename}: ${error.message}`);
+
+    /**
+     * ⚠ RETRIED, BECAUSE ONE BLIP HERE USED TO COST HALF THE SEND — SILENTLY.
+     *
+     * Observed 29-Aug-2026: a sample run threw `could not upload …: <none>` — an error with no
+     * message at all, i.e. the storage API answering with nothing rather than refusing. The
+     * identical run seconds later succeeded untouched. So it is a blip, not a fault.
+     *
+     * What that blip cost is the point. This throw escapes the per-recipient try/catch and kills
+     * the whole run, so every salesperson still queued gets nothing — while the ones already
+     * mailed keep their copy, and the `finally` claims the slot because `queued > 0`. The result
+     * is a HALF-DELIVERED report that is recorded as sent and will never be retried, and the
+     * watchdog cannot see it either: it only speaks when a slot goes UNSERVED. Half looks exactly
+     * like success. (That last hole is closed separately, in `collections_report_watchdog`.)
+     *
+     * Three attempts with a widening pause. Anything still failing after that is a real fault and
+     * still throws — a run that cannot write its files must not pretend otherwise.
+     */
+    let lastErr = "";
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      // `upsert: false` deliberately: the prefix already carries a per-run id, so a collision
+      // means two runs are writing the same slot and the second should fail loudly rather than
+      // overwrite.
+      const { error } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, body, { contentType: mime, upsert: false });
+      if (!error) { lastErr = ""; break; }
+
+      // ⚠ "Already exists" on a RETRY is our own previous attempt landing after its response was
+      //   lost, not the two-runs-racing case `upsert: false` guards — that guard is about the
+      //   per-run id in the prefix, which is ours alone. Treating it as failure would turn a
+      //   recovered upload into the abort this retry exists to prevent.
+      const msg = error.message || "";
+      if (attempt > 1 && /exist|duplicate|conflict/i.test(msg)) { lastErr = ""; break; }
+
+      lastErr = msg || "(the storage API returned an error with no message)";
+      if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1500));
+    }
+    if (lastErr) throw new Error(`could not upload ${f.filename} after 3 attempts: ${lastErr}`);
+
     out.push({ path, filename: f.filename, mime });
   }
   return out;

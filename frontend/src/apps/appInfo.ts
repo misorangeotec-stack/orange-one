@@ -141,6 +141,14 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/hr-exit",
     category: "hr",
   },
+  // Official travel end to end: the request, the band-wise entitlement, the
+  // approval, the booking, the advance, the expense claim and the settlement —
+  // one trip, one row. Third HR module, after joining and leaving.
+  "travel-desk": {
+    name: "Travel Desk",
+    basePath: "/travel-desk",
+    category: "hr",
+  },
   "leads-dashboard": {
     name: "Leads Dashboard",
     basePath: "/leads-dashboard",
@@ -163,6 +171,16 @@ export const APPS: Record<string, AppInfo> = {
   "master-report": {
     name: "Master Report",
     basePath: "/master-report",
+    category: "control",
+  },
+  // The coordinator's own desk: every module's master approvals in one queue,
+  // and every process at a glance with the person to ring about a stuck step.
+  // Sits in Control between the two screens it is deliberately not — the
+  // Control Center ("what is due today") and the Master Report ("is this module
+  // alive").
+  "process-coordinator": {
+    name: "Process Coordinator",
+    basePath: "/process-coordinator",
     category: "control",
   },
   // Virtual module: no web app and no route, so no basePath that resolves to a

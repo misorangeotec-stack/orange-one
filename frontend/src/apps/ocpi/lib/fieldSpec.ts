@@ -63,10 +63,23 @@ export interface QuotationDraft {
 
   inclInk: boolean | null;
   inkQtyIncluded: string;
+  /*
+    OCPI-7 · the NO branch. Six keys, not eight: the two SUB-TOTALS are
+    deliberately absent from the draft and from the payload. They are derived
+    by fms_ocpi_write_quotation and live on OcpiDeal alone, so there is exactly
+    one authoritative figure. The form shows a live preview computed from these
+    two factors; the paper prints the stored column.
+  */
+  inkOfferAgreed: boolean | null;
+  inkOfferQty: string;
+  inkOfferRate: string;
   inclSpares: boolean | null;
   spareDetails: string;
   inclHead: boolean | null;
   headsIncluded: string;
+  headOfferAgreed: boolean | null;
+  headOfferQty: string;
+  headOfferRate: string;
   dryerType: string;
 
   dealValueCurrency: string;
@@ -115,14 +128,29 @@ export interface QuotationDraft {
    *   differently. The repetition is the price of the diff working.
    *
    * ⚠ EACH ITEM BRANCHES ON ITS OWN CONDITION, and they are not the same one:
-   *   the head on "deal includes a head", spares on "deal includes spare parts",
-   *   the dryer on the MACHINE's needs_dryer flag, and the centering device on
-   *   the machine's opt_external_centering capability. See branching.ts. */
+   *   the head on "deal includes a head", ink on "deal includes ink", spares on
+   *   "deal includes spare parts", the dryer on the MACHINE's needs_dryer flag,
+   *   and the centering device on the machine's opt_external_centering
+   *   capability. See branching.ts.
+   *
+   * ⚠ NO SUB-TOTAL LIVES HERE. Each row's sub-total is derived by
+   *   fms_ocpi_write_oc from the qty and amount below and lives on `OcpiDeal`
+   *   alone, so there is exactly one answer for one price. The form recomputes
+   *   the same product live as a preview and never sends it up. */
   headShipMode: string;
   headShipVia: string;
   headSeparateInvoice: boolean | null;
   headInvoiceQty: string;
   headInvoiceAmount: string;
+
+  /* ⚠ NOT `inkOfferQty` / `inkOfferRate` above — those are ink the deal does
+   *   NOT include, offered at a subsidized rate. These are ink that IS included
+   *   and billed on its own invoice. Mutually exclusive by construction. */
+  inkShipMode: string;
+  inkShipVia: string;
+  inkSeparateInvoice: boolean | null;
+  inkInvoiceQty: string;
+  inkInvoiceAmount: string;
 
   dryerShipMode: string;
   dryerShipVia: string;
@@ -160,6 +188,7 @@ export interface QuotationDraft {
   externalCentering: boolean | null;
   inkDustExhauster: boolean | null;
   chillingSystem: boolean | null;
+  otherInclusions: string;
 
   printerWarranty: string;
   headWarranty: string;
@@ -201,10 +230,16 @@ export const EMPTY_DRAFT: QuotationDraft = {
   inkCreditTerms: "",
   inclInk: null,
   inkQtyIncluded: "",
+  inkOfferAgreed: null,
+  inkOfferQty: "",
+  inkOfferRate: "",
   inclSpares: null,
   spareDetails: "",
   inclHead: null,
   headsIncluded: "",
+  headOfferAgreed: null,
+  headOfferQty: "",
+  headOfferRate: "",
   dryerType: "",
   dealValueCurrency: "INR",
   dealValueAmount: "",
@@ -229,6 +264,11 @@ export const EMPTY_DRAFT: QuotationDraft = {
   headSeparateInvoice: null,
   headInvoiceQty: "",
   headInvoiceAmount: "",
+  inkShipMode: "",
+  inkShipVia: "",
+  inkSeparateInvoice: null,
+  inkInvoiceQty: "",
+  inkInvoiceAmount: "",
   dryerShipMode: "",
   dryerShipVia: "",
   dryerSeparateInvoice: null,
@@ -255,6 +295,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   externalCentering: null,
   inkDustExhauster: null,
   chillingSystem: null,
+  otherInclusions: "",
   printerWarranty: "",
   headWarranty: "",
   postWarrantyHeadPrice: "",
@@ -453,6 +494,25 @@ export const DOLLAR_CLAUSE =
   "payment terms exceed 3 months in equal instalments, Dollar exchange will be adjusted " +
   "against Debit Note / Credit Note.";
 
+/**
+ * The standing note that bounds a subsidized rate to the quantity it was agreed
+ * for (OCPI-7, 31-Aug-2026).
+ *
+ * ⚠ A RATE WITHOUT A QUANTITY IS AN OPEN-ENDED COMMITMENT. "Ink at ₹900 a litre"
+ *   on a signed quotation, with nothing limiting it, is a price the customer can
+ *   hold the company to for any quantity and for as long as they like. The rate
+ *   is agreed against a specific quantity at the table; this says so on the paper.
+ *
+ * ⚠ IT NAMES THE QUANTITY, which is why the printed line carries the figure even
+ *   though the client asked for "the final price only". A note reading "valid for
+ *   the stated quantity" is empty if the quantity is nowhere on the page — it
+ *   would bound the rate by something the customer cannot see.
+ */
+export const SUBSIDIZED_RATE_NOTE =
+  "This is a subsidized rate, agreed for the quantity stated above and valid for that " +
+  "quantity only. Any further quantity will be charged at the rate prevailing at the time " +
+  "of that order.";
+
 /** The standing insurance clause, printed verbatim and confirmed by the salesperson. */
 export const INSURANCE_CLAUSE =
   "Insurance coverage up to the point of loading will be the responsibility of the company, " +
@@ -495,11 +555,30 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   inkPrice: "Ink selling price",
   inkCreditTerms: "Ink credit terms (future)",
   inclInk: "Deal includes ink",
+  // ⚠ NO UNIT ON THIS ONE, and that is deliberate rather than an omission.
+  //   `inkOfferQty` three lines down IS in litres — the client fixed that — and
+  //   the two measure the same substance, so the temptation is to label both.
+  //   But this field is FREE TEXT and the data disagrees: of the 17 deals on
+  //   record, 15 say litres and two say "25 Kgs" and "3000kg". A label reading
+  //   "(litres)" is also the revision diff's heading, so it would restate two
+  //   real deals in a unit they never agreed. The form's hint asks for the unit
+  //   instead of asserting one.
   inkQtyIncluded: "Quantity of ink included",
+  // OCPI-7 · the NO branch. Positioned here, not appended at the end, because
+  // this object's KEY ORDER is the revision diff's sort order (revisionDiff.ts)
+  // — a reader scanning a diff and a reader scanning the form travel the same
+  // path. Each label names its ITEM as well as its question, the convention the
+  // Shipment & invoice labels below set.
+  inkOfferAgreed: "Ink — offered at a subsidized rate",
+  inkOfferQty: "Ink — subsidized quantity (litres)",
+  inkOfferRate: "Ink — subsidized rate (₹ per litre)",
   inclSpares: "Deal includes spare parts",
   spareDetails: "Spare part details and quantity",
   inclHead: "Deal includes head",
   headsIncluded: "No. of heads included",
+  headOfferAgreed: "Head — offered at a subsidized rate",
+  headOfferQty: "Head — subsidized quantity (nos.)",
+  headOfferRate: "Head — subsidized rate (₹ per head)",
   dryerType: "Dryer category",
   dealValueCurrency: "Currency",
   dealValueAmount: "Total deal value (excl. GST)",
@@ -533,6 +612,17 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   headInvoiceQty: "Head — invoice quantity",
   headInvoiceAmount: "Head — invoice amount (excl. tax)",
 
+  /* ⚠ "INVOICE", NOT "SUBSIDIZED". `inkOfferQty` / `inkOfferRate` above read
+   *   "Ink — subsidized quantity / rate" and mean the opposite: ink the deal
+   *   does NOT include. These two are the included ink's own invoice. The
+   *   wording is the only thing separating them in an error message, since a
+   *   missing-fields list gives no other context. */
+  inkShipMode: "Ink — how it ships",
+  inkShipVia: "Ink — separate shipment sent via",
+  inkSeparateInvoice: "Ink — separate invoice",
+  inkInvoiceQty: "Ink — invoice quantity",
+  inkInvoiceAmount: "Ink — invoice amount (excl. tax)",
+
   dryerShipMode: "Dryer — how it ships",
   dryerShipVia: "Dryer — separate shipment sent via",
   dryerSeparateInvoice: "Dryer — separate invoice",
@@ -562,6 +652,11 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   externalCentering: "External centering system",
   inkDustExhauster: "Ink dust exhauster",
   chillingSystem: "Chilling system",
+  // Section B's eighth pointer (OCPI-10). Positioned with the four extras
+  // rather than appended, because THIS OBJECT'S KEY ORDER IS THE REVISION
+  // DIFF'S SORT ORDER (revisionDiff.ts) - a reader scanning a diff and a
+  // reader scanning the form travel the same path.
+  otherInclusions: "Other inclusions",
   printerWarranty: "Printer warranty period",
   headWarranty: "Print-head warranty period",
   postWarrantyHeadPrice: "Head price after the warranty",
@@ -606,10 +701,16 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     inkCreditTerms: s(d.inkCreditTerms),
     inclInk: d.inclInk,
     inkQtyIncluded: s(d.inkQtyIncluded),
+    inkOfferAgreed: d.inkOfferAgreed,
+    inkOfferQty: s(d.inkOfferQty),
+    inkOfferRate: s(d.inkOfferRate),
     inclSpares: d.inclSpares,
     spareDetails: s(d.spareDetails),
     inclHead: d.inclHead,
     headsIncluded: s(d.headsIncluded),
+    headOfferAgreed: d.headOfferAgreed,
+    headOfferQty: s(d.headOfferQty),
+    headOfferRate: s(d.headOfferRate),
     dryerType: s(d.dryerType),
     dealValueCurrency: s(d.dealValueCurrency) || "INR",
     dealValueAmount: s(d.dealValueAmount),
@@ -634,6 +735,11 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     headSeparateInvoice: d.headSeparateInvoice,
     headInvoiceQty: s(d.headInvoiceQty),
     headInvoiceAmount: s(d.headInvoiceAmount),
+    inkShipMode: s(d.inkShipMode),
+    inkShipVia: s(d.inkShipVia),
+    inkSeparateInvoice: d.inkSeparateInvoice,
+    inkInvoiceQty: s(d.inkInvoiceQty),
+    inkInvoiceAmount: s(d.inkInvoiceAmount),
     dryerShipMode: s(d.dryerShipMode),
     dryerShipVia: s(d.dryerShipVia),
     dryerSeparateInvoice: d.dryerSeparateInvoice,
@@ -660,6 +766,7 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     externalCentering: d.externalCentering,
     inkDustExhauster: d.inkDustExhauster,
     chillingSystem: d.chillingSystem,
+    otherInclusions: s(d.otherInclusions),
     printerWarranty: s(d.printerWarranty),
     headWarranty: s(d.headWarranty),
     postWarrantyHeadPrice: s(d.postWarrantyHeadPrice),
@@ -713,10 +820,29 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     ink_credit_terms: d.inkCreditTerms,
     incl_ink: d.inclInk,
     ink_qty_included: d.inkQtyIncluded,
+    /*
+      ⚠ THE PART-A TWIN OF THE SNIFF-ARRAY TRAP, and it is the worse of the two.
+        A part-B key missing from fms_ocpi_save_draft's key array is silently
+        never written and the old value survives. A part-A key missing from
+        HERE is BLANKED ON EVERY SAVE: the payload lookup returns null, the
+        writer's `case` stores null, and an agreed rate erases itself with no
+        error and nothing in a log.
+
+      ⚠ SIX KEYS, NOT EIGHT. The two sub-totals are derived by
+        fms_ocpi_write_quotation and are deliberately not sent — sending them
+        would let the browser dictate a figure that contradicts its own two
+        factors, which is what `withGst` was deleted for.
+    */
+    ink_offer_agreed: d.inkOfferAgreed,
+    ink_offer_qty: d.inkOfferQty,
+    ink_offer_rate: d.inkOfferRate,
     incl_spares: d.inclSpares,
     spare_details: d.spareDetails,
     incl_head: d.inclHead,
     heads_included: d.headsIncluded,
+    head_offer_agreed: d.headOfferAgreed,
+    head_offer_qty: d.headOfferQty,
+    head_offer_rate: d.headOfferRate,
     dryer_type: d.dryerType,
     deal_value_currency: d.dealValueCurrency,
     deal_value_amount: d.dealValueAmount,
@@ -741,6 +867,14 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     head_separate_invoice: d.headSeparateInvoice,
     head_invoice_qty: d.headInvoiceQty,
     head_invoice_amount: d.headInvoiceAmount,
+    // ⚠ THESE FIVE KEY NAMES ARE ALSO IN fms_ocpi_save_draft's part-B array.
+    //   That array is what decides whether write_oc runs at all; a key missing
+    //   from it is never written and says nothing about it.
+    ink_ship_mode: d.inkShipMode,
+    ink_ship_via: d.inkShipVia,
+    ink_separate_invoice: d.inkSeparateInvoice,
+    ink_invoice_qty: d.inkInvoiceQty,
+    ink_invoice_amount: d.inkInvoiceAmount,
     dryer_ship_mode: d.dryerShipMode,
     dryer_ship_via: d.dryerShipVia,
     dryer_separate_invoice: d.dryerSeparateInvoice,
@@ -767,6 +901,7 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     external_centering: d.externalCentering,
     ink_dust_exhauster: d.inkDustExhauster,
     chilling_system: d.chillingSystem,
+    other_inclusions: d.otherInclusions,
     other_commitments: d.otherCommitments,
     printer_warranty: d.printerWarranty,
     head_warranty: d.headWarranty,
@@ -833,6 +968,25 @@ export function missingForSubmit(d: QuotationDraft): string[] {
   if (d.inclHead === null) out.push("whether the deal includes a head");
   else if (d.inclHead && !d.headsIncluded.trim()) out.push("how many heads are included");
 
+  /*
+    OCPI-7 · the NO branch. Answering the rate question at all is OPTIONAL —
+    silence means it was never discussed — but a Yes must carry its numbers,
+    or the quotation prints a promise with no figure beside it.
+
+    ⚠ THIS MIRRORS THE SQL CONSTRAINT CONJUNCT FOR CONJUNCT. The server's
+      fms_ocpi_complete_when_submitted carries the same two rules. If the two
+      ever disagree the salesperson gets a raw Postgres constraint violation
+      naming no field, on a deal this list said was ready.
+  */
+  if (d.inclInk === false && d.inkOfferAgreed === true) {
+    if (!d.inkOfferQty.trim()) out.push("how many litres of ink are offered at the subsidized rate");
+    if (!d.inkOfferRate.trim()) out.push("the subsidized rate for ink, per litre");
+  }
+  if (d.inclHead === false && d.headOfferAgreed === true) {
+    if (!d.headOfferQty.trim()) out.push("how many heads are offered at the subsidized rate");
+    if (!d.headOfferRate.trim()) out.push("the subsidized rate for a head");
+  }
+
   // Section C · Commercial terms
   if (!d.transportTerms) out.push("the deal type (High Seas or Others)");
   else if (d.transportTerms === "high_seas") {
@@ -881,6 +1035,9 @@ export function missingForDetailSheet(d: QuotationDraft, facts: MachineFacts): s
   if (!d.deliveryDays.trim()) out.push(FIELD_LABEL.deliveryDays);
   if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
   if (d.inclHead === true && !d.headShipMode) out.push(FIELD_LABEL.headShipMode);
+  // Ink's row is asked of nearly every deal — 17 of the 19 on record include
+  // ink — so this is the shipment question a salesperson meets most often.
+  if (d.inclInk === true && !d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
 
   // ⚠ THE DRYER IS THE MACHINE'S ANSWER NOW, not the deal's. This used to read
   //   `dryerType !== 'Not Applicable'` — the salesperson's own pick — so a

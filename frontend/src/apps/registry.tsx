@@ -6,6 +6,7 @@ import { procurementApp } from "./procurement/meta";
 import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
+import { travelDeskApp } from "./travel-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { productionEntryApp } from "./production-entry/meta";
@@ -15,6 +16,7 @@ import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { ocpiApp } from "./ocpi/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
+import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
@@ -43,6 +45,11 @@ export const apps: AppManifest[] = [
   // Granted per user like every other module (was universal — see apps/universal.ts —
   // but that let everyone see it regardless of their grant, which admins didn't want).
   hrExitApp,
+  // Travel Desk FMS — separate module (own fms_travel_* tables), granted per user
+  // to whoever travels, approves, books and pays. ONE TRIP carries the request,
+  // every booked leg, the advance, the expense claim and the settlement, so the
+  // entitlement checked before booking is the one enforced on the claim.
+  travelDeskApp,
   // Granted per user like every other module (was universal — see apps/universal.ts).
   officeSuppliesApp,
   // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
@@ -72,6 +79,13 @@ export const apps: AppManifest[] = [
   // user to the sales team and to whoever approves.
   ocpiApp,
   fmsControlCenterApp,
+  // Process Coordinator — the coordinator's own desk, and the only screen in the
+  // Control category that WRITES: every module's master approvals land in one
+  // queue here. Its second half answers the question the Control Center cannot —
+  // not just which step is delayed, but who is sitting on it and how to reach
+  // them. Granted per user; the grant itself is what makes someone the
+  // coordinator.
+  processCoordinatorApp,
   // Master Report — the director's read on module ADOPTION, not on due work.
   // Sits beside the Control Center in the Control category and answers the
   // question that one cannot: "is anyone actually using this module?". Counts
