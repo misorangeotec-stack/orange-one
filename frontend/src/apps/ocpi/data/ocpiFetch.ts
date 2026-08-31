@@ -358,6 +358,7 @@ const mapDeal = (r: any): OcpiDeal => ({
   externalCentering: r.external_centering ?? null,
   inkDustExhauster: r.ink_dust_exhauster ?? null,
   chillingSystem: r.chilling_system ?? null,
+  otherInclusions: r.other_inclusions ?? null,
 
   otherCommitments: r.other_commitments ?? null,
   printerWarranty: r.printer_warranty ?? null,

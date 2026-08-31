@@ -239,13 +239,34 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   // would carry a charge for something the customer is not being charged for.
   dryerPrice: (d, m) => hasDryer(d, m) && d.dryerIncluded === false,
 
-  // RULE 7 again — the four extras. "no" or unmapped means the machine cannot
-  // take it, so the question never appears; "yes" is standard equipment and is
-  // still asked, because the deal has to record that it is included.
-  airBlade: (_d, m) => canCarry(m.optAirBlade),
+  /*
+    RULE 7 again — ONE extra, where there used to be four (OCPI-10).
+
+    Air blade, ink dust exhauster and chilling system are now asked on EVERY
+    deal and have no rule here at all: `isVisible` returns true for a key it
+    does not know, which is the whole of their change. Removing the rules also
+    takes them out of `clearHidden`'s loop — required, not incidental, or the
+    answer would be blanked client-side before the payload was even built.
+
+    ⚠ EXTERNAL CENTERING KEEPS ITS GATE, and the asymmetry is the client's own
+      decision rather than an oversight. The centering system follows the
+      dryer's logic: if the machine backs it, ask; otherwise do not. So section
+      B shows seven pointers on the 5 machines that can carry a centering
+      device and six on the other 23. Do not "fix" that by always rendering the
+      row, and do not tidy this rule into matching the three that went.
+
+    ⚠ ITS TWIN IS THE SHIPMENT GROUP twenty lines above — `centeringShipMode`
+      and the four beside it read the SAME capability, and the client confirmed
+      the two hide together. Both survive OCPI-10 untouched.
+
+    ⚠ THE SERVER CARRIES THIS RULE TOO. `fms_ocpi_write_oc` still clears
+      `external_centering` on a machine that cannot carry one, and deliberately
+      no longer clears the other three — see
+      20261025120000_fms_ocpi_extras_stop_being_gated.sql. If this rule and
+      that clearing ever disagree, the form asks a question the server throws
+      away, which is exactly the bug OCPI-10 existed to remove.
+  */
   externalCentering: (_d, m) => canCarry(m.optExternalCentering),
-  inkDustExhauster: (_d, m) => canCarry(m.optInkDustExhauster),
-  chillingSystem: (_d, m) => canCarry(m.optChillingSystem),
 
   highSeasVia: (d) => d.transportTerms === "high_seas",
   highSeasCostBy: (d) => d.transportTerms === "high_seas",

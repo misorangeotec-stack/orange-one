@@ -173,6 +173,7 @@ export interface QuotationDraft {
   externalCentering: boolean | null;
   inkDustExhauster: boolean | null;
   chillingSystem: boolean | null;
+  otherInclusions: string;
 
   printerWarranty: string;
   headWarranty: string;
@@ -274,6 +275,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   externalCentering: null,
   inkDustExhauster: null,
   chillingSystem: null,
+  otherInclusions: "",
   printerWarranty: "",
   headWarranty: "",
   postWarrantyHeadPrice: "",
@@ -619,6 +621,11 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   externalCentering: "External centering system",
   inkDustExhauster: "Ink dust exhauster",
   chillingSystem: "Chilling system",
+  // Section B's eighth pointer (OCPI-10). Positioned with the four extras
+  // rather than appended, because THIS OBJECT'S KEY ORDER IS THE REVISION
+  // DIFF'S SORT ORDER (revisionDiff.ts) - a reader scanning a diff and a
+  // reader scanning the form travel the same path.
+  otherInclusions: "Other inclusions",
   printerWarranty: "Printer warranty period",
   headWarranty: "Print-head warranty period",
   postWarrantyHeadPrice: "Head price after the warranty",
@@ -723,6 +730,7 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     externalCentering: d.externalCentering,
     inkDustExhauster: d.inkDustExhauster,
     chillingSystem: d.chillingSystem,
+    otherInclusions: s(d.otherInclusions),
     printerWarranty: s(d.printerWarranty),
     headWarranty: s(d.headWarranty),
     postWarrantyHeadPrice: s(d.postWarrantyHeadPrice),
@@ -849,6 +857,7 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     external_centering: d.externalCentering,
     ink_dust_exhauster: d.inkDustExhauster,
     chilling_system: d.chillingSystem,
+    other_inclusions: d.otherInclusions,
     other_commitments: d.otherCommitments,
     printer_warranty: d.printerWarranty,
     head_warranty: d.headWarranty,

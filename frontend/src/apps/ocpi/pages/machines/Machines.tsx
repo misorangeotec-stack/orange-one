@@ -162,11 +162,24 @@ export default function Machines() {
     { key: "needsDryer", label: "Takes a dryer", type: "select", required: true,
       options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
       hint: "Per machine, not per category — the client sheet has Position Printer needing one while the three Pengdas in the same category do not. Decides whether the quotation shows the dryer section at all, so it must be answered." },
-    optionField("optAirBlade", "Air blade"),
+    /*
+      ⚠ WHAT THESE FOUR STILL DO, now that three of them no longer hide
+        anything (OCPI-10). They were the gate on all four questions; they are
+        now the gate on ONE. The other three keep a smaller but real job: "yes"
+        puts a "standard on this machine" note beside the question on the
+        quotation, which is how a salesperson tells a genuinely optional extra
+        from one the model always ships with. Left blank they say nothing, and
+        the question is still asked. So none of the four is a field that does
+        nothing — but only external centering changes what the form shows.
+    */
+    optionField("optAirBlade", "Air blade",
+      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked — air blade is asked on every deal."),
     optionField("optExternalCentering", "External centering",
-      "Also decides whether the quotation asks how the centering device ships and whether it is invoiced separately."),
-    optionField("optInkDustExhauster", "Ink dust exhauster"),
-    optionField("optChillingSystem", "Chilling system"),
+      "THE ONE EXTRA THAT IS STILL A GATE. Decides whether the quotation asks about the centering system at all — both the tick in Deal inclusions and how the device ships and is invoiced. “No” or blank hides all of it."),
+    optionField("optInkDustExhauster", "Ink dust exhauster",
+      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
+    optionField("optChillingSystem", "Chilling system",
+      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
     { key: "docTitle", label: "Document heading", type: "select", required: true,
       options: [
         { value: "ORDER CONFIRMATION", label: "ORDER CONFIRMATION" },

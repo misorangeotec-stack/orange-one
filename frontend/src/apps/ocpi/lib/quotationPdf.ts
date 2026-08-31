@@ -4,7 +4,7 @@ import {
   setDraw, setFill, text, widthOf, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { DOLLAR_CLAUSE, INSURANCE_CLAUSE, SUBSIDIZED_RATE_NOTE } from "./fieldSpec";
+import { DOLLAR_CLAUSE, INSURANCE_CLAUSE, SUBSIDIZED_RATE_NOTE, canCarry } from "./fieldSpec";
 import { docHeading, fmtDealValue } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
@@ -366,6 +366,40 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
         wide: true,
       });
     }
+  }
+
+  /*
+    ── The four extras, and the free-text eighth (OCPI-10) ───────────────────
+
+    ⚠ THEY PRINT HERE BECAUSE THEY ARE ASKED HERE. They used to be answered in
+      a different card and appeared on no quotation at all — only later, on the
+      order confirmation, and only when the answer was Yes. Now that section B
+      asks all seven, a reader of the paper section B produces has to find all
+      seven on it, or the form and its own document disagree.
+
+    ⚠ A No PRINTS, exactly as the three rows above it print a No. On this paper
+      "not included" is a term of the deal, not an absence — which is the
+      opposite of the order confirmation, where these four feed a bullet list
+      of what the machine IS composed of and a No is simply no bullet.
+
+    ⚠ THE CENTERING ROW IS MACHINE-GATED, matching the form one for one. It is
+      the one extra still hidden when the machine cannot carry it, so printing
+      it on the other 23 machines would put a question on a customer's paper
+      that was never asked — and answer it, blankly, on their behalf.
+  */
+  inclusions.push({ label: "Inclusive of Air Blade?", value: yesNo(d.airBlade) });
+  if (machine && canCarry(machine.optExternalCentering)) {
+    inclusions.push({
+      label: "Inclusive of External Centering System?",
+      value: yesNo(d.externalCentering),
+    });
+  }
+  inclusions.push(
+    { label: "Inclusive of Ink Dust Exhauster?", value: yesNo(d.inkDustExhauster) },
+    { label: "Inclusive of Chilling System?", value: yesNo(d.chillingSystem) },
+  );
+  if (d.otherInclusions?.trim()) {
+    inclusions.push({ label: "Other Inclusions", value: d.otherInclusions, wide: true });
   }
 
   return [

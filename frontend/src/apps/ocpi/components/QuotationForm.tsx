@@ -652,10 +652,6 @@ export default function QuotationForm({
 
   const show = (k: keyof QuotationDraft) => isVisible(k, draft, facts);
 
-  /** Can this machine carry ANY extra? If not, the whole block goes. */
-  const anyExtra =
-    show("airBlade") || show("externalCentering") ||
-    show("inkDustExhauster") || show("chillingSystem");
 
   /**
    * Does this deal ship ANYTHING on its own terms? If not, the whole card goes.
@@ -1202,6 +1198,98 @@ export default function QuotationForm({
           rate={draft.headOfferRate}
           onRate={(v) => patch({ headOfferRate: v })}
         />
+
+        {/*
+          ── Also included ──────────────────────────────────────────────────────
+
+          ⚠ THESE FOUR MOVED HERE FROM *Document details* (OCPI-10), where they
+            sat under a heading "Options included" that a salesperson filling in
+            a deal never thought to open. Section B is where the deal's contents
+            are decided, so this is where they are asked.
+
+          ⚠ THE CARD NOW HOLDS TWO KINDS OF QUESTION, and the divider and the
+            note below are what make the difference read as deliberate. The
+            three above open a rate follow-up on No, because ink and heads are
+            still SOLD when they are not included. These four do not: a chilling
+            system is not sold by the litre, so a No simply ends it.
+
+          ⚠ THREE OF THE FOUR ARE NO LONGER GATED BY THE MACHINE — asked on
+            every deal. `fms_ocpi_write_oc` had been nulling the answer on save
+            for any machine whose sheet said "no", which is 25 of the 28 for the
+            air blade, so the question could be answered and silently lost. The
+            gate and that clearing were removed together; see
+            20261025120000_fms_ocpi_extras_stop_being_gated.sql.
+
+          ⚠ THE CENTERING TICK IS THE EXCEPTION AND KEEPS `show()`. Ritesh Bhai,
+            31-Aug-2026: the centering system follows the dryer's logic — backed
+            by the machine or not asked at all — and that covers BOTH this tick
+            and the centering shipment questions in the card below. So this
+            group shows four rows on the 5 machines that can carry one and three
+            on the other 23. That is correct; do not "fix" it by always
+            rendering the row, and do not tidy the other three into matching it.
+
+          ⚠ `standardHint` IS A HINT, NEVER AN ANSWER. "yes" on the machine
+            means standard equipment, and the deal still has to record that it
+            is included. Answering it for them would put a value on the deal
+            nobody entered.
+        */}
+        <div className="space-y-3 border-t border-line pt-4">
+          <h3 className="text-[13px] font-semibold text-ink">Also included</h3>
+          <p className="text-[12px] text-grey-2">
+            Yes or No only — unlike the three above, these do not open a rate question.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <YesNo
+              label="Air blade"
+              hint={standardHint(facts.optAirBlade)}
+              value={draft.airBlade}
+              onChange={(v) => patch({ airBlade: v })}
+              disabled={disabled}
+            />
+            {show("externalCentering") && (
+              <YesNo
+                label="External centering system"
+                hint={standardHint(facts.optExternalCentering)}
+                value={draft.externalCentering}
+                onChange={(v) => patch({ externalCentering: v })}
+                disabled={disabled}
+              />
+            )}
+            <YesNo
+              label="Ink dust exhauster"
+              hint={standardHint(facts.optInkDustExhauster)}
+              value={draft.inkDustExhauster}
+              onChange={(v) => patch({ inkDustExhauster: v })}
+              disabled={disabled}
+            />
+            <YesNo
+              label="Chilling system"
+              hint={standardHint(facts.optChillingSystem)}
+              value={draft.chillingSystem}
+              onChange={(v) => patch({ chillingSystem: v })}
+              disabled={disabled}
+            />
+          </div>
+          {/*
+            ⚠ NOT `otherCommitments`, which is retired and has no input — see
+              the notice further down. And deliberately narrower than *Special
+              remarks* in section D: this asks what else is IN the deal, that
+              one takes anything else ABOUT it. Both hints say so, or the two
+              boxes drift into meaning the same thing and the same sentence
+              gets typed into whichever the eye lands on first.
+          */}
+          <FieldLabel
+            label="Other inclusions"
+            hint="anything else included in the deal — for anything else about the deal, use Special remarks"
+          >
+            <TextArea
+              rows={2}
+              value={draft.otherInclusions}
+              onChange={(e) => patch({ otherInclusions: e.target.value })}
+              disabled={disabled}
+            />
+          </FieldLabel>
+        </div>
       </Card>
 
       {/*
@@ -1608,7 +1696,10 @@ export default function QuotationForm({
             caveat here, believing it reached the contract, would have been
             wrong.
         */}
-        <FieldLabel label="Special remarks" hint="prints on the summary sheet">
+        <FieldLabel
+          label="Special remarks"
+          hint="prints on the summary sheet — anything else ABOUT the deal; for what is included IN it, use Other inclusions in section B"
+        >
           <TextArea
             rows={5}
             value={draft.remarks}
@@ -1806,69 +1897,6 @@ export default function QuotationForm({
             (it lives with Special remarks, and stage H decides its fate), and
             `HEAD_SHIP_MODES` / `HEAD_SHIP_VIA` are now read by all four rows.
         */}
-
-        {/*
-          ── Options included ───────────────────────────────────────────────────
-
-          ⚠ EACH EXTRA IS ASKED ONLY IF THE MACHINE CAN CARRY IT (OCPI-3, stage
-            E). All four used to be asked of every deal; the client's sheet maps
-            them per model — "no", "optional" or "yes" — and only 7 of the 28
-            machines can take any of them at all. "yes" still asks, because it
-            means STANDARD EQUIPMENT and the deal has to record that it is
-            included; the hint says so rather than answering for the salesperson.
-
-          ⚠ THIS BLOCK IS NOT INSIDE THE DRYER CARD, deliberately. P8S needs no
-            dryer and can still take a chilling system, so nesting the extras
-            under the dryer would make that machine's one extra unreachable.
-
-          ⚠ THE "External centering system" TICK IS NOT THE CENTERING DEVICE'S
-            SHIPMENT QUESTIONS. The client asked for them to stay separate; both
-            read the same `opt_external_centering` capability, and the shipment
-            block arrives in stage F.
-        */}
-        {anyExtra && (
-          <div className="space-y-3 border-t border-line pt-4">
-            <h3 className="text-[13px] font-semibold text-ink">Options included</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {show("airBlade") && (
-                <YesNo
-                  label="Air blade"
-                  hint={standardHint(facts.optAirBlade)}
-                  value={draft.airBlade}
-                  onChange={(v) => patch({ airBlade: v })}
-                  disabled={disabled}
-                />
-              )}
-              {show("externalCentering") && (
-                <YesNo
-                  label="External centering system"
-                  hint={standardHint(facts.optExternalCentering)}
-                  value={draft.externalCentering}
-                  onChange={(v) => patch({ externalCentering: v })}
-                  disabled={disabled}
-                />
-              )}
-              {show("inkDustExhauster") && (
-                <YesNo
-                  label="Ink dust exhauster"
-                  hint={standardHint(facts.optInkDustExhauster)}
-                  value={draft.inkDustExhauster}
-                  onChange={(v) => patch({ inkDustExhauster: v })}
-                  disabled={disabled}
-                />
-              )}
-              {show("chillingSystem") && (
-                <YesNo
-                  label="Chilling system"
-                  hint={standardHint(facts.optChillingSystem)}
-                  value={draft.chillingSystem}
-                  onChange={(v) => patch({ chillingSystem: v })}
-                  disabled={disabled}
-                />
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="space-y-3 border-t border-line pt-4">
           <h3 className="text-[13px] font-semibold text-ink">Sign-off</h3>

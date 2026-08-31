@@ -263,6 +263,11 @@ export interface OcpiDeal {
   inkDustExhauster: boolean | null;
   chillingSystem: boolean | null;
 
+  /* Section B's eighth pointer (OCPI-10). Free text, asked on every deal.
+   * NOT `otherCommitments` below, which is retired: it still prints on old
+   * deals that carry a value, but the form offers no input for it. */
+  otherInclusions: string | null;
+
   otherCommitments: string | null;
   printerWarranty: string | null;
   headWarranty: string | null;

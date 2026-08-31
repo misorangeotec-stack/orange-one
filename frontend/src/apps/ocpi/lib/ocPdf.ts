@@ -113,13 +113,28 @@ export function shipmentLines(d: OcpiDeal): ShipmentLine[] {
     }));
 }
 
-/** What this deal adds to the machine's standard composition. */
+/**
+ * What this deal ADDS to the machine's standard composition.
+ *
+ * ⚠ A No CONTRIBUTES NOTHING, and that is deliberate even now that a No is a
+ *   deliberate answer on every deal rather than a hidden question (OCPI-10,
+ *   confirmed with the client 31-Aug-2026). These lines become bullets under
+ *   "THE MACHINE IS COMPOSED AS FOLLOWS", which is a list of what the machine
+ *   HAS. "Air Blade: No" is not a thing the machine has. The quotation is
+ *   where the Yes/No answers are stated in full — this paper states the
+ *   outcome.
+ *
+ * ⚠ `otherInclusions` IS FREE TEXT AND GOES IN AS TYPED, so it reads as one
+ *   more line of the composition. It is the only entry here the salesperson
+ *   words themselves.
+ */
 export function optionalExtras(d: OcpiDeal): string[] {
   const out: string[] = [];
   if (d.airBlade) out.push("Air Blade");
   if (d.externalCentering) out.push("External Centring Device");
   if (d.inkDustExhauster) out.push("Ink Dust Exhauster");
   if (d.chillingSystem) out.push("Chilling System");
+  if (d.otherInclusions?.trim()) out.push(d.otherInclusions.trim());
   return out;
 }
 

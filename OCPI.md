@@ -2022,3 +2022,139 @@ reads as false precision on a contract.
 - [x] Comments-only migration applied; no column, constraint or function touched
 - [x] The form's sub-total and the printed price both render `₹` on a **USD** deal — the case that
       previously showed `$`
+---
+
+# OCPI-10 · Section B becomes seven pointers plus Others — 31-Aug-2026
+
+Asked for by Ritesh Bhai. *Deal inclusions* (section B) asked three questions — ink, spare parts,
+head. Four more — **air blade, external centering, ink dust exhauster, chilling system** — were asked
+in a different card entirely, under a heading "Options included" in *Document details*, where a
+salesperson filling in a deal never thought to look. All four moved into section B, which now reads
+as **seven pointers**, plus a free-text eighth, **Other inclusions**.
+
+## What was built
+
+**Migration `20261025120000_fms_ocpi_extras_stop_being_gated.sql`** — applied, seven machine checks
+pass. New nullable `fms_ocpi_deals.other_inclusions`; `fms_ocpi_write_oc` and `fms_ocpi_save_draft`
+replaced from the bodies pulled out of the **live database**, not from a migration file.
+
+**Seven frontend files** — `branching.ts` (three rules deleted, one kept), `QuotationForm.tsx` (the
+block moved, `anyExtra` deleted, the Others box added), `fieldSpec.ts` / `types/index.ts` /
+`ocpiFetch.ts` (the new field), `quotationPdf.ts` and `ocPdf.ts` (both papers), `Machines.tsx` (the
+master hints).
+
+## 🔴 The clearing trap — what made this more than a move
+
+`fms_ocpi_write_oc` carried, for each of the four:
+
+```sql
+air_blade = case when coalesce(v_air, 'no') = 'no' then null else (p->>'air_blade')::boolean end
+```
+
+The capability is read off the **machine**, and the client's sheet says `no` or is blank for the air
+blade on **25 of the 28 machines**. So on almost every deal the question could be answered, saved,
+and silently discarded — no error, nothing in a log. Ungating the form without this migration would
+have shipped a feature that appeared to work and stored nothing. The gate and the clearing came out
+together, in one change.
+
+## Centering is the exception, and it is deliberate
+
+Ritesh Bhai, 31-Aug: the centering system follows the dryer's logic — **if the machine backs it, show
+it; otherwise do not** — and that covers **both** the tick and the centering shipment questions.
+
+| Pointer | Gate | Shows on |
+|---|---|---|
+| Air blade · Ink dust exhauster · Chilling system | none | all 28 |
+| **External centering — tick and shipment block** | **the machine** | **5** — Homer K24, K32, JP7, JPK, K64 |
+
+So section B holds **seven pointers on 5 machines and six on the other 23**. That is correct. Do not
+"fix" it by always rendering the centering row, and do not tidy the other three into matching it.
+`branching.ts`'s `externalCentering` rule, its five `centering*` shipment rules, and the RPC's
+`external_centering` clearing were all left exactly as they were.
+
+## Three corrections to the brief, found in the live database
+
+1. **"Both write RPCs" was one.** Of 40 `fms_ocpi_*` functions only `fms_ocpi_write_oc` clears.
+   `fms_ocpi_save_draft` names the four only in its part-B **key-sniff array** — so its job here was
+   to *gain* `'other_inclusions'`, without which a payload carrying only that key would never reach
+   `write_oc` at all.
+2. **`v_centering` had to survive.** `v_air`, `v_exhauster` and `v_chilling` were read only on the
+   three gate lines and came out with them. `v_centering` is read **six** times — the tick plus the
+   five shipment clearings — so removing all four together would have broken the centering shipment
+   block silently. The select and into lists were edited in step; **assertion 4** in the migration is
+   what proves `v_centering` is still fed by `opt_external_centering` and not by a neighbour that
+   shifted up.
+3. 🔴 **The quotation paper was not in the brief and had to be.** `quotationPdf.ts` prints a boxed
+   *B. Deal Inclusions* section, and it prints **No as well as Yes**. The four extras appeared on no
+   quotation at all — only on the order confirmation, as composition bullets, and only when true.
+   Left alone, section B would have asked seven questions and printed three.
+
+⚠ **A trap this migration set for itself, worth knowing before editing it.** Assertion 2 greps
+`fms_ocpi_write_oc`'s own definition for `v_air` / `v_exhauster` / `v_chilling` to catch an older body
+being restored — and `pg_get_functiondef` returns the **comments** too. A helpful note inside the
+function naming the three removed variables fails the migration. It is the same shape as OCPI-7's
+money guard, which warns the same thing. The comments there are worded around it deliberately.
+
+## What prints where — settled with the client, 31-Aug
+
+| | Quotation (`quotationPdf.ts`) | Order confirmation (`ocPdf.ts`) |
+|---|---|---|
+| The seven pointers | **all seven, Yes and No** | a Yes adds a composition bullet; **a No prints nothing** |
+| Centering row | machine-gated, matching the form | machine-gated |
+| Other inclusions | a `wide` row in the B box | a composition bullet |
+
+The OC asymmetry is deliberate: `optionalExtras()` feeds *"THE MACHINE IS COMPOSED AS FOLLOWS"*, a
+list of what the machine **has**. "Air Blade: No" is not a thing the machine has. The quotation is
+where the answers are stated in full; the OC states the outcome.
+
+## What the machine master's four columns are for now
+
+They no longer hide three of the four questions, so this was settled rather than left to rot into
+fields that do nothing. They keep **two** jobs: `"yes"` still puts the *"standard on this machine"*
+note beside the question on all four, and the column is still the **gate** on external centering
+alone. `Machines.tsx`'s hints were reworded to say exactly that, so the screen stops implying a gate
+that only one of them has. `standardHint` itself is unchanged — it is a hint, never a default answer.
+
+## Other inclusions is a NEW field
+
+Not `other_commitments`, which is **retired**: it still prints on old deals that carry a value and the
+form renders it read-only under a "retired" notice, but there has been no input for it for some time.
+Reusing it would have un-retired something the module deliberately withdrew.
+
+The real neighbour is **`remarks` (Special remarks, section D)**, which is live and adjacent — the
+field `other_commitments` was retired *in favour of*. Both boxes now carry a hint pointing at the
+other: Other inclusions asks what is **in** the deal, Special remarks takes anything **about** it.
+Without that, the same sentence gets typed into whichever box the eye lands on first.
+
+## Verify — OCPI-10
+
+- [x] `npm run build` green
+- [x] **Exactly one render** of each of `airBlade` / `externalCentering` / `inkDustExhauster` /
+      `chillingSystem` / `otherInclusions` in `QuotationForm.tsx` — the move left no copy behind
+- [x] CLAUDE.md's orphan sweep over `apps/ocpi` — clean; `anyExtra` deleted as genuinely orphaned
+- [x] 🔴 **The persistence test, through the real form.** ZZ TEST Bhavani Prints (Homer K24: air `no`,
+      exhauster `no`) — answered Yes / Yes / **No** / Yes plus Other inclusions, saved, re-opened, and
+      read the row in SQL: `air_blade=true`, `ink_dust_exhauster=false`, `chilling_system=true`,
+      `external_centering=true`, text stored. **Before this change the first two would have been
+      NULL.** The deliberate No is the part that matters — `false`, not `null`, is what proves the
+      answer was kept rather than merely not cleared
+- [x] **The gate still bites.** A rolled-back RPC test on Rocket (centering `no`) sent all four as
+      true: `external_centering` came back **NULL**, the other three stored
+- [x] **Centering absent on a machine that cannot carry one** — Rocket shows six pointers, no centering
+      row, and the centering shipment block hidden too; its quotation prints no centering row
+- [x] **An older deal still opens and still prints** — ZZ TEST Laxmi Fabrics (QT-M0027, JP7, awaiting
+      customer sign) renders read-only with all seven, prints two pages, OC bullets correct
+- [x] **Both papers read back with pdf.js**, not eyeballed. jsPDF embeds a subset font, so the text is
+      glyph-encoded and a plain string search of the content stream finds **nothing — including rows
+      that are definitely there**. Extract with pdf.js or the check is worthless
+
+## Open
+
+⚠ **Fab Pro 1I / 2I / 3I are blank for all four extras**, and blank reads as `no`. They are therefore
+the three machines whose centering shipment block can never appear — **a data gap, not a decision**,
+and it now rests on that column alone. Worth confirming with Bushra rather than baking the gap in.
+
+⚠ **This deliberately reverses OCPI-3 stage E for three of the four.** That gating came from the
+client's own machine sheet and was recorded here as *"a good idea nobody asked for… Adopted."* It was
+undone on the client's instruction, with the reasoning in view: asking about a chilling system on a
+machine that cannot take one was judged the smaller cost against a section B that reads consistently.
