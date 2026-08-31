@@ -926,6 +926,130 @@ proof-read, and which selling entities actually raise OCPIs.
 flow uses; who supplies the 18 missing detailed-sheet templates; whether an *Others* deal quoted in
 USD really attracts GST; and the client's own remaining feedback.
 
+### OCPI-4 · The 31-08-2026 template batch — nine of the eleven missing decks  `[x]`  — imported, applied and render-verified 31-Aug-2026
+*Raised 2026-08-31 · Source: `Misc/Bushra Reports/OCPI/31-08-2026/` (12 files → 9 machines)*
+
+Bushra has supplied **nine of the eleven decks** OCPI-3 §K named as missing. Every one maps onto a
+master row that already exists with `has_template = false`, so this is an **update, not a new machine**.
+Only **Pengda PD-1700XD-800** and **Pengda PD-1800XD-800** remain outstanding after this.
+
+Takes the module from **10 of 28** machines printing a detailed contract to **19 of 28**.
+
+| Deck | Machine row |
+|---|---|
+| `K64.pptx` (+ `.docx`) | `K64` |
+| `POSITIONAL  PRINTER.pptx` | `Position Printer` |
+| `ALPHA  3  12 PH.pptx` | `KoloRado Alpha 3 — 12 heads` |
+| `ALPHA  2  3.2 - 8.pptx` | `KoloRado Alpha 3.2 — 8 heads` |
+| `FABPRO 1I.pptx` (+ `.docx`) | `Fab Pro 1I` |
+| `Fab Pro 2I.pptx` | `Fab Pro 2I` |
+| `JP7.pptx` | `JP7` |
+| `JP K EVO.pptx` | `JPK` |
+| `ROCKET  MACHINE  OC.docx` (+ `ROCKET MACHINE.docx`) | `Rocket` |
+
+**Baseline before any write (31-Aug-2026):** 28 machines · 10 templates · 82 sections · 19 deals.
+Two of those deals are **real** (AARNAV FASHIONS, `QT-M0037` / `QT-M0038`) and sit on Homer K32 and
+Kolorado Alpha 15 — both already templated, so **no live deal changes behaviour**. The six deals on
+this batch's machines are all `ZZ TEST`.
+
+#### Phase-wise checklist
+
+**Phase 0 · Baseline and safety net**
+- [x] 0.1 Record counts and a per-template md5 of the existing ten, to prove afterwards they were not touched
+- [x] 0.2 Confirm which existing deals sit on the nine machines, and that none is real
+- [x] 0.3 Check whether PowerPoint / Word are already running before touching COM
+
+**Phase 1 · Render the decks (never transcribe from raw OOXML — see the finding below)**
+- [x] 1.1 Export every slide of the 8 `.pptx` to PNG via PowerPoint COM
+- [x] 1.2 Export `ROCKET  MACHINE  OC.docx` (and the three Performas, for cross-check) to PDF via Word COM
+- [x] 1.3 Read every render; reconcile against the structured XML walk used for the audit
+
+**Phase 2 · Transcribe, one machine at a time**
+- [x] 2.1 K64 · [x] 2.2 Position Printer · [x] 2.3 Alpha 3 — 12 heads · [x] 2.4 Alpha 3.2 — 8 heads
+- [x] 2.5 Fab Pro 1I · [x] 2.6 Fab Pro 2I · [x] 2.7 JP7 · [x] 2.8 JPK · [x] 2.9 Rocket
+
+**Phase 3 · The migration**
+- [x] 3.1 Machine header updates (`intro_text`, `machine_model_no`, `supply_description`, `spec_rows`, `composition`, `header_fields`, `signoff_style`, `has_template`), each guarded `where name = … and has_template = false`
+- [x] 3.2 Sections in a `do $seed$` block, one loop per family, skipping any machine that already has sections
+- [x] 3.3 Master gaps the decks answer — model numbers, and `Fab Pro 1I` sign-off → `checked_by`
+
+**Phase 4 · Apply and verify**
+- [x] 4.1 Apply to `icutjkrqkbzwvmnfbzpr`
+- [x] 4.2 SQL: 19/28 templates; all nine non-zero on specs + composition + sections; **the ten baseline fingerprints unchanged**
+- [x] 4.3 Token sweep — every `{{…}}` is in `TOKEN_HELP`; zero `post_warranty_head_price` / `dryer_warranty`
+- [x] 4.4 `cd frontend && npm run build`
+- [x] 4.5 Browser: each of the nine in *Machine template*, no "placeholders not recognised" warning
+- [x] 4.6 End-to-end render — **all nine** rendered through the app's own `buildOcPdf`, 4–7 pages each, **0 render errors, 0 ruled blanks, 0 unresolved `{{…}}`**. No test deal was raised and **no quotation number was burned**: the nine were rendered by importing the module against live store data, and JP7 was additionally seen on a real deal page.
+- [x] 4.7 The `ZZ TEST` JP7 deal at `awaiting_customer_sign` now shows a **Detailed sheet tab it never had**, banner "Rebuilt from the template — the approved file could not be found". Renders correctly and `{{head_count}}` resolved to the deal's **4**, not the deck's 16. Behaviour change confirmed, and honest on its face.
+
+**Phase 5 · Record**
+- [x] 5.1 `OCPI.md` — new 31-08-2026 entry; Phase 3's counts and the "who supplies the missing templates" open item are now stale
+- [x] 5.2 `WORKLIST.md` — tick this entry, correct §K's "the eleven decks are not in the folder either", and file the findings below
+- [x] 5.3 Memory — 19 of 28 templated, and the render-don't-parse rule now has evidence
+
+#### What the audit turned up
+
+⚠ **Raw OOXML text is unusable for four of the nine decks — now proven, not suspected.** Both Alpha
+decks and both Fab Pro decks extract with words fused (`Followingupyourkind order`,
+`THEMACHINEISCOMPOSEDASFOLLOWS`). K64, JP7, JPK and Position Printer read cleanly, which is why the
+problem was missed the first time. Transcription is from a **render**, always.
+
+🔴 **`FABPRO 1I.pptx` is a filled-in live contract, not a blank template.** It carries customer
+**PRINTING PARADISE**, their Tirupur address, **GST 33AAPFP8156P1ZD**, and the price
+**₹40,00,000 + ₹7,20,000 GST = ₹47,20,000** with payment terms *25% Advance and remain in 8 equal PDC*.
+Transcribed verbatim it would put **another customer's name, GST number and price on every future Fab
+Pro contract.** Stripped to tokens on import.
+
+🔴 **The retired head-price token appears five more times.** K64, Position Printer, Fab Pro 1I/2I
+(*"1.75 lacs plus GST"*) and Rocket (*"INR 1,50,000.00 to 1,80,000.00 plus GST"*) all carry the
+post-warranty print-head price sentence. `{{post_warranty_head_price}}` no longer resolves and would
+print a **ruled blank in a signed contract**. All five take the reworded sentence already live on
+K24/K32/P8D/P8S.
+
+🔴 **Machine-warranty conflict.** Config is fixed at machine 12 / head 18 months. The decks say
+Position Printer 12, Fab Pro 1I 12, JPK *"12 and no longer than 15"*, K64 blank — and **Rocket 24**.
+Using the token prints **12 on Rocket, whose deck promises 24**. Proceeding with the token, because
+OCPI-3 §F made warranties fixed company policy; **listed for Ritesh Bhai** below.
+
+🟢 **A real dryer name, at last.** `JP K EVO.pptx` slide 3 carries a full Dryer Information block naming
+**POWER-D Dryer (ELECTRIC)** — electrical heating H18, third passage H18, folder H18. Six `[SAMPLE]`
+placeholders are standing in for exactly this. See the *Waiting for* row on real dryer names.
+
+🔴 **F18 · `{{machine_model_no}}` does not read the machine master, and Homer K24 is live with it.**
+The token resolves from `deal.machineModelNo` — a free-text box the salesperson types on the quotation
+form, which is **never prefilled from the machine**. K64, Position Printer and Rocket were first written
+with the token and all three then rendered *"Model No: ________"* against a real deal; caught in the
+render sweep, they now carry the literal model number, which is what their decks state anyway.
+**Homer K24's live supply line still reads `(Model No: {{machine_model_no}})`**, so any K24 contract
+raised without that box filled prints a ruled blank on a signed document. Not changed here — it is
+existing contract text and outside this batch. The Machines form's hint *"Available in templates as
+`{{machine_model_no}}`"* is misleading for the same reason.
+
+🔴 **F16 · Position Printer's contract says it is a Homer K32.** Its deck's composition reads *"Printing
+unit model Homer K32 to print from 4 to 8 colors"* — a copy-paste leftover from the K32 deck, carried
+across verbatim under the deck-verbatim rule. **First thing for the proof-read.** The same deck also
+carries a "Manufacture" label with no value and no token behind it, which was dropped rather than printed
+as a dangling label. And the Alpha 3.2 deck's composition says *"model KoloRado alpha III"*.
+
+🔴 **F17 · The two new Alpha decks state different commercial terms from their five siblings.** Not
+wording drift — three substantive differences: NOT INCLUDED says *"Transportation Charges will be bear by
+us"* where the five say local transportation is the customer's; WARRANTY says *"AMC charges will be
+applicable"* where the five say **no** AMC applies if the customer uses Orange ink; and CANCELLATION opens
+with *"Once order is placed; it will not be cancelled"*. Transcribed as the decks read, so seven Alpha
+machines now carry two different sets of terms. Worth a decision.
+
+**Module gaps the decks expose, none blocking this import:**
+- **JPK is priced in EURO.** The module supports **INR and USD only**. A JPK deal cannot be quoted in
+  its own currency today.
+- **Rocket's layout drawing cannot be reproduced** — a 2.9 MB JPEG in the OC document, referenced by its
+  "Layout :" line. `fms_ocpi_machine_sections` is text and the renderer draws no images.
+- **JPK's spec table has no *No. of Machine Supply* and no *installed printing heads* row**, so
+  `{{machine_count}}` / `{{head_count}}` have nowhere to sit — unlike all 27 other machines. Both rows
+  are being added, since the deal genuinely varies them.
+- **JP7 cites a document not in the folder** — *"Printheads warranty: Please refer enclosed Policy
+  document for Printheads."*
+- **Sign-off shapes the renderer cannot express** — JPK closes with a two-party *Signature / Position /
+  Date and place* block, Rocket with a Director signature. Cosmetic.
 
 ---
 

@@ -145,6 +145,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked ·
   - [x] Pengda PD-1700XD-1000
 - [x] `20260929120500_seed_fms_ocpi_machines.sql` + `20260929120600_seed_fms_ocpi_compositions.sql` — 28 machines, 82 sections, applied and verified
 - [x] 18 models carry `has_template = false` — quotable now, blocked at the order confirmation
+- ⚠ **SUPERSEDED 31-Aug-2026 — the counts above are history.** Nine more templates landed
+  (`20261023120000_seed_fms_ocpi_machine_templates_batch2.sql`), so it is now **28 machines, 163
+  sections, 19 templated and 9 without**. See *The 31-08-2026 template batch* at the foot of this file.
 - [!] **Bushra still to proof-read the transcription.** The decks' own typos were carried across on purpose ("CHINES DRYER", "regural", "continous") — silently correcting a customer-facing contract is not a transcription decision. All of it is editable in Administration → Machines without a deploy.
 
 ### Verify
@@ -543,7 +546,11 @@ silently invisible. Do not conclude the rail is broken because you cannot make t
       somebody confirms it, every screen that can mint a number says so (phase 9c)
 - [ ] Pengda 800: the deck is a copy of the 1000 — what are the real 800 specs?
 - [ ] "Alpha 2 – 8 Heads machine" is three machines (1.8 m / 1.9 m `OT-1908A` / 2.2 m) — confirm names
-- [ ] The 15 models with no template — who supplies the content?
+- [x] ~~The 15 models with no template — who supplies the content?~~ **ANSWERED 31-Aug-2026 for nine of
+      them** — Bushra supplied the decks in `Misc/Bushra Reports/OCPI/31-08-2026/`. Nine imported; only
+      **Pengda PD-1700XD-800** and **Pengda PD-1800XD-800** are still genuinely missing, plus the seven
+      models that never had a deck (Mini Lario, Fab Pro 3I, Kolorado Alpha 16, Alpha 3.2 — 16 heads,
+      Foil Machine, Label Printer, Book Printer).
 - [ ] Five selling companies, one letterhead — which entities raise OCPIs? **The four without a
       profile now warn by name on every screen that produces a document** (phase 9c), so a wrong
       bank block can no longer go out unnoticed — but the right one still has to come from you
@@ -1808,3 +1815,108 @@ Two things remain, neither of them code:
 7. **Is "Homer" a head?** — *put to the client 29-Aug-2026; they do not know, so it is PARKED for Ritesh Bhai.* Evidence supports yes: "EX600 RC KATAN & HOMER" is structurally identical to "EX600 RC KATAN & KYOCERA" (P8S) and "MS & KYOCERA BOTH" (JP7, JPK), where both terms are head makes. HOMER occupies the head-make slot. It appears on Homer K24, Homer K32 **and K64** — all HAN GLORY, and K64 is not Homer-branded. Built on that assumption: *Homer* exists as a head name and those three machines carry it. If the answer comes back no, delete the head and leave the three on Katana alone — data only, no rebuild. Full wording in **WORKLIST.md → To discuss with Ritesh Bhai → OCPI item 4**.
 8. ~~**Is the Fab Pro's Ricoh a Gen 6?**~~ — **ANSWERED 29-Aug-2026: yes, keep Gen 6.** The sheet says only "RICHO HEAD", DPI "300 & 600", supplier ORANGE BRAND, so the generation could not be read from it. **Fab Pro 1I, 2I and 3I** stay mapped to the existing *RICOH GEN 6 HEAD*; the client will say if that ever changes. No code or data change — the stage-C mapping was already correct.
 9. **Is the "external centering system" tick the same thing as the centering device?** — *put to the client 29-Aug-2026; they do not know, so it is PARKED for Ritesh Bhai.* The client said keep them separate and they are — one is a yes/no on what the deal includes, the other asks how the device ships and whether it is billed on its own. But both read the same `opt_external_centering` capability, so a machine mapped "no" shows **neither**. If they are meant to be independent — billed for a device the deal does not include, or the reverse — the machine master needs a second column and both rule engines a second condition. Nothing built either way; today's behaviour is the "yes" answer. Full wording in **WORKLIST.md → To discuss with Ritesh Bhai → OCPI item 7**.
+
+---
+
+## The 31-08-2026 template batch — 10 templates become 19
+
+*Tracked as **OCPI-4** in [WORKLIST.md](WORKLIST.md). Migration:
+`supabase/migrations/20261023120000_seed_fms_ocpi_machine_templates_batch2.sql`, applied to
+`icutjkrqkbzwvmnfbzpr` on 31-Aug-2026.*
+
+Bushra supplied **nine of the eleven decks** OCPI-3 §K named as missing, in
+`Misc/Bushra Reports/OCPI/31-08-2026/` (12 files → 9 machines). Every one mapped onto a master row that
+already existed with `has_template = false`, so the migration **updates rows and inserts no machine**.
+
+| | |
+|---|---|
+| Before | 28 machines · **10** templated · 82 sections |
+| After | 28 machines · **19** templated · **163** sections |
+| Imported | K64 · Position Printer · KoloRado Alpha 3 — 12 heads · KoloRado Alpha 3.2 — 8 heads · Fab Pro 1I · Fab Pro 2I · JP7 · JPK · Rocket |
+| Still missing | Pengda PD-1700XD-800, Pengda PD-1800XD-800 (decks), plus 7 models that never had one |
+
+**The existing ten were fingerprinted before the run and re-checked after — all ten md5s byte-identical.**
+Two REAL deals are live (AARNAV FASHIONS, QT-M0037 / QT-M0038) on Homer K32 and Kolorado Alpha 15, and
+neither changed. Every statement is guarded (`and has_template = false`; sections skipped when any
+exist), so the migration is a no-op on re-run and cannot touch the ten.
+
+### ⚠ Raw OOXML text is unusable for four of these decks — proven, not suspected
+
+Both Alpha decks and both Fab Pro decks extract with words fused — `Followingupyourkind order`,
+`THEMACHINEISCOMPOSEDASFOLLOWS`, `Ourofferandquotationisvalidfor30daysonly`. K64, JP7, JPK and Position
+Printer extract cleanly, **which is exactly why the hazard was missed the first time**. Every deck was
+therefore exported slide-by-slide to PNG through PowerPoint COM (Word → PDF for Rocket) and transcribed
+from the render; the structured XML walk was kept only as a numeric cross-check. The render also
+corrected a wrong reading: JPK's Attn/Date/Ref/Address header is invisible to the XML walk but present
+on the page.
+
+⚠ **Do not call `.Quit()` on the COM app if PowerPoint or Word is already running** — COM attaches to the
+live instance and quitting closes the user's own documents. Check `Get-Process POWERPNT, WINWORD` first.
+
+### Three deliberate departures from "the deck's own wording"
+
+1. 🔴 **`FABPRO 1I.pptx` is a filled-in live contract, not a blank template.** Customer **PRINTING
+   PARADISE**, their Tirupur address, **GST 33AAPFP8156P1ZD**, **₹40,00,000 + ₹7,20,000 = ₹47,20,000**,
+   payment terms *"25% Advance and remain in 8 equal PDC"*. Transcribed verbatim it would have put
+   another customer's name, GST number and price on **every future Fab Pro contract**. All stripped to
+   tokens. A post-import sweep for 19 such needles across all 19 templates returns **zero hits**.
+2. 🔴 **The retired head-price sentence, five more times** — K64, Position Printer, Fab Pro 1I/2I
+   (*"1.75 lacs plus GST"*) and Rocket (*"INR 1,50,000.00 to 1,80,000.00 plus GST"*).
+   `{{post_warranty_head_price}}` no longer resolves and would print a **ruled blank in a signed
+   contract**. All five use the reworded, client-approved sentence already live on K24/K32/P8D/P8S.
+3. **Literal warranty months become `{{machine_warranty_months}}` / `{{head_warranty_months}}`**, which
+   are fixed company config (12 / 18). ⚠ **Rocket's deck says 24 months and will therefore print 12** —
+   raised with the client rather than hard-coded.
+
+### The Homer-lineage clauses are COPIED IN SQL, not retyped
+
+K64's and Position Printer's decks carry, word for word, the same seven clauses as Homer K24's.
+The migration `insert … select` s those rows straight off K24 — what the app's own `copyTemplate` does.
+It guarantees byte-identical text and means the reworded head-price sentence is **inherited rather than
+re-keyed and possibly re-broken**. Only the two clauses that genuinely differ per deck — sale conditions
+and cancellation — are written out.
+
+### What the render sweep caught that SQL could not
+
+All nine were rendered through the app's own `buildOcPdf` against live store data: **4–7 pages each,
+0 render errors, 0 unresolved `{{…}}`, 0 ruled blanks**. No deal was raised and **no quotation number was
+burned**. The first pass was *not* clean — it showed one ruled blank on K64, Position Printer and Rocket:
+
+🔴 **`{{machine_model_no}}` does not read the machine master.** It resolves from `deal.machineModelNo`, a
+free-text box the salesperson types on the quotation form and which is **never prefilled from the
+machine**. Those three now carry the literal model number their decks state.
+**Homer K24's live supply line still reads `(Model No: {{machine_model_no}})`** — any K24 contract raised
+without that box filled prints a ruled blank. Left alone as existing contract text; logged as OCPI-4 F18,
+along with the Machines form hint *"Available in templates as `{{machine_model_no}}`"*, which is
+misleading for the same reason.
+
+### Flipping `has_template` changes behaviour on deals already raised
+
+`hasTemplate` has eight consumers. The visible one: a deal raised **before** today on one of these nine
+now shows a **Detailed sheet tab it never had**, rendered live and banner-flagged *"Rebuilt from the
+template — the approved file could not be found, so check it before printing."* Confirmed on the `ZZ TEST`
+JP7 deal at `awaiting_customer_sign`, where `{{head_count}}` correctly resolved to the deal's **4**, not
+the deck's 16. **All six affected deals are `ZZ TEST`; no real contract is involved.**
+
+### Open with the client — from this batch
+
+1. 🔴 **Position Printer's contract says it is a Homer K32** — a copy-paste leftover in the deck's
+   composition, carried verbatim. First thing for the proof-read. (Alpha 3.2's says *"KoloRado alpha III"*.)
+2. 🔴 **The two new Alpha decks state different commercial terms from their five siblings** — transport
+   borne by Orange, AMC chargeable rather than waived, and an extra cancellation clause.
+3. **Rocket's 24-month machine warranty** vs the fixed 12 in config.
+4. **JPK is priced in EURO**; the module supports INR and USD only.
+5. **Position Printer prints an air blade, centering device and ink dust exhauster** it is mapped `'no'`
+   for — so the deal can never actually include them.
+6. **Alpha 3 — 12 heads lists a "Front Dryer"** while `needs_dryer = false`, which makes the whole Dryer
+   details section unreachable for it.
+7. 🟢 **A real dryer name at last** — JPK's deck names **POWER-D Dryer (ELECTRIC)**, H18 electrical
+   heating, third passage, folder. Six `[SAMPLE]` placeholders are standing in for exactly this.
+8. **Two different Enterprises bank accounts** — Fab Pro 1I's deck is ICICI Noida-Sector 63, Fab Pro 2I's
+   is ICICI Athwalines. Neither entity has a company profile, so both Fab Pros are unquotable until
+   Finance supplies one, and it matters which.
+9. **Rocket's layout drawing cannot be reproduced** — a 2.9 MB JPEG behind its "Layout :" line; sections
+   are text and the renderer draws no images.
+10. **JP7 cites an enclosed print-head policy document** that is not in the folder.
+
+⚠ **These nine, like the first ten, are an agent's transcription and Bushra has not proof-read them.**
