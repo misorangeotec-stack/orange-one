@@ -1808,3 +1808,157 @@ Two things remain, neither of them code:
 7. **Is "Homer" a head?** — *put to the client 29-Aug-2026; they do not know, so it is PARKED for Ritesh Bhai.* Evidence supports yes: "EX600 RC KATAN & HOMER" is structurally identical to "EX600 RC KATAN & KYOCERA" (P8S) and "MS & KYOCERA BOTH" (JP7, JPK), where both terms are head makes. HOMER occupies the head-make slot. It appears on Homer K24, Homer K32 **and K64** — all HAN GLORY, and K64 is not Homer-branded. Built on that assumption: *Homer* exists as a head name and those three machines carry it. If the answer comes back no, delete the head and leave the three on Katana alone — data only, no rebuild. Full wording in **WORKLIST.md → To discuss with Ritesh Bhai → OCPI item 4**.
 8. ~~**Is the Fab Pro's Ricoh a Gen 6?**~~ — **ANSWERED 29-Aug-2026: yes, keep Gen 6.** The sheet says only "RICHO HEAD", DPI "300 & 600", supplier ORANGE BRAND, so the generation could not be read from it. **Fab Pro 1I, 2I and 3I** stay mapped to the existing *RICOH GEN 6 HEAD*; the client will say if that ever changes. No code or data change — the stage-C mapping was already correct.
 9. **Is the "external centering system" tick the same thing as the centering device?** — *put to the client 29-Aug-2026; they do not know, so it is PARKED for Ritesh Bhai.* The client said keep them separate and they are — one is a yes/no on what the deal includes, the other asks how the device ships and whether it is billed on its own. But both read the same `opt_external_centering` capability, so a machine mapped "no" shows **neither**. If they are meant to be independent — billed for a device the deal does not include, or the reverse — the machine master needs a second column and both rule engines a second condition. Nothing built either way; today's behaviour is the "yes" answer. Full wording in **WORKLIST.md → To discuss with Ritesh Bhai → OCPI item 7**.
+
+---
+
+# OCPI-7 · A "no" is not the end of the conversation — 31-Aug-2026
+
+**Tracked in WORKLIST.md as:** OCPI-7 · *Asked for by Ritesh Bhai*
+
+Section B asks three questions — *deal includes ink · spare parts · head* — and a **No** used to end
+the conversation. It should not: *"not included in the machine price"* is not *"not being sold"*. The
+customer still buys ink and still buys heads, and the rate is agreed at the same table as the machine.
+That agreement lived nowhere, so it was re-negotiated later from memory.
+
+```
+Deal includes ink?  ── Yes ──▶ Quantity of ink included        (unchanged)
+                    ├─ No  ──▶ Offered at a subsidized rate?
+                    │            ├─ No  ──▶ nothing further
+                    │            └─ Yes ──▶ Quantity · Rate · Sub-total
+                    └─ null ─▶ nothing at all
+```
+
+**INK AND HEAD ONLY.** The client narrowed it mid-build: *spare parts keeps today's behaviour, a No
+ends it*. That removed a whole column family and the description field spares would have needed.
+
+### Settled with the client, 31-Aug-2026
+
+| | |
+|---|---|
+| The second question's wording | **"Offered at a subsidized rate?"** — their words, and it prints |
+| Prints on | the **quotation** only, never the OC |
+| What prints | **the final price alone.** Quantity and rate are captured and diffed, not printed |
+| Units | ink in **litres** (rate per litre, decimal); head a **plain count** (rate per head) |
+| Currency | the **deal's own** `deal_value_currency`. No second currency, and nothing is converted |
+
+### 🔴 The rule this feature exists under
+
+**The sub-total is NOT part of the deal value and must never be added to it.** The reasoning is the
+branch's own — this is only ever asked when the item is **not** in the deal, so its money is not the
+deal's money. `deal_value_amount`, `deal_value_inr`, `machine_value_inr`, `gst_amount_inr`,
+`total_inr`, `dryer_value_inr`, `dryer_gst_inr` and `grand_total_inr` all exclude it by construction.
+
+⚠ **It is not even in rupees**, which is the second and independent reason it can never join that
+family: it follows the deal's currency and is never converted at `fx_rate`, so adding it to a rupee
+total would be an ~85× error on a dollar deal. That is why **not one of the eight columns carries the
+`_inr` suffix**, which in this module marks "on the money path". Said in every column comment, so the
+next person reads it before they add it up.
+
+## What was built
+
+**Migration `20261024120000_fms_ocpi_a_no_may_still_carry_a_rate.sql`** — additive only. Eight
+nullable columns (`ink_offer_agreed/qty/rate/subtotal`, `head_offer_*`), the completeness constraint
+replaced, and `fms_ocpi_write_quotation` re-issued **from its live body**.
+
+- 🔴 **The first branches in this module that fire on FALSE.** Every other guard reads
+  `is distinct from true`; these read `is distinct from false`, which stores nothing for TRUE **and
+  for NULL** alike. An unanswered inclusion must not present a rate question as though the system had
+  already decided the answer was No. The browser twin in `branching.ts` uses `=== false` for the same
+  reason — `!d.inclInk` would be true for `null` and is the wrong shorthand here.
+- **One writer, not two.** Section B is part A, so `fms_ocpi_write_quotation` owns all eight and
+  `fms_ocpi_write_oc` was deliberately **not** re-issued — their column separation is what keeps
+  saving one from blanking the other, and `write_oc` is one revision ahead of the file that last
+  defined both. It also makes the exclusion invariant **structural**: `incl_head` and the offer
+  columns are set by ONE statement, so `head_invoice_*` (kept only on TRUE) and `head_offer_*` (kept
+  only on FALSE) can never both survive on a row.
+- **No cross-column CHECK enforces that invariant, on purpose.** A CHECK is evaluated at
+  end-of-statement and cannot be deferred, so inside a single `save_draft` that flips a head from Yes
+  to No it would fire on the transient state between the two writers and fail the save. Asserted
+  against the data instead.
+- **The sub-total is DERIVED in the RPC and never sent from the browser.** Six payload keys, not
+  eight. A browser-computed twin would be a second, different answer for one price on a contract —
+  the `withGst` mistake deleted in stage E. The form shows a live preview; the paper prints the
+  stored column.
+- **`fms_ocpi_save_draft` needed no change** — its sniff array gates only `write_oc`;
+  `write_quotation` is called unconditionally. ⚠ But the part-A twin of that trap is **worse** and
+  lives in the browser: a part-B key missing from the sniff array is silently never written and the
+  old value survives, whereas a part-A key missing from `payloadFromDraft` is **blanked on every
+  save** — no error, nothing in a log.
+
+**The completeness gate is tightened only where it is vacuous on existing rows.** A Yes must carry its
+quantity and rate; **answering the question at all is optional**. Requiring an answer was considered
+and rejected: a CHECK is re-validated on every UPDATE, and `ink_offer_agreed` is null on every deal on
+record — four already answer No to head — so it would make every one of them un-updatable, and every
+approval, signature stamp, hold and cancel on those rows would throw. Backfilling `false` asserts a
+commercial fact nobody stated. **Silence means "not discussed".**
+
+**Form** — one `RateOffer` component, **two callers**, modelled prop-for-prop on `ShipmentRow`
+(*visibility decided by the caller, every binding passed explicitly*). Sub-total read-only and derived,
+recomputing live, and **empty rather than `₹ 0`** while either factor is blank — a zero is a claim, a
+blank is not.
+
+**Quotation PDF** — Section B became a built array rather than a flat literal. Each follow-up sits
+immediately after its own question and appears only when the rate question was actually answered, so
+**a deal saved before this existed still prints exactly the six rows it always did**. The label is
+*"Subsidized Ink Price"*, not *"Ink Price"* — Section A already prints *"Ink Selling Price"*.
+
+**Deal Register** — eight columns, placed at the far end of the sheet and nowhere near the deal-value
+block, precisely so no reader drags a contiguous numeric range into a sum.
+
+**`revisionDiff.ts` — nothing.** It derives label *and* order from `FIELD_LABEL`.
+
+### Verify — OCPI-7
+
+- [x] `cd frontend && npm run build` green (tsc strict; there is no test runner)
+- [x] **The full truth table, proved against the live writer** on a scratch deal, not on the screen:
+      `No + Yes` stores and derives (500.5 × 900 = **450,450.00**; 4 × 125,000 = **500,000.00**);
+      `No + No` keeps the flag and drops the numbers; `No + unanswered` stores nothing;
+      **an unanswered inclusion stores nothing even when rate answers are sent**
+- [x] 🔴 **The switch-back test.** Rate stored, inclusion flipped to Yes with the rate still in the
+      payload → all four fields **null on the row**, and the Yes-branch details (`200 litres`, `2`)
+      came back. Checked in SQL
+- [x] 🔴 **The money guard.** Both blocks filled with 10,00,000 and 1,00,00,000 of subsidized rates and
+      `write_oc` re-run: `deal_value_amount`, `deal_value_inr`, `machine_value_inr`, `gst_rate`,
+      `gst_amount_inr`, `total_inr`, `dryer_value_inr`, `dryer_gst_inr`, `grand_total_inr` **all
+      byte-identical**
+- [x] **The completeness gate, all three ways.** A subsidized Yes with no figures is **refused**
+      (asserted, not merely noticed); it is accepted once quantity and rate are given; and an
+      unanswered rate question does not block submission
+- [x] **Browser, on `ZZ TEST Saraswati Fabrics`** (nothing saved; the row is unchanged). Head answers
+      No → the question shows alone; Yes → quantity · rate · sub-total; `4 × 125,000` → `$ 5,00,000`
+      live, `$ 5,20,000` when the rate changed, **empty** when the quantity was cleared. Ink toggled
+      to No → the litres block appeared and *Quantity of ink included* disappeared with it. The
+      integer guard strips `.` and letters from a head count; the decimal one keeps `500.5`
+- [x] **The currency rule, proved by accident.** That deal is a **USD** high-seas sale, and the
+      sub-total rendered `$ 4,50,450` — matching the server's `450450.00` exactly
+- [x] Constraint pre-flight: 0 of the 19 existing deals violate the new predicate; 19 deals before and
+      after, no scratch rows left
+
+### Found while doing this
+
+⚠ **The live `fms_ocpi_write_quotation` body differed from the newest migration file.** Pulled with
+`pg_get_functiondef` before writing anything: it differs from `20261021140000` in **two comments** (one
+reworded, one with its `⚠` dropped) while **every executable line is identical**. Harmless this time,
+but it is exactly the drift the work list warned about, and the new migration was based on the live
+text rather than the file. ⚠ Note also that the applied migration *versions* are wall-clock stamps
+(`20260827…`, `20260829…`) and do **not** match the repo's logical filenames.
+
+🔴 **The first apply of this migration aborted on its own assertion, and the assertion was wrong.**
+It looked for `'%offer%>= 0%'` in `pg_get_constraintdef`, but Postgres re-renders the bound in the
+column's own type: the one integer column reads `>= 0` and every numeric one reads `>= (0)::numeric`.
+One of six matched, the migration raised and **rolled back cleanly** — no partial state. Fixed to match
+the column name and `>=` separately. Worth keeping: a tail assertion stricter than the schema it
+guards is a migration that cannot be applied.
+
+⚠ **`ink_qty_included` is NOT reliably litres, so it was NOT labelled "litres".** The work list asked
+for the unit on both fields. The data refuses: of the 17 deals carrying a value, 15 say litres and two
+say **"25 Kgs"** and **"3000kg"**. `FIELD_LABEL` is also the revision diff's heading, so labelling it
+`(litres)` would restate two real deals in a unit they never agreed to. The free-text field's hint asks
+the salesperson to **state the unit**; only the new numeric field, which the client fixed at litres,
+names one. The two sit three rows apart on the same card, which is why either had to say something.
+
+### Open
+
+- **`ink_price` ("Ink Selling Price", Section A) and the new subsidized ink rate sit on one form and
+  are different figures.** Nobody has said how they relate. Worth asking before a customer does.
+- Whether the sub-total should ever appear on the **OC**. Today it is quotation-only by instruction.

@@ -63,10 +63,23 @@ export interface QuotationDraft {
 
   inclInk: boolean | null;
   inkQtyIncluded: string;
+  /*
+    OCPI-7 · the NO branch. Six keys, not eight: the two SUB-TOTALS are
+    deliberately absent from the draft and from the payload. They are derived
+    by fms_ocpi_write_quotation and live on OcpiDeal alone, so there is exactly
+    one authoritative figure. The form shows a live preview computed from these
+    two factors; the paper prints the stored column.
+  */
+  inkOfferAgreed: boolean | null;
+  inkOfferQty: string;
+  inkOfferRate: string;
   inclSpares: boolean | null;
   spareDetails: string;
   inclHead: boolean | null;
   headsIncluded: string;
+  headOfferAgreed: boolean | null;
+  headOfferQty: string;
+  headOfferRate: string;
   dryerType: string;
 
   dealValueCurrency: string;
@@ -201,10 +214,16 @@ export const EMPTY_DRAFT: QuotationDraft = {
   inkCreditTerms: "",
   inclInk: null,
   inkQtyIncluded: "",
+  inkOfferAgreed: null,
+  inkOfferQty: "",
+  inkOfferRate: "",
   inclSpares: null,
   spareDetails: "",
   inclHead: null,
   headsIncluded: "",
+  headOfferAgreed: null,
+  headOfferQty: "",
+  headOfferRate: "",
   dryerType: "",
   dealValueCurrency: "INR",
   dealValueAmount: "",
@@ -495,11 +514,30 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   inkPrice: "Ink selling price",
   inkCreditTerms: "Ink credit terms (future)",
   inclInk: "Deal includes ink",
+  // ⚠ NO UNIT ON THIS ONE, and that is deliberate rather than an omission.
+  //   `inkOfferQty` three lines down IS in litres — the client fixed that — and
+  //   the two measure the same substance, so the temptation is to label both.
+  //   But this field is FREE TEXT and the data disagrees: of the 17 deals on
+  //   record, 15 say litres and two say "25 Kgs" and "3000kg". A label reading
+  //   "(litres)" is also the revision diff's heading, so it would restate two
+  //   real deals in a unit they never agreed. The form's hint asks for the unit
+  //   instead of asserting one.
   inkQtyIncluded: "Quantity of ink included",
+  // OCPI-7 · the NO branch. Positioned here, not appended at the end, because
+  // this object's KEY ORDER is the revision diff's sort order (revisionDiff.ts)
+  // — a reader scanning a diff and a reader scanning the form travel the same
+  // path. Each label names its ITEM as well as its question, the convention the
+  // Shipment & invoice labels below set.
+  inkOfferAgreed: "Ink — offered at a subsidized rate",
+  inkOfferQty: "Ink — subsidized quantity (litres)",
+  inkOfferRate: "Ink — subsidized rate (per litre)",
   inclSpares: "Deal includes spare parts",
   spareDetails: "Spare part details and quantity",
   inclHead: "Deal includes head",
   headsIncluded: "No. of heads included",
+  headOfferAgreed: "Head — offered at a subsidized rate",
+  headOfferQty: "Head — subsidized quantity (nos.)",
+  headOfferRate: "Head — subsidized rate (per head)",
   dryerType: "Dryer category",
   dealValueCurrency: "Currency",
   dealValueAmount: "Total deal value (excl. GST)",
@@ -606,10 +644,16 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     inkCreditTerms: s(d.inkCreditTerms),
     inclInk: d.inclInk,
     inkQtyIncluded: s(d.inkQtyIncluded),
+    inkOfferAgreed: d.inkOfferAgreed,
+    inkOfferQty: s(d.inkOfferQty),
+    inkOfferRate: s(d.inkOfferRate),
     inclSpares: d.inclSpares,
     spareDetails: s(d.spareDetails),
     inclHead: d.inclHead,
     headsIncluded: s(d.headsIncluded),
+    headOfferAgreed: d.headOfferAgreed,
+    headOfferQty: s(d.headOfferQty),
+    headOfferRate: s(d.headOfferRate),
     dryerType: s(d.dryerType),
     dealValueCurrency: s(d.dealValueCurrency) || "INR",
     dealValueAmount: s(d.dealValueAmount),
@@ -713,10 +757,29 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     ink_credit_terms: d.inkCreditTerms,
     incl_ink: d.inclInk,
     ink_qty_included: d.inkQtyIncluded,
+    /*
+      ⚠ THE PART-A TWIN OF THE SNIFF-ARRAY TRAP, and it is the worse of the two.
+        A part-B key missing from fms_ocpi_save_draft's key array is silently
+        never written and the old value survives. A part-A key missing from
+        HERE is BLANKED ON EVERY SAVE: the payload lookup returns null, the
+        writer's `case` stores null, and an agreed rate erases itself with no
+        error and nothing in a log.
+
+      ⚠ SIX KEYS, NOT EIGHT. The two sub-totals are derived by
+        fms_ocpi_write_quotation and are deliberately not sent — sending them
+        would let the browser dictate a figure that contradicts its own two
+        factors, which is what `withGst` was deleted for.
+    */
+    ink_offer_agreed: d.inkOfferAgreed,
+    ink_offer_qty: d.inkOfferQty,
+    ink_offer_rate: d.inkOfferRate,
     incl_spares: d.inclSpares,
     spare_details: d.spareDetails,
     incl_head: d.inclHead,
     heads_included: d.headsIncluded,
+    head_offer_agreed: d.headOfferAgreed,
+    head_offer_qty: d.headOfferQty,
+    head_offer_rate: d.headOfferRate,
     dryer_type: d.dryerType,
     deal_value_currency: d.dealValueCurrency,
     deal_value_amount: d.dealValueAmount,
@@ -832,6 +895,25 @@ export function missingForSubmit(d: QuotationDraft): string[] {
   else if (d.inclSpares && !d.spareDetails.trim()) out.push("which spare parts are included");
   if (d.inclHead === null) out.push("whether the deal includes a head");
   else if (d.inclHead && !d.headsIncluded.trim()) out.push("how many heads are included");
+
+  /*
+    OCPI-7 · the NO branch. Answering the rate question at all is OPTIONAL —
+    silence means it was never discussed — but a Yes must carry its numbers,
+    or the quotation prints a promise with no figure beside it.
+
+    ⚠ THIS MIRRORS THE SQL CONSTRAINT CONJUNCT FOR CONJUNCT. The server's
+      fms_ocpi_complete_when_submitted carries the same two rules. If the two
+      ever disagree the salesperson gets a raw Postgres constraint violation
+      naming no field, on a deal this list said was ready.
+  */
+  if (d.inclInk === false && d.inkOfferAgreed === true) {
+    if (!d.inkOfferQty.trim()) out.push("how many litres of ink are offered at the subsidized rate");
+    if (!d.inkOfferRate.trim()) out.push("the subsidized rate for ink, per litre");
+  }
+  if (d.inclHead === false && d.headOfferAgreed === true) {
+    if (!d.headOfferQty.trim()) out.push("how many heads are offered at the subsidized rate");
+    if (!d.headOfferRate.trim()) out.push("the subsidized rate for a head");
+  }
 
   // Section C · Commercial terms
   if (!d.transportTerms) out.push("the deal type (High Seas or Others)");

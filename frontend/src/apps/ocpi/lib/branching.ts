@@ -129,6 +129,36 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   headsIncluded: (d) => d.inclHead === true,
 
   /*
+    ── OCPI-7 · the NO branch, and the module's first show-on-FALSE group ─────
+
+    Every other rule in this map fires on `=== true`. These six fire on
+    `=== false`, because "not included in the machine price" is not "not being
+    sold": the customer still buys ink and still buys heads, and the rate is
+    agreed at the same table as the machine.
+
+    ⚠ `=== false`, NEVER `!d.inclInk`. The third state is real and load-bearing
+      here. An unanswered inclusion is `null`, and `!null` is true — so the
+      shorthand would present the rate question to somebody who has not
+      answered the inclusion at all, reading as though the system had already
+      decided the answer was No. `null` must show NOTHING.
+
+    ⚠ The precedent is `dryerPrice` further down: a price only when the dryer
+      is NOT part of the deal. Same shape, same reason.
+
+    The rate lines then hang off the rate question, so the chain is
+    inclusion=false → offered=true. `clearHidden` iterates this map, so a rate
+    typed and then hidden is blanked here as well as by the RPC — but the RPC
+    is the authority and carries the inverted guard too.
+  */
+  inkOfferAgreed: (d) => d.inclInk === false,
+  inkOfferQty: (d) => d.inclInk === false && d.inkOfferAgreed === true,
+  inkOfferRate: (d) => d.inclInk === false && d.inkOfferAgreed === true,
+
+  headOfferAgreed: (d) => d.inclHead === false,
+  headOfferQty: (d) => d.inclHead === false && d.headOfferAgreed === true,
+  headOfferRate: (d) => d.inclHead === false && d.headOfferAgreed === true,
+
+  /*
     ⚠ THIS RULE STAYS, THOUGH THE BOX IS GONE (OCPI-3, stage H) — and my own task
       list was wrong to call it an orphan.
 

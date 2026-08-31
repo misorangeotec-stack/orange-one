@@ -267,19 +267,69 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
     machineRows.push({ label: "Platter", value: d.platterDetails });
   }
 
+  /*
+    ⚠ SECTION B GAINED A SECOND BRANCH (OCPI-7). A "No" no longer ends the
+      conversation: the customer still buys ink and still buys heads, and the
+      rate agreed at the same table now prints beside the No that prompted it.
+
+    ⚠ ONLY THE FINAL PRICE PRINTS, by the client's instruction — the quantity
+      and the per-unit rate are captured on the form and carried in the revision
+      diff, but the paper shows one figure per item.
+
+    ⚠ THE FIGURE IS READ, NEVER COMPUTED. `*OfferSubtotal` is derived and stored
+      by fms_ocpi_write_quotation. Multiplying qty × rate here would be the
+      `withGst` mistake deleted in stage E: a second, different answer for one
+      price, on a contract.
+
+    ⚠ IT IS NOT PART OF ANY TOTAL, and must never become part of one. Section C
+      is untouched: this money belongs to an item the deal explicitly does NOT
+      include, so adding it to the machine price would be a commercial error.
+      It prints in the deal's own currency and is never converted at fx_rate.
+
+    ⚠ EACH FOLLOW-UP SITS IMMEDIATELY AFTER ITS OWN QUESTION, and appears only
+      when the rate question was actually answered. Both flags are null on every
+      deal saved before this existed, so an older deal still prints exactly the
+      six rows it always did — nothing is pushed. Content prints, emptiness does
+      not, the same rule the retired remark boxes follow.
+
+    ⚠ THE PACKER PUTS TWO ROWS ON A LINE. An item offered at a rate adds two
+      rows and keeps the parity; an item answered "No" adds one and leaves a
+      half-empty final line. That is expected — do not pad it.
+  */
+  const inclusions: Row[] = [
+    { label: "Inclusive of Ink?", value: yesNo(d.inclInk) },
+    { label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded ?? "" },
+  ];
+  if (d.inclInk === false && d.inkOfferAgreed !== null) {
+    inclusions.push({ label: "Ink Offered at a Subsidized Rate?", value: yesNo(d.inkOfferAgreed) });
+    if (d.inkOfferAgreed === true) {
+      // "Subsidized Ink Price", not "Ink Price" — Section A already prints
+      // "Ink Selling Price", which is a different figure entirely.
+      inclusions.push({
+        label: "Subsidized Ink Price",
+        value: fmtDealValue(d.inkOfferSubtotal, d.dealValueCurrency),
+      });
+    }
+  }
+  inclusions.push(
+    { label: "Inclusive of Spare Parts?", value: yesNo(d.inclSpares) },
+    { label: "Spare Part Details and Quantity", value: d.spareDetails ?? "" },
+    { label: "Inclusive of Head?", value: yesNo(d.inclHead) },
+    { label: "No. of Heads Included in Deal", value: d.headsIncluded === null ? "" : String(d.headsIncluded) },
+  );
+  if (d.inclHead === false && d.headOfferAgreed !== null) {
+    inclusions.push({ label: "Head Offered at a Subsidized Rate?", value: yesNo(d.headOfferAgreed) });
+    if (d.headOfferAgreed === true) {
+      inclusions.push({
+        label: "Subsidized Head Price",
+        value: fmtDealValue(d.headOfferSubtotal, d.dealValueCurrency),
+      });
+    }
+  }
+
   return [
     { title: "A.  Machine Details", rows: machineRows },
-    {
-      title: "B.  Deal Inclusions",
-      rows: [
-        { label: "Inclusive of Ink?", value: yesNo(d.inclInk) },
-        { label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded ?? "" },
-        { label: "Inclusive of Spare Parts?", value: yesNo(d.inclSpares) },
-        { label: "Spare Part Details and Quantity", value: d.spareDetails ?? "" },
-        { label: "Inclusive of Head?", value: yesNo(d.inclHead) },
-        { label: "No. of Heads Included in Deal", value: d.headsIncluded === null ? "" : String(d.headsIncluded) },
-      ],
-    },
+    { title: "B.  Deal Inclusions", rows: inclusions },
     { title: "C.  Commercial Terms", rows: commercial },
     { title: "D.  Special Remarks", rows: remarks },
   ];

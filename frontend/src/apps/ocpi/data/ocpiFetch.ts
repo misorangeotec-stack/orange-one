@@ -285,10 +285,20 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   inclInk: r.incl_ink ?? null,
   inkQtyIncluded: r.ink_qty_included ?? null,
+  // OCPI-7 · the NO branch. Miss a line here and the column is fetched but
+  // never reaches OcpiDeal — `r` is `any`, so it fails silently as a null.
+  inkOfferAgreed: r.ink_offer_agreed ?? null,
+  inkOfferQty: num(r.ink_offer_qty),
+  inkOfferRate: num(r.ink_offer_rate),
+  inkOfferSubtotal: num(r.ink_offer_subtotal),
   inclSpares: r.incl_spares ?? null,
   spareDetails: r.spare_details ?? null,
   inclHead: r.incl_head ?? null,
   headsIncluded: r.heads_included ?? null,
+  headOfferAgreed: r.head_offer_agreed ?? null,
+  headOfferQty: num(r.head_offer_qty),
+  headOfferRate: num(r.head_offer_rate),
+  headOfferSubtotal: num(r.head_offer_subtotal),
   dryerType: r.dryer_type ?? null,
 
   dealValueCurrency: r.deal_value_currency ?? null,

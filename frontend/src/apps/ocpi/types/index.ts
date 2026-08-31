@@ -114,10 +114,45 @@ export interface OcpiDeal {
 
   inclInk: boolean | null;
   inkQtyIncluded: string | null;
+  /* ── Ink, the NO branch (OCPI-7) ──────────────────────────────────────────
+   * Asked only when `inclInk` is literally FALSE. "Not included in the machine
+   * price" is not "not being sold" — the customer still buys ink, and the rate
+   * is agreed at the same table. `null` means never asked, which is NOT No.
+   *
+   * ⚠ THE SUB-TOTAL IS NOT PART OF THE DEAL VALUE AND MUST NEVER BE ADDED TO
+   *   IT. This is only ever asked when the item is NOT in the deal, so its
+   *   money is not the deal's money — `dealValueAmount`, the GST derivation,
+   *   the frozen FX conversion, `totalInr` and `grandTotalInr` all exclude it
+   *   by construction. It is not even in rupees: it follows the deal's own
+   *   `dealValueCurrency` and is never converted at `fxRate`, which is why it
+   *   carries no `Inr` suffix. Two sub-totals beside a deal value are an
+   *   obvious thing for a later "grand total" to sweep up, and that would be a
+   *   commercial error on a customer contract, not a display bug. */
+  inkOfferAgreed: boolean | null;
+  /** Litres. Numeric, unlike the free-text `inkQtyIncluded` of the YES branch. */
+  inkOfferQty: number | null;
+  /** Per litre, in the deal's own currency. Not `inkPrice`, which is Section A. */
+  inkOfferRate: number | null;
+  /** DERIVED by `fms_ocpi_write_quotation`, never computed here. Read only. */
+  inkOfferSubtotal: number | null;
   inclSpares: boolean | null;
   spareDetails: string | null;
   inclHead: boolean | null;
   headsIncluded: number | null;
+  /* ── Head, the NO branch (OCPI-7) ─────────────────────────────────────────
+   * ⚠ NOT `headInvoiceQty` / `headInvoiceAmount`, which mean the OPPOSITE: a
+   *   head that IS included but is billed on a separate invoice. These are for
+   *   a head the deal does not include at all. The two pairs are mutually
+   *   exclusive by construction — the invoice pair survives only when
+   *   `inclHead` is true, this pair only when it is false. Same money rule as
+   *   the ink block above. */
+  headOfferAgreed: boolean | null;
+  /** A plain count of heads, like `headsIncluded` next door. */
+  headOfferQty: number | null;
+  /** Per head, in the deal's own currency. */
+  headOfferRate: number | null;
+  /** DERIVED by `fms_ocpi_write_quotation`, never computed here. Read only. */
+  headOfferSubtotal: number | null;
   dryerType: string | null;
 
   dealValueCurrency: DealCurrency | null;

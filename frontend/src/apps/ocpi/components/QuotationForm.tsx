@@ -10,6 +10,7 @@ import CustomerPicker from "./CustomerPicker";
 import GstinField from "./GstinField";
 import RequestMasterModal from "./RequestMasterModal";
 import { isVisible } from "../lib/branching";
+import { fmtDealValue } from "../lib/format";
 import { fetchFxRate } from "@/shared/lib/fx";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
@@ -215,6 +216,145 @@ function ShipmentRow({
                 value={amount}
                 onChange={(e) => onAmount(e.target.value.replace(/[^\d.]/g, ""))}
                 disabled={disabled}
+              />
+            </FieldLabel>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One item that is NOT in the deal, and what it is offered at instead.
+ *
+ * Section B used to end at "No". It should not: "not included in the machine
+ * price" is not "not being sold" — the customer still buys ink and still buys
+ * heads, and the rate is agreed at the same table as the machine. Before this,
+ * that agreement lived nowhere and was re-negotiated later from memory.
+ *
+ * ⚠ ONE COMPONENT, TWO CALLERS — ink and the head. They ask the same three
+ *   questions by instruction, and two hand-written copies would be two places
+ *   to forget the unit, or to change the wording of a question that prints on a
+ *   customer's quotation in only one of them. `ShipmentRow` above is the
+ *   precedent and the prop contract is copied from it.
+ *
+ * ⚠ EVERY BINDING IS PASSED IN EXPLICITLY, for the reason `ShipmentRow` gives:
+ *   a `draft[`${prefix}OfferQty`]` lookup compiles and silently reads
+ *   `undefined` the day somebody renames a field.
+ *
+ * ⚠ VISIBILITY IS DECIDED BY THE CALLER. `branching.ts` owns every condition in
+ *   this module and has the SQL's twin beside it.
+ *
+ * ⚠ THE SUB-TOTAL IS A PREVIEW, NOT THE FIGURE THAT PRINTS. It is derived and
+ *   stored by `fms_ocpi_write_quotation` (`round(qty * rate, 2)`), and the
+ *   quotation prints that column — the same rule that had `withGst` deleted in
+ *   stage E, so that one price can never have two different answers. What is
+ *   shown here recomputes live as either factor changes, and shows EMPTY rather
+ *   than a zero while either is blank: "₹ 0" is a claim, a blank is not.
+ *
+ * ⚠ THE MONEY IS NOT THE DEAL'S MONEY. This sub-total is never added to
+ *   `dealValueAmount`, the GST derivation, the frozen FX conversion or the
+ *   printed total. It is only ever asked when the item is NOT in the deal.
+ */
+function RateOffer({
+  title,
+  why,
+  shown,
+  disabled,
+  agreed,
+  onAgreed,
+  showLines,
+  qtyLabel,
+  qtyHint,
+  qtyMode,
+  qty,
+  onQty,
+  rateLabel,
+  rateHint,
+  rate,
+  onRate,
+  currency,
+}: {
+  title: string;
+  /** Why this block is being asked at all — the branch, in words. */
+  why: string;
+  shown: boolean;
+  disabled?: boolean;
+  agreed: boolean | null;
+  onAgreed: (v: boolean) => void;
+  showLines: boolean;
+  qtyLabel: string;
+  qtyHint: string;
+  /** Litres take decimals; heads are counted. */
+  qtyMode: "integer" | "decimal";
+  qty: string;
+  onQty: (v: string) => void;
+  rateLabel: string;
+  rateHint: string;
+  rate: string;
+  onRate: (v: string) => void;
+  /** The DEAL's currency. A rate never carries one of its own. */
+  currency: string;
+}) {
+  if (!shown) return null;
+
+  // Blank, or anything that is not a number, is "not answered yet" — not zero.
+  const asNumber = (v: string): number | null => {
+    const n = Number(v);
+    return v.trim() === "" || Number.isNaN(n) ? null : n;
+  };
+  const q = asNumber(qty);
+  const r = asNumber(rate);
+  const subtotal = q === null || r === null ? null : Math.round(q * r * 100) / 100;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-line p-3.5">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
+        <span className="text-[11.5px] text-grey-2">asked because {why}</span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-4">
+        <YesNo
+          label="Offered at a subsidized rate?"
+          value={agreed}
+          onChange={onAgreed}
+          disabled={disabled}
+        />
+        {showLines && (
+          <>
+            <FieldLabel label={qtyLabel} hint={qtyHint}>
+              <TextInput
+                inputMode={qtyMode === "integer" ? "numeric" : "decimal"}
+                value={qty}
+                onChange={(e) =>
+                  onQty(e.target.value.replace(qtyMode === "integer" ? /\D/g : /[^\d.]/g, ""))
+                }
+                disabled={disabled}
+              />
+            </FieldLabel>
+            <FieldLabel label={rateLabel} hint={rateHint}>
+              <TextInput
+                inputMode="decimal"
+                value={rate}
+                onChange={(e) => onRate(e.target.value.replace(/[^\d.]/g, ""))}
+                disabled={disabled}
+              />
+            </FieldLabel>
+            {/*
+              Read-only and derived — never typed. A typed sub-total that
+              disagrees with its own two factors is a contradiction printed on a
+              contract. `disabled` rather than a bare `readOnly` so it is
+              visibly a result and not a box somebody forgot to fill.
+            */}
+            <FieldLabel label="Sub-total" hint="quantity × rate">
+              <TextInput
+                value={fmtDealValue(subtotal, currency)}
+                readOnly
+                disabled
+                className="font-semibold"
+                aria-label={`${title} sub-total`}
               />
             </FieldLabel>
           </>
@@ -947,7 +1087,17 @@ export default function QuotationForm({
             disabled={disabled}
           />
           {show("inkQtyIncluded") && (
-            <FieldLabel label="Quantity of ink included">
+            /*
+              ⚠ THE HINT ASKS FOR THE UNIT, IT DOES NOT STATE ONE. A numeric
+                "subsidized quantity (litres)" sits one block below this
+                free-text box, measuring the same substance on the opposite
+                branch, so this one has to say what kind of value it holds. But
+                it cannot claim litres: of the 17 deals on record 15 say litres
+                and two say "25 Kgs" and "3000kg". Printing "litres" beside
+                those would put a unit on a customer's paper that the deal never
+                agreed to. Free text stays free; it is only asked to be explicit.
+            */
+            <FieldLabel label="Quantity of ink included" hint="state the unit">
               <TextInput
                 value={draft.inkQtyIncluded}
                 onChange={(e) => patch({ inkQtyIncluded: e.target.value })}
@@ -956,6 +1106,26 @@ export default function QuotationForm({
             </FieldLabel>
           )}
         </div>
+
+        <RateOffer
+          title="Ink"
+          why="the deal does not include ink"
+          shown={show("inkOfferAgreed")}
+          disabled={disabled}
+          agreed={draft.inkOfferAgreed}
+          onAgreed={(v) => patch({ inkOfferAgreed: v })}
+          showLines={show("inkOfferQty")}
+          qtyLabel="Quantity"
+          qtyHint="litres"
+          qtyMode="decimal"
+          qty={draft.inkOfferQty}
+          onQty={(v) => patch({ inkOfferQty: v })}
+          rateLabel="Rate"
+          rateHint="per litre"
+          rate={draft.inkOfferRate}
+          onRate={(v) => patch({ inkOfferRate: v })}
+          currency={draft.dealValueCurrency}
+        />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <YesNo
@@ -993,6 +1163,34 @@ export default function QuotationForm({
             </FieldLabel>
           )}
         </div>
+
+        {/*
+          ⚠ NOT the "separate invoice" quantity and amount in Shipment & invoice
+            below. Those mean a head that IS included but is billed on its own
+            document; this is a head the deal does not include at all. The two
+            are mutually exclusive by construction — the writer keeps the
+            invoice pair only when the inclusion is Yes and this pair only when
+            it is No.
+        */}
+        <RateOffer
+          title="Print head"
+          why="the deal does not include a head"
+          shown={show("headOfferAgreed")}
+          disabled={disabled}
+          agreed={draft.headOfferAgreed}
+          onAgreed={(v) => patch({ headOfferAgreed: v })}
+          showLines={show("headOfferQty")}
+          qtyLabel="Quantity"
+          qtyHint="nos."
+          qtyMode="integer"
+          qty={draft.headOfferQty}
+          onQty={(v) => patch({ headOfferQty: v })}
+          rateLabel="Rate"
+          rateHint="per head"
+          rate={draft.headOfferRate}
+          onRate={(v) => patch({ headOfferRate: v })}
+          currency={draft.dealValueCurrency}
+        />
       </Card>
 
       {/*

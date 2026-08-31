@@ -124,6 +124,38 @@ export function exportDealRegister(
     { header: "Centering invoiced separately", width: 22, value: (d) => yesNo(d.centeringSeparateInvoice) },
     { header: "Centering invoice qty", width: 16, value: (d) => d.centeringInvoiceQty ?? "" },
     { header: "Centering invoice amount", width: 20, value: (d) => d.centeringInvoiceAmount ?? "" },
+    /*
+      ── The NO branch (OCPI-7) ──────────────────────────────────────────────
+
+      What an item that is NOT in the deal was offered at instead. Same reason
+      the separate-invoice pairs above exist: the deal records a commercial
+      commitment and a reader reconciling it could not otherwise see it.
+
+      ⚠ THE OPPOSITE OF THE COLUMNS DIRECTLY ABOVE, despite the similar words.
+        "Head invoice qty" is a head that IS in the deal, billed on its own
+        document. "Head subsidized qty" is a head the deal does NOT include, on
+        an agreed rate. They are mutually exclusive on a row by construction.
+
+      ⚠ THESE ARE NOT PART OF ANY TOTAL AND MUST NEVER BE SUMMED INTO ONE.
+        They are placed here, at the far end of the sheet and nowhere near the
+        deal-value block, precisely so no reader drags a contiguous numeric
+        range into a sum. The question is only ever asked when the item is not
+        in the deal, so this money is not the deal's money — adding it to a
+        contract price would be a commercial error, not a display bug.
+
+      ⚠ THE PRICE IS IN THE DEAL'S OWN CURRENCY, not rupees, and is never
+        converted at the frozen fx_rate. The existing "Currency" column is the
+        one that says which — the same arrangement the deal value already uses,
+        so a dollar deal and a rupee deal can share a column without lying.
+    */
+    { header: "Ink offered at subsidized rate", width: 22, value: (d) => yesNo(d.inkOfferAgreed) },
+    { header: "Ink subsidized qty (litres)", width: 20, value: (d) => d.inkOfferQty ?? "" },
+    { header: "Ink subsidized rate (per litre)", width: 22, value: (d) => d.inkOfferRate ?? "" },
+    { header: "Ink subsidized price", width: 18, value: (d) => d.inkOfferSubtotal ?? "" },
+    { header: "Head offered at subsidized rate", width: 22, value: (d) => yesNo(d.headOfferAgreed) },
+    { header: "Head subsidized qty", width: 16, value: (d) => d.headOfferQty ?? "" },
+    { header: "Head subsidized rate (per head)", width: 22, value: (d) => d.headOfferRate ?? "" },
+    { header: "Head subsidized price", width: 18, value: (d) => d.headOfferSubtotal ?? "" },
     { header: "Payment terms", width: 24, value: (d) => d.paymentTerms ?? "" },
     /*
       ⚠ "Delivery term" STAYS — settled with the client on 29-Aug-2026, after an
