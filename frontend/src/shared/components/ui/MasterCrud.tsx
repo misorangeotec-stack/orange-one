@@ -7,6 +7,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Pagination from "@/shared/components/ui/Pagination";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
@@ -24,7 +25,16 @@ import {
 export interface MasterFieldDef {
   key: string;
   label: string;
-  type: "text" | "textarea" | "select" | "custom";
+  /**
+   * ⚠ "choice" IS "select" SHOWN AS BUTTONS, and it is OPT-IN ON PURPOSE. It is
+   *   not inferred from `options.length`, because 58 of this component's 64
+   *   select fields are built from a MASTER list — several of which hold two or
+   *   three rows today and will hold more tomorrow. A strip sized to today's data
+   *   breaks the first time somebody adds a row, and nobody would connect the
+   *   broken layout to the master they edited. Declaring it makes the author say
+   *   "this vocabulary is fixed", which is the only thing that is actually safe.
+   */
+  type: "text" | "textarea" | "select" | "choice" | "custom";
   required?: boolean;
   options?: ComboOption[];
   placeholder?: string;
@@ -720,6 +730,15 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                 <FieldLabel label={f.label} required={f.required}>
                   {f.type === "custom" ? (
                     f.render?.(values[f.key] ?? "", (next) => setField(f.key, next), values, setField)
+                  ) : f.type === "choice" ? (
+                    <ChoiceButtons
+                      value={values[f.key] ?? ""}
+                      onChange={(v) => setField(f.key, v)}
+                      options={f.options ?? []}
+                      disabled={f.readOnly}
+                      autoAdvance
+                      ariaLabel={f.label}
+                    />
                   ) : f.type === "select" ? (
                     <Combobox
                       value={values[f.key] ?? ""}

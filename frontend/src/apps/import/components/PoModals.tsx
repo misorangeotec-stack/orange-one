@@ -3,6 +3,7 @@ import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS, Field, FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
@@ -587,7 +588,7 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-3.5">
-            <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance /></FieldLabel>
+            <FieldLabel label="Dispatch Status"><ChoiceButtons value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance ariaLabel="Dispatch Status" /></FieldLabel>
 
             {/* Dispatch dates. The PLANNED date (confirmed at Share PO) is always shown
                 for reference; the editable field then matches the status — a revised
@@ -770,7 +771,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
             <TextInput value={gate} onChange={(e) => setGate(e.target.value)} />
           </FieldLabel>
           <FieldLabel label="Condition">
-            <Combobox value={condition} onChange={setCondition} options={CONDITION} autoAdvance />
+            <ChoiceButtons value={condition} onChange={setCondition} options={CONDITION} autoAdvance ariaLabel="Condition" />
           </FieldLabel>
         </div>
 

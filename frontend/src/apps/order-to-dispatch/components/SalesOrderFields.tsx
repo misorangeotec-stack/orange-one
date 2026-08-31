@@ -1,5 +1,5 @@
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
-import PillToggle from "@/shared/components/ui/PillToggle";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
 import { DISPATCH_TYPE_LABEL } from "../lib/format";
@@ -123,13 +123,17 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
         {/* ---- row 1: how it moves, when, and who bills it ---- */}
 
         <FieldLabel label="Dispatch type" required>
-            <PillToggle<DispatchType>
+            {/* Form-grade buttons, not PillToggle: PillToggle is the FILTER control
+                (small grey pills, always one selected) and this sits in a form grid
+                beside h-9 inputs. See ChoiceButtons for why the two stay apart. */}
+            <ChoiceButtons
               value={f.form.dispatchType}
-              onChange={(v) => f.patch({ dispatchType: v })}
+              onChange={(v) => f.patch({ dispatchType: v as DispatchType })}
               options={[
                 { value: "local", label: DISPATCH_TYPE_LABEL.local },
                 { value: "transport", label: DISPATCH_TYPE_LABEL.transport },
               ]}
+              ariaLabel="Dispatch type"
             />
         </FieldLabel>
 

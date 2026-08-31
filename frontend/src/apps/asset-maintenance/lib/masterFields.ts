@@ -49,7 +49,7 @@ export function masterFields(mt: AssetMasterType, ctx: MasterFieldCtx = {}): Mas
       return [
         { key: "name", label: "Name", type: "text", required: true, placeholder: "e.g. Lift Licence" },
         {
-          key: "kind", label: "Kind", type: "select", required: true, options: KIND_OPTIONS,
+          key: "kind", label: "Kind", type: "choice", required: true, options: KIND_OPTIONS,
           hint: "Renewal tracks ask for the new expiry date off the renewed document when the job is closed. Service tracks compute the next date from the frequency.",
         },
         { key: "default_frequency_value", label: "Default frequency", type: "text", placeholder: "6" },

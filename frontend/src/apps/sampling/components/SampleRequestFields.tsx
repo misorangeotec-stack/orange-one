@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { SAMPLING_SOURCE_LABEL } from "../types";
@@ -167,7 +168,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
         </FieldLabel>
         {/* Direction comes BEFORE the source — it decides the source's options. */}
         <FieldLabel label="Direction" required>
-          <Combobox
+          <ChoiceButtons
             value={direction}
             onChange={(v) => {
               setDirection(v as Direction);
@@ -177,30 +178,28 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
               setReceiveVia("");
             }}
             options={DIRECTION_OPTIONS}
-            placeholder="Inward or Outward"
             autoAdvance
+            ariaLabel="Direction"
           />
         </FieldLabel>
         <FieldLabel label="Sample source" required>
-          <Combobox
+          <ChoiceButtons
             value={receiveVia}
             onChange={(v) => setReceiveVia(v as ReceiveVia)}
             options={isOutward ? OUTWARD_VIA_OPTIONS : INWARD_VIA_OPTIONS}
-            placeholder={
-              direction ? (isOutward ? "Export or Domestic" : "Import or Domestic") : "Choose a direction first"
-            }
             disabled={!direction}
             autoAdvance
+            ariaLabel="Sample source"
           />
         </FieldLabel>
         {isInward && (
           <FieldLabel label="Requirement type" required>
-            <Combobox
+            <ChoiceButtons
               value={requirementType}
               onChange={(v) => setRequirementType(v as RequirementType)}
               options={REQUIREMENT_OPTIONS}
-              placeholder="What is this sample for?"
               autoAdvance
+              ariaLabel="Requirement type"
             />
           </FieldLabel>
         )}
@@ -285,12 +284,12 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
           {isInward && (
             <>
               <FieldLabel label="Lab testing required?" required>
-                <Combobox
+                <ChoiceButtons
                   value={labTestingRequired}
                   onChange={(v) => setLabTestingRequired(v as typeof labTestingRequired)}
                   options={LAB_OPTIONS}
-                  placeholder="Choose Yes or No"
                   autoAdvance
+                  ariaLabel="Lab testing required?"
                 />
               </FieldLabel>
               {/* OPTIONAL — and silent about it: no asterisk, no hint. Left blank
@@ -323,11 +322,11 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
 
           {(isCompetitor || isOutward) && (
             <FieldLabel label={transportLabel}>
-              <Combobox
+              <ChoiceButtons
                 value={transportBorne}
                 onChange={(v) => setTransportBorne(v as TransportBorne)}
                 options={YES_NO}
-                placeholder="Yes or No"
+                ariaLabel={transportLabel}
               />
             </FieldLabel>
           )}

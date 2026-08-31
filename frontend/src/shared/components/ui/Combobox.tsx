@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 import { matchesSearch } from "@/shared/lib/search";
 import { menuHeightFor, placeMenu, type MenuPos } from "@/shared/lib/menuPlacement";
+import { advanceFocus } from "@/shared/lib/advanceFocus";
 
 export interface ComboOption {
   value: string;
@@ -178,37 +179,11 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
     setQ("");
   };
 
-  // Move focus to the next form control after a selection so keyboard users can
-  // chain ↓ + Enter → next field. Scoped to the enclosing dialog/form (falls back
-  // to the document), skipping this combobox's own controls.
-  const advanceFocus = () => {
-    const container = ref.current;
-    if (!container) return;
-    const scope = container.closest<HTMLElement>('[role="dialog"], form') ?? document.body;
-    const focusables = Array.from(
-      scope.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )
-    ).filter((el) => el.offsetParent !== null);
-    const trigger = container.querySelector<HTMLElement>("button");
-    const start = trigger ? focusables.indexOf(trigger) : -1;
-    for (let i = start + 1; i < focusables.length; i++) {
-      const el = focusables[i];
-      if (container.contains(el)) continue; // skip our own trigger/remove buttons
-      el.focus();
-      const inp = el as HTMLInputElement;
-      if ((inp.tagName === "INPUT" || inp.tagName === "TEXTAREA") && typeof inp.select === "function") {
-        try { inp.select(); } catch { /* some number inputs disallow select() */ }
-      }
-      break;
-    }
-  };
-
   const commit = (v: string) => {
     onChange(v);
     setOpen(false);
     setQ("");
-    if (autoAdvance) setTimeout(advanceFocus, 0);
+    if (autoAdvance) setTimeout(() => advanceFocus(ref.current), 0);
   };
 
   // Keyboard navigation. Selectable rows = the filtered options, plus a trailing

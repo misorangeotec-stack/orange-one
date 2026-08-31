@@ -13,7 +13,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { MultiSelect } from "@hub/components/MultiSelect";
-import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
+import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
@@ -243,7 +243,12 @@ export default function AgingReport() {
   //   re-aggregate from bills and never read their children, so adjusting metrics after the fact
   //   would move leaf rows and silently leave every subtotal alone.
   const bills = useMemo(() => {
-    const stActive = saleTypes.length > 0 && saleTypes.length < 5;
+    // ⚠ 6, NOT 5. This read `< 5` from when there were five sale types; "head" made six
+    //   (SALE_TYPE_OPTIONS / SALE_TYPES / SALE_TYPE_META all carry six). At five selected the
+    //   test said "not a filter" while enumerateBills WAS filtering to those five — so the
+    //   report anchored a five-type bill list to the whole ledger and the total jumped by the
+    //   entire unbilled adjustment. Read the length off the list so it cannot drift again.
+    const stActive = saleTypes.length > 0 && saleTypes.length < SALE_TYPE_OPTIONS.length;
     if (stActive) return baseBills;
     const billNet = new Map<string, number>();
     for (const b of baseBills) billNet.set(b.cust.id, (billNet.get(b.cust.id) ?? 0) + b.inv.pending);

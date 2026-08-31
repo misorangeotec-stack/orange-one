@@ -608,18 +608,31 @@ export function Step7Credit({ form, disabled }: StepProps) {
                      placeholder="30" {...register("requested_credit_days")} />
             </FieldShell>
             <FieldShell id="security_offered" label="Security Offered" error={err(form, "security_offered")}>
-              <Select
+              <RadioGroup
+                className="flex flex-wrap gap-2"
                 value={watch("security_offered") ?? ""}
                 disabled={disabled}
                 onValueChange={(v) => setValue("security_offered", v as never, { shouldDirty: true })}
               >
-                <SelectTrigger id="security_offered"><SelectValue placeholder="None specified" /></SelectTrigger>
-                <SelectContent>
-                  {SECURITY_OFFERED_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {SECURITY_OFFERED_OPTIONS.map((o) => (
+                  <label
+                    key={o.value}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/50"
+                  >
+                    <RadioGroupItem value={o.value} id={`security-${o.value}`} />
+                    <span className="text-sm">{o.label}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+              {(watch("security_offered") ?? "") !== "" && !disabled && (
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setValue("security_offered", "" as never, { shouldDirty: true })}
+                >
+                  Clear — none specified
+                </button>
+              )}
             </FieldShell>
           </FormGrid>
           <FormGrid cols={1}>
