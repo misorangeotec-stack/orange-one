@@ -143,19 +143,20 @@ export function exportDealRegister(
         in the deal, so this money is not the deal's money — adding it to a
         contract price would be a commercial error, not a display bug.
 
-      ⚠ THE PRICE IS IN THE DEAL'S OWN CURRENCY, not rupees, and is never
-        converted at the frozen fx_rate. The existing "Currency" column is the
-        one that says which — the same arrangement the deal value already uses,
-        so a dollar deal and a rupee deal can share a column without lying.
+      ⚠ ALWAYS RUPEES, AND THE "Currency" COLUMN DOES NOT APPLY TO THEM. Every
+        other money column on this sheet is in the deal's currency and is read
+        together with that column; these four are rupees whatever the deal is
+        quoted in, so their headers say INR outright. Reading them against
+        "Currency" on a dollar deal would overstate them by the exchange rate.
     */
     { header: "Ink offered at subsidized rate", width: 22, value: (d) => yesNo(d.inkOfferAgreed) },
     { header: "Ink subsidized qty (litres)", width: 20, value: (d) => d.inkOfferQty ?? "" },
-    { header: "Ink subsidized rate (per litre)", width: 22, value: (d) => d.inkOfferRate ?? "" },
-    { header: "Ink subsidized price", width: 18, value: (d) => d.inkOfferSubtotal ?? "" },
+    { header: "Ink subsidized rate (INR/litre)", width: 22, value: (d) => d.inkOfferRate ?? "" },
+    { header: "Ink subsidized price (INR)", width: 20, value: (d) => d.inkOfferSubtotal ?? "" },
     { header: "Head offered at subsidized rate", width: 22, value: (d) => yesNo(d.headOfferAgreed) },
     { header: "Head subsidized qty", width: 16, value: (d) => d.headOfferQty ?? "" },
-    { header: "Head subsidized rate (per head)", width: 22, value: (d) => d.headOfferRate ?? "" },
-    { header: "Head subsidized price", width: 18, value: (d) => d.headOfferSubtotal ?? "" },
+    { header: "Head subsidized rate (INR/head)", width: 22, value: (d) => d.headOfferRate ?? "" },
+    { header: "Head subsidized price (INR)", width: 20, value: (d) => d.headOfferSubtotal ?? "" },
     { header: "Payment terms", width: 24, value: (d) => d.paymentTerms ?? "" },
     /*
       ⚠ "Delivery term" STAYS — settled with the client on 29-Aug-2026, after an

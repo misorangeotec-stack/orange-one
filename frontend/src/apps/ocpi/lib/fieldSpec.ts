@@ -472,6 +472,25 @@ export const DOLLAR_CLAUSE =
   "payment terms exceed 3 months in equal instalments, Dollar exchange will be adjusted " +
   "against Debit Note / Credit Note.";
 
+/**
+ * The standing note that bounds a subsidized rate to the quantity it was agreed
+ * for (OCPI-7, 31-Aug-2026).
+ *
+ * ⚠ A RATE WITHOUT A QUANTITY IS AN OPEN-ENDED COMMITMENT. "Ink at ₹900 a litre"
+ *   on a signed quotation, with nothing limiting it, is a price the customer can
+ *   hold the company to for any quantity and for as long as they like. The rate
+ *   is agreed against a specific quantity at the table; this says so on the paper.
+ *
+ * ⚠ IT NAMES THE QUANTITY, which is why the printed line carries the figure even
+ *   though the client asked for "the final price only". A note reading "valid for
+ *   the stated quantity" is empty if the quantity is nowhere on the page — it
+ *   would bound the rate by something the customer cannot see.
+ */
+export const SUBSIDIZED_RATE_NOTE =
+  "This is a subsidized rate, agreed for the quantity stated above and valid for that " +
+  "quantity only. Any further quantity will be charged at the rate prevailing at the time " +
+  "of that order.";
+
 /** The standing insurance clause, printed verbatim and confirmed by the salesperson. */
 export const INSURANCE_CLAUSE =
   "Insurance coverage up to the point of loading will be the responsibility of the company, " +
@@ -530,14 +549,14 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   // Shipment & invoice labels below set.
   inkOfferAgreed: "Ink — offered at a subsidized rate",
   inkOfferQty: "Ink — subsidized quantity (litres)",
-  inkOfferRate: "Ink — subsidized rate (per litre)",
+  inkOfferRate: "Ink — subsidized rate (₹ per litre)",
   inclSpares: "Deal includes spare parts",
   spareDetails: "Spare part details and quantity",
   inclHead: "Deal includes head",
   headsIncluded: "No. of heads included",
   headOfferAgreed: "Head — offered at a subsidized rate",
   headOfferQty: "Head — subsidized quantity (nos.)",
-  headOfferRate: "Head — subsidized rate (per head)",
+  headOfferRate: "Head — subsidized rate (₹ per head)",
   dryerType: "Dryer category",
   dealValueCurrency: "Currency",
   dealValueAmount: "Total deal value (excl. GST)",

@@ -123,15 +123,24 @@ export interface OcpiDeal {
    *   IT. This is only ever asked when the item is NOT in the deal, so its
    *   money is not the deal's money — `dealValueAmount`, the GST derivation,
    *   the frozen FX conversion, `totalInr` and `grandTotalInr` all exclude it
-   *   by construction. It is not even in rupees: it follows the deal's own
-   *   `dealValueCurrency` and is never converted at `fxRate`, which is why it
-   *   carries no `Inr` suffix. Two sub-totals beside a deal value are an
-   *   obvious thing for a later "grand total" to sweep up, and that would be a
-   *   commercial error on a customer contract, not a display bug. */
+   *   by construction. Two sub-totals beside a deal value are an obvious thing
+   *   for a later "grand total" to sweep up, and that would be a commercial
+   *   error on a customer contract, not a display bug.
+   *
+   * ⚠ ALWAYS RUPEES, whatever the deal is quoted in (client, 31-Aug-2026), and
+   *   never converted — `fxRate` is not consulted anywhere in this block. So a
+   *   dollar machine and a rupee ink rate can appear on one sheet, each with its
+   *   own symbol.
+   *
+   * ⚠ IT STILL CARRIES NO `Inr` SUFFIX, and that is deliberate rather than an
+   *   oversight now that it IS rupees: in this module `…Inr` marks a figure on
+   *   the DERIVED MONEY PATH (`machineValueInr`, `gstAmountInr`, `totalInr`,
+   *   `grandTotalInr`). This is rupees but is not on that path, and naming it
+   *   `…Inr` would file it with the very figures it must never join. */
   inkOfferAgreed: boolean | null;
   /** Litres. Numeric, unlike the free-text `inkQtyIncluded` of the YES branch. */
   inkOfferQty: number | null;
-  /** Per litre, in the deal's own currency. Not `inkPrice`, which is Section A. */
+  /** Rupees per litre, always. Not `inkPrice`, which is Section A. */
   inkOfferRate: number | null;
   /** DERIVED by `fms_ocpi_write_quotation`, never computed here. Read only. */
   inkOfferSubtotal: number | null;
@@ -149,7 +158,7 @@ export interface OcpiDeal {
   headOfferAgreed: boolean | null;
   /** A plain count of heads, like `headsIncluded` next door. */
   headOfferQty: number | null;
-  /** Per head, in the deal's own currency. */
+  /** Rupees per head, always. */
   headOfferRate: number | null;
   /** DERIVED by `fms_ocpi_write_quotation`, never computed here. Read only. */
   headOfferSubtotal: number | null;

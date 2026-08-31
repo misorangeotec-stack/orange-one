@@ -15,7 +15,7 @@ import { fetchFxRate } from "@/shared/lib/fx";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
   HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TYPES, PLATTER_OPTIONS,
-  TRADE_TERMS, TRANSPORT_TERMS, machineFacts,
+  SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, machineFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
 import type { MachineOption, OcpiMasterType } from "../types";
@@ -253,6 +253,13 @@ function ShipmentRow({
  *   shown here recomputes live as either factor changes, and shows EMPTY rather
  *   than a zero while either is blank: "₹ 0" is a claim, a blank is not.
  *
+ * ⚠ ALWAYS RUPEES, NEVER THE DEAL'S CURRENCY (client, 31-Aug-2026). A machine
+ *   may be sold in dollars; ink and heads are bought here and are rated in
+ *   rupees regardless. So a High Seas deal shows a dollar machine price and a
+ *   rupee ink rate on one page — deliberately, and each states its own symbol.
+ *   There is no conversion anywhere in this block: `fxRate` is not consulted,
+ *   so nothing here can drift when a rate moves.
+ *
  * ⚠ THE MONEY IS NOT THE DEAL'S MONEY. This sub-total is never added to
  *   `dealValueAmount`, the GST derivation, the frozen FX conversion or the
  *   printed total. It is only ever asked when the item is NOT in the deal.
@@ -274,7 +281,6 @@ function RateOffer({
   rateHint,
   rate,
   onRate,
-  currency,
 }: {
   title: string;
   /** Why this block is being asked at all — the branch, in words. */
@@ -294,8 +300,6 @@ function RateOffer({
   rateHint: string;
   rate: string;
   onRate: (v: string) => void;
-  /** The DEAL's currency. A rate never carries one of its own. */
-  currency: string;
 }) {
   if (!shown) return null;
 
@@ -350,7 +354,7 @@ function RateOffer({
             */}
             <FieldLabel label="Sub-total" hint="quantity × rate">
               <TextInput
-                value={fmtDealValue(subtotal, currency)}
+                value={fmtDealValue(subtotal, "INR")}
                 readOnly
                 disabled
                 className="font-semibold"
@@ -360,6 +364,15 @@ function RateOffer({
           </>
         )}
       </div>
+
+      {/*
+        The note is shown WHERE THE RATE IS TYPED, not only on the paper, so the
+        salesperson agreeing the figure can see what they are committing to
+        before they write it down. Same words print on the quotation.
+      */}
+      {showLines && (
+        <p className="text-[11.5px] leading-snug text-grey-2">{SUBSIDIZED_RATE_NOTE}</p>
+      )}
     </div>
   );
 }
@@ -1124,7 +1137,6 @@ export default function QuotationForm({
           rateHint="per litre"
           rate={draft.inkOfferRate}
           onRate={(v) => patch({ inkOfferRate: v })}
-          currency={draft.dealValueCurrency}
         />
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1189,7 +1201,6 @@ export default function QuotationForm({
           rateHint="per head"
           rate={draft.headOfferRate}
           onRate={(v) => patch({ headOfferRate: v })}
-          currency={draft.dealValueCurrency}
         />
       </Card>
 

@@ -4,7 +4,7 @@ import {
   setDraw, setFill, text, widthOf, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { DOLLAR_CLAUSE, INSURANCE_CLAUSE } from "./fieldSpec";
+import { DOLLAR_CLAUSE, INSURANCE_CLAUSE, SUBSIDIZED_RATE_NOTE } from "./fieldSpec";
 import { docHeading, fmtDealValue } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
@@ -62,6 +62,30 @@ const inr = (n: number | null): string =>
  * figure that does not reproduce from the rate printed beside it.
  */
 const rateText = (n: number | null): string => (n === null ? "" : n.toFixed(4));
+
+/**
+ * The subsidized-rate note, with the quantity it is bounded by written into it.
+ *
+ * ⚠ A RATE ON A SIGNED QUOTATION WITH NO LIMIT IS AN OPEN COMMITMENT. The rate
+ *   was agreed for a particular quantity at the table; without this sentence the
+ *   paper offers it for any quantity, indefinitely.
+ *
+ * ⚠ THE QUANTITY IS SPELT OUT HERE because it prints nowhere else on the sheet —
+ *   the client asked for the price alone. A note bounding the rate to a quantity
+ *   the reader cannot see would bound nothing.
+ *
+ * Trailing zeros are trimmed: `ink_offer_qty` is `numeric(12,3)`, so 500 litres
+ * arrives as "500.000" and would otherwise read as false precision on a contract.
+ */
+const rateNote = (qty: number | null, unit: string): string => {
+  if (qty === null) return SUBSIDIZED_RATE_NOTE;
+  const n = qty.toLocaleString("en-IN", { maximumFractionDigits: 3 });
+  return (
+    `This is a subsidized rate, agreed for ${n} ${unit}${qty === 1 ? "" : "s"} and valid for ` +
+    `that quantity only. Any further quantity will be charged at the rate prevailing at the ` +
+    `time of that order.`
+  );
+};
 
 /** A label/value pair for the boxed sections. */
 type Row = { label: string; value: string; wide?: boolean };
@@ -272,9 +296,22 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
       conversation: the customer still buys ink and still buys heads, and the
       rate agreed at the same table now prints beside the No that prompted it.
 
-    ⚠ ONLY THE FINAL PRICE PRINTS, by the client's instruction — the quantity
-      and the per-unit rate are captured on the form and carried in the revision
-      diff, but the paper shows one figure per item.
+    ⚠ ONE PRICE FIGURE PER ITEM, by the client's instruction — the per-unit rate
+      is captured on the form and carried in the revision diff, but the paper
+      shows the total, not the arithmetic behind it.
+
+    ⚠ THE QUANTITY APPEARS INSIDE THE NOTE, and that is not a breach of the rule
+      above. The client asked for a remark bounding the rate to the quantity it
+      was agreed for; a note reading "valid for the stated quantity" is empty
+      when the quantity is nowhere on the page, and would bound the price by
+      something the customer cannot see. So the sentence names it, rather than a
+      separate ruled row doing so.
+
+    ⚠ ALWAYS RUPEES, never the deal's currency (client, 31-Aug-2026). A machine
+      may be sold in dollars; ink and heads are rated in rupees regardless, so a
+      High Seas sheet carries a dollar machine price and a rupee ink price on one
+      page. Both print their own symbol, and nothing here is converted — `fxRate`
+      is not consulted, so this figure cannot move when a rate does.
 
     ⚠ THE FIGURE IS READ, NEVER COMPUTED. `*OfferSubtotal` is derived and stored
       by fms_ocpi_write_quotation. Multiplying qty × rate here would be the
@@ -305,9 +342,11 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
     if (d.inkOfferAgreed === true) {
       // "Subsidized Ink Price", not "Ink Price" — Section A already prints
       // "Ink Selling Price", which is a different figure entirely.
+      inclusions.push({ label: "Subsidized Ink Price", value: inr(d.inkOfferSubtotal) });
       inclusions.push({
-        label: "Subsidized Ink Price",
-        value: fmtDealValue(d.inkOfferSubtotal, d.dealValueCurrency),
+        label: "Ink Rate Note",
+        value: rateNote(d.inkOfferQty, "litre"),
+        wide: true,
       });
     }
   }
@@ -320,9 +359,11 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
   if (d.inclHead === false && d.headOfferAgreed !== null) {
     inclusions.push({ label: "Head Offered at a Subsidized Rate?", value: yesNo(d.headOfferAgreed) });
     if (d.headOfferAgreed === true) {
+      inclusions.push({ label: "Subsidized Head Price", value: inr(d.headOfferSubtotal) });
       inclusions.push({
-        label: "Subsidized Head Price",
-        value: fmtDealValue(d.headOfferSubtotal, d.dealValueCurrency),
+        label: "Head Rate Note",
+        value: rateNote(d.headOfferQty, "head"),
+        wide: true,
       });
     }
   }

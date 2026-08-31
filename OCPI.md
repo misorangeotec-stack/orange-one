@@ -1962,3 +1962,63 @@ names one. The two sit three rows apart on the same card, which is why either ha
 - **`ink_price` ("Ink Selling Price", Section A) and the new subsidized ink rate sit on one form and
   are different figures.** Nobody has said how they relate. Worth asking before a customer does.
 - Whether the sub-total should ever appear on the **OC**. Today it is quotation-only by instruction.
+
+## OCPI-7 · three answers from the client, same day — 31-Aug-2026
+
+Migration `20261024130000_fms_ocpi_a_subsidized_rate_is_always_rupees.sql` (comments only).
+
+**1 · The two ink prices are separate things.** `ink_price` (*"Ink Selling Price"*, Section A) and the
+new subsidized rate are unrelated figures and both stay. The open question logged above is closed.
+
+**2 · 🔴 The subsidized rate is ALWAYS IN RUPEES — this reverses the same day's earlier answer.** It
+first followed the deal's own `deal_value_currency`. It does not: a machine may be sold in dollars,
+but ink and heads are bought here and are rated in rupees regardless. So a High Seas sheet now carries
+a **dollar machine price and a rupee ink price on one page**, each printing its own symbol. Nothing is
+converted — `fx_rate` is not consulted by the writer or by either renderer, so these figures cannot
+move when an exchange rate moves.
+
+⚠ **No data or arithmetic changed, only the description.** The stored figures were never converted, so
+`round(qty * rate, 2)` was already right and every value already means what it now says. The migration
+is comments alone — but a wrong comment on a money column earns its own migration, because it is what
+the next person reads before deciding whether to sum it.
+
+🔴 **One line of defence is gone, and it is worth stating plainly.** The original comments argued the
+sub-total could never join `total_inr` *partly because it was not in rupees* — adding it would have
+been an ~85× error on a dollar deal, the kind of mistake that announces itself. It is now rupees, in
+the same unit as every figure on the money path, so a wrong sum would look **plausible**. What still
+holds:
+
+- the column comments, which say so outright;
+- the names, which deliberately carry **no `_inr` suffix** — in this module that suffix marks the
+  *derived money path* (`machine_value_inr`, `gst_amount_inr`, `total_inr`, `grand_total_inr`), and
+  these are rupees but are **not** on it;
+- the assertion in `20261024120000`, which **fails the deploy** if `fms_ocpi_write_oc` ever so much as
+  mentions an offer column.
+
+That third one is now the load-bearing guard. Do not weaken it.
+
+**3 · A rate now carries the quantity it is bounded by.** `SUBSIDIZED_RATE_NOTE` in `fieldSpec.ts`,
+alongside `DOLLAR_CLAUSE` and `INSURANCE_CLAUSE` — the module's existing pattern for a standing
+sentence. It shows **on the form, under the rate as it is typed**, so the salesperson sees what they
+are committing to before writing the figure down, and the same words print on the quotation:
+
+> *"This is a subsidized rate, agreed for 500 litres and valid for that quantity only. Any further
+> quantity will be charged at the rate prevailing at the time of that order."*
+
+⚠ **A rate with no quantity beside it is an open-ended commitment.** "Ink at ₹900 a litre" on a signed
+quotation, unqualified, is a price the customer can hold the company to for any quantity and
+indefinitely. The rate is agreed against a specific quantity at the table; the paper now says so.
+
+⚠ **The printed sentence NAMES the quantity, which bends the "final price only" rule — deliberately.**
+A note reading *"valid for the stated quantity"* is empty when the quantity appears nowhere on the
+page: it would bound the price by something the customer cannot see. So the quantity is written into
+the sentence rather than given a ruled row of its own, and the sheet still shows exactly one price
+figure per item. Trailing zeros are trimmed — `numeric(12,3)` renders 500 litres as `500.000`, which
+reads as false precision on a contract.
+
+### Verify — the follow-up
+
+- [x] `npm run build` green in the master worktree
+- [x] Comments-only migration applied; no column, constraint or function touched
+- [x] The form's sub-total and the printed price both render `₹` on a **USD** deal — the case that
+      previously showed `$`
