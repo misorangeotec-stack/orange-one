@@ -12,7 +12,7 @@ import {
   TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { MultiSelect } from "@hub/components/MultiSelect";
-import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
+import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ColumnPicker } from "@hub/components/ColumnPicker";
 import { formatDateDMY } from "@hub/lib/utils";
@@ -183,7 +183,10 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
       if (customerNames.length && !custSet.has(r.customerName)) return false;
       if (companies.length && !coSet.has(r.company)) return false;
       if (locations.length && !locSet.has(r.location)) return false;
-      if (saleTypes.length && saleTypes.length < 5 && !stSet.has(r.voucherType)) return false;
+      // ⚠ 6, NOT 5 — same stale constant as the Aging Report carried. With five of the six
+      //   ticked this said "no filter" and showed EVERY row, so the dialog silently ignored a
+      //   filter the chips above it were still advertising.
+      if (saleTypes.length && saleTypes.length < SALE_TYPE_OPTIONS.length && !stSet.has(r.voucherType)) return false;
       if (statuses.length && !statusSet.has(r.status)) return false;
       if (q && !(r.customerName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q) || (r.billRefName ?? "").toLowerCase().includes(q))) return false;
       return true;

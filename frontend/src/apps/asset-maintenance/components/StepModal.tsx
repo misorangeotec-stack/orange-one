@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { SectionHeading } from "@/shared/components/ui/Readout";
 import { useAssetStore } from "../store";
@@ -103,6 +104,20 @@ export default function StepModal({
     const v = values[f.key] ?? "";
     if (f.kind === "select") {
       const opts = f.choices ?? (f.optionsFrom ? optionsFor(f.optionsFrom) : []);
+      // ⚠ Buttons only for a fixed `choices` list of two or three. `optionsFrom`
+      //   reads a master and must keep its dropdown however few rows it holds
+      //   today — see ChoiceButtons for why that rule is absolute.
+      if (f.choices && f.choices.length >= 2 && f.choices.length <= 3) {
+        return (
+          <ChoiceButtons
+            value={v}
+            onChange={(next) => set(f.key, next)}
+            options={opts}
+            disabled={readOnly}
+            ariaLabel={f.label}
+          />
+        );
+      }
       return (
         <Combobox
           value={v}

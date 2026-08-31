@@ -70,7 +70,7 @@ export function masterFields(mt: ExitMasterType): MasterFieldDef[] {
         {
           key: "requires_file",
           label: "Must the signed copy be uploaded?",
-          type: "select",
+          type: "choice",
           required: true,
           options: YES_NO,
           hint: "A letter recorded as 'issued' with nothing attached is a promise, not a document.",
@@ -82,7 +82,7 @@ export function masterFields(mt: ExitMasterType): MasterFieldDef[] {
         {
           key: "kind",
           label: "Addition or deduction",
-          type: "select",
+          type: "choice",
           required: true,
           options: [
             { value: "addition", label: "Addition (paid to them)" },

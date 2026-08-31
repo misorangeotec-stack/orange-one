@@ -118,7 +118,9 @@ export default function Machines() {
   );
 
   const optionField = (key: string, label: string, hint?: string): MasterFieldDef => ({
-    key, label, type: "select", hint,
+    // No / Optional / Yes — a fixed vocabulary, and asked FOUR times on this
+    // form, so it is the clearest case on the screen for showing the answers.
+    key, label, type: "choice", hint,
     options: MACHINE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
   });
 
@@ -159,7 +161,7 @@ export default function Machines() {
     //   silently unreachable for that model, with no error anywhere. All 28
     //   machines carry an answer today — this keeps the 29th from arriving
     //   without one.
-    { key: "needsDryer", label: "Takes a dryer", type: "select", required: true,
+    { key: "needsDryer", label: "Takes a dryer", type: "choice", required: true,
       options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
       hint: "Per machine, not per category — the client sheet has Position Printer needing one while the three Pengdas in the same category do not. Decides whether the quotation shows the dryer section at all, so it must be answered." },
     /*
@@ -180,7 +182,7 @@ export default function Machines() {
       "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
     optionField("optChillingSystem", "Chilling system",
       "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
-    { key: "docTitle", label: "Document heading", type: "select", required: true,
+    { key: "docTitle", label: "Document heading", type: "choice", required: true,
       options: [
         { value: "ORDER CONFIRMATION", label: "ORDER CONFIRMATION" },
         { value: "OFFER QUOTE", label: "OFFER QUOTE" },
@@ -188,7 +190,7 @@ export default function Machines() {
       hint: "P8D's deck is headed OFFER QUOTE — check before changing." },
     { key: "machineModelNo", label: "Manufacturer's model no.", type: "text",
       hint: "e.g. HM1800B-TK24. Available in templates as {{machine_model_no}}." },
-    { key: "signoffStyle", label: "Sign-off wording", type: "select",
+    { key: "signoffStyle", label: "Sign-off wording", type: "choice",
       options: [
         { value: "approved_by", label: "Prepared By / Approved By" },
         { value: "checked_by", label: "Prepared By / Checked By" },

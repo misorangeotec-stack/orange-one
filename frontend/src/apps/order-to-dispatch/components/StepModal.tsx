@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { SectionHeading } from "@/shared/components/ui/Readout";
 import { formatDateTime } from "@/shared/lib/time";
@@ -248,6 +249,22 @@ export default function StepModal({
       const opts = f.master
         ? s.activeOf(s.masterList(f.master)).map((m) => ({ value: m.id, label: m.name }))
         : (f.choices ?? []);
+      // ⚠ A SHORT FIXED LIST IS SHOWN AS BUTTONS, a master list never is. The gate
+      //   is `f.master`, not the option count: a master with two rows today gets a
+      //   third tomorrow, and nobody would connect the broken layout to the master
+      //   they edited. Because the descriptor already separates the two cases,
+      //   this is exact rather than a guess.
+      if (!f.master && f.choices && f.choices.length >= 2 && f.choices.length <= 3) {
+        return (
+          <ChoiceButtons
+            value={v}
+            onChange={(next) => set(f.key, next)}
+            options={opts}
+            disabled={locked}
+            ariaLabel={f.label}
+          />
+        );
+      }
       return (
         <Combobox
           value={v}

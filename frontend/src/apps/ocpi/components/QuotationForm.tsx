@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useOcpiStore } from "../store";
 import { OCPI_MASTERS_QK, fetchOcpiMasters } from "../data/ocpiMasters";
@@ -12,7 +12,6 @@ import GstinField from "./GstinField";
 import RequestMasterModal from "./RequestMasterModal";
 import { isVisible } from "../lib/branching";
 import { fmtDealValue } from "../lib/format";
-import { fetchFxRate } from "@/shared/lib/fx";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
   HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TYPES, PLATTER_OPTIONS,
@@ -721,37 +720,6 @@ export default function QuotationForm({
    */
   const isHighSeas = draft.transportTerms === "high_seas";
 
-  const [fxBusy, setFxBusy] = useState(false);
-  const [fxError, setFxError] = useState<string | null>(null);
-
-  /**
-   * Pull the live rate.
-   *
-   * ⚠ A FAILURE MUST NOT BLOCK THE QUOTATION. The field stays editable and the
-   *   error is a sentence under it — a hand-typed rate is always a legitimate
-   *   answer, and often the correct one, since deals are struck at an agreed rate
-   *   rather than at whatever the market says this minute.
-   */
-  const pullRate = async () => {
-    setFxBusy(true);
-    setFxError(null);
-    try {
-      const r = await fetchFxRate("USD", "INR");
-      patch({
-        fxRate: String(r.rate),
-        fxRateSource: r.source,
-        fxRateAt: r.fetchedAt,
-        fxRateOverridden: false,
-      });
-    } catch (e) {
-      setFxError(
-        `${e instanceof Error ? e.message : "Could not fetch a live rate"} — type the rate you agreed instead.`,
-      );
-    } finally {
-      setFxBusy(false);
-    }
-  };
-
   /** The rupee equivalent, shown beside the rate so the figure is never a surprise. */
   const inrEquivalent = useMemo(() => {
     const amt = Number(draft.dealValueAmount);
@@ -1071,13 +1039,13 @@ export default function QuotationForm({
               belongs to the dryer, gate it in BOTH places.
           */}
           <FieldLabel label="Platter">
-            <Combobox
+            <ChoiceButtons
               value={draft.platterDetails}
               onChange={(v) => patch({ platterDetails: v })}
               options={opts(PLATTER_OPTIONS)}
-              placeholder="Choose"
               clearable
               disabled={disabled}
+              ariaLabel="Platter"
             />
           </FieldLabel>
         </div>
@@ -1635,7 +1603,7 @@ export default function QuotationForm({
         */}
         <div className="grid gap-3 sm:grid-cols-2">
           <FieldLabel label="Deal type" required>
-            <Combobox
+            <ChoiceButtons
               value={draft.transportTerms}
               onChange={(v) =>
                 // ⚠ PICKING HIGH SEAS SETS THE CURRENCY HERE, NOT ONLY ON SAVE.
@@ -1654,32 +1622,31 @@ export default function QuotationForm({
                 )
               }
               options={optsKV(TRANSPORT_TERMS)}
-              placeholder="Choose"
-              clearable
               disabled={disabled}
+              ariaLabel="Deal type"
             />
           </FieldLabel>
           {show("highSeasVia") && (
             <FieldLabel label="High seas delivery via">
-              <Combobox
+              <ChoiceButtons
                 value={draft.highSeasVia}
                 onChange={(v) => patch({ highSeasVia: v })}
                 options={opts(HIGH_SEAS_VIA)}
-                placeholder="Choose"
                 clearable
                 disabled={disabled}
+                ariaLabel="High seas delivery via"
               />
             </FieldLabel>
           )}
           {show("highSeasCostBy") && (
             <FieldLabel label="High seas cost borne by">
-              <Combobox
+              <ChoiceButtons
                 value={draft.highSeasCostBy}
                 onChange={(v) => patch({ highSeasCostBy: v })}
                 options={optsKV(COST_BEARERS)}
-                placeholder="Choose"
                 clearable
                 disabled={disabled}
+                ariaLabel="High seas cost borne by"
               />
             </FieldLabel>
           )}
@@ -1688,13 +1655,13 @@ export default function QuotationForm({
               label="Local delivery cost borne by"
               hint="transport, clearance, loading / unloading"
             >
-              <Combobox
+              <ChoiceButtons
                 value={draft.localCostBy}
                 onChange={(v) => patch({ localCostBy: v })}
                 options={optsKV(COST_BEARERS)}
-                placeholder="Choose"
                 clearable
                 disabled={disabled}
+                ariaLabel="Local delivery cost borne by"
               />
             </FieldLabel>
           )}
@@ -1710,11 +1677,12 @@ export default function QuotationForm({
 
         <div className="grid gap-3 sm:grid-cols-3">
           <FieldLabel label="Currency" required hint={isHighSeas ? "fixed by the deal type" : undefined}>
-            <Combobox
+            <ChoiceButtons
               value={draft.dealValueCurrency}
               onChange={(v) => patch({ dealValueCurrency: v })}
               options={opts(CURRENCIES)}
               disabled={disabled || isHighSeas}
+              ariaLabel="Currency"
             />
           </FieldLabel>
           <div className={show("gstRate") ? undefined : "sm:col-span-2"}>
@@ -1757,6 +1725,20 @@ export default function QuotationForm({
         {/*
           ⚠ THE RATE IS A STARTING POINT, NEVER A LOCK. Deals are negotiated at an
             agreed rate; showing the live one instead would misstate the contract.
+
+          ⚠ THE RATE IS TYPED, NEVER FETCHED (client's instruction, 29-Aug-2026).
+            A "Get live rate" button used to sit here and fill the box from an FX
+            service. It went because a market rate offered as the default invites
+            somebody to accept it and misstate the contract. `fetchFxRate`
+            survives in shared/lib/fx for the Import app, which quotes against the
+            market and genuinely wants it.
+
+          ⚠ THE THREE fxRate* COMPANION FIELDS ARE STILL WRITTEN — source
+            "manual", the moment it was typed, overridden = true. They are stored
+            columns frozen onto every revision and read by the part-B key sniff in
+            `fms_ocpi_save_draft`; dropping them from the payload would silently
+            stop the write.
+
             Whichever rate is used is frozen onto the revision when the quotation
             is generated, so a paper keeps the arithmetic it was issued under.
         */}
@@ -1781,9 +1763,6 @@ export default function QuotationForm({
                   />
                 </FieldLabel>
               </div>
-              <Button variant="outline" size="sm" onClick={pullRate} disabled={disabled || fxBusy}>
-                {fxBusy ? "Fetching…" : "Get live rate"}
-              </Button>
               {inrEquivalent && (
                 <p className="pb-2 text-[13px] text-grey">
                   ≈ <span className="font-semibold text-navy">{inrEquivalent}</span>
@@ -1791,26 +1770,22 @@ export default function QuotationForm({
               )}
             </div>
             <p className="text-[12px] text-grey-2">
-              {fxError
-                ? fxError
-                : draft.fxRate
-                  ? draft.fxRateOverridden
-                    ? "Entered by hand. This is the rate the papers will use."
-                    : `Live rate from ${draft.fxRateSource || "the FX service"}${draft.fxRateAt ? ` · ${new Date(draft.fxRateAt).toLocaleString()}` : ""}. Type over it to use the rate you agreed.`
-                  : "Fetch the live rate, or type the rate you agreed with the customer."}
+              {draft.fxRate
+                ? "This is the rate the papers will use."
+                : "Type the rate you agreed with the customer."}
             </p>
           </div>
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <FieldLabel label="Type of payment">
-            <Combobox
+            <ChoiceButtons
               value={draft.paymentType}
               onChange={(v) => patch({ paymentType: v })}
               options={optsKV(PAYMENT_TYPES)}
-              placeholder="Choose"
               clearable
               disabled={disabled}
+              ariaLabel="Type of payment"
             />
           </FieldLabel>
           <FieldLabel label="Machine delivery date" hint="tentative, committed to the customer">

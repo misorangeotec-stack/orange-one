@@ -1,5 +1,6 @@
 import type { Customer, CustomerDetail, CustomerGroupMap, Invoice, SaleType } from "./types";
 import { EMPTY_GROUP_MAP, groupEntryOf } from "./customerGroups";
+import { SALE_TYPES } from "./collections";
 
 /**
  * Aging Report aggregation — pure, UI-free.
@@ -328,6 +329,14 @@ export function enumerateBills(
   const byId = new Map<string, Customer>();
   for (const c of customers) byId.set(c.id, c);
 
+  // ⚠ EMPTY *AND* FULL BOTH MEAN "NO FILTER" — the convention `makeSaleTypeScope` states and
+  //   `SaleTypeMultiSelect` labels ("All Sale Types" at both ends). A full selection was only
+  //   a no-op by luck: `toSaleType` folds anything unrecognised into "other", so the six
+  //   options happen to cover every value. Say it outright, so a seventh type added later
+  //   cannot quietly drop rows the reader believes they asked for.
+  const stFilterOn =
+    !!filters.saleTypes && filters.saleTypes.length > 0 && filters.saleTypes.length < SALE_TYPES.length;
+
   const bills: EnrichedBill[] = [];
   for (const [cid, detail] of Object.entries(customerDetail)) {
     const cust = byId.get(cid);
@@ -339,7 +348,7 @@ export function enumerateBills(
 
     for (const inv of detail.invoices) {
       if (Math.abs(inv.pending) < 0.5) continue; // settled bill
-      if (filters.saleTypes && filters.saleTypes.length > 0 && !filters.saleTypes.includes(inv.voucherType)) {
+      if (stFilterOn && !filters.saleTypes!.includes(inv.voucherType)) {
         continue;
       }
       const age = daysBetween(inv.date, asOfDate);

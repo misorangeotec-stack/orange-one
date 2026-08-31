@@ -1,4 +1,5 @@
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import RequestMasterModal from "./RequestMasterModal";
 import type { RequestType } from "../types";
@@ -36,7 +37,7 @@ export default function SupplyRequestFields({ form }: { form: SupplyRequestFormA
         <Combobox value={companyId} onChange={setCompanyId} options={companyOptions} placeholder="Select company" autoAdvance />
       </FieldLabel>
       <FieldLabel label="Location" required>
-        <Combobox value={location} onChange={setLocation} options={LOCATIONS} placeholder="Plant or Office" autoAdvance />
+        <ChoiceButtons value={location} onChange={setLocation} options={LOCATIONS} autoAdvance ariaLabel="Location" />
       </FieldLabel>
       <label className="flex items-center gap-2.5 cursor-pointer select-none">
         <input type="checkbox" checked={onBehalf} onChange={(e) => setOnBehalf(e.target.checked)} className="w-4 h-4 accent-orange" />
@@ -70,7 +71,7 @@ export default function SupplyRequestFields({ form }: { form: SupplyRequestFormA
       )}
 
       <FieldLabel label="Type of request" required>
-        <Combobox value={requestType} onChange={(v) => setRequestType(v as RequestType)} options={TYPES} placeholder="Select" autoAdvance />
+        <ChoiceButtons value={requestType} onChange={(v) => setRequestType(v as RequestType)} options={TYPES} autoAdvance ariaLabel="Type of request" />
       </FieldLabel>
 
       {requestType === "new_requirement" ? (

@@ -51,7 +51,7 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         {
           key: "qc_required",
           label: "QC inspection required",
-          type: "select",
+          type: "choice",
           options: [
             { value: "no", label: "No — the flow ends at Tally" },
             { value: "yes", label: "Yes — inspect after the Tally entry" },

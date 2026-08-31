@@ -97,7 +97,7 @@ export interface SaleTypePoint {
 
 /**
  * Outstanding by sale type. `outstandingByType` stays the full 5-type record even
- * under a Sale Type filter, so restrict to `activeSaleTypes` (empty / all = all five)
+ * under a Sale Type filter, so restrict to `activeSaleTypes` (empty / all = all six)
  * — otherwise the donut would show filtered-out types and its total wouldn't tie to
  * the shown exposure.
  */
