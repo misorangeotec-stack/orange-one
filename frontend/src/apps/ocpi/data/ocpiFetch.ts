@@ -116,6 +116,16 @@ export interface OcpiWarranty {
 
 export interface OcpiConfig {
   processCoordinatorIds: string[];
+  /**
+   * The departments the Salesperson roster is drawn from — Sales, as seeded.
+   *
+   * ⚠ CONFIG RATHER THAN A CONSTANT so an admin can widen it (Management, say —
+   *   both Directors carry a book) without a deploy. Empty means the picker
+   *   offers nobody, which the Setup screen warns about rather than silently
+   *   falling back to "everyone": a roster of 63 would put the whole warehouse
+   *   on a customer's quotation.
+   */
+  salespersonDepartmentIds: string[];
   quotationValidityDays: number;
   defaultGstRate: number;
   warranty: OcpiWarranty;
@@ -266,6 +276,7 @@ const mapDeal = (r: any): OcpiDeal => ({
   ocNo: r.oc_no ?? null,
   raisedBy: r.raised_by ?? null,
   salespersonName: r.salesperson_name ?? null,
+  salespersonUserId: r.salesperson_user_id ?? null,
 
   customerId: r.customer_id ?? null,
   customerName: r.customer_name ?? null,
@@ -510,6 +521,7 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     stepOwners: ownerRows.map(mapStepOwner),
     config: {
       processCoordinatorIds: cfg.get("process_coordinators")?.user_ids ?? [],
+      salespersonDepartmentIds: cfg.get("salesperson_departments")?.department_ids ?? [],
       quotationValidityDays: cfg.get("quotation_validity_days")?.days ?? 30,
       defaultGstRate: cfg.get("default_gst_rate")?.rate ?? 18,
       // The fallbacks are the client's settled figures, so a database where the

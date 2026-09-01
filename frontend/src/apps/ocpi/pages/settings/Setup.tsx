@@ -1,6 +1,7 @@
 import StepOwnersSection from "./StepOwnersSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
+import SalespeopleSection from "./SalespeopleSection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import QuotationNumberingSection from "./QuotationNumberingSection";
 import OcNumberingSection from "./OcNumberingSection";
@@ -34,6 +35,7 @@ export default function Setup() {
 
       <StepOwnersSection />
       <CoordinatorsSection />
+      <SalespeopleSection />
       <StepDueDatesSection />
       <MasterOwnersSection />
       <QuotationNumberingSection />

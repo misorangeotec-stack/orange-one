@@ -78,7 +78,19 @@ export function diffPayloads(
   for (const key of keys) {
     // Identity, not content: a change of customer is a different quotation, and
     // the id would render as a meaningless uuid in a diff.
-    if (key === "customer_id" || key === "company_id" || key === "location_id") continue;
+    //
+    // `salesperson_user_id` joins them for the same reason and one more: it can
+    // change on its own, when a name that was typed is later PICKED from the
+    // roster. Nothing about the deal changed — the paper still says the same
+    // name — so a row reading "Salesperson (user): → 695b41c7-…" would report a
+    // change that did not happen.
+    if (
+      key === "customer_id" ||
+      key === "company_id" ||
+      key === "location_id" ||
+      key === "salesperson_user_id"
+    )
+      continue;
 
     const b = show(before[key]);
     const a = show(after[key]);

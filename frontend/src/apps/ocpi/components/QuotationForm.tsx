@@ -11,6 +11,7 @@ import CustomerPicker from "./CustomerPicker";
 import GstinField from "./GstinField";
 import RequestMasterModal from "./RequestMasterModal";
 import { isVisible } from "../lib/branching";
+import { useSalespeople } from "../lib/useSalespeople";
 import { fmtDealValue } from "../lib/format";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
@@ -19,6 +20,9 @@ import {
   type QuotationDraft,
 } from "../lib/fieldSpec";
 import type { MachineOption, OcpiMasterType } from "../types";
+
+/** The heading a name that matches no portal user sits under. */
+const OFF_ROSTER = "Not a portal user";
 
 /**
  * Part A — everything the printed quotation needs.
@@ -514,6 +518,7 @@ export default function QuotationForm({
   disabled?: boolean;
 }) {
   const s = useOcpiStore();
+  const { people: salespeople, isLoading: rosterLoading } = useSalespeople();
 
   /**
    * The chosen machine, and what it says this deal may be asked.
@@ -701,12 +706,71 @@ export default function QuotationForm({
     return d?.legalName ?? null;
   }, [s.companyProfiles]);
 
+  /**
+   * Who may own this deal: the Sales roster, then anything already typed.
+   *
+   * ⚠ THE OPTION VALUE IS THE NAME, NOT THE USER ID, and that is not an
+   *   oversight. Combobox renders its trigger as
+   *   `options.find(o => o.value === value)?.label ?? placeholder`, so a value
+   *   with no matching option makes a filled field look EMPTY. Keying on the id
+   *   would do exactly that on every deal saved before this change (name set,
+   *   id null) and again on every render before the roster query resolves.
+   *   Keying on the name cannot: the "Not a portal user" group below carries
+   *   every name the roster does not. Same hazard `masterOpts` exists for.
+   *
+   * ⚠ THE SECOND GROUP IS KEPT DELIBERATELY. It is the old distinct-over-deals
+   *   list, and it is what lets an existing deal's value be re-selected rather
+   *   than silently dropped — plus where a typed name lands for the next
+   *   person. It empties itself as the free-typed names fall out of use.
+   *
+   * Both halves are deduplicated case-insensitively: Combobox keys its rows on
+   * `o.value`, so two options sharing one would collide in React, and a name
+   * appearing under both headings would read as two different people.
+   */
   const salespersonOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const d of s.deals) if (d.salespersonName) names.add(d.salespersonName);
-    if (draft.salespersonName) names.add(draft.salespersonName);
-    return [...names].sort((a, b) => a.localeCompare(b)).map((n) => ({ value: n, label: n }));
-  }, [s.deals, draft.salespersonName]);
+    const onRoster = new Set<string>();
+    const roster: ComboOption[] = [];
+    for (const p of salespeople) {
+      const key = p.name.trim().toLowerCase();
+      if (!key || onRoster.has(key)) continue;
+      onRoster.add(key);
+      roster.push({
+        value: p.name,
+        label: p.name,
+        sublabel: p.designation ?? undefined,
+        group: p.group,
+      });
+    }
+
+    const typed = new Set<string>();
+    for (const d of s.deals) if (d.salespersonName) typed.add(d.salespersonName);
+    if (draft.salespersonName) typed.add(draft.salespersonName);
+    const offRoster: ComboOption[] = [...typed]
+      .filter((n) => !onRoster.has(n.trim().toLowerCase()))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n, group: OFF_ROSTER }));
+
+    return [...roster, ...offRoster];
+  }, [salespeople, s.deals, draft.salespersonName]);
+
+  /**
+   * Record the pick, and the user behind it.
+   *
+   * ⚠ EXACTLY ONE MATCH, OR NO ID. `profiles.name` carries no uniqueness
+   *   constraint, so two people can share a display name; guessing between them
+   *   would attribute a deal to the wrong person on the strength of a string.
+   *   Falling back to the name alone is the same state a typed value is in, and
+   *   it is a state the whole feature already handles.
+   *
+   * ⚠ THE ONLY PLACE THAT WRITES THIS FIELD. `Combobox.create()` calls
+   *   `onChange` with whatever `onCreate` returns, so a typed name arrives
+   *   here too — which is why `onCreate` below returns the label and does
+   *   nothing else. Patching in both would be two paths to keep in step.
+   */
+  const pickSalesperson = (v: string) => {
+    const hit = salespeople.filter((p) => p.name === v);
+    patch({ salespersonName: v, salespersonUserId: hit.length === 1 ? hit[0].id : "" });
+  };
 
   /**
    * A pending "please add this to the list" prompt.
@@ -857,22 +921,38 @@ export default function QuotationForm({
               </p>
             )}
           </div>
-          <FieldLabel label="Salesperson" required>
-            <Combobox
-              value={draft.salespersonName}
-              onChange={(v) => patch({ salespersonName: v })}
-              options={salespersonOptions}
-              placeholder="Who owns this deal"
-              searchable
-              clearable
-              disabled={disabled}
-              onCreate={(label) => {
-                patch({ salespersonName: label });
-                return label;
-              }}
-              createLabel={(q) => `Use “${q}”`}
-            />
-          </FieldLabel>
+          <div>
+            <FieldLabel label="Salesperson" required>
+              <Combobox
+                value={draft.salespersonName}
+                onChange={pickSalesperson}
+                options={salespersonOptions}
+                placeholder="Who owns this deal"
+                searchable
+                clearable
+                disabled={disabled}
+                onCreate={(label) => label}
+                createLabel={(q) => `Use “${q}”`}
+              />
+            </FieldLabel>
+            {/* The heading in the list says a name is off-roster; once it is
+                CHOSEN the trigger shows a bare name like any other, so the same
+                fact has to be said again here. It prints on the customer's
+                quotation either way — this is a note, not a warning. */}
+            {draft.salespersonName && !draft.salespersonUserId && !rosterLoading && (
+              <p className="mt-1.5 text-[12px] text-grey-2">
+                Not a portal user — this name prints as typed.
+              </p>
+            )}
+            {/* An empty roster is a settings problem, not a typo. Say which
+                screen fixes it rather than leaving a picker that offers nobody. */}
+            {salespeople.length === 0 && !rosterLoading && (
+              <p className="mt-1.5 text-[12px] text-grey-2">
+                No departments are set as Sales yet — an admin names them in
+                Setup › Salespeople.
+              </p>
+            )}
+          </div>
         </div>
       </Card>
 
