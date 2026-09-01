@@ -158,12 +158,23 @@ that is done the question would simply stop appearing anywhere.
   column tracks the **Kyocera** head. Rocket reads *"EX600 RC & KYOCERA"* with DPI **300**, so RC 600 +
   Kyocera 300 is consistent. Mapped that way; mention only if it looks wrong.
 
-**5. `[open]` What is "JAY"?**
+**5. `[answered]` What is "JAY"? — it is **POD**.** *(01-Sep-2026, from the client's own 01-09 sheet.)*
 
-The machine sheet's TYPE OF MACHINE column reads DIRECT (10), SUBLIMATION (12), OTHER (4) — and **JAY
-(2)**. The two are **Label Printer** and **Book Printer**. "JAY" sits where a machine type goes and is
-not one, so it reads like a name typed into the wrong cell. Both machines are left **uncategorised**;
-they are still fully quotable, since the machine list shows all 28 when no category is chosen.
+The 29-Aug sheet's TYPE OF MACHINE column read DIRECT (10), SUBLIMATION (12), OTHER (4) and **JAY (2)**
+— the two being **Label Printer** and **Book Printer**. "JAY" sat where a machine type goes and was not
+one, so it read like a name typed into the wrong cell, and both machines were left **uncategorised**.
+
+The **01-09 sheet replaces it with POD**, which is a machine type. OCPI-14 created the category (sort
+25, so *Other* stays last in the dropdown) and moved both machines into it. POD asks no dryer, no
+centering device and no optional extras — the same as Sublimation and Other.
+
+⚠ **They were quotable before only because a blank category showed all 28 machines.** That is no longer
+a happy accident to rely on: the category now decides what the form asks, so a machine without one
+would be quotable but would never be asked a dryer or centering question. **Every machine now has a
+category** — an assertion in `20261030120000_fms_ocpi_master_refresh_01_09.sql` enforces it.
+
+This also answers **OCPI-5's open 0.1** ("confirm the live category list, and where the two JAY machines
+sit"): four categories, and the template comparison workbook gains a fourth tab.
 
 **6. `[decided]` A separately-charged dryer DOES attract GST.** *(29-Aug-2026)*
 
@@ -184,26 +195,26 @@ Built and verified against those exact figures. Two things came out of doing it 
 *For Ritesh Bhai: confirm the dryer is taxed at the same rate as the machine, rather than at a rate of
 its own.*
 
-**7. `[open]` On a machine that takes no centering device, should BOTH centering questions disappear?**
-*(put to the client 29-Aug-2026 — they do not know; it needs Ritesh Bhai.)*
+**7. `[answered]` On a machine that takes no centering device, should BOTH centering questions disappear?**
+*(asked 29-Aug-2026 · **CLOSED by OCPI-14, 01-Sep-2026** — the question stopped applying rather than
+being answered either way.)*
 
-There are **two** centering questions on the quotation, and the client asked for them to be kept
-separate. They are separate:
+It asked whether the **machine's** capability should hide both centering questions together, and
+offered a second tick on the machine master if the answer was no.
 
-1. **"External centering system"** — a yes/no tick under *Deal inclusions*. Asks: *is it part of this
-   deal?*
-2. **"Centering device"** — a row under *Shipment & invoice*. Asks: *how does it ship, and is it billed
-   on its own invoice?*
+**Neither option was taken, because the machine stopped deciding.** OCPI-14 moved every one of these
+branches onto the **machine CATEGORY**: a Direct deal is asked about a centering device, and a
+Sublimation, Other or POD deal is not — whatever `opt_external_centering` says on the model. So the
+five machines that could carry one became **eleven**, and Mini Lario, Rocket and the three Fab Pro
+models are now asked despite their own mapping.
 
-**But both of them only appear when the machine is marked as able to take a centering device.** So on a
-machine marked **"No"**, **neither** question shows.
+The two questions also stopped being two. The **tick** in *Deal inclusions* is gone; a full inclusion
+with details and quantity replaced it, because a bare yes/no could say neither which device nor how
+many. What remains is that inclusion plus the *Shipment & invoice* row, and both follow the category.
 
-*For Ritesh Bhai: is that correct?*
-
-- **Yes** → nothing to do. This is how it is built today.
-- **No** → i.e. there is a case where a customer is billed for a centering device on a machine that does
-  not normally take one (or the reverse). Then the machine list needs a **second tick**, so the two can
-  be set independently — a small build change in the machine master and in both rule engines.
+⚠ `opt_external_centering` still exists and is still edited on the Machines master — it records what a
+model can take. **Nothing branches on it any more.** If the client ever wants the machine to overrule
+the category, that is a new decision and a new entry, not this one.
 
 ---
 
@@ -1762,6 +1773,225 @@ a pre-change deal → reads `Afrin Saiyed`, **not blank**. Test draft deleted.
 - [ ] Eleven `StepOwnersSection.tsx` copies filter `useDirectory().profiles` by department — the
       RLS-scoped read, so a non-admin sees a short list there for the same reason this entry exists.
       `list_org_people_detail()` is what would fix them.
+
+### OCPI-14 · The machine TYPE decides what is asked, not the machine  `[x]` — built, browser-verified and DEPLOYED 01-Sep-2026
+*Raised 2026-09-01 · Asked for by Ritesh Bhai · plan: `right-now-the-shipment-eventual-stallman.md`*
+
+**What is being asked.** Three things the form decides today from the wrong place:
+
+1. **Shipment & invoice is wired to Deal inclusions.** Head / Ink / Spare parts rows appear only when
+   the deal *includes* that item (`branching.ts` RULE 8). There should be **no connection** — how a
+   thing ships and whether it is billed on its own is not the same question as whether it sits inside
+   the machine price.
+2. **A per-machine tick decides the Dryer and the Centering device**, so nothing appears until an
+   actual machine row is picked. It must react to the **machine category** alone.
+3. **The centering device is not a deal inclusion at all** — only a bare tick in *Also included*. It
+   becomes a full question, shaped like spare parts.
+
+The rule: **Direct → all five** (ink · spare parts · head · dryer · centering device).
+**Sublimation / Other / POD → three** (ink · spare parts · head).
+
+Plus: the **dryer price** question goes (all pricing is already asked in Shipment & invoice); a
+**two-option print head** becomes the salesperson's choice; and **warranty** moves from one global
+setting to three per-machine values.
+
+**The source of truth is a new sheet** — `Misc/Bushra Reports/OCPI/OCPI Machine Templates - 01-09.xlsx`,
+28 machines, column G = type of head, M–P = the four extras, Q/R/S/T = the warranties.
+
+#### The sheet disagrees with the live master, and one of those disagreements is load-bearing
+
+| | Sheet | Database (checked 01-Sep-2026) |
+|---|---|---|
+| **Position Printer** | **Direct** | **Other** — the ONE machine that breaks the category rule |
+| Label Printer, Book Printer | **POD** — a 4th type | no category at all |
+| MP5000 | present · Direct · EX600 | absent; **JP7** is present and absent from the sheet |
+| Mini Lario, Rocket — centering | OPTIONAL | `no` |
+| Fab Pro 1I / 2I / 3I — centering | No | **blank** — the data gap logged under OCPI-10 |
+| Type of head | 7 machines read **"EX600 or RC"** | names unrecognisable (`Homer`, `KATANA 600 DPI - HANGLORY`) |
+| Warranty | machine / head / dryer, **per machine**; head is **NA on 15 of 28 models**, 10 of them sublimation | one global `warranty_periods` `{machine 12, head 18}` for everybody |
+
+🟢 **The sheet is what makes the rule true.** With Position Printer moved to Direct,
+`needs_dryer = true` ⟺ *category is Direct* holds for **all 28 machines**. It does not hold today —
+which is why the master refresh has to land BEFORE anything branches on the category, not after.
+
+🔴 **`opt_external_centering` is currently `no` on Mini Lario and Rocket and BLANK on the three Fab
+Pros.** Under the new rule all five show the centering questions anyway, because the category decides.
+Three of those blanks were already recorded as *"a data gap, not a decision"* (OCPI-10).
+
+#### The traps
+
+🔴 **The machine category is UI state that is never stored.** `QuotationForm.tsx:549` is a `useState`
+filter with a comment at `:885` saying it is deliberately NOT on the draft and NOT on the deal. The
+write RPCs null every column the form hides on **every save** and can only see the row — so branching
+on a value the server cannot see means the server erases answers the form is still showing. **This is
+why the change is not a one-line edit:** `fms_ocpi_deals.machine_category_id` has to exist first.
+
+🔴 **Never match the literal name "Direct".** OCPI-8 paid for this with `dryer_type` = `"Not
+Applicable"`. Three marker flags on `fms_ocpi_machine_categories` instead — `shows_dryer`,
+`shows_centering`, `shows_extras` — the same shape as `means_no_dryer`.
+
+🔴 **The three extras were deliberately UNGATED four days ago** (OCPI-10, 31-Aug) and are being
+re-gated now. Their clearing was removed **by name** in
+`20261025120000_fms_ocpi_extras_stop_being_gated.sql`; it has to come back — and this time defaulting
+to **`false`, not `null`**, because the client asked for a definite No. `clearHidden` blanks hidden
+booleans to `null`, so that needs an explicit exception on both sides or the two disagree on save.
+
+🔴 **The migrations carry `do $check$` assertions that grep the function body.** `20261026120000` and
+`20261027120000` assert exact substrings and counts — *"expected 7 `coalesce(v_centering` guards"*.
+Re-gating changes those counts and the migration fails on apply unless they are re-derived.
+
+⚠ **Base the new RPC bodies on the LIVE definitions**, pulled with `pg_get_functiondef`. They have been
+redefined six times and the files diverge from the database.
+
+⚠ **Do NOT add a conjunct to `fms_ocpi_complete_when_submitted`.** A CHECK is re-validated on every
+UPDATE, so requiring `incl_centering` would make all 20 existing deals un-updatable and every approval
+or signature stamp on them would throw. OCPI-7 hit this and rejected it. The form carries the
+requirement; the constraint does not.
+
+🟢 **Removing the dryer price needs NO SQL.** Once the form stops sending the key, `p->>'dryer_price'`
+is null and `grand_total_inr` collapses to `total_inr` through guards that already exist. Verified
+safe four ways: **0 of 20** deals carry a `dryer_price`, **0** answer *dryer not included*,
+`grand_total_inr` = `total_inr` on all 4 deals that have one, and **no machine template body references
+`{{dryer_price}}`** — so this is not the OCPI-3 section F trap that would leave a ruled blank in a
+signed contract.
+
+#### Phase-wise checklist
+
+**Phase 0 · Freeze the ground — nothing is changed yet**
+- [x] 0.1 Capture the **live** bodies of `fms_ocpi_write_quotation`, `write_oc` and `save_draft`. Every
+      later phase bases its `create or replace` on this capture. Also the rollback artefact
+- [x] 0.2 Snapshot `fms_ocpi_machines`, `_machine_categories`, `_head_types`, `_machine_head_types` as
+      replayable statements — the master refresh is the only part of this work that is not additive
+- [x] 0.3 The full 28-row sheet-vs-database diff, written down, so the refresh can be audited
+- [x] 0.4 **Rehearse the rollback.** A rollback that has only been read is not a rollback
+
+**Phase 1 · Schema — additive only, nothing reads it**
+- [x] 1.1 Nine nullable columns: `fms_ocpi_deals` (`machine_category_id`, `incl_centering`,
+      `centering_details`) · `_machine_categories` (three `shows_*` flags) · `_machines` (three
+      warranties). ⚠ `fms_ocpi_complete_when_submitted` untouched
+- [x] 1.2 `warranty_note` into `fms_ocpi_config`
+
+**Phase 2 · Master data — fills the new columns, still nothing reads them**
+- [x] 2.1 POD category; the three flags on all four categories
+- [x] 2.2 Position Printer → Direct; Label + Book Printer → POD; **JP7 renamed MP5000**
+- [x] 2.3 `needs_dryer` / the four `opt_*` corrected; head types re-mapped from column G; warranties
+      written; billing names filled
+- [x] 2.4 **Back-fill `machine_category_id` on all 20 existing deals** — this is what lets Phase 3
+      carry ONE rule instead of a permanent old-deal shim
+- [x] 2.5 ✅ **Checkpoint: prove `needs_dryer = true` ⟺ Direct for all 28** before anything reads it.
+      If it does not hold, Phase 3 is not safe to apply
+
+**Phase 3 · The RPCs — the server switches to the category**
+- [x] 3.1 `write_quotation` gains the three deal columns + category-driven clearing; `write_oc`
+      re-points its dryer and centering gates and re-gates the three extras with `else false`;
+      ⚠ `fms_ocpi_save_draft`'s ~53-key sniff array gains the two new part-B keys
+- [x] 3.2 The `do $check$` assertions re-derived, or the migration fails on apply
+- [x] 3.3 ⚠ The old-form/new-server window: dryer is identical, centering is strictly wider, only the
+      extras differ. Apply immediately before the Phase 4 deploy, not the day before
+
+**Phase 4 · Frontend, in dependency order**
+- [x] 4.1 `machineCategoryId` becomes a draft field; `chooseMachine` snaps the category
+- [x] 4.2 `branching.ts` — RULE 7 and RULE 8 onto the flags; the `false`-not-`null` exception
+- [x] 4.3 `fieldSpec.ts` all six touch-points (⚠ `FIELD_LABEL` **position** is the revision-diff row
+      order) + `types/index.ts` + `ocpiFetch.ts` (⚠ `r` is `any` — a missed column is silently null)
+- [x] 4.4 Section B: centering in, the *External centering* tick out. ⚠ Container removal — account for
+      its rule, its RPC clearing, its printed line and its PDF bullet one at a time
+- [x] 4.5 Shipment table re-gated + the subsidized-rate carry-over. ⚠ `anyShipment` becomes a gate that
+      can never close; all five `why` strings start describing the wrong rule
+- [x] 4.6 Dryer price out — form, rule, draft/payload keys, register column, token. No SQL
+- [x] 4.7 Head `ChoiceButtons` where ≥2 are mapped, plus the read-out for a legacy value that matches
+      no button. ⚠ A second deliberate exception to `ChoiceButtons`' "never a master list" rule
+- [x] 4.8 Three warranties, hidden on NULL, prefilled from the machine, plus the `warranty_note` line
+- [x] 4.9 Machines master (warranty fields, `needs_dryer` no longer required, hints reworded to say the
+      `opt_*` ticks no longer gate anything) and the category flags on Masters
+- [x] 4.10 Orphan sweep over `apps/ocpi`
+
+**Phase 5 · Documents and exports**
+- [x] 5.1 `quotationPdf.ts` — ⚠ `showsDryer` at `:296` reads `machine?.needsDryer` and must move
+- [x] 5.2 `ocPdf.ts` — bullets, shipment lines, the money block, warranty + note
+- [x] 5.3 `exportRegister.ts` — drop *Dryer price*; add centering and the three warranties
+- [x] 5.4 `tokens.ts` — drop `dryer_price`; add the warranty tokens
+
+**Phase 6 · Verify**
+- [x] 6.1 `cd frontend && npm run build`
+- [x] 6.2 **The switch-back test in SQL against the live writer** — Direct filled, switch to
+      Sublimation, confirm the server cleared **exactly** what the form hid, stored the extras as
+      `false`, and left head / ink / spares shipment answers untouched. Then switch back
+- [x] 6.3 The money guard — `total_inr` and friends byte-identical
+- [x] 6.4 **React to the category alone** — pick *Direct* with NO machine selected and confirm
+      everything appears. This is the request in one test
+- [x] 6.5 Browser on K64 (Direct, 2 heads), P8S (Sublimation, 2 heads), Pengda (Other, no heads)
+- [x] 6.6 The carry-over fills, and never overwrites a typed value
+- [x] 6.7 An older deal still opens and prints; a legacy `head_type` shows as a read-out, not blank
+- [x] 6.8 Read the PDFs with **pdf.js**, never by string-searching jsPDF output
+- [x] 6.9 Test data deleted, versions first, zero residue
+
+#### Phase 6a · Two bugs the BROWSER found that nothing else could  `[x]` — 01-Sep-2026
+
+Both survived a green build, a clean `tsc`, and the SQL switch-back test — none of
+which look at what the form actually renders.
+
+- [x] 6a.1 🔴 **The Dryer warranty box showed on a Sublimation deal.** `dryerWarranty` had no
+      rule in `PART_A_VISIBILITY`, so `isVisible` returned true for it — while
+      `fms_ocpi_write_oc` has nulled `dryer_warranty` on `not v_has_dryer` since stage E. Typing a
+      value would have had it silently erased on save. The field was OFF the form between OCPI-3
+      stage D and OCPI-14, so the rule was never missed until the question came back.
+      Fixed: `dryerWarranty: hasDryerDetails`.
+- [x] 6a.2 🔴 **Direct showed FOUR shipment rows, not five — reported by Ritesh Bhai on sight.**
+      The Dryer row shared `hasDryerDetails`, which waits for a DRYER category to be picked. That
+      wait is right for the details (you cannot name a dryer inside no category) and wrong for the
+      shipment row (how it travels is answerable the moment the deal is known to carry one).
+      ⚠ **I had seen this in testing and wrongly called it correct-by-design.**
+
+      Split into two gates, in BOTH engines — `hasDryerShipment` in `branching.ts` and
+      `v_dryer_ships` in `fms_ocpi_write_oc`, migration
+      `20261101120000_fms_ocpi_dryer_ships_on_the_category_alone.sql`:
+
+      | State | Dryer row |
+      |---|---|
+      | Direct, no dryer category yet | **shown** ← the fix |
+      | Direct, "Not Applicable" | hidden — OCPI-8 item 1.5 preserved |
+      | Direct, Indian / Chinese | shown |
+      | Sublimation / Other / POD | hidden |
+
+      ⚠ **The migration TRANSFORMS the live body rather than retyping it** — reads
+      `pg_get_functiondef`, asserts each of 8 anchors appears exactly once, substitutes, asserts
+      the result. A hand-copied 400-line function is how a body drifts from what is running.
+- [x] 6a.3 Proved in SQL on live data: Direct + no dryer category **keeps** all six shipment
+      columns (₹12,50,000 sub-total) while still clearing the detail columns; Direct + Not
+      Applicable clears both; Sublimation clears both. Test deal deleted, zero residue.
+- [x] 6a.4 Re-verified in the browser: Direct alone → five rows; Not Applicable → four; Chinese → five.
+
+#### Phase 6b · Two on-sight corrections from Ritesh Bhai  `[x]` — 01-Sep-2026
+
+- [x] 6b.1 **The "asked because …" line under every Shipment & invoice item is gone.** It
+      explained each row's branch in words — useful while the rows appeared and vanished on five
+      different conditions, noise now that they follow one rule the salesperson picks themselves
+      at the top of the form. Three lines of grey text under every item was burying the names.
+      ⚠ Removed the `why` PROP and all five callers, not just the render — and `categoryName`,
+      which existed only to word two of those sentences, went with it. A prop nobody renders is
+      the orphan this repo keeps writing down as a fault. `RateOffer` keeps its own `why`: it
+      explains a whole block that appears conditionally, which is a different job.
+- [x] 6b.2 **The three warranties are read-outs, not text boxes.** They were editable for one
+      afternoon and should not have been: the warranty is a property of the MODEL, mapped once on
+      the Machines master. An editable box invites a salesperson to promise 24 months on a machine
+      the company warrants for 12, on a document the customer signs, with nothing downstream to
+      question it. ⚠ The VALUE still travels — set by `chooseMachine`, sent in the payload, frozen
+      onto the revision — so a deal stays a record of what was quoted. Only the keyboard is gone.
+      ⚠ A read-out, NOT a `disabled` input: greyed-out reads as temporarily unavailable and
+      somebody will ask why they cannot type in it. The exception route is Special remarks, as it
+      was when the warranty was a fixed setting. Admins still edit them on the Machines master.
+- [x] 6b.3 Browser-verified: the ITEM column shows five bare names; the warranty card reads
+      "Machine warranty · from the machine master · 12 Months" with ZERO editable warranty inputs.
+
+**Phase 7 · Ship**
+- [x] 7.1 Migration applied **before** the frontend goes live
+- [x] 7.2 `OCPI.md` — the second `ChoiceButtons` exception; the `opt_*` columns are now informational
+- [x] 7.3 **Closes open question 7** (*"should both centering questions disappear together?"*) and
+      answers **OCPI-5's open 0.1** — the two JAY machines sit in **POD**, so the comparison workbook
+      gains a fourth tab
+- [x] 7.4 **OCPI-12 (the K64 print audit) must run AFTER this**, not before — this changes K64's form
+      substantially and an audit of the old shape would be wasted
 
 ---
 

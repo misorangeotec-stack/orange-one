@@ -2309,3 +2309,144 @@ trigger's `title` on hover. Flagged rather than fixed.
 
 ⚠ **The register exports the sub-totals** beside "Total (INR)" — which is exactly where somebody
 eventually writes `=SUM()` across a row. The column comments say so; the spreadsheet cannot.
+
+---
+
+# OCPI-14 · The machine TYPE decides what is asked, not the machine
+
+*Built, browser-verified and DEPLOYED 01-Sep-2026. Four migrations,
+`20261029120000` … `20261101120000`, applied to `icutjkrqkbzwvmnfbzpr` before the frontend shipped.*
+
+## 🔴 The category was local state, and that is why this was not a one-line change
+
+`QuotationForm` kept the machine category in a `useState` with a comment saying it was **deliberately**
+not on the draft and not on the deal: the machine already carries its own category, so a second copy
+could disagree the day somebody re-categorises a model.
+
+That reasoning is right for a **filter** and fatal for a **branch input**. Both write RPCs null every
+column their branches hide, on every save, and they can only see the row — so a question shown on
+something the server cannot read is a question whose answer the server deletes. `machine_category_id`
+is a real column now; `chooseMachine` snaps it to the chosen machine and the RPC coalesces onto the
+same value, so the two cannot hold different answers.
+
+## The rule, and the sheet that made it true
+
+**Direct** carries a dryer, a centering device and the three optional extras. **Sublimation, Other and
+POD** carry none. Shipment & invoice asks head, ink and spare parts on *every* deal.
+
+The 01-09 machine sheet is what makes that hold. It moves **Position Printer to Direct** — the one
+model that broke it, sitting in *Other* with a dryer — and gives Label Printer and Book Printer a
+fourth category, **POD**, where they had none. After the refresh `needs_dryer = true` ⟺ *Direct* for
+**all 28 machines**; an assertion in the migration enforces it.
+
+⚠ **Two places the sheet is deliberately NOT copied.** It spells the Ricoh head `RICHO GEN 6` — a typo
+of a manufacturer's name that prints on a customer's contract — and writes the same period as both
+`12 Month` and `12 Months`. Stored as `RICOH GEN 6` and normalised to the plural, with assertions that
+fail if either slips back.
+
+## ⚠ A SECOND deliberate exception to `ChoiceButtons`' "never a master list" rule
+
+The first was the dryer category (OCPI-8). This is the **print head**, where a model offers two.
+
+Column G reads **"EX600 or RC"** on seven of the 28 models, and `chooseMachine` was joining every
+mapped head with `" + "` — **recording an OR as an AND**. One mapped head is still shown and not
+chosen; two or more are a choice.
+
+The exception is safe for the same reason the dryer category's was: the strip is sized by what ONE
+MACHINE carries — one or two options — not by how many head types the master holds.
+
+⚠ **A legacy `head_type` matches no button and must not be blanked.** 22 of 28 machines changed mapping
+in the refresh, so a deal quoted as `"Homer + KATANA 600 DPI - HANGLORY"` now matches nothing.
+`ChoiceButtons` leaves an unmatched value selected by nothing and never clears it, so without the
+read-out beside it the salesperson would see a blank where a real answer is stored.
+
+## 🔴 The warranty token trap, which this module had already paid for once
+
+`{{machine_warranty_months}}` is in **21 live machine sections** and `{{head_warranty_months}}` in 10,
+and the clause prose supplies the word itself — *"will be of {{…}} **months** from the date of
+installation"*. The new per-machine columns hold `"12 Months"`.
+
+Pointing the tokens at them naively prints **"of 12 Months months"** on 21 contracts — which is exactly
+what a real contract once said, and why warranty was moved to a fixed setting in the first place
+(`tokens.ts`' own header records it). `months()` resolves the LEADING INTEGER and returns null for
+anything it cannot parse, so `"1 Year"` rules a blank rather than printing `1`.
+
+⚠ **The single setting was wrong the other way.** 15 of the 28 models carry NO head warranty, so
+Settings was quoting 18 months on fifteen machines that offer none. **Not a per-category rule either** —
+10 of the 12 sublimation models have none but P8S and P8D have 18 months, which is why warranty lives
+on the machine and not beside the three `shows_*` flags.
+
+⚠ **Shown, never typed.** The warranty is a property of the model. An editable box invites a
+salesperson to promise 24 months on a machine the company warrants for 12, on a document the customer
+signs. A read-out, not a `disabled` input — greyed-out reads as *temporarily unavailable*.
+
+## The `opt_*` columns are INFORMATION ONLY from here
+
+`needs_dryer` and the four `opt_*` capability columns still exist and are still edited on the Machines
+master; they record what a model can take. **Nothing branches on them** — not `branching.ts`, not
+either write RPC. `needs_dryer` stopped being a *required* field at the same moment: it was required
+because a blank one would silently make a section unreachable, and that can no longer happen.
+
+The Machines master says so in every hint. Do not "fix" a screen by making one of them gate something
+again without a decision to reverse OCPI-14.
+
+## 🔴 Two bugs the BROWSER found that nothing else could
+
+Both survived a green build, a clean `tsc` **and** the SQL switch-back test — none of which look at
+what the form renders.
+
+1. **The Dryer warranty box showed on a Sublimation deal.** `dryerWarranty` had no rule in
+   `PART_A_VISIBILITY`, so `isVisible` returned true, while `fms_ocpi_write_oc` has nulled the column
+   on `not v_has_dryer` since stage E. The field was OFF the form between OCPI-3 stage D and OCPI-14,
+   so the missing rule cost nothing until the question came back.
+2. **Direct showed FOUR shipment rows, not five** (reported on sight). The Dryer row shared
+   `hasDryerDetails`, which waits for a DRYER category to be picked — right for the details, wrong for
+   the shipment row. Split into two gates in **both** engines: `hasDryerShipment` and `v_dryer_ships`.
+   The "means no dryer" term survives in both, because OCPI-8 item 1.5 was an explicit client decision.
+
+   | State | Dryer row |
+   |---|---|
+   | Direct, no dryer category yet | shown |
+   | Direct, "Not Applicable" | hidden |
+   | Direct, Indian / Chinese | shown |
+   | Sublimation / Other / POD | hidden |
+
+**The lesson worth keeping:** a green build proves the types line up, and the SQL probe proves the
+server agrees with itself. Neither can see a field the form is rendering. For a change whose whole
+subject is *which questions appear*, the browser is not a formality at the end — it is the only
+instrument that measures the thing being changed.
+
+## ⚠ The last migration TRANSFORMS the live body rather than retyping it
+
+`20261101120000` reads `pg_get_functiondef`, asserts each of eight anchors appears exactly once,
+substitutes, and asserts the result — then `execute`s it. A hand-copied 400-line function is how a body
+drifts from what is actually running, and these two RPCs have been redefined seven times.
+
+## Verify — OCPI-14
+
+- The **switch-back test** against the live writers: a Direct deal with every answer filled, switched
+  to Sublimation, cleared *exactly* the dryer and centering columns, stored the three extras as
+  **`false` rather than null**, and left head / ink / spares shipment answers untouched.
+- **The request itself, at the server:** with `machine_id` NULL and only a category picked, the dryer
+  category and centering inclusion both stored. Under the old rule every one would have been erased.
+- **The money guard:** ₹22.5 lakh of shipment sub-totals on the row, `total_inr` unchanged.
+- **Both PDFs read with pdf.js**, never string-searched: zero unresolved tokens, zero ruled blanks, and
+  the clause reads *"will be of 12 months"*. A Sublimation paper prints no centering, no extras and no
+  dryer block, but keeps machine + head warranty and the dispatch-date note.
+- Browser on K64 / P8S / Pengda, the subsidised-rate carry-over (fills an empty cell, never overwrites
+  a typed one), and an older deal whose legacy head shows as a read-out.
+- Zero residue: no deal saved, **no quotation number burned** — the papers were rendered by importing
+  the module against live store data, the OCPI-4 technique.
+
+## Open — OCPI-14
+
+⚠ **The three Fab Pro models are asked about a centering device the sheet says they cannot take**, as
+are Mini Lario and Rocket. That is the category rule working as instructed, not a fault. If the machine
+should be able to overrule the category, that is a new decision.
+
+⚠ **`external_centering` and `dryer_price` are frozen history.** Neither is written any more. 15 deals
+hold a centering tick (11 copied forward into `incl_centering`; the 4 on Sublimation left where they
+are, because their category no longer asks). No deal ever held a dryer price.
+
+📋 **`grand_total_inr` now always equals `total_inr`.** The dryer price was its only other term. The
+column and its derivation survive so older deals still render, but nothing can make the two differ.
