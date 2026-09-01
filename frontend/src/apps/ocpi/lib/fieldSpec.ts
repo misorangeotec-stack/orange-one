@@ -261,6 +261,33 @@ export interface QuotationDraft {
   totalInr: string;
 }
 
+/**
+ * Who consumables are bought from — SHOWN, NEVER TYPED (OCPI-19, 01-Sep-2026).
+ *
+ * It was a free-text box, and the only answer anybody ever gave was this company,
+ * spelled two different ways on customers' contracts. So it stopped being a
+ * question and became a statement.
+ *
+ * ⚠ IT LIVES HERE, NOT WITH THE OTHER STANDING CLAUSES, because `EMPTY_DRAFT`
+ *   below reads it. A `const` declared further down the file cannot be read by an
+ *   object literal evaluated at module load — it is a temporal-dead-zone error,
+ *   not merely untidy. If this is ever moved, it must stay ABOVE `EMPTY_DRAFT`.
+ *
+ * ⚠ THE TEMPLATES SUPPLY THE "M/s " PREFIX, so this constant must not carry one.
+ *   The 12 machine sections using `{{consumables_supplier}}` read
+ *   "Consumable items: To be purchased directly from M/s {{…}}." — a prefix here
+ *   would print "M/s M/s Orange O Tec Pvt Ltd".
+ *
+ * 🔴 IT DELIBERATELY DIFFERS FROM `fms_ocpi_company_profiles.legal_name`, which is
+ *    "M/s ORANGE O TEC PVT LTD." and prints as the seller on the same page. Ritesh
+ *    Bhai was shown both spellings and picked this one. **DO NOT "harmonise" them**
+ *    — the divergence is the decision, not an oversight.
+ *
+ * ⚠ IT IS A CONSTANT, NOT A LOOKUP on the deal's selling entity. Settled:
+ *   consumables always come from Orange O Tec, whichever entity sells the machine.
+ */
+export const CONSUMABLES_SUPPLIER = "Orange O Tec Pvt Ltd";
+
 export const EMPTY_DRAFT: QuotationDraft = {
   salespersonName: "",
   salespersonUserId: "",
@@ -354,7 +381,10 @@ export const EMPTY_DRAFT: QuotationDraft = {
   printerWarranty: "",
   headWarranty: "",
   postWarrantyHeadPrice: "",
-  consumablesSupplier: "",
+  // ⚠ NOT "" — the field is read-only now, so nobody can fill it in. A blank here
+  //   would store NULL and print a ruled blank into the consumables clause of the
+  //   12 templates that carry `{{consumables_supplier}}` (OCPI-19).
+  consumablesSupplier: CONSUMABLES_SUPPLIER,
   insuranceClauseAgreed: null,
   refNo: "",
   deliveryDays: "",
@@ -549,7 +579,17 @@ export const HEAD_SHIP_VIA = [
   { value: "local_sales", label: "Local sales" },
 ] as const;
 
-export const PLATTER_OPTIONS = ["With Platter", "Without Platter", "Not Applicable"] as const;
+/**
+ * ⚠ "NOT APPLICABLE" WAS REMOVED (OCPI-17, 01-Sep-2026) AND MUST NOT COME BACK.
+ *   The strip is `clearable`, so the ✕ already meant "no answer" — which is all
+ *   "Not Applicable" ever stood for. Three buttons for two answers plus a clear.
+ *
+ * ⚠ A DEAL QUOTED WITH IT STILL HOLDS IT. `platter_details` is free text with no
+ *   CHECK constraint, and nothing rewrites the stored value. `QuotationForm`
+ *   feeds this list through `optsWithCurrent`, so such a deal opens with its own
+ *   answer offered as a third button rather than looking unanswered.
+ */
+export const PLATTER_OPTIONS = ["With Platter", "Without Platter"] as const;
 
 /*
   ⚠ WARRANTY_MONTHS AND PRINTER_WARRANTY ARE GONE (OCPI-3, stage D), and are
@@ -611,6 +651,28 @@ export const SUBSIDIZED_RATE_NOTE =
 export const INSURANCE_CLAUSE =
   "Insurance coverage up to the point of loading will be the responsibility of the company, " +
   "while any coverage required during unloading will be the responsibility of the customer.";
+
+/*
+  The consumables supplier is a standing answer too, but it is declared UP BESIDE
+  `EMPTY_DRAFT` rather than here — see `CONSUMABLES_SUPPLIER`. It is a default on a
+  new draft, and a const cannot be read before the line that initialises it.
+*/
+
+/**
+ * The house wording for the terms of payment (OCPI-20, 01-Sep-2026).
+ *
+ * ⚠ ONE CONSTANT FOR THREE USES — the placeholder, the persistent hint under the
+ *   box, and the "Use this format" button. They were allowed to drift once
+ *   already: the old placeholder read "25% advance, 75% before delivery", which
+ *   is not the wording anybody actually uses, so the box was teaching a format
+ *   nobody follows.
+ *
+ * ⚠ THE FIELD STAYS FREE TEXT. This is guidance, never a constraint — a
+ *   negotiated deal must still be able to say something else. `payment_terms`
+ *   remains one free-text column feeding `{{payment_terms}}` on ~21 templates.
+ */
+export const PAYMENT_TERMS_FORMAT =
+  "25% advance with the order, 75% against the shipping documents.";
 
 /*
   ⚠ THERE IS NO GROUP TABLE HERE ANY MORE, AND THAT IS DELIBERATE.
@@ -874,7 +936,15 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     printerWarranty: s(d.printerWarranty),
     headWarranty: s(d.headWarranty),
     postWarrantyHeadPrice: s(d.postWarrantyHeadPrice),
-    consumablesSupplier: s(d.consumablesSupplier),
+    /*
+      ⚠ A DEAL RAISED BEFORE OCPI-19 STORED NOTHING HERE, and the field is now a
+        read-out nobody can type into. Without this fallback the form would SHOW
+        the company name while saving back NULL, and the contract would print
+        "M/s " followed by a ruled blank — a field that displays one thing and
+        stores another. A deal that already recorded wording keeps its own,
+        because `s()` returns it and it is truthy.
+    */
+    consumablesSupplier: s(d.consumablesSupplier) || CONSUMABLES_SUPPLIER,
     insuranceClauseAgreed: d.insuranceClauseAgreed,
     refNo: s(d.refNo),
     deliveryDays: s(d.deliveryDays),

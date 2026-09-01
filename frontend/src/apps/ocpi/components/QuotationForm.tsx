@@ -15,8 +15,8 @@ import { useSalespeople } from "../lib/useSalespeople";
 import { fmtDealValue } from "../lib/format";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
-  HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TYPES, PLATTER_OPTIONS,
-  SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
+  HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TERMS_FORMAT, PAYMENT_TYPES,
+  PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
 import type { OcpiMasterType } from "../types";
@@ -125,6 +125,33 @@ const masterOpts = (rows: { name: string; active: boolean }[], current: string) 
   const all = current && !live.includes(current) ? [...live, current] : live;
   return all.map((x) => ({ value: x, label: x }));
 };
+
+/**
+ * A FIXED vocabulary, plus whatever this deal already holds — the retired-option
+ * counterpart to `masterOpts` above, for lists declared in code rather than in a
+ * master.
+ *
+ * ⚠ IT EXISTS BECAUSE `ChoiceButtons` SHOWS AN UNKNOWN VALUE AS NOTHING AT ALL.
+ *   The component is fully controlled and never clears what it cannot match, so
+ *   the stored answer survives a save — but no button lights up, `aria-checked`
+ *   is false on every one of them, and the field reads as unanswered. Worse, with
+ *   nothing selected its arrow-key handler starts from index -1, so a single ↓ on
+ *   a tabbed-to strip fires `onChange(options[0])` and replaces a recorded answer
+ *   with no click and nothing to see.
+ *
+ *   Feeding the current value back in as an option fixes all three at once: the
+ *   answer renders as a lit button, and the index is real, so the arrow keys move
+ *   between options the way they do everywhere else.
+ *
+ * ⚠ THIS IS NOT A LICENCE TO SIZE A STRIP BY DATA — `ChoiceButtons` says "only for
+ *   a fixed vocabulary declared in code", and that still holds. It adds at most
+ *   ONE button, and only on a deal quoted against an option since withdrawn.
+ *
+ * Clearing is a one-way door: the retired button disappears once the value goes,
+ * which is intended — a withdrawn option should not be re-selectable.
+ */
+const optsWithCurrent = (xs: readonly string[], current: string) =>
+  opts(current && !xs.includes(current) ? [...xs, current] : xs);
 const optsKV = (xs: readonly { value: string; label: string }[]) =>
   xs.map((x) => ({ value: x.value, label: x.label }));
 
@@ -884,6 +911,21 @@ export default function QuotationForm({
   const [machineAsked, setMachineAsked] = useState<string | null>(null);
 
   /**
+   * "Use this format" has been clicked over terms that are ALREADY TYPED, and is
+   * asking before it overwrites them (OCPI-20).
+   *
+   * ⚠ THE BUTTON MUST NEVER SILENTLY REPLACE TYPED TEXT. A salesperson three
+   *   quarters through a negotiated term, clicking only to see what the house
+   *   wording was, must not lose it.
+   *
+   * ⚠ CONFIRM RATHER THAN DISABLE. Disabling the button while the box has content
+   *   would lock it out of exactly the deal that needs it most — the live one whose
+   *   payment terms are the word "na". Appending was the other candidate and is
+   *   worse still: two payment sentences in one clause, on a signed contract.
+   */
+  const [confirmPaymentFormat, setConfirmPaymentFormat] = useState(false);
+
+  /**
    * A high seas sale is a dollar deal with no GST, both fixed by the deal type.
    * The currency picker is disabled rather than hidden — a reader still needs to
    * see WHICH currency, and hiding it would make the rule look like a bug.
@@ -1265,19 +1307,37 @@ export default function QuotationForm({
               `fms_ocpi_write_oc` stores `platter_details` UNCONDITIONALLY. The
               form was the stricter of the two, so a machine with no dryer could
               never record a platter the database was perfectly willing to keep.
-              Machine details is where the SQL already assumes it lives, and
-              "Not Applicable" is one of its own options. If the client says it
-              belongs to the dryer, gate it in BOTH places.
+              Machine details is where the SQL already assumes it lives. If the
+              client says it belongs to the dryer, gate it in BOTH places.
+
+            ⚠ THAT JUSTIFICATION USED TO HAVE A SECOND HALF — that "Not Applicable"
+              was one of Platter's own options, so the field could answer itself on
+              a machine it did not apply to. OCPI-17 removed that option (the ✕
+              already meant the same thing), so only the SQL argument above is
+              left. Do not cite the option list as a reason this field lives here.
+
+            ⚠ `optsWithCurrent`, NOT `opts` — a deal quoted as "Not Applicable"
+              still holds it, and `ChoiceButtons` renders an unmatched value as
+              nothing at all. See the helper for why that is worse than it sounds.
           */}
           <FieldLabel label="Platter">
-            <ChoiceButtons
-              value={draft.platterDetails}
-              onChange={(v) => patch({ platterDetails: v })}
-              options={opts(PLATTER_OPTIONS)}
-              clearable
-              disabled={disabled}
-              ariaLabel="Platter"
-            />
+            <div className="space-y-1.5">
+              <ChoiceButtons
+                value={draft.platterDetails}
+                onChange={(v) => patch({ platterDetails: v })}
+                options={optsWithCurrent(PLATTER_OPTIONS, draft.platterDetails)}
+                clearable
+                disabled={disabled}
+                ariaLabel="Platter"
+              />
+              {draft.platterDetails &&
+                !PLATTER_OPTIONS.some((o) => o === draft.platterDetails) && (
+                  <p className="text-[12px] text-grey-2">
+                    <b className="text-navy">{draft.platterDetails}</b> is no longer offered —
+                    kept because this deal was quoted with it. Pick again, or clear it, to drop it.
+                  </p>
+                )}
+            </div>
           </FieldLabel>
         </div>
 
@@ -2181,15 +2241,79 @@ export default function QuotationForm({
           </FieldLabel>
         </div>
 
+        {/*
+          ⚠ THE FORMAT IS A HINT UNDER THE BOX, NOT A PLACEHOLDER (OCPI-20). A
+            placeholder was already here and did not work: it vanishes the moment
+            anybody types, so a salesperson editing a saved draft never saw it at
+            all. Six different wordings across 18 deals came out of that box —
+            including one whose payment terms are the word "na". The placeholder
+            is corrected too, so the empty state and the hint agree, but the hint
+            is the part that had been missing.
+
+          ⚠ THE FIELD STAYS FREE TEXT. No dropdown, no advance-% field, no new
+            column — `payment_terms` is one column feeding `{{payment_terms}}` on
+            ~21 templates, and a negotiated deal must still be able to say
+            something else. This is guidance, not a constraint.
+
+          ⚠ THE HINT AND BUTTON SIT OUTSIDE `FieldLabel`, which renders a <label>.
+            A <button> inside it would focus the textarea on every click, so the
+            confirm step would fight the caret.
+        */}
         <FieldLabel label="Terms of payment">
           <TextArea
             rows={2}
             value={draft.paymentTerms}
-            onChange={(e) => patch({ paymentTerms: e.target.value })}
-            placeholder="e.g. 25% advance, 75% before delivery"
+            onChange={(e) => {
+              patch({ paymentTerms: e.target.value });
+              // Typing answers the question the confirm was asking.
+              setConfirmPaymentFormat(false);
+            }}
+            placeholder={PAYMENT_TERMS_FORMAT}
             disabled={disabled}
           />
         </FieldLabel>
+        {/* `-mt-2`: the Card is `space-y-4`, so the hint has to be pulled back to
+            hug the field it describes — same as Special remarks below. */}
+        <div className="-mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <p className="text-[12px] text-grey-2">
+            House format: <b className="text-navy">{PAYMENT_TERMS_FORMAT}</b>
+          </p>
+          {!disabled &&
+            (confirmPaymentFormat ? (
+              <span className="flex items-baseline gap-2 text-[12px]">
+                <span className="text-grey-2">Replace what is typed?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    patch({ paymentTerms: PAYMENT_TERMS_FORMAT });
+                    setConfirmPaymentFormat(false);
+                  }}
+                  className="font-semibold text-orange underline underline-offset-2"
+                >
+                  Replace
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmPaymentFormat(false)}
+                  className="text-grey-2 underline underline-offset-2 hover:text-ink"
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  // An empty box has nothing to lose, so it fills on the first click.
+                  if (!draft.paymentTerms.trim()) patch({ paymentTerms: PAYMENT_TERMS_FORMAT });
+                  else setConfirmPaymentFormat(true);
+                }}
+                className="text-[12px] font-semibold text-orange underline underline-offset-2"
+              >
+                Use this format
+              </button>
+            ))}
+        </div>
       </Card>
 
       <Card className="space-y-4 p-5">
@@ -2391,12 +2515,33 @@ export default function QuotationForm({
               The COLUMN stays, additive-only, so deals raised before this keep
               what they recorded. Nothing reads it.
           */}
+          {/*
+            ⚠ THE COMMENT ABOVE IS ABOUT THE HEAD-PRICE FIELD, NOT THIS ONE. Its
+              closing line — "Zero templates use the token now" — has been read as
+              applying here at least once. It does not.
+
+            🔴 `{{consumables_supplier}}` IS LIVE ON 12 MACHINE TEMPLATES, inside
+               the WARRANTY section: "Consumable items: To be purchased directly
+               from M/s {{consumables_supplier}}." Fab Pro 1I/2I/3I, Kolorado Alpha
+               15/16, KoloRado Alpha 3 — 12 heads, Alpha 3.2 — 8/24 heads, Alpha II
+               ×3, and MP5000. The COLUMN, the TOKEN and those 12 templates all
+               stay exactly as they are.
+
+            ⚠ SHOWN, NEVER TYPED (OCPI-19). Every deal gave the same answer, spelled
+              two ways, so the question became a statement. It is a read-out and not
+              a `disabled` TextInput for the reason `WarrantyReadout` gives above: a
+              greyed-out box reads as temporarily unavailable and invites "why can't
+              I type here", where a read-out reads as an answer.
+
+            ⚠ IT RENDERS THE DRAFT, NOT THE CONSTANT. A deal raised before this
+              recorded its own wording and must keep showing it — the value on the
+              deal is what its contract prints. `draftFromDeal` supplies the
+              constant when a deal stored nothing, so this can never be blank.
+          */}
           <FieldLabel label="Consumables to be bought from">
-            <TextInput
-              value={draft.consumablesSupplier}
-              onChange={(e) => patch({ consumablesSupplier: e.target.value })}
-              disabled={disabled}
-            />
+            <div className="flex min-h-9 items-center rounded-lg border border-line bg-page px-3 py-2 text-[13px] text-navy">
+              {draft.consumablesSupplier}
+            </div>
           </FieldLabel>
           <div className="rounded-lg border border-line bg-[#FBFCFE] p-3">
             <p className="text-[12.5px] leading-relaxed text-grey">{INSURANCE_CLAUSE}</p>
