@@ -1683,6 +1683,88 @@ Combobox moves.
 
 ---
 
+### OCPI-13 · The Salesperson list comes from the users, not from what somebody typed last  `[x]` — built, browser-verified and DEPLOYED 01-Sep-2026
+*Raised 2026-09-01 · Asked for by Yash Agarwal · shipped the same day*
+
+**The question, asked of a screenshot:** the Salesperson box on the quotation form offered exactly two
+names — `Afrin Saiyed` and `Yash Agarwal`. Where were they coming from?
+
+**Nowhere but the deals themselves.** `QuotationForm.tsx` built the list by scanning `s.deals` for
+distinct `salesperson_name` values. There was no master, no `profiles` read and no Tally list: the
+vocabulary was whatever had been typed before, and both names were seeded test data. Three things
+followed, all of them live:
+
+- **The list was RLS-scoped.** `fms_ocpi_deals` select is limited to admins, coordinators, module
+  viewers, step owners and `raised_by = auth.uid()`, so a plain salesperson opening the form saw a
+  list of roughly their own name.
+- 🔴 **The prefill put the WRONG PERSON on a customer's quotation.** `useQuotationDraft` seeded the
+  box from `profiles.receivables_salespersons` — the Outstanding Dashboard's **visibility scope**, not
+  an identity (the same trap RC-5 records). Ten users carry exactly one tag, so it fired for all ten:
+  UMESHKUMAR SOLANKI was prefilled as **`UMESH JI`**, KHURSHID ALAM as `KHURSHID JI`, and VIJAY of
+  collections as **`NAKUL JI`** — a different person, because Vijay's one tag is Nakul's book. That
+  string prints at the head of the customer's copy (`quotationPdf.ts:496`).
+- **"My deals" could never match.** It tested `tags.has(d.salespersonName)` — Tally strings
+  (`UMESH JI`) against portal names (`Yash Agarwal`). Two vocabularies that never met, so the screen
+  was empty for everyone whose deals they had not personally raised.
+
+**Also deleted: a column comment describing a design that was never built.** `salesperson_name` claimed
+it was *"Sourced from ext_ledger_tags via fetchSalespersonNames()"*. That function is imported nowhere
+in `apps/ocpi`.
+
+#### What shipped
+
+**The roster is the user directory, filtered on one condition — `department = Sales`** (13 people),
+grouped by sub-department with designation beneath each name, then the names already on deals under a
+**Not a portal user** heading. Free text stays: a name can still be typed, and says so under the field.
+
+Which departments count is **config, not code** — `fms_ocpi_config.salesperson_departments`, seeded to
+Sales and editable in **Setup › Salespeople**, so an admin can widen it (Management, where both
+Directors carry a book) without a deploy. Empty offers nobody, deliberately: falling back to "everyone"
+would put all 63 users, warehouse included, on a customer's quotation.
+
+The deal now stores **`salesperson_user_id` beside the name**. The name is still what prints and what
+all ten read sites filter on; the id answers *whose deal is it*. It is nullable — null means "typed" —
+and is deliberately NOT in `fms_ocpi_complete_when_submitted`, which still asks for the name alone.
+
+#### Four things this ran into that are worth keeping
+
+- **`profiles` is RLS'd to self + downline + same department**, so a client-side read shows a Sales
+  roster only to somebody already in Sales — and the two non-admins holding OCPI access are in
+  Accounting & Finance and Administration. Both would have seen **nobody**. New definer function
+  **`list_org_people_detail()`**, additive beside `list_org_people` rather than widening it (that one
+  has four consumers and adding an OUT column needs drop+create). Verified as Riya: 13 rows.
+- ⚠ **The picker is keyed on the NAME, not the user id.** `Combobox` renders its trigger as
+  `options.find(o => o.value === value)?.label ?? placeholder`, so a value with no matching option makes
+  a filled field look **empty** — which keying on the id would have done to all 19 existing deals and to
+  every render before the roster query resolves. Same hazard `masterOpts` exists for.
+- ⚠ **`fms_ocpi_write_quotation` had to be re-issued, and the live body is `20261024120000` (OCPI-7)** —
+  not the `20261019120100` several file headers still point at. Dumped from `pg_get_functiondef`, one
+  line added, then **checksum-proved**: stripping the five new lines from the new definition reproduces
+  the old md5 exactly (`5bdfd997…`), so OCPI-7's six inverted guards are untouched. Worth copying as a
+  method the next time this function is edited.
+- `salesperson_user_id` joins `customer_id` / `company_id` / `location_id` in **`revisionDiff`'s skip
+  list**. It can change on its own — when a typed name is later picked from the roster — and would
+  otherwise report a change to a deal that did not change.
+
+#### Verified
+
+Migration applied first, then the frontend. `npm run build` green. In the browser, OCPI email confirmed
+**off** before starting: picked UMESHKUMAR SOLANKI → row stored his name *and* his user id, with
+`raised_by` correctly someone else; typed a non-user over it → id cleared to null, note shown; reopened
+a pre-change deal → reads `Afrin Saiyed`, **not blank**. Test draft deleted.
+
+- [ ] **"My deals" is not proven end to end.** The id arm is in and type-checks, but exercising it needs
+      a *submitted* deal, which burns a number off a series nobody has confirmed. Check on the first
+      real submission.
+- [ ] **Notifications still key on `raised_by`, not the salesperson.** When a coordinator raises a deal
+      for a rep, the rep is not told about decisions on it. `salesperson_user_id` is what makes this
+      fixable; it was deliberately not changed here.
+- [ ] Eleven `StepOwnersSection.tsx` copies filter `useDirectory().profiles` by department — the
+      RLS-scoped read, so a non-admin sees a short list there for the same reason this entry exists.
+      `list_org_people_detail()` is what would fix them.
+
+---
+
 ## R&D  *(new module)*
 
 ### RD-1 · R&D module — log initiatives, let management see them  `[!]`
