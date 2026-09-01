@@ -2450,3 +2450,128 @@ are, because their category no longer asks). No deal ever held a dryer price.
 
 📋 **`grand_total_inr` now always equals `total_inr`.** The dryer price was its only other term. The
 column and its derivation survive so older deals still render, but nothing can make the two differ.
+
+---
+
+# OCPI-17 + OCPI-19 + OCPI-20 — three small quotation-form fixes — 01-Sep-2026
+*All three raised 01-09-2026 by Ritesh Bhai · shipped together because each is a few lines, they sit
+in different corners of `QuotationForm.tsx`, and none of them touches the completeness lists that
+OCPI-15 and OCPI-18 own*
+
+## What was built
+
+- **Machine category order — no code and no SQL.** The Masters screen already exposes ordering
+  (`Masters.tsx:160`, a `sortOrder` field on all four tabs, with the hint *"Lower comes first in the
+  dropdown."*), so the fix was one field edit through the UI. Only **POD** actually moved: the other
+  three were already on 10 / 20 / 30, and POD's `25` was the half-step left by inserting it between
+  two existing rows. Now `Direct 10 · Sublimation 20 · Other 30 · POD 40`.
+- **Platter lost "Not Applicable"** (`fieldSpec.ts`). The strip is `clearable`, so the ✕ already meant
+  what that option stood for — three buttons for two answers plus a clear.
+- **Consumables became a read-out** carrying `CONSUMABLES_SUPPLIER = "Orange O Tec Pvt Ltd"`, written
+  onto every new draft, with the column, the token and the 12 templates untouched.
+- **Payment terms gained a persistent hint and a "Use this format" button**, both fed from one
+  `PAYMENT_TERMS_FORMAT` constant along with the corrected placeholder. The field is still free text.
+
+## 🔴 `ChoiceButtons` does not blank an unknown value — it does something quieter and worse
+
+The question OCPI-17 asked was whether removing an option would blank the deals holding it. It does
+not: the component is fully controlled, never writes back on mount, `clearHidden` skips
+`platterDetails`, and the SQL writer stores it unconditionally with no CHECK constraint. A blind
+open-and-save round-trips the value intact — **verified**, not assumed.
+
+But two things it *does* do:
+
+1. **The field reads as unanswered.** `index` is `-1`, no button lights, `aria-checked` is false on
+   every one. A salesperson sees a blank where a real answer is stored.
+2. **One keystroke replaces it silently.** With `index === -1`, `onKeyDown` computes `from = -1` and a
+   single ↓ on a tabbed-to strip fires `onChange(options[0].value)`. No click, nothing on screen.
+
+**The fix was NOT to change the shared component.** It has **26 call sites across 10 apps** and there
+is no test runner. It was also unnecessary — the house answer already sat 1,100 lines up the same
+file. `masterOpts` (`QuotationForm.tsx:123`) says it outright: *"⚠ THE CURRENT VALUE IS ALWAYS AN
+OPTION, even when it is not on the list."* It takes master rows, so Platter got the fixed-vocabulary
+twin, `optsWithCurrent`.
+
+Feeding the deal's own value back in as an option closes **all three** symptoms at once, and the
+third one structurally: the value renders as a lit button, so `index` is real, so the arrow keys move
+between options exactly as they do everywhere else. There is no guard to forget.
+
+⚠ **Print head is still exposed** — it is fed from `mappedHeads`, has a read-out but no index.
+Recorded as **OCPI-21** rather than fixed, to keep this session off a shared component.
+
+## 🔴 The consumables default needed a SECOND write the brief did not mention
+
+`EMPTY_DRAFT` covers new drafts. An older deal stored `NULL`, and the field is now a read-out nobody
+can type into — so the form would have **displayed the company name while saving back NULL**, and
+`nullif(btrim(…),'')` would have printed `M/s ` and a ruled blank into a signed contract.
+
+So `draftFromDeal` gained `s(d.consumablesSupplier) || CONSUMABLES_SUPPLIER`. A deal that already
+recorded wording keeps it exactly, because `s()` returns it and it is truthy.
+
+**A field nobody can edit must not display one thing and store another.**
+
+## Two checked assumptions that could have gone wrong
+
+- ✅ **No change to when `fms_ocpi_write_oc` runs.** `fms_ocpi_save_draft` gates it on
+  `p ?| array[… 'consumables_supplier' …]`, which tests key *existence* — and `payloadFromDraft`
+  already emitted the key unconditionally, so the gate already always fired. Setting a default
+  changes the value, not the gate.
+- 🔴 **`CONSUMABLES_SUPPLIER` had to be declared ABOVE `EMPTY_DRAFT`, not with the standing clauses.**
+  A `const` 250 lines further down cannot be read by an object literal evaluated at module load — a
+  temporal-dead-zone error, not untidiness. Caught before the build; a pointer comment now sits in
+  the standing-clauses block where it would otherwise have gone.
+
+## The overwrite guard on "Use this format" — confirm, not disable, not append
+
+An empty box fills on the first click. A box with anything in it arms an inline *"Replace what is
+typed? Replace / Cancel"* on the button itself.
+
+- **Disable while the box has content** was rejected: it locks the button out of exactly the deal
+  that needs it most — the live one whose payment terms are the word `na`.
+- **Append** was rejected: two payment sentences in one clause, on a document the customer signs.
+
+## Verified — live browser + SQL, 01-Sep-2026
+
+- `npm run build` green.
+- **Category dropdown** reads `Direct · Sublimation · Other · POD`, and the source agrees
+  (`10 / 20 / 30 / 40`).
+- **Platter, new deal** — two buttons; the ✕ appears once something is picked.
+- **Platter, QT-M0040** — "Not Applicable" renders as a **lit third button** with the explanatory
+  note. Focus lands on it (roving tabindex `0`), and ↓ moves visibly to "With Platter" — an ordinary
+  edit of a visible answer, not a silent overwrite of an apparently-empty field.
+- **The save round-trip could not be proved on QT-M0040**: `fms_ocpi_save_draft` raises *"already
+  been submitted — use Edit instead"* for any non-draft. **Pre-existing, not this change.** Proved
+  instead on a `ZZ TEST` draft given a retired platter value — `updated_at` moved, and both
+  `platter_details = 'Not Applicable'` and `consumables_supplier = 'Orange O Tec Pvt. Ltd.'` survived
+  byte-identically. Fixture restored.
+- **New draft** stores `consumables_supplier = 'Orange O Tec Pvt Ltd'`.
+- **The contract, read back with pdf.js** (string-searching jsPDF output finds nothing) on MP5000,
+  one of the 12: *"Consumable items: To be purchased directly from M/s Orange O Tec Pvt Ltd."* — no
+  ruled blank. An older deal renders *"…M/s Orange O Tec Pvt. Ltd.."* unchanged, **double period and
+  all**, because the stored value ends in one and the template adds another. The chosen spelling has
+  no trailing period, so new contracts read cleanly — an accidental point in its favour.
+- **Payment terms** — hint visible with content in the box; empty box fills on one click; typed text
+  arms the confirm and is **byte-identical** after Cancel (string equality, not eye); Replace swaps it.
+- FIX-4 orphan sweep over `apps/ocpi`: clean.
+
+## Open / worth knowing
+
+🔴 **Three live deals hold "Not Applicable", not the one the work list says** — QT-M0040, QT-M0041
+and QT-M0042, all at `awaiting_quotation_approval`. **A new one appeared during the session**,
+because the option stays pickable until this ships. All three render correctly.
+
+🔴 **QT-M0042 answered consumables `customer`** — its contract will print *"from M/s customer."*, and
+the field is now read-only so nobody can fix it from the form. **OCPI-22.** It also contradicts
+OCPI-19's premise that the answer is always Orange O Tec.
+
+⚠ **The counts in all three work-list entries came from seeded data.** All 14 deals carrying a
+consumables value and all 13 carrying the approved payment sentence are `ZZ TEST` rows. So *"the
+chosen spelling matches the majority"* was inverted — 13 seeds use `Orange O Tec Pvt. Ltd.` and one
+uses the chosen spelling. It does not change the decision: with no real record to sit beside, the
+choice was unconstrained. But the real deals tell a different story — every one of them uses
+PDC-based domestic terms, none uses the approved sentence, which makes the case for OCPI-20's hint
+*stronger*, not weaker.
+
+📋 **The revision diff will show consumables as "added"** on a deal frozen with NULL and re-generated
+after this. `revisionDiff` iterates `FIELD_LABEL`, which includes the field. That is accurate — the
+new paper really does print what the old one left blank — and should not be suppressed.
