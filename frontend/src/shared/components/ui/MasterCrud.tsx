@@ -1,6 +1,7 @@
 import { isValidElement, useCallback, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import PillToggle from "@/shared/components/ui/PillToggle";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
@@ -12,6 +13,12 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
+import {
+  BLANK_VALUE,
+  filterOptionLabel,
+  isRenderedPlaceholder,
+  sortFilterOptions,
+} from "@/shared/lib/blankFilter";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
 import {
@@ -160,6 +167,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   canManage,
   canCreate,
   createHint,
+  statusNote,
   emptyValues,
   toValues,
   onSubmit,
@@ -196,6 +204,17 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   canCreate?: boolean;
   /** Shown in place of the Add button when `canCreate` is false. */
   createHint?: string;
+  /**
+   * WHAT DEACTIVATING THIS MASTER ACTUALLY DOES, in one line on the screen.
+   *
+   * ⚠ THE DEFAULT IS TRUE OF EVERY MASTER — deactivate, never delete, so that
+   *   existing references stay resolvable (see this component's docblock). Pass a
+   *   sharper wording where the consequence is specific enough to be worth
+   *   naming: OCPI's machines master says a deactivated machine stops being
+   *   quotable while deals already raised on it are unaffected, which is the one
+   *   thing a reader needs before they dare touch the button.
+   */
+  statusNote?: ReactNode;
   emptyValues: Values;
   toValues: (row: T) => Values;
   onSubmit: (id: string | null, values: Values, active: boolean) => Promise<void>;
@@ -223,7 +242,17 @@ export default function MasterCrud<T extends { id: string; name: string; active:
    * `colFilters` is keyed by header — the same key the columns are rendered by,
    * and stable because two columns of one table cannot share a header.
    */
-  const [colFilters, setColFilters] = useState<Record<string, string[]>>({});
+  /**
+   * ⚠ OPENS ON ACTIVE, and the count of what that hides is stated in words beside
+   *   the segment — a default that quietly drops rows is worse than no default.
+   *   "Clear all filters" still empties this entirely (= All), so the way back is
+   *   unchanged and the segment is a second one.
+   *
+   * ⚠ A CONSTANT, NEVER SEEDED FROM `rows`. Every FMS store loads asynchronously,
+   *   so a lazy initialiser reading the data would run against an empty array and
+   *   compute the wrong default — silently, and only on a slow connection.
+   */
+  const [colFilters, setColFilters] = useState<Record<string, string[]>>({ __status: ["Active"] });
   const [sort, setSort] = useState<{ header: string; dir: "asc" | "desc" } | null>(null);
 
   /**
@@ -239,9 +268,22 @@ export default function MasterCrud<T extends { id: string; name: string; active:
         filterable: c.filter !== false,
         get: (row: T) => {
           const v = explicit ? explicit(row) : nodeText(c.render(row));
-          return (Array.isArray(v) ? v : [v])
+          const vals = (Array.isArray(v) ? v : [v])
             .map((x) => (x ?? "").toString().trim())
-            .filter(Boolean);
+            // A cell that renders the "—" placeholder has NO value, and must not
+            // offer a filter option spelled with a glyph. Only on the derived
+            // path: an author who wrote "—" into their own `filter.get` chose it,
+            // and on some columns it does not mean blank at all.
+            .filter((x) => x !== "" && !(explicit === null && isRenderedPlaceholder(x)));
+          // ⚠ A BLANK IS A VALUE, NOT AN ABSENCE OF ONE — this line is the whole
+          //   of OCPI-9. It used to end `.filter(Boolean)`, so a row with nothing
+          //   here yielded an empty array: it offered no "(Blank)" to pick, and
+          //   `narrow`'s `.some` is always false on an empty array, so picking ANY
+          //   value in this column silently dropped every blank row. Carrying the
+          //   sentinel instead makes both halves come right at once.
+          //
+          //   A row with SOME values is not blank — ["A", ""] stays ["A"].
+          return vals.length ? vals : [BLANK_VALUE];
         },
       };
     }
@@ -296,7 +338,11 @@ export default function MasterCrud<T extends { id: string; name: string; active:
         const want = new Set(picked);
         // A row with no value for the column is filtered OUT once that column is
         // being filtered on — "show me the Dispatch ones" should not also return
-        // the ones belonging to nothing.
+        // the ones belonging to nothing. But it is now REACHABLE: a blank row
+        // carries BLANK_VALUE, so "(Blank)" in the dropdown returns exactly those
+        // rows. `.some` needed no change once the empty array went away — it was
+        // always false on one, which is what made blanks unselectable AND
+        // silently excluded.
         out = out.filter((row) => (colCache[c.header]?.get(row.id) ?? []).some((x) => want.has(x)));
       }
       // Status is not one of `columns` — MasterCrud renders it itself — so it
@@ -321,18 +367,84 @@ export default function MasterCrud<T extends { id: string; name: string; active:
       const seen = new Set<string>();
       for (const row of narrow(searched, c.header))
         for (const s of colCache[c.header]?.get(row.id) ?? []) seen.add(s);
-      out[c.header] = [...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-        .map((s) => ({ value: s, label: s }));
+      // "(Blank)" is pinned last rather than sorted alphabetically into the
+      // middle — it is the absence of a value, not one of them.
+      out[c.header] = sortFilterOptions([...seen], (a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      ).map((s) => ({ value: s, label: filterOptionLabel(s) }));
     }
     return out;
   }, [columns, colValue, colCache, narrow, searched]);
 
-  /** Status cascades too: no inactive rows left, no Inactive to pick. */
-  const statusOptions = useMemo(() => {
-    const seen = new Set<string>();
-    for (const row of narrow(searched, "__status")) seen.add(row.active ? "Active" : "Inactive");
-    return ["Active", "Inactive"].filter((s) => seen.has(s)).map((s) => ({ value: s, label: s }));
+  /**
+   * How many rows are live and how many are switched off, over the rows the
+   * search and the OTHER columns still allow — and the dropdown's options, from
+   * the same single pass. ONE pass on purpose: `narrow` walks every row of every
+   * filtered column, and the Items master runs to 14,000 of them.
+   *
+   * Status cascades like any other column: no inactive rows left, no Inactive to
+   * pick. And because the counts see the search, a search that matches only
+   * switched-off rows reads "Inactive · 1" on the segment — which is the way out
+   * of an empty table, stated rather than left to be guessed at.
+   */
+  const statusCounts = useMemo(() => {
+    let activeN = 0;
+    let inactiveN = 0;
+    for (const row of narrow(searched, "__status")) {
+      if (row.active) activeN++;
+      else inactiveN++;
+    }
+    return { active: activeN, inactive: inactiveN, all: activeN + inactiveN };
   }, [narrow, searched]);
+
+  /**
+   * ⚠ A STATUS THAT IS PICKED IS ALWAYS OFFERED, even when nothing matches it.
+   *   Found in the browser: with Category narrowed to rows that are all live,
+   *   clicking the segment's "Inactive · 0" left the dropdown reading "Any" while
+   *   the segment read Inactive — the two controls saying different things about
+   *   one piece of state, which is the exact failure this segment exists to
+   *   prevent. `MultiSelect` resolves its trigger label by looking the selection
+   *   up in `options`, so a value missing from the list renders as the
+   *   placeholder and the filter goes invisible while still filtering.
+   *
+   *   The cascade cannot produce this on an ordinary column, because a column's
+   *   dropdown only ever offers values that are still reachable. The segment is a
+   *   SECOND way into this one, and it can pick a status the dropdown would not
+   *   have shown.
+   */
+  const statusOptions = useMemo(() => {
+    const picked = new Set(colFilters.__status ?? []);
+    return (
+      [
+        ["Active", statusCounts.active],
+        ["Inactive", statusCounts.inactive],
+      ] as const
+    )
+      .filter(([s, n]) => n > 0 || picked.has(s))
+      .map(([s]) => ({ value: s, label: s }));
+  }, [statusCounts, colFilters.__status]);
+
+  /**
+   * THE SEGMENT AND THE COLUMN DROPDOWN ARE ONE CONTROL, not two that agree.
+   *
+   * The segment holds no state of its own — it reads and writes the very same
+   * `colFilters.__status` the dropdown does, so they cannot drift apart. That was
+   * the whole complaint: the filter already existed, twelve columns off the right
+   * edge of the table, where nobody could find it.
+   *
+   * Both statuses ticked in the dropdown selects the same rows as All, and so
+   * reads back as All.
+   */
+  const statusSeg: "all" | "Active" | "Inactive" = (() => {
+    const picked = colFilters.__status ?? [];
+    return picked.length === 1 && (picked[0] === "Active" || picked[0] === "Inactive") ? picked[0] : "all";
+  })();
+
+  const setStatusSeg = (next: "all" | "Active" | "Inactive") =>
+    setColFilters((cur) => ({ ...cur, __status: next === "all" ? [] : [next] }));
+
+  /** Rows the Active default is holding back, for the line that says so. */
+  const inactiveHidden = statusSeg === "Active" ? statusCounts.inactive : 0;
 
   const filtered = useMemo(() => {
     const list = narrow(searched);
@@ -346,8 +458,18 @@ export default function MasterCrud<T extends { id: string; name: string; active:
     }
     if (active) {
       const dir = sort!.dir === "asc" ? 1 : -1;
-      const valueOf = (row: T) =>
-        active.sortValue ? active.sortValue(row) : (colCache[active.header]?.get(row.id) ?? []).join(" ");
+      // ⚠ THE SENTINEL IS UNMAPPED HERE, AND THE BLANKS-LAST RULE BELOW DEPENDS
+      //   ON IT. `colCache` holds FILTER values, where a blank row carries
+      //   BLANK_VALUE so it can be picked in the dropdown (OCPI-9). Joined raw,
+      //   that sentinel is a non-empty string, the `av === ""` test below never
+      //   fires, and blank rows quietly stop sorting last on every column with no
+      //   explicit `sortValue` — which is most of them. Sorting wants the absence
+      //   back, so it reads "" and the two behaviours stay independent.
+      const valueOf = (row: T) => {
+        if (active.sortValue) return active.sortValue(row);
+        const vals = colCache[active.header]?.get(row.id) ?? [];
+        return vals.length === 1 && vals[0] === BLANK_VALUE ? "" : vals.join(" ");
+      };
       return [...list].sort((a, b) => {
         const av = valueOf(a);
         const bv = valueOf(b);
@@ -396,6 +518,34 @@ export default function MasterCrud<T extends { id: string; name: string; active:
         : null,
     );
 
+  /**
+   * The active filters in plain English, for the export's About sheet.
+   *
+   * ⚠ THE EXPORT HAS ALWAYS CARRIED `filtered`, BUT IT USED TO NAME ONLY THE
+   *   SEARCH. That was already under-reporting; it became misleading the moment
+   *   the status segment started defaulting to Active, because an untouched
+   *   screen now exports a subset. A sheet that omits rows and does not say which
+   *   is how a screen starts lying — so every filter that shaped it is listed,
+   *   the way QueueTable's export already does it.
+   *
+   * Nothing is at risk in the round trip either way: `buildExportColumns` emits
+   * an Active column, and the import only writes rows the sheet actually holds,
+   * so the omitted ones are left exactly as they are.
+   */
+  const filterSummary = (): string[] => {
+    const out: string[] = [];
+    if (q.trim()) out.push(`Search: "${q.trim()}"`);
+    const status = colFilters.__status ?? [];
+    if (status.length) out.push(`Status: ${status.join(", ")}`);
+    for (const c of columns) {
+      const picked = colFilters[c.header];
+      if (!picked?.length || !colValue[c.header]?.filterable) continue;
+      const vals = picked.map(filterOptionLabel);
+      out.push(vals.length === 1 ? `${c.header} is "${vals[0]}"` : `${c.header} is one of: ${vals.join(", ")}`);
+    }
+    return out;
+  };
+
   const doExport = () => {
     exportRowsToXlsx({
       fileName: singular.replace(/\s+/g, "_"),
@@ -403,7 +553,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
       title: `${singular} master`,
       columns: buildExportColumns(emptyValues, fields, toValues),
       rows: filtered,
-      filters: q.trim() ? [`Search: "${q.trim()}"`] : [],
+      filters: filterSummary(),
       notes: [
         "Keep the ID column untouched — it matches each row back to the master. Clear it to add a NEW row.",
         "Only changed rows and new (blank-ID) rows are written on import; everything else is left as-is.",
@@ -516,6 +666,27 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
+        {/* ⚠ ABOVE THE CARD, AND FIRST IN THE ROW, WHICH IS THE POINT OF IT.
+            The Active/Inactive filter has always existed — in the last cell of
+            the filter row, which on the widest master sits off the right edge of
+            the ScrollableTable. A control that exists and cannot be found is
+            worse than one that does not. Here it cannot be scrolled away from,
+            and it stays reachable when the filters match nothing, which is
+            exactly when a reader needs it. */}
+        <PillToggle
+          value={statusSeg}
+          onChange={setStatusSeg}
+          options={[
+            { value: "all" as const, label: `All · ${statusCounts.all}` },
+            { value: "Active" as const, label: `Active · ${statusCounts.active}` },
+            { value: "Inactive" as const, label: `Inactive · ${statusCounts.inactive}` },
+          ]}
+        />
+        {inactiveHidden > 0 && (
+          <span className="text-[12px] text-grey-2 whitespace-nowrap">
+            {inactiveHidden} inactive hidden
+          </span>
+        )}
         <div className="relative flex-1 min-w-[200px]">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
@@ -551,6 +722,18 @@ export default function MasterCrud<T extends { id: string; name: string; active:
         )}
       </div>
 
+      {/* Said ONCE, on the screen, because the button gives no clue and the
+          consequence is not reversible-looking. Nothing here used to say whether
+          switching a row off would break something already raised on it. */}
+      <p className="text-[12px] leading-snug text-grey-2">
+        {statusNote ?? (
+          <>
+            An inactive {singular.toLowerCase()} cannot be picked on new records. Anything already
+            using it is unaffected.
+          </>
+        )}
+      </p>
+
       {importErr && <p className="text-[12.5px] text-ryg-red">Import failed: {importErr}</p>}
 
       <Card className="overflow-hidden">
@@ -574,6 +757,24 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                 <thead>
                   <tr className="text-left text-grey-2 border-b border-line">
                     {canManage && <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>}
+                    {/* ⚠ STATUS SITS BESIDE THE BUTTON THAT CHANGES IT, not twelve
+                        columns away. It used to be the LAST column, so on the
+                        machines master — ten columns of its own plus Actions and
+                        Status — you clicked Deactivate at the far left and nothing
+                        you could see changed, because the badge was off the right
+                        edge. So you clicked again. */}
+                    <th className="font-medium px-4 py-3 whitespace-nowrap">
+                      <button
+                        onClick={() => cycleSort("__status")}
+                        className={`inline-flex items-center gap-1 transition hover:text-navy ${sort?.header === "__status" ? "text-navy" : ""}`}
+                        title="Sort by status"
+                      >
+                        Status
+                        <span className={sort?.header === "__status" ? "text-orange" : "text-grey-2/40"}>
+                          {sort?.header === "__status" ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                        </span>
+                      </button>
+                    </th>
                     {columns.map((c) => {
                       const on = sort?.header === c.header;
                       return (
@@ -593,24 +794,21 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                         </th>
                       );
                     })}
-                    <th className="font-medium px-4 py-3 whitespace-nowrap">
-                      <button
-                        onClick={() => cycleSort("__status")}
-                        className={`inline-flex items-center gap-1 transition hover:text-navy ${sort?.header === "__status" ? "text-navy" : ""}`}
-                        title="Sort by status"
-                      >
-                        Status
-                        <span className={sort?.header === "__status" ? "text-orange" : "text-grey-2/40"}>
-                          {sort?.header === "__status" ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
-                        </span>
-                      </button>
-                    </th>
                   </tr>
 
                   {/* THE FILTER ROW. One searchable multi-select under each column,
                       exactly as every queue in the app has. */}
                   <tr className="border-b border-line bg-page/40">
                     {canManage && <th className="px-4 py-2" />}
+                    <th className="px-2 py-2 font-normal align-top">
+                      <MultiSelect
+                        values={colFilters.__status ?? []}
+                        onChange={(v) => setColFilters((cur) => ({ ...cur, __status: v }))}
+                        options={statusOptions}
+                        placeholder="Any"
+                        triggerClassName="w-full min-w-[7rem] text-[12px]"
+                      />
+                    </th>
                     {columns.map((c) => (
                       <th key={c.header} className="px-2 py-2 font-normal align-top">
                         {colValue[c.header]?.filterable && (filterOptions[c.header]?.length ?? 0) > 0 ? (
@@ -625,15 +823,6 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                         ) : null}
                       </th>
                     ))}
-                    <th className="px-2 py-2 font-normal align-top">
-                      <MultiSelect
-                        values={colFilters.__status ?? []}
-                        onChange={(v) => setColFilters((cur) => ({ ...cur, __status: v }))}
-                        options={statusOptions}
-                        placeholder="Any"
-                        triggerClassName="w-full min-w-[7rem] text-[12px]"
-                      />
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -656,10 +845,23 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                       </td>
                     </tr>
                   )}
-                  {pg.pageItems.map((row) => (
-                    <tr key={row.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                  {pg.pageItems.map((row) => {
+                    /* AN INACTIVE ROW IS RECOGNISABLE WITHOUT READING A COLUMN —
+                       a muted band plus a grey rule down its leading edge. The
+                       rule is 3px on every row, transparent when live, so nothing
+                       shifts sideways as rows change state.
+
+                       ⚠ NOT `opacity`, which was the obvious way to do it and is
+                         wrong: it would fade the Activate link too, on precisely
+                         the rows somebody opened this screen to switch back on. */
+                    const lead = row.active ? "border-l-[3px] border-l-transparent" : "border-l-[3px] border-l-grey-2/50";
+                    return (
+                    <tr
+                      key={row.id}
+                      className={`border-b border-line/70 last:border-0 hover:bg-page/60 ${row.active ? "" : "bg-page/70"}`}
+                    >
                       {canManage && (
-                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                        <td className={`px-4 py-3 align-middle whitespace-nowrap ${lead}`}>
                           <button
                             onClick={() => openEdit(row)}
                             className="text-[12.5px] font-semibold text-orange hover:underline mr-3"
@@ -675,22 +877,23 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                           </button>
                         </td>
                       )}
-                      {columns.map((c) => (
-                        <td key={c.header} className={`px-4 py-3 align-middle ${c.className ?? ""}`}>
-                          {c.render(row)}
-                        </td>
-                      ))}
-                      <td className="px-4 py-3 align-middle">
+                      <td className={`px-4 py-3 align-middle ${canManage ? "" : lead}`}>
                         <span
                           className={`inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 ${
-                            row.active ? "text-ryg-green bg-[#E9F8EF]" : "text-grey-2 bg-page"
+                            row.active ? "text-ryg-green bg-[#E9F8EF]" : "text-grey-2 bg-white border border-line"
                           }`}
                         >
                           {row.active ? "Active" : "Inactive"}
                         </span>
                       </td>
+                      {columns.map((c) => (
+                        <td key={c.header} className={`px-4 py-3 align-middle ${c.className ?? ""}`}>
+                          {c.render(row)}
+                        </td>
+                      ))}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </ScrollableTable>

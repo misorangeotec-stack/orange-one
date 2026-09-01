@@ -71,8 +71,14 @@ export default function Machines() {
         render: (m) =>
           m.needsDryer === null ? <span className="text-grey-2">—</span> : m.needsDryer ? "Needs one" : "No dryer",
         sortValue: (m) => (m.needsDryer === null ? -1 : m.needsDryer ? 1 : 0),
+        // Unanswered returns "" so it reads as "(Blank)", the same as an empty
+        // Billing name or Model no. on this table. It used to hand-roll the
+        // literal "Not set" — the only column here that worked, because its
+        // author remembered a case the shared component did not handle. Now that
+        // MasterCrud keeps blanks itself (OCPI-9), the workaround would be a
+        // second spelling of "nothing here" on one screen.
         filter: {
-          get: (m) => (m.needsDryer === null ? "Not set" : m.needsDryer ? "Needs one" : "No dryer"),
+          get: (m) => (m.needsDryer === null ? "" : m.needsDryer ? "Needs one" : "No dryer"),
         },
       },
       {
@@ -221,6 +227,12 @@ export default function Machines() {
         }
         defaultOrder={(m) => m.sortOrder}
         canManage={s.isAdmin}
+        // True, and the master never said it: `QuotationForm` filters the model
+        // dropdown to `m.active || m.id === draft.machineId`, so switching a
+        // machine off stops it being quotable while a draft already sitting on it
+        // keeps it. Without this nobody could tell whether deactivating would
+        // break an open deal.
+        statusNote="An inactive machine cannot be picked on a new quotation. Deals already raised on it are unaffected."
         emptyValues={{
           name: "",
           billingName: "",
