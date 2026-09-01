@@ -19,6 +19,7 @@ import {
   PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
+import { FIELD_ANCHOR, QUOTATION_FORM_ANCHOR, requiredKeys } from "../lib/completeness";
 import type { OcpiMasterType } from "../types";
 
 /** The heading a name that matches no portal user sits under. */
@@ -96,15 +97,20 @@ function YesNo({
   value,
   onChange,
   disabled,
+  required,
+  anchor,
 }: {
   label: string;
   hint?: string;
   value: boolean | null;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  /** OCPI-15 · both go straight through to `FieldLabel`; see its note. */
+  required?: boolean;
+  anchor?: string;
 }) {
   return (
-    <FieldLabel label={label} hint={hint}>
+    <FieldLabel label={label} hint={hint} required={required} anchor={anchor}>
       <YesNoControl value={value} onChange={onChange} disabled={disabled} ariaLabel={label} />
     </FieldLabel>
   );
@@ -470,10 +476,13 @@ function RateOffer({
   qtyMode,
   qty,
   onQty,
+  qtyKey,
   rateLabel,
   rateHint,
   rate,
   onRate,
+  rateKey,
+  req,
 }: {
   title: string;
   /** Why this block is being asked at all — the branch, in words. */
@@ -493,6 +502,16 @@ function RateOffer({
   rateHint: string;
   rate: string;
   onRate: (v: string) => void;
+  /*
+    OCPI-15 · the two lines are mandatory once the offer is agreed, and the
+    missing-answers panel has to be able to jump to them. The KEYS come in
+    rather than a pair of booleans so the anchor and the asterisk are derived
+    from the same thing the panel is derived from — `req` is `requiredKeys`,
+    already computed once by the form.
+  */
+  qtyKey: "inkOfferQty" | "headOfferQty";
+  rateKey: "inkOfferRate" | "headOfferRate";
+  req: Set<keyof QuotationDraft>;
 }) {
   if (!shown) return null;
 
@@ -516,7 +535,12 @@ function RateOffer({
         />
         {showLines && (
           <>
-            <FieldLabel label={qtyLabel} hint={qtyHint}>
+            <FieldLabel
+              label={qtyLabel}
+              hint={qtyHint}
+              required={req.has(qtyKey)}
+              anchor={FIELD_ANCHOR(qtyKey)}
+            >
               <TextInput
                 inputMode={qtyMode === "integer" ? "numeric" : "decimal"}
                 value={qty}
@@ -526,7 +550,12 @@ function RateOffer({
                 disabled={disabled}
               />
             </FieldLabel>
-            <FieldLabel label={rateLabel} hint={rateHint}>
+            <FieldLabel
+              label={rateLabel}
+              hint={rateHint}
+              required={req.has(rateKey)}
+              anchor={FIELD_ANCHOR(rateKey)}
+            >
               <TextInput
                 inputMode="decimal"
                 value={rate}
@@ -705,6 +734,25 @@ export default function QuotationForm({
   const mappedHeads = useMemo(
     () => s.headsFor(draft.machineId || null),
     [s, draft.machineId],
+  );
+
+  /**
+   * Which questions this deal is obliged to answer (OCPI-15).
+   *
+   * 🔴 IT IS THE SAME TABLE THE BLOCKERS READ. `requiredKeys`, `missingForGenerate`
+   *    and `missingForSubmit` all come out of one `REQUIREMENTS` list in
+   *    completeness.ts, so an asterisk on this form and a refusal at the top of
+   *    the page cannot disagree — which they would within a month if the
+   *    asterisks were typed in by hand, as six of them were until now.
+   *
+   * ⚠ THE ASTERISK MEANS MANDATORY, NOT "BLOCKS GENERATE". Most of these are
+   *   only demanded at Send for approval; the cards above the form say which is
+   *   which. Marking only the Generate tier would leave twenty mandatory
+   *   questions unmarked, which is the hunt this was raised to end.
+   */
+  const req = useMemo(
+    () => requiredKeys(draft, dealAnswers, mappedHeads.length),
+    [draft, dealAnswers, mappedHeads.length],
   );
 
   /**
@@ -978,7 +1026,10 @@ export default function QuotationForm({
    */
 
   return (
-    <div className="space-y-4">
+    // ⚠ THE ID IS `focusField`'s FALLBACK. A missing-answers entry whose field
+    //   somehow carries no anchor scrolls the form into view rather than
+    //   silently ignoring the click, which reads as a broken page.
+    <div id={QUOTATION_FORM_ANCHOR} className="space-y-4">
       <Card className="space-y-4 p-5">
         <h2 className="text-[15px] font-bold text-navy">Customer</h2>
         <CustomerPicker draft={draft} patch={patch} disabled={disabled} />
@@ -1056,7 +1107,11 @@ export default function QuotationForm({
             )}
           </div>
           <div>
-            <FieldLabel label="Salesperson" required>
+            <FieldLabel
+              label="Salesperson"
+              required={req.has("salespersonName")}
+              anchor={FIELD_ANCHOR("salespersonName")}
+            >
               <Combobox
                 value={draft.salespersonName}
                 onChange={pickSalesperson}
@@ -1139,7 +1194,11 @@ export default function QuotationForm({
             />
           </FieldLabel>
           <div>
-            <FieldLabel label="Machine" required>
+            <FieldLabel
+              label="Machine"
+              required={req.has("machineId")}
+              anchor={FIELD_ANCHOR("machineId")}
+            >
               <Combobox
                 value={draft.machineId}
                 onChange={chooseMachine}
@@ -1215,7 +1274,8 @@ export default function QuotationForm({
                 ? "this model offers a choice — pick the one being supplied"
                 : "from the machine master"
             }
-            required={mappedHeads.length > 1}
+            required={req.has("headType")}
+            anchor={FIELD_ANCHOR("headType")}
           >
             {mappedHeads.length > 1 ? (
               <div className="space-y-1.5">
@@ -1258,7 +1318,11 @@ export default function QuotationForm({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <FieldLabel label="No. of machines" required>
+          <FieldLabel
+            label="No. of machines"
+            required={req.has("machineCount")}
+            anchor={FIELD_ANCHOR("machineCount")}
+          >
             <TextInput
               inputMode="numeric"
               value={draft.machineCount}
@@ -1553,6 +1617,8 @@ export default function QuotationForm({
             value={draft.inclInk}
             onChange={(v) => patch({ inclInk: v })}
             disabled={disabled}
+            required={req.has("inclInk")}
+            anchor={FIELD_ANCHOR("inclInk")}
           />
           {show("inkQtyIncluded") && (
             /*
@@ -1565,7 +1631,12 @@ export default function QuotationForm({
                 those would put a unit on a customer's paper that the deal never
                 agreed to. Free text stays free; it is only asked to be explicit.
             */
-            <FieldLabel label="Quantity of ink included" hint="state the unit">
+            <FieldLabel
+              label="Quantity of ink included"
+              hint="state the unit"
+              required={req.has("inkQtyIncluded")}
+              anchor={FIELD_ANCHOR("inkQtyIncluded")}
+            >
               <TextInput
                 value={draft.inkQtyIncluded}
                 onChange={(e) => patch({ inkQtyIncluded: e.target.value })}
@@ -1588,10 +1659,13 @@ export default function QuotationForm({
           qtyMode="decimal"
           qty={draft.inkOfferQty}
           onQty={(v) => carry(v, "inkOfferQty", "inkInvoiceQty")}
+          qtyKey="inkOfferQty"
           rateLabel="Rate"
           rateHint="per litre"
           rate={draft.inkOfferRate}
           onRate={(v) => carry(v, "inkOfferRate", "inkInvoiceAmount")}
+          rateKey="inkOfferRate"
+          req={req}
         />
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1600,9 +1674,16 @@ export default function QuotationForm({
             value={draft.inclSpares}
             onChange={(v) => patch({ inclSpares: v })}
             disabled={disabled}
+            required={req.has("inclSpares")}
+            anchor={FIELD_ANCHOR("inclSpares")}
           />
           {show("spareDetails") && (
-            <FieldLabel label="Spare part details and quantity" hint="item name & quantity">
+            <FieldLabel
+              label="Spare part details and quantity"
+              hint="item name & quantity"
+              required={req.has("spareDetails")}
+              anchor={FIELD_ANCHOR("spareDetails")}
+            >
               <TextInput
                 value={draft.spareDetails}
                 onChange={(e) => patch({ spareDetails: e.target.value })}
@@ -1637,9 +1718,16 @@ export default function QuotationForm({
               value={draft.inclCentering}
               onChange={(v) => patch({ inclCentering: v })}
               disabled={disabled}
+              required={req.has("inclCentering")}
+              anchor={FIELD_ANCHOR("inclCentering")}
             />
             {show("centeringDetails") && (
-              <FieldLabel label="Centering device details and quantity" hint="item name & quantity">
+              <FieldLabel
+                label="Centering device details and quantity"
+                hint="item name & quantity"
+                required={req.has("centeringDetails")}
+                anchor={FIELD_ANCHOR("centeringDetails")}
+              >
                 <TextInput
                   value={draft.centeringDetails}
                   onChange={(e) => patch({ centeringDetails: e.target.value })}
@@ -1656,9 +1744,15 @@ export default function QuotationForm({
             value={draft.inclHead}
             onChange={(v) => patch({ inclHead: v })}
             disabled={disabled}
+            required={req.has("inclHead")}
+            anchor={FIELD_ANCHOR("inclHead")}
           />
           {show("headsIncluded") && (
-            <FieldLabel label="No. of heads included">
+            <FieldLabel
+              label="No. of heads included"
+              required={req.has("headsIncluded")}
+              anchor={FIELD_ANCHOR("headsIncluded")}
+            >
               <TextInput
                 inputMode="numeric"
                 value={draft.headsIncluded}
@@ -1690,10 +1784,13 @@ export default function QuotationForm({
           qtyMode="integer"
           qty={draft.headOfferQty}
           onQty={(v) => carry(v, "headOfferQty", "headInvoiceQty")}
+          qtyKey="headOfferQty"
           rateLabel="Rate"
           rateHint="per head"
           rate={draft.headOfferRate}
           onRate={(v) => carry(v, "headOfferRate", "headInvoiceAmount")}
+          rateKey="headOfferRate"
+          req={req}
         />
 
         {/*
@@ -1992,7 +2089,11 @@ export default function QuotationForm({
             frozen version still reads correctly.
         */}
         <div className="grid gap-3 sm:grid-cols-2">
-          <FieldLabel label="Deal type" required>
+          <FieldLabel
+            label="Deal type"
+            required={req.has("transportTerms")}
+            anchor={FIELD_ANCHOR("transportTerms")}
+          >
             <ChoiceButtons
               value={draft.transportTerms}
               onChange={(v) =>
@@ -2017,7 +2118,11 @@ export default function QuotationForm({
             />
           </FieldLabel>
           {show("highSeasVia") && (
-            <FieldLabel label="High seas delivery via">
+            <FieldLabel
+              label="High seas delivery via"
+              required={req.has("highSeasVia")}
+              anchor={FIELD_ANCHOR("highSeasVia")}
+            >
               <ChoiceButtons
                 value={draft.highSeasVia}
                 onChange={(v) => patch({ highSeasVia: v })}
@@ -2029,7 +2134,11 @@ export default function QuotationForm({
             </FieldLabel>
           )}
           {show("highSeasCostBy") && (
-            <FieldLabel label="High seas cost borne by">
+            <FieldLabel
+              label="High seas cost borne by"
+              required={req.has("highSeasCostBy")}
+              anchor={FIELD_ANCHOR("highSeasCostBy")}
+            >
               <ChoiceButtons
                 value={draft.highSeasCostBy}
                 onChange={(v) => patch({ highSeasCostBy: v })}
@@ -2044,6 +2153,8 @@ export default function QuotationForm({
             <FieldLabel
               label="Local delivery cost borne by"
               hint="transport, clearance, loading / unloading"
+              required={req.has("localCostBy")}
+              anchor={FIELD_ANCHOR("localCostBy")}
             >
               <ChoiceButtons
                 value={draft.localCostBy}
@@ -2066,7 +2177,12 @@ export default function QuotationForm({
         )}
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <FieldLabel label="Currency" required hint={isHighSeas ? "fixed by the deal type" : undefined}>
+          <FieldLabel
+            label="Currency"
+            required={req.has("dealValueCurrency")}
+            anchor={FIELD_ANCHOR("dealValueCurrency")}
+            hint={isHighSeas ? "fixed by the deal type" : undefined}
+          >
             <ChoiceButtons
               value={draft.dealValueCurrency}
               onChange={(v) => patch({ dealValueCurrency: v })}
@@ -2076,7 +2192,11 @@ export default function QuotationForm({
             />
           </FieldLabel>
           <div className={show("gstRate") ? undefined : "sm:col-span-2"}>
-            <FieldLabel label="Total deal value (excluding GST)" required>
+            <FieldLabel
+              label="Total deal value (excluding GST)"
+              required={req.has("dealValueAmount")}
+              anchor={FIELD_ANCHOR("dealValueAmount")}
+            >
               <TextInput
                 inputMode="decimal"
                 value={draft.dealValueAmount}
@@ -2136,7 +2256,11 @@ export default function QuotationForm({
           <div className="space-y-2 rounded-lg border border-line bg-[#FBFCFE] p-3">
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[9rem]">
-                <FieldLabel label="USD → INR rate">
+                <FieldLabel
+                  label="USD → INR rate"
+                  required={req.has("fxRate")}
+                  anchor={FIELD_ANCHOR("fxRate")}
+                >
                   <TextInput
                     inputMode="decimal"
                     value={draft.fxRate}
@@ -2238,7 +2362,11 @@ export default function QuotationForm({
               one governs. See DELIVERY_DATE_REMARK in fieldSpec.ts.
           */}
           <div>
-            <FieldLabel label="Tentative machine delivery date">
+            <FieldLabel
+              label="Tentative machine delivery date"
+              required={req.has("deliveryDate")}
+              anchor={FIELD_ANCHOR("deliveryDate")}
+            >
               <TextInput
                 type="date"
                 value={draft.deliveryDate}
@@ -2277,7 +2405,11 @@ export default function QuotationForm({
             A <button> inside it would focus the textarea on every click, so the
             confirm step would fight the caret.
         */}
-        <FieldLabel label="Terms of payment">
+        <FieldLabel
+          label="Terms of payment"
+          required={req.has("paymentTerms")}
+          anchor={FIELD_ANCHOR("paymentTerms")}
+        >
           <TextArea
             rows={2}
             value={draft.paymentTerms}

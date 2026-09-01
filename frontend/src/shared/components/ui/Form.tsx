@@ -7,9 +7,18 @@ const fieldBase =
   "w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-grey-2 " +
   "outline-none transition focus:border-orange focus:ring-4 focus:ring-orange/10 disabled:bg-page disabled:text-grey-2";
 
-export function FieldLabel({ label, required, hint, children }: { label: string; required?: boolean; hint?: ReactNode; children: ReactNode }) {
+/**
+ * `anchor` is an optional DOM id, so something elsewhere on the page can scroll
+ * to this field and focus it — OCPI's "what is still missing" panel does exactly
+ * that, from `FIELD_ANCHOR` in apps/ocpi/lib/completeness.ts.
+ *
+ * ⚠ `scroll-mt-24` GOES WITH IT AND IS NOT COSMETIC. The portal's `Topbar` is
+ *   `sticky top-0` and 68px tall, so a plain `scrollIntoView` parks the label
+ *   underneath it. 96px clears the bar with a little air above.
+ */
+export function FieldLabel({ label, required, hint, anchor, children }: { label: string; required?: boolean; hint?: ReactNode; anchor?: string; children: ReactNode }) {
   return (
-    <label className="block">
+    <label id={anchor} className={anchor ? "block scroll-mt-24" : "block"}>
       {/* Baseline-aligned with the label pinned: a hint long enough to wrap used to
           vertically re-centre the label and collide with it. */}
       <span className="flex items-baseline justify-between gap-3 mb-1.5">

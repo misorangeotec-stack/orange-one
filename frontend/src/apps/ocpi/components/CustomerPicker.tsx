@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import Combobox from "@/shared/components/ui/Combobox";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { FIELD_ANCHOR } from "../lib/completeness";
 import {
   OCPI_MASTERS_QK, fetchOcpiMasters, fetchLastContactFor, type OcpiParty,
 } from "../data/ocpiMasters";
@@ -166,7 +167,16 @@ export default function CustomerPicker({
         </p>
       </FieldLabel>
 
-      <FieldLabel label="Customer / party name" required>
+      {/* ⚠ ALWAYS REQUIRED, so it does not read `requiredKeys` — there is no
+          state of this form in which a quotation may be addressed to nobody, and
+          threading the set in for one unconditional field would be ceremony. The
+          anchor is what matters here: it is the first entry the missing-answers
+          panel jumps to. */}
+      <FieldLabel
+        label="Customer / party name"
+        required
+        anchor={FIELD_ANCHOR("customerName")}
+      >
         <TextInput
           value={draft.customerName}
           onChange={(e) => patch({ customerName: e.target.value })}

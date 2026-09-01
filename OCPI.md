@@ -2747,3 +2747,190 @@ this renderer's rows require a label, and this mirrors `Warranty Note`.
 - 📋 **`delivery_days` still fills from the deal on edit.** A pre-existing deal that recorded it keeps
   writing it back on every save. That is the retirement shape working as intended, not a leak — nothing
   reads the column any more.
+
+---
+
+# OCPI-15 · Nothing is mandatory until Send for approval — 01-Sep-2026
+
+**The ask.** A salesperson should be able to work on a quotation without being blocked by unanswered
+questions. Completeness should be enforced at **Send for approval**, and at that moment the screen
+should make it obvious which fields are mandatory and which are still empty.
+
+## The gate that was actually blocking, and the one that was not
+
+`Save draft` enforced nothing and still does — that was never the problem. The block was on
+**Generate**, gated on `missingForSubmit(draft).length === 0`, i.e. all 26 answers. So a deal
+mid-negotiation could not produce a paper at all.
+
+There are now two tiers:
+
+| | Blocks | Fields |
+|---|---|---|
+| `missingForGenerate` | **Generate quotation** | customer name, salesperson, machine, no. of machines, currency, total deal value, and the USD→INR rate on a dollar / high-seas deal |
+| `missingForSubmit` | **Send for approval** | all of the above **plus** print head, the four inclusion answers and their detail boxes, the ink / head subsidized quantity + rate, deal type and its cost-bearer follow-ups, terms of payment, tentative delivery date |
+
+`missingForSubmit` is a **superset**, deliberately: the panel at Send has to name everything still
+outstanding, not only the part that was let through earlier.
+
+## 🔴 The price came back to the Generate tier, and it was the client who put it there
+
+OCPI-15 was specified — and settled in WORKLIST 0.2 — as *customer name and machine only*, knowingly
+accepting that a quotation PDF could reach a customer with no price on it, with a loud warning as the
+defence. **Ritesh Bhai reversed that during planning:** *"the price should definitely be compulsory. A
+quotation cannot be generated without the pricing — otherwise we already have the save draft option."*
+
+He is right, and the reversal is what makes the whole change cheap: the client's Generate tier now
+lands on almost exactly what the database already demanded, so **nothing had to be relaxed
+server-side**. The red "this will print with no price" callout the brief asked for has no subject any
+more; what took its place warns about the three answers that *can* still print blank — see below.
+
+The USD rate is in the Generate tier because without it `deal_value_inr` is derived as null and the
+**rupee total prints blank on both papers**. That is the same fault as a blank price with one
+indirection in front of it.
+
+## 🔴 The brief was wrong about where the server gate lives
+
+The entry said `fms_ocpi_write_quotation` carried a completeness predicate that had to be relaxed in
+the same migration. **It does not.** Pulled live with `pg_get_functiondef` it is a plain `UPDATE`. The
+two gates that exist are:
+
+- **Generate** → a six-item list inside **`fms_ocpi_generate_quotation`**.
+- **Send for approval** → the CHECK **`fms_ocpi_complete_when_submitted`**, written
+  `status = 'draft' OR (…24 conjuncts…)`.
+
+Because that CHECK is **status-gated it already did exactly what OCPI-15 asks** — enforces nothing
+while the deal is a draft, everything the moment it is submitted. It needed no change, which is just
+as well: a CHECK is re-validated on every UPDATE, so tightening it makes every deal on record that
+fails it un-updatable and throws on every approval and signature stamp. OCPI-7 and OCPI-14 both
+proposed it and both rejected it. **Proved rather than assumed:** all 19 non-draft deals were updated
+in a rolled-back transaction after the migration — 19 clean, 0 failures.
+
+So the migration (`20261103120000_fms_ocpi_the_gate_moves_to_send_for_approval.sql`) does two small
+things, both as **transforms of the live body** — read `pg_get_functiondef`, assert the anchor appears
+exactly once, substitute, assert the result:
+
+1. `fms_ocpi_generate_quotation` gains **one** conjunct, the dollar rate. A *tightening*, not a
+   relaxation. Checked on live data first: all 5 USD / high-seas deals of 26 already carry an
+   `fx_rate`, so it refuses nothing that exists.
+2. `fms_ocpi_submit_quotation` gains a completeness pre-check that **names the missing fields**. It had
+   none, so a client/server disagreement surfaced as a bare `violates check constraint` naming nothing
+   — the exact failure OCPI-15 exists to end, one layer down.
+   ⚠ It **mirrors the CHECK conjunct for conjunct and is never stricter**; it stays deliberately looser
+   on `head_type` and `incl_centering`, which the CHECK has never carried and the form refuses first.
+
+Agreement was proved in SQL across all 26 deals: **0 rows where the new pre-check is stricter than the
+CHECK, 0 where it is looser.**
+
+## ⚠ `completeness.ts` — and why it could not stay in `fieldSpec.ts`
+
+`missingForSubmit` and `missingForDetailSheet` moved to a new **`lib/completeness.ts`**. The move was
+forced, not tidy-minded: the new rule table has to ask `isVisible` whether a field is on the
+salesperson's screen at all, and **`branching.ts` already imports `isUsdDeal` from `fieldSpec.ts`** —
+keeping them there makes fieldSpec → branching → fieldSpec a cycle. `missingForDetailSheet` went with
+it because the two are a pair whose comments explain each other. `fieldSpec.ts` keeps a pointer note
+where they were.
+
+Everything now comes out of **one authored `REQUIREMENTS` table** — `missingForGenerate`,
+`missingForSubmit` and `requiredKeys` all read it, so a required marker and a blocker cannot disagree.
+
+🔴 **Nothing in that table restates a branch rule.** "Is this asked?" is answered by `isVisible`.
+`PART_A_VISIBILITY` already carries every conditional `missingForSubmit` used to hand-roll — checked
+line by line: `inkQtyIncluded`, `spareDetails`, `headsIncluded`, the six OCPI-7 show-on-`false` rate
+fields, `inclCentering`, `centeringDetails`, `highSeasVia`, `highSeasCostBy`, `localCostBy`, `fxRate`.
+Only `headType`'s head count needs an `extra`, because it is a fact about the machine master and not
+about the draft. Writing those rules a second time is how the panel comes to name a box that is not on
+the page — **OCPI-8 is this module's own record of that happening.**
+
+Bonus from the same move: `missingForDetailSheet`'s dryer gate was a spelled-out copy of
+`hasDryerDetails` and is now `isVisible("dryerName", …)`. One rule, one place.
+
+⚠ `FIELD_LABEL` was **read, never edited** — its key order is `revisionDiff.ts`'s row order.
+
+## Four cards on a severity ladder
+
+This screen has contradicted itself before, so each card says a different thing in its own register.
+The last three are gated on `canGenerate`, exactly as the yellow one already was, so the neutral card
+never stacks with them.
+
+| Card | Colour | Says |
+|---|---|---|
+| Still needed to generate | neutral | the price-and-parties tier, as chips you can press |
+| **The customer's copy will print blank lines** | **red** | `transportTerms` / `paymentTerms` / `deliveryDate` — verified against `quotationPdf.ts`, these three leave **four rows** blank on the summary sheet the customer is sent: Deal Type (:160), Tentative Machine Delivery Date (:236), Payment Terms (:240), Term of Delivery (:241) |
+| N answers still needed before this can be sent | orange | the complete clickable list; what the Send button jumps to |
+| The detailed sheet will print N blank lines | yellow | **unchanged**, still working alongside |
+
+Red = a customer sees a gap. Orange = you cannot proceed. Yellow = a secondary sheet has gaps.
+
+## Finding the field
+
+- `FieldLabel` gained an optional **`anchor`** (`shared/components/ui/Form.tsx`) rendering
+  `id={anchor} class="block scroll-mt-24"`. ⚠ The `scroll-mt-24` is load-bearing: `Topbar` is
+  `sticky top-0` and 68px tall, so a plain `scrollIntoView` parks the label underneath it.
+- `FIELD_ANCHOR(key)` is used at **both ends** — the form writes the ids, the panel reads them — so a
+  renamed field cannot leave a silently dead link.
+- `focusField` scrolls, focuses the first focusable descendant, and flashes an orange ring
+  (`.ocpi-field-flash` in `index.css`, real CSS so it cannot depend on the JIT content scanner finding
+  a class literal in a `.ts` file). ⚠ The ring is not decoration — several targets are Yes/No pairs,
+  and moving the caret into one button among a dozen is not a visible event. It **falls back to
+  scrolling the form** when an anchor is missing, so no entry is ever a dead click.
+- **Audited:** all 26 `REQUIREMENTS` keys resolve to an anchor that exists in the rendered form.
+
+⚠ **The asterisk means MANDATORY, not "blocks Generate".** A field required only at the approval tier
+still carries one; the cards say when. Marking only the Generate tier would leave twenty mandatory
+questions unmarked, which is the hunt this was raised to end. The seven asterisks that were typed by
+hand are now driven by `requiredKeys` so they cannot drift.
+
+⚠ `missingForDetailSheet` stays `string[]` and stays **unclickable**, deliberately: four of its seven
+entries are shipment answers living in `<td>`s inside `ShipmentRow`, not in a `FieldLabel`, so they
+carry no anchor. A list where three entries move the page and four do nothing is worse than one that
+never offered.
+
+## 🔴 Send for approval saves first
+
+`onSubmit` saves before it checks. `missing` is computed from the **draft**; the CHECK reads the
+**row**. Somebody who fills in the payment terms and presses Send without saving would pass the
+client's check and be refused by the database, on a field the screen had just shown as answered.
+A returned quotation is safe to save: `fms_ocpi_decide_quotation` puts a `rework` decision back to
+status `draft`, so `fms_ocpi_save_draft` takes it.
+
+The button **stays live** when the deal is incomplete — the client's call. A greyed button answers
+nothing; pressing this one saves, then scrolls to the panel and flashes it (~800ms later, with
+"Sending…" shown meanwhile, because the save is a round-trip).
+
+## Verified — live browser + SQL, 01-Sep-2026
+
+- `npm run build` green (tsc strict + vite).
+- **Rollback rehearsed, not merely written:** apply → roll back → re-apply on the live database. Both
+  function bodies returned **byte-for-byte** to their originals (md5 `bc2a4161…` / `d592556d…`), and
+  the re-apply reproduced the post-migration md5s exactly.
+- A deal with customer + machine only: Generate refused, the card naming Salesperson, No. of machines,
+  Currency, Total deal value. Each chip scrolls to, focuses and flashes its box.
+- Price filled → **QT-M0046 generated with no deal type, no payment terms and no delivery date** — the
+  state that was impossible before. Both papers produced, nothing crashed on the nulls.
+- **The PDF was read with pdf.js, not string-searched.** Total Value (INR) ₹53,10,000 prints; the four
+  blank rows are exactly the ones the red card named.
+- Send for approval on that deal was **refused** — no RPC call, status stayed `draft`, panel named all
+  8 answers, chips jumped (including onto a Yes/No pair).
+- Filled and sent: status `awaiting_quotation_approval`, no error. **The SQL did not refuse what the
+  form allowed.**
+- **The disagreement was forced:** `payment_terms`, `delivery_date` and `incl_ink` nulled directly in
+  SQL, then submitted — the new message reads *"Still needed before this can be sent for approval:
+  Deal includes ink, Terms of payment, Tentative machine delivery date"*, in the form's own words,
+  instead of a bare constraint violation. Rolled back; QT-M0046 untouched.
+- An already-issued quotation revised: QT-M0036 went v4 → v5, same number, PDF stored, no errors.
+- All 19 non-draft deals updated cleanly — the CHECK was not touched.
+- FIX-4 orphan sweep over `apps/ocpi`: clean, and no prose `q.missing` render survives.
+
+## Open / worth knowing
+
+- **Two ZZ TEST artefacts were left behind by the verification.** `QT-M0046` (*ZZ TEST OCPI-15 gate
+  move*) is sitting in the **live quotation-approval queue**, and `QT-M0036` gained a revision 5. Both
+  are `ZZ TEST` and consistent with the existing seeded set, but the first is visible to a real
+  approver — remove it when the module is next torn down.
+- OCPI email was **off** (`email_module_settings.ocpi = false`) throughout, so the browser test sent no
+  mail. It was left as found.
+- **Does the approver need to see anything different**, now that a deal can reach them having been
+  generated with gaps that were filled in later? Not asked yet — worth raising now the panel exists.
+- The `fms_ocpi_submit_quotation` pre-check duplicates the CHECK's logic in a second place. That is a
+  deliberate trade — a readable message for a mirrored predicate — but it is now **two** things to keep
+  in step, and the mirror is asserted only by the SQL agreement query above, not by anything running.

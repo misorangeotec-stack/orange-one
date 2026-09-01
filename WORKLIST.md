@@ -1993,6 +1993,223 @@ which look at what the form actually renders.
 - [x] 7.4 **OCPI-12 (the K64 print audit) must run AFTER this**, not before — this changes K64's form
       substantially and an audit of the old shape would be wasted
 
+### OCPI-15 · Nothing is mandatory until Send for approval — and then say plainly what is missing  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai*
+
+**The ask.** A salesperson should be able to work on a quotation without being blocked by unanswered
+questions. Completeness should be enforced at **Send for approval** and nowhere earlier — and at that
+moment the screen should make it obvious which fields are mandatory and which of them are still empty,
+so they can be filled without hunting.
+
+#### First, what is actually blocked today — it is NOT Save
+
+⚠ **`Save draft` already enforces nothing.** `useQuotationDraft.ts`'s `save()` has no completeness check
+at all; it writes whatever is on the form. The card on screen even says *"You can save it as a draft in
+the meantime."* So the thing being described as "saving the quotation" is almost certainly
+**Generate quotation** — the button that produces the actual document. Reading it that way:
+
+| Step | Gated on today | Should be |
+|---|---|---|
+| Save draft | nothing | nothing — **already correct** |
+| **Generate quotation** | **`missingForSubmit(draft).length === 0`** (`QuotationEditor.tsx:43`) — the block | **nothing, or a warning** |
+| Send for approval | only that a document exists (`alreadyIssued`) | **the completeness gate moves here** |
+
+So this is one move, not a rewrite: take the gate off Generate and put it on Send for approval.
+
+⚠ **If "saving" really did mean `Save draft`, say so and this entry shrinks to nothing** — that path is
+already free. Proceeding on the Generate reading.
+
+#### What that gate is holding back
+
+`missingForSubmit` (`fieldSpec.ts:1023`) requires **~24 things**, including: customer name, salesperson,
+machine, how many machines; the three inclusion answers and their follow-ups; OCPI-7's subsidized
+quantity and rate; deal type; **currency**; **total deal value**; the USD rate on a dollar deal;
+**payment type and terms**; **delivery date**.
+
+🔴 **So the sharp question is whether a quotation may be GENERATED with no deal value, no payment terms
+and no delivery date.** Generate produces a **customer-facing PDF**. Today those fields cannot be blank
+on it, by design. Move the gate and they can be — and a quotation reaching a customer without a price
+is worse than a salesperson being nagged for one.
+
+There is already a two-tier model on this screen that points at the answer:
+- `missingForSubmit` — **blocks**. Things a quotation cannot go out without.
+- `missingForDetailSheet` — **warns only**, in a yellow card naming exactly which lines will print
+  ruled-blank. Its comment says why: *"A WARNING, NEVER A BLOCK. The detail fields are optional on
+  purpose — a quotation goes out mid-negotiation, often before the warranty and delivery terms are
+  settled."*
+
+**The natural shape of this change is to move most of `missingForSubmit` into that second tier** — warn
+loudly at Generate, block only at Send for approval — rather than deleting the concept. Which fields, if
+any, stay hard blocks at Generate is the one thing to settle with Ritesh Bhai. My suggestion: keep
+**customer name and machine** as hard blocks (a document addressed to nobody, for nothing, is not a
+draft of anything) and let everything else warn.
+
+🔴 **THE SERVER ENFORCES THIS TOO, AND IT IS THE SAME PREDICATE.** `fms_ocpi_write_quotation` carries its
+own completeness check in SQL — e.g. `incl_ink is not null and (incl_ink is not true or ink_qty_included
+is not null)`. Relax the client alone and Generate will be offered, then refused by the database with a
+message no salesperson can act on. Client and server move **in the same migration**, and the RPCs have
+been redefined many times — pull the LIVE bodies.
+
+#### Part 2 · Make the mandatory fields findable
+
+Today the missing list is a comma-separated sentence in a card at the top of the page
+(`QuotationEditor.tsx:156-165`). It names the fields in prose — *"the total deal value, the type of
+payment…"* — but it does not say **where** they are, does not link to them, and the form itself gives no
+sign which fields are required. On a form of this length that is a hunt.
+
+- [x] 1 **Mark mandatory fields in the form itself.** `FieldLabel` already takes a `required` prop —
+      `MasterCrud` uses it. The quotation form largely does not. Wire it from the same rule set that
+      `missingForSubmit` uses, so the asterisk and the blocker can never disagree.
+- [x] 2 **Make the missing list clickable** — each entry scrolls to and focuses its field. The list
+      already knows the fields; today it only knows their prose names.
+      ⚠ This needs a field **key** alongside the sentence. `missingForSubmit` returns plain strings
+      today (*"the total deal value"*), which cannot be linked to anything. It has to return
+      `{ key, label }` — a small refactor, and the one piece of real work in Part 2.
+- [x] 3 **Show it at Send for approval**, since that is where the block now lives — as a dialog or an
+      inline panel listing what is still needed, not a bare disabled button. A disabled button with no
+      reason is the bug being fixed, moved down the page.
+- [x] 4 Keep the **existing yellow "will print N blank lines"** warning working alongside it. Two
+      different messages — *"cannot send"* and *"will print blank"* — must stay visually distinct or the
+      screen contradicts itself, which has happened here before.
+
+#### Phase-wise checklist
+
+**Phase 0 · Settled before a line was written**  `[x]`
+- [x] 0.1 Confirmed the reading: it is **Generate**, not Save, that blocks. `useQuotationDraft.save()`
+      carries no completeness check at all, and the card on screen already says so.
+- [x] 0.2 ~~SETTLED — only the CUSTOMER NAME and the MACHINE still block Generate.~~
+      🔴 **SUPERSEDED BY THE USER, 01-09-2026, during planning.** *"The price should definitely be
+      compulsory. A quotation cannot be generated without the pricing — otherwise we already have the
+      save draft option."* The price therefore **returns to the Generate tier**, and the red
+      "this will print with no price" callout has no subject any more. Final tiers:
+      · **Blocks Generate** — customer name, salesperson, machine, no. of machines, currency, total
+        deal value, and the USD→INR rate on a dollar / high-seas deal (without it the RUPEE total
+        prints blank on both papers — the same fault, one indirection away).
+      · **Warns at Generate, blocks Send for approval** — type of head, the four inclusion answers and
+        their detail boxes, the ink / head subsidized quantity + rate, deal type and its cost-bearer
+        follow-ups, terms of payment, tentative delivery date.
+- [x] 0.3 🔴 **THE BRIEF WAS WRONG ABOUT WHERE THE SERVER GATE LIVES.** `fms_ocpi_write_quotation` does
+      NOT carry a completeness predicate — pulled live with `pg_get_functiondef`, it is a plain
+      `UPDATE`. The two real gates are **`fms_ocpi_generate_quotation`** (a six-item list) and the
+      CHECK **`fms_ocpi_complete_when_submitted`**, which is written `status = 'draft' OR (…)` and so
+      ALREADY enforces nothing while the deal is a draft and everything the moment it is submitted —
+      exactly what OCPI-15 asks for. It needs no change, which is just as well.
+- [x] 0.4 Live-data check: all 5 USD / high-seas deals of 26 already carry an `fx_rate` (`no_fx = 0` on
+      every USD row, every status), so adding that conjunct to Generate blocks nothing that exists.
+
+**Phase 1 · `lib/completeness.ts` — the two tiers get one home**
+- [x] 1.1 New module `frontend/src/apps/ocpi/lib/completeness.ts`.
+      ⚠ IT CANNOT LIVE IN `fieldSpec.ts`. The rule table must ask `isVisible`, and `branching.ts`
+      already imports `isUsdDeal` FROM `fieldSpec.ts` — putting it there is a circular import.
+- [x] 1.2 One authored `REQUIREMENTS` table: `{ key, tier, label?, extra? }`.
+      ⚠ "Is this field asked?" is answered by **`isVisible`, not a second copy of the rules**.
+      `PART_A_VISIBILITY` already carries every gate `missingForSubmit` hand-rolls — checked line by
+      line: `inkQtyIncluded`, `spareDetails`, `headsIncluded`, the six `ink/headOffer*` show-on-`false`
+      rules, `inclCentering`, `centeringDetails`, `highSeasVia`, `highSeasCostBy`, `localCostBy`,
+      `fxRate`. `extra` exists only for what `isVisible` cannot know — `headType`'s head count.
+- [x] 1.3 `missingForSubmit(d, deal, headOptions)` returns `MissingField[]` — `{ key, label }` instead
+      of prose. ⚠ **KEEPS ITS NAME AND ITS THREE ARGUMENTS**; "submit" IS Send for approval here
+      (`submitQuotation` → `fms_ocpi_submit_quotation`) and OCPI-14's head-count rule rides on the
+      third argument.
+- [x] 1.4 `missingForGenerate(…)` — the `tier: "generate"` subset.
+- [x] 1.5 `requiredKeys(…)` — every ASKED key, filled or not. This is what puts the asterisks on the
+      form, from the same table, so an asterisk and a blocker cannot disagree.
+- [x] 1.6 `FIELD_ANCHOR(key)` and `focusField(key)` — the contract between the panel and the form.
+- [x] 1.7 `missingForDetailSheet` moves across too, so the two tiers stay in one file that
+      cross-references itself. Its dryer gate is a hand-copy of `hasDryerDetails` and becomes
+      `isVisible("dryerName", …)`. ⚠ It stays `string[]` and stays UNCLICKABLE, deliberately: four of
+      its entries are ship-mode answers living in `<td>`s inside `ShipmentRow`, not `FieldLabel`s, so
+      they have no anchor to jump to — and half a clickable list is worse than none.
+- [x] 1.8 Update every comment in `fieldSpec.ts` and `QuotationForm.tsx` that points at the two moved
+      functions by name. ⚠ The "moving a block leaves the old one" rule — grep, do not assume.
+      ⚠ `FIELD_LABEL` is READ, never edited: its key order is `revisionDiff.ts`'s row order.
+
+**Phase 2 · The gate moves**
+- [x] 2.1 `useQuotationDraft` returns BOTH lists — `missing` (approval, name unchanged) and
+      `missingToGenerate`. It already holds the draft, the store, `dealFacts(…)` and `s.headsFor(…)`.
+- [x] 2.2 `canGenerate = q.missingToGenerate.length === 0`.
+- [x] 2.3 **Send for approval stays CLICKABLE** (the user's call — a greyed button answers nothing).
+      `onSubmit` **saves first**, then refuses when `q.missing` is non-empty: no RPC call, scroll to
+      the panel, flash it.
+      🔴 THE SAVE IS NOT OPTIONAL. The client list is computed from the DRAFT and the CHECK reads the
+      ROW; without saving first, unsaved edits pass the form and get refused by the database.
+- [x] 2.4 Four cards on a deliberate **severity ladder**, because this screen has contradicted itself
+      before: neutral = "still needed before a quotation can be generated"; **red** = "the customer
+      will see a blank" (`transportTerms` / `paymentTerms` / `deliveryDate` leave four rows blank on
+      the customer's own summary sheet — `quotationPdf.ts` :160, :236, :240, :241); orange = "not
+      ready to send" with the complete clickable list; **yellow = the existing detail-sheet warning,
+      untouched**. The last three are gated on `canGenerate`, as the yellow one already is, so the
+      neutral card never stacks with them.
+
+**Phase 3 · Make the mandatory fields findable**
+- [x] 3.1 `FieldLabel` gains an optional `anchor` → `<label id={anchor} className="block scroll-mt-24">`.
+      Additive; `MasterCrud`'s use of `required` is untouched. 96px clears the sticky 68px `Topbar`.
+- [x] 3.2 `.ocpi-field-flash` keyframe in `index.css` — real CSS, not Tailwind classes toggled from a
+      `.ts` file, which would depend on the JIT content scanner finding a class literal.
+- [x] 3.3 `QuotationForm` computes `requiredKeys(…)` once and passes `required` + `anchor` on ~24
+      labels. The seven that say `required` by hand today become driven by it so they cannot drift.
+      `YesNo` and `RateOffer` gain the two pass-through props; both already wrap `FieldLabel`.
+- [x] 3.4 `CustomerPicker` — anchor on the already-`required` "Customer / party name" label.
+- [x] 3.5 `focusField` **falls back to scrolling the form into view when an anchor is absent**, so no
+      entry in the list is ever a dead click.
+      ⚠ The asterisk means MANDATORY, not "blocks Generate" — a field required only at the approval
+      tier still carries one, and the panels say when. Record it, or somebody will "fix" it.
+
+**Phase 4 · Migration** — `20261103120000_fms_ocpi_the_gate_moves_to_send_for_approval.sql`
+- [x] 4.1 `fms_ocpi_generate_quotation` — add the fx-rate conjunct to its missing-list array.
+- [x] 4.2 `fms_ocpi_submit_quotation` — a completeness pre-check before the `update`, raising
+      *"Still needed before this can be sent for approval: …"* with the field names, so a
+      client/server disagreement stops being a raw Postgres violation naming nothing.
+      ⚠ It **mirrors the CHECK conjunct for conjunct, NEVER stricter** — stricter would refuse what
+      the CHECK permits. It stays looser on `head_type` and `incl_centering`, which the CHECK has
+      never carried.
+- [x] 4.3 ⚠ **BOTH ARE TRANSFORMS OF THE LIVE BODY, NOT RETYPED COPIES** — read `pg_get_functiondef`,
+      assert the anchor appears exactly once, substitute, assert the result.
+- [x] 4.4 ⚠ **DO NOT TOUCH `fms_ocpi_complete_when_submitted`**, `fms_ocpi_write_quotation` or
+      `fms_ocpi_save_draft`. A CHECK is re-validated on every UPDATE, so tightening it makes all 26
+      deals on record un-updatable and throws on every approval and signature stamp. OCPI-7 and
+      OCPI-14 both hit this and both rejected it.
+- [x] 4.5 **Rehearse the rollback on live data** — apply, roll back, confirm both bodies match the
+      originals, re-apply. Run it; do not merely write it.
+- [x] 4.6 Applied **before** the frontend goes live.
+
+**Phase 5 · Verify**
+- [x] 5.1 `cd frontend && npm run build` — no test runner in this repo; the build is the gate.
+- [x] 5.2 Audit: every `REQUIREMENTS` key resolves to an anchor that exists in the rendered form.
+- [x] 5.3 ⚠ **Check the FMS module email switch BEFORE the browser test** — Send for approval calls
+      `fms_ocpi_announce` and OCPI mail is live. Use the `ZZ TEST` deals.
+- [x] 5.4 A deal with **customer + machine only**: Generate refused; the card names salesperson, no. of
+      machines, currency and total deal value; each name jumps to and focuses its box.
+- [x] 5.5 Fill the price only → **Generate produces both papers.** Confirm nothing crashes on null
+      `transportTerms`, `paymentTerms`, `deliveryDate`, the inclusion answers or `headType` — the old
+      "null deal value" case is unreachable now that the price blocks.
+- [x] 5.6 Read the generated PDF with **pdf.js**, not by string-searching jsPDF output.
+- [x] 5.7 **Send for approval on that same deal is REFUSED**, names every missing field, and each name
+      jumps to its field.
+- [x] 5.8 Fill them, send, confirm it goes through — **and that the SQL does not refuse what the form
+      allowed.** The client/server agreement test.
+- [x] 5.9 Force the disagreement: null `payment_terms` on a draft directly in SQL, submit through the
+      UI on stale form state, and confirm the new message NAMES THE FIELD.
+- [x] 5.10 An already-issued quotation being **revised** behaves the same way throughout.
+- [x] 5.11 An older deal still opens, still prints, and can still be approved and stamped — proof the
+      CHECK was not touched.
+- [x] 5.12 FIX-4 orphan sweep over `apps/ocpi`; confirm nothing still renders the old prose `q.missing`.
+
+**Phase 6 · Record**
+- [x] 6.1 `OCPI.md` — the two tiers; that the server predicate lives in `fms_ocpi_generate_quotation`
+      and NOT in `fms_ocpi_write_quotation`; that the CHECK was already status-gated; why
+      `completeness.ts` could not live in `fieldSpec.ts`; the asterisk convention; `FIELD_ANCHOR`.
+- [x] 6.2 Tick this checklist as each phase lands.
+- [ ] 6.3 ⚠ Stage only my own hunks — `WORKLIST.md`, `OCPI.md` and `index.css` are shared with other
+      sessions and the tree already carries OCPI-18's uncommitted work.
+
+#### Questions
+- [x] **What still blocks Generate** — settled, then **changed by the user**: customer name, salesperson,
+      machine, machine count, currency, total deal value, and the USD rate on a dollar deal. See 0.2.
+- [ ] **Does the approver need to see anything different**, now that a deal can reach them having been
+      generated with gaps that were filled later? *(Not asked yet — raise it when the panel is built and
+      there is something to look at.)*
+
 ### OCPI-17 · Two small form fixes — the machine category order, and Platter loses "Not Applicable"  `[x]`
 *Raised 2026-09-01 · Asked for by Ritesh Bhai, from two screenshots*
 

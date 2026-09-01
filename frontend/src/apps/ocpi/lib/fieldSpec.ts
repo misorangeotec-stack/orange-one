@@ -1169,182 +1169,25 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     says why.
 */
 
-/**
- * What still has to be answered before this quotation can be finalised.
- *
- * Returns human sentences, not field keys — they are shown to the salesperson.
- * The table CHECK `fms_ocpi_complete_when_submitted` enforces the same minimum
- * server-side; this exists so the user finds out before pressing the button.
- *
- * ⚠ SECTIONS B AND C ARE MANDATORY (revision stage B), but a CONDITIONAL field
- *   is only required when its own branch is open. A deal that includes no head
- *   must never be blocked on a head count it was never asked for — which is why
- *   each dependent is tested against the answer that reveals it, not on its own.
- */
-export function missingForSubmit(
-  d: QuotationDraft,
-  deal: DealFacts = NO_DEAL_FACTS,
-  /**
-   * How many print heads the chosen machine offers.
-   *
-   * ⚠ ONLY A CHOICE CAN BE MISSING (OCPI-14). A model with ONE mapped head fills
-   *   `headType` in itself and a model with NONE — the three Pengda and both POD
-   *   printers — legitimately has no head at all. Only the seven models whose
-   *   sheet says "EX600 or RC" can leave this unanswered, and on those a blank
-   *   would print a contract that does not say which head the customer is
-   *   getting. Defaults to 0 so a caller that does not know asks for nothing.
-   */
-  headOptions = 0,
-): string[] {
-  const out: string[] = [];
+/*
+  ⚠ `missingForSubmit` AND `missingForDetailSheet` NOW LIVE IN lib/completeness.ts
+    (OCPI-15). Recorded here rather than silently deleted, because both are named
+    by comments all over this module and by the two RPCs they mirror.
 
-  if (!d.customerName.trim()) out.push("the customer name");
-  if (!d.salespersonName.trim()) out.push("the salesperson");
-  if (!d.machineId) out.push("the machine");
-  if (!d.machineCount.trim()) out.push("how many machines");
-  if (headOptions > 1 && !d.headType.trim()) out.push("which print head is being supplied");
+    THE MOVE WAS FORCED, NOT TIDY-MINDED. OCPI-15 splits completeness into two
+    tiers — what blocks GENERATE and what blocks SEND FOR APPROVAL — and drives
+    the form's own required markers from the same table, so a marker and a
+    blocker cannot disagree. To do that the table has to ask `isVisible` whether
+    a field is on the salesperson's screen at all, and `branching.ts` already
+    imports `isUsdDeal` FROM this file. Keeping them here would have made
+    fieldSpec → branching → fieldSpec a cycle.
 
-  // Section B · Deal inclusions
-  if (d.inclInk === null) out.push("whether the deal includes ink");
-  else if (d.inclInk && !d.inkQtyIncluded.trim()) out.push("how much ink is included");
-  if (d.inclSpares === null) out.push("whether the deal includes spare parts");
-  else if (d.inclSpares && !d.spareDetails.trim()) out.push("which spare parts are included");
-  /*
-    OCPI-14 · the centering device, required ONLY where it is asked.
+    `missingForDetailSheet` went with it because the two are a pair whose
+    comments explain each other: one blocks and the other only warns, and reading
+    either without the other loses the reason for both.
 
-    ⚠ THIS IS THE FORM'S REQUIREMENT AND NOT THE DATABASE'S, deliberately.
-      `fms_ocpi_complete_when_submitted` was left untouched: a CHECK is
-      re-validated on every UPDATE, so a conjunct naming incl_centering would
-      have made all 20 deals already on record un-updatable and thrown on every
-      approval or signature stamp. OCPI-7 hit exactly that and rejected it.
-
-    ⚠ AND IT IS GATED, or every Sublimation deal becomes un-generatable — the
-      question is not on their screen at all.
-  */
-  if (deal.showsCentering) {
-    if (d.inclCentering === null) out.push("whether the deal includes a centering device");
-    else if (d.inclCentering && !d.centeringDetails.trim())
-      out.push("which centering device is included");
-  }
-  if (d.inclHead === null) out.push("whether the deal includes a head");
-  else if (d.inclHead && !d.headsIncluded.trim()) out.push("how many heads are included");
-
-  /*
-    OCPI-7 · the NO branch. Answering the rate question at all is OPTIONAL —
-    silence means it was never discussed — but a Yes must carry its numbers,
-    or the quotation prints a promise with no figure beside it.
-
-    ⚠ THIS MIRRORS THE SQL CONSTRAINT CONJUNCT FOR CONJUNCT. The server's
-      fms_ocpi_complete_when_submitted carries the same two rules. If the two
-      ever disagree the salesperson gets a raw Postgres constraint violation
-      naming no field, on a deal this list said was ready.
-  */
-  if (d.inclInk === false && d.inkOfferAgreed === true) {
-    if (!d.inkOfferQty.trim()) out.push("how many litres of ink are offered at the subsidized rate");
-    if (!d.inkOfferRate.trim()) out.push("the subsidized rate for ink, per litre");
-  }
-  if (d.inclHead === false && d.headOfferAgreed === true) {
-    if (!d.headOfferQty.trim()) out.push("how many heads are offered at the subsidized rate");
-    if (!d.headOfferRate.trim()) out.push("the subsidized rate for a head");
-  }
-
-  // Section C · Commercial terms
-  if (!d.transportTerms) out.push("the deal type (High Seas or Others)");
-  else if (d.transportTerms === "high_seas") {
-    if (!d.highSeasVia) out.push("how the printer is delivered on high seas");
-    if (!d.highSeasCostBy) out.push("who bears the high-seas cost");
-  } else if (d.transportTerms === "local" && !d.localCostBy) {
-    out.push("who bears the local delivery cost");
-  }
-  if (!d.dealValueCurrency) out.push("the currency");
-  if (!d.dealValueAmount.trim()) out.push("the total deal value");
-  // ⚠ A DOLLAR DEAL WITHOUT A RATE PRINTS A BLANK TOTAL. The rupee value is
-  //   derived from amount × rate server-side; with no rate it is null, and the
-  //   null carries all the way through to "Total Value (INR)" on both papers.
-  //   Nothing used to require it — not here, and not in the table's
-  //   `fms_ocpi_complete_when_submitted` check, which now asks for it too.
-  if (isUsdDeal(d) && !d.fxRate.trim()) out.push("the USD to INR rate");
-  // ⚠ "the type of payment" WAS HERE (OCPI-18) and had to leave in step with the
-  //   SQL. `fms_ocpi_complete_when_submitted` demanded `payment_type is not null`
-  //   until the same change dropped that conjunct; a form that stopped asking
-  //   while the CHECK still demanded would have raised a raw Postgres violation
-  //   naming no field, on a quotation this list called complete.
-  if (!d.paymentTerms.trim()) out.push("the terms of payment");
-  // ⚠ THE DELIVERY DATE STAYS REQUIRED, here and in the CHECK. OCPI-15 owns any
-  //   change to that; OCPI-18 only relabelled the field.
-  if (!d.deliveryDate) out.push("the tentative machine delivery date");
-
-  return out;
-}
-
-/**
- * Which lines the DETAILED sheet will print as ruled blanks.
- *
- * ⚠ THIS IS A WARNING, NEVER A BLOCK. The client asked for the detail fields to
- *   be optional at first so a quotation can go out during a negotiation before
- *   the warranty and delivery terms are settled. The sheet prints a ruled blank
- *   where an answer is missing; this exists so the salesperson knows which lines
- *   are blank BEFORE sending it, rather than discovering it in the customer's
- *   reply.
- *
- * Conditional groups are skipped when their branch is shut, for the same reason
- * missingForSubmit skips them: a deal with no dryer has no dryer warranty to be
- * missing.
- */
-export function missingForDetailSheet(
-  d: QuotationDraft,
-  deal: DealFacts = NO_DEAL_FACTS,
-): string[] {
-  const out: string[] = [];
-
-  // ⚠ THE THREE WARRANTY CHECKS ARE STILL GONE, and their absence is still the
-  //   point — but the reason has changed (OCPI-14). They used to be a fixed
-  //   SETTING that could never be blank; they are now a per-machine default, and
-  //   a machine whose warranty is NULL means NOT APPLICABLE, so the question is
-  //   not asked and no line is printed. Either way, warning a salesperson about
-  //   a field they cannot see is a warning they cannot act on.
-  // ⚠ THE DELIVERY DAYS WARNING IS GONE (OCPI-18) because the line it warned
-  //   about is gone. `{{delivery_days}}` sat in the SALE CONDITIONS clause of 21
-  //   decks; the same change rewrote all 21 to carry the delivery DATE and its
-  //   condition instead, so there is no longer a sheet line for a blank
-  //   delivery-days answer to rule. The delivery TERM below is a different field
-  //   and still prints — see the note on it in QuotationForm.tsx.
-  if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
-
-  /*
-    ⚠ THE SHIPMENT ROWS ARE NO LONGER GATED ON THE INCLUSIONS (OCPI-14), so
-      these two are no longer gated either. They used to read
-      `d.inclHead === true && !d.headShipMode`, which was right while the row
-      only appeared for an included item; now the row appears on every deal and
-      the warning must too, or the sheet prints a blank the form never mentioned.
-
-      Spare parts and ink join it for the same reason. Centering is the one that
-      stays conditional, because its row is the one the category still gates.
-  */
-  if (!d.headShipMode) out.push(FIELD_LABEL.headShipMode);
-  if (!d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
-  if (!d.sparesShipMode) out.push(FIELD_LABEL.sparesShipMode);
-  if (deal.showsCentering && !d.centeringShipMode) out.push(FIELD_LABEL.centeringShipMode);
-
-  /*
-    ⚠ THE CATEGORY OPENS THE QUESTION AND THE DRYER CATEGORY DECIDES IT, and it
-      takes BOTH. It read `dryerType !== 'Not Applicable'` originally — the
-      salesperson's own pick — so a machine that took no dryer was still nagged
-      for a chamber count. Then (OCPI-3, stage E) it read the machine alone and
-      the opposite fault appeared: a salesperson who answered "no dryer on this
-      deal" was still told the sheet would print a blank dryer name, a warning
-      they could not act on because the field was unfillable. OCPI-8 fixed that,
-      and OCPI-14 moved the first term from the machine to the category.
-
-      It asks the same question `hasDryerDetails` asks in branching.ts, and the
-      same one fms_ocpi_write_oc asks before it nulls these columns. All three
-      must agree: a field this warns about must be one the form shows and the
-      server keeps.
-  */
-  if (deal.showsDryer && d.dryerType.trim() !== "" && !deal.noDryerCategory) {
-    if (!d.dryerName.trim()) out.push(FIELD_LABEL.dryerName);
-    if (!d.dryerChambers.trim()) out.push(FIELD_LABEL.dryerChambers);
-  }
-
-  return out;
-}
+    Both keep their names and their signatures. `missingForSubmit` now returns
+    `{ key, label }` instead of prose sentences — the key is what lets the panel
+    scroll to the field and focus it, which is the whole of what OCPI-15 asked
+    for.
+*/

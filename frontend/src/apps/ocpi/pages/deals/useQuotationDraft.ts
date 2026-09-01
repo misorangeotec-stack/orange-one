@@ -14,9 +14,10 @@ import {
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
 import { docHeading } from "../../lib/format";
 import {
-  EMPTY_DRAFT, dealFacts, draftFromDeal, missingForSubmit, payloadFromDraft,
+  EMPTY_DRAFT, dealFacts, draftFromDeal, payloadFromDraft,
   type QuotationDraft,
 } from "../../lib/fieldSpec";
+import { missingForGenerate, missingForSubmit } from "../../lib/completeness";
 
 /**
  * The quotation form's state, and the one place that knows how to save it.
@@ -122,14 +123,29 @@ export function useQuotationDraft(dealId?: string) {
       back to `NO_DEAL_FACTS` — the OPEN set — and block every Sublimation deal
       on a question its own form never shows.
   */
+  const facts = useMemo(
+    () => dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
+    [s, draft.dryerType, draft.machineCategoryId],
+  );
+  const headOptions = s.headsFor(draft.machineId || null).length;
+
+  /**
+   * TWO LISTS, TWO STRENGTHS (OCPI-15).
+   *
+   * ⚠ THEY ARE NOT ALTERNATIVES — `missing` is a SUPERSET of `missingToGenerate`.
+   *   The panel at Send for approval has to name everything still outstanding,
+   *   not only the part that was allowed through at Generate.
+   */
+  /** Blocks Send for approval. Every answer a finished quotation carries. */
   const missing = useMemo(
-    () =>
-      missingForSubmit(
-        draft,
-        dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
-        s.headsFor(draft.machineId || null).length,
-      ),
-    [draft, s],
+    () => missingForSubmit(draft, facts, headOptions),
+    [draft, facts, headOptions],
+  );
+
+  /** Blocks Generate. The seven without which the customer's PDF is unusable. */
+  const missingToGenerate = useMemo(
+    () => missingForGenerate(draft, facts, headOptions),
+    [draft, facts, headOptions],
   );
 
   const save = useCallback(async (): Promise<string | null> => {
@@ -307,6 +323,7 @@ export function useQuotationDraft(dealId?: string) {
     savedId,
     savedAt,
     missing,
+    missingToGenerate,
     /** True once the row exists in the database. */
     isPersisted: !!savedId,
     /** The row, when editing an existing draft. */
