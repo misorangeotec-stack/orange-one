@@ -29,6 +29,9 @@ export interface MachineInput {
   optExternalCentering: string | null;
   optInkDustExhauster: string | null;
   optChillingSystem: string | null;
+  machineWarranty: string | null;
+  headWarranty: string | null;
+  dryerWarranty: string | null;
   docTitle: string;
   introText: string | null;
   machineModelNo: string | null;
@@ -51,6 +54,11 @@ const toRow = (m: MachineInput) => ({
   opt_external_centering: m.optExternalCentering || null,
   opt_ink_dust_exhauster: m.optInkDustExhauster || null,
   opt_chilling_system: m.optChillingSystem || null,
+  // OCPI-14 · per-model warranties. NULL means NOT APPLICABLE, not "unknown", so
+  // an empty box is stored as null and the question disappears from the form.
+  machine_warranty: m.machineWarranty?.trim() || null,
+  head_warranty: m.headWarranty?.trim() || null,
+  dryer_warranty: m.dryerWarranty?.trim() || null,
   doc_title: m.docTitle,
   intro_text: m.introText?.trim() || null,
   machine_model_no: m.machineModelNo?.trim() || null,
@@ -83,6 +91,9 @@ export async function updateMachine(id: string, input: Partial<MachineInput>): P
   if (input.optExternalCentering !== undefined) row.opt_external_centering = full.optExternalCentering || null;
   if (input.optInkDustExhauster !== undefined) row.opt_ink_dust_exhauster = full.optInkDustExhauster || null;
   if (input.optChillingSystem !== undefined) row.opt_chilling_system = full.optChillingSystem || null;
+  if (input.machineWarranty !== undefined) row.machine_warranty = full.machineWarranty?.trim() || null;
+  if (input.headWarranty !== undefined) row.head_warranty = full.headWarranty?.trim() || null;
+  if (input.dryerWarranty !== undefined) row.dryer_warranty = full.dryerWarranty?.trim() || null;
   if (input.docTitle !== undefined) row.doc_title = full.docTitle;
   if (input.introText !== undefined) row.intro_text = full.introText?.trim() || null;
   if (input.machineModelNo !== undefined) row.machine_model_no = full.machineModelNo?.trim() || null;

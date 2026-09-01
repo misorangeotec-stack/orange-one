@@ -103,11 +103,60 @@ export default function Masters() {
           },
         ]
       : []),
+    /*
+      OCPI-14 · the same idea again, on the tab that has the flags. A machine
+      category decides what the quotation ASKS — one column saying so beats
+      three yes/no columns nobody would read across.
+    */
+    ...(tab === "machine_category"
+      ? [
+          {
+            header: "The quotation asks about",
+            render: (r: OcpiNamedMaster) => {
+              const asks = [
+                r.showsDryer ? "dryer" : null,
+                r.showsCentering ? "centering device" : null,
+                r.showsExtras ? "air blade · ink dust · chilling" : null,
+              ].filter(Boolean);
+              return asks.length ? (
+                <span className="text-navy">{asks.join(" · ")}</span>
+              ) : (
+                <span className="text-grey-2">ink, spare parts and head only</span>
+              );
+            },
+          },
+        ]
+      : []),
     { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
   ];
 
   const fields: MasterFieldDef[] = [
     { key: "name", label: "Name", type: "text", required: true, hint: "Exactly as it should read on the quotation." },
+    /*
+      ⚠ ONLY ON THE MACHINE-CATEGORY TAB, for the same reason the "Means" column
+        is only on the dryer one: these three columns exist on
+        fms_ocpi_machine_categories alone, and offering them over print heads
+        would be three controls that write nothing.
+
+      🔴 THESE ARE THE BRANCH INPUTS (OCPI-14). Turning one off stops the
+         quotation asking that group on every deal in this category — AND makes
+         `fms_ocpi_write_oc` null those columns on the next save of any such
+         deal. That is the intended behaviour, not a side effect, but it is why
+         these are admin controls and not a per-deal answer.
+    */
+    ...(tab === "machine_category"
+      ? ([
+          { key: "showsDryer", label: "Asks about a dryer", type: "choice",
+            options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
+            hint: "Shows the Dryer details card and the Dryer row in Shipment & invoice. Yes on Direct only — all 11 Direct machines take a dryer and no other machine does." },
+          { key: "showsCentering", label: "Asks about a centering device", type: "choice",
+            options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
+            hint: "Shows the Centering device inclusion in section B and its Shipment & invoice row." },
+          { key: "showsExtras", label: "Asks about the optional extras", type: "choice",
+            options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
+            hint: "Air blade, ink dust exhauster and chilling system. Where this is No the three are recorded as No on the deal rather than left unanswered." },
+        ] as MasterFieldDef[])
+      : []),
     { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0", hint: "Lower comes first in the dropdown." },
   ];
 
@@ -245,8 +294,17 @@ export default function Masters() {
           searchText={(r) => r.name}
           defaultOrder={(r) => r.sortOrder}
           canManage={canManage}
-          emptyValues={{ name: "", sortOrder: "0" }}
-          toValues={(r) => ({ name: r.name, sortOrder: String(r.sortOrder) })}
+          emptyValues={{
+            name: "", sortOrder: "0",
+            showsDryer: "no", showsCentering: "no", showsExtras: "no",
+          }}
+          toValues={(r) => ({
+            name: r.name,
+            sortOrder: String(r.sortOrder),
+            showsDryer: r.showsDryer ? "yes" : "no",
+            showsCentering: r.showsCentering ? "yes" : "no",
+            showsExtras: r.showsExtras ? "yes" : "no",
+          })}
           onSubmit={async (id, v, active) => {
             const input = {
               name: v.name.trim(),
@@ -254,8 +312,16 @@ export default function Masters() {
               sortOrder: Math.max(0, Math.floor(Number(v.sortOrder) || 0)),
             };
             if (tab === "machine_category") {
-              if (id) await updateMachineCategory(id, input);
-              else await insertMachineCategory(input);
+              // ⚠ THE FLAGS GO ONLY ON THIS TAB. The other three vocabularies
+              //   share this form and have no such columns.
+              const cat = {
+                ...input,
+                showsDryer: v.showsDryer === "yes",
+                showsCentering: v.showsCentering === "yes",
+                showsExtras: v.showsExtras === "yes",
+              };
+              if (id) await updateMachineCategory(id, cat);
+              else await insertMachineCategory(cat);
             } else if (id) await updateNamedMaster(tab, id, input);
             else await insertNamedMaster(tab, input);
             await s.refresh();

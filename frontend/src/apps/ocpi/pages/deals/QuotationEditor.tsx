@@ -9,7 +9,7 @@ import { CompanyProfileWarning, QuotationSeriesWarning } from "../../components/
 import { useOcpiStore } from "../../store";
 import { submitQuotation } from "../../data/ocpiWrites";
 import { useQuotationDraft, type GeneratedPapers } from "./useQuotationDraft";
-import { dealFacts, machineFacts, missingForDetailSheet } from "../../lib/fieldSpec";
+import { dealFacts, missingForDetailSheet } from "../../lib/fieldSpec";
 
 /**
  * Write a quotation — the same screen whether it is new or a draft being
@@ -47,11 +47,11 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
     () =>
       missingForDetailSheet(
         q.draft,
-        machineFacts(s.machineById(q.draft.machineId || null)),
         // ⚠ WITHOUT THIS the card nags for a dryer name on a deal whose category
         //   says there is no dryer — a warning about a field the form no longer
-        //   shows and the server nulls anyway (OCPI-8).
-        dealFacts(s.dryerTypes, q.draft.dryerType),
+        //   shows and the server nulls anyway (OCPI-8) — and, since OCPI-14, for
+        //   a centering shipment answer on a category that never asks for one.
+        dealFacts(s.dryerTypes, q.draft.dryerType, s.machineCategories, q.draft.machineCategoryId),
       ),
     [q.draft, s],
   );

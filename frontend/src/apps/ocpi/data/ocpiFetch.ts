@@ -129,6 +129,12 @@ export interface OcpiConfig {
   quotationValidityDays: number;
   defaultGstRate: number;
   warranty: OcpiWarranty;
+  /**
+   * OCPI-14 · the standing sentence printed beside every warranty, on the form
+   * and on both papers. In config rather than in code because it is a clause on
+   * a customer's contract, and rewording one should not need a deploy.
+   */
+  warrantyNote: string;
   quotationSeries: OcpiQuotationSeries;
   /**
    * Keyed by financial year, because the OC counter restarts each April and
@@ -203,6 +209,9 @@ const mapMachine = (r: any): OcpiMachine => ({
   optExternalCentering: r.opt_external_centering ?? null,
   optInkDustExhauster: r.opt_ink_dust_exhauster ?? null,
   optChillingSystem: r.opt_chilling_system ?? null,
+  machineWarranty: r.machine_warranty ?? null,
+  headWarranty: r.head_warranty ?? null,
+  dryerWarranty: r.dryer_warranty ?? null,
   docTitle: r.doc_title,
   introText: r.intro_text ?? null,
   machineModelNo: r.machine_model_no ?? null,
@@ -235,6 +244,11 @@ const mapNamed = (r: any): OcpiNamedMaster => ({
   //   vocabularies share this mapper and simply have no such field, so
   //   `undefined === true` reads false — "an ordinary entry", which is right.
   meansNoDryer: r.means_no_dryer === true,
+  // OCPI-14 · MACHINE CATEGORIES ONLY, same shape as meansNoDryer above: the
+  // other three vocabularies have no such columns and read as false.
+  showsDryer: r.shows_dryer === true,
+  showsCentering: r.shows_centering === true,
+  showsExtras: r.shows_extras === true,
 });
 
 const mapDryer = (r: any): OcpiDryer => ({
@@ -292,6 +306,7 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   machineCount: r.machine_count ?? null,
   machineId: r.machine_id ?? null,
+  machineCategoryId: r.machine_category_id ?? null,
   headType: r.head_type ?? null,
   headCount: r.head_count ?? null,
   inkType: r.ink_type ?? null,
@@ -308,6 +323,8 @@ const mapDeal = (r: any): OcpiDeal => ({
   inkOfferSubtotal: num(r.ink_offer_subtotal),
   inclSpares: r.incl_spares ?? null,
   spareDetails: r.spare_details ?? null,
+  inclCentering: r.incl_centering ?? null,
+  centeringDetails: r.centering_details ?? null,
   inclHead: r.incl_head ?? null,
   headsIncluded: r.heads_included ?? null,
   headOfferAgreed: r.head_offer_agreed ?? null,
@@ -530,6 +547,9 @@ export async function fetchOcpiData(): Promise<OcpiData> {
         machineMonths: cfg.get("warranty_periods")?.machine_months ?? 12,
         headMonths: cfg.get("warranty_periods")?.head_months ?? 18,
       },
+      warrantyNote:
+        cfg.get("warranty_note")?.text ??
+        "Warranty is applicable from the date of dispatch from the manufacturer.",
       // Missing row and `{"confirmed": false}` mean the same thing on purpose:
       // nobody has checked. Defaulting to `true` here would silence the warning
       // on any database where the migration had not run — the exact case where

@@ -1,10 +1,7 @@
 import {
-  canCarry,
   isUsdDeal,
   NO_DEAL_FACTS,
-  NO_MACHINE_FACTS,
   type DealFacts,
-  type MachineFacts,
   type QuotationDraft,
 } from "./fieldSpec";
 
@@ -58,14 +55,23 @@ import {
  *
  * 6. The FX position exists only for a dollar deal. (Stage C.)
  *
- * 7. THE MACHINE DECIDES WHAT IS ASKED, NOT THE SALESPERSON. Whether there is a
- *    dryer, and which of the four extras apply, are properties of the model —
- *    mapped once on the Machine master from the client's own sheet. (Stage E,
- *    and the reason `isVisible` now takes a second argument; see below.)
+ * 7. THE MACHINE CATEGORY DECIDES WHAT IS ASKED, NOT THE SALESPERSON AND NOT THE
+ *    MACHINE. Whether there is a dryer, a centering device, or the three
+ *    optional extras is a property of the CATEGORY — Direct carries all three,
+ *    Sublimation / Other / POD carry none.
+ *    ⚠ SUPERSEDED TWICE. Stage E moved this from the salesperson to the MACHINE
+ *      (`needs_dryer` and the four `opt_*` columns); OCPI-14 moved it again, to
+ *      the category, at Ritesh Bhai's instruction. The machine columns still
+ *      exist and are still edited on the Machines master — they record what a
+ *      model can take — but nothing branches on them any more, here or in SQL.
  *
- * 8. Shipment & invoice asks four items the same four questions, each on its
- *    own condition — two of them the machine’s. (Stage F; written out in full
- *    beside the rules themselves, since the four conditions differ.)
+ * 8. Shipment & invoice asks five items the same five questions.
+ *    ⚠ ALSO SUPERSEDED (OCPI-14). Each row used to hang off its own condition,
+ *      three of them the deal's own inclusions. THERE IS NO CONNECTION NOW: how
+ *      a thing ships and whether it is billed on its own document is not the
+ *      same question as whether it sits inside the machine price. Head, ink and
+ *      spare parts are asked on every deal; the dryer and the centering device
+ *      follow the category.
  *
  * All eight are recorded in OCPI.md. If any turns out to be unwanted, delete it
  * here AND in the matching SQL writer — they must not disagree.
@@ -74,38 +80,36 @@ import {
 /**
  * A field is either shown or hidden; nothing is ever disabled-but-visible.
  *
- * ⚠ TWO ARGUMENTS SINCE STAGE E. A rule may need the chosen MACHINE's mapping as
- *   well as the draft, and `machineFacts` (fieldSpec.ts) is how it gets there —
- *   deliberately a small flat record rather than the whole `OcpiMachine`, so
- *   that what the branches may depend on is visible at a glance and matches the
- *   five columns `fms_ocpi_write_oc` actually reads.
+ * ⚠ TWO ARGUMENTS, DOWN FROM THREE (OCPI-14). There used to be a `MachineFacts`
+ *   between these two, holding the five machine columns the SQL read. The
+ *   category decides now, so that record had nothing left to decide and was
+ *   deleted rather than left as a parameter every caller still had to pass.
  *
- * ⚠ AND THREE SINCE OCPI-8. One rule now needs a fact that is neither on the
- *   draft nor on the machine: whether the dryer CATEGORY the salesperson picked
- *   is one that means there is no dryer. The draft holds only its NAME, and the
- *   answer lives on the master row — `dealFacts` (fieldSpec.ts) resolves the
- *   two, once, so no rule here has to reach for a store.
+ * `DealFacts` (fieldSpec.ts) resolves, once, the four things a rule needs that
+ * are not on the draft: the three category flags, and whether the dryer CATEGORY
+ * the salesperson picked is one that means there is no dryer. No rule here has
+ * to reach for a store.
  */
-export type Visibility = (d: QuotationDraft, m: MachineFacts, f: DealFacts) => boolean;
+export type Visibility = (d: QuotationDraft, f: DealFacts) => boolean;
 
 /**
  * Does this deal carry a dryer?
  *
- * ⚠ THIS MOVED OFF THE DEAL AND ONTO THE MACHINE (OCPI-3, stage E). It used to
- *   read `dryerType !== 'Not Applicable'` — the salesperson's own answer to a
- *   "Dryer required" dropdown. The client's sheet settles it per model instead,
- *   so `dryerType` now means the dryer's CATEGORY and this flag comes from the
- *   machine.
+ * ⚠ THIS HAS MOVED TWICE. It began as `dryerType !== 'Not Applicable'` — the
+ *   salesperson's own answer. OCPI-3 stage E moved it to the MACHINE, because
+ *   the client's sheet settles it per model. OCPI-14 moved it to the CATEGORY,
+ *   because the client's newer sheet settles it per type and the two agree on
+ *   all 28 machines — every Direct model takes a dryer and no other model does.
  *
  * ⚠ CHANGE THIS AND CHANGE `fms_ocpi_write_oc` IN THE SAME BREATH. The SQL reads
- *   `m.needs_dryer` through a left join and nulls every dryer column when it is
+ *   `c.shows_dryer` through a left join and nulls every dryer column when it is
  *   not true. If the two ever disagree the server erases answers the form is
  *   still showing, on every save, with no error.
  *
- * ⚠ NULL IS "NO". An unmapped machine, or no machine yet, asks nothing — which
- *   is also why the Machine master requires the flag.
+ * ⚠ NULL IS "NO". No category yet asks nothing — which is the ordinary state of
+ *   a brand-new draft, and matches `coalesce(c.shows_dryer, false)` in the SQL.
  */
-const hasDryer = (_d: QuotationDraft, m: MachineFacts): boolean => m.needsDryer === true;
+const hasDryer = (_d: QuotationDraft, f: DealFacts): boolean => f.showsDryer;
 
 /**
  * Does this deal carry a dryer whose DETAILS can be filled in?
@@ -118,12 +122,12 @@ const hasDryer = (_d: QuotationDraft, m: MachineFacts): boolean => m.needsDryer 
  *
  * Three conditions, and each earns its place:
  *
- *   · the MACHINE takes a dryer                — as before;
- *   · a category has been PICKED               — until one is, there is nothing
+ *   · the MACHINE CATEGORY carries a dryer     — was the machine, until OCPI-14;
+ *   · a dryer category has been PICKED         — until one is, there is nothing
  *     to name a dryer inside. The old form rendered the Dryer box DISABLED with
  *     a "choose a category first" hint, which this file's own header forbids
  *     ("hidden, never disabled"); hiding it settles that too;
- *   · the category is not one that means NO DRYER.
+ *   · that dryer category is not one that means NO DRYER.
  *
  * ⚠ IT READS A RESOLVED FLAG, NEVER THE NAME. `dryerType` is TEXT — the
  *   category's name, frozen into every revision payload — so matching the
@@ -137,8 +141,39 @@ const hasDryer = (_d: QuotationDraft, m: MachineFacts): boolean => m.needsDryer 
  *   If the two ever disagree the server erases answers the form is still
  *   showing, on every save, with no error.
  */
-const hasDryerDetails: Visibility = (d, m, f) =>
-  hasDryer(d, m) && d.dryerType.trim() !== "" && !f.noDryerCategory;
+const hasDryerDetails: Visibility = (d, f) =>
+  hasDryer(d, f) && d.dryerType.trim() !== "" && !f.noDryerCategory;
+
+/**
+ * Does this deal's DRYER get its own shipment questions?
+ *
+ * 🔴 TWO TERMS, NOT THREE, AND THE MISSING ONE IS THE POINT (OCPI-14a, reported
+ *    by Ritesh Bhai on sight). The Shipment & invoice table showed four rows on
+ *    a Direct deal instead of five, because the Dryer row shared
+ *    `hasDryerDetails` — which waits for a DRYER CATEGORY to be picked.
+ *
+ *    That wait is right for the details: you cannot name a dryer, or count its
+ *    chambers, inside a category nobody has chosen yet. It is wrong here. How
+ *    the dryer travels, and whether it is billed on its own document, are
+ *    answerable the moment the deal is known to carry a dryer at all — which is
+ *    what the machine category says.
+ *
+ * ⚠ IT STILL OBEYS A CATEGORY THAT MEANS "NO DRYER", and that term is kept
+ *   deliberately: OCPI-8 item 1.5 was an explicit client decision on
+ *   01-Sep-2026 that picking such a category hides this row too. So
+ *
+ *     Direct, no dryer category yet  → shown
+ *     Direct, "Not Applicable"       → hidden
+ *     Direct, Indian / Chinese       → shown
+ *     anything else                  → hidden
+ *
+ * ⚠ ITS TWIN IS `v_dryer_ships` in fms_ocpi_write_oc, which is the same two
+ *   terms and governs the same six columns. `v_has_dryer` there keeps all three
+ *   and still governs the detail columns. Change one, change both — showing this
+ *   row while the server cleared it on the old gate would erase six answers on
+ *   every save.
+ */
+const hasDryerShipment: Visibility = (d, f) => hasDryer(d, f) && !f.noDryerCategory;
 
 /*
  * `isUsdDeal` lives in fieldSpec.ts, beside the currency list and the
@@ -216,61 +251,57 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   */
   headBalanceRemarks: (d) => d.inclHead === true,
 
-  /* ── RULE 8 · Shipment & invoice, one row per item ────────────────────────
+  /* ── RULE 8 · Shipment & invoice ───────────────────────────────────────────
    *
-   * FIVE items ask the same five questions, and each hangs off a DIFFERENT
-   * condition. Reading them together is the point of listing them together,
-   * and they are listed in the order the table shows them (OCPI-11):
+   * 🔴 THERE IS NO CONNECTION TO THE DEAL INCLUSIONS ANY MORE (OCPI-14, asked
+   *    for by Ritesh Bhai). Until now each row hung off its own condition and
+   *    three of them were the deal's own inclusions:
    *
-   *   head              the deal includes a head        d.inclHead
-   *   ink               the deal includes ink           d.inclInk
-   *   dryer             the MACHINE takes a dryer       m.needsDryer
-   *   spare parts       the deal includes spares        d.inclSpares
-   *   centering device  the MACHINE can carry one       m.optExternalCentering
+   *      head             d.inclHead              ink   d.inclInk
+   *      spare parts      d.inclSpares            dryer the machine
+   *      centering        the machine
    *
-   * Two of the five are the machine's answer, not the salesperson's — so a
-   * salesperson cannot open the dryer's shipping questions by naming a dryer,
-   * and cannot open the centering device's by ticking "external centering
-   * system". The client asked for that tick and this device to stay separate;
-   * they read the same capability but they are different questions.
+   *    That coupling was wrong. How a thing ships, and whether it is billed on
+   *    its own document, is not the same question as whether it sits inside the
+   *    machine price — a customer can be invoiced separately for a head the deal
+   *    does not include, which is exactly what OCPI-7's subsidized-rate block
+   *    records. So:
    *
-   * ⚠ THE ROW COUNT VARIES BY DEAL, and that is the design, not a fault. The
-   *   section lists only the parts a deal actually carries — five rows on the 5
-   *   machines that can take a centering device, four on the other 23, fewer
-   *   again when a deal has no head or no spares. Making the table always show
-   *   five would invite answers that fms_ocpi_write_oc then discards.
+   *      head · ink · spare parts    asked on EVERY deal — NO RULE AT ALL
+   *      dryer                       the category carries a dryer
+   *      centering device            the category carries one
    *
-   * Within each row:
+   * ⚠ HEAD, INK AND SPARES HAVE NO ENTRY BELOW, and that absence IS the change.
+   *   `isVisible` returns true for a key it does not know, so removing the rule
+   *   is what shows the row. It also takes them out of `clearHidden`'s loop —
+   *   required, not incidental: a rule left behind would blank the answer
+   *   client-side before the payload was even built, while the server kept it.
+   *
+   * ⚠ THE TABLE IS THEREFORE FIVE ROWS ON A DIRECT DEAL AND THREE ON EVERY
+   *   OTHER, and the count no longer varies with what the salesperson ticked.
+   *
+   * ⚠ ONE GUARANTEE WAS LOST AND THE CLIENT TRADED IT KNOWINGLY. OCPI-11 relied
+   *   on ink's two quantity/amount pairs never being on screen together —
+   *   `inkOfferQty` fires on `inclInk === false` and the shipment pair used to
+   *   fire on `=== true`. A deal can now carry both. The form answers it by
+   *   CARRYING THE SUBSIDIZED FIGURES OVER into the shipment row when the
+   *   shipment cells are empty, rather than by asking twice.
+   *
+   * Within each row, unchanged:
    *   · the ROUTE is asked only of a SEPARATE shipment — nothing to route when
    *     it travels with the machine;
    *   · QUANTITY and AMOUNT are asked only of a SEPARATE INVOICE, because that
-   *     is the only document they would appear on. Asking otherwise invites a
-   *     figure being quoted twice, once inside the deal value and once beside it.
+   *     is the only document they would appear on.
    *
    * Every line below has its twin in fms_ocpi_write_oc. Change one, change both.
    */
-  headShipMode: (d) => d.inclHead === true,
-  headShipVia: (d) => d.inclHead === true && d.headShipMode === "separate",
-  headSeparateInvoice: (d) => d.inclHead === true,
-  headInvoiceQty: (d) => d.inclHead === true && d.headSeparateInvoice === true,
-  headInvoiceAmount: (d) => d.inclHead === true && d.headSeparateInvoice === true,
+  headShipVia: (d) => d.headShipMode === "separate",
+  headInvoiceQty: (d) => d.headSeparateInvoice === true,
+  headInvoiceAmount: (d) => d.headSeparateInvoice === true,
 
-  /*
-    ⚠ INK'S ROW IS THE MIRROR OF THE SUBSIDIZED-RATE BLOCK ABOVE, not a second
-      copy of it. `inkOfferAgreed` fires on `inclInk === false`; these fire on
-      `inclInk === true`. The two can therefore NEVER be on screen together, and
-      no deal can hold both — which is what stops a salesperson pricing ink the
-      deal never included. Labels still differ ("invoice" against "subsidized"),
-      because a missing-fields list shows the label and nothing else.
-
-      This is also the row that shows most often: 17 of the 19 deals on record
-      include ink, and none exclude it.
-  */
-  inkShipMode: (d) => d.inclInk === true,
-  inkShipVia: (d) => d.inclInk === true && d.inkShipMode === "separate",
-  inkSeparateInvoice: (d) => d.inclInk === true,
-  inkInvoiceQty: (d) => d.inclInk === true && d.inkSeparateInvoice === true,
-  inkInvoiceAmount: (d) => d.inclInk === true && d.inkSeparateInvoice === true,
+  inkShipVia: (d) => d.inkShipMode === "separate",
+  inkInvoiceQty: (d) => d.inkSeparateInvoice === true,
+  inkInvoiceAmount: (d) => d.inkSeparateInvoice === true,
 
   /*
     ⚠ THE DRYER'S ROW FOLLOWS THE CATEGORY, NOT JUST THE MACHINE (OCPI-8,
@@ -287,25 +318,26 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
       So the table shows FOUR rows on a "no dryer" deal where it showed five.
       The varying row count is the section's design — see RULE 8 above.
   */
-  dryerShipMode: hasDryerDetails,
-  dryerShipVia: (d, m, f) => hasDryerDetails(d, m, f) && d.dryerShipMode === "separate",
-  dryerSeparateInvoice: hasDryerDetails,
-  dryerInvoiceQty: (d, m, f) => hasDryerDetails(d, m, f) && d.dryerSeparateInvoice === true,
-  dryerInvoiceAmount: (d, m, f) => hasDryerDetails(d, m, f) && d.dryerSeparateInvoice === true,
+  /*
+    ⚠ `hasDryerShipment`, NOT `hasDryerDetails` (OCPI-14a). These five are the
+      only dryer fields that do not wait for a dryer category to be chosen — see
+      the predicate's own header for why, and for the one term it still keeps.
+  */
+  dryerShipMode: hasDryerShipment,
+  dryerShipVia: (d, f) => hasDryerShipment(d, f) && d.dryerShipMode === "separate",
+  dryerSeparateInvoice: hasDryerShipment,
+  dryerInvoiceQty: (d, f) => hasDryerShipment(d, f) && d.dryerSeparateInvoice === true,
+  dryerInvoiceAmount: (d, f) => hasDryerShipment(d, f) && d.dryerSeparateInvoice === true,
 
-  sparesShipMode: (d) => d.inclSpares === true,
-  sparesShipVia: (d) => d.inclSpares === true && d.sparesShipMode === "separate",
-  sparesSeparateInvoice: (d) => d.inclSpares === true,
-  sparesInvoiceQty: (d) => d.inclSpares === true && d.sparesSeparateInvoice === true,
-  sparesInvoiceAmount: (d) => d.inclSpares === true && d.sparesSeparateInvoice === true,
+  sparesShipVia: (d) => d.sparesShipMode === "separate",
+  sparesInvoiceQty: (d) => d.sparesSeparateInvoice === true,
+  sparesInvoiceAmount: (d) => d.sparesSeparateInvoice === true,
 
-  centeringShipMode: (_d, m) => canCarry(m.optExternalCentering),
-  centeringShipVia: (d, m) => canCarry(m.optExternalCentering) && d.centeringShipMode === "separate",
-  centeringSeparateInvoice: (_d, m) => canCarry(m.optExternalCentering),
-  centeringInvoiceQty: (d, m) =>
-    canCarry(m.optExternalCentering) && d.centeringSeparateInvoice === true,
-  centeringInvoiceAmount: (d, m) =>
-    canCarry(m.optExternalCentering) && d.centeringSeparateInvoice === true,
+  centeringShipMode: (_d, f) => f.showsCentering,
+  centeringShipVia: (d, f) => f.showsCentering && d.centeringShipMode === "separate",
+  centeringSeparateInvoice: (_d, f) => f.showsCentering,
+  centeringInvoiceQty: (d, f) => f.showsCentering && d.centeringSeparateInvoice === true,
+  centeringInvoiceAmount: (d, f) => f.showsCentering && d.centeringSeparateInvoice === true,
 
   // RULE 7 — the whole Dryer details section, machine-driven. `dryerType` is in
   // here too: the CATEGORY is only asked of a machine that takes a dryer, which
@@ -328,38 +360,73 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   dryerChambers: hasDryerDetails,
   heatingMode: hasDryerDetails,
   dryerIncluded: hasDryerDetails,
-  // A price only when the dryer is NOT part of the deal — otherwise the sheet
-  // would carry a charge for something the customer is not being charged for.
-  dryerPrice: (d, m, f) => hasDryerDetails(d, m, f) && d.dryerIncluded === false,
+  /*
+    🔴 THIS RULE WAS MISSING AND THE BROWSER FOUND IT (OCPI-14).
+
+       `dryer_warranty` has been cleared by `fms_ocpi_write_oc` on
+       `not v_has_dryer` since stage E — but nothing in this map ever mentioned
+       it, because between OCPI-3 stage D and OCPI-14 the field was not on the
+       form at all, so `isVisible` was never asked about it. Putting the question
+       back without putting the rule back left the form showing a Dryer warranty
+       box on a Sublimation deal, which the server nulls on every save.
+
+       That is precisely the form/server disagreement this whole change exists to
+       remove, and it survived a green build, a clean typecheck and the SQL
+       switch-back test — none of which look at what the form renders.
+  */
+  dryerWarranty: hasDryerDetails,
+  /*
+    ⚠ `dryerPrice` USED TO BE THE SIXTH RULE HERE and it is deliberately gone
+      (OCPI-14). It fired on `dryerIncluded === false` — a price only when the
+      dryer is NOT part of the deal — and it was the precedent the OCPI-7
+      show-on-false group was written from. All pricing is asked once now, in
+      Shipment & invoice, where the Dryer row already collects a quantity and an
+      amount; asking again here was the second place to type the same figure.
+
+      The COLUMN survives and so does its derivation in fms_ocpi_write_oc. The
+      form simply stops sending the key, so `dryer_value_inr` and
+      `dryer_gst_inr` resolve to null and `grand_total_inr` collapses to
+      `total_inr` through guards that already existed. Removing the rule is what
+      takes it out of `clearHidden` too — leaving the rule behind would have
+      blanked a column the form no longer populates, on every save, forever.
+  */
 
   /*
-    RULE 7 again — ONE extra, where there used to be four (OCPI-10).
+    RULE 7 again — THE THREE EXTRAS, RE-GATED ON THE CATEGORY (OCPI-14).
 
-    Air blade, ink dust exhauster and chilling system are now asked on EVERY
-    deal and have no rule here at all: `isVisible` returns true for a key it
-    does not know, which is the whole of their change. Removing the rules also
-    takes them out of `clearHidden`'s loop — required, not incidental, or the
-    answer would be blanked client-side before the payload was even built.
+    ⚠ THIS REVERSES OCPI-10, FOUR DAYS OLD, AND THE REVERSAL IS THE CLIENT'S.
+      OCPI-10 ungated air blade / ink dust exhauster / chilling system because
+      the per-machine mapping was hiding questions people needed to answer. The
+      01-09 sheet settles it properly instead: the extras are mapped against
+      DIRECT machines only and read "no" for every Sublimation, Other and POD
+      model. So they are asked on a Direct deal and nowhere else.
 
-    ⚠ EXTERNAL CENTERING KEEPS ITS GATE, and the asymmetry is the client's own
-      decision rather than an oversight. The centering system follows the
-      dryer's logic: if the machine backs it, ask; otherwise do not. So section
-      B shows seven pointers on the 5 machines that can carry a centering
-      device and six on the other 23. Do not "fix" that by always rendering the
-      row, and do not tidy this rule into matching the three that went.
+    🔴 THEY ARE THE ONE PLACE IN THIS FILE WHERE A HIDDEN FIELD CLEARS TO
+       `false` RATHER THAN `null` — see `clearHidden` below. Ritesh Bhai asked
+       for a definite "No" on a machine that cannot take one, not an unanswered
+       question, so the papers can state it. `fms_ocpi_write_oc` carries the
+       matching `else false`; if the two disagree the answer flickers between
+       null and false on alternate saves.
 
-    ⚠ ITS TWIN IS THE SHIPMENT GROUP twenty lines above — `centeringShipMode`
-      and the four beside it read the SAME capability, and the client confirmed
-      the two hide together. Both survive OCPI-10 untouched.
-
-    ⚠ THE SERVER CARRIES THIS RULE TOO. `fms_ocpi_write_oc` still clears
-      `external_centering` on a machine that cannot carry one, and deliberately
-      no longer clears the other three — see
-      20261025120000_fms_ocpi_extras_stop_being_gated.sql. If this rule and
-      that clearing ever disagree, the form asks a question the server throws
-      away, which is exactly the bug OCPI-10 existed to remove.
+    ⚠ `externalCentering` HAS NO RULE HERE ANY MORE — the field is gone from the
+      form. It was the fourth of these ticks and the only one OCPI-10 left
+      gated; OCPI-14 promotes it to a full deal inclusion
+      (`inclCentering` / `centeringDetails`, in section B beside spare parts).
+      The COLUMN is frozen history: `fms_ocpi_write_oc` no longer writes it, so
+      the 15 deals that answered it keep their answer. A rule left here would
+      have blanked it on the first re-save of every one of them.
   */
-  externalCentering: (_d, m) => canCarry(m.optExternalCentering),
+  airBlade: (_d, f) => f.showsExtras,
+  inkDustExhauster: (_d, f) => f.showsExtras,
+  chillingSystem: (_d, f) => f.showsExtras,
+
+  /*
+    OCPI-14 · the centering device as a deal inclusion, shaped on spare parts.
+    A "No" ends it — there is no subsidized-rate branch, which is why this pair
+    reads like `spareDetails` above and not like the ink block.
+  */
+  inclCentering: (_d, f) => f.showsCentering,
+  centeringDetails: (d, f) => f.showsCentering && d.inclCentering === true,
 
   highSeasVia: (d) => d.transportTerms === "high_seas",
   highSeasCostBy: (d) => d.transportTerms === "high_seas",
@@ -384,12 +451,33 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
 export function isVisible(
   field: keyof QuotationDraft,
   draft: QuotationDraft,
-  facts: MachineFacts = NO_MACHINE_FACTS,
   deal: DealFacts = NO_DEAL_FACTS,
 ): boolean {
   const rule = PART_A_VISIBILITY[field];
-  return rule ? rule(draft, facts, deal) : true;
+  return rule ? rule(draft, deal) : true;
 }
+
+/**
+ * The three fields a hidden state answers "No" rather than "unanswered".
+ *
+ * 🔴 THE ONLY EXCEPTION IN THIS MODULE, and it is the client's instruction, not
+ *    a convenience. Every other hidden boolean clears to `null` because an
+ *    unanswered question and a question answered No are different facts — the
+ *    header of `YesNoButtons` says so, and the RPCs read `coalesce(x,'no')`
+ *    precisely so they never have to guess. Here Ritesh Bhai asked for a
+ *    definite No: a Sublimation machine cannot take an air blade, so the deal
+ *    should record that it has none rather than that nobody was asked.
+ *
+ * ⚠ ITS TWIN IS `case when coalesce(v_shows_extras, false) then … else false end`
+ *   in fms_ocpi_write_oc — three of them. If this set and those three ever
+ *   disagree, the value flips between null and false on alternate saves and the
+ *   revision diff reports a change on every single save.
+ */
+const CLEARS_TO_FALSE = new Set<keyof QuotationDraft>([
+  "airBlade",
+  "inkDustExhauster",
+  "chillingSystem",
+]);
 
 /**
  * Blank whatever the current answers have hidden.
@@ -402,27 +490,30 @@ export function isVisible(
  * different absences, and collapsing them would turn an unanswered yes/no into
  * an empty string the row cannot store.
  *
- * ⚠ PASS THE MACHINE'S FACTS. The default is the CLOSED set, which would blank
- *   every dryer answer and every extra — right for "no machine chosen", wrong
- *   for a caller that simply forgot. `useQuotationDraft` reads them off the
- *   draft's own machine; there is one caller and it does.
- *
- * ⚠ THE DEAL FACTS DEFAULT THE OTHER WAY ROUND, and that asymmetry is
- *   deliberate — see `NO_DEAL_FACTS`. "A real category" blanks nothing, so a
- *   caller that forgets loses no answer; the closed default would erase dryer
- *   answers from any screen not yet updated. The server still clears correctly
+ * ⚠ THE DEAL FACTS DEFAULT TO THE *OPEN* SET, and that is deliberate — see
+ *   `NO_DEAL_FACTS`. A caller that forgets to pass them therefore blanks
+ *   nothing; the closed default would erase every dryer, centering and extras
+ *   answer from any screen not yet updated. The server still clears correctly
  *   either way, because it always knows.
+ *
+ * ⚠ THE MACHINE'S FACTS USED TO BE A THIRD ARGUMENT and are gone (OCPI-14) —
+ *   the category decides now, and it travels in `deal`.
  */
 export function clearHidden(
   draft: QuotationDraft,
-  facts: MachineFacts = NO_MACHINE_FACTS,
   deal: DealFacts = NO_DEAL_FACTS,
 ): QuotationDraft {
   const out = { ...draft };
   for (const key of Object.keys(PART_A_VISIBILITY) as (keyof QuotationDraft)[]) {
-    if (!isVisible(key, draft, facts, deal)) {
+    if (!isVisible(key, draft, deal)) {
       const current = draft[key];
-      (out[key] as unknown) = typeof current === "boolean" || current === null ? null : "";
+      // See CLEARS_TO_FALSE — three fields answer "No" when hidden; everything
+      // else goes back to unanswered.
+      (out[key] as unknown) = CLEARS_TO_FALSE.has(key)
+        ? false
+        : typeof current === "boolean" || current === null
+          ? null
+          : "";
     }
   }
   return out;

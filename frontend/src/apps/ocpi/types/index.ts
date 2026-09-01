@@ -120,6 +120,9 @@ export interface OcpiDeal {
 
   machineCount: number | null;
   machineId: string | null;
+  /** OCPI-14 · Direct / Sublimation / Other / POD — THE branch input. Snapped
+   *  to the machine's own category on every pick, so the two cannot disagree. */
+  machineCategoryId: string | null;
   headType: string | null;
   headCount: number | null;
   inkType: string | null;
@@ -160,6 +163,10 @@ export interface OcpiDeal {
   inkOfferSubtotal: number | null;
   inclSpares: boolean | null;
   spareDetails: string | null;
+  /** OCPI-14 · the centering device as a deal inclusion, shaped on spare parts.
+   *  REPLACES the `externalCentering` tick, which is now frozen history. */
+  inclCentering: boolean | null;
+  centeringDetails: string | null;
   inclHead: boolean | null;
   headsIncluded: number | null;
   /* ── Head, the NO branch (OCPI-7) ─────────────────────────────────────────
@@ -486,12 +493,43 @@ export interface OcpiMachine {
    *   client's own sheet disproved it: in "Other", Position Printer needs one
    *   while all three Pengda machines do not.
    */
+  /**
+   * ⚠ INFORMATION ONLY SINCE OCPI-14. These five record what a MODEL can take
+   *   and are still edited on the Machines master, but nothing branches on them
+   *   any anymore — not `branching.ts`, not `fms_ocpi_write_quotation`, not
+   *   `fms_ocpi_write_oc`. The machine CATEGORY decides what the form asks
+   *   (`OcpiNamedMaster.showsDryer` and its two neighbours).
+   *
+   *   `needsDryer` in particular stopped being a REQUIRED field on the Machines
+   *   master at the same moment: it was required because a blank one would
+   *   silently make a whole section unreachable, and that can no longer happen.
+   */
   needsDryer: boolean | null;
   optAirBlade: MachineOption | null;
-  /** Also decides whether the centering device is asked about at all. */
   optExternalCentering: MachineOption | null;
   optInkDustExhauster: MachineOption | null;
   optChillingSystem: MachineOption | null;
+
+  /**
+   * The three warranties, per model, as they should print (OCPI-14).
+   *
+   * ⚠ NULL MEANS NOT APPLICABLE — not "unknown", and not "fall back to the
+   *   default". The question is not asked on the form and no line is printed on
+   *   either paper. 15 of the 28 models carry no head warranty at all.
+   *
+   * ⚠ NOT A PER-CATEGORY RULE, which is why they live here beside the model and
+   *   not with the three `shows_*` flags: 10 of the 12 sublimation machines have
+   *   no head warranty but P8S and P8D have 18 months.
+   *
+   * ⚠ THERE IS NO SPARE-PARTS WARRANTY, and its absence is a finding. The
+   *   client's sheet reads "NA" for it on all 28 rows.
+   *
+   * `fms_ocpi_config.warranty_periods` remains as the fallback for a model with
+   * no value of its own.
+   */
+  machineWarranty: string | null;
+  headWarranty: string | null;
+  dryerWarranty: string | null;
   docTitle: "ORDER CONFIRMATION" | "OFFER QUOTE";
   introText: string | null;
   machineModelNo: string | null;
@@ -628,6 +666,30 @@ export interface OcpiNamedMaster {
    * because deals already saved hold the old text. Deactivate it instead.
    */
   meansNoDryer: boolean;
+
+  /**
+   * MACHINE CATEGORIES ONLY — what a deal in this category is asked (OCPI-14).
+   *
+   * Direct carries all three; Sublimation, Other and POD carry none. These are
+   * THE branch inputs for the Dryer details card, the Centering device
+   * inclusion, the three optional extras, and the Dryer and Centering rows in
+   * Shipment & invoice.
+   *
+   * ⚠ FLAGS, NOT THE NAME "Direct". OCPI-8 paid for that lesson with
+   *   `dryer_type = 'Not Applicable'`: match a category by its literal name and
+   *   renaming it in Masters switches the branch off silently. Nothing in this
+   *   module compares a category name.
+   *
+   * ⚠ FALSE ON THE OTHER THREE VOCABULARIES, for the same reason `meansNoDryer`
+   *   is — print heads, inks and dryer categories have no such columns and
+   *   `mapNamed` reads a missing field as false.
+   *
+   * ⚠ THEIR TWIN IS `c.shows_dryer, c.shows_centering, c.shows_extras` in
+   *   fms_ocpi_write_oc, which nulls what it hides on every save.
+   */
+  showsDryer: boolean;
+  showsCentering: boolean;
+  showsExtras: boolean;
 }
 
 export interface OcpiMasterManager {
