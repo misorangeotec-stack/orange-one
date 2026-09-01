@@ -15,7 +15,7 @@ import { fmtDealValue } from "../lib/format";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
   HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TYPES, PLATTER_OPTIONS,
-  SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, machineFacts,
+  SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts, machineFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
 import type { MachineOption, OcpiMasterType } from "../types";
@@ -527,6 +527,19 @@ export default function QuotationForm({
   const facts = useMemo(() => machineFacts(chosenMachine), [chosenMachine]);
 
   /**
+   * ... and what the DEAL's own answers say, where the answer is not on the
+   * draft (OCPI-8).
+   *
+   * One fact today: the dryer category the salesperson picked is one that MEANS
+   * there is no dryer. The draft holds its NAME; the master row holds what the
+   * name means. Resolved once, here, so no branch rule has to reach for a store.
+   */
+  const dealAnswers = useMemo(
+    () => dealFacts(s.dryerTypes, draft.dryerType),
+    [s.dryerTypes, draft.dryerType],
+  );
+
+  /**
    * The category filter — UI state, never stored.
    *
    * Seeded from the deal's own machine so opening an existing quotation shows
@@ -746,7 +759,7 @@ export default function QuotationForm({
     return all.map((x) => ({ value: x, label: x }));
   }, [s, draft.dryerType, draft.dryerName]);
 
-  const show = (k: keyof QuotationDraft) => isVisible(k, draft, facts);
+  const show = (k: keyof QuotationDraft) => isVisible(k, draft, facts, dealAnswers);
 
 
   /**
@@ -1090,71 +1103,131 @@ export default function QuotationForm({
             <p className="mt-1 text-[12.5px] text-grey">
               Asked because <b className="text-navy">{chosenMachine?.name}</b> takes a dryer. No
               warranty is offered on a dryer.
+              {/*
+                ⚠ THE COLLAPSE IS ANNOUNCED, NOT JUST PERFORMED (OCPI-8). Five
+                  fields vanish the moment this category is picked, and a card
+                  that shrinks to one control with no explanation reads as a
+                  panel that failed to load. Same reason `NotAsked` puts a dash
+                  and a reason in the shipment table instead of an empty cell:
+                  "not asked" and "not answered" must not look alike.
+              */}
+              {dealAnswers.noDryerCategory && (
+                <>
+                  {" "}
+                  <b className="text-navy">
+                    This deal carries no dryer, so nothing further is asked here.
+                  </b>
+                </>
+              )}
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            {/*
+              ⚠ BUTTONS, NOT A DROPDOWN (OCPI-8, asked for by Ritesh Bhai). Three
+                options, and this is the field that now decides whether half the
+                card exists — so it should be readable at a glance rather than
+                folded into a closed dropdown.
+
+              ⚠ A DELIBERATE EXCEPTION TO `ChoiceButtons`' OWN RULE, which says
+                "ONLY FOR A FIXED VOCABULARY DECLARED IN CODE — never a master
+                list" and cites this very master by name. OCPI-8 requires the
+                opposite — hardcode the three and a category added on the Masters
+                screen would never appear here, with the two screens disagreeing
+                and no clue why. Every other strip in this form feeds it an
+                `as const` array; this is the first master-driven one. The
+                mitigation is that the strip is `flex-wrap`, so a fourth or fifth
+                category wraps onto a second line rather than overflowing.
+
+              ⚠ WHAT THE COMBOBOX CARRIED, one at a time:
+                · `searchable` — gone. A search box over three values is noise.
+                · `clearable` — KEPT. Neither `missingForSubmit` nor the table's
+                  own `fms_ocpi_complete_when_submitted` requires a category, so
+                  this is an optional field, and without a way back the first
+                  click would be irreversible.
+                · `onCreate` + the master request — DELIBERATELY DROPPED. It
+                  first came back as a "+ Other" button, and Ritesh Bhai removed
+                  it on sight (01-Sep-2026): the three categories are the whole
+                  vocabulary, and a fourth is an admin decision rather than
+                  something a salesperson invents mid-quotation. Unlike the head,
+                  ink and machine pickers — which keep their `onCreate`, because
+                  those lists genuinely grow.
+
+                  ⚠ THE CAPABILITY IS NOT GONE, only this shortcut to it. The
+                    OCPI **Master Requests** page raises a `dryer_type` request
+                    with the type chosen there, and `fms_ocpi_resolve_master_request`
+                    still handles it. Do not delete that branch as an orphan on
+                    the strength of this field no longer using it.
+            */}
             <FieldLabel label="Dryer category">
-              <Combobox
+              <ChoiceButtons
                 value={draft.dryerType}
-                onChange={(v) =>
-                  // Changing the category orphans the model inside the old one.
-                  patch({ dryerType: v, dryerName: "" })
-                }
+                // Changing the category orphans the model inside the old one.
+                onChange={(v) => patch({ dryerType: v, dryerName: "" })}
                 options={masterOpts(s.dryerTypes, draft.dryerType)}
-                placeholder="Choose or type"
-                searchable
                 clearable
                 disabled={disabled}
-                onCreate={(label) => {
-                  // Non-blocking: the typed value is KEPT on the deal, and the
-                  // list is asked to grow so the next person can pick it.
-                  patch({ dryerType: label, dryerName: "" });
-                  setAsk({ type: "dryer_type", name: label });
-                  return label;
-                }}
-                createLabel={(q) => `Use “${q}”`}
+                ariaLabel="Dryer category"
               />
             </FieldLabel>
-            <FieldLabel
-              label="Dryer"
-              hint={draft.dryerType ? undefined : "choose a category first"}
-            >
-              <Combobox
-                value={draft.dryerName}
-                onChange={(v) => patch({ dryerName: v })}
-                options={dryerOptions}
-                placeholder={
-                  !draft.dryerType
-                    ? "Choose a category first"
-                    : dryerOptions.length
-                      ? "Choose the model"
-                      : "None set up in this category"
-                }
-                searchable
-                clearable
-                disabled={disabled || !draft.dryerType}
-              />
-            </FieldLabel>
+            {/*
+              ⚠ ONE GUARD FOR THE WHOLE GROUP, AND IT IS NOT OPTIONAL (OCPI-8).
+                These five fields used to render unconditionally inside the card
+                — only `dryerPrice` had a `show()` of its own. `clearHidden`
+                iterates EVERY rule in `PART_A_VISIBILITY`, not the ones the form
+                happens to ask about, so adding the rules without this guard
+                would blank the answers on every save while leaving the boxes on
+                screen. Silent data loss, not a fix.
+
+                They share one condition, so they take one check. Read the rules
+                themselves in `branching.ts` — `hasDryerDetails` — which is also
+                what `clearHidden` and `fms_ocpi_write_oc` obey.
+
+              ⚠ THREE AFFORDANCES CAME OUT WITH IT, deliberately rather than by
+                oversight (the FIX-4 rule): the Dryer picker's
+                `hint="choose a category first"`, its `disabled` on an empty
+                category, and its "Choose a category first" placeholder. All
+                three were unreachable the moment the group hides until a
+                category is picked, and a disabled-but-visible box breaks this
+                file's own header rule — "CONDITIONAL FIELDS ARE HIDDEN, NEVER
+                DISABLED". Leaving them would have been dead code that lies.
+            */}
+            {show("dryerName") && (
+              <FieldLabel label="Dryer">
+                <Combobox
+                  value={draft.dryerName}
+                  onChange={(v) => patch({ dryerName: v })}
+                  options={dryerOptions}
+                  placeholder={
+                    dryerOptions.length ? "Choose the model" : "None set up in this category"
+                  }
+                  searchable
+                  clearable
+                  disabled={disabled}
+                />
+              </FieldLabel>
+            )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldLabel label="How many chambers with the dryer">
-              <TextInput
-                value={draft.dryerChambers}
-                onChange={(e) => patch({ dryerChambers: e.target.value })}
-                disabled={disabled}
-              />
-            </FieldLabel>
-            <FieldLabel label="Heating medium">
-              <TextInput
-                value={draft.heatingMode}
-                onChange={(e) => patch({ heatingMode: e.target.value })}
-                placeholder="e.g. electric, gas, thermic fluid"
-                disabled={disabled}
-              />
-            </FieldLabel>
-          </div>
+          {show("dryerChambers") && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FieldLabel label="How many chambers with the dryer">
+                <TextInput
+                  value={draft.dryerChambers}
+                  onChange={(e) => patch({ dryerChambers: e.target.value })}
+                  disabled={disabled}
+                />
+              </FieldLabel>
+              <FieldLabel label="Heating medium">
+                <TextInput
+                  value={draft.heatingMode}
+                  onChange={(e) => patch({ heatingMode: e.target.value })}
+                  placeholder="e.g. electric, gas, thermic fluid"
+                  disabled={disabled}
+                />
+              </FieldLabel>
+            </div>
+          )}
 
           {/*
             ⚠ THE PRICE IS ASKED ONLY WHEN THE DRYER IS *NOT* IN THE DEAL. It is
@@ -1164,24 +1237,26 @@ export default function QuotationForm({
               whether it attracts GST is still unanswered by the client — so the
               papers carry it as its own line (stage I).
           */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <YesNo
-              label="Dryer included in the deal"
-              value={draft.dryerIncluded}
-              onChange={(v) => patch({ dryerIncluded: v })}
-              disabled={disabled}
-            />
-            {show("dryerPrice") && (
-              <FieldLabel label="Dryer price (excl. GST)" hint="charged separately">
-                <TextInput
-                  inputMode="decimal"
-                  value={draft.dryerPrice}
-                  onChange={(e) => patch({ dryerPrice: e.target.value.replace(/[^\d.]/g, "") })}
-                  disabled={disabled}
-                />
-              </FieldLabel>
-            )}
-          </div>
+          {show("dryerIncluded") && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <YesNo
+                label="Dryer included in the deal"
+                value={draft.dryerIncluded}
+                onChange={(v) => patch({ dryerIncluded: v })}
+                disabled={disabled}
+              />
+              {show("dryerPrice") && (
+                <FieldLabel label="Dryer price (excl. GST)" hint="charged separately">
+                  <TextInput
+                    inputMode="decimal"
+                    value={draft.dryerPrice}
+                    onChange={(e) => patch({ dryerPrice: e.target.value.replace(/[^\d.]/g, "") })}
+                    disabled={disabled}
+                  />
+                </FieldLabel>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
@@ -2128,6 +2203,15 @@ export default function QuotationForm({
         lockType
         prefillName={ask?.name}
         stacked
+        /*
+          ⚠ NO `dryer_type` BRANCH HERE, and its absence is deliberate rather
+            than an omission. It existed for one turn, to put a requested
+            category straight onto the deal — then the "+ Other" button that
+            raised it was removed at the client's request (01-Sep-2026), leaving
+            nothing in this form that can open the modal for a dryer category.
+            A handler for a trigger that no longer exists is exactly the orphan
+            FIX-4 is about, so it went with the button.
+        */
         onRequested={(type, name) => {
           if (type === "machine") setMachineAsked(name);
         }}

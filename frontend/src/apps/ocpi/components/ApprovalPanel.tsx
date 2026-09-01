@@ -8,6 +8,7 @@ import { useOcpiStore } from "../store";
 import { decideQuotation, freezeOc, uploadOcPdf } from "../data/ocpiWrites";
 import { fetchDealById } from "../data/ocpiFetch";
 import { fetchStoredPdf } from "../lib/docUrls";
+import { dealFacts } from "../lib/fieldSpec";
 import {
   quotationDetailFileName, quotationFileName, quotationPdfBlob,
 } from "../lib/quotationPdf";
@@ -107,6 +108,7 @@ export default function ApprovalPanel({
               machine,
               profile: s.profileFor(deal.companyId),
               versionNo: deal.quotationVersionNo || 1,
+              noDryerCategory: dealFacts(s.dryerTypes, deal.dryerType ?? "").noDryerCategory,
             }),
           );
           if (!cancelled) setRebuilt(true);
@@ -161,6 +163,7 @@ export default function ApprovalPanel({
       machine: m,
       profile,
       versionNo: fresh.quotationVersionNo || 1,
+      noDryerCategory: dealFacts(s.dryerTypes, fresh.dryerType ?? "").noDryerCategory,
     });
     const summaryPath = await uploadOcPdf(fresh.id, approvedSummary, ocSummaryFileName(fresh));
 

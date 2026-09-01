@@ -434,6 +434,57 @@ export function machineFacts(m: OcpiMachine | null | undefined): MachineFacts {
 }
 
 /**
+ * What a branch needs to know about the DEAL that is not on the draft (OCPI-8).
+ *
+ * ⚠ DELIBERATELY NOT PART OF `MachineFacts`. That record is documented as
+ *   exactly the five machine columns `fms_ocpi_write_oc` reads, and folding a
+ *   sixth, non-machine fact into it would make that sentence false — the next
+ *   person comparing it against the SQL would find a field with no column.
+ *
+ * One entry today: the dryer category the salesperson picked is one that MEANS
+ * there is no dryer. The draft holds the category's NAME (`dryerType`, TEXT,
+ * frozen into every revision); the master row holds what that name means. This
+ * is where the two are joined, once, so no branch has to.
+ */
+export interface DealFacts {
+  /** The chosen dryer category means "this deal carries no dryer". */
+  noDryerCategory: boolean;
+}
+
+/**
+ * No category chosen, or one nobody recognises.
+ *
+ * ⚠ THE SAFE DEFAULT IS THE *OPEN* ONE, which is the opposite of
+ *   `NO_MACHINE_FACTS`. "A real category" hides nothing and clears nothing, so a
+ *   caller that forgets to pass these blanks no answers; the server, which
+ *   always knows, still clears correctly. The closed default would have
+ *   `clearHidden` erase dryer answers on any screen that had not been updated.
+ */
+export const NO_DEAL_FACTS: DealFacts = { noDryerCategory: false };
+
+/**
+ * Resolve the deal's dryer category name back to its master row.
+ *
+ * ⚠ SEARCHES INACTIVE ROWS TOO, and that is load-bearing. Deactivating the
+ *   "no dryer" category must not flip deals already sitting on it back to "a
+ *   real category" — the form would un-hide five fields the server has already
+ *   nulled, and the two engines would be showing different answers.
+ *
+ * ⚠ A NAME NOBODY RECOGNISES IS A REAL CATEGORY. That is the steady state of
+ *   the form's "+ Other" path between a request and its approval, and
+ *   `fms_ocpi_write_oc`'s left join resolves it to null and coalesces the same
+ *   way. Change one and change the other.
+ */
+export function dealFacts(
+  dryerTypes: { name: string; meansNoDryer: boolean }[],
+  dryerType: string,
+): DealFacts {
+  const name = dryerType.trim();
+  if (!name) return NO_DEAL_FACTS;
+  return { noDryerCategory: dryerTypes.some((t) => t.name === name && t.meansNoDryer) };
+}
+
+/**
  * Can the machine carry this extra at all?
  *
  * `"optional"` and `"yes"` both mean ASK — "yes" is standard equipment, and the
@@ -1024,7 +1075,11 @@ export function missingForSubmit(d: QuotationDraft): string[] {
  * missingForSubmit skips them: a deal with no dryer has no dryer warranty to be
  * missing.
  */
-export function missingForDetailSheet(d: QuotationDraft, facts: MachineFacts): string[] {
+export function missingForDetailSheet(
+  d: QuotationDraft,
+  facts: MachineFacts,
+  deal: DealFacts = NO_DEAL_FACTS,
+): string[] {
   const out: string[] = [];
 
   // ⚠ THE THREE WARRANTY CHECKS ARE GONE, and their absence is the point. The
@@ -1039,11 +1094,21 @@ export function missingForDetailSheet(d: QuotationDraft, facts: MachineFacts): s
   // ink — so this is the shipment question a salesperson meets most often.
   if (d.inclInk === true && !d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
 
-  // ⚠ THE DRYER IS THE MACHINE'S ANSWER NOW, not the deal's. This used to read
-  //   `dryerType !== 'Not Applicable'` — the salesperson's own pick — so a
-  //   machine that takes no dryer could still be nagged for chamber count.
-  //   Same rule, same source, as branching.ts and fms_ocpi_write_oc.
-  if (facts.needsDryer === true) {
+  /*
+    ⚠ THE MACHINE OPENS THE QUESTION AND THE CATEGORY DECIDES IT (OCPI-8), and
+      it takes BOTH. It used to read `dryerType !== 'Not Applicable'` — the
+      salesperson's own pick — so a machine that takes no dryer was still nagged
+      for a chamber count. Then (OCPI-3, stage E) it read the machine alone, and
+      the opposite fault appeared: a salesperson who answered "no dryer on this
+      deal" was still told the sheet would print a blank dryer name, a warning
+      they could not act on because the field was unfillable.
+
+      Now it asks the same question `hasDryerDetails` asks in branching.ts, and
+      the same one fms_ocpi_write_oc asks before it nulls these columns. All
+      three must agree: a field this warns about must be one the form shows and
+      the server keeps.
+  */
+  if (facts.needsDryer === true && d.dryerType.trim() !== "" && !deal.noDryerCategory) {
     if (!d.dryerName.trim()) out.push(FIELD_LABEL.dryerName);
     if (!d.dryerChambers.trim()) out.push(FIELD_LABEL.dryerChambers);
   }

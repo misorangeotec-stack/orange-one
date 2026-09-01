@@ -1789,21 +1789,37 @@ Two things remain, neither of them code:
    samples until the real names arrive, so three Indian and three Chinese were added: *2-Chamber
    Electric*, *3-Chamber Thermic Fluid*, *4-Chamber Gas Fired*.
 
-   They are prefixed **`[SAMPLE]`** deliberately — a dryer name **prints on the customer's quotation**,
-   so accidental use shows on the paper instead of passing silently. Removal is one statement:
+   They were prefixed **`[SAMPLE]`** deliberately — a dryer name **prints on the customer's
+   quotation**, so accidental use showed on the paper instead of passing silently.
+
+   🔴 **THE PREFIX IS GONE (OCPI-8, 01-Sep-2026) — THE CLIENT ASKED FOR IT, AFTER THE RISK WAS PUT TO
+   THEM ONCE.** The six were renamed in place, no deletes. **These six names are still placeholders,
+   and nothing on screen says so any more.** *3-Chamber Dryer — Thermic Fluid* now reads on a signed
+   contract exactly like a real product name. The real list is **still outstanding** from Bushra.
+
+   ⚠ **THE DOCUMENTED CLEANUP NO LONGER WORKS.** `delete from fms_ocpi_dryers where name like
+   '[SAMPLE]%'` was how these were to be cleared when the real names arrived, and it now matches
+   nothing. Clear them **by name** instead — and check the list against this one first, because
+   after the rename nothing distinguishes a placeholder from a real dryer:
 
    ```sql
-   delete from fms_ocpi_dryers where name like '[SAMPLE]%';   -- Postgres LIKE: [ is literal
+   delete from public.fms_ocpi_dryers where name in (
+     'Indian 2-Chamber Dryer — Electric',   'Chinese 2-Chamber Dryer — Electric',
+     'Indian 3-Chamber Dryer — Thermic Fluid', 'Chinese 3-Chamber Dryer — Thermic Fluid',
+     'Indian 4-Chamber Dryer — Gas Fired',  'Chinese 4-Chamber Dryer — Gas Fired');
    ```
 
-   `fms_ocpi_deals.dryer_name` stores the **text**, not an id, so deleting them cannot break a saved
-   quotation — but a frozen revision would keep printing `[SAMPLE]`. **Getting the real names is still
-   a go-live prerequisite for the business, not a build task.**
+   `fms_ocpi_deals.dryer_name` stores the **text**, not an id, so neither the rename nor a later
+   delete can break a saved quotation — a frozen revision keeps printing whatever it froze.
+   **Getting the real names is still a go-live prerequisite for the business, not a build task.** One
+   is already known: `JP K EVO.pptx` names **POWER-D Dryer (ELECTRIC)**.
 
-   ⚠ **The "Not Applicable" dryer category has no dryers and cannot sensibly have one.** Picking it on
-   a machine that needs a dryer leaves the name unfillable and the completeness warning standing. That
-   guides rather than blocks — Indian or Chinese is the right pick — but somebody will report it as a
-   fault. Whether a dryer machine should be offered "Not Applicable" at all is a business decision.
+   ✅ **The "Not Applicable" question is ANSWERED (OCPI-8).** It used to read: *picking it on a machine
+   that needs a dryer leaves the name unfillable and the completeness warning standing… whether a
+   dryer machine should be offered it at all is a business decision.* Ritesh Bhai reported it on
+   31-Aug and settled it: **the category stays on offer, and it means no dryer details.** The form now
+   hides every dryer question below the category, `missingForDetailSheet` stops asking, and
+   `fms_ocpi_write_oc` nulls the columns. See the OCPI-8 section below.
 
 ## Open with the client — none blocks anything; all stages are built
 1. Replacement wording for the two clauses *(blocks J only)*
@@ -1911,7 +1927,8 @@ the deck's 16. **All six affected deals are `ZZ TEST`; no real contract is invol
 6. **Alpha 3 — 12 heads lists a "Front Dryer"** while `needs_dryer = false`, which makes the whole Dryer
    details section unreachable for it.
 7. 🟢 **A real dryer name at last** — JPK's deck names **POWER-D Dryer (ELECTRIC)**, H18 electrical
-   heating, third passage, folder. Six `[SAMPLE]` placeholders are standing in for exactly this.
+   heating, third passage, folder. Six placeholders are standing in for exactly this; since OCPI-8
+   (01-Sep-2026) they no longer carry the `[SAMPLE]` prefix, so nothing marks them out as invented.
 8. **Two different Enterprises bank accounts** — Fab Pro 1I's deck is ICICI Noida-Sector 63, Fab Pro 2I's
    is ICICI Athwalines. Neither entity has a company profile, so both Fab Pros are unquotable until
    Finance supplies one, and it matters which.
@@ -2468,3 +2485,176 @@ trigger's `title` on hover. Flagged rather than fixed.
 
 ⚠ **The register exports the sub-totals** beside "Total (INR)" — which is exactly where somebody
 eventually writes `=SUM()` across a row. The column comments say so; the spreadsheet cannot.
+
+---
+
+# OCPI-8 · The dryer category decides whether the card holds anything — 01-Sep-2026
+
+*Reported by Ritesh Bhai, 31-Aug-2026. Three changes to one card.*
+
+The *Dryer details* card appeared whenever the chosen **machine** takes a dryer (`needs_dryer`, 11 of
+28 models), and everything inside it then showed regardless of the **category** picked. Choosing *Not
+Applicable* left Dryer name, chambers, heating medium, included-in-deal and price on screen,
+unfillable, with the completeness warning still asking for a dryer name that could not be given.
+
+**This closed a known open question rather than opening one.** It stood in this file as *"whether a
+dryer machine should be offered Not Applicable at all is a business decision."* The decision is made:
+**it stays on offer, and it means no dryer details.**
+
+## What was built
+
+- **`hasDryerDetails`** in `branching.ts`, beside the unchanged machine-only `hasDryer`. Three
+  conditions: the machine takes a dryer, a category has been picked, and the category is not one that
+  means no dryer. It governs `dryerName`, `dryerChambers`, `heatingMode`, `dryerIncluded`,
+  `dryerPrice` **and the five dryer shipment rules**. `dryerType` itself stays on `hasDryer` — the
+  category is the answer, and hiding it on its own answer would make it unchangeable.
+- **`fms_ocpi_write_oc`** narrows the same gate in three lines. One variable already drove every dryer
+  clearing there, so it covers the six detail columns, `dryer_price` and its three derived rupee
+  figures, and the six shipment columns together.
+- **`missingForDetailSheet`** asks the same question, so the warning stops naming fields the form no
+  longer shows.
+- **The category is a button row**, driven by the live master.
+- **The six `[SAMPLE]` dryers were renamed in place.** See the placeholder note earlier in this file —
+  **the documented `LIKE '[SAMPLE]%'` cleanup no longer works**, and is replaced there by a delete by name.
+
+## 🔴 The marker column, and why the name could not be the key
+
+`fms_ocpi_deals.dryer_type` is **TEXT — the category's NAME**, frozen into every revision payload.
+Matching the literal name would switch the whole branch off silently the day somebody renamed that
+category in Masters: no error, no log, just a card that stopped collapsing.
+
+So `fms_ocpi_dryer_types` gained a nullable **`means_no_dryer`**, and both engines read the flag:
+TypeScript through `dealFacts` (`fieldSpec.ts`), SQL through a left join in `write_oc`. The literal
+name appears **exactly once in the whole system** — in the one-time `update` inside migration
+`20261027120000`, which resolves today's row. An assertion fails the migration if the RPC ever
+mentions it again.
+
+⚠ **THE JOIN CARRIES NO `active` FILTER, in either engine.** Deactivating that category must not flip
+existing deals back to "a real category" and un-hide five fields the server has already nulled.
+
+⚠ **AN UNRECOGNISED NAME IS A REAL CATEGORY, in both engines**, and they must agree on that. It is
+reachable in two ways: a deal quoted under a category later deleted from the master, and a category
+requested from *Master Requests* and not yet approved. Neither is exotic, and the branch must not
+collapse the card on a name it simply has not heard of.
+
+⚠ **THE NAME OF A FLAGGED ROW CANNOT BE CHANGED**, because a DEAL stores the text and not an id — a
+rename would strand every saved deal under a category the master no longer knows. A trigger refuses
+it in plain English, `MasterCrud` surfaces that message on screen, and the Masters screen carries a
+note saying so. A **second** flagged category is allowed and needs no code change; that is the point
+of the column. `Masters.tsx`'s existing hardcoded name check now reads the flag too — one literal
+removed, not added.
+
+## 🔴 Adding the branch rules alone would have made the bug worse
+
+Inside the card, `dryerName`, `dryerChambers`, `heatingMode` and `dryerIncluded` rendered
+**unconditionally** — only `dryerPrice` had a `show()` of its own. `clearHidden` iterates EVERY rule
+in `PART_A_VISIBILITY`, not the ones the form happens to ask about (which is why `headBalanceRemarks`
+keeps a rule for a box that no longer exists). Adding the five rules without a group guard would have
+**blanked the answers on every save while leaving the boxes on screen**: silent data loss, not a fix.
+
+Three affordances came out with the guard rather than being left as dead code that lies: the Dryer
+picker's `hint="choose a category first"`, its `disabled` on an empty category, and its "Choose a
+category first" placeholder. All three became unreachable, and a disabled-but-visible box breaks the
+form's own rule — *conditional fields are hidden, never disabled*.
+
+## The shipment row hides too, and it had to
+
+The Dryer row in *Shipment & invoice* was gated on the machine alone, so a salesperson who had
+answered "no dryer on this deal" was still asked how the dryer ships. Because one variable governs
+every dryer clearing in `write_oc`, the moment the detail fields obey the category those six columns
+do too — leaving the row visible would have been a form/server disagreement, the thing this module
+forbids. Client confirmed, 01-Sep-2026. The table shows four rows instead of five on such a deal;
+the varying row count is the section's design.
+
+## Buttons from the master — and a deliberate exception
+
+Three options, and this is the field that now decides whether half a card exists, so it reads at a
+glance instead of from behind a closed dropdown. **Rendered from `s.dryerTypes` through the existing
+`masterOpts` helper**, never a hardcoded three — hardcode them and a category added on the Masters
+screen never appears on the form.
+
+⚠ **This is a deliberate exception to `ChoiceButtons`' own header**, which says *"ONLY FOR A FIXED
+VOCABULARY DECLARED IN CODE — never a master list"* and cites this very master by name. OCPI-8
+requires the opposite, so the client's instruction wins. Every other strip in this form feeds it an
+`as const` array; this is the first master-driven one. The mitigation is that the strip is
+`flex-wrap`, so a fourth category wraps rather than overflows — verified live with a temporary fourth.
+
+**What the Combobox carried, accounted for one at a time:**
+
+| Carried before | Decision |
+|---|---|
+| `searchable` | **Gone.** A search box over three values is noise. |
+| `clearable` | **Kept.** Neither `missingForSubmit` nor `fms_ocpi_complete_when_submitted` requires a category, so it is an optional field — and without a way back the first click would be irreversible. |
+| `onCreate` + the master request | **Dropped — deliberately, on the client's instruction.** It first came back as a `+ Other` button precisely so it would not vanish with the dropdown (the FIX-4 rule). Ritesh Bhai removed it on sight, 01-Sep-2026: **the three categories are the whole vocabulary, and a fourth is an admin decision, not something a salesperson invents mid-quotation.** The head, ink and machine pickers keep their `onCreate` — those lists genuinely grow. ⚠ **The capability is not gone, only this shortcut to it:** the OCPI *Master Requests* page still raises a `dryer_type` request and `fms_ocpi_resolve_master_request` still handles it. Do not delete that branch as an orphan on the strength of this field. The `onRequested` handler for `dryer_type` **did** go with the button, since nothing in the form can now open the modal for one. |
+
+`ShipmentRow`'s two pickers **stay Comboboxes** — its own header explains that button strips would push
+that table past 1100px.
+
+## The summary sheet stopped printing four ruled blanks
+
+`sectionRows` printed *Dryer Category* plus four detail rows whenever `dryerType` was set — so a "no
+dryer" deal printed **four ruled blanks under a line that had just said there is no dryer**. Exactly
+the fault stage I removed for *"Dryer Required"*, one level down. It was cosmetic while the category
+was barely usable; OCPI-8 makes it the normal case. `QuotationDocInput` gained an **optional**
+`noDryerCategory` (default false = the old behaviour), passed by all four `quotationPdfBlob` callers.
+
+⚠ **A half-filled REAL category still prints its blanks, and must.** The ruled blank where an answer is
+missing is deliberate — it is what `missingForDetailSheet` warns about before the paper goes out. Only
+the "no dryer" answer suppresses them, because only there is the blank inapplicable rather than
+unanswered.
+
+## Three corrections to the brief, found in the live database
+
+1. **The completeness check exists only in the form, not in SQL.** The brief said both.
+   `fms_ocpi_complete_when_submitted` and `fms_ocpi_submit_oc` name no dryer column, and only four DB
+   functions mention a dryer at all. `missingForDetailSheet` is a **warning card**, never a gate — so
+   the deal was untidy, not un-submittable. It still had to stop nagging.
+2. **Only ONE write RPC needed changing, not both.** `fms_ocpi_write_quotation` owns exactly one dryer
+   column — `dryer_type` — and that *is* the answer; nulling it would erase the choice.
+3. **There was nothing to erase.** 4 deals sat on the no-dryer category and 3 on `null`; every dryer
+   column on all 7 was already empty. The 12 Indian/Chinese deals holding chambers and heating medium
+   were untouched.
+
+## Verify — OCPI-8 *(01-Sep-2026, live browser + SQL)*
+
+- [x] `cd frontend && npm run build` — green. (`findExisting` and `RequestMasterModal.rowsFor` needed
+      widening: a machine had been satisfying `OcpiNamedMaster` structurally, and stopped once the
+      marker was added. Fixed by asking for the two fields actually compared, not by putting a dryer
+      flag on machines.)
+- [x] **The row-level test, which nothing else catches.** New draft on **K64**: category *Indian*,
+      dryer named, chambers 4, heating Thermic Fluid, included *No*, price ₹1,25,000, plus a separate
+      dryer invoice qty 3 × ₹40,000. Saved → the row held all of it, `dryer_value_inr` 1,25,000,
+      `dryer_gst_inr` 22,500, `dryer_invoice_subtotal` 1,20,000. Switched to **Not Applicable** and
+      **saved** → **every dryer column null except `dryer_type`** — name, chambers, heating medium,
+      included, price, both derived rupee figures, and all six shipment columns. **Gone, not hidden.**
+- [x] **Counterfactual** — switching back to *Indian* returned all five fields, returned the Dryer
+      shipment row, and took the detail-sheet warning from 3 lines back to 4 ("Dryer" reappears). The
+      check still works when it should.
+- [x] **Re-opened after reload** — *Not Applicable* still selected, only the category shown, warning
+      names 3 lines with **no dryer**, **Generate quotation enabled**. The deal is submittable.
+- [x] **The generated PDF** (QT-M0039) read back with pdf.js: **`Dryer Category` alone** — no
+      *Dryer*, no *No. of Chambers*, no *Heating Medium*, no *Dryer Included in the Deal*.
+- [x] **A deal frozen before this change is untouched** — QT-M0026's stored 25-Aug paper still prints
+      `Dryer Required | Indian`, under the pre-stage-E label, served as stored.
+- [x] **Buttons follow the master** — a temporary fourth category appeared as a fourth button with no
+      code change, and disappeared when deleted.
+- [x] **`+ Other` opened *Ask for a new entry* locked to Dryer type** — verified, then **removed at the
+      client's instruction the same day**. The strip is now the three master buttons and the clear ✕,
+      nothing else. Re-verified after removal: build green, buttons still master-driven.
+- [x] **The rename is refused** — editing the flagged category to "None" in Masters showed the
+      trigger's plain-English message on screen; the row was unchanged. Ordinary edits (active toggle,
+      sort order, renaming an unflagged category) still work.
+- [x] **The six dryers read without `[SAMPLE]`** in Masters and in the form's Dryer picker, and the
+      picker still offers only the dryers inside the chosen category.
+- [x] Test draft and temporary category deleted afterwards, versions first. **Zero residue.**
+
+## Open
+
+⚠ **On the OC *contract*, a machine template using `{{dryer_name}}` or `{{dryer_chambers}}` on a "no
+dryer" deal prints blanks**, because those tokens resolve to null. Pre-existing — the four deals
+already on that category were null before this change — and it is a template-content question rather
+than a code one. Flagged, not fixed.
+
+📋 **The six placeholder dryer names are now indistinguishable from real ones.** See the placeholder
+note earlier in this file for the delete-by-name replacement. Getting Bushra's real list matters more
+than it did yesterday.

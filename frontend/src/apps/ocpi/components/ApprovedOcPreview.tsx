@@ -5,6 +5,7 @@ import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
 import { ocFileName, ocPdfBlob, ocSummaryFileName } from "../lib/ocPdf";
 import { quotationPdfBlob } from "../lib/quotationPdf";
+import { dealFacts } from "../lib/fieldSpec";
 import type { OcpiDeal } from "../types";
 
 /**
@@ -67,6 +68,7 @@ export default function ApprovedOcPreview({
               machine,
               profile: s.profileFor(deal.companyId),
               versionNo: deal.quotationVersionNo || 1,
+              noDryerCategory: dealFacts(s.dryerTypes, deal.dryerType ?? "").noDryerCategory,
             }),
           );
           if (!cancelled) setRebuilt(true);

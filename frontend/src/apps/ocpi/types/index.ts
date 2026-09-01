@@ -597,6 +597,23 @@ export interface OcpiNamedMaster {
   name: string;
   active: boolean;
   sortOrder: number;
+  /**
+   * DRYER CATEGORIES ONLY — "picking this means the deal has no dryer" (OCPI-8).
+   *
+   * ⚠ IT EXISTS SO NOTHING MATCHES THE NAME "Not Applicable". `dryer_type` on a
+   *   deal is TEXT — the category's NAME, frozen into every revision payload —
+   *   so a literal match would switch the branch off silently the day somebody
+   *   renamed the category in Masters. The row says what it MEANS instead, and
+   *   `fms_ocpi_write_oc` reads the same flag through the same join.
+   *
+   * ⚠ FALSE ON EVERY OTHER MASTER, and that is correct rather than incidental.
+   *   Print heads, inks and machine categories have no such column; `mapNamed`
+   *   reads the missing field as `false`, which means "an ordinary entry".
+   *
+   * A flagged row's NAME cannot be edited — a database trigger refuses it,
+   * because deals already saved hold the old text. Deactivate it instead.
+   */
+  meansNoDryer: boolean;
 }
 
 export interface OcpiMasterManager {

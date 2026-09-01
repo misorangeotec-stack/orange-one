@@ -46,7 +46,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | The filled asset register sheet (vehicles, IT, air conditioners) | Ritesh Bhai / Finance | **AM-2** | 2026-08-29 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
-| The REAL dryer names, Indian and Chinese — six `[SAMPLE]` placeholders are standing in so the 11 machines that take a dryer can name one | Ritesh Bhai / Bushra | **OCPI-3 go-live** | 2026-08-29 |
+| The REAL dryer names, Indian and Chinese — six placeholders are standing in so the 11 machines that take a dryer can name one. ⚠ **They no longer say `[SAMPLE]`** (OCPI-8, 01-Sep, client's instruction), so nothing on screen marks them as invented and one can reach a signed contract looking real. More urgent than it was, not less | Ritesh Bhai / Bushra | **OCPI-3 go-live** | 2026-08-29 |
 
 ---
 
@@ -1828,8 +1828,9 @@ Using the token prints **12 on Rocket, whose deck promises 24**. Proceeding with
 OCPI-3 §F made warranties fixed company policy; **listed for Ritesh Bhai** below.
 
 🟢 **A real dryer name, at last.** `JP K EVO.pptx` slide 3 carries a full Dryer Information block naming
-**POWER-D Dryer (ELECTRIC)** — electrical heating H18, third passage H18, folder H18. Six `[SAMPLE]`
-placeholders are standing in for exactly this. See the *Waiting for* row on real dryer names.
+**POWER-D Dryer (ELECTRIC)** — electrical heating H18, third passage H18, folder H18. Six placeholders
+are standing in for exactly this; since OCPI-8 they no longer carry the `[SAMPLE]` prefix, so nothing
+marks them out. See the *Waiting for* row on real dryer names.
 
 🔴 **F18 · `{{machine_model_no}}` does not read the machine master, and Homer K24 is live with it.**
 The token resolves from `deal.machineModelNo` — a free-text box the salesperson types on the quotation
@@ -2279,7 +2280,7 @@ before they add it up.
   reading *"valid for the stated quantity"* is empty when the quantity appears nowhere on the page. It
   goes inside the sentence rather than into a ruled row, so the sheet still shows one price per item.
 
-### OCPI-8 · Dryer details — hide them on "Not Applicable", buttons for the category, and drop the `[SAMPLE]` prefix  `[ ]`
+### OCPI-8 · Dryer details — hide them on "Not Applicable", buttons for the category, and drop the `[SAMPLE]` prefix  `[x]` — 01-Sep-2026
 *Raised 2026-08-31 · Asked for by Ritesh Bhai · three changes to one card*
 
 #### 1 · "Not Applicable" must hide the dryer detail fields
@@ -2363,17 +2364,54 @@ there is no Italian one. Correct me if a fourth category is actually wanted.
 
 #### Phase-wise checklist
 
-- [ ] 1.1 Branch: dryer detail fields shown only for a real category; category selector always visible
-- [ ] 1.2 Both write RPCs — null the dryer columns on Not Applicable as well as on `needs_dryer = false`
-- [ ] 1.3 `missingForDetailSheet` no longer demands a dryer name when the category is Not Applicable
-- [ ] 2.1 Category as a button row, driven by `s.dryerTypes`; decide `clearable` and the **+ Other** path
-- [ ] 3.1 `update fms_ocpi_dryers set name = …` — rename in place, both categories, no deletes
-- [ ] 3.2 Update OCPI.md's removal note and the *Waiting for* row, which both key on the prefix
-- [ ] 4.1 `cd frontend && npm run build`
-- [ ] 4.2 Browser on a dryer machine: pick Indian → fields appear; fill chambers and price; switch to
-      **Not Applicable and save** — then check the ROW IN SQL. The chamber count and price must be gone,
-      not merely hidden. Then re-open and confirm the deal can be submitted
-- [ ] 4.3 A deal frozen before this change still opens and still prints its dryer block
+- [x] 1.1 Branch: dryer detail fields shown only for a real category; category selector always visible.
+      `hasDryerDetails` in `branching.ts`. ⚠ **The five fields were NOT individually gated in the form** —
+      only `dryerPrice` was — and `clearHidden` iterates every rule regardless, so adding the rules
+      alone would have blanked the answers on save while leaving the boxes on screen. One group guard;
+      three now-unreachable affordances removed with it
+- [x] 1.2 ⚠ **ONE write RPC, not both, and that is a decision.** `fms_ocpi_write_quotation` owns exactly
+      one dryer column — `dryer_type` — and that *is* the answer; nulling it would erase the choice.
+      `fms_ocpi_write_oc` narrows its existing gate in three lines, which covers the detail columns,
+      the price and its derived rupee figures, and the six shipment columns
+- [x] 1.3 `missingForDetailSheet` no longer demands a dryer name. ⚠ **It is the ONLY place that did** —
+      neither `fms_ocpi_complete_when_submitted` nor `fms_ocpi_submit_oc` names a dryer column, so the
+      deal was untidy rather than un-submittable
+- [x] 1.4 **NEW — the branch keys on a marker, not the name.** `fms_ocpi_dryer_types.means_no_dryer`
+      (nullable, additive); the literal name survives in exactly one place, the migration's one-time
+      `update`. A trigger refuses to rename a flagged row, since deals store the category as text
+- [x] 1.5 **NEW — the Dryer row hides from Shipment & invoice too** (client, 01-Sep). One variable
+      governs every dryer clearing in the RPC, so leaving the row visible would have been a
+      form/server disagreement
+- [x] 2.1 Category as a button row from `s.dryerTypes`, reusing `ChoiceButtons`. **`clearable` KEPT**
+      (the field is required by neither completeness check, so it is optional). `searchable` genuinely
+      goes. ⚠ Deliberate exception to `ChoiceButtons`' "never a master list" rule — recorded in OCPI.md
+- [x] 2.1a **`+ Other` built, then REMOVED at Ritesh Bhai's instruction on sight (01-Sep).** It was
+      added so the "request a new category" path would not vanish with the dropdown; he removed it
+      because **the three categories are the whole vocabulary and a fourth is an admin decision**, not
+      something a salesperson invents mid-quotation. Head / ink / machine keep their `onCreate` — those
+      lists genuinely grow. ⚠ The capability survives on the **Master Requests** page; only the
+      shortcut from this field is gone. Its `onRequested` handler went with the button (orphan rule)
+- [x] 2.2 **NEW — the summary sheet stops printing four ruled blanks** under a category that says there
+      is no dryer. Optional `noDryerCategory` on `QuotationDocInput`; a half-filled *real* category
+      still prints its blanks, which is deliberate
+- [x] 3.1 `update fms_ocpi_dryers set name = …` — renamed in place, both categories, no deletes
+- [x] 3.2 OCPI.md's removal note rewritten — **the `LIKE '[SAMPLE]%'` statement no longer matches
+      anything** and is replaced by a delete-by-name, with the warning that nothing now distinguishes a
+      placeholder from a real dryer. *Waiting for* row re-worded
+- [x] 4.1 `cd frontend && npm run build` — green
+- [x] 4.2 Browser on **K64**: *Indian* → the five fields appeared; filled a dryer name, chambers 4,
+      heating Thermic Fluid, included *No*, price ₹1,25,000, plus a separate dryer invoice 3 × ₹40,000.
+      Saved → the row held all of it plus `dryer_value_inr` / `dryer_gst_inr` / `dryer_invoice_subtotal`.
+      Switched to **Not Applicable and saved** → **every dryer column null except `dryer_type`**,
+      shipment columns included. **Gone, not hidden.** Re-opened after a reload: category still shown,
+      warning names 3 lines with no dryer, **Generate enabled**. Counterfactual: back to *Indian*
+      returned all five fields, the shipment row, and the 4th warning line
+- [x] 4.3 QT-M0026's stored 25-Aug paper still prints `Dryer Required | Indian` under the pre-stage-E
+      label, served as stored. The **new** NA deal's PDF, read with pdf.js, prints `Dryer Category`
+      alone — no chambers, no heating medium, no ruled blanks
+- [x] 4.4 The rename is refused on screen; buttons follow the master (a temporary 4th category appeared
+      and went). `+ Other` was verified opening the request modal locked to *Dryer type*, then removed
+      the same day — see 2.1a. Test data deleted, zero residue
 
 ### OCPI-9 · Blank values cannot be filtered for — on the machines master and every other grid  `[ ]`
 *Raised 2026-08-31 · Reported by Ritesh Bhai · ships with **OCPI-6**, same file, same decision*

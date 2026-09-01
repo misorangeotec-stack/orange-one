@@ -221,6 +221,10 @@ const mapNamed = (r: any): OcpiNamedMaster => ({
   name: r.name,
   active: r.active !== false,
   sortOrder: r.sort_order ?? 0,
+  // ⚠ ONLY fms_ocpi_dryer_types HAS THIS COLUMN (OCPI-8). The other three
+  //   vocabularies share this mapper and simply have no such field, so
+  //   `undefined === true` reads false — "an ordinary entry", which is right.
+  meansNoDryer: r.means_no_dryer === true,
 });
 
 const mapDryer = (r: any): OcpiDryer => ({
