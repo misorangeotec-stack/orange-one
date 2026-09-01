@@ -2887,6 +2887,302 @@ a pre-change deal → reads `Afrin Saiyed`, **not blank**. Test draft deleted.
       RLS-scoped read, so a non-admin sees a short list there for the same reason this entry exists.
       `list_org_people_detail()` is what would fix them.
 
+### OCPI-17 · Two small form fixes — the machine category order, and Platter loses "Not Applicable"  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai, from two screenshots*
+
+#### 1 · Machine category — the order in the dropdown
+
+✅ **SETTLED 01-09-2026: POD moves to the very end.** Confirmed by Ritesh Bhai. Re-space all four to
+round numbers so the next insertion has somewhere to go:
+
+| Category | `sort_order` now | → becomes |
+|---|---|---|
+| Direct | 10 | **10** |
+| Sublimation | 20 | **20** |
+| Other | 30 | **30** |
+| **POD** | 25 *(a half-step — it was inserted between two rows rather than placed)* | **40** |
+
+Resulting dropdown order: **Direct · Sublimation · Other · POD**.
+
+⚠ **POD's `sort_order = 25` is the tell that it was inserted between two existing rows** rather than
+placed. Whatever is decided, re-space all four to 10 / 20 / 30 / 40 so the next insertion has somewhere
+to go without another half-step.
+
+⚠ **This is master DATA, not code.** The dropdown reads `fms_ocpi_machine_categories` in sort order, so
+the fix is an `update` on `sort_order` — no frontend change, and it can be done from the Masters screen
+if that screen exposes ordering. Check before writing SQL.
+
+#### 2 · Platter — remove "Not Applicable", keep With and Without
+
+`PLATTER_OPTIONS` (`lib/fieldSpec.ts:552`) is
+`["With Platter", "Without Platter", "Not Applicable"]`. Drop the third.
+
+🟢 **Nothing is lost by removing it.** The control is `ChoiceButtons` with `clearable`, so the **×**
+already means "no answer" — which is what "Not Applicable" was standing in for. After the change the
+field reads With / Without / cleared, which is the same three states with one fewer button.
+
+🔴 **ONE REAL, LIVE DEAL ALREADY HOLDS THIS VALUE.** `QT-M0040` — **AADESH DIGITAL PRINTS**, status
+`awaiting_quotation_approval` — has `platter_details = 'Not Applicable'` right now. It is a genuine deal
+sitting at an approval gate, not a `ZZ TEST` row. Counts across all deals: With Platter 14 · null 6 ·
+**Not Applicable 1**.
+
+So before removing the option:
+- [ ] **Do not migrate or blank that row.** Its quotation is frozen and already says what it says;
+      rewriting the stored value would put the deal and its issued paper out of step.
+- [ ] **Check what `ChoiceButtons` does with a value that is no longer in its options.** It must show
+      the deal as-is and must not silently blank it on the next save. If it cannot display an unknown
+      value, the deal loses an answer the moment anybody opens and saves it — and that is a live deal at
+      an approval gate.
+- [ ] Decide what happens if somebody edits QT-M0040: they will have to pick With, Without, or clear.
+      That is acceptable, but it should be a known consequence rather than a surprise.
+
+⚠ **Platter is the one field in this section NOBODY ASKED FOR.** The code comment on it says so — it
+appears in no pointer and nowhere in the work list, and *"its home is still an open question with the
+client"*. It was moved into Machine details because the form and `fms_ocpi_write_oc` disagreed about it,
+and partly **because "Not Applicable" was one of its own options**. Removing that option removes one of
+the stated reasons it sits where it sits. Not a blocker — but if Platter is ever revisited, that comment
+now overstates the case and should be corrected at the same time.
+
+#### Checklist
+
+- [x] 0.1 SETTLED — POD moves to the end; all four re-spaced to 10 / 20 / 30 / 40
+- [x] 1.1 Re-space all four categories to 10 / 20 / 30 / 40 in the agreed order — **no SQL and no code
+      needed.** The Masters screen already exposes Sort order (`Masters.tsx:160`, on all four tabs), and
+      only POD actually moved: the other three were already 10 / 20 / 30. Done through the UI
+- [x] 2.1 `PLATTER_OPTIONS` → `["With Platter", "Without Platter"]`
+- [x] 2.2 Verify `ChoiceButtons` renders QT-M0040's stored "Not Applicable" without blanking it —
+      **it does not blank it, but it did not SHOW it either**, and one arrow key silently replaced it.
+      Fixed with `optsWithCurrent` (the fixed-vocabulary twin of the existing `masterOpts`), which feeds
+      the deal's own value back in as an option. It now renders as a lit third button, so the value is
+      visible AND the arrow-key index is real. No shared component was touched
+- [x] 2.3 Correct the Platter comment in `QuotationForm.tsx` — it cites "Not Applicable" as a reason
+      the field lives in Machine details
+- [x] 3.1 `cd frontend && npm run build`
+- [x] 3.2 Browser: the category dropdown reads in the agreed order; Platter shows two buttons and the ×
+- [x] 3.3 🔴 Open **QT-M0040**, confirm its Platter answer is still shown and still stored, then leave it
+      alone — shown as a lit button with a note; left untouched. ⚠ **Its "Save draft" is refused
+      anyway** — `fms_ocpi_save_draft` raises *"already been submitted — use Edit instead"* for any
+      non-draft, which is pre-existing. The save round-trip was proved on a `ZZ TEST` draft instead:
+      `platter_details` survived byte-identically across open → save
+- [x] 3.4 ⚠ **THE COUNT IN THIS ENTRY IS WRONG AND STILL RISING.** It says one deal holds
+      "Not Applicable". At the time of building there were **three** — QT-M0040, QT-M0041 and QT-M0042 —
+      all real, all at `awaiting_quotation_approval`. A new one appeared *during* the session, because
+      the option stays pickable until this ships. All three render correctly
+
+### OCPI-19 · "Consumables to be bought from" stops being a question and becomes a statement  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai*
+
+**The ask.** The field is a free-text box today (`QuotationForm.tsx:2387`). The answer is always the same
+company, so stop asking and simply **show** it: *Consumables to be bought from Orange O Tec Private
+Limited.*
+
+🟢 **The live data proves the point.** All **14** deals that carry a value carry the same company — typed
+**two different ways**: `Orange O Tec Pvt Ltd` and `Orange O Tec Pvt. Ltd.` A field whose only answer is
+one company, spelled inconsistently on customers' contracts, should not be a text box.
+
+#### 🔴 The spelling has to be settled once — there are already THREE, and this would make a FOURTH
+
+| Where | Spelling |
+|---|---|
+| Deals, variant 1 (some of the 14) | `Orange O Tec Pvt Ltd` |
+| Deals, variant 2 (the rest) | `Orange O Tec Pvt. Ltd.` |
+| **`fms_ocpi_company_profiles.legal_name`** — what prints as the **selling entity** on the paper | **`M/s ORANGE O TEC PVT LTD.`** |
+| Asked for here | `Orange O Tec Private Limited` |
+
+⚠ **The last two land on the SAME PAGE.** The letterhead and signature block carry the legal name from
+the company profile; the consumables clause would carry this one. A contract naming its own seller two
+different ways in two places is the kind of thing a customer's lawyer notices.
+
+**Decide before building:** either use the company profile's `legal_name` so the two can never diverge,
+or fix an explicit constant and accept the difference knowingly. My recommendation is to read
+`legal_name`, since it is already the module's single answer to "what is this company called" — but that
+prints *"M/s ORANGE O TEC PVT LTD."*, which is not the wording asked for. **Ritesh Bhai's call.**
+
+⚠ Also confirm: is the consumables supplier **always Orange O Tec**, or should it follow the deal's
+**selling entity**? Only one company profile exists today, so the two are indistinguishable — but the
+module supports several, and the answer decides whether this is a constant or a lookup.
+
+#### 🔴 It is a template token on 12 machines
+
+`{{consumables_supplier}}` (`tokens.ts:154`, `:246`) resolves from the deal and is used in **12** machine
+templates. So the field cannot simply be deleted — the safest shape is:
+
+- Keep the **column** and keep the **token resolving from the deal**, exactly as now. Nothing in the 12
+  templates changes, and every frozen paper stays valid.
+- On the form, replace the text box with **read-only text** showing the settled wording.
+- Set the constant onto the draft so every new deal stores it, and the token keeps resolving.
+
+That way this is a **form change plus a default**, not a token migration — much smaller, and the 12
+templates are never touched.
+
+⚠ Do NOT rewrite the 14 existing deals' values. Their papers are frozen and already print what they
+print; changing the stored text would put a deal and its issued document out of step.
+
+⚠ There is a comment directly above this field describing a *different* field that was removed, and it
+notes *"Zero templates use the token now; verified before this field was removed."* That is about the
+head-price field, **not** this one — this token has 12 users. Do not read that comment as applying here.
+
+#### Checklist
+
+- [x] 0.1 **SETTLED 01-09-2026 — the wording is exactly `Orange O Tec Pvt Ltd`.** A fixed constant, NOT
+      read from `company_profiles.legal_name`. It matches the spelling most of the 14 existing deals
+      already use, so nothing on record looks odd beside it.
+      ⚠ **Chosen knowingly in spite of the mismatch flagged above**: the letterhead and signature block
+      will still print `M/s ORANGE O TEC PVT LTD.` from the company profile, so the same contract names
+      its seller two ways. Ritesh Bhai was shown both and picked this. **Do not "harmonise" the two.**
+- [x] 0.2 Always Orange O Tec — a constant, not a lookup on the deal's selling entity
+- [x] 1.1 Form: read-only text in place of the input, wording per 0.1 — a read-out, **not** a disabled
+      input, following `WarrantyReadout`'s stated rule in the same file
+- [x] 1.2 The value is written onto every new deal so `{{consumables_supplier}}` keeps resolving —
+      `EMPTY_DRAFT` (new drafts) **and** `draftFromDeal` (a deal that stored nothing). ⚠ The second half
+      is not in this entry and the change is broken without it: `EMPTY_DRAFT` alone would have let an
+      older deal display the company name while saving back NULL, printing `M/s ` and a ruled blank
+- [x] 1.3 Leave the column, the token, the 12 templates and the 14 existing deals alone
+- [x] 2.1 `cd frontend && npm run build`
+- [x] 2.2 Render a contract on one of the 12 and confirm the consumables line reads correctly and is
+      **not blank** — MP5000, read back with pdf.js: *"Consumable items: To be purchased directly from
+      M/s Orange O Tec Pvt Ltd."* No ruled blank
+- [x] 2.3 Open one of the 14 older deals and confirm it still shows and prints its original wording —
+      shows and prints `Orange O Tec Pvt. Ltd.`, unchanged
+- [x] 2.4 🔴 **A REAL DEAL ANSWERED THIS FIELD `customer`.** QT-M0042 (SHAN TEXTILES, awaiting
+      quotation approval) holds `consumables_supplier = 'customer'`, so its contract will print
+      *"purchased directly from M/s customer."* The field is now read-only, so **nobody can correct that
+      from the form** — it needs a person and an SQL update, or a revision. Not fixed here: rewriting a
+      live deal's stored value was explicitly out of scope. ⚠ It also contradicts this entry's premise
+      that the answer is always Orange O Tec
+
+### OCPI-20 · Show the salesperson the expected format for payment terms  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai · **scope cut on the same day** — free text with a visible
+format, NOT structured fields. Dropdowns deferred; see "Later" at the foot.*
+
+**The ask, as settled.** Keep *Terms of payment* a free text box. Just **show the expected format in it**,
+so the salesperson writes it the house way without being forced to. No dropdowns, no structured fields,
+no new columns — those can come later if this is not enough.
+
+#### ⚠ Read this first — a placeholder already exists, and it has not worked
+
+`QuotationForm.tsx:2189` already carries `placeholder="e.g. 25% advance, 75% before delivery"`. So
+"put the format in the box" is **the current state**, and the box still produced six different wordings
+across 18 deals — including one deal whose payment terms are the word **`na`**.
+
+Two reasons it fails, and the fix is to correct both rather than to re-add a placeholder:
+
+1. 🔴 **A placeholder disappears the moment anybody types.** It is guidance for an empty box, and this box
+   is rarely empty for long — a salesperson editing a saved draft never sees it at all. **The format has
+   to be a persistent hint that stays visible while typing**, not placeholder text.
+2. 🔴 **The placeholder does not match house style.** It says *"25% advance, 75% before delivery"*. The
+   wording actually used on 13 of the 18 deals is *"25% advance with the order, 75% against the shipping
+   documents."* The example is teaching a format nobody uses.
+
+#### What to build
+
+✅ **THE APPROVED SENTENCE, settled 01-09-2026** — one string, used in all three places below, identical
+to the character:
+
+> **25% advance with the order, 75% against the shipping documents.**
+
+It is the wording 13 of the 18 existing deals already carry, so nothing on record looks odd beside it.
+Define it **once as a constant** — the hint, the placeholder and the button must never drift apart.
+
+- [ ] 1 **A persistent hint under the box**, always visible **while typing**, showing that sentence.
+      Visible on a saved draft being edited, not only on an empty box — that is the whole point.
+- [ ] 2 **Correct the placeholder** from today's `e.g. 25% advance, 75% before delivery` to the same
+      approved sentence, so the empty state and the hint agree.
+- [ ] 3 ✅ **A "Use this format" button — CONFIRMED, build it.** One click drops the sentence into the
+      box so the salesperson edits the numbers rather than writing the line from memory. That is what
+      makes the house wording actually get used.
+      ⚠ **It must never silently overwrite text already typed.** A salesperson three-quarters through a
+      negotiated term, clicking to see what the format was, must not lose it — confirm first, or disable
+      the button while the box has content, or append rather than replace. Decide which, and say so.
+
+**Deliberately NOT in scope:** dropdowns, an advance-% field, a PDC-cheque count, derived balance
+percentages, or any new column. `payment_terms` stays exactly as it is — one free-text column holding one
+sentence.
+
+#### Why this stays safe
+
+🟢 **Nothing about the data or the documents changes.** `{{payment_terms}}` is a template token live in
+the SALE CONDITIONS section of ~21 machines (`Payment terms: {{payment_terms}}`), and it keeps resolving
+from the same column exactly as today. No migration, no template edits, no risk to a frozen paper. This
+is a hint and a placeholder — the smallest possible version of the idea.
+
+#### Checklist
+
+- [x] 0.1 SETTLED — *"25% advance with the order, 75% against the shipping documents."*
+- [x] 0.2 SETTLED — the **"Use this format" button is wanted**. Build it, with the overwrite guard above.
+- [x] 1.1 Persistent hint + corrected placeholder — both from one constant, `PAYMENT_TERMS_FORMAT`
+- [x] 1.2 The overwrite guard is **confirm before replacing** (the entry asked for a choice). An empty
+      box fills on the first click; a box with anything in it arms an inline *"Replace what is typed?
+      Replace / Cancel"* on the button itself. Not *disable*, which would lock the button out of exactly
+      the deal that needs it most — the one whose terms are the word `na`; and not *append*, which would
+      put two payment sentences into one clause on a signed contract
+- [x] 2.1 `cd frontend && npm run build`
+- [x] 2.2 Browser: the hint is visible **while typing**, not only when the box is empty
+- [x] 2.3 Nothing else moved — open a saved deal and confirm its stored terms are untouched. Cancel
+      leaves typed text byte-identical (checked by string equality, not by eye)
+
+#### Separately — one live deal needs correcting by a person, not by code
+
+🔴 **A real deal has `payment_terms = 'na'`**, and that prints on the contract's payment clause. It is a
+live defect, not an illustration. Surface it to whoever owns that deal. No format hint fixes a row that
+is already wrong.
+
+#### Later, if the hint is not enough
+
+The 18 deals show every real answer has the same shape — a percentage up front, and a balance settled
+some way (*against shipping documents* · *before dispatch* · *PDC cheques*, with a cheque count). If drift
+continues, the structured version is: advance % + balance method + cheque count, composing into the
+sentence, with the balance percentage **derived** rather than typed, and an "Other — type it" escape so
+an unusual deal does not end up recorded in Special remarks. Stored in new additive columns beside
+`payment_terms`, which would keep holding the composed sentence so the token is unaffected.
+**Not being built now — recorded so the analysis is not redone.**
+
+### OCPI-21 · `ChoiceButtons` still loses a value it cannot match — Print head is the one left exposed  `[ ]`
+*Raised 2026-09-01, found while building OCPI-17*
+
+`shared/components/ui/ChoiceButtons.tsx` is fully controlled and never writes back on mount, so a
+stored value that matches no option **survives a save**. But it shows as nothing at all: no button
+lights, `aria-checked` is false on every one, and the field reads as unanswered.
+
+🔴 **Worse, one keystroke replaces it silently.** With nothing matched, `index` is `-1`, so
+`onKeyDown` computes `from = -1` and a single ↓ on a tabbed-to strip fires
+`onChange(options[0].value)` — a recorded answer gone with no click and nothing on screen to show it
+happened.
+
+**OCPI-17 closed this for Platter** without touching the shared component, using `optsWithCurrent`
+in `QuotationForm.tsx` (the fixed-vocabulary twin of the existing `masterOpts`): feed the deal's own
+value back in as an option, and the value is both visible and index-addressable, so the arrow keys
+behave normally.
+
+⚠ **Print head is still exposed.** It is fed from `mappedHeads`, and 22 of the 28 machines changed
+their mapping in the 01-09 refresh, so an older deal can easily hold a head that maps to nothing.
+`QuotationForm.tsx:1187` renders an explanatory read-out — so the value is at least *visible* — but
+it does **not** stop the keystroke, because the strip itself still has `index === -1`.
+
+The fix is either `masterOpts` at that call site too, or generic unknown-value handling inside
+`ChoiceButtons`. ⚠ The shared component has **26 call sites across 10 apps** and there is no test
+runner, so the local fix is the cheaper one. If it is done centrally, Print head's bespoke read-out
+must be reconciled or it will double-report.
+
+### OCPI-22 · A live deal says its consumables come from "customer", and the field can no longer be edited  `[!]`
+*Raised 2026-09-01, found while building OCPI-19 · **needs a person, not code***
+
+**QT-M0042 — SHAN TEXTILES PRIVATE LIMITED- MACHINE**, `awaiting_quotation_approval`, holds
+`consumables_supplier = 'customer'`. The 12 templated machines render
+`Consumable items: To be purchased directly from M/s {{consumables_supplier}}.`, so its contract
+prints **"purchased directly from M/s customer."**
+
+🔴 **OCPI-19 made that field read-only, so nobody can correct it from the form.** Fixing it now takes
+an SQL update or a revision. Rewriting a live deal's stored value was explicitly out of scope for
+OCPI-19, so it was left alone deliberately.
+
+⚠ It also contradicts OCPI-19's premise that the answer is always Orange O Tec — this is the first
+deal that answered otherwise. Worth asking whether it was a genuine commercial term or somebody
+misreading the box, because that decides whether the read-only field is right.
+
+🔴 Same shape as the `payment_terms = 'na'` deal noted under OCPI-20: **the form can stop new bad
+answers, but it cannot repair the ones already recorded.**
+
 ---
 
 ## R&D  *(new module)*
