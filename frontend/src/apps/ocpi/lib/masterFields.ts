@@ -69,10 +69,18 @@ export function payloadFromValues(mt: OcpiMasterType, v: MasterValues): Record<s
  *   the modal is the difference between a helpful screen and a puzzling one —
  *   and most of the time the requester simply did not scroll.
  */
-export function findExisting(
-  rows: OcpiNamedMaster[],
+/*
+  ⚠ IT ASKS FOR THE TWO FIELDS IT READS, NOT FOR A NAMED MASTER (OCPI-8). Its
+    four callers pass MACHINES as well as name-only vocabularies, and a machine
+    is not an `OcpiNamedMaster` — it happened to satisfy that shape until the
+    dryer-category marker was added to it, and then this stopped compiling. The
+    fix is to say what is actually needed rather than to put a dryer flag on
+    machines to keep a structural coincidence alive.
+*/
+export function findExisting<T extends { name: string; active: boolean }>(
+  rows: T[],
   name: string,
-): OcpiNamedMaster | undefined {
+): T | undefined {
   const n = name.trim().toLowerCase();
   if (!n) return undefined;
   return rows.find((r) => r.name.trim().toLowerCase() === n);

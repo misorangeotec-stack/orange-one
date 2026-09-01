@@ -77,8 +77,32 @@ export default function Masters() {
   /** A dryer category name, for the Dryers tab. */
   const categoryOf = (id: string) => s.dryerTypes.find((d) => d.id === id)?.name ?? "—";
 
+  /*
+    ⚠ ONE COLUMN SET, FOUR TABS — so the marker column is added only on the tab
+      that has a marker. `means_no_dryer` exists on fms_ocpi_dryer_types alone;
+      a "Means" column over print heads would be a column that is blank on every
+      row, which reads as data missing rather than as a column that does not
+      apply here.
+  */
   const columns: MasterColumn<OcpiNamedMaster>[] = [
     { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
+    ...(tab === "dryer_type"
+      ? [
+          {
+            header: "Means",
+            render: (r: OcpiNamedMaster) =>
+              r.meansNoDryer ? (
+                <span className="rounded-full bg-navy/5 px-2 py-0.5 text-[12px] font-semibold text-navy">
+                  no dryer on the deal
+                </span>
+              ) : (
+                <span className="text-grey-2">a real dryer category</span>
+              ),
+            // The rendered text is what to sort and filter by, so neither needs
+            // declaring — MasterCrud reads it off the cell.
+          },
+        ]
+      : []),
     { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
   ];
 
@@ -131,6 +155,29 @@ export default function Masters() {
         ))}
       </div>
 
+      {/*
+        ⚠ SAYING IT ON SCREEN IS HALF THE GUARD, and the database holds the other
+          half — a trigger refuses the rename outright, so this is an explanation
+          rather than the enforcement. Both exist because the quiet failure would
+          be invisible: a deal stores the category's NAME as text, so renaming
+          the row would leave every saved deal pointing at a category the master
+          no longer knows.
+      */}
+      {tab === "dryer_type" && (
+        <Card className="border-ryg-yellow/40 bg-[#FFFCF3] p-4">
+          <p className="text-[13px] font-medium text-navy">
+            The category marked <b>&ldquo;no dryer on the deal&rdquo;</b> cannot be renamed
+          </p>
+          <p className="mt-1 text-[13px] text-grey">
+            The quotation form recognises it by that marking and hides every dryer question below
+            it. Deals already saved store the category as <b className="text-navy">text</b>, so a
+            rename would leave them pointing at a category that no longer exists &mdash; the
+            database refuses it. Deactivate it instead. Everything else on this tab, including its
+            sort order, edits normally, and a second category can be marked the same way in SQL.
+          </p>
+        </Card>
+      )}
+
       {tab === "dryer" ? (
         /*
           ⚠ ITS OWN INSTANCE, because a dryer is the one list here that is not
@@ -153,8 +200,12 @@ export default function Masters() {
             { key: "name", label: "Dryer name", type: "text", required: true,
               hint: "Exactly as it should read on the quotation." },
             { key: "dryerTypeId", label: "Dryer category", type: "select", required: true,
+              // ⚠ THE MARKER, NOT THE NAME (OCPI-8). This read
+              //   `d.name !== "Not Applicable"` until the marker column existed —
+              //   a category that means "no dryer" cannot own a dryer, and the
+              //   row now says so itself rather than being recognised by spelling.
               options: s.dryerTypes
-                .filter((d) => d.active && d.name !== "Not Applicable")
+                .filter((d) => d.active && !d.meansNoDryer)
                 .map((d) => ({ value: d.id, label: d.name })),
               hint: "Indian or Chinese. The quotation asks for the category first, then offers only the dryers inside it." },
             { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0" },

@@ -13,7 +13,7 @@ import {
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
 import { docHeading } from "../../lib/format";
 import {
-  EMPTY_DRAFT, draftFromDeal, machineFacts, missingForSubmit, payloadFromDraft,
+  EMPTY_DRAFT, dealFacts, draftFromDeal, machineFacts, missingForSubmit, payloadFromDraft,
   type QuotationDraft,
 } from "../../lib/fieldSpec";
 
@@ -99,7 +99,13 @@ export function useQuotationDraft(dealId?: string) {
     setBusy(true);
     setError(null);
     try {
-      const payload = payloadFromDraft(clearHidden(draft, machineFacts(s.machineById(draft.machineId || null))));
+      const payload = payloadFromDraft(
+        clearHidden(
+          draft,
+          machineFacts(s.machineById(draft.machineId || null)),
+          dealFacts(s.dryerTypes, draft.dryerType),
+        ),
+      );
       const id = await saveDraftWrite(payload, savedId);
       setSavedId(id);
       setSavedAt(new Date().toISOString());
@@ -128,7 +134,13 @@ export function useQuotationDraft(dealId?: string) {
     setBusy(true);
     setError(null);
     try {
-      const payload = payloadFromDraft(clearHidden(draft, machineFacts(s.machineById(draft.machineId || null))));
+      const payload = payloadFromDraft(
+        clearHidden(
+          draft,
+          machineFacts(s.machineById(draft.machineId || null)),
+          dealFacts(s.dryerTypes, draft.dryerType),
+        ),
+      );
       const id = await saveDraftWrite(payload, savedId);
       setSavedId(id);
 
@@ -196,7 +208,13 @@ export function useQuotationDraft(dealId?: string) {
       const rendered = await fetchDealById(id);
       if (!rendered) throw new Error("The quotation could not be re-read after generating");
 
-      const summary = await quotationPdfBlob({ deal: rendered, machine, profile, versionNo });
+      const summary = await quotationPdfBlob({
+        deal: rendered,
+        machine,
+        profile,
+        versionNo,
+        noDryerCategory: dealFacts(s.dryerTypes, rendered.dryerType ?? "").noDryerCategory,
+      });
       const detail =
         machine && machine.hasTemplate
           ? await ocPdfBlob({ deal: rendered, machine, sections, profile, validityDays, warranty })

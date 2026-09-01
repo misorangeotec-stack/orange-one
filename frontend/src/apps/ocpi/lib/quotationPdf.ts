@@ -38,6 +38,19 @@ export interface QuotationDocInput {
   versionNo: number;
   /** ISO date the version was generated; falls back to now for a live preview. */
   generatedAt?: string;
+  /**
+   * The deal's dryer CATEGORY is one that means there is no dryer (OCPI-8).
+   *
+   * ⚠ IT CANNOT BE DERIVED FROM THE DEAL ALONE, which is why it is passed in.
+   *   `dryerType` is the category's NAME; only the master row says what that
+   *   name means. Every caller has the store — `dealFacts(s.dryerTypes,
+   *   deal.dryerType).noDryerCategory` is the whole of it.
+   *
+   * ⚠ OPTIONAL, DEFAULTING TO FALSE, so a caller that omits it prints exactly
+   *   what it printed before. Wrong in only one direction — four ruled blanks
+   *   that were already there — rather than hiding a dryer somebody quoted.
+   */
+  noDryerCategory?: boolean;
 }
 
 const dmy = (iso: string | null): string => {
@@ -107,7 +120,11 @@ const CONTINUED = ["… continued"];
  */
 const MIN_SPLIT = 3;
 
-function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows: Row[] }[] {
+function sectionRows(
+  d: OcpiDeal,
+  machine?: OcpiMachine,
+  noDryerCategory = false,
+): { title: string; rows: Row[] }[] {
   const isHighSeas = d.transportTerms === "high_seas";
   const isUsd = d.dealValueCurrency === "USD";
 
@@ -279,13 +296,32 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
   const showsDryer =
     machine?.needsDryer === true || !!d.dryerType || !!d.dryerName || !!d.dryerChambers;
   if (showsDryer) {
-    machineRows.push(
-      { label: "Dryer Category", value: d.dryerType ?? "" },
-      { label: "Dryer", value: d.dryerName ?? "" },
-      { label: "No. of Chambers", value: d.dryerChambers ?? "" },
-      { label: "Heating Medium", value: d.heatingMode ?? "" },
-      { label: "Dryer Included in the Deal", value: yesNo(d.dryerIncluded) },
-    );
+    machineRows.push({ label: "Dryer Category", value: d.dryerType ?? "" });
+    /*
+      ⚠ THE CATEGORY CAN BE THE WHOLE BLOCK (OCPI-8). When it is one that means
+        there is no dryer, `fms_ocpi_write_oc` nulls the other four columns — so
+        printing their rows would put FOUR RULED BLANKS under a line that has
+        just said there is no dryer to describe. That is precisely the fault the
+        note above says stage I removed for "Dryer Required", reappearing one
+        level down.
+
+        It was cosmetic while the category was barely usable; OCPI-8 makes it the
+        normal case, which is why it is fixed here rather than left.
+
+      ⚠ A HALF-FILLED *REAL* CATEGORY STILL PRINTS ITS BLANKS, and must. The
+        sheet ruling a blank where an answer is missing is deliberate — it is
+        what `missingForDetailSheet` warns about before the paper goes out. Only
+        the "no dryer" answer suppresses them, because only there is the blank
+        inapplicable rather than unanswered.
+    */
+    if (!noDryerCategory) {
+      machineRows.push(
+        { label: "Dryer", value: d.dryerName ?? "" },
+        { label: "No. of Chambers", value: d.dryerChambers ?? "" },
+        { label: "Heating Medium", value: d.heatingMode ?? "" },
+        { label: "Dryer Included in the Deal", value: yesNo(d.dryerIncluded) },
+      );
+    }
   }
   if (d.platterDetails) {
     machineRows.push({ label: "Platter", value: d.platterDetails });
@@ -412,7 +448,7 @@ function sectionRows(d: OcpiDeal, machine?: OcpiMachine): { title: string; rows:
 
 /** Build the document. Returns the jsPDF instance so callers can save, blob or print it. */
 export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF> {
-  const { deal, machine, profile, versionNo } = input;
+  const { deal, machine, profile, versionNo, noDryerCategory } = input;
 
   const [assets, letterhead] = await Promise.all([loadBrandAssets(), loadLetterhead(profile)]);
 
@@ -550,7 +586,7 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
     }
   };
 
-  for (const sec of sectionRows(deal, machine)) {
+  for (const sec of sectionRows(deal, machine, noDryerCategory)) {
     if (y + 46 > bodyBottom(pdf)) y = newPage(letterhead);
 
     setFill(pdf, BRAND.navy);

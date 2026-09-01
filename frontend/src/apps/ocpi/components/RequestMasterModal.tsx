@@ -65,7 +65,15 @@ export default function RequestMasterModal({
     label: m.label,
   }));
 
-  const rowsFor = (t: OcpiMasterType) =>
+  /*
+    ⚠ THE RETURN TYPE IS DECLARED, and it is the two fields the clash check
+      reads — not `OcpiNamedMaster`. Left to infer, this is a UNION OF FOUR
+      ARRAY TYPES, and `findExisting` then binds its type parameter to whichever
+      arm comes first and rejects the rest. Machines are the odd one out: they
+      carry a whole order-confirmation template, and they are not a name in a
+      list. Naming the common shape says exactly what is being compared.
+  */
+  const rowsFor = (t: OcpiMasterType): { name: string; active: boolean }[] =>
     t === "machine"
       ? s.machines
       : t === "head_type"
