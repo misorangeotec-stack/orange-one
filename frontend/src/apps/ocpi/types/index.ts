@@ -88,8 +88,22 @@ export interface OcpiDeal {
   quotationNo: string | null;
   ocNo: string | null;
   raisedBy: string | null;
-  /** The TALLY salesperson name — independent of `raisedBy`, the portal user. */
+  /**
+   * Who owns the deal, as printed on the quotation.
+   *
+   * ⚠ NOT `raisedBy`. A coordinator routinely raises the quotation while the
+   *   deal belongs to the rep, so collapsing the two would lose one of the
+   *   answers. The NAME is what prints and what every grid filters on.
+   */
   salespersonName: string | null;
+  /**
+   * The portal user behind that name, when it was picked from the roster.
+   *
+   * ⚠ NULL MEANS "TYPED", NOT "MISSING". Free text is still legal here, so a
+   *   null id is a legitimate state and is deliberately NOT part of
+   *   `missingForSubmit` — the name alone is the required answer.
+   */
+  salespersonUserId: string | null;
 
   customerId: string | null;
   customerName: string | null;

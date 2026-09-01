@@ -7,6 +7,7 @@ import {
   uploadQuotationPdf,
 } from "../../data/ocpiWrites";
 import { clearHidden } from "../../lib/branching";
+import { useSalespeople } from "../../lib/useSalespeople";
 import {
   quotationDetailFileName, quotationFileName, quotationPdfBlob,
 } from "../../lib/quotationPdf";
@@ -59,6 +60,8 @@ export function useQuotationDraft(dealId?: string) {
   const s = useOcpiStore();
   const existing = dealId ? s.deals.find((d) => d.id === dealId) : undefined;
 
+  const { people: salespeople, isLoading: rosterLoading } = useSalespeople();
+
   const seeded = useRef(false);
   const [draft, setDraft] = useState<QuotationDraft>(EMPTY_DRAFT);
   const [savedId, setSavedId] = useState<string | null>(dealId ?? null);
@@ -77,16 +80,36 @@ export function useQuotationDraft(dealId?: string) {
       seeded.current = true;
       return;
     }
-    // Prefilled only when the tag names exactly ONE salesperson. Somebody tagged
-    // with three has not told us which of them this deal belongs to, and picking
-    // the first would be a guess printed on a customer's quotation.
-    const tagged = s.salespersonTags;
+    /*
+      ⚠ WAIT FOR THE ROSTER BEFORE SEEDING. This effect seeds ONCE and then sets
+        `seeded.current`, so running it while the people query is still in
+        flight would seed a blank name and never try again — a prefill that
+        works or doesn't depending on how warm the cache is.
+    */
+    if (rosterLoading) return;
+
+    /*
+      The signed-in user, when they are on the roster. A coordinator who is not
+      (Riya raises most of these) gets a blank box and picks — which is right:
+      the deal is not theirs.
+
+      ⚠ THIS REPLACED A PREFILL FROM `profiles.receivables_salespersons`, which
+        was wrong in a way nobody could see. That column is the Outstanding
+        Dashboard's VISIBILITY SCOPE — whose figures you may look at — not an
+        identity, and its values are Tally strings. Ten users carry exactly one
+        tag, so it fired for all ten: UMESHKUMAR SOLANKI was prefilled as
+        "UMESH JI", and VIJAY of collections as "NAKUL JI", a different person
+        entirely, because Vijay's one tag is Nakul's book. Whatever sits in this
+        box prints at the head of the customer's quotation.
+    */
+    const me = salespeople.find((p) => p.id === s.userId);
     setDraft({
       ...EMPTY_DRAFT,
-      salespersonName: tagged.length === 1 ? tagged[0] : "",
+      salespersonName: me?.name ?? "",
+      salespersonUserId: me?.id ?? "",
     });
     seeded.current = true;
-  }, [dealId, existing, s]);
+  }, [dealId, existing, s, salespeople, rosterLoading]);
 
   const patch = useCallback((p: Partial<QuotationDraft>) => {
     setDraft((d) => ({ ...d, ...p }));

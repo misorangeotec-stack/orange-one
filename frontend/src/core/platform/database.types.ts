@@ -9199,6 +9199,22 @@ export type Database = {
           role: string
         }[]
       }
+      list_org_people_detail: {
+        Args: never
+        Returns: {
+          avatar_color: string
+          department: string
+          department_id: string
+          designation: string
+          employee_code: string
+          id: string
+          name: string
+          role: string
+          sub_department: string
+          sub_department_id: string
+          sub_department_sort: number
+        }[]
+      }
       prev_working_day: { Args: { d: string }; Returns: string }
       same_department: { Args: { _a: string; _b: string }; Returns: boolean }
       shift_task_to_week: {

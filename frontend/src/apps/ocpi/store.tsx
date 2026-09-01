@@ -52,11 +52,17 @@ interface OcpiStoreValue {
    * The TALLY salesperson name(s) this user is tagged with
    * (profiles.receivables_salespersons).
    *
-   * ⚠ REUSED, NOT REINVENTED. That tag already maps a portal user to their Tally
-   *   salesperson name and an admin sets it in the User form. A second mapping
-   *   owned by OCPI would be a second thing to keep in step, and the two would
-   *   disagree inside a month. Used to prefill a new quotation's salesperson and
-   *   to answer "which of these deals are mine".
+   * ⚠ ONE CONSUMER LEFT: the legacy arm of My deals. It no longer prefills a
+   *   new quotation — see `useQuotationDraft` — because the tag turned out to
+   *   be the wrong thing to prefill FROM. It is the Outstanding Dashboard's
+   *   visibility scope, answering "whose figures may this person see", not
+   *   "who is this person": ten users carry exactly one tag, so the prefill
+   *   fired for all ten and put "UMESH JI" on UMESHKUMAR SOLANKI's quotations
+   *   and "NAKUL JI" on VIJAY's. The salesperson is now a USER
+   *   (`salesperson_user_id`), read from the Sales roster.
+   *
+   * ⚠ DO NOT REVIVE IT AS AN IDENTITY. The values are Tally strings and include
+   *   things that are not people at all — OTHERS, RELATED PARTY.
    */
   salespersonTags: string[];
 
@@ -132,6 +138,14 @@ interface OcpiStoreValue {
   setStepSla: (map: StepSlaMap) => Promise<void>;
   /** Admin: who may act on any step and open the Control Center. */
   setCoordinators: (userIds: string[]) => Promise<void>;
+  /**
+   * Admin: which departments the Salesperson picker draws its roster from.
+   *
+   * ⚠ AN EMPTY LIST OFFERS NOBODY, and that is the intended behaviour rather
+   *   than a bug to guard against. The alternative — falling back to every user
+   *   — would put the warehouse and the quality lab on a customer's quotation.
+   */
+  setSalespersonDepartments: (departmentIds: string[]) => Promise<void>;
   /** How many days a quotation stands — the {{quotation_validity_days}} token. */
   setQuotationValidityDays: (days: number) => Promise<void>;
   /**
@@ -153,6 +167,9 @@ const Ctx = createContext<OcpiStoreValue | null>(null);
 
 const EMPTY_CONFIG: OcpiConfig = {
   processCoordinatorIds: [],
+  // Empty is the honest pre-load value: the Salesperson picker offers nobody
+  // until the config row arrives, rather than briefly offering the wrong list.
+  salespersonDepartmentIds: [],
   quotationValidityDays: 30,
   defaultGstRate: 18,
   // The client's settled figures, so even a store that has not loaded yet names
@@ -368,6 +385,10 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       },
       setCoordinators: async (userIds) => {
         await setConfigWrite('process_coordinators', { user_ids: userIds });
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      setSalespersonDepartments: async (departmentIds) => {
+        await setConfigWrite('salesperson_departments', { department_ids: departmentIds });
         await qc.invalidateQueries({ queryKey: QK });
       },
       setQuotationValidityDays: async (days) => {

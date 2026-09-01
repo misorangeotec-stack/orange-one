@@ -40,6 +40,15 @@ import type { MachineOption, OcpiDeal, OcpiMachine } from "../types";
 /** The draft, as the form holds it: every value a string, as typed. */
 export interface QuotationDraft {
   salespersonName: string;
+  /**
+   * The portal user behind the name, blank when it was typed rather than picked.
+   *
+   * ⚠ ON THE DRAFT, NOT BESIDE IT. It has to travel through `payloadFromDraft`
+   *   to reach `fms_ocpi_write_quotation`, and holding it in separate component
+   *   state would be a second thing for `clearHidden` and the revision freeze to
+   *   not know about.
+   */
+  salespersonUserId: string;
 
   customerId: string;
   customerName: string;
@@ -211,6 +220,7 @@ export interface QuotationDraft {
 
 export const EMPTY_DRAFT: QuotationDraft = {
   salespersonName: "",
+  salespersonUserId: "",
   customerId: "",
   customerName: "",
   customerAddress: "",
@@ -588,6 +598,11 @@ export const INSURANCE_CLAUSE =
 /** The human label for every field — used by the form, the PDF and the diff. */
 export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   salespersonName: "Salesperson",
+  // Never rendered: `revisionDiff` skips this key with the other identity
+  // columns, because a uuid changing tells a reader nothing. The entry exists
+  // because the type demands one for every draft field — which is the point of
+  // typing it that way.
+  salespersonUserId: "Salesperson (user)",
   customerId: "Customer",
   customerName: "Customer / party name",
   customerAddress: "Customer address",
@@ -733,6 +748,7 @@ const s = (v: unknown): string => (v === null || v === undefined ? "" : String(v
 export function draftFromDeal(d: OcpiDeal): QuotationDraft {
   return {
     salespersonName: s(d.salespersonName),
+    salespersonUserId: s(d.salespersonUserId),
     customerId: s(d.customerId),
     customerName: s(d.customerName),
     customerAddress: s(d.customerAddress),
@@ -852,6 +868,7 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
 export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
   return {
     salesperson_name: d.salespersonName,
+    salesperson_user_id: d.salespersonUserId,
     customer_id: d.customerId,
     customer_name: d.customerName,
     customer_address: d.customerAddress,
