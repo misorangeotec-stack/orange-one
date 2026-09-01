@@ -44,10 +44,40 @@ export interface TokenContext {
    *   the preview rather than silently printing a wrong number.
    */
   warranty?: { machineMonths: number; headMonths: number };
+  /** The standing sentence beside every warranty, from `fms_ocpi_config`. */
+  warrantyNote?: string;
 }
 
 const money = (n: number | null): string | null =>
   n === null ? null : n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+/**
+ * The NUMBER of months in a warranty answer — never the answer itself.
+ *
+ * 🔴 THIS FUNCTION IS THE WHOLE REASON PER-MACHINE WARRANTIES DID NOT REOPEN A
+ *    BUG THIS MODULE HAS ALREADY PAID FOR ONCE. Read the note on `warranty`
+ *    above: the clause prose supplies the word "months" itself —
+ *    "Machine Warranty period will be of {{machine_warranty_months}} months
+ *    from the date of installation" — so a token that resolves to TEXT prints
+ *    "of 12 Months months", which is exactly what a real contract once said.
+ *
+ *    `{{machine_warranty_months}}` is in 21 live machine sections and
+ *    `{{head_warranty_months}}` in 10 (checked 01-Sep-2026), so getting this
+ *    wrong is 21 broken sentences on customer contracts, not one.
+ *
+ * ⚠ AN UNPARSEABLE ANSWER RESOLVES TO NULL, which prints a RULED BLANK. That is
+ *   deliberate and is the module's standing failure mode: a blank is visible and
+ *   gets fixed, a wrong number is not. So "1 Year" blanks the clause rather than
+ *   printing "1".
+ *
+ * It reads the LEADING integer, which is right for every value on record —
+ * "12 Months", "12 months from installation" and even the old dropdown's
+ * "12 months warranty -> maximum 13 months from the invoice date" all mean 12.
+ */
+const months = (v: string | null): string | null => {
+  const m = /^\s*(\d+)\b/.exec(v ?? "");
+  return m ? m[1] : null;
+};
 
 /**
  * Build the token table for one deal.
@@ -55,7 +85,7 @@ const money = (n: number | null): string | null =>
  * A value of null means "not answered" and becomes a blank. An empty string is
  * treated the same way — a field someone cleared is not an answer.
  */
-export function tokensFor({ deal, profile, warranty }: TokenContext): Record<string, string | null> {
+export function tokensFor({ deal, profile, warranty, warrantyNote }: TokenContext): Record<string, string | null> {
   const bank = profile
     ? [
         profile.legalName,
@@ -72,15 +102,47 @@ export function tokensFor({ deal, profile, warranty }: TokenContext): Record<str
     head_count: deal.headCount === null ? null : String(deal.headCount),
     heads_included: deal.headsIncluded === null ? null : String(deal.headsIncluded),
     machine_count: deal.machineCount === null ? null : String(deal.machineCount),
-    // Company-wide policy, not a per-deal answer — see TokenContext.
-    machine_warranty_months: warranty ? String(warranty.machineMonths) : null,
-    head_warranty_months: warranty ? String(warranty.headMonths) : null,
-    // ⚠ NO dryer_warranty TOKEN ANY MORE. The client offers no dryer warranty at
-    //   all, so there is nothing for it to resolve to. It is left OUT rather than
-    //   set to null so that a template still using it is reported as unresolved in
-    //   the editor's "what will be blank?" warning, instead of quietly printing a
-    //   ruled blank. No live template uses it — checked 27-Aug-2026, 0 of 82
-    //   sections.
+    /*
+      🔴 PER MACHINE AGAIN, AND FROZEN ON THE DEAL (OCPI-14) — with the config
+         setting kept as the fallback.
+
+         They became a company-wide setting because the per-deal dropdowns held
+         sentences rather than numbers (see TokenContext). The client's 01-09
+         sheet then showed the single setting was wrong the other way: 15 of the
+         28 models carry NO head warranty, so a fixed 18 months was being printed
+         for models that offer none.
+
+         The deal's own `printerWarranty` / `headWarranty` — prefilled from the
+         machine master and frozen onto every revision — are the source now, and
+         `months()` is what stops the old bug returning. A deal that recorded
+         nothing falls back to the setting, so nothing that printed before stops
+         printing.
+
+      ⚠ THE DEAL, NOT THE MACHINE, and that is the same rule as every other
+        quoted term: a revision must print what was quoted, not what the master
+        says today.
+    */
+    machine_warranty_months:
+      months(deal.printerWarranty) ?? (warranty ? String(warranty.machineMonths) : null),
+    head_warranty_months:
+      months(deal.headWarranty) ?? (warranty ? String(warranty.headMonths) : null),
+    /*
+      ⚠ THE DRYER WARRANTY TOKEN IS BACK, and with NO fallback. It was retired
+        because the client offered no dryer warranty at all; the 01-09 sheet
+        gives one on all 11 Direct machines. There is no setting to fall back to
+        and there must not be one — a machine with no dryer warranty resolves to
+        null and rules a blank, which is the honest answer.
+
+        No live template uses it yet (0 of 82 sections, checked 01-Sep-2026), so
+        this changes no existing paper.
+    */
+    dryer_warranty_months: months(deal.dryerWarranty),
+    /*
+      OCPI-14 · the standing sentence the client asked to appear beside every
+      warranty. Available to templates so a machine can place it inside its own
+      warranty clause rather than only in the block the renderer draws.
+    */
+    warranty_note: warrantyNote ?? null,
     // ⚠ NO post_warranty_head_price TOKEN ANY MORE (stage J.1), retired the same
     //   way and for the same reason as dryer_warranty above. The four clauses that
     //   used it were reworded first — client-approved 29-Aug-2026 — to “replacement
@@ -109,7 +171,11 @@ export function tokensFor({ deal, profile, warranty }: TokenContext): Record<str
     dryer_name: deal.dryerName,
     dryer_chambers: deal.dryerChambers,
     heating_medium: deal.heatingMode,
-    dryer_price: money(deal.dryerPrice),
+    // ⚠ dryer_price IS RETIRED (OCPI-14) — the form no longer asks it, so it
+    //   would resolve to null on every new deal. Left OUT rather than set to
+    //   null so a template still using it is reported as UNRESOLVED in the
+    //   editor's "what will be blank?" warning instead of quietly ruling a
+    //   blank. No live template uses it — checked 01-Sep-2026, 0 of 82 sections.
     ex_works_city: profile?.exWorksCity ?? null,
     bank_block: bank,
     delivery_days: deal.deliveryDays,
@@ -173,14 +239,15 @@ export const TOKEN_HELP: { token: string; means: string }[] = [
   { token: "head_count", means: "print heads on this deal (a K32 can be sold with 16)" },
   { token: "heads_included", means: "heads included free in the deal" },
   { token: "machine_count", means: "how many machines" },
-  { token: "machine_warranty_months", means: "machine warranty, in months — a fixed company setting" },
-  { token: "head_warranty_months", means: "print-head warranty, in months — a fixed company setting" },
+  { token: "machine_warranty_months", means: "machine warranty, in MONTHS — from the machine master via the deal; the clause supplies the word “months” itself" },
+  { token: "head_warranty_months", means: "print-head warranty, in MONTHS. Blank on the 15 models that offer none" },
+  { token: "dryer_warranty_months", means: "dryer warranty, in MONTHS. Blank on a machine that carries no dryer" },
+  { token: "warranty_note", means: "the standing sentence — warranty applies from the date of dispatch from the manufacturer" },
   { token: "consumables_supplier", means: "who consumables must be bought from" },
   { token: "machine_model_no", means: "manufacturer's model code, e.g. HM1800B-TK24" },
   { token: "dryer_name", means: "the dryer model on this deal — only on a machine that takes one" },
   { token: "dryer_chambers", means: "how many chambers the dryer has" },
   { token: "heating_medium", means: "how the dryer heats — electric, gas, thermic fluid" },
-  { token: "dryer_price", means: "the dryer's price, EXCLUDING GST — only when it is not part of the deal" },
   { token: "ex_works_city", means: "Ex-Works city of the selling company" },
   { token: "bank_block", means: "the selling company's full bank details" },
   { token: "delivery_days", means: "committed delivery days" },

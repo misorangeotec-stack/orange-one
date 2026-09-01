@@ -92,7 +92,14 @@ export function exportDealRegister(
     { header: "Dryer category", width: 14, value: (d) => d.dryerType ?? "" },
     { header: "Dryer", width: 22, value: (d) => d.dryerName ?? "" },
     { header: "Dryer in deal", width: 12, value: (d) => yesNo(d.dryerIncluded) },
-    { header: "Dryer price (deal currency)", width: 20, value: (d) => d.dryerPrice ?? "" },
+    /*
+      ⚠ "Dryer price (deal currency)" IS GONE (OCPI-14). The form stopped asking
+        it — all pricing is collected once, in Shipment & invoice — so the column
+        would be blank on every deal raised from here on. The two DERIVED rupee
+        figures below stay: they are null on a new deal and still carry the
+        figures of any older one that recorded a price, and dropping them would
+        lose that history from the only export that shows it.
+    */
     { header: "Dryer value (INR)", width: 17, value: (d) => d.dryerValueInr ?? "" },
     { header: "Dryer GST (INR)", width: 15, value: (d) => d.dryerGstInr ?? "" },
     // What the customer actually pays: machine + its GST + dryer + its GST.
@@ -147,6 +154,30 @@ export function exportDealRegister(
     { header: "Centering invoice qty", width: 16, value: (d) => d.centeringInvoiceQty ?? "" },
     { header: "Centering invoice amount", width: 20, value: (d) => d.centeringInvoiceAmount ?? "" },
     { header: "Centering invoice sub-total", width: 22, value: (d) => d.centeringInvoiceSubtotal ?? "" },
+    /*
+      ── The three warranties (OCPI-14) ──────────────────────────────────────
+
+      Worth a column now and not before: until this change they were one
+      company-wide SETTING applied to every deal, so a column would have printed
+      the same two figures 20 times. They are per machine now — 15 of the 28
+      models carry no head warranty at all — so they vary by row, which is the
+      test for whether a register column earns its place.
+
+      Frozen on the DEAL, prefilled from the machine master, so this is what was
+      quoted rather than what the master says today.
+
+      ⚠ THERE IS NO SPARE-PARTS WARRANTY COLUMN. The client's sheet reads "NA"
+        for it on all 28 models, so there is nothing to export.
+
+      ⚠ AND NO "Centering included" COLUMN, deliberately. This export has never
+        carried ANY of the section-B inclusions — not ink, not spare parts, not
+        the head, and not the tick the centering inclusion replaced. Adding one
+        of them alone would be the inconsistency rather than the fix; if finance
+        wants the inclusions they should arrive as a set.
+    */
+    { header: "Machine warranty", width: 16, value: (d) => d.printerWarranty ?? "" },
+    { header: "Head warranty", width: 16, value: (d) => d.headWarranty ?? "" },
+    { header: "Dryer warranty", width: 16, value: (d) => d.dryerWarranty ?? "" },
     /*
       ── The NO branch (OCPI-7) ──────────────────────────────────────────────
 

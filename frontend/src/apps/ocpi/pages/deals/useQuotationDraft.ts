@@ -14,7 +14,7 @@ import {
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
 import { docHeading } from "../../lib/format";
 import {
-  EMPTY_DRAFT, dealFacts, draftFromDeal, machineFacts, missingForSubmit, payloadFromDraft,
+  EMPTY_DRAFT, dealFacts, draftFromDeal, missingForSubmit, payloadFromDraft,
   type QuotationDraft,
 } from "../../lib/fieldSpec";
 
@@ -116,7 +116,21 @@ export function useQuotationDraft(dealId?: string) {
     setSavedAt(null);
   }, []);
 
-  const missing = useMemo(() => missingForSubmit(draft), [draft]);
+  /*
+    ⚠ THE FACTS GO IN TOO (OCPI-14). The centering inclusion is required only on
+      a category that asks for it; without this, `missingForSubmit` would fall
+      back to `NO_DEAL_FACTS` — the OPEN set — and block every Sublimation deal
+      on a question its own form never shows.
+  */
+  const missing = useMemo(
+    () =>
+      missingForSubmit(
+        draft,
+        dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
+        s.headsFor(draft.machineId || null).length,
+      ),
+    [draft, s],
+  );
 
   const save = useCallback(async (): Promise<string | null> => {
     setBusy(true);
@@ -125,8 +139,7 @@ export function useQuotationDraft(dealId?: string) {
       const payload = payloadFromDraft(
         clearHidden(
           draft,
-          machineFacts(s.machineById(draft.machineId || null)),
-          dealFacts(s.dryerTypes, draft.dryerType),
+          dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
         ),
       );
       const id = await saveDraftWrite(payload, savedId);
@@ -160,8 +173,7 @@ export function useQuotationDraft(dealId?: string) {
       const payload = payloadFromDraft(
         clearHidden(
           draft,
-          machineFacts(s.machineById(draft.machineId || null)),
-          dealFacts(s.dryerTypes, draft.dryerType),
+          dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
         ),
       );
       const id = await saveDraftWrite(payload, savedId);
@@ -172,6 +184,7 @@ export function useQuotationDraft(dealId?: string) {
       const sections = machine ? s.sectionsFor(machine.id) : [];
       const validityDays = s.config.quotationValidityDays;
       const warranty = s.config.warranty;
+      const warrantyNote = s.config.warrantyNote;
 
       // ⚠ RE-READ THE ROW AFTER THE SAVE AND BEFORE THE FREEZE. The rupee value
       //   of a dollar deal, the GST amount and the total are DERIVED server-side
@@ -218,7 +231,7 @@ export function useQuotationDraft(dealId?: string) {
       */
       const ocDocumentPayload =
         machine && machine.hasTemplate
-          ? resolvedOcDocument({ deal: saved, machine, sections, profile, validityDays, warranty })
+          ? resolvedOcDocument({ deal: saved, machine, sections, profile, validityDays, warranty, warrantyNote })
           : {};
 
       const versionNo = await generateWrite(id, payload, documentPayload, ocDocumentPayload);
@@ -236,11 +249,12 @@ export function useQuotationDraft(dealId?: string) {
         machine,
         profile,
         versionNo,
-        noDryerCategory: dealFacts(s.dryerTypes, rendered.dryerType ?? "").noDryerCategory,
+        facts: dealFacts(s.dryerTypes, rendered.dryerType ?? "", s.machineCategories, rendered.machineCategoryId ?? ""),
+        warrantyNote,
       });
       const detail =
         machine && machine.hasTemplate
-          ? await ocPdfBlob({ deal: rendered, machine, sections, profile, validityDays, warranty })
+          ? await ocPdfBlob({ deal: rendered, machine, sections, profile, validityDays, warranty, warrantyNote })
           : null;
 
       // A failed upload does not unwind the revision: it is already frozen, and

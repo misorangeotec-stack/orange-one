@@ -108,7 +108,8 @@ export default function ApprovalPanel({
               machine,
               profile: s.profileFor(deal.companyId),
               versionNo: deal.quotationVersionNo || 1,
-              noDryerCategory: dealFacts(s.dryerTypes, deal.dryerType ?? "").noDryerCategory,
+              facts: dealFacts(s.dryerTypes, deal.dryerType ?? "", s.machineCategories, deal.machineCategoryId ?? ""),
+              warrantyNote: s.config.warrantyNote,
             }),
           );
           if (!cancelled) setRebuilt(true);
@@ -125,6 +126,7 @@ export default function ApprovalPanel({
               profile: s.profileFor(deal.companyId),
               validityDays: s.config.quotationValidityDays,
               warranty: s.config.warranty,
+              warrantyNote: s.config.warrantyNote,
             }),
           );
           if (!cancelled) setRebuilt(true);
@@ -163,7 +165,8 @@ export default function ApprovalPanel({
       machine: m,
       profile,
       versionNo: fresh.quotationVersionNo || 1,
-      noDryerCategory: dealFacts(s.dryerTypes, fresh.dryerType ?? "").noDryerCategory,
+      facts: dealFacts(s.dryerTypes, fresh.dryerType ?? "", s.machineCategories, fresh.machineCategoryId ?? ""),
+      warrantyNote: s.config.warrantyNote,
     });
     const summaryPath = await uploadOcPdf(fresh.id, approvedSummary, ocSummaryFileName(fresh));
 
@@ -177,6 +180,7 @@ export default function ApprovalPanel({
         profile,
         validityDays,
         warranty: s.config.warranty,
+        warrantyNote: s.config.warrantyNote,
       };
       document = resolvedOcDocument(input);
       detailPath = await uploadOcPdf(fresh.id, await ocPdfBlob(input), ocFileName(fresh));

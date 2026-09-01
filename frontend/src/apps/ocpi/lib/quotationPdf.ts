@@ -4,7 +4,9 @@ import {
   setDraw, setFill, text, widthOf, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { DOLLAR_CLAUSE, INSURANCE_CLAUSE, SUBSIDIZED_RATE_NOTE, canCarry } from "./fieldSpec";
+import {
+  DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS, SUBSIDIZED_RATE_NOTE, type DealFacts,
+} from "./fieldSpec";
 import { docHeading, fmtDealValue } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
@@ -39,18 +41,26 @@ export interface QuotationDocInput {
   /** ISO date the version was generated; falls back to now for a live preview. */
   generatedAt?: string;
   /**
-   * The deal's dryer CATEGORY is one that means there is no dryer (OCPI-8).
+   * What this deal's CATEGORY and dryer category say it carries.
    *
-   * ⚠ IT CANNOT BE DERIVED FROM THE DEAL ALONE, which is why it is passed in.
-   *   `dryerType` is the category's NAME; only the master row says what that
-   *   name means. Every caller has the store — `dealFacts(s.dryerTypes,
-   *   deal.dryerType).noDryerCategory` is the whole of it.
+   * ⚠ WAS A SINGLE `noDryerCategory` BOOLEAN (OCPI-8); OCPI-14 made it the whole
+   *   record, because the paper now needs three more answers — does this deal
+   *   carry a dryer, a centering device, the three optional extras — and they
+   *   all come from the same resolve.
    *
-   * ⚠ OPTIONAL, DEFAULTING TO FALSE, so a caller that omits it prints exactly
-   *   what it printed before. Wrong in only one direction — four ruled blanks
-   *   that were already there — rather than hiding a dryer somebody quoted.
+   * ⚠ NONE OF IT CAN BE DERIVED FROM THE DEAL ROW ALONE, which is why it is
+   *   passed in. `dryerType` is a category NAME and `machineCategoryId` is an
+   *   id; only the master rows say what either means. Every caller has the
+   *   store: `dealFacts(s.dryerTypes, d.dryerType, s.machineCategories,
+   *   d.machineCategoryId)` is the whole of it.
+   *
+   * ⚠ OPTIONAL, DEFAULTING TO THE *OPEN* SET, so a caller that omits it prints
+   *   what it printed before rather than dropping sections a customer was
+   *   quoted. Wrong in only one direction — a ruled blank that was already there.
    */
-  noDryerCategory?: boolean;
+  facts?: DealFacts;
+  /** From module config — the standing sentence beside every warranty. */
+  warrantyNote?: string;
 }
 
 const dmy = (iso: string | null): string => {
@@ -123,7 +133,8 @@ const MIN_SPLIT = 3;
 function sectionRows(
   d: OcpiDeal,
   machine?: OcpiMachine,
-  noDryerCategory = false,
+  facts: DealFacts = NO_DEAL_FACTS,
+  warrantyNote?: string,
 ): { title: string; rows: Row[] }[] {
   const isHighSeas = d.transportTerms === "high_seas";
   const isUsd = d.dealValueCurrency === "USD";
@@ -214,6 +225,38 @@ function sectionRows(
   }
 
   /*
+    ── Warranty (OCPI-14) ────────────────────────────────────────────────────
+
+    🔴 THE SUMMARY SHEET DID NOT PRINT A WARRANTY AT ALL, and that was right
+       while it was a fixed company setting: a line saying the same thing on
+       every quotation ever issued is boilerplate, and the detailed sheet's own
+       clauses already said it. It is per machine now — 15 of the 28 models
+       carry no head warranty — so it varies by deal, which is the test for
+       whether it belongs on the paper.
+
+    ⚠ A ROW APPEARS ONLY WHERE THERE IS AN ANSWER. Blank means NOT APPLICABLE on
+      this model, and a ruled blank would read as an unanswered question rather
+      than as "none offered" — the same distinction OCPI-8 drew for the dryer's
+      four blanks.
+
+    ⚠ THE NOTE PRINTS WHENEVER ANY WARRANTY DOES, and never on its own. A
+      sentence explaining when a warranty starts, under no warranty, is noise.
+      It is the same string the form shows, from `fms_ocpi_config.warranty_note`,
+      so screen and paper cannot drift.
+  */
+  const warrantyRows: Row[] = [
+    { label: "Machine Warranty", value: d.printerWarranty ?? "" },
+    { label: "Print-Head Warranty", value: d.headWarranty ?? "" },
+    { label: "Dryer Warranty", value: d.dryerWarranty ?? "" },
+  ].filter((r) => r.value.trim() !== "");
+  if (warrantyRows.length) {
+    commercial.push(...warrantyRows);
+    if (warrantyNote?.trim()) {
+      commercial.push({ label: "Warranty Note", value: warrantyNote.trim(), wide: true });
+    }
+  }
+
+  /*
     ⚠ SECTION D CARRIES ALL THREE REMARK BOXES. The master form scattered its
       free text across three questions in three places; the client asked for one
       group, headed Special Remarks. The balance-heads box prints only when the
@@ -293,8 +336,12 @@ function sectionRows(
       as needing none. Same rule as the retired remark boxes in stage H —
       content prints, emptiness does not.
   */
+  // ⚠ THE FIRST TERM MOVED FROM THE MACHINE TO THE CATEGORY (OCPI-14). The
+  //   other three are unchanged and still matter: a deal quoted before the
+  //   mapping existed must not lose its answers because its model was later
+  //   re-categorised. Content prints; emptiness does not.
   const showsDryer =
-    machine?.needsDryer === true || !!d.dryerType || !!d.dryerName || !!d.dryerChambers;
+    facts.showsDryer || !!d.dryerType || !!d.dryerName || !!d.dryerChambers;
   if (showsDryer) {
     machineRows.push({ label: "Dryer Category", value: d.dryerType ?? "" });
     /*
@@ -314,7 +361,7 @@ function sectionRows(
         the "no dryer" answer suppresses them, because only there is the blank
         inapplicable rather than unanswered.
     */
-    if (!noDryerCategory) {
+    if (!facts.noDryerCategory) {
       machineRows.push(
         { label: "Dryer", value: d.dryerName ?? "" },
         { label: "No. of Chambers", value: d.dryerChambers ?? "" },
@@ -418,22 +465,31 @@ function sectionRows(
       opposite of the order confirmation, where these four feed a bullet list
       of what the machine IS composed of and a No is simply no bullet.
 
-    ⚠ THE CENTERING ROW IS MACHINE-GATED, matching the form one for one. It is
-      the one extra still hidden when the machine cannot carry it, so printing
-      it on the other 23 machines would put a question on a customer's paper
-      that was never asked — and answer it, blankly, on their behalf.
+    🔴 THE THREE EXTRAS ARE CATEGORY-GATED (OCPI-14), matching the form one for
+       one. They are asked on a Direct deal and on no other, so printing them
+       elsewhere would put three questions on a customer's paper that were never
+       asked — and answer them, blankly, on their behalf. The same reasoning that
+       stopped the dryer's four ruled blanks in OCPI-8.
+
+    🔴 THE CENTERING DEVICE IS NO LONGER ONE OF THEM. It was a bare tick,
+       machine-gated, printed here as "Inclusive of External Centering System?".
+       It is a full deal inclusion now — a Yes/No AND the details and quantity —
+       so it prints above with spare parts, which is where a reader looking for
+       what the deal contains will expect it.
   */
-  inclusions.push({ label: "Inclusive of Air Blade?", value: yesNo(d.airBlade) });
-  if (machine && canCarry(machine.optExternalCentering)) {
-    inclusions.push({
-      label: "Inclusive of External Centering System?",
-      value: yesNo(d.externalCentering),
-    });
+  if (facts.showsCentering) {
+    inclusions.push(
+      { label: "Inclusive of Centering Device?", value: yesNo(d.inclCentering) },
+      { label: "Centering Device Details and Quantity", value: d.centeringDetails ?? "" },
+    );
   }
-  inclusions.push(
-    { label: "Inclusive of Ink Dust Exhauster?", value: yesNo(d.inkDustExhauster) },
-    { label: "Inclusive of Chilling System?", value: yesNo(d.chillingSystem) },
-  );
+  if (facts.showsExtras) {
+    inclusions.push(
+      { label: "Inclusive of Air Blade?", value: yesNo(d.airBlade) },
+      { label: "Inclusive of Ink Dust Exhauster?", value: yesNo(d.inkDustExhauster) },
+      { label: "Inclusive of Chilling System?", value: yesNo(d.chillingSystem) },
+    );
+  }
   if (d.otherInclusions?.trim()) {
     inclusions.push({ label: "Other Inclusions", value: d.otherInclusions, wide: true });
   }
@@ -448,7 +504,7 @@ function sectionRows(
 
 /** Build the document. Returns the jsPDF instance so callers can save, blob or print it. */
 export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF> {
-  const { deal, machine, profile, versionNo, noDryerCategory } = input;
+  const { deal, machine, profile, versionNo, facts, warrantyNote } = input;
 
   const [assets, letterhead] = await Promise.all([loadBrandAssets(), loadLetterhead(profile)]);
 
@@ -586,7 +642,7 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
     }
   };
 
-  for (const sec of sectionRows(deal, machine, noDryerCategory)) {
+  for (const sec of sectionRows(deal, machine, facts, warrantyNote)) {
     if (y + 46 > bodyBottom(pdf)) y = newPage(letterhead);
 
     setFill(pdf, BRAND.navy);

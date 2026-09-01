@@ -138,16 +138,46 @@ export async function setMasterManagers(
  *   fms_ocpi_machine_sections, which has always followed its machine's owner.
  */
 
-export async function insertMachineCategory(input: NamedMasterInput): Promise<void> {
+/**
+ * What a category makes the quotation ask (OCPI-14).
+ *
+ * ⚠ THESE ARE BRANCH INPUTS, not decoration. `fms_ocpi_write_oc` reads the same
+ *   three columns and nulls what they hide on every save, so turning one off
+ *   here changes what a live quotation asks AND what the server keeps.
+ *
+ * ⚠ OPTIONAL ON THE INPUT, and deliberately so: `onToggleActive` sends only a
+ *   name, an active flag and a sort order. Sending `undefined` for the three
+ *   flags would blank them on every activate/deactivate, which is the same
+ *   partial-write trap `updateMachine` guards against field by field.
+ */
+export interface MachineCategoryInput extends NamedMasterInput {
+  showsDryer?: boolean;
+  showsCentering?: boolean;
+  showsExtras?: boolean;
+}
+
+const categoryFlags = (input: MachineCategoryInput) => ({
+  ...(input.showsDryer !== undefined ? { shows_dryer: input.showsDryer } : {}),
+  ...(input.showsCentering !== undefined ? { shows_centering: input.showsCentering } : {}),
+  ...(input.showsExtras !== undefined ? { shows_extras: input.showsExtras } : {}),
+});
+
+export async function insertMachineCategory(input: MachineCategoryInput): Promise<void> {
   const { error } = await db.from("fms_ocpi_machine_categories").insert({
     name: input.name, active: input.active, sort_order: input.sortOrder,
+    // A new category asks nothing extra until somebody says otherwise. False
+    // rather than null so the Masters grid shows three answered questions.
+    shows_dryer: input.showsDryer ?? false,
+    shows_centering: input.showsCentering ?? false,
+    shows_extras: input.showsExtras ?? false,
   });
   if (error) throw new Error(error.message);
 }
 
-export async function updateMachineCategory(id: string, input: NamedMasterInput): Promise<void> {
+export async function updateMachineCategory(id: string, input: MachineCategoryInput): Promise<void> {
   const { error } = await db.from("fms_ocpi_machine_categories").update({
     name: input.name, active: input.active, sort_order: input.sortOrder,
+    ...categoryFlags(input),
   }).eq("id", id);
   if (error) throw new Error(error.message);
 }

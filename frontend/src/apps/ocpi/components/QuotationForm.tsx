@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
@@ -16,10 +16,10 @@ import { fmtDealValue } from "../lib/format";
 import {
   COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
   HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TYPES, PLATTER_OPTIONS,
-  SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts, machineFacts,
+  SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
-import type { MachineOption, OcpiMasterType } from "../types";
+import type { OcpiMasterType } from "../types";
 
 /** The heading a name that matches no portal user sits under. */
 const OFF_ROSTER = "Not a portal user";
@@ -129,15 +129,39 @@ const optsKV = (xs: readonly { value: string; label: string }[]) =>
   xs.map((x) => ({ value: x.value, label: x.label }));
 
 /**
- * Say when an extra is standard on this model rather than a choice.
+ * A warranty as it will print — SHOWN, NEVER TYPED (Ritesh Bhai, 01-Sep-2026).
  *
- * "yes" on the machine means the machine always has it, so the question is
- * really "is it in this deal?" — worth saying, because otherwise a salesperson
- * reading four identical yes/no boxes cannot tell which are genuinely optional.
- * Answering it for them would put a value on the deal nobody entered.
+ * 🔴 THESE WERE EDITABLE BOXES FOR ONE AFTERNOON AND SHOULD NOT HAVE BEEN. The
+ *    warranty is a property of the MODEL, mapped once on the Machines master
+ *    from the client's own sheet. An editable box invites a salesperson to
+ *    promise 24 months on a machine the company warrants for 12 — on a document
+ *    the customer signs — and nothing downstream would question it.
+ *
+ * ⚠ THE VALUE STILL TRAVELS. It is set on the draft by `chooseMachine`, sent in
+ *   the payload, written by `fms_ocpi_write_oc` and frozen onto the revision, so
+ *   a deal remains a record of what was quoted rather than of what the master
+ *   says today. Only the keyboard is taken away.
+ *
+ * ⚠ AND IT IS DELIBERATELY NOT A `disabled` TextInput. A greyed-out input reads
+ *   as a field that is temporarily unavailable — somebody will ask why they
+ *   cannot type in it. A read-out reads as an answer, which is what this is. The
+ *   Print heads field above states the same thing the same way.
+ *
+ * The exception route is Special remarks, exactly as it was when the warranty
+ * was a fixed setting.
  */
-const standardHint = (o: MachineOption | null): string | undefined =>
-  o === "yes" ? "standard on this machine" : undefined;
+function WarrantyReadout({ value, hasMachine }: { value: string; hasMachine: boolean }) {
+  return (
+    <div className="flex min-h-9 items-center rounded-lg border border-line bg-page px-3 py-2 text-[13px] text-navy">
+      {value.trim() ? (
+        value
+      ) : (
+        <span className="text-grey-2">{hasMachine ? "Not applicable" : "Choose a machine first"}</span>
+      )}
+    </div>
+  );
+}
+
 
 /**
  * Blank, or anything that is not a number, is "not answered yet" — NOT zero.
@@ -208,7 +232,6 @@ function NotAsked({ reason }: { reason: string }) {
  */
 function ShipmentRow({
   title,
-  why,
   shown,
   disabled,
   mode,
@@ -225,8 +248,6 @@ function ShipmentRow({
   onAmount,
 }: {
   title: string;
-  /** Why this row is being asked at all — the branch, in words. */
-  why: string;
   shown: boolean;
   disabled?: boolean;
   mode: string;
@@ -251,11 +272,20 @@ function ShipmentRow({
 
   return (
     <tr className="border-t border-line align-middle">
+      {/*
+        ⚠ THE "asked because …" LINE IS GONE (Ritesh Bhai, 01-Sep-2026), and the
+          `why` prop with it. It explained each row's branch in words — useful
+          while the rows appeared and vanished on five different conditions, and
+          noise now that they follow one rule the salesperson chose themselves at
+          the top of the form. Three lines of grey text under every item was
+          burying the item names.
+
+          Removed rather than hidden: a prop nobody renders is the orphan this
+          repo keeps writing down as a fault. `categoryName`, which existed only
+          to word two of these sentences, went with it.
+      */}
       <th scope="row" className="py-2.5 pr-3 text-left font-normal">
         <span className="block text-[13px] font-semibold text-ink">{title}</span>
-        <span className="mt-0.5 block text-[11px] leading-snug text-grey-2">
-          asked because {why}
-        </span>
       </th>
 
       {/*
@@ -521,53 +551,85 @@ export default function QuotationForm({
   const { people: salespeople, isLoading: rosterLoading } = useSalespeople();
 
   /**
-   * The chosen machine, and what it says this deal may be asked.
+   * The chosen machine. It supplies the head options, the model number and the
+   * warranty defaults — it no longer decides what is ASKED.
    *
-   * ⚠ THESE FACTS DRIVE THE BRANCHES NOW (OCPI-3, stage E). Whether there is a
-   *   dryer section, and which of the four extras appear, comes off the machine
-   *   row — the same five columns `fms_ocpi_write_oc` reads to decide what to
-   *   keep. Read `machineFacts`' header for why they are a flat record.
+   * ⚠ THE MACHINE STOPPED DRIVING THE BRANCHES (OCPI-14). Between stage E and
+   *   now, `machineFacts(chosenMachine)` was the second argument to every
+   *   `isVisible` call and the dryer section, the centering questions and the
+   *   four extras all read it. The CATEGORY decides now, so that record was
+   *   deleted rather than left as an argument that changed nothing.
    */
   const chosenMachine = s.machineById(draft.machineId || null);
-  const facts = useMemo(() => machineFacts(chosenMachine), [chosenMachine]);
 
   /**
-   * ... and what the DEAL's own answers say, where the answer is not on the
-   * draft (OCPI-8).
+   * Everything a branch needs that is not on the draft.
    *
-   * One fact today: the dryer category the salesperson picked is one that MEANS
-   * there is no dryer. The draft holds its NAME; the master row holds what the
-   * name means. Resolved once, here, so no branch rule has to reach for a store.
+   * Four facts: the three category flags — does this deal carry a dryer, a
+   * centering device, the three optional extras — and whether the DRYER category
+   * the salesperson picked is one that means there is no dryer. Resolved once,
+   * here, so no branch rule has to reach for a store.
+   *
+   * ⚠ IT READS `draft.machineCategoryId`, NOT THE MACHINE'S. That is what makes
+   *   the questions appear the moment a category is picked, before any machine
+   *   has been chosen — which is the whole of what OCPI-14 was asked for.
    */
   const dealAnswers = useMemo(
-    () => dealFacts(s.dryerTypes, draft.dryerType),
-    [s.dryerTypes, draft.dryerType],
+    () => dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
+    [s.dryerTypes, s.machineCategories, draft.dryerType, draft.machineCategoryId],
   );
 
-  /**
-   * The category filter — UI state, never stored.
-   *
-   * Seeded from the deal's own machine so opening an existing quotation shows
-   * the list it was chosen from, and left alone afterwards: the salesperson may
-   * legitimately widen it to move the deal to another category.
-   */
-  const [category, setCategory] = useState<string>("");
-  const seededCategory = useRef(false);
-  useEffect(() => {
-    if (seededCategory.current) return;
-    if (!draft.machineId) return;
-    const m = s.machineById(draft.machineId);
-    if (!m) return; // masters not loaded yet — try again next render
-    seededCategory.current = true;
-    if (m.categoryId) setCategory(m.categoryId);
-  }, [draft.machineId, s]);
   /*
-    ⚠ SEEDING IS FOR AN OPENED DEAL, NOT FOR A PICK. `chooseMachine` closes this
-      the moment the user chooses anything, so the filter never moves under them.
-      Without that, picking a Direct machine on a blank form would snap the
-      filter to Direct — and the Sublimation model they meant to compare it with
-      would vanish from the list they had just been reading.
+    ⚠ THE CATEGORY IS THE DEAL'S OWN ANSWER NOW (OCPI-14), not local state.
+
+      It used to be `useState<string>("")` — a filter that narrowed the machine
+      dropdown and was deliberately never stored, on the reasoning that the
+      machine already knows its category and a second copy could disagree. That
+      reasoning was right for a filter and wrong for a branch input: both write
+      RPCs null every column their branches hide, on every save, and they can
+      only see the row. A question shown on something the server cannot read is a
+      question the server erases the answer to.
+
+      So it lives on the draft, `fms_ocpi_write_quotation` stores it, and the two
+      can never disagree because `chooseMachine` snaps it to the machine's own
+      category on every pick and the RPC coalesces onto the same value.
+
+    ⚠ THERE IS NO SEEDING EFFECT ANY MORE, and its removal is not an oversight.
+      An opened deal arrives with `machine_category_id` already on the row — the
+      migration back-filled all 20 — so `draftFromDeal` carries it and there is
+      nothing to infer. The old effect existed only because the filter started
+      empty on every render of an existing deal.
   */
+  /**
+   * Carry a subsidized rate across into the Shipment & invoice row (OCPI-14).
+   *
+   * 🔴 IT EXISTS BECAUSE THE ROWS DETACHED FROM THE INCLUSIONS. OCPI-11 relied
+   *    on ink's two quantity/amount pairs never being on screen together: the
+   *    subsidized pair fires on `inclInk === false`, the shipment pair used to
+   *    fire on `=== true`, and the module's own note called that "structurally
+   *    closed". Detaching the shipment rows opened it — a deal can now hold both
+   *    — and Ritesh Bhai's answer was not to close it again but to make the one
+   *    fill the other: what was agreed as a subsidized rate IS what will be
+   *    invoiced.
+   *
+   * ⚠ IT FILLS ONLY AN EMPTY CELL, and that is the whole safety of it. A
+   *   salesperson who has typed an invoice figure has said something the offer
+   *   block does not know; overwriting it would be this form deciding it knew
+   *   better. Because the test is "is the cell empty", it also survives a reload
+   *   with no extra state to remember what was auto-filled and what was typed.
+   *
+   * ⚠ INK AND HEAD ONLY. Spare parts has no rate block — OCPI-7 was narrowed to
+   *   two items mid-build — so there is nothing to carry over for it.
+   */
+  const carry = (
+    value: string,
+    offerKey: "inkOfferQty" | "inkOfferRate" | "headOfferQty" | "headOfferRate",
+    shipmentKey: "inkInvoiceQty" | "inkInvoiceAmount" | "headInvoiceQty" | "headInvoiceAmount",
+  ) =>
+    patch({
+      [offerKey]: value,
+      ...(draft[shipmentKey].trim() === "" ? { [shipmentKey]: value } : {}),
+    } as Partial<QuotationDraft>);
 
   const categoryOptions = useMemo(
     () =>
@@ -591,7 +653,12 @@ export default function QuotationForm({
     () =>
       s.machines
         .filter((m) => m.active || m.id === draft.machineId)
-        .filter((m) => !category || m.categoryId === category || m.id === draft.machineId)
+        .filter(
+          (m) =>
+            !draft.machineCategoryId ||
+            m.categoryId === draft.machineCategoryId ||
+            m.id === draft.machineId,
+        )
         .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
         .map((m) => ({
           value: m.id,
@@ -604,7 +671,7 @@ export default function QuotationForm({
               .filter(Boolean)
               .join(" · ") || undefined,
         })),
-    [s.machines, category, draft.machineId],
+    [s.machines, draft.machineCategoryId, draft.machineId],
   );
 
   /** Every print head the chosen machine carries — a model may have several. */
@@ -626,15 +693,41 @@ export default function QuotationForm({
    */
   const chooseMachine = (id: string) => {
     const m = s.machineById(id || null);
-    // The user has taken over; stop the category filter seeding itself. See the
-    // note beside `seededCategory`.
-    seededCategory.current = true;
+    const heads = s.headsFor(id || null);
+    /*
+      ⚠ THE CATEGORY SNAPS TO THE MACHINE (OCPI-14), and this is what makes the
+        form and the server incapable of disagreeing: `fms_ocpi_write_quotation`
+        coalesces onto the machine's own category, so if this line did not exist
+        the browser would branch on the old category while the row branched on
+        the new one — and the server would clear whatever the two disagreed
+        about. Clearing the category still lists every machine, which is how a
+        salesperson browses across types before committing to one.
+    */
+    const cat = m?.categoryId ?? "";
+    const catFlags = s.machineCategories.find((c) => c.id === cat);
     patch({
       machineId: id,
-      headType: s.headsFor(id || null).map((h) => h.name).join(" + "),
-      // A machine that takes no dryer cannot keep a dryer category, and one
+      machineCategoryId: cat,
+      /*
+        ⚠ ONE HEAD, NOT A JOIN, WHERE THE MODEL OFFERS A CHOICE (OCPI-14). This
+          read `.join(" + ")` for every machine, which wrote "EX600 + RC" onto a
+          deal whose sheet says "EX600 **or** RC" — an "or" recorded as an "and",
+          on seven of the 28 models. A machine with one mapped head still fills
+          itself in; a machine with two leaves this blank for the buttons below
+          to answer, because the system cannot know which the customer chose.
+      */
+      headType: heads.length === 1 ? heads[0].name : "",
+      /*
+        The three warranty defaults, per model. NULL on the master means NOT
+        APPLICABLE, so an empty string here is right: the question will not be
+        shown and no line will print.
+      */
+      printerWarranty: m?.machineWarranty ?? "",
+      headWarranty: m?.headWarranty ?? "",
+      dryerWarranty: m?.dryerWarranty ?? "",
+      // A category that carries no dryer cannot keep a dryer category, and one
       // that does starts from a clean sheet rather than the previous model's.
-      ...(m?.needsDryer === true ? {} : { dryerType: "", dryerName: "" }),
+      ...(catFlags?.showsDryer === true ? {} : { dryerType: "", dryerName: "" }),
     });
   };
 
@@ -823,25 +916,24 @@ export default function QuotationForm({
     return all.map((x) => ({ value: x, label: x }));
   }, [s, draft.dryerType, draft.dryerName]);
 
-  const show = (k: keyof QuotationDraft) => isVisible(k, draft, facts, dealAnswers);
+  const show = (k: keyof QuotationDraft) => isVisible(k, draft, dealAnswers);
 
 
   /**
-   * Does this deal ship ANYTHING on its own terms? If not, the whole card goes.
+   * ⚠ `anyShipment` IS GONE, AND ITS REMOVAL IS THE POINT (OCPI-14).
    *
-   * An empty "Shipment & invoice" heading over nothing would read as a section
-   * that failed to load. A deal with no head, no ink, no dryer, no spares and a
-   * machine that takes no centering device genuinely has nothing to answer here.
+   * It read
+   *   `show("headShipMode") || show("inkShipMode") || show("dryerShipMode") ||
+   *    show("sparesShipMode") || show("centeringShipMode")`
+   * and guarded the whole card, so that an empty "Shipment & invoice" heading
+   * over nothing never appeared.
    *
-   * ⚠ NOT ORPHANED BY THE TABLE (OCPI-11). It now guards the table's header row
-   *   as well: a `<thead>` of seven column titles above an empty `<tbody>` reads
-   *   worse than the bare heading it used to prevent. Ink joined the list, and
-   *   because 17 of the 19 deals on record include ink this is now the term most
-   *   likely to be the one keeping the card on screen.
+   * Head, ink and spare parts are asked on EVERY deal now, so the first three
+   * terms are always true and the OR could never be false. A gate that cannot
+   * close is worse than no gate: it still looks like a condition, so the next
+   * reader has to work out that it is not one. The card renders unconditionally
+   * and always carries at least three rows.
    */
-  const anyShipment =
-    show("headShipMode") || show("inkShipMode") || show("dryerShipMode") ||
-    show("sparesShipMode") || show("centeringShipMode");
 
   return (
     <div className="space-y-4">
@@ -963,29 +1055,39 @@ export default function QuotationForm({
 
         <div className="grid gap-3 sm:grid-cols-3">
           {/*
-            ⚠ THE CATEGORY IS A FILTER, NOT AN ANSWER. It is deliberately NOT on
-              the draft and not on the deal: the machine already carries its own
-              category, so storing a second copy would let the two disagree the
-              day somebody re-categorises a model. It exists to cut a 28-model
-              list down to a readable one, and it is seeded FROM the chosen
-              machine when an existing deal is opened.
+            🔴 THE CATEGORY IS THE ANSWER, NOT A FILTER (OCPI-14). It narrows the
+               machine list exactly as it always did, but it is now stored on the
+               deal and it is what decides whether this quotation asks about a
+               dryer, a centering device and the three optional extras.
 
-            ⚠ CLEARING IT SHOWS EVERY MACHINE, which is the only way to reach the
-              two models that have no category yet (Label Printer and Book
-              Printer — their sheet column says "JAY", which nobody has explained,
-              so no category was invented for them).
+               The note that stood here said the opposite — "deliberately NOT on
+               the draft and not on the deal", on the reasoning that the machine
+               already carries its own category and a second copy could disagree.
+               That is true of a filter and fatal for a branch input: both write
+               RPCs null every column their branches hide and can only see the
+               row, so a question shown on local state is a question whose answer
+               the server deletes on the next save.
+
+               The two cannot disagree because `chooseMachine` snaps this to the
+               machine's own category and the RPC coalesces onto the same value.
+
+            ⚠ CLEARING IT STILL SHOWS EVERY MACHINE, and picking one sets it
+              again. That is how a salesperson compares models across types.
+              Every machine now HAS a category — Label Printer and Book Printer
+              were given POD by the 01-09 sheet — so clearing is a browsing
+              gesture, never the only way to reach a model.
           */}
-          <FieldLabel label="Machine category" hint="narrows the list below">
+          <FieldLabel label="Machine category" hint="decides what this quotation asks">
             <Combobox
-              value={category}
+              value={draft.machineCategoryId}
               onChange={(v) => {
-                setCategory(v);
                 // A machine outside the new category would leave the picker
                 // showing a value that is not in its own list. Clear it rather
                 // than leave that contradiction on screen.
                 if (v && draft.machineId && s.machineById(draft.machineId)?.categoryId !== v) {
                   chooseMachine("");
                 }
+                patch({ machineCategoryId: v });
               }}
               options={categoryOptions}
               placeholder="All categories"
@@ -1031,49 +1133,85 @@ export default function QuotationForm({
           </div>
 
           {/*
-            ⚠ SHOWN, NOT CHOSEN (OCPI-3, stage E). The print head used to be a
-              free-text picker on the deal. It is a property of the model — one
-              machine may carry SEVERAL heads — so it is read off the Machine
-              master and displayed. Picking a machine copies the joined names
-              onto `headType`, which is still the text column both papers and the
-              register print from; nothing downstream changed.
+            🔴 SHOWN WHERE THERE IS ONE, CHOSEN WHERE THERE ARE TWO (OCPI-14).
 
-            ⚠ THE COPY HAPPENS IN `chooseMachine`, NEVER IN AN EFFECT. An effect
-              would overwrite the head text on a deal quoted before the mapping
-              existed, the moment somebody merely opened it — rewriting a signed
-              contract's record by loading a page. Only an explicit change of
-              machine rewrites it.
+               OCPI-3 stage E made the print head a property of the model, read
+               off the master and displayed rather than picked — and
+               `chooseMachine` copied every mapped head onto `headType` JOINED
+               WITH " + ". The client's 01-09 sheet shows why that was wrong:
+               column G reads "EX600 **or** RC" on seven of the 28 models. An
+               "or" was being recorded as an "and", so a K64 quotation said the
+               customer was getting both heads when they choose one.
 
-            ⚠ A HEAD TYPE CAN STILL BE REQUESTED — from Master requests, whose
-              modal offers every master type. Removing the picker removed the
-              shortcut, not the route.
+               So: one mapped head is still shown and not chosen; TWO OR MORE are
+               a choice, as buttons.
+
+            ⚠ A DELIBERATE SECOND EXCEPTION TO `ChoiceButtons`' OWN RULE, which
+              says "ONLY FOR A FIXED VOCABULARY DECLARED IN CODE — never a master
+              list". This is a master list. The exception is safe for the same
+              reason the dryer category's was (OCPI-8): the strip is sized by
+              what ONE MACHINE carries, which is one or two options, not by how
+              many head types the master holds. Recorded in OCPI.md.
+
+            ⚠ AN OLD DEAL'S HEAD MATCHES NO BUTTON, and must not be blanked.
+              `head_type` is frozen TEXT and 22 of the 28 machines changed their
+              mapping in the 01-09 refresh, so a deal quoted as
+              "Homer + KATANA 600 DPI - HANGLORY" now matches nothing. It renders
+              as a read-out beside the buttons instead of silently showing as
+              unanswered — `ChoiceButtons` leaves an unmatched value selected by
+              nothing and never clears it, so without this the salesperson would
+              see a blank where a real answer is stored.
+
+            ⚠ THE COPY STILL HAPPENS IN `chooseMachine`, NEVER IN AN EFFECT. An
+              effect would overwrite the head text on a deal quoted before the
+              mapping existed, the moment somebody merely opened it.
           */}
           <FieldLabel
-            label="Print heads"
-            hint={mappedHeads.length > 1 ? "all heads this model carries" : "from the machine master"}
+            label={mappedHeads.length > 1 ? "Print head" : "Print heads"}
+            hint={
+              mappedHeads.length > 1
+                ? "this model offers a choice — pick the one being supplied"
+                : "from the machine master"
+            }
+            required={mappedHeads.length > 1}
           >
-            <div className="min-h-9 rounded-lg border border-line bg-page px-3 py-2 text-[13px] text-navy">
-              {mappedHeads.length > 0 ? (
-                <span className="flex flex-wrap gap-1.5">
-                  {mappedHeads.map((h) => (
-                    <span
-                      key={h.id}
-                      className="rounded-md border border-line bg-white px-1.5 py-0.5 text-[12px]"
-                    >
-                      {h.name}
-                    </span>
-                  ))}
-                </span>
-              ) : draft.headType ? (
-                // A deal quoted before the mapping existed. Show what it holds
-                // rather than an empty box that reads as "no head".
-                <span title="recorded on this deal; not mapped on the machine">{draft.headType}</span>
-              ) : (
-                <span className="text-grey-2">
-                  {draft.machineId ? "No print head mapped to this machine" : "Choose a machine first"}
-                </span>
-              )}
-            </div>
+            {mappedHeads.length > 1 ? (
+              <div className="space-y-1.5">
+                <ChoiceButtons
+                  options={mappedHeads.map((h) => ({ value: h.name, label: h.name }))}
+                  value={draft.headType}
+                  onChange={(v) => patch({ headType: v })}
+                  disabled={disabled}
+                  ariaLabel="Print head"
+                />
+                {draft.headType && !mappedHeads.some((h) => h.name === draft.headType) && (
+                  <p className="text-[12px] text-grey-2">
+                    Quoted as <b className="text-navy">{draft.headType}</b> — not one of this
+                    model’s current options. Leave it, or pick again to change it.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="min-h-9 rounded-lg border border-line bg-page px-3 py-2 text-[13px] text-navy">
+                {mappedHeads.length === 1 ? (
+                  <span className="rounded-md border border-line bg-white px-1.5 py-0.5 text-[12px]">
+                    {mappedHeads[0].name}
+                  </span>
+                ) : draft.headType ? (
+                  // A deal quoted before the mapping existed. Show what it holds
+                  // rather than an empty box that reads as "no head".
+                  <span title="recorded on this deal; not mapped on the machine">
+                    {draft.headType}
+                  </span>
+                ) : (
+                  <span className="text-grey-2">
+                    {draft.machineId
+                      ? "No print head mapped to this machine"
+                      : "Choose a machine first"}
+                  </span>
+                )}
+              </div>
+            )}
           </FieldLabel>
         </div>
 
@@ -1310,12 +1448,26 @@ export default function QuotationForm({
           )}
 
           {/*
-            ⚠ THE PRICE IS ASKED ONLY WHEN THE DRYER IS *NOT* IN THE DEAL. It is
-              a separate charge; a dryer that is part of the deal is already
-              inside the deal value, and asking again invites it being counted
-              twice. `dryer_price` deliberately does NOT feed `total_inr` —
-              whether it attracts GST is still unanswered by the client — so the
-              papers carry it as its own line (stage I).
+            🔴 THE DRYER PRICE BOX IS GONE (OCPI-14, asked for by Ritesh Bhai).
+               It appeared beside this question whenever the answer was No — a
+               dryer outside the deal is a separate charge — and it was the
+               precedent OCPI-7's whole show-on-false group was written from.
+
+               It went because ALL PRICING IS ASKED ONCE, in Shipment & invoice,
+               where the Dryer row already collects a quantity and an amount.
+               Two places to type the same figure is how two figures end up on
+               one contract.
+
+               The column and its derivation survive untouched in
+               fms_ocpi_write_oc; the form simply stops sending the key, so
+               `dryer_value_inr` and `dryer_gst_inr` resolve to null and
+               `grand_total_inr` collapses to `total_inr`. Nothing was lost: no
+               deal on record carried a price, and no machine template references
+               the `{{dryer_price}}` token, so no clause anywhere prints a blank.
+
+            ⚠ `dryerIncluded` STAYS. It is still a real question — is the dryer
+              part of this deal or sold beside it — and the papers say so. Only
+              the price it used to reveal is gone.
           */}
           {show("dryerIncluded") && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1325,16 +1477,6 @@ export default function QuotationForm({
                 onChange={(v) => patch({ dryerIncluded: v })}
                 disabled={disabled}
               />
-              {show("dryerPrice") && (
-                <FieldLabel label="Dryer price (excl. GST)" hint="charged separately">
-                  <TextInput
-                    inputMode="decimal"
-                    value={draft.dryerPrice}
-                    onChange={(e) => patch({ dryerPrice: e.target.value.replace(/[^\d.]/g, "") })}
-                    disabled={disabled}
-                  />
-                </FieldLabel>
-              )}
             </div>
           )}
         </Card>
@@ -1385,11 +1527,11 @@ export default function QuotationForm({
           qtyHint="litres"
           qtyMode="decimal"
           qty={draft.inkOfferQty}
-          onQty={(v) => patch({ inkOfferQty: v })}
+          onQty={(v) => carry(v, "inkOfferQty", "inkInvoiceQty")}
           rateLabel="Rate"
           rateHint="per litre"
           rate={draft.inkOfferRate}
-          onRate={(v) => patch({ inkOfferRate: v })}
+          onRate={(v) => carry(v, "inkOfferRate", "inkInvoiceAmount")}
         />
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1409,6 +1551,44 @@ export default function QuotationForm({
             </FieldLabel>
           )}
         </div>
+
+        {/*
+          OCPI-14 · THE CENTERING DEVICE, AS A DEAL INCLUSION IN ITS OWN RIGHT.
+
+          ⚠ IT REPLACES THE "External centering system" TICK that used to sit in
+            "Also included" below — one of four bare yes/no ticks with nowhere to
+            say WHICH device or HOW MANY. The client asked for it to be treated
+            like spare parts instead, so it is: a Yes/No, and on Yes one box for
+            the details and the quantity. A No ends it, exactly as spares does —
+            there is deliberately no subsidized-rate branch here, because the
+            client asked for the spare-parts shape and not the ink one.
+
+          ⚠ AND IT IS ASKED ON THE CATEGORY, NOT THE MACHINE. The tick was gated
+            on the model's own `opt_external_centering`, which meant it appeared
+            on 5 machines of 28. It now appears on every Direct deal — 11
+            machines — including the three Fab Pro models the sheet marks as
+            unable to carry one. That widening is the client's instruction, not
+            an oversight.
+        */}
+        {show("inclCentering") && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <YesNo
+              label="Deal includes centering device"
+              value={draft.inclCentering}
+              onChange={(v) => patch({ inclCentering: v })}
+              disabled={disabled}
+            />
+            {show("centeringDetails") && (
+              <FieldLabel label="Centering device details and quantity" hint="item name & quantity">
+                <TextInput
+                  value={draft.centeringDetails}
+                  onChange={(e) => patch({ centeringDetails: e.target.value })}
+                  disabled={disabled}
+                />
+              </FieldLabel>
+            )}
+          </div>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <YesNo
@@ -1449,11 +1629,11 @@ export default function QuotationForm({
           qtyHint="nos."
           qtyMode="integer"
           qty={draft.headOfferQty}
-          onQty={(v) => patch({ headOfferQty: v })}
+          onQty={(v) => carry(v, "headOfferQty", "headInvoiceQty")}
           rateLabel="Rate"
           rateHint="per head"
           rate={draft.headOfferRate}
-          onRate={(v) => patch({ headOfferRate: v })}
+          onRate={(v) => carry(v, "headOfferRate", "headInvoiceAmount")}
         />
 
         {/*
@@ -1470,26 +1650,34 @@ export default function QuotationForm({
             still SOLD when they are not included. These four do not: a chilling
             system is not sold by the litre, so a No simply ends it.
 
-          ⚠ THREE OF THE FOUR ARE NO LONGER GATED BY THE MACHINE — asked on
-            every deal. `fms_ocpi_write_oc` had been nulling the answer on save
-            for any machine whose sheet said "no", which is 25 of the 28 for the
-            air blade, so the question could be answered and silently lost. The
-            gate and that clearing were removed together; see
-            20261025120000_fms_ocpi_extras_stop_being_gated.sql.
+          🔴 THREE, NOT FOUR, AND ALL THREE FOLLOW THE CATEGORY (OCPI-14).
 
-          ⚠ THE CENTERING TICK IS THE EXCEPTION AND KEEPS `show()`. Ritesh Bhai,
-            31-Aug-2026: the centering system follows the dryer's logic — backed
-            by the machine or not asked at all — and that covers BOTH this tick
-            and the centering shipment questions in the card below. So this
-            group shows four rows on the 5 machines that can carry one and three
-            on the other 23. That is correct; do not "fix" it by always
-            rendering the row, and do not tidy the other three into matching it.
+             OCPI-10 ungated these on 31-Aug because the per-machine mapping was
+             nulling answers people had given — 25 of 28 machines said "no" to an
+             air blade, so the question could be answered and silently lost. The
+             01-09 sheet settles it properly instead: the extras are mapped
+             against DIRECT machines only and read "no" for every Sublimation,
+             Other and POD model. So they are asked on a Direct deal and are not
+             asked, and are recorded as No, anywhere else.
 
-          ⚠ `standardHint` IS A HINT, NEVER AN ANSWER. "yes" on the machine
-            means standard equipment, and the deal still has to record that it
-            is included. Answering it for them would put a value on the deal
-            nobody entered.
+          🔴 A HIDDEN ANSWER HERE IS `false`, NOT `null` — the one exception in
+             the whole module. Ritesh Bhai asked for a definite No rather than an
+             unanswered question, so `clearHidden` has a `CLEARS_TO_FALSE` set and
+             `fms_ocpi_write_oc` has the matching `else false`. Change one and
+             change both, or the value flips on alternate saves and the revision
+             diff reports a change on every one of them.
+
+          ⚠ THE CENTERING TICK HAS LEFT THIS GROUP ENTIRELY. It is a full deal
+            inclusion now, above, with a details-and-quantity box — a bare tick
+            could not say WHICH device or HOW MANY. Do not add it back here.
+
+          ⚠ `standardHint` IS GONE WITH THE MACHINE'S FACTS. It read the model's
+            own mapping to say "standard on this machine", and nothing in this
+            form reads that mapping any more. The hint would have had to come
+            from a column that no longer decides anything, which is exactly the
+            kind of control this repo keeps writing down as a fault.
         */}
+        {show("airBlade") && (
         <div className="space-y-3 border-t border-line pt-4">
           <h3 className="text-[13px] font-semibold text-ink">Also included</h3>
           <p className="text-[12px] text-grey-2">
@@ -1498,35 +1686,26 @@ export default function QuotationForm({
           <div className="grid gap-3 sm:grid-cols-2">
             <YesNo
               label="Air blade"
-              hint={standardHint(facts.optAirBlade)}
               value={draft.airBlade}
               onChange={(v) => patch({ airBlade: v })}
               disabled={disabled}
             />
-            {show("externalCentering") && (
-              <YesNo
-                label="External centering system"
-                hint={standardHint(facts.optExternalCentering)}
-                value={draft.externalCentering}
-                onChange={(v) => patch({ externalCentering: v })}
-                disabled={disabled}
-              />
-            )}
             <YesNo
               label="Ink dust exhauster"
-              hint={standardHint(facts.optInkDustExhauster)}
               value={draft.inkDustExhauster}
               onChange={(v) => patch({ inkDustExhauster: v })}
               disabled={disabled}
             />
             <YesNo
               label="Chilling system"
-              hint={standardHint(facts.optChillingSystem)}
               value={draft.chillingSystem}
               onChange={(v) => patch({ chillingSystem: v })}
               disabled={disabled}
             />
           </div>
+        </div>
+        )}
+        <div className="space-y-3">
           {/*
             ⚠ NOT `otherCommitments`, which is retired and has no input — see
               the notice further down. And deliberately narrower than *Special
@@ -1563,15 +1742,18 @@ export default function QuotationForm({
           questions across the top, in the order the client gave: head, ink,
           dryer, spare parts, centering device.
 
-        ⚠ EACH ROW APPEARS ON ITS OWN CONDITION, and they are not the same one.
-          Two are the machine's answer rather than the salesperson's; the list is
-          written out in branching.ts beside the rules. Every rule here has its
-          twin in fms_ocpi_write_oc, which nulls what it hides on every save.
+        🔴 THIS SECTION HAS NO CONNECTION TO THE DEAL INCLUSIONS (OCPI-14).
+           Head, ink and spare parts used to appear only when the deal INCLUDED
+           them. They are asked on every deal now: how a thing ships, and whether
+           it is billed on its own document, is a different question from whether
+           it sits inside the machine price — a customer can be invoiced
+           separately for a head the deal does not include.
 
-          So THE ROW COUNT VARIES BY DEAL — five rows on the 5 machines that can
-          take a centering device, four on the other 23, fewer again without a
-          head or spares. That is the section's design, not a fault: showing all
-          five always would invite answers the writer then discards.
+           Only two rows are still conditional, and the MACHINE CATEGORY decides
+           both: the dryer and the centering device. So the table is FIVE ROWS ON
+           A DIRECT DEAL AND THREE ON EVERY OTHER, and the count no longer moves
+           with what the salesperson ticked upstairs. Every rule has its twin in
+           fms_ocpi_write_oc, which nulls what it hides on every save.
 
         ⚠ AMOUNTS ARE EXCLUSIVE OF TAX, by instruction, and the heading says so.
           They are stored and printed as given; NOTHING HERE — the sub-totals
@@ -1579,7 +1761,6 @@ export default function QuotationForm({
           the deal value alone. A separately-invoiced item is billed on its own
           document, so rolling it into this contract would charge it twice.
       */}
-      {anyShipment && (
         <Card className="space-y-4 p-5">
           <div>
             <h2 className="text-[15px] font-bold text-navy">Shipment &amp; invoice</h2>
@@ -1630,7 +1811,6 @@ export default function QuotationForm({
               <tbody>
           <ShipmentRow
             title="Print head"
-            why="the deal includes a head"
             shown={show("headShipMode")}
             disabled={disabled}
             mode={draft.headShipMode}
@@ -1657,7 +1837,6 @@ export default function QuotationForm({
           */}
           <ShipmentRow
             title="Ink"
-            why="the deal includes ink"
             shown={show("inkShipMode")}
             disabled={disabled}
             mode={draft.inkShipMode}
@@ -1676,7 +1855,6 @@ export default function QuotationForm({
 
           <ShipmentRow
             title="Dryer"
-            why={`${chosenMachine?.name ?? "this machine"} takes a dryer`}
             shown={show("dryerShipMode")}
             disabled={disabled}
             mode={draft.dryerShipMode}
@@ -1695,7 +1873,6 @@ export default function QuotationForm({
 
           <ShipmentRow
             title="Spare parts"
-            why="the deal includes spare parts"
             shown={show("sparesShipMode")}
             disabled={disabled}
             mode={draft.sparesShipMode}
@@ -1722,7 +1899,6 @@ export default function QuotationForm({
           */}
           <ShipmentRow
             title="Centering device"
-            why={`${chosenMachine?.name ?? "this machine"} can take one`}
             shown={show("centeringShipMode")}
             disabled={disabled}
             mode={draft.centeringShipMode}
@@ -1742,7 +1918,6 @@ export default function QuotationForm({
             </table>
           </ScrollableTable>
         </Card>
-      )}
 
       <Card className="space-y-4 p-5">
         <h2 className="text-[15px] font-bold text-navy">
@@ -2143,27 +2318,56 @@ export default function QuotationForm({
         <div className="space-y-3">
           <h3 className="text-[13px] font-semibold text-ink">Warranty &amp; service</h3>
           {/*
-            ⚠ THE WARRANTY IS NO LONGER ASKED. It is fixed company policy — set in
-              Settings → Warranty periods — and prints from there. The two pickers
-              that stood here (printer warranty, print-head warranty) and the
-              "Head price after the warranty" box are gone with it.
+            🔴 WARRANTY IS PER MACHINE AGAIN, AND THERE ARE THREE OF THEM
+               (OCPI-14). It had become fixed company policy — one setting, one
+               machine figure and one head figure, applied to all 28 models. The
+               client's 01-09 sheet gives all three per model and shows why the
+               single figure was wrong: 15 of the 28 carry NO head warranty at
+               all, so Settings was quoting 18 months on fifteen models that
+               offer none.
 
-              Their COLUMNS remain, and the module is additive-only, so every deal
-              raised before this keeps what it recorded. Nothing reads them now:
-              the tokens resolve from the setting instead (lib/tokens.ts).
+            🔴 BLANK MEANS NOT APPLICABLE, NOT "UNANSWERED". A machine whose
+               master value is NULL does not show the question here and prints no
+               line on either paper. That is why these are read-outs and not
+               required fields: the answer belongs to the model.
 
-              If a deal genuinely needs a different warranty, it goes in Special
-              remarks — that is the whole of the exception route, by instruction.
+            ⚠ SPARE PARTS HAS NO WARRANTY AND NO BOX, and its absence is a
+              finding rather than an omission — column S of the client's sheet
+              reads "NA" on all 28 rows.
+
+            ⚠ THE FIGURES ARE PREFILLED BY `chooseMachine`, NEVER BY AN EFFECT —
+              the same rule the head and the model number follow. A deal quoted
+              before this existed keeps what it recorded until somebody
+              deliberately changes its machine.
+
+            ⚠ THE SETTING SURVIVES as the fallback for a model with no value of
+              its own, so Settings → Warranty periods is not orphaned.
+          */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FieldLabel label="Machine warranty" hint="from the machine master">
+              <WarrantyReadout value={draft.printerWarranty} hasMachine={!!chosenMachine} />
+            </FieldLabel>
+            <FieldLabel label="Print-head warranty" hint="from the machine master">
+              <WarrantyReadout value={draft.headWarranty} hasMachine={!!chosenMachine} />
+            </FieldLabel>
+            {show("dryerWarranty") && (
+              <FieldLabel label="Dryer warranty" hint="from the machine master">
+                <WarrantyReadout value={draft.dryerWarranty} hasMachine={!!chosenMachine} />
+              </FieldLabel>
+            )}
+          </div>
+          {/*
+            ⚠ THE LINE THE CLIENT ASKED FOR, IN ONE PLACE. It is stored in
+              `fms_ocpi_config.warranty_note` rather than compiled in, because it
+              is a clause on a customer's contract and rewording one should not
+              need a deploy. The same sentence is printed by both PDFs from the
+              same key, so the screen and the paper cannot drift apart.
           */}
           <div className="rounded-lg border border-line bg-[#FBFCFE] px-3 py-2.5">
-            <p className="text-[12.5px] leading-relaxed text-grey">
-              Warranty is fixed for every deal:{" "}
-              <b className="text-navy">{s.config.warranty.machineMonths} months</b> on the machine and{" "}
-              <b className="text-navy">{s.config.warranty.headMonths} months</b> on the print head. No
-              warranty is offered on the dryer or on spare parts.
-            </p>
+            <p className="text-[12.5px] leading-relaxed text-grey">{s.config.warrantyNote}</p>
             <p className="mt-1 text-[12px] text-grey-2">
-              If this deal needs something different, write it into Special remarks above.
+              This prints below the warranty on both papers. If this deal needs something different,
+              write it into Special remarks above.
             </p>
           </div>
 

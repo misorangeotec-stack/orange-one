@@ -68,7 +68,8 @@ export default function ApprovedOcPreview({
               machine,
               profile: s.profileFor(deal.companyId),
               versionNo: deal.quotationVersionNo || 1,
-              noDryerCategory: dealFacts(s.dryerTypes, deal.dryerType ?? "").noDryerCategory,
+              facts: dealFacts(s.dryerTypes, deal.dryerType ?? "", s.machineCategories, deal.machineCategoryId ?? ""),
+              warrantyNote: s.config.warrantyNote,
             }),
           );
           if (!cancelled) setRebuilt(true);
@@ -85,6 +86,7 @@ export default function ApprovedOcPreview({
               profile: s.profileFor(deal.companyId),
               validityDays: s.config.quotationValidityDays,
               warranty: s.config.warranty,
+              warrantyNote: s.config.warrantyNote,
             }),
           );
           if (!cancelled) setRebuilt(true);

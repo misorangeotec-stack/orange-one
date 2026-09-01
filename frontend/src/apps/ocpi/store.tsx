@@ -175,6 +175,7 @@ const EMPTY_CONFIG: OcpiConfig = {
   // The client's settled figures, so even a store that has not loaded yet names
   // the right periods rather than a zero.
   warranty: { machineMonths: 12, headMonths: 18 },
+  warrantyNote: "Warranty is applicable from the date of dispatch from the manufacturer.",
   quotationSeries: { confirmed: false, confirmedAtValue: null, confirmedAt: null, confirmedBy: null },
   ocSeries: {},
 };

@@ -139,7 +139,7 @@ export default function Machines() {
       options: s.machineCategories
         .filter((c) => c.active)
         .map((c) => ({ value: c.id, label: c.name })),
-      hint: "Chosen first on the quotation, and it narrows the machine list." },
+      hint: "THE BRANCH INPUT since OCPI-14. Chosen first on the quotation, it narrows the machine list AND decides whether the deal is asked about a dryer, a centering device and the three optional extras. Direct is asked all three; Sublimation, Other and POD are asked none. Edit what each category asks on the Masters screen." },
     {
       // ⚠ A MACHINE MAY HAVE SEVERAL HEADS. The client's sheet lists two in one
       //   cell for five machines, and confirmed that is real. The quotation
@@ -148,7 +148,7 @@ export default function Machines() {
       key: "headTypeIds",
       label: "Print heads",
       type: "custom",
-      hint: "All of them. The quotation displays these and the salesperson cannot change them.",
+      hint: "All of them. ONE mapped head is shown on the quotation and cannot be changed; TWO OR MORE become a choice the salesperson makes, because the client sheet reads “EX600 or RC” — an OR, not an AND.",
       render: (value, onChange) => (
         <MultiSelect
           values={value ? value.split(",").filter(Boolean) : []}
@@ -160,34 +160,58 @@ export default function Machines() {
         />
       ),
     },
-    // ⚠ REQUIRED SINCE STAGE E, and that is load-bearing rather than tidy.
-    //   `fms_ocpi_write_oc` treats a NULL flag as "no dryer" and nulls every
-    //   dryer column on the deal; the form hides the whole Dryer details card
-    //   for the same reason. Leaving this blank would therefore make a section
-    //   silently unreachable for that model, with no error anywhere. All 28
-    //   machines carry an answer today — this keeps the 29th from arriving
-    //   without one.
-    { key: "needsDryer", label: "Takes a dryer", type: "choice", required: true,
-      options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
-      hint: "Per machine, not per category — the client sheet has Position Printer needing one while the three Pengdas in the same category do not. Decides whether the quotation shows the dryer section at all, so it must be answered." },
     /*
-      ⚠ WHAT THESE FOUR STILL DO, now that three of them no longer hide
-        anything (OCPI-10). They were the gate on all four questions; they are
-        now the gate on ONE. The other three keep a smaller but real job: "yes"
-        puts a "standard on this machine" note beside the question on the
-        quotation, which is how a salesperson tells a genuinely optional extra
-        from one the model always ships with. Left blank they say nothing, and
-        the question is still asked. So none of the four is a field that does
-        nothing — but only external centering changes what the form shows.
+      🔴 THE THREE WARRANTIES, PER MODEL (OCPI-14). They were one company-wide
+         SETTING — 12 months on the machine, 18 on the head, for all 28 models.
+         The client's 01-09 sheet gives them per machine and shows why one figure
+         could not work: 15 of the 28 carry NO head warranty at all, so Settings
+         was quoting 18 months on fifteen models that offer none.
+
+      🔴 BLANK MEANS NOT APPLICABLE, NOT UNKNOWN. The quotation does not ask the
+         question and neither paper prints a line. It does NOT fall through to
+         the Settings figure — that fallback exists only for a model nobody has
+         filled in yet.
+
+      ⚠ THERE IS NO SPARE-PARTS WARRANTY FIELD, and that is a finding rather than
+        an omission: column S of the client's sheet reads "NA" on all 28 rows.
     */
+    { key: "machineWarranty", label: "Machine warranty", type: "text",
+      hint: "As it should print, e.g. “12 Months”. Blank means not applicable — the quotation will not ask and neither paper will print a line." },
+    { key: "headWarranty", label: "Print-head warranty", type: "text",
+      hint: "e.g. “18 Months”. Blank means not applicable. 15 of the 28 models carry none, which is why this is per machine and not a setting." },
+    { key: "dryerWarranty", label: "Dryer warranty", type: "text",
+      hint: "e.g. “12 Months”. Blank means not applicable. Only a model that takes a dryer should carry one." },
+    /*
+      🔴 THESE FIVE NO LONGER DECIDE ANYTHING (OCPI-14). Until now they were the
+         branch inputs: `needsDryer` opened the Dryer section and
+         `optExternalCentering` opened both centering questions, in the form AND
+         in `fms_ocpi_write_oc`. The MACHINE CATEGORY decides all of it now —
+         Direct carries a dryer, a centering device and the three extras;
+         Sublimation, Other and POD carry none — so the flags are edited here as
+         a RECORD OF WHAT EACH MODEL CAN TAKE and nothing reads them.
+
+         They are kept, rather than deleted, because that record is real and the
+         client may want it back as a second condition. But nobody should edit
+         one expecting the quotation to change: it will not.
+
+      ⚠ `needsDryer` STOPPED BEING REQUIRED at the same moment, and that is the
+        same decision rather than a second one. It was required because
+        `fms_ocpi_write_oc` read a NULL as "no dryer" and would have made a whole
+        section silently unreachable. Nothing reads it, so a blank can no longer
+        hide anything, and demanding an answer to a question that changes nothing
+        is exactly the kind of control this repo keeps writing down as a fault.
+    */
+    { key: "needsDryer", label: "Takes a dryer", type: "choice",
+      options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }],
+      hint: "REFERENCE ONLY since OCPI-14 — the machine category decides whether the quotation shows the dryer section. Records what this model can take." },
     optionField("optAirBlade", "Air blade",
-      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked — air blade is asked on every deal."),
+      "REFERENCE ONLY since OCPI-14. The machine category decides whether the question is asked; this records what the model can take."),
     optionField("optExternalCentering", "External centering",
-      "THE ONE EXTRA THAT IS STILL A GATE. Decides whether the quotation asks about the centering system at all — both the tick in Deal inclusions and how the device ships and is invoiced. “No” or blank hides all of it."),
+      "REFERENCE ONLY since OCPI-14. It used to be the one extra that was still a gate; the machine category decides now, so a Direct model is asked about centering whatever this says."),
     optionField("optInkDustExhauster", "Ink dust exhauster",
-      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
+      "REFERENCE ONLY since OCPI-14. The machine category decides whether the question is asked."),
     optionField("optChillingSystem", "Chilling system",
-      "Shows a “standard on this machine” note beside the question on the quotation. It no longer decides whether the question is asked."),
+      "REFERENCE ONLY since OCPI-14. The machine category decides whether the question is asked."),
     { key: "docTitle", label: "Document heading", type: "choice", required: true,
       options: [
         { value: "ORDER CONFIRMATION", label: "ORDER CONFIRMATION" },
@@ -238,6 +262,9 @@ export default function Machines() {
           billingName: "",
           categoryId: "",
           headTypeIds: "",
+          machineWarranty: "",
+          headWarranty: "",
+          dryerWarranty: "",
           needsDryer: "",
           optAirBlade: "",
           optExternalCentering: "",
@@ -256,6 +283,9 @@ export default function Machines() {
           headTypeIds: s.headsFor(m.id).map((h) => h.id).join(","),
           // "" is UNSET and is not the same answer as "no" — a machine nobody
           // has mapped yet must not read as one that takes no dryer.
+          machineWarranty: m.machineWarranty ?? "",
+          headWarranty: m.headWarranty ?? "",
+          dryerWarranty: m.dryerWarranty ?? "",
           needsDryer: m.needsDryer === null ? "" : m.needsDryer ? "yes" : "no",
           optAirBlade: m.optAirBlade ?? "",
           optExternalCentering: m.optExternalCentering ?? "",
@@ -273,6 +303,9 @@ export default function Machines() {
             billingName: values.billingName || null,
             categoryId: values.categoryId || null,
             // Three states, not two: "" means nobody has said yet.
+            machineWarranty: values.machineWarranty || null,
+            headWarranty: values.headWarranty || null,
+            dryerWarranty: values.dryerWarranty || null,
             needsDryer: values.needsDryer === "" ? null : values.needsDryer === "yes",
             optAirBlade: values.optAirBlade || null,
             optExternalCentering: values.optExternalCentering || null,

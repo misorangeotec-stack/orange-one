@@ -64,6 +64,25 @@ export interface QuotationDraft {
 
   machineCount: string;
   machineId: string;
+  /**
+   * Direct / Sublimation / Other / POD — and THE BRANCH INPUT for the dryer
+   * section, the centering inclusion, the three optional extras and the whole
+   * Shipment & invoice card (OCPI-14).
+   *
+   * ⚠ THIS USED TO BE LOCAL STATE IN `QuotationForm`, and moving it here is the
+   *   whole reason OCPI-14 is not a one-line change. It was a filter that
+   *   narrowed the machine dropdown and was deliberately never stored. But
+   *   `fms_ocpi_write_quotation` and `fms_ocpi_write_oc` null every column their
+   *   branches hide, on every save, and they can only see the row — so a branch
+   *   keyed on something the server cannot read means the server erases answers
+   *   the form is still showing.
+   *
+   * ⚠ IT SNAPS TO THE CHOSEN MACHINE'S CATEGORY. `chooseMachine` sets it on
+   *   every pick and the RPC coalesces onto the machine's own category, so the
+   *   form and the server can never hold different answers. Clearing it still
+   *   lists every machine, which is how a salesperson browses across types.
+   */
+  machineCategoryId: string;
   headType: string;
   headCount: string;
   inkType: string;
@@ -84,6 +103,21 @@ export interface QuotationDraft {
   inkOfferRate: string;
   inclSpares: boolean | null;
   spareDetails: string;
+  /**
+   * OCPI-14 · the centering device becomes a deal inclusion in its own right.
+   *
+   * Shaped on SPARE PARTS, not on ink: a Yes/No and one free-text box for the
+   * details and quantity, with No ending the conversation. There is no
+   * subsidized-rate branch — the client asked for the spare-parts shape.
+   *
+   * ⚠ IT REPLACES the `externalCentering` tick that sat in "Also included".
+   *   That tick read the MACHINE's capability and was one of four; the group is
+   *   three now. `external_centering` on the deal is frozen history — the RPC
+   *   stopped writing it, and the answers of 11 deals were copied into this
+   *   field by the migration.
+   */
+  inclCentering: boolean | null;
+  centeringDetails: string;
   inclHead: boolean | null;
   headsIncluded: string;
   headOfferAgreed: boolean | null;
@@ -185,9 +219,18 @@ export interface QuotationDraft {
    * fms_ocpi_dryers master. Whether the section is asked at all is decided by
    * the MACHINE's `needs_dryer` flag — see branching.ts. */
   dryerName: string;
-  /** Is the dryer part of the deal? If not, it is charged — `dryerPrice`. */
+  /**
+   * Is the dryer part of the deal?
+   *
+   * ⚠ A "No" USED TO REVEAL A DRYER PRICE, and OCPI-14 removed that box. All
+   *   pricing is asked once, in Shipment & invoice, where the Dryer row already
+   *   collects a quantity and an amount. `dryer_price` survives as a column and
+   *   its derivation still stands in `fms_ocpi_write_oc`, but the form no longer
+   *   sends the key, so the two rupee figures resolve to null and
+   *   `grand_total_inr` collapses to `total_inr`. No deal on record carried a
+   *   price and no machine template references the token, so nothing was lost.
+   */
   dryerIncluded: boolean | null;
-  dryerPrice: string;
   dryerChambers: string;
   heatingMode: string;
   dryerWarranty: string;
@@ -233,6 +276,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   locationId: "",
   machineCount: "1",
   machineId: "",
+  machineCategoryId: "",
   headType: "",
   headCount: "",
   inkType: "",
@@ -245,6 +289,8 @@ export const EMPTY_DRAFT: QuotationDraft = {
   inkOfferRate: "",
   inclSpares: null,
   spareDetails: "",
+  inclCentering: null,
+  centeringDetails: "",
   inclHead: null,
   headsIncluded: "",
   headOfferAgreed: null,
@@ -296,7 +342,6 @@ export const EMPTY_DRAFT: QuotationDraft = {
   centeringInvoiceAmount: "",
   dryerName: "",
   dryerIncluded: null,
-  dryerPrice: "",
   dryerChambers: "",
   heatingMode: "",
   dryerWarranty: "",
@@ -398,100 +443,88 @@ export const isUsdDeal = (d: QuotationDraft): boolean =>
   d.dealValueCurrency === "USD" || d.transportTerms === "high_seas";
 
 /**
- * What the CHOSEN MACHINE says this deal can have.
+ * Everything a branch rule needs that is NOT on the draft.
  *
- * ⚠ THE DRAFT ALONE NO LONGER DECIDES WHAT IS ASKED (OCPI-3, stage E). Whether
- *   there is a dryer, and which of the four extras apply, is a property of the
- *   machine — mapped once on the Machine master from the client's own sheet —
- *   not something the salesperson answers deal by deal. `fms_ocpi_write_oc`
- *   reads exactly these columns off `fms_ocpi_machines` to decide what to keep,
- *   so the browser has to read the same ones or the two engines disagree and
- *   the server silently erases answers the form is still showing.
+ * ⚠ THE MACHINE STOPPED DECIDING THIS (OCPI-14). Until then there were two
+ *   records here — a `MachineFacts` holding `needs_dryer` and the four `opt_*`
+ *   capability columns, and this one. The client's rule is now that the machine
+ *   CATEGORY decides: Direct carries a dryer, a centering device and the three
+ *   optional extras; Sublimation, Other and POD carry none of them. So the
+ *   machine record had nothing left to decide and was deleted rather than left
+ *   as a parameter every caller still had to pass.
  *
- * ⚠ NULL IS "DO NOT ASK", NOT "MAYBE". A machine with the flag unset, or no
- *   machine chosen yet, produces no dryer questions and no extras. That matches
- *   `coalesce(v_centering, 'no') = 'no'` in the SQL. It is also why the Machine
- *   master now REQUIRES the dryer flag: leaving it blank there would quietly
- *   make a whole section unreachable.
- */
-export interface MachineFacts {
-  needsDryer: boolean | null;
-  optAirBlade: MachineOption | null;
-  optExternalCentering: MachineOption | null;
-  optInkDustExhauster: MachineOption | null;
-  optChillingSystem: MachineOption | null;
-}
-
-/** No machine chosen — every machine-driven question is shut. */
-export const NO_MACHINE_FACTS: MachineFacts = {
-  needsDryer: null,
-  optAirBlade: null,
-  optExternalCentering: null,
-  optInkDustExhauster: null,
-  optChillingSystem: null,
-};
-
-/** Read the facts off a machine row, or the closed set when there is none. */
-export function machineFacts(m: OcpiMachine | null | undefined): MachineFacts {
-  if (!m) return NO_MACHINE_FACTS;
-  return {
-    needsDryer: m.needsDryer,
-    optAirBlade: m.optAirBlade,
-    optExternalCentering: m.optExternalCentering,
-    optInkDustExhauster: m.optInkDustExhauster,
-    optChillingSystem: m.optChillingSystem,
-  };
-}
-
-/**
- * What a branch needs to know about the DEAL that is not on the draft (OCPI-8).
+ *   `fms_ocpi_machines.needs_dryer` and `.opt_external_centering` still exist and
+ *   are still edited on the Machines master — they record what a model can take.
+ *   They are INFORMATION ONLY; nothing branches on them, in this file or in SQL.
  *
- * ⚠ DELIBERATELY NOT PART OF `MachineFacts`. That record is documented as
- *   exactly the five machine columns `fms_ocpi_write_oc` reads, and folding a
- *   sixth, non-machine fact into it would make that sentence false — the next
- *   person comparing it against the SQL would find a field with no column.
- *
- * One entry today: the dryer category the salesperson picked is one that MEANS
- * there is no dryer. The draft holds the category's NAME (`dryerType`, TEXT,
- * frozen into every revision); the master row holds what that name means. This
- * is where the two are joined, once, so no branch has to.
+ * ⚠ ITS TWIN IS THE `select … c.shows_dryer, c.shows_centering, c.shows_extras`
+ *   IN `fms_ocpi_write_oc`, which nulls what it hides on every save. If the two
+ *   ever disagree the server erases answers the form is still showing, with no
+ *   error and nothing in a log. Change one, change both.
  */
 export interface DealFacts {
   /** The chosen dryer category means "this deal carries no dryer". */
   noDryerCategory: boolean;
+  /** The Dryer details card, and the Dryer row in Shipment & invoice. */
+  showsDryer: boolean;
+  /** The Centering device inclusion, and its Shipment & invoice row. */
+  showsCentering: boolean;
+  /** Air blade · ink dust exhauster · chilling system. */
+  showsExtras: boolean;
 }
 
 /**
  * No category chosen, or one nobody recognises.
  *
- * ⚠ THE SAFE DEFAULT IS THE *OPEN* ONE, which is the opposite of
- *   `NO_MACHINE_FACTS`. "A real category" hides nothing and clears nothing, so a
- *   caller that forgets to pass these blanks no answers; the server, which
- *   always knows, still clears correctly. The closed default would have
- *   `clearHidden` erase dryer answers on any screen that had not been updated.
+ * ⚠ THE SAFE DEFAULT IS THE *OPEN* ONE — every flag true, and `noDryerCategory`
+ *   false. A caller that forgets to pass these therefore HIDES NOTHING and, more
+ *   importantly, CLEARS nothing: `clearHidden` iterates this map and would
+ *   otherwise erase every dryer, centering and extras answer from any screen not
+ *   yet updated. The server always knows the real answer and still clears
+ *   correctly, so an open default costs nothing and a closed one silently eats
+ *   data.
  */
-export const NO_DEAL_FACTS: DealFacts = { noDryerCategory: false };
+export const NO_DEAL_FACTS: DealFacts = {
+  noDryerCategory: false,
+  showsDryer: true,
+  showsCentering: true,
+  showsExtras: true,
+};
 
 /**
- * Resolve the deal's dryer category name back to its master row.
+ * Resolve the deal's dryer category name, and its machine category, back to
+ * their master rows.
  *
- * ⚠ SEARCHES INACTIVE ROWS TOO, and that is load-bearing. Deactivating the
- *   "no dryer" category must not flip deals already sitting on it back to "a
- *   real category" — the form would un-hide five fields the server has already
- *   nulled, and the two engines would be showing different answers.
+ * ⚠ THE DRYER CATEGORY SEARCHES INACTIVE ROWS TOO, and that is load-bearing.
+ *   Deactivating the "no dryer" category must not flip deals already sitting on
+ *   it back to "a real category" — the form would un-hide five fields the server
+ *   has already nulled, and the two engines would be showing different answers.
  *
- * ⚠ A NAME NOBODY RECOGNISES IS A REAL CATEGORY. That is the steady state of
- *   the form's "+ Other" path between a request and its approval, and
- *   `fms_ocpi_write_oc`'s left join resolves it to null and coalesces the same
- *   way. Change one and change the other.
+ * ⚠ A DRYER-CATEGORY NAME NOBODY RECOGNISES IS A REAL CATEGORY. That is the
+ *   steady state of the form's "+ Other" path between a request and its
+ *   approval, and `fms_ocpi_write_oc`'s left join resolves it to null and
+ *   coalesces the same way.
+ *
+ * ⚠ A MACHINE CATEGORY NOBODY RECOGNISES ASKS NOTHING EXTRA — the opposite
+ *   default, and it matches `coalesce(c.shows_dryer, false)` in the SQL. The two
+ *   differ because they answer different questions: an unknown dryer category is
+ *   a category the master has not caught up with yet, while an unknown machine
+ *   category is no category at all.
  */
 export function dealFacts(
   dryerTypes: { name: string; meansNoDryer: boolean }[],
   dryerType: string,
+  categories: { id: string; showsDryer: boolean | null; showsCentering: boolean | null; showsExtras: boolean | null }[],
+  machineCategoryId: string,
 ): DealFacts {
   const name = dryerType.trim();
-  if (!name) return NO_DEAL_FACTS;
-  return { noDryerCategory: dryerTypes.some((t) => t.name === name && t.meansNoDryer) };
+  const cat = machineCategoryId ? categories.find((c) => c.id === machineCategoryId) : undefined;
+  return {
+    noDryerCategory: !!name && dryerTypes.some((t) => t.name === name && t.meansNoDryer),
+    showsDryer: cat?.showsDryer === true,
+    showsCentering: cat?.showsCentering === true,
+    showsExtras: cat?.showsExtras === true,
+  };
 }
 
 /**
@@ -615,6 +648,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   locationId: "Location",
   machineCount: "No. of machines",
   machineId: "Machine",
+  machineCategoryId: "Machine category",
   headType: "Type of head",
   headCount: "No. of print heads required",
   inkType: "Type of ink",
@@ -640,6 +674,8 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   inkOfferRate: "Ink — subsidized rate (₹ per litre)",
   inclSpares: "Deal includes spare parts",
   spareDetails: "Spare part details and quantity",
+  inclCentering: "Deal includes centering device",
+  centeringDetails: "Centering device details and quantity",
   inclHead: "Deal includes head",
   headsIncluded: "No. of heads included",
   headOfferAgreed: "Head — offered at a subsidized rate",
@@ -709,7 +745,6 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
 
   dryerName: "Dryer",
   dryerIncluded: "Dryer included in the deal",
-  dryerPrice: "Dryer price (excl. GST)",
   dryerChambers: "How many chambers with the dryer",
   heatingMode: "Heating medium",
   dryerWarranty: "Dryer warranty period",
@@ -761,6 +796,7 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     locationId: s(d.locationId),
     machineCount: s(d.machineCount),
     machineId: s(d.machineId),
+    machineCategoryId: s(d.machineCategoryId),
     headType: s(d.headType),
     headCount: s(d.headCount),
     inkType: s(d.inkType),
@@ -773,6 +809,8 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     inkOfferRate: s(d.inkOfferRate),
     inclSpares: d.inclSpares,
     spareDetails: s(d.spareDetails),
+    inclCentering: d.inclCentering,
+    centeringDetails: s(d.centeringDetails),
     inclHead: d.inclHead,
     headsIncluded: s(d.headsIncluded),
     headOfferAgreed: d.headOfferAgreed,
@@ -824,7 +862,6 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     centeringInvoiceAmount: s(d.centeringInvoiceAmount),
     dryerName: s(d.dryerName),
     dryerIncluded: d.dryerIncluded,
-    dryerPrice: s(d.dryerPrice),
     dryerChambers: s(d.dryerChambers),
     heatingMode: s(d.heatingMode),
     dryerWarranty: s(d.dryerWarranty),
@@ -881,6 +918,7 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     location_id: d.locationId,
     machine_count: d.machineCount,
     machine_id: d.machineId,
+    machine_category_id: d.machineCategoryId,
     head_type: d.headType,
     head_count: d.headCount,
     ink_type: d.inkType,
@@ -906,6 +944,8 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     ink_offer_rate: d.inkOfferRate,
     incl_spares: d.inclSpares,
     spare_details: d.spareDetails,
+    incl_centering: d.inclCentering,
+    centering_details: d.centeringDetails,
     incl_head: d.inclHead,
     heads_included: d.headsIncluded,
     head_offer_agreed: d.headOfferAgreed,
@@ -960,7 +1000,6 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     centering_invoice_amount: d.centeringInvoiceAmount,
     dryer_name: d.dryerName,
     dryer_included: d.dryerIncluded,
-    dryer_price: d.dryerPrice,
     dryer_chambers: d.dryerChambers,
     heating_mode: d.heatingMode,
     dryer_warranty: d.dryerWarranty,
@@ -1020,19 +1059,51 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
  *   must never be blocked on a head count it was never asked for — which is why
  *   each dependent is tested against the answer that reveals it, not on its own.
  */
-export function missingForSubmit(d: QuotationDraft): string[] {
+export function missingForSubmit(
+  d: QuotationDraft,
+  deal: DealFacts = NO_DEAL_FACTS,
+  /**
+   * How many print heads the chosen machine offers.
+   *
+   * ⚠ ONLY A CHOICE CAN BE MISSING (OCPI-14). A model with ONE mapped head fills
+   *   `headType` in itself and a model with NONE — the three Pengda and both POD
+   *   printers — legitimately has no head at all. Only the seven models whose
+   *   sheet says "EX600 or RC" can leave this unanswered, and on those a blank
+   *   would print a contract that does not say which head the customer is
+   *   getting. Defaults to 0 so a caller that does not know asks for nothing.
+   */
+  headOptions = 0,
+): string[] {
   const out: string[] = [];
 
   if (!d.customerName.trim()) out.push("the customer name");
   if (!d.salespersonName.trim()) out.push("the salesperson");
   if (!d.machineId) out.push("the machine");
   if (!d.machineCount.trim()) out.push("how many machines");
+  if (headOptions > 1 && !d.headType.trim()) out.push("which print head is being supplied");
 
   // Section B · Deal inclusions
   if (d.inclInk === null) out.push("whether the deal includes ink");
   else if (d.inclInk && !d.inkQtyIncluded.trim()) out.push("how much ink is included");
   if (d.inclSpares === null) out.push("whether the deal includes spare parts");
   else if (d.inclSpares && !d.spareDetails.trim()) out.push("which spare parts are included");
+  /*
+    OCPI-14 · the centering device, required ONLY where it is asked.
+
+    ⚠ THIS IS THE FORM'S REQUIREMENT AND NOT THE DATABASE'S, deliberately.
+      `fms_ocpi_complete_when_submitted` was left untouched: a CHECK is
+      re-validated on every UPDATE, so a conjunct naming incl_centering would
+      have made all 20 deals already on record un-updatable and thrown on every
+      approval or signature stamp. OCPI-7 hit exactly that and rejected it.
+
+    ⚠ AND IT IS GATED, or every Sublimation deal becomes un-generatable — the
+      question is not on their screen at all.
+  */
+  if (deal.showsCentering) {
+    if (d.inclCentering === null) out.push("whether the deal includes a centering device");
+    else if (d.inclCentering && !d.centeringDetails.trim())
+      out.push("which centering device is included");
+  }
   if (d.inclHead === null) out.push("whether the deal includes a head");
   else if (d.inclHead && !d.headsIncluded.trim()) out.push("how many heads are included");
 
@@ -1094,38 +1165,50 @@ export function missingForSubmit(d: QuotationDraft): string[] {
  */
 export function missingForDetailSheet(
   d: QuotationDraft,
-  facts: MachineFacts,
   deal: DealFacts = NO_DEAL_FACTS,
 ): string[] {
   const out: string[] = [];
 
-  // ⚠ THE THREE WARRANTY CHECKS ARE GONE, and their absence is the point. The
-  //   machine and head warranties are now a fixed SETTING, so they can never be
-  //   blank on the sheet; the dryer warranty is not offered at all. Warning a
-  //   salesperson that a field they can no longer see is empty would be worse
-  //   than silence — it is a warning they cannot act on.
+  // ⚠ THE THREE WARRANTY CHECKS ARE STILL GONE, and their absence is still the
+  //   point — but the reason has changed (OCPI-14). They used to be a fixed
+  //   SETTING that could never be blank; they are now a per-machine default, and
+  //   a machine whose warranty is NULL means NOT APPLICABLE, so the question is
+  //   not asked and no line is printed. Either way, warning a salesperson about
+  //   a field they cannot see is a warning they cannot act on.
   if (!d.deliveryDays.trim()) out.push(FIELD_LABEL.deliveryDays);
   if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
-  if (d.inclHead === true && !d.headShipMode) out.push(FIELD_LABEL.headShipMode);
-  // Ink's row is asked of nearly every deal — 17 of the 19 on record include
-  // ink — so this is the shipment question a salesperson meets most often.
-  if (d.inclInk === true && !d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
 
   /*
-    ⚠ THE MACHINE OPENS THE QUESTION AND THE CATEGORY DECIDES IT (OCPI-8), and
-      it takes BOTH. It used to read `dryerType !== 'Not Applicable'` — the
-      salesperson's own pick — so a machine that takes no dryer was still nagged
-      for a chamber count. Then (OCPI-3, stage E) it read the machine alone, and
+    ⚠ THE SHIPMENT ROWS ARE NO LONGER GATED ON THE INCLUSIONS (OCPI-14), so
+      these two are no longer gated either. They used to read
+      `d.inclHead === true && !d.headShipMode`, which was right while the row
+      only appeared for an included item; now the row appears on every deal and
+      the warning must too, or the sheet prints a blank the form never mentioned.
+
+      Spare parts and ink join it for the same reason. Centering is the one that
+      stays conditional, because its row is the one the category still gates.
+  */
+  if (!d.headShipMode) out.push(FIELD_LABEL.headShipMode);
+  if (!d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
+  if (!d.sparesShipMode) out.push(FIELD_LABEL.sparesShipMode);
+  if (deal.showsCentering && !d.centeringShipMode) out.push(FIELD_LABEL.centeringShipMode);
+
+  /*
+    ⚠ THE CATEGORY OPENS THE QUESTION AND THE DRYER CATEGORY DECIDES IT, and it
+      takes BOTH. It read `dryerType !== 'Not Applicable'` originally — the
+      salesperson's own pick — so a machine that took no dryer was still nagged
+      for a chamber count. Then (OCPI-3, stage E) it read the machine alone and
       the opposite fault appeared: a salesperson who answered "no dryer on this
       deal" was still told the sheet would print a blank dryer name, a warning
-      they could not act on because the field was unfillable.
+      they could not act on because the field was unfillable. OCPI-8 fixed that,
+      and OCPI-14 moved the first term from the machine to the category.
 
-      Now it asks the same question `hasDryerDetails` asks in branching.ts, and
-      the same one fms_ocpi_write_oc asks before it nulls these columns. All
-      three must agree: a field this warns about must be one the form shows and
-      the server keeps.
+      It asks the same question `hasDryerDetails` asks in branching.ts, and the
+      same one fms_ocpi_write_oc asks before it nulls these columns. All three
+      must agree: a field this warns about must be one the form shows and the
+      server keeps.
   */
-  if (facts.needsDryer === true && d.dryerType.trim() !== "" && !deal.noDryerCategory) {
+  if (deal.showsDryer && d.dryerType.trim() !== "" && !deal.noDryerCategory) {
     if (!d.dryerName.trim()) out.push(FIELD_LABEL.dryerName);
     if (!d.dryerChambers.trim()) out.push(FIELD_LABEL.dryerChambers);
   }

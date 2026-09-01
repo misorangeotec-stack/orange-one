@@ -40,8 +40,11 @@ export interface OcDocInput {
   profile?: OcpiCompanyProfile;
   /** From module config, for the {{quotation_validity_days}} token. */
   validityDays?: number;
-  /** From module config, for the two warranty tokens. Fixed company policy. */
+  /** From module config, as the FALLBACK for the warranty tokens (OCPI-14 made
+   *  them per machine, frozen on the deal). */
   warranty?: { machineMonths: number; headMonths: number };
+  /** From module config — the standing sentence beside every warranty. */
+  warrantyNote?: string;
 }
 
 const dmy = (iso: string | null): string => {
@@ -149,7 +152,23 @@ export function shipmentLines(d: OcpiDeal): ShipmentLine[] {
 export function optionalExtras(d: OcpiDeal): string[] {
   const out: string[] = [];
   if (d.airBlade) out.push("Air Blade");
-  if (d.externalCentering) out.push("External Centring Device");
+  /*
+    ⚠ THE CENTERING BULLET NOW READS THE DEAL INCLUSION (OCPI-14). It read
+      `externalCentering` — the bare tick that used to sit in "Also included",
+      which `fms_ocpi_write_oc` no longer writes at all. Left pointing there,
+      this bullet would silently stop appearing on every new deal that includes
+      a centering device, on the DETAILED CONTRACT, with nothing in the build to
+      complain: the field still exists and still type-checks, it is simply never
+      set again.
+
+    ⚠ THE DETAILS GO INTO THE BULLET, because unlike the old tick this question
+      has an answer worth printing. "External Centring Device — 2 x rail, 1.9m"
+      states what is being supplied; a bare bullet does not.
+  */
+  if (d.inclCentering) {
+    const detail = d.centeringDetails?.trim();
+    out.push(detail ? `External Centring Device — ${detail}` : "External Centring Device");
+  }
   if (d.inkDustExhauster) out.push("Ink Dust Exhauster");
   if (d.chillingSystem) out.push("Chilling System");
   if (d.otherInclusions?.trim()) out.push(d.otherInclusions.trim());
@@ -165,7 +184,7 @@ export function optionalExtras(d: OcpiDeal): string[] {
 export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
   const { deal, machine, sections, profile } = input;
   const tokens = {
-    ...tokensFor({ deal, profile, warranty: input.warranty }),
+    ...tokensFor({ deal, profile, warranty: input.warranty, warrantyNote: input.warrantyNote }),
     quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
   };
   return {
@@ -261,7 +280,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   const left = MARGIN;
 
   const tokens = {
-    ...tokensFor({ deal, profile, warranty: input.warranty }),
+    ...tokensFor({ deal, profile, warranty: input.warranty, warrantyNote: input.warrantyNote }),
     quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
   };
 
