@@ -2075,6 +2075,159 @@ now overstates the case and should be corrected at the same time.
       all real, all at `awaiting_quotation_approval`. A new one appeared *during* the session, because
       the option stays pickable until this ships. All three render correctly
 
+### OCPI-18 · Commercial terms — drop two fields, and put the delivery date on the contract with its condition  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai, from the commercial-terms screenshot*
+
+Four changes to one block. Two are removals, and **one of the two cannot simply be deleted** — read the
+Delivery days section before touching anything.
+
+#### 1 · Remove "Type of payment" (Any Advance / On Credit)
+
+- Form: `QuotationForm.tsx:2091`. Field `paymentType`, column `payment_type`.
+- ⚠ **It PRINTS on the summary sheet today** — `quotationPdf.ts:212` renders it as *"Any Advance"* /
+  *"On Credit"*. Removing the field removes a line from a customer-facing document. That is the intent,
+  but it should be a decision, not a side effect.
+- ⚠ **It is MANDATORY today** — `fieldSpec.ts:1145`, `missingForSubmit`. Remove it there too, and from
+  the matching SQL completeness predicate, or the form stops asking for something the database still
+  demands and nothing can be submitted.
+- 🟢 *Terms of payment* (`paymentTerms`, the free-text box below it) is a **different field and stays.**
+  It carries the real answer — *"30 % advance and rest PDC cheque"* — and prints on both papers. Do not
+  confuse the two while removing one.
+- Keep the column; do not drop it. Additive-only, and existing deals keep what they recorded.
+
+#### 2 · Remove "Delivery days" — 🔴 NOT A SIMPLE DELETION
+
+🔴 **`{{delivery_days}}` IS A TEMPLATE TOKEN, LIVE ON 21 OF THE 28 MACHINES.** It sits inside the
+**SALE CONDITIONS OF THE SUPPLY** section — the contract's own terms — reading:
+
+```
+Transport Terms: {{trade_term}}
+Delivery Days: {{delivery_days}}
+Payment terms: {{payment_terms}}
+Insurance: Product Insurance borne by Customer.
+```
+
+Delete the form field alone and every one of those 21 contracts prints **`Delivery Days: ` followed by a
+ruled blank**, in the delivery clause of a signed document. The 21: Homer K24, Homer K32, K64, P8D, P8S,
+MP5000, JPK, Rocket, Position Printer, Fab Pro 1I/2I/3I, Pengda PD-1700XD-1000, Kolorado Alpha 15/16,
+KoloRado Alpha II ×3, KoloRado Alpha 3 — 12 heads, KoloRado Alpha 3.2 — 8 / 24 heads.
+
+🟢 **The fix and change 4 are the same edit.** Replace that line on all 21 sections:
+
+```
+-  Delivery Days: {{delivery_days}}
++  Tentative Machine Delivery Date: {{delivery_date}}
++  Applicable from the date of signing of this contract.
+```
+
+That removes Delivery days from the contract **and** puts the delivery date there, which is exactly what
+was asked for. One migration, 21 sections, no blank lines left behind.
+
+Also to clear up:
+- `tokens.ts:181` and `:253` — remove `delivery_days` from the resolver and from `TOKEN_HELP`, so the
+  Machine template screen stops offering a token nothing fills.
+- `exportRegister.ts:223` — the Deal Register has a **"Delivery days"** column. Remove it, or it exports
+  a column that can only ever be blank from here on.
+- `fieldSpec.ts:1178` — it is in `missingForDetailSheet`, the "will print blank lines" warning. Remove.
+
+#### 3 · "Machine delivery date" → "Tentative machine delivery date", with a remark under it
+
+✅ **ALL THREE SETTLED 01-09-2026.** Build exactly this:
+
+| | |
+|---|---|
+| Label | **Tentative machine delivery date** |
+| Existing hint *"tentative, committed to the customer"* | **REMOVED** — the new label and remark say it better, and three tentative-ish notes on one field read as a mistake |
+| Remark, below the input | **"Applicable from the date of signing of this contract."** |
+
+⚠ **That remark wording is confirmed and PRINTS ON A SIGNED CONTRACT** — it is also what goes into the
+21 SALE CONDITIONS sections in change 2. Use the same sentence in both places, to the character, or the
+form and the contract will say the delivery condition slightly differently.
+- ⚠ The field stays **mandatory** (`fieldSpec.ts:1180`) unless OCPI-15 moves it. These two entries touch
+  the same completeness list — whichever lands second must not undo the first.
+
+#### 4 · Show the date and the remark on the contract
+
+- Handled by the section rewrite in change 2 above — that is where it lands.
+- 🔴 **A `{{delivery_date}}` TOKEN DOES NOT EXIST.** `tokens.ts` has `delivery_days`, `payment_terms` and
+  `trade_term`, but no delivery date. It must be **added to the resolver and to `TOKEN_HELP`**, formatted
+  `dd-mm-yyyy` like every other date in this module, **before** the 21 sections are rewritten to use it —
+  or the migration lands a token that resolves to nothing and prints the very blank it was meant to fix.
+- The summary sheet already prints *"Machine Delivery Date"* (`quotationPdf.ts:214`). Relabel it to match
+  the new wording, and decide whether the remark prints there too or only on the contract.
+
+#### Checklist
+
+- [x] 0.1 SETTLED — *"Applicable from the date of signing of this contract."*, label **Tentative machine
+      delivery date**, old hint removed
+- [x] 0.2 Summary sheet: relabelled, and the REMARK PRINTS THERE TOO — as a `Delivery Condition` row
+      directly beneath, and only where there is a date (the rule the warranty note already follows).
+      ⚠ **It did crowd the sheet, and the fix was the row width, not the wording.** In a half-width cell
+      the new label wrapped to *"Tentative Machine"* / *"Delivery Date"* / *"30 Sept 2026"* — three lines
+      for one field, read off the rendered PDF. Both rows are `wide` now and each reads on one line. The
+      row LABEL `Delivery Condition` is the one word not settled in the brief; the renderer's rows need
+      a label and this mirrors `Warranty Note`
+- [x] 1.1 Add the `delivery_date` token to `tokens.ts` + `TOKEN_HELP` — done first, before the migration
+- [x] 1.2 Migration `20261102120000_fms_ocpi_delivery_date_on_the_contract.sql`, applied 01-Sep-2026.
+      21 sections rewritten, asserted at 21. 🔴 **THE GUARD IN THIS ENTRY WOULD HAVE FAILED** — see the
+      correction below; it matches the TOKEN, not the heading
+- [x] 2.1 `paymentType` out of the form, `quotationPdf.ts`, `missingForSubmit` and the SQL predicate
+- [x] 2.2 `deliveryDays` out of the form, `tokens.ts`, `TOKEN_HELP`, `missingForDetailSheet` and the
+      Deal Register export
+- [x] 2.3 Both COLUMNS kept. Proved, not assumed: a draft holding both was saved through the real form
+      and both values came back byte-identical
+- [x] 3.1 Relabelled, old hint dropped, remark added; the two half-empty grids merged into one holding
+      the date and the delivery term
+- [x] 4.1 `cd frontend && npm run build`
+- [x] 4.2 🔴 **K64 contract rendered and read with pdf.js** — SALE CONDITIONS reads *"Transport Terms:
+      CIF / Tentative Machine Delivery Date: 30 Sept 2026 / Applicable from the date of signing of this
+      contract."* No `Delivery Days:` line, no ruled blank from this change. **The other four heading
+      families were rendered too** (Fab Pro 1I, JPK, Position Printer, MP5000) — all five correct. The
+      two blanks left on the K64 paper are `{{head_count}}` and `{{consumables_supplier}}`, both unanswered
+      on QT-M0040 itself and unrelated to this
+- [x] 4.3 Token sweep across all **180** sections: 11 tokens in use, `delivery_date` among them,
+      **0 unknown**, `delivery_days` nowhere
+- [x] 4.4 A frozen deal is untouched — 23 of the 30 stored payloads still say *"Delivery Days"*, none say
+      the new wording, all 30 still carry `payment_type`, and 23 still serve a stored PDF from storage
+- [x] 4.5 🔴 **Submitted for real, with `payment_type` NULL**, through the form and the live RPC on a
+      `ZZ TEST` draft. Accepted; before this it would have raised the CHECK. Restored afterwards, and
+      the activity row and notification deleted — counter unmoved, **no email queued** (OCPI mail is off)
+
+#### 🔴 Two corrections to this entry, found in the live database
+
+**1 · The 21 sections do not share a heading — there are FIVE.** This entry described every one as
+`Delivery Days: {{delivery_days}}` and asked the migration to match that literal text and assert 21.
+It would have rewritten **14** and failed:
+
+| Heading | Count | Machines |
+|---|---|---|
+| `Delivery Days:` | 14 | Homer K24/K32, K64, P8D, P8S, Pengda, Kolorado Alpha 15/16, KoloRado Alpha II ×3, Alpha 3 — 12 heads, Alpha 3.2 — 8/24 heads |
+| `Delivery Terms:` | 3 | Fab Pro 1I / 2I / 3I |
+| `Delivery:` | 2 | JPK, Rocket |
+| `Shipment Terms:` | 1 | Position Printer |
+| `Shipment:` | 1 | MP5000 |
+
+All 21 were normalised to the settled wording — confirmed with the client before building. That also
+corrects the three Fab Pro decks, which labelled delivery DAYS as *"Delivery Terms"*, a heading their
+own `{{trade_term}}` line already uses on the same page. The migration matches the **token**.
+
+**2 · A second SQL gate names delivery days, and it is dead.** `fms_ocpi_submit_oc` raises
+*"Still needed on the order confirmation: the delivery days"*. That reads like a blocker for every deal
+raised from here on, and is not one: the order-confirmation wrappers were retired at revision stage F
+(`data/ocpiWrites.ts:215`), nothing in the app calls it, and no deal is parked at that step. **Left
+untouched deliberately** — it is what historical rows at the retired step were written by.
+
+#### One thing found while verifying, outside the ask
+
+`{{delivery_date}}` was first written against `format.ts`'s `dmy`, and the contract renderer uses its
+own private copy of a near-identical formatter — as does the summary sheet. Three copies, and this
+would have been a fourth. They were consolidated onto one `paperDate` in `format.ts`. ⚠ **Nothing was
+printing wrongly**: `en-GB` and `en-IN` were checked month by month and agree on all twelve, so the
+copies had not drifted. `format.ts`'s comment claiming *"dd-mm-yyyy"* was corrected — it has never
+produced that, and it is the comment this entry's *"dd-mm-yyyy like every other date"* was written from.
+⚠ **Sequence with OCPI-15 and OCPI-14.** All three edit the same commercial-terms block and the same
+completeness rules. Do not run two of them at once.
+
 ### OCPI-19 · "Consumables to be bought from" stops being a question and becomes a statement  `[x]`
 *Raised 2026-09-01 · Asked for by Ritesh Bhai*
 

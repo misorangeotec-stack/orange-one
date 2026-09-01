@@ -2575,3 +2575,175 @@ PDC-based domestic terms, none uses the approved sentence, which makes the case 
 📋 **The revision diff will show consumables as "added"** on a deal frozen with NULL and re-generated
 after this. `revisionDiff` iterates `FIELD_LABEL`, which includes the field. That is accurate — the
 new paper really does print what the old one left blank — and should not be suppressed.
+---
+
+# OCPI-18 · The delivery DATE replaces the delivery DAYS, on the form and on the contract — 01-Sep-2026
+*Raised 01-09-2026 by Ritesh Bhai, from the commercial-terms screenshot · four changes, of which two
+turned out to be one edit*
+
+## What was built
+
+Four asks: drop **Type of payment**, drop **Delivery days**, relabel **Machine delivery date** →
+**Tentative machine delivery date** with a condition under it, and put that date and its condition on
+the contract.
+
+🟢 **The second and fourth are one edit, not two.** `{{delivery_days}}` was live in the
+**SALE CONDITIONS OF THE SUPPLY** clause of 21 of the 28 machine decks. Deleting the form field alone
+would have printed `Delivery Days: ________` in the delivery clause of a document customers sign — an
+unresolved token rules a blank by design. Replacing that line with the date and its condition removes
+the token *and* delivers the fourth ask, in one migration, with nothing left blank.
+
+- **`{{delivery_date}}` added first**, to `tokensFor` and `TOKEN_HELP` (`tokens.ts`). Order was
+  load-bearing: a section rewritten to use a token the resolver does not know resolves to `undefined`
+  and prints the very blank the change was made to remove.
+- **Migration `20261102120000_fms_ocpi_delivery_date_on_the_contract.sql`**, applied 01-Sep-2026.
+  21 sections rewritten under 19 assertions — pre-flight (21 sections, one token each, five known
+  headings, nothing outside section bodies, `{{delivery_date}}` unused), the update itself
+  (`row_count = 21`), and post-flight (0 mentions of `delivery_days` anywhere, 21 carrying the new line
+  once, 21 carrying the condition once, `{{trade_term}}` unmoved, and the master gaining **exactly 21
+  lines** — one per section, which is only true if each replacement turned one line into two and
+  touched nothing around it).
+- **`payment_type` stops being required on submit.** `fms_ocpi_complete_when_submitted` was rebuilt
+  from the live `pg_get_constraintdef` capture, minus that one conjunct. Strictly weaker, and the only
+  three rows with a null payment type are drafts, so the re-validation could not fail.
+- **Both fields left the form**, `paymentType` also leaving the summary sheet's *"Term of Payment"* row
+  and `missingForSubmit`; `deliveryDays` also leaving `TOKEN_HELP`, `missingForDetailSheet` and the
+  Deal Register's *"Delivery days"* column.
+- **The date relabelled**, its old *"tentative, committed to the customer"* hint dropped, and
+  `DELIVERY_DATE_REMARK` shown beneath it — the same sentence, from one constant, that the summary
+  sheet prints and the 21 contracts carry.
+
+## Retire, don't erase — and the module already had the shape for it
+
+Both COLUMNS stay, and so do the draft field, default, `FIELD_LABEL`, `draftFromDeal` and
+`payloadFromDraft` entries for each. That is `otherCommitments`' shape (OCPI-3 stage H), and it buys
+two things: the 23 deals holding a payment type and the 20 holding delivery days round-trip their
+answers byte-identically through an edit rather than being cleared to `''`, and `FIELD_LABEL` stays a
+total `Record<keyof QuotationDraft, string>` — dropping an entry while the draft key remains fails
+`tsc`. **Proved, not assumed:** a draft holding both was saved through the real form and both values
+came back unchanged.
+
+The one departure is the summary sheet. `otherCommitments` still prints when non-empty; *"Term of
+Payment"* does not, because removing a line from a customer-facing document was the ask, not a side
+effect. A paper reissued today reads the way the module asks its questions today.
+
+`PAYMENT_TYPES` was deleted outright — a vocabulary with no control behind it is exactly the orphan the
+FIX-4 rule is about. `PaymentType` in `types/index.ts` stays; `OcpiDeal` still reads the column.
+
+## 🔴 Two corrections to the brief, found in the live database
+
+**1 · The brief said one heading. The database has five.** The instruction described all 21 lines as
+`Delivery Days: {{delivery_days}}` and asked for a guard matching that literal text, asserting 21. It
+would have rewritten **14** and failed the assertion:
+
+| Heading | Count | Machines |
+|---|---|---|
+| `Delivery Days:` | 14 | Homer K24/K32, K64, P8D, P8S, Pengda, Kolorado Alpha 15/16, KoloRado Alpha II ×3, Alpha 3 — 12 heads, Alpha 3.2 — 8/24 heads |
+| `Delivery Terms:` | 3 | Fab Pro 1I / 2I / 3I |
+| `Delivery:` | 2 | JPK, Rocket |
+| `Shipment Terms:` | 1 | Position Printer |
+| `Shipment:` | 1 | MP5000 |
+
+All five say the same thing, and all 21 were normalised to the agreed wording — put to the client and
+confirmed before a line was written. That also corrects the three Fab Pro decks, which labelled
+delivery DAYS as *"Delivery Terms"* — a heading their own `{{trade_term}}` line already uses one line
+earlier on the same page.
+
+⚠ **So the migration matches the TOKEN, never the heading**, with `(?n)` making `^`/`$` line anchors so
+`.` cannot cross a newline. Anchoring on prose is what would have missed a third of the contracts. The
+pre-flight still asserts all 21 lines match one of the five known shapes, so a sixth — the token
+mid-sentence, say, which a whole-line replacement would destroy — stops the apply.
+
+**2 · A second SQL gate names delivery days, and it is dead.** `fms_ocpi_submit_oc` raises
+*"Still needed on the order confirmation: the delivery days"* when the column is blank. That reads like
+a blocker for every deal raised from here on — the form would have stopped asking for something the
+server still demanded, with no field anywhere to satisfy it. It is not one: the order-confirmation
+wrappers were retired at revision stage F (`data/ocpiWrites.ts:215`), nothing in the app calls any of
+the three, and no deal sits at `awaiting_order_confirmation`. **Left untouched on purpose** — it is
+what historical rows at the retired step were written by. Recorded here so the next reader knows it was
+seen and decided, not missed.
+
+## One thing found while verifying, outside the ask
+
+The token was written against `format.ts`'s `dmy` first. Reading the rendered PDF showed the contract's
+own `Date:` header comes from a **private copy** of a near-identical formatter inside `ocPdf.ts` — and
+`quotationPdf.ts` holds a third, character-for-character the same. This would have been a fourth copy,
+printing inside a clause three lines under the second one.
+
+All three now import one `paperDate` from `format.ts`.
+
+⚠ **Nothing was printing wrongly, and the note in the code says so.** `en-GB` and `en-IN` were checked
+month by month in the browser and agree on all twelve — the copies had not drifted. They agree because
+of the CLDR data this browser ships, not because the two locales are the same thing; one definition is
+what stops that ever becoming a document that spells one month two ways.
+
+📋 **`format.ts`'s comment claiming "dd-mm-yyyy" was corrected.** It has never produced that —
+`month: "short"` is a name, and September comes out `"Sept"`. It matters because that comment is what
+the brief was written from: it asked for the new token to be formatted *"dd-mm-yyyy like every other
+date in this module"*, and no date in this module has ever looked like that.
+
+## The summary sheet's remark does print — and it needed the row width, not different words
+
+Whether the condition also prints on the summary sheet was not asked. It does, as a `Delivery Condition`
+row directly beneath the date, because a date whose condition appears on one paper and not the other
+invites the question of which governs. It prints **only where there is a date**, the same rule the
+warranty note follows: a standing sentence about when a date starts running, under no date, is noise.
+
+⚠ **It did crowd the sheet, and reading the PDF is the only way that showed up.** A half-width cell
+gives the label `LABEL_W / 2`, which *"Tentative Machine Delivery Date"* does not fit — it wrapped to
+*"Tentative Machine"* / *"Delivery Date"* / *"30 Sept 2026"*, three lines for one field. The old label
+fitted, so this is a cost of the new wording rather than something already wrong. Both rows are `wide`
+now and each reads on one line.
+
+📋 **`Delivery Condition` is the one word not settled in the brief.** The brief fixes the *sentence*;
+this renderer's rows require a label, and this mirrors `Warranty Note`.
+
+## Verified — live browser + SQL, 01-Sep-2026
+
+- **Build gate** — `cd frontend && npm run build`, clean (`tsc` strict + vite).
+- 🔴 **K64 contract rendered and read with pdf.js**, not string-searched. SALE CONDITIONS reads:
+  *"Transport Terms: CIF / Tentative Machine Delivery Date: 30 Sept 2026 / Applicable from the date of
+  signing of this contract. / Payment terms: na"*. No `Delivery Days:` line. **All four other heading
+  families rendered too** — Fab Pro 1I (*Trade Terms:*), JPK (*Delivery Terms:*), Position Printer
+  (*Trade Terms (Machine):*), MP5000 (*Terms:*) — every one correct, and each keeps its own trade-term
+  heading above the normalised delivery line.
+- **The two ruled blanks left on the K64 paper are the deal's own** — `{{head_count}}` and
+  `{{consumables_supplier}}`, both null on QT-M0040. Nothing to do with this change.
+- **Token sweep across all 180 sections** (not just the 21): 11 tokens in use, `delivery_date` among
+  them, **0 unknown**, `delivery_days` nowhere. The Machine template screen offers the new token and
+  raises no unknown-token warning.
+- **A frozen deal is untouched.** 23 of the 30 stored payloads still say *"Delivery Days"*, none say the
+  new wording, all 30 still carry `payment_type`, and 23 still serve a stored PDF from storage — so an
+  already-issued paper prints exactly what it was issued as.
+- 🔴 **A quotation can still be submitted, proved with `payment_type` NULL.** A `ZZ TEST` draft was
+  nulled, then sent for approval through the real form and the live RPC. Accepted; before this change
+  the same UPDATE would have raised `fms_ocpi_complete_when_submitted`. Restored afterwards to its exact
+  prior row, and the activity row and notification deleted. The quotation counter did not move and
+  **no email was queued** — `email_module_settings` has `ocpi` off, checked before driving anything.
+- **Round-trip proved.** A draft holding `payment_type = 'advance'` and
+  `delivery_days = '60 days from receipt of advance'` was saved through the form; both came back
+  byte-identical.
+- **Deal Register export generated from the real page** — 78 columns, 26 rows. *"Delivery days"* gone,
+  *"Tentative delivery date"* present, *"Delivery term"* and *"Payment terms"* untouched.
+- **Form** — no *"Type of payment"*, no *"Delivery days"*, no *"Any Advance"/"On Credit"* anywhere; the
+  new label and remark present, old hint gone; the two half-empty grids merged into one holding the
+  date (with its remark) and the delivery term.
+- **Orphan sweep** (CLAUDE.md FIX-4) over `apps/ocpi` — no setter left calling only its empty value, and
+  `PAYMENT_TYPES` survives only inside the comment recording its retirement.
+
+## Open / worth knowing
+
+- ⚠ **The migration and the frontend must go live together.** Both orders have a bad window: the
+  migration is applied, so until this branch reaches `master` a contract rendered by the **deployed**
+  bundle prints `Tentative Machine Delivery Date: ________` — its resolver does not know the token yet.
+  The reverse order would have printed the blank the other way round. Nothing else closes it short of a
+  three-step rollout, which is not worth it for a module with 26 deals; merge promptly.
+- 📋 **`fms_ocpi_submit_oc` still names delivery days** and is still uncalled. If the retired
+  order-confirmation step is ever revived, that gate has to go first.
+- 📋 **The sentence lives in three places** — `DELIVERY_DATE_REMARK` in `fieldSpec.ts`, the migration,
+  and the 21 section bodies it wrote. SQL cannot import a TypeScript const, so changing the wording
+  means a new migration rewriting those 21 bodies. The constant's comment says so, and the migration's
+  post-flight assertion counts the exact string.
+- 📋 **`delivery_days` still fills from the deal on edit.** A pre-existing deal that recorded it keeps
+  writing it back on every save. That is the retirement shape working as intended, not a leak — nothing
+  reads the column any more.

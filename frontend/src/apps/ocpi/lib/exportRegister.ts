@@ -220,8 +220,17 @@ export function exportDealRegister(
         this in. It also feeds "Delivery Terms:" on all ten contract templates.
     */
     { header: "Delivery term", width: 16, value: (d) => d.tradeTerm ?? "" },
-    { header: "Delivery days", width: 13, value: (d) => d.deliveryDays ?? "" },
-    { header: "Delivery date", width: 13, value: (d) => dmy(d.deliveryDate) },
+    /*
+      ⚠ THE "Delivery days" COLUMN IS GONE (OCPI-18). The form no longer asks the
+        question and no paper prints the answer, so from here on the column could
+        only ever have exported a blank — or, worse, a value from before the
+        change sitting beside newer rows that have none, read as though the newer
+        deals had simply forgotten to fill it in.
+
+        The `delivery_days` COLUMN itself stays and the 20 deals that answered it
+        keep their answer; it is the export that would have misled.
+    */
+    { header: "Tentative delivery date", width: 20, value: (d) => dmy(d.deliveryDate) },
     { header: "Revisions", width: 10, value: (d) => d.quotationVersionNo },
     { header: "Sent back", width: 10, value: (d) => d.reworkCount },
     { header: "Sent for approval", width: 15, value: (d) => dmy(d.qsAt) },

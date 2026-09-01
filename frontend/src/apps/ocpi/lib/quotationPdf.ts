@@ -5,9 +5,10 @@ import {
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import {
-  DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS, SUBSIDIZED_RATE_NOTE, type DealFacts,
+  DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
+  SUBSIDIZED_RATE_NOTE, type DealFacts,
 } from "./fieldSpec";
-import { docHeading, fmtDealValue } from "./format";
+import { docHeading, fmtDealValue, paperDate } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
 /**
@@ -63,13 +64,11 @@ export interface QuotationDocInput {
   warrantyNote?: string;
 }
 
-const dmy = (iso: string | null): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-};
+// ⚠ THE PRIVATE `dmy` CONST IS GONE (OCPI-18) — it is `paperDate` in format.ts
+//   now, byte-for-byte the same function, imported instead of copied. It was one
+//   of three identical copies; the third was about to be written for the
+//   `{{delivery_date}}` token. Nothing was printing wrongly — see `paperDate`.
+const dmy = paperDate;
 
 const yesNo = (v: boolean | null): string => (v === null ? "" : v ? "Yes" : "No");
 
@@ -206,12 +205,38 @@ function sectionRows(
   } else {
     commercial.push({ label: "Total Value (INR)", value: inr(d.totalInr) });
   }
-  commercial.push({
-    label: "Term of Payment",
-    value:
-      d.paymentType === "advance" ? "Any Advance" : d.paymentType === "credit" ? "On Credit" : "",
-  });
-  commercial.push({ label: "Machine Delivery Date", value: dmy(d.deliveryDate) });
+  /*
+    ⚠ "Term of Payment" IS GONE FROM THIS SHEET (OCPI-18), and removing a line
+      from a customer-facing document was the intent, not a side effect. It
+      rendered `payment_type` as "Any Advance" / "On Credit" — a two-word summary
+      sitting directly above "Payment Terms", which carries the actual agreement
+      ("30% advance and rest PDC cheque") and prints on both papers. The client
+      asked for the question to go; the row could not stay behind it.
+
+      Unlike `otherCommitments`, this is NOT kept as a conditional row for the 23
+      deals that recorded an answer. That is deliberate: a paper reissued today
+      should read the way the module asks its questions today.
+
+    ⚠ THE DELIVERY DATE IS RELABELLED AND CARRIES ITS CONDITION. The same change
+      wrote the date and this sentence into the SALE CONDITIONS clause of all 21
+      machine decks; a date whose condition appears on the contract but not on
+      the summary invites the question of which paper governs.
+
+    ⚠ THE CONDITION PRINTS ONLY WHERE THERE IS A DATE, which is the rule the
+      warranty note below already follows. A standing sentence about when a date
+      starts running, under no date at all, is noise on a signed document.
+
+    ⚠ BOTH ROWS ARE `wide`, AND THE FIRST ONE HAS TO BE. A half-width cell gives
+      the label `LABEL_W / 2`, which "Tentative Machine Delivery Date" does not
+      fit: rendered narrow it wrapped to "Tentative Machine" / "Delivery Date" /
+      "30 Sept 2026" — three lines for one field, read off the actual PDF, not
+      guessed. The old label ("Machine Delivery Date") fitted, so this is a cost
+      of the new wording rather than something that was already wrong.
+  */
+  commercial.push({ label: "Tentative Machine Delivery Date", value: dmy(d.deliveryDate), wide: true });
+  if (d.deliveryDate) {
+    commercial.push({ label: "Delivery Condition", value: DELIVERY_DATE_REMARK, wide: true });
+  }
   commercial.push({ label: "Payment Terms", value: d.paymentTerms ?? "", wide: true });
   commercial.push({ label: "Term of Delivery", value: transport, wide: true });
 

@@ -5,7 +5,7 @@ import {
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import { resolve, tokensFor } from "./tokens";
-import { docHeading } from "./format";
+import { docHeading, paperDate } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection } from "../types";
 
 /**
@@ -47,13 +47,11 @@ export interface OcDocInput {
   warrantyNote?: string;
 }
 
-const dmy = (iso: string | null): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-};
+// ⚠ THE PRIVATE `dmy` CONST IS GONE (OCPI-18) — it is `paperDate` in format.ts
+//   now, byte-for-byte the same function, imported instead of copied. It was one
+//   of three identical copies; the third was about to be written for the
+//   `{{delivery_date}}` token. Nothing was printing wrongly — see `paperDate`.
+const dmy = paperDate;
 
 const inr = (n: number | null): string =>
   n === null ? "" : `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;

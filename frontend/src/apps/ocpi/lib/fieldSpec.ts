@@ -127,6 +127,13 @@ export interface QuotationDraft {
 
   dealValueCurrency: string;
   dealValueAmount: string;
+  /**
+   * ⚠ RETIRED, NOT REMOVED (OCPI-18). No input renders this any more, and no
+   *   paper prints it. It stays in the draft — with its default, label,
+   *   `draftFromDeal` and `payloadFromDraft` entries — so the 23 deals that
+   *   recorded an answer round-trip it byte-identically through an edit instead
+   *   of being silently cleared. Same shape as `otherCommitments` below.
+   */
   paymentType: string;
   paymentTerms: string;
   deliveryDate: string;
@@ -249,6 +256,12 @@ export interface QuotationDraft {
   insuranceClauseAgreed: boolean | null;
 
   refNo: string;
+  /**
+   * ⚠ RETIRED, NOT REMOVED (OCPI-18) — see `paymentType` above for the shape and
+   *   the reason. `{{delivery_days}}` was rewritten out of all 21 SALE CONDITIONS
+   *   sections in the same change, so nothing prints it; the 20 deals that
+   *   answered it keep their answer.
+   */
   deliveryDays: string;
   tradeTerm: string;
   machineModelNo: string;
@@ -418,10 +431,29 @@ export const EMPTY_DRAFT: QuotationDraft = {
  *   cannot honour.
  */
 
-export const PAYMENT_TYPES = [
-  { value: "advance", label: "Any Advance" },
-  { value: "credit", label: "On Credit" },
-] as const;
+/*
+  ⚠ `PAYMENT_TYPES` IS RETIRED (OCPI-18, 01-Sep-2026) — Any Advance / On Credit.
+    The client asked for the question to go: "Terms of payment" below it is a
+    free-text box that carries the real answer ("30% advance and rest PDC
+    cheque"), and a two-button summary of it added nothing the paper did not
+    already say better.
+
+    It is deleted rather than left standing because nothing rendered it any more,
+    and a vocabulary with no control behind it is exactly the orphan the FIX-4
+    rule in CLAUDE.md is about. What stays:
+
+      · the `payment_type` COLUMN, and the `paymentType` draft field, default,
+        label and payload entry — additive-only, so the 23 deals that recorded an
+        answer keep it and still round-trip it through an edit;
+      · the `PaymentType` type in types/index.ts, which `OcpiDeal` still reads.
+
+    What went with it: the ChoiceButtons block in Commercial terms, the
+    "Term of Payment" row on the summary sheet, the `missingForSubmit` entry, and
+    the `payment_type is not null` conjunct of fms_ocpi_complete_when_submitted.
+    Removing the form field without the last of those would have left the
+    database demanding an answer the form had stopped asking for, and nothing
+    could have been submitted.
+*/
 
 /**
  * The head of Section C, and the choice everything commercial follows from.
@@ -674,6 +706,26 @@ export const INSURANCE_CLAUSE =
 export const PAYMENT_TERMS_FORMAT =
   "25% advance with the order, 75% against the shipping documents.";
 
+/**
+ * The condition the machine delivery date is given under (OCPI-18, 01-Sep-2026).
+ *
+ * 🔴 THIS SENTENCE PRINTS ON A SIGNED CONTRACT. It is shown under the date on the
+ *    form, printed under the date on the summary sheet, and written into the SALE
+ *    CONDITIONS OF THE SUPPLY clause of all 21 machine decks that have one. The
+ *    form and the contract must state the delivery condition in the SAME WORDS —
+ *    a customer reading two slightly different sentences about when a date starts
+ *    running has two different answers to which one governs.
+ *
+ * ⚠ THERE IS A THIRD COPY, IN SQL, AND THERE HAS TO BE. The 21 template bodies
+ *   hold the sentence as literal text — a migration cannot import a TypeScript
+ *   const. It was written by
+ *   `supabase/migrations/20261102120000_fms_ocpi_delivery_date_on_the_contract.sql`,
+ *   whose post-flight assertion counts 21 bodies carrying this exact string.
+ *   Changing the wording here means a new migration rewriting those 21 bodies;
+ *   changing only one of the two is how the form and the paper drift apart.
+ */
+export const DELIVERY_DATE_REMARK = "Applicable from the date of signing of this contract.";
+
 /*
   ⚠ THERE IS NO GROUP TABLE HERE ANY MORE, AND THAT IS DELIBERATE.
 
@@ -748,7 +800,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   dealValueAmount: "Total deal value (excl. GST)",
   paymentType: "Type of payment",
   paymentTerms: "Terms of payment",
-  deliveryDate: "Machine delivery date (tentative)",
+  deliveryDate: "Tentative machine delivery date",
   transportTerms: "Deal type",
   highSeasVia: "High seas delivery via",
   highSeasCostBy: "High seas cost borne by",
@@ -1212,9 +1264,15 @@ export function missingForSubmit(
   //   Nothing used to require it — not here, and not in the table's
   //   `fms_ocpi_complete_when_submitted` check, which now asks for it too.
   if (isUsdDeal(d) && !d.fxRate.trim()) out.push("the USD to INR rate");
-  if (!d.paymentType) out.push("the type of payment");
+  // ⚠ "the type of payment" WAS HERE (OCPI-18) and had to leave in step with the
+  //   SQL. `fms_ocpi_complete_when_submitted` demanded `payment_type is not null`
+  //   until the same change dropped that conjunct; a form that stopped asking
+  //   while the CHECK still demanded would have raised a raw Postgres violation
+  //   naming no field, on a quotation this list called complete.
   if (!d.paymentTerms.trim()) out.push("the terms of payment");
-  if (!d.deliveryDate) out.push("the machine delivery date");
+  // ⚠ THE DELIVERY DATE STAYS REQUIRED, here and in the CHECK. OCPI-15 owns any
+  //   change to that; OCPI-18 only relabelled the field.
+  if (!d.deliveryDate) out.push("the tentative machine delivery date");
 
   return out;
 }
@@ -1245,7 +1303,12 @@ export function missingForDetailSheet(
   //   a machine whose warranty is NULL means NOT APPLICABLE, so the question is
   //   not asked and no line is printed. Either way, warning a salesperson about
   //   a field they cannot see is a warning they cannot act on.
-  if (!d.deliveryDays.trim()) out.push(FIELD_LABEL.deliveryDays);
+  // ⚠ THE DELIVERY DAYS WARNING IS GONE (OCPI-18) because the line it warned
+  //   about is gone. `{{delivery_days}}` sat in the SALE CONDITIONS clause of 21
+  //   decks; the same change rewrote all 21 to carry the delivery DATE and its
+  //   condition instead, so there is no longer a sheet line for a blank
+  //   delivery-days answer to rule. The delivery TERM below is a different field
+  //   and still prints — see the note on it in QuotationForm.tsx.
   if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
 
   /*

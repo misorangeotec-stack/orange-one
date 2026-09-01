@@ -14,8 +14,8 @@ import { isVisible } from "../lib/branching";
 import { useSalespeople } from "../lib/useSalespeople";
 import { fmtDealValue } from "../lib/format";
 import {
-  COST_BEARERS, CURRENCIES, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA,
-  HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TERMS_FORMAT, PAYMENT_TYPES,
+  COST_BEARERS, CURRENCIES, DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, HEAD_SHIP_MODES,
+  HEAD_SHIP_VIA, HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TERMS_FORMAT,
   PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
@@ -2167,32 +2167,35 @@ export default function QuotationForm({
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FieldLabel label="Type of payment">
-            <ChoiceButtons
-              value={draft.paymentType}
-              onChange={(v) => patch({ paymentType: v })}
-              options={optsKV(PAYMENT_TYPES)}
-              clearable
-              disabled={disabled}
-              ariaLabel="Type of payment"
-            />
-          </FieldLabel>
-          <FieldLabel label="Machine delivery date" hint="tentative, committed to the customer">
-            <TextInput
-              type="date"
-              value={draft.deliveryDate}
-              onChange={(e) => patch({ deliveryDate: e.target.value })}
-              disabled={disabled}
-            />
-          </FieldLabel>
-        </div>
-
         {/*
           ── Delivery, moved up from "Delivery & tax" (OCPI-3, stage G) ─────────
 
-          Both fields sit beside the delivery DATE above, which is what they are
-          about. The block they came from is gone.
+          ⚠ WHAT USED TO BE FOUR FIELDS HERE IS NOW TWO (OCPI-18, 01-Sep-2026),
+            and each of the two that went was accounted for before it went — the
+            FIX-4 rule in CLAUDE.md, applied to a pair of controls rather than a
+            container:
+
+              · Type of payment (Any Advance / On Credit) → REMOVED outright. Its
+                "Term of Payment" row left the summary sheet with it, which the
+                client asked for knowingly: "Terms of payment" below is the
+                free-text box that carries the real answer and prints on both
+                papers. Its `missingForSubmit` entry AND the matching
+                `payment_type is not null` conjunct of the SQL check went at the
+                same time — removing only one of the two would have left the
+                database demanding an answer the form had stopped asking for.
+
+              · Delivery days → REMOVED, but NOT by deletion. `{{delivery_days}}`
+                was live in the SALE CONDITIONS OF THE SUPPLY clause of 21 of the
+                28 machine decks, so deleting the field alone would have printed
+                "Delivery Days: ________" in the delivery clause of a signed
+                contract. Migration 20261102120000 rewrote all 21 sections to
+                carry the delivery DATE and its condition instead — which is the
+                same edit the client's fourth request asked for. Its token, its
+                TOKEN_HELP entry, its Deal Register column and its
+                `missingForDetailSheet` warning went with it.
+
+            Both COLUMNS stay, and both values still round-trip: see the notes on
+            `paymentType` and `deliveryDays` in fieldSpec.ts.
 
           ⚠ THE DELIVERY TERM STAYS — SETTLED WITH THE CLIENT, 29-Aug-2026, and
             recorded here because the instruction that came first said the
@@ -2221,14 +2224,30 @@ export default function QuotationForm({
             as "no change", not as "not done yet".
         */}
         <div className="grid gap-3 sm:grid-cols-2">
-          <FieldLabel label="Delivery days" hint="prints on the detailed sheet">
-            <TextInput
-              value={draft.deliveryDays}
-              onChange={(e) => patch({ deliveryDays: e.target.value })}
-              placeholder="e.g. 45-60 days"
-              disabled={disabled}
-            />
-          </FieldLabel>
+          {/*
+            ⚠ THE REMARK IS OUTSIDE `FieldLabel`, which renders a <label>. Text
+              inside it is part of the label, so a click anywhere on the sentence
+              would open the date picker — and the sentence is a statement about
+              the contract, not a prompt to fill anything in. Same reason the
+              payment-format hint below sits outside its own label.
+
+            ⚠ AND IT IS THE SAME SENTENCE THE CONTRACT CARRIES, from one const.
+              It is written into all 21 SALE CONDITIONS sections and printed on
+              the summary sheet; if the screen and the paper worded the delivery
+              condition differently, a customer would have two answers to which
+              one governs. See DELIVERY_DATE_REMARK in fieldSpec.ts.
+          */}
+          <div>
+            <FieldLabel label="Tentative machine delivery date">
+              <TextInput
+                type="date"
+                value={draft.deliveryDate}
+                onChange={(e) => patch({ deliveryDate: e.target.value })}
+                disabled={disabled}
+              />
+            </FieldLabel>
+            <p className="mt-1 text-[12px] text-grey-2">{DELIVERY_DATE_REMARK}</p>
+          </div>
           <FieldLabel label="Delivery term" hint="prints on the contract">
             <Combobox
               value={draft.tradeTerm}
@@ -2240,7 +2259,6 @@ export default function QuotationForm({
             />
           </FieldLabel>
         </div>
-
         {/*
           ⚠ THE FORMAT IS A HINT UNDER THE BOX, NOT A PLACEHOLDER (OCPI-20). A
             placeholder was already here and did not work: it vanishes the moment

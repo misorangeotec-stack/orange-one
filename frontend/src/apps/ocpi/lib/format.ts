@@ -53,12 +53,51 @@ export function docHeading(deal: OcpiDeal): string {
   return deal.ocNo ? "ORDER CONFIRMATION" : "ORDER QUOTATION";
 }
 
-/** dd-mm-yyyy, the form people here read dates in. */
+/**
+ * A date as the SCREEN shows it — "30 Sept 2026".
+ *
+ * ⚠ THE COMMENT HERE USED TO SAY "dd-mm-yyyy", WHICH IT HAS NEVER PRODUCED.
+ *   `month: "short"` is a name, not a number, and `en-IN` renders September as
+ *   "Sept" rather than "Sep". Corrected while writing OCPI-18, because that
+ *   comment is what a brief was written against: it asked for the new
+ *   `{{delivery_date}}` token to be formatted "dd-mm-yyyy like every other date
+ *   in this module", and no date in this module has ever looked like that.
+ *
+ * Screen and register export use this; anything that lands on a DOCUMENT goes
+ * through `paperDate` below.
+ */
 export function dmy(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/**
+ * A date as the PAPERS print it.
+ *
+ * ⚠ EVERY DATE ON A DOCUMENT COMES THROUGH HERE, and that is worth one function
+ *   even though it currently returns exactly what `dmy` above returns.
+ *
+ *   ocPdf.ts (the contract's "Date:" header) and quotationPdf.ts (the summary
+ *   sheet's) each carried this as a private const, character for character, and
+ *   OCPI-18 was about to add a THIRD copy for the `{{delivery_date}}` token —
+ *   which prints inside the SALE CONDITIONS clause of 21 machine decks, three
+ *   lines under a header the same document draws with the copy in ocPdf.ts. All
+ *   three now import this one.
+ *
+ * ⚠ `en-GB` AND `en-IN` AGREE TODAY, AND THAT IS A COINCIDENCE, NOT A RULE. The
+ *   two locales were checked month by month in Chrome while writing OCPI-18 and
+ *   produce identical output for all twelve — so the copies had NOT drifted, and
+ *   nothing was printing wrongly. They agree because of the CLDR data this
+ *   browser ships; a different runtime, or a later ICU, need not. One definition
+ *   is what stops that ever becoming a document that spells one month two ways.
+ */
+export function paperDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 /**

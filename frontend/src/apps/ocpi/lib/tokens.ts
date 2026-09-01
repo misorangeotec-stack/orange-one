@@ -1,3 +1,4 @@
+import { paperDate } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal } from "../types";
 
 /**
@@ -178,7 +179,34 @@ export function tokensFor({ deal, profile, warranty, warrantyNote }: TokenContex
     //   blank. No live template uses it — checked 01-Sep-2026, 0 of 82 sections.
     ex_works_city: profile?.exWorksCity ?? null,
     bank_block: bank,
-    delivery_days: deal.deliveryDays,
+    /*
+      OCPI-18 · THE DELIVERY DATE REPLACED THE DELIVERY DAYS, on the form and on
+      the contract, and the two halves had to land in this order.
+
+      `{{delivery_days}}` was live in the SALE CONDITIONS OF THE SUPPLY clause of
+      21 of the 28 machine decks. Removing the form field on its own would have
+      printed "Delivery Days: ________" in the delivery clause of a signed
+      document, so the same change rewrites those 21 sections to read
+
+          Tentative Machine Delivery Date: {{delivery_date}}
+          Applicable from the date of signing of this contract.
+
+      ⚠ THIS TOKEN HAD TO EXIST BEFORE THE MIGRATION RAN. A section rewritten to
+        use a token the resolver does not know resolves to `undefined`, which is
+        reported as unresolved and printed as the very ruled blank the change was
+        made to remove.
+
+      ⚠ IT IS FORMATTED, AND WITH THE PAPERS' FORMATTER, NOT THE SCREEN'S. This
+        token prints INSIDE the contract, three lines under a "Date:" header the
+        same document draws with `paperDate`, so it reads through the same
+        function rather than through the screen's `dmy`. The two happen to return
+        identical text today — checked month by month — and `paperDate` carries
+        the note on why that is a coincidence worth not depending on.
+
+        An empty string is not an answer, hence the `|| null` — that is what makes
+        an unanswered date rule a blank instead of printing nothing at all.
+    */
+    delivery_date: paperDate(deal.deliveryDate) || null,
     payment_terms: deal.paymentTerms,
     trade_term: deal.tradeTerm,
     machine_value_inr: money(deal.machineValueInr),
@@ -250,7 +278,7 @@ export const TOKEN_HELP: { token: string; means: string }[] = [
   { token: "heating_medium", means: "how the dryer heats — electric, gas, thermic fluid" },
   { token: "ex_works_city", means: "Ex-Works city of the selling company" },
   { token: "bank_block", means: "the selling company's full bank details" },
-  { token: "delivery_days", means: "committed delivery days" },
+  { token: "delivery_date", means: "the tentative machine delivery date, dd-mmm-yyyy" },
   { token: "payment_terms", means: "the agreed payment terms" },
   { token: "trade_term", means: "Ex-Work / CIF / FOB" },
   { token: "machine_value_inr", means: "machine value in rupees" },
