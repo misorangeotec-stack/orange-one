@@ -7,6 +7,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
+import { filterOptionLabel, filterValueOf, sortFilterOptions } from "@/shared/lib/blankFilter";
 
 /** Per-column filter behaviour. */
 export type ColumnFilter<T> =
@@ -347,7 +348,10 @@ export default function QueueTable<T>({
         return col.filter.get(row).toLowerCase().includes((f as string).trim().toLowerCase());
       case "select":
       case "multiselect":
-        return (f as string[]).includes(col.filter.get(row));
+        // Through `filterValueOf`, so a row with no value here is reachable as
+        // "(Blank)" instead of being unselectable AND silently excluded the
+        // moment any other value is ticked.
+        return (f as string[]).includes(filterValueOf(col.filter.get(row)));
       case "number": {
         const { min, max } = f as { min: string; max: string };
         const v = col.filter.get(row);
@@ -410,10 +414,14 @@ export default function QueueTable<T>({
             if (!matches(other, row)) { reachable = false; break; }
           }
           if (!reachable) continue;
-          const v = c.filter.get(row);
-          if (v) set.add(v);
+          // Blanks are kept as a distinct value rather than dropped, so "which of
+          // these has nothing here?" is answerable. It cascades like every other
+          // value, because this loop has already excluded the rows the OTHER
+          // filters rule out — narrow a queue to rows that all carry a vendor and
+          // the "(Blank)" option disappears from the vendor column.
+          set.add(filterValueOf(c.filter.get(row)));
         }
-        out[c.key] = [...set].sort((a, b) => a.localeCompare(b));
+        out[c.key] = sortFilterOptions([...set], (a, b) => a.localeCompare(b));
       }
     }
     return out;
@@ -531,7 +539,9 @@ export default function QueueTable<T>({
       else if (col.filter.kind === "select" || col.filter.kind === "multiselect") {
         // A single ticked value reads as plain equality — which is what most exports
         // are — rather than a one-item "is one of:" list.
-        const vals = f as string[];
+        // Spelled out, so the About sheet reads `Vendor is "(Blank)"` rather than
+        // the raw sentinel.
+        const vals = (f as string[]).map(filterOptionLabel);
         out.push(vals.length === 1 ? `${col.header} is "${vals[0]}"` : `${col.header} is one of: ${vals.join(", ")}`);
       }
       else if (col.filter.kind === "number") {
@@ -586,7 +596,7 @@ export default function QueueTable<T>({
           <MultiSelect
             values={v}
             onChange={(next) => setFilter(col.key, next)}
-            options={(selectOptions[col.key] ?? []).map((o) => ({ value: o, label: o }))}
+            options={(selectOptions[col.key] ?? []).map((o) => ({ value: o, label: filterOptionLabel(o) }))}
             placeholder="All"
             /* Search is forced ON rather than left to MultiSelect's "more than 6
                options" default. A filter row where some columns can be typed into

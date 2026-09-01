@@ -2019,8 +2019,14 @@ grid: *"Not compared — no template imported: Pengda PD-1700XD-800, Pengda PD-1
       what the machine is?
 - [ ] Where do **Label Printer** and **Book Printer** belong — Other, or a category of their own?
 
-### OCPI-6 · The machine master cannot be read for active vs inactive  `[ ]`
-*Raised 2026-08-31 · Reported by Ritesh Bhai as "creating quite a confusion"*
+### OCPI-6 · The machine master cannot be read for active vs inactive  `[x]` — 01-Sep-2026
+*Raised 2026-08-31 · Reported by Ritesh Bhai as "creating quite a confusion" · **BUILT 01-09-2026**,
+portal-wide in `MasterCrud`, see [OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Build green, verified in the browser on the Machines master AND on Organisation →
+> Departments (23 rows, 11 inactive — the segment reads `All · 23 / Active · 12 / Inactive · 11`).
+> Status moved from the twelfth column to the second: measured, the table is **1748px wide in an
+> 836px window**, so the badge is now visible unscrolled where its old position is not.
 
 Activate / Deactivate works, and every part of it is present — and yet the screen is unreadable, because
 the three pieces sit as far apart as the layout allows.
@@ -2051,25 +2057,34 @@ is no count anywhere of how many of each there are.
 
 #### What to build
 
-- [ ] 1 **A status segment at the top of the master — All · Active · Inactive, each with its count.**
-      Above the table, beside the search box, where nobody has to scroll to reach it. It drives the same
-      `__status` filter that already exists rather than a second parallel one, so the segment and the
-      column filter can never disagree.
-- [ ] 2 **Default the segment to Active**, with the number of hidden rows stated in words beside it
-      (*"3 inactive hidden"*) so the default is honest rather than silent. ⚠ Per CLAUDE.md a
-      filtered-empty table must keep its header and offer a way back — the segment IS that way back.
-- [ ] 3 **Move Status next to the machine code**, or render it as a left border / dimmed row rather than
-      a far-right badge. An inactive row should be recognisable without reading any column.
-- [ ] 4 **Put the Deactivate/Activate control where its result is visible** — either bring the badge left,
-      or have the button itself show the state it will produce.
-- [ ] 5 **Say what it means, once, on the screen**: *"An inactive machine cannot be picked on a new
-      quotation. Deals already raised on it are unaffected."*
-- [ ] 6 Decide whether this is a **`MasterCrud` change for every master** or an OCPI-only one. Machines is
-      the widest master so it hurts most here, but every other masters screen has the same badge in the
-      same place. ⚠ Done in `MasterCrud` it lands on **every** masters screen in the portal at once — that
-      is probably right, but it is a portal-wide change and must be verified on more than one screen.
-- [ ] 7 Verify: `cd frontend && npm run build`, then browse the Machines master and one other master —
-      counts correct, segment and column filter agreeing, inactive rows obvious at a glance
+- [x] 1 **A status segment at the top of the master — All · Active · Inactive, each with its count.**
+      Built as a `PillToggle` first in the toolbar row, above the `Card` so it stays reachable when the
+      body is empty. It holds **no state of its own** — it reads and writes the very same
+      `colFilters.__status` the column dropdown does, proved bidirectionally in the browser (picking
+      *Active* in the dropdown moves the segment, and the reverse). Counts come from the existing
+      `narrow(searched, "__status")` pass, so they cascade with the search and the other columns and cost
+      no extra walk over the rows.
+- [x] 2 **Default the segment to Active**, with *"N inactive hidden"* beside it. On Departments it reads
+      *"11 inactive hidden"*. A **constant**, never seeded from `rows` — the FMS stores load
+      asynchronously, so a lazy initialiser would run against an empty array. Filtered-empty keeps the
+      header, the filter row and *Clear all filters*, and the segment stays on screen throughout.
+- [x] 3 **Status moved to the second column**, immediately left of the master's first column, plus a
+      muted band and a 3px grey leading rule on inactive rows (transparent when live, so nothing shifts).
+      ⚠ Deliberately **not** `opacity` — that would fade the *Activate* link on exactly the rows somebody
+      opened the screen to switch back on.
+- [x] 4 **The badge now sits beside the button**, measured at 0px between the two cells.
+      ⚠ **One consequence worth knowing:** on the default *Active* view, deactivating a row makes it
+      **leave the table** rather than show its new badge — it no longer matches the filter. The feedback
+      is real and immediate (the segment counts move and *"1 inactive hidden"* appears), but the badge
+      itself is only watchable from *All* or *Inactive*.
+- [x] 5 **Said once, under the toolbar.** `statusNote` prop; Machines passes the wording above, and every
+      other master gets a generic default that is true of all of them ("An inactive department cannot be
+      picked on new records. Anything already using it is unaffected.").
+- [x] 6 **Portal-wide, confirmed with the client before building.** Lands on ~50 `MasterCrud` call sites.
+- [x] 7 Verified: build green; Machines and Organisation → Departments both checked; segment and column
+      filter proved to agree in both directions; a `Book Printer` deactivate → activate round trip left
+      the row `active = true`, confirmed in SQL. **A defect was found by this check and fixed** — see the
+      `statusOptions` note in OCPI.md.
 
 **Not in scope:** the Activate/Deactivate mechanism itself, which works. This is legibility only.
 
@@ -2413,8 +2428,14 @@ there is no Italian one. Correct me if a fourth category is actually wanted.
       and went). `+ Other` was verified opening the request modal locked to *Dryer type*, then removed
       the same day — see 2.1a. Test data deleted, zero residue
 
-### OCPI-9 · Blank values cannot be filtered for — on the machines master and every other grid  `[ ]`
-*Raised 2026-08-31 · Reported by Ritesh Bhai · ships with **OCPI-6**, same file, same decision*
+### OCPI-9 · Blank values cannot be filtered for — on the machines master and every other grid  `[x]` — 01-Sep-2026
+*Raised 2026-08-31 · Reported by Ritesh Bhai · shipped with **OCPI-6** · **BUILT 01-09-2026**, see
+[OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Blanks are a first-class filter value in both shared grids, defined once in
+> `shared/lib/blankFilter.ts`. On the machines master *Billing name → (Blank)* returns **exactly the
+> 6 machines** SQL says have none — by name, not just by count. ⚠ **WORKLIST said seven; it is six**
+> (Fab Pro 2I, Fab Pro 3I, JP7, JPK, KoloRado Alpha 3 — 12 heads, Mini Lario).
 
 "Which machines have no billing name?" is unanswerable from the machines master today. There is no
 **(Blank)** entry in any filter dropdown, so the rows that are missing a value are the ones you cannot
@@ -2435,22 +2456,34 @@ the blank case and three did not, which is exactly why **the fix belongs in the 
 each column**. Left per-column, the next new column will get it wrong again.
 
 **What to build**
-- [ ] 1 In `MasterCrud`, keep blanks as a distinct value rather than dropping them: a row with no value
-      offers a **(Blank)** option, and picking it returns exactly those rows.
-- [ ] 2 The option only appears when blanks actually exist in the rows the other filters still allow —
-      it must cascade like every other value, per CLAUDE.md's cascading-filters rule.
-- [ ] 3 Sort **(Blank)** to the top or bottom deliberately, not alphabetically into the middle of the list.
-- [ ] 4 Same treatment in **`QueueTable`** — every FMS queue has the same gap, and CLAUDE.md's grid rules
-      are portal-wide by design. ⚠ Verify how each derives its values: `QueueTable` and `MasterCrud`
-      both fall back to `nodeText`, and a column with no explicit `filter.get` renders the em-dash
-      placeholder `—`, which would currently show up as a filter value spelled "—". Whichever way it
-      lands, a blank must read the same in both components — not "(Blank)" in one and "—" in the other.
-- [ ] 5 Once central, drop the hand-rolled workarounds: the Dryer column's `"Not set"` can stay if the
-      client prefers that wording, but it should be a deliberate label, not a workaround for a missing
-      feature.
-- [ ] 6 Verify: `cd frontend && npm run build`; on the machines master filter Billing name to (Blank) and
-      confirm the count matches the seven machines known to have none; check one queue elsewhere in the
-      portal for the same behaviour.
+- [x] 1 `MasterCrud`'s `colValue` no longer ends `.filter(Boolean)` — a row with nothing left carries a
+      `BLANK_VALUE` sentinel, so it offers **(Blank)** and picking it returns exactly those rows.
+      `narrow` needed **no change**: `.some` was always false on the empty array, which is what made
+      blanks unselectable *and* silently excluded; the sentinel fixes both halves at once.
+- [x] 2 **Cascades**, because the options are built from `narrow(searched, header)`, which already
+      excludes the column's own filter. Proved: Category → *Other* (4 machines, none blank) makes
+      **(Blank) disappear** from Billing name. And picking a normal value no longer drops rows blank in
+      a *different* column — two rows with no Model no. survived a Category filter.
+- [x] 3 **Pinned last, deliberately**, by `sortFilterOptions`, matching MasterCrud's existing
+      "blanks last in BOTH directions" sort rule.
+- [x] 4 Same treatment in `QueueTable` (`selectOptions`, `matches`, the dropdown labels and the export's
+      About sheet). ⚠ **The note here was half right and the correction matters:** `QueueTable` has **no
+      `nodeText` fallback** — a column with no `filter` gets no filter box at all — so only `MasterCrud`
+      derives values from rendered text, and only there is an em-dash *invented*. Settled with the
+      client: **"" / null / undefined → (Blank) in both components**, an em-dash the component invented
+      is stripped, and an em-dash an **author wrote** is left alone (77 sites; on a few it means
+      something else entirely — Dispatch's hold column reads "On hold" / "—" where the dash means NOT
+      held). Verified outside OCPI on Dispatch → Orders: the authored `—` is still spelled `—`, still
+      selects, and returns 58 of 921 orders — matching SQL exactly.
+- [x] 5 **Dryer's hand-rolled `"Not set"` dropped**, so all four affected columns on that table read
+      **(Blank)**. ⚠ Unobservable on today's data and said plainly rather than claimed: all 28 machines
+      carry a dryer answer (`needs_dryer is null` = 0), so that column has no blank to show either way.
+      The literal "Not set" is gone from the dropdown, which is what was checked.
+- [x] 6 Verified: build green; Billing name → (Blank) cross-checked against SQL **by row name**; the
+      cascade proved by making the option disappear; one queue outside OCPI checked. **Audit finding
+      folded in:** the sentinel would have silently broken blanks-last sorting on every column with no
+      explicit `sortValue` — caught before shipping, fixed, and re-proved in the browser ascending *and*
+      descending.
 
 ### OCPI-10 · Section B becomes seven pointers plus Others — the four extras move in and stop being gated  `[x]` — 31-Aug-2026
 *Raised 2026-08-31 · Asked for by Ritesh Bhai · **sequence AFTER OCPI-7** — same card, same file*

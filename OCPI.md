@@ -2658,3 +2658,109 @@ than a code one. Flagged, not fixed.
 📋 **The six placeholder dryer names are now indistinguishable from real ones.** See the placeholder
 note earlier in this file for the delete-by-name replacement. Getting Bushra's real list matters more
 than it did yesterday.
+
+---
+
+# OCPI-6 + OCPI-9 — the machine master reads for status, and blanks can be filtered for
+*Built 01-09-2026 · both raised 31-08-2026 by Ritesh Bhai · shipped together because they are the
+same two shared files*
+
+Both complaints landed on the OCPI machines master and **neither was an OCPI bug**. They were faults
+in `shared/components/ui/MasterCrud.tsx` and `shared/components/ui/QueueTable.tsx`, so the fix is
+portal-wide: ~50 masters screens and ~104 queues inherit it. Confirmed with the client before
+building, along with three other decisions.
+
+## The four decisions taken before a line was written
+
+1. **Portal-wide, both parts.** An OCPI-only fix would have meant forking a shared component.
+2. **Only true empties become `(Blank)`.** `""` / `null` / `undefined`, in both components. An
+   em-dash an **author wrote** into their own `filter.get` is left alone — on a few queues it does not
+   mean "blank" at all (Dispatch's hold column reads `"On hold" : "—"`, where the dash means *not
+   held*). An em-dash **`MasterCrud` invented** from the rendered cell is stripped, because there it
+   is a rendering placeholder rather than a value anyone chose. That distinction is what makes a blank
+   read identically in both grids.
+3. **Dryer's hand-rolled `"Not set"` folded into `(Blank)`** — one vocabulary per screen.
+4. **The export keeps following the screen and now says so.**
+
+## What was built
+
+- **`shared/lib/blankFilter.ts` (new)** — one definition of what a blank is: a `BLANK_VALUE` sentinel
+  (a NUL-prefixed string, so it cannot collide with real data), the `(Blank)` label, and
+  `sortFilterOptions`, which pins it **last** and takes the comparator so each grid keeps its own
+  collation and none of the ~340 existing dropdowns reorder.
+- **`MasterCrud`** — blank-aware column values; the status segment (`PillToggle`, counts in the label)
+  driving the **existing** `__status` filter; default Active with *"N inactive hidden"*; Status moved
+  from last column to second; muted band + leading rule on inactive rows; `statusNote`; and an export
+  About sheet that now names every active filter.
+- **`QueueTable`** — the same blank handling in its three spellings (`selectOptions`, `matches`,
+  `filterSummary`) plus the dropdown labels.
+- **Two per-column corrections** — Machines' Dryer, and hr-recruitment's *Drive link*, which used `—`
+  to mean **"Not allowed"** (a real boolean No) while the column directly above it rendered a plain
+  Yes/No. Fixed in place rather than bending the central rule around it.
+
+## What the audit caught before shipping
+
+🔴 **The sentinel would have silently broken sorting on ~50 masters.** `filtered`'s `valueOf` reads the
+same `colCache` the filters read, and its blanks-last rule tests `av === ""`. With a blank row now
+carrying the sentinel, that join returns a non-empty string, the test never fires, and blank rows stop
+sorting last on every column with no explicit `sortValue`. It would have compiled and looked fine on
+any column that happened to be checked. The sort now unmaps the sentinel; re-proved in the browser
+**ascending and descending** (blanks at positions 22–24 both ways).
+
+🔴 **One genuine casualty of the em-dash rule, found by reading every `—` cell in every master** — the
+*Drive link* column above. Nine others genuinely mean "no value" and read correctly as `(Blank)`.
+
+✅ **The export→edit→import round trip is safe under an active-only default** — checked rather than
+assumed: `buildExportColumns` emits an `Active` column (confirmed in the generated .xlsx), and the
+import only writes rows the sheet holds, so omitted rows are untouched.
+
+✅ **The default must be a constant, never seeded from `rows`** — the FMS stores load asynchronously,
+so a lazy initialiser would run against an empty array.
+
+## The defect the browser check found, which no build would have
+
+⚠ **The segment and the column dropdown disagreed on a zero-count status.** With Category narrowed to
+rows that are all live, clicking `Inactive · 0` left the dropdown reading **"Any"** while the segment
+read *Inactive* — two controls saying different things about one piece of state, which is the exact
+failure the segment exists to prevent. Cause: `statusOptions` hid a status with no rows, and
+`MultiSelect` resolves its trigger label by looking the selection up in `options`, so a missing value
+renders as the placeholder while still filtering. **A filter must never hide the value that is
+currently selected.** Fixed: a picked status is always offered. The cascade cannot produce this on an
+ordinary column — a column's dropdown only offers reachable values — but the segment is a *second* way
+into this one and can pick what the dropdown would not have shown.
+
+## Verified
+
+- `npm run build` green; `receivables-hub` still type-clean.
+- **Machines master** — *Billing name → (Blank)* returns **exactly the 6** machines SQL says have none,
+  matched **by name**: Fab Pro 2I, Fab Pro 3I, JP7, JPK, KoloRado Alpha 3 — 12 heads, Mini Lario.
+  ⚠ **WORKLIST said seven. It is six.**
+- **The cascade proved by disappearance** — Category → *Other* (4 machines, all with a billing name)
+  removes `(Blank)` from Billing name. Category itself offers `(Blank)` for the 2 machines with no
+  category.
+- **Blanks in other columns are no longer collateral** — two rows with no Model no. survive a Category
+  filter.
+- **Status is reachable without scrolling, measured** — the table is **1748px wide in an 836px
+  window**. The badge is in view unscrolled; the position it used to occupy is not.
+- **Outside OCPI, masters** — Organisation → Departments: `All · 23 / Active · 12 / Inactive · 11`,
+  matching SQL, with *"11 inactive hidden"* and the generic note.
+- **Outside OCPI, a queue** — Dispatch → Orders: the authored `—` is still `—` (no `(Blank)`), still
+  selects, and returns **58 of 921**, matching SQL. (An earlier query said 57 of 920 — the live
+  database gained an order between the two reads, not a bug.)
+- **Export** — About sheet now records `Filters applied: Status: Active`.
+- **Live round trip** — `Book Printer` deactivated then re-activated; SQL confirms `active = true`.
+  **Zero residue.**
+
+## Open / worth knowing
+
+⚠ **Deactivating from the default *Active* view makes the row leave the table** rather than show its
+new badge — it no longer matches the filter. The feedback is real (the segment counts move and
+*"N inactive hidden"* appears), but the badge itself is only watchable from *All* or *Inactive*.
+
+⚠ **Dryer's `(Blank)` is unobservable today.** All 28 machines carry a dryer answer, so that column has
+no blank to show. What was checked is that the literal "Not set" is gone.
+
+📋 **Pre-existing, flagged not fixed:** office-supplies' Department cell renders a `retired` badge
+inside the name, so its derived filter value reads `"Ink Manufacturing retired"`; and
+`QueueTable.groups` lists only rows with a non-null group id, so ungrouped rows are reachable under
+*All* but not selectable.

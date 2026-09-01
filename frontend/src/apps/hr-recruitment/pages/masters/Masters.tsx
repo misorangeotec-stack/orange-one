@@ -373,7 +373,10 @@ function OnboardingItemsMaster() {
     },
     {
       header: "Drive link",
-      render: (r) => (r.allowsLink ? <span className="text-navy">Allowed</span> : <span className="text-grey-2">—</span>),
+      // "No", not "—": this is a real answer, not a missing one. The dash read as
+      // a blank to the filter row (and to anyone scanning the column), while the
+      // "Needs a file" column directly above already renders a plain Yes / No.
+      render: (r) => (r.allowsLink ? <span className="text-navy">Allowed</span> : <span className="text-grey-2">No</span>),
       className: "w-28",
     },
     {
