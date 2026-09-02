@@ -14,9 +14,10 @@ import {
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
 import { docHeading } from "../../lib/format";
 import {
-  EMPTY_DRAFT, dealFacts, draftFromDeal, missingForSubmit, payloadFromDraft,
+  EMPTY_DRAFT, dealFacts, draftFromDeal, factsForDeal, payloadFromDraft,
   type QuotationDraft,
 } from "../../lib/fieldSpec";
+import { missingForGenerate, missingForSubmit } from "../../lib/completeness";
 
 /**
  * The quotation form's state, and the one place that knows how to save it.
@@ -76,7 +77,7 @@ export function useQuotationDraft(dealId?: string) {
     if (seeded.current) return;
     if (dealId) {
       if (!existing) return; // still loading
-      setDraft(draftFromDeal(existing));
+      setDraft(draftFromDeal(existing, String(s.config.defaultGstRate)));
       seeded.current = true;
       return;
     }
@@ -107,6 +108,9 @@ export function useQuotationDraft(dealId?: string) {
       ...EMPTY_DRAFT,
       salespersonName: me?.name ?? "",
       salespersonUserId: me?.id ?? "",
+      // OCPI-29 · the rate is no longer typed, so it is seeded from the config
+      // row rather than from the literal in EMPTY_DRAFT.
+      gstRate: String(s.config.defaultGstRate),
     });
     seeded.current = true;
   }, [dealId, existing, s, salespeople, rosterLoading]);
@@ -116,20 +120,57 @@ export function useQuotationDraft(dealId?: string) {
     setSavedAt(null);
   }, []);
 
+  /**
+   * The GST rate, guaranteed present before a payload is built (OCPI-29).
+   *
+   * 🔴 `fms_ocpi_write_oc` DERIVES THE TAX FROM THE PAYLOAD, NOT FROM THE CONFIG:
+   *      v_rate := case when v_transport = 'high_seas' then null
+   *                     else nullif(p->>'gst_rate', '')::numeric end;
+   *    so an empty `gst_rate` on an Others deal does not fall back to 18 — it
+   *    derives a NULL amount, drops the tax row from both papers and understates
+   *    the total by 18%, with nothing on screen to notice. The form stopped
+   *    asking for the rate; it must not stop SENDING it.
+   *
+   * ⚠ IT RUNS BEFORE `clearHidden`, never after. High Seas still has to end up
+   *   with nothing — `clearHidden` blanks the field and the RPC nulls it again —
+   *   and reversing the order would put a rate back on a contract that legally
+   *   attracts none.
+   */
+  const withGstRate = useCallback(
+    (d: QuotationDraft): QuotationDraft =>
+      d.gstRate.trim() ? d : { ...d, gstRate: String(s.config.defaultGstRate) },
+    [s],
+  );
+
   /*
     ⚠ THE FACTS GO IN TOO (OCPI-14). The centering inclusion is required only on
       a category that asks for it; without this, `missingForSubmit` would fall
       back to `NO_DEAL_FACTS` — the OPEN set — and block every Sublimation deal
       on a question its own form never shows.
   */
+  const facts = useMemo(
+    () => dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
+    [s, draft.dryerType, draft.machineCategoryId],
+  );
+  const headOptions = s.headsFor(draft.machineId || null).length;
+
+  /**
+   * TWO LISTS, TWO STRENGTHS (OCPI-15).
+   *
+   * ⚠ THEY ARE NOT ALTERNATIVES — `missing` is a SUPERSET of `missingToGenerate`.
+   *   The panel at Send for approval has to name everything still outstanding,
+   *   not only the part that was allowed through at Generate.
+   */
+  /** Blocks Send for approval. Every answer a finished quotation carries. */
   const missing = useMemo(
-    () =>
-      missingForSubmit(
-        draft,
-        dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
-        s.headsFor(draft.machineId || null).length,
-      ),
-    [draft, s],
+    () => missingForSubmit(draft, facts, headOptions),
+    [draft, facts, headOptions],
+  );
+
+  /** Blocks Generate. The seven without which the customer's PDF is unusable. */
+  const missingToGenerate = useMemo(
+    () => missingForGenerate(draft, facts, headOptions),
+    [draft, facts, headOptions],
   );
 
   const save = useCallback(async (): Promise<string | null> => {
@@ -138,7 +179,8 @@ export function useQuotationDraft(dealId?: string) {
     try {
       const payload = payloadFromDraft(
         clearHidden(
-          draft,
+          // ⚠ withGstRate FIRST, clearHidden SECOND — see withGstRate.
+          withGstRate(draft),
           dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
         ),
       );
@@ -153,7 +195,7 @@ export function useQuotationDraft(dealId?: string) {
     } finally {
       setBusy(false);
     }
-  }, [draft, savedId, s]);
+  }, [draft, savedId, s, withGstRate]);
 
   /**
    * Save, then freeze a revision and produce the PDF.
@@ -172,7 +214,8 @@ export function useQuotationDraft(dealId?: string) {
     try {
       const payload = payloadFromDraft(
         clearHidden(
-          draft,
+          // ⚠ withGstRate FIRST, clearHidden SECOND — see withGstRate.
+          withGstRate(draft),
           dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
         ),
       );
@@ -231,7 +274,16 @@ export function useQuotationDraft(dealId?: string) {
       */
       const ocDocumentPayload =
         machine && machine.hasTemplate
-          ? resolvedOcDocument({ deal: saved, machine, sections, profile, validityDays, warranty, warrantyNote })
+          ? resolvedOcDocument({
+              deal: saved,
+              machine,
+              sections,
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, saved, machine),
+              profile,
+              validityDays,
+              warranty,
+              warrantyNote,
+            })
           : {};
 
       const versionNo = await generateWrite(id, payload, documentPayload, ocDocumentPayload);
@@ -249,12 +301,21 @@ export function useQuotationDraft(dealId?: string) {
         machine,
         profile,
         versionNo,
-        facts: dealFacts(s.dryerTypes, rendered.dryerType ?? "", s.machineCategories, rendered.machineCategoryId ?? ""),
+        facts: factsForDeal(s.dryerTypes, s.machineCategories, rendered, machine),
         warrantyNote,
       });
       const detail =
         machine && machine.hasTemplate
-          ? await ocPdfBlob({ deal: rendered, machine, sections, profile, validityDays, warranty, warrantyNote })
+          ? await ocPdfBlob({
+              deal: rendered,
+              machine,
+              sections,
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, rendered, machine),
+              profile,
+              validityDays,
+              warranty,
+              warrantyNote,
+            })
           : null;
 
       // A failed upload does not unwind the revision: it is already frozen, and
@@ -295,7 +356,7 @@ export function useQuotationDraft(dealId?: string) {
     } finally {
       setBusy(false);
     }
-  }, [draft, savedId, s]);
+  }, [draft, savedId, s, withGstRate]);
 
   return {
     draft,
@@ -307,6 +368,7 @@ export function useQuotationDraft(dealId?: string) {
     savedId,
     savedAt,
     missing,
+    missingToGenerate,
     /** True once the row exists in the database. */
     isPersisted: !!savedId,
     /** The row, when editing an existing draft. */

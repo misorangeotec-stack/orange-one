@@ -4,8 +4,10 @@ import {
   setDraw, setFill, text, widthOf, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { resolve, tokensFor } from "./tokens";
-import { docHeading } from "./format";
+import { tokensFor } from "./tokens";
+import { conditionsFor, render, type Conditions } from "./conditions";
+import { isUsdDealRow, type DealFacts } from "./fieldSpec";
+import { docHeading, paperDate } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection } from "../types";
 
 /**
@@ -37,6 +39,27 @@ export interface OcDocInput {
   deal: OcpiDeal;
   machine: OcpiMachine;
   sections: OcpiMachineSection[];
+  /**
+   * What this deal carries — the input to every `[[if …]]` in the template.
+   *
+   * 🔴 REQUIRED, AND NOT OPTIONAL LIKE `warranty` AND `profile` BESIDE IT
+   *    (OCPI-31). Everything else here fails visibly when a caller forgets it: a
+   *    missing profile prints no bank block, a missing warranty prints a ruled
+   *    blank. These flags decide whether the contract SELLS A DRYER, so a
+   *    forgotten caller would print a plausible, wrong document. The module's
+   *    `NO_DEAL_FACTS` open default is right where the cost of forgetting is
+   *    "nothing is hidden"; here it is "the customer signs for equipment they are
+   *    not buying", so the compiler is made to ask instead.
+   *
+   *    All four `ocPdfBlob` call sites already computed these for the SUMMARY
+   *    sheet a few lines earlier and simply did not pass them on — including the
+   *    two rebuild-from-template paths nobody looks at. Requiring it is what
+   *    turned that from a thing to remember into a build error.
+   *
+   * ⚠ BUILD IT WITH `factsForDeal`, NOT `dealFacts` — the machine's own category
+   *   is the fallback on the render side, mirroring the SQL's `coalesce`.
+   */
+  facts: DealFacts;
   profile?: OcpiCompanyProfile;
   /** From module config, for the {{quotation_validity_days}} token. */
   validityDays?: number;
@@ -47,13 +70,11 @@ export interface OcDocInput {
   warrantyNote?: string;
 }
 
-const dmy = (iso: string | null): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-};
+// ⚠ THE PRIVATE `dmy` CONST IS GONE (OCPI-18) — it is `paperDate` in format.ts
+//   now, byte-for-byte the same function, imported instead of copied. It was one
+//   of three identical copies; the third was about to be written for the
+//   `{{delivery_date}}` token. Nothing was printing wrongly — see `paperDate`.
+const dmy = paperDate;
 
 const inr = (n: number | null): string =>
   n === null ? "" : `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -176,6 +197,88 @@ export function optionalExtras(d: OcpiDeal): string[] {
 }
 
 /**
+ * Everything the template is resolved against, built once.
+ *
+ * ⚠ THE TWO RENDERERS USED TO BUILD THE TOKEN TABLE SEPARATELY, in two
+ *   byte-identical blocks that nothing stopped from drifting. Adding a second
+ *   table beside it — the conditions — would have made that two things to keep
+ *   in step in two places, so it is one function now. The snapshot and the paper
+ *   are resolved against the same values by construction.
+ */
+function docContext(input: OcDocInput): { tokens: Record<string, string | null>; conditions: Conditions } {
+  const { deal, profile } = input;
+  return {
+    tokens: {
+      ...tokensFor({ deal, profile, warranty: input.warranty, warrantyNote: input.warrantyNote }),
+      quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
+    },
+    conditions: conditionsFor({ deal, facts: input.facts }),
+  };
+}
+
+/**
+ * The specification table as it will print.
+ *
+ * ⚠ A ROW A CONDITION EMPTIED IS REMOVED, NOT LEFT BLANK (OCPI-31). Five
+ *   machines carry a whole `Dryer` row — "Dryer | Oil + Electric" — and jsPDF's
+ *   `splitTextToSize("")` returns one empty line rather than none, so an emptied
+ *   value would draw a fully bordered row labelled "Dryer" with nothing beside
+ *   it. `emptied` is only ever true where the template said something and a
+ *   condition took it away: `resolve()` cannot shrink a non-empty string to
+ *   empty, because an unanswered token becomes a ruled blank. Checked live —
+ *   no machine has an empty spec-row value, so this can only fire on purpose.
+ *
+ * ⚠ LABELS ARE STILL NOT TOKENISED, exactly as before. That is a pre-existing
+ *   gap (a `{{token}}` in a label prints its braces) and no machine has one; it
+ *   is not this change's to close, and the whole-row case is carried by the
+ *   value.
+ */
+function renderSpecRows(
+  rows: { label: string; value: string }[],
+  tokens: Record<string, string | null>,
+  conditions: Conditions,
+): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  for (const r of rows) {
+    const done = render(r.value ?? "", tokens, conditions);
+    if (done.emptied) continue;
+    out.push({ label: r.label, value: done.text });
+  }
+  return out;
+}
+
+/**
+ * The composition bullets as they will print.
+ *
+ * 🔴 THE SNAPSHOT DID NOT RESOLVE THESE AND THE PAGE DID, which was invisible
+ *    only because no bullet held a token. A conditional bullet — Rocket's
+ *    "Dryer System" is one — would have been frozen as its own markup while the
+ *    paper dropped it, so the archive and the contract would describe different
+ *    machines. One function, both callers.
+ *
+ * ⚠ THE DEAL'S OWN EXTRAS ARE APPENDED UNRESOLVED, and that is deliberate. They
+ *   are free text a salesperson typed — "External Centring Device — 2 x rail,
+ *   1.9m", the Others box — and running template syntax over deal data is the
+ *   one thing `render`'s header forbids. The page used to resolve them by
+ *   accident; no deal carries a token or a marker in those fields, so nothing
+ *   printed changes.
+ */
+function renderComposition(
+  machine: OcpiMachine,
+  deal: OcpiDeal,
+  tokens: Record<string, string | null>,
+  conditions: Conditions,
+): string[] {
+  const out: string[] = [];
+  for (const item of machine.composition) {
+    const done = render(item, tokens, conditions);
+    if (done.emptied) continue;
+    out.push(done.text);
+  }
+  return [...out, ...optionalExtras(deal)];
+}
+
+/**
  * The document as plain data — what gets frozen onto the deal.
  *
  * Built here rather than in the caller so the snapshot and the PDF are produced
@@ -183,10 +286,7 @@ export function optionalExtras(d: OcpiDeal): string[] {
  */
 export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
   const { deal, machine, sections, profile } = input;
-  const tokens = {
-    ...tokensFor({ deal, profile, warranty: input.warranty, warrantyNote: input.warrantyNote }),
-    quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
-  };
+  const { tokens, conditions } = docContext(input);
   return {
     doc_title: docHeading(deal),
     oc_no: deal.ocNo,
@@ -200,20 +300,28 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
     */
     machine_name: machine.name,
     machine_billing_name: machine.billingName,
-    intro_text: machine.introText ? resolve(machine.introText, tokens).text : null,
+    intro_text: machine.introText ? render(machine.introText, tokens, conditions).text : null,
     header_fields: machine.headerFields,
     signoff_style: machine.signoffStyle,
-    spec_rows: machine.specRows.map((r) => ({
-      label: r.label,
-      value: resolve(r.value ?? "", tokens).text,
-    })),
-    composition: [...machine.composition, ...optionalExtras(deal)],
-    supply_description: machine.supplyDescription ? resolve(machine.supplyDescription, tokens).text : null,
+    spec_rows: renderSpecRows(machine.specRows, tokens, conditions),
+    composition: renderComposition(machine, deal, tokens, conditions),
+    supply_description: machine.supplyDescription
+      ? render(machine.supplyDescription, tokens, conditions).text
+      : null,
     sections: sections.map((s) => ({
       key: s.key,
       title: s.title,
-      body: resolve(s.body ?? "", tokens).text,
+      body: render(s.body ?? "", tokens, conditions).text,
     })),
+    /*
+      ⚠ WHY THE CLAUSE WAS LEFT OUT IS PART OF THE RECORD (OCPI-31 / OCPI-33).
+        The same argument the money block below makes for the currency and the
+        rate: a snapshot that cannot afterwards say whether this contract was
+        printed with a dryer, a centering device or a dollar clause cannot answer
+        the one question a dispute about those words would turn on. Three
+        booleans, frozen beside the money they belong with.
+    */
+    conditions,
     /*
       ⚠ THE CURRENCY AND THE RATE ARE PART OF THE MONEY, not context around it.
         A frozen snapshot recording only rupees cannot afterwards say whether the
@@ -279,10 +387,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   const cw = contentW(pdf);
   const left = MARGIN;
 
-  const tokens = {
-    ...tokensFor({ deal, profile, warranty: input.warranty, warrantyNote: input.warrantyNote }),
-    quotation_validity_days: input.validityDays ? String(input.validityDays) : null,
-  };
+  const { tokens, conditions } = docContext(input);
 
   const newPage = (a: LetterheadAssets): number => {
     pdf.addPage();
@@ -342,7 +447,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
 
   // ── Intro ────────────────────────────────────────────────────────────────
   if (machine.introText) {
-    const intro = resolve(machine.introText, tokens).text;
+    const intro = render(machine.introText, tokens, conditions).text;
     const lines = wrapText(pdf, intro, cw, 9);
     y = room(y, lines.length * 11 + 8);
     for (const l of lines) {
@@ -354,8 +459,8 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
 
   // ── Specification table ──────────────────────────────────────────────────
   const LABEL_W = cw * 0.42;
-  for (const spec of machine.specRows) {
-    const value = resolve(spec.value ?? "", tokens).text;
+  for (const spec of renderSpecRows(machine.specRows, tokens, conditions)) {
+    const value = spec.value;
     const labelLines = wrapText(pdf, spec.label, LABEL_W - 12, 8.5, true);
     // Values carry newlines on the electrical rows; honour them.
     const valueLines = value
@@ -375,13 +480,13 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   y += 14;
 
   // ── Composition ──────────────────────────────────────────────────────────
-  const composition = [...machine.composition, ...optionalExtras(deal)];
+  const composition = renderComposition(machine, deal, tokens, conditions);
   if (composition.length > 0) {
     y = room(y, 30);
     text(pdf, "THE MACHINE IS COMPOSED AS FOLLOWS:", left, y, { size: 9.5, bold: true });
     y += 14;
     for (const item of composition) {
-      const lines = wrapText(pdf, resolve(item, tokens).text, cw - 14, 8.5);
+      const lines = wrapText(pdf, item, cw - 14, 8.5);
       y = room(y, lines.length * 11 + 2);
       setFill(pdf, BRAND.orange);
       pdf.circle(left + 3, y - 2.6, 1.4, "F");
@@ -396,7 +501,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   text(pdf, "TOTAL NET AMOUNT OF THE SUPPLY", left, y, { size: 9.5, bold: true });
   y += 14;
   if (machine.supplyDescription) {
-    const lines = wrapText(pdf, resolve(machine.supplyDescription, tokens).text, cw, 8.5);
+    const lines = wrapText(pdf, render(machine.supplyDescription, tokens, conditions).text, cw, 8.5);
     y = room(y, lines.length * 11 + 4);
     for (const l of lines) {
       text(pdf, l, left, y, { size: 8.5 });
@@ -416,7 +521,10 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
       one frozen onto this revision, never today's.
   */
   const moneyRows: [string, string, boolean][] = [];
-  if (deal.dealValueCurrency === "USD") {
+  // ⚠ ONE PREDICATE WITH THE `usd` TEMPLATE CONDITION (OCPI-33) — see
+  //   `isUsdDealRow`. The forex clause prints a few inches below these rows and
+  //   must not be able to disagree with them about the currency.
+  if (isUsdDealRow(deal)) {
     moneyRows.push(["Machine Value USD", usd(deal.dealValueAmount), false]);
     moneyRows.push([
       deal.fxRate === null
@@ -557,7 +665,7 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
 
   // ── The machine's own sections, in its own order ─────────────────────────
   for (const sec of sections) {
-    const body = resolve(sec.body ?? "", tokens).text;
+    const body = render(sec.body ?? "", tokens, conditions).text;
     y = room(y, 30);
     text(pdf, sec.title.toUpperCase(), left, y, { size: 9.5, bold: true, color: BRAND.navy });
     y += 13;

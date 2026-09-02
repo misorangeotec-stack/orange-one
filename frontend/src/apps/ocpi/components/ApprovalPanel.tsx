@@ -8,7 +8,7 @@ import { useOcpiStore } from "../store";
 import { decideQuotation, freezeOc, uploadOcPdf } from "../data/ocpiWrites";
 import { fetchDealById } from "../data/ocpiFetch";
 import { fetchStoredPdf } from "../lib/docUrls";
-import { dealFacts } from "../lib/fieldSpec";
+import { factsForDeal } from "../lib/fieldSpec";
 import {
   quotationDetailFileName, quotationFileName, quotationPdfBlob,
 } from "../lib/quotationPdf";
@@ -108,7 +108,7 @@ export default function ApprovalPanel({
               machine,
               profile: s.profileFor(deal.companyId),
               versionNo: deal.quotationVersionNo || 1,
-              facts: dealFacts(s.dryerTypes, deal.dryerType ?? "", s.machineCategories, deal.machineCategoryId ?? ""),
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, deal, machine),
               warrantyNote: s.config.warrantyNote,
             }),
           );
@@ -123,6 +123,7 @@ export default function ApprovalPanel({
               deal,
               machine,
               sections: s.sectionsFor(machine.id),
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, deal, machine),
               profile: s.profileFor(deal.companyId),
               validityDays: s.config.quotationValidityDays,
               warranty: s.config.warranty,
@@ -165,7 +166,7 @@ export default function ApprovalPanel({
       machine: m,
       profile,
       versionNo: fresh.quotationVersionNo || 1,
-      facts: dealFacts(s.dryerTypes, fresh.dryerType ?? "", s.machineCategories, fresh.machineCategoryId ?? ""),
+      facts: factsForDeal(s.dryerTypes, s.machineCategories, fresh, m),
       warrantyNote: s.config.warrantyNote,
     });
     const summaryPath = await uploadOcPdf(fresh.id, approvedSummary, ocSummaryFileName(fresh));
@@ -177,6 +178,7 @@ export default function ApprovalPanel({
         deal: fresh,
         machine: m,
         sections: s.sectionsFor(m.id),
+        facts: factsForDeal(s.dryerTypes, s.machineCategories, fresh, m),
         profile,
         validityDays,
         warranty: s.config.warranty,

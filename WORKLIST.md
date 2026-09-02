@@ -3255,7 +3255,7 @@ answers, but it cannot repair the ones already recorded.**
 
 ---
 
-### OCPI-31 · A contract for a machine with NO DRYER still sells a dryer  `[ ]`
+### OCPI-31 · A contract for a machine with NO DRYER still sells a dryer  `[x]` *(migration written, not yet applied)*
 *Found 2026-09-02 by OCPI-12's print audit · **on a document the customer signs***
 
 🔴 **The deal says Not Applicable and the contract still sells a dryer.** OCPI-8 gated the deal-derived
@@ -3280,6 +3280,41 @@ does not include.
 | name a dryer in their spec rows | **10 of 21** |
 | name a **centering system** in `supply_description` | **2 of 21** — K64 and Homer K32 |
 
+#### 🔴 Recounted on the day it was built, and three of those figures were wrong
+
+- **Only 7 of the 9 SELL a dryer.** JPK says `(Without Dryer)` and MP5000 says `without dryer` —
+  unconditionally, so a Direct deal that *does* include a dryer denies one. The mirror defect, fixed in
+  the same pass with `[[if !dryer]]`. JPK's one live deal has an Indian dryer.
+- **Spec rows are 11, not 10** (9 Direct + P8D/P8S), and they come in **two shapes**: five whole `Dryer`
+  rows, and eight dryer LINES buried inside a multi-line `Electrical Voltage` value. A whole-row rule
+  would have missed eight of them.
+- **The centering count of 2 is right, and the recount that said 1 was wrong** — it searched only
+  `centering`. K64 says CENTERING SYSTEM and **Homer K32 says CENTRING DEVICE**. The same trap the entry
+  flags for the forex clause, one line above, in the other spelling.
+
+#### 🔴 And the three sites named above are FIVE
+
+Beyond `supply_description` and `spec_rows`, the same defect lives in a **composition bullet** (Rocket's
+`Dryer System`) and inside a **section body** (Rocket's `SCOPE OF SUPPLY`, a `Dryer System` heading and a
+paragraph describing four drying chambers and oil heating). **Both Rocket deals on record are
+`dryer_type = 'Not Applicable'` and one has been issued** — so this was already live on a signed
+contract, in a place this entry never looked. JPK's whole 14-line `DRYER INFORMATION` section is the
+sixth and is deliberately left: it wants section-level visibility, which is a different mechanism.
+
+#### ⚠ THE MIGRATION MUST NOT RUN UNTIL THE PARSER IS DEPLOYED
+
+`[` and `]` are not in `pdfBrand`'s `GLYPH_FALLBACK` and Poppins carries both, so against the frontend
+currently on `master` these markers print **crisply** on a customer's contract — strictly worse than the
+bug being fixed. OCPI is live and deployed and real deals were raised today, so the order is: **merge and
+deploy the code, confirm it is live, then run the migration.** Same ordering OCPI-18 had to respect for
+`{{delivery_date}}`, in the same direction.
+
+⚠ And once it has run, `replaceSections` is a delete-then-reinsert of whatever the Machine template
+screen is holding, and that screen seeds its state once and never re-seeds. **An admin with that tab open
+across the migration who presses "Save template" silently reverts it for that machine** — sections, spec
+rows and supply description alike. The migration's assertion block is re-runnable as a standalone
+`select` for exactly this reason; run it again the next morning.
+
 The centering half is the same defect: `incl_centering = false` still prints "AND CENTERING SYSTEM".
 
 #### The traps
@@ -3299,15 +3334,27 @@ sheet of a machine that CAN take a dryer is arguably correct even when this deal
 the client whether all three go or only the supply line.
 
 #### Checklist
-- [ ] 0.1 Ask the client: on a no-dryer deal, should the spec rows go too, or only the supply line?
-- [ ] 1.1 Decide the mechanism — token vs conditional section — and write down why
-- [ ] 1.2 The 9 `supply_description` rows, and the centering half on 2 of them
-- [ ] 2.1 Re-render a Not Applicable deal and read the page; the words must be gone
-- [ ] 2.2 Re-render a WITH-dryer deal on the same machine; the words must still be there
+- [x] 0.1 Asked and answered 02-09-2026: **everything the deal would have supplied** goes — the supply
+      line, the spec rows, the composition bullet and Rocket's section block. JPK's whole `DRYER
+      INFORMATION` section stays (it wants section-level visibility, and JPK's only deal has a dryer)
+- [x] 1.1 **An inline `[[if dryer]]…[[/if]]` in the template text**, resolved by `lib/conditions.ts` in
+      the same pass as `{{tokens}}`. A token cannot do it — `resolve()` prints a ruled blank for an
+      empty value, so it could not resolve to nothing without changing `resolve()` anyway. Reasoning in
+      full in OCPI.md and in the file's own header
+- [x] 1.2 ⚠ **WRITTEN AND VERIFIED, NOT YET APPLIED** —
+      `20261104120000_fms_ocpi_the_deal_decides_what_the_template_sells.sql`. 15 guarded UPDATEs: 11
+      supply-line wraps across 9 machines, 5 whole `Dryer` spec rows, 8 dryer lines inside multi-line
+      spec values, 1 composition bullet, 2 section lines, 4 forex clauses. **It must not run until the
+      parser is deployed** — see the entry's own note below
+- [x] 2.1 Rendered headlessly through the real `buildOcPdf` from the live rows and read back with
+      pdf.js: on a no-dryer Homer K32, K64 and Rocket the dryer words are gone from the supply line,
+      the spec table, the composition and SCOPE OF SUPPLY
+- [x] 2.2 And the with-dryer page on the same machine is **byte-identical to today** — checked on Homer
+      K32 (Chinese) and on the real K64 USD deal
 
 ---
 
-### OCPI-32 · The dryer warranty is silently lost, and the screen says it does not exist  `[ ]`
+### OCPI-32 · The dryer warranty is silently lost, and the screen says it does not exist  `[x]`
 *Found 2026-09-02 by OCPI-12's print audit*
 
 🔴 **Fill the form in the natural order and the dryer warranty disappears.** Pick the machine, save the
@@ -3345,15 +3392,38 @@ re-fill side: prefill when the dryer category is chosen, the way `chooseMachine`
 they survive today — but check before assuming.
 
 #### Checklist
-- [ ] 1.1 Re-prefill the dryer warranty when a dryer category is chosen, from the machine master
-- [ ] 1.2 Make the read-out distinguish "none offered" from "not answered"
-- [ ] 1.3 Check the machine and head warranties for the same gap
-- [ ] 2.1 Browser: machine → save → category, and confirm the value survives
-- [ ] 2.2 Re-render and confirm the Dryer Warranty row is back on the summary
+- [x] 1.1 The dryer-category `onChange` fills `dryerWarranty` from the machine master **when the box is
+      empty** — `carry`'s rule — and does it in the SAME patch that sets the category, which is what
+      makes `clearHidden` keep it. The pattern is `CustomerPicker`'s `gstNo` + `gstAvailable`.
+      `clearHidden` is untouched
+- [x] 1.2 `WarrantyReadout` takes the master value and has three states: the value · "Not applicable"
+      when the model genuinely offers none · **"Not on this deal — the model says 12 Months"** when it
+      was lost. ⚠ It is `text-orange`: `text-ryg-amber` was the obvious class and **there is no amber in
+      the palette**, so it would have emitted no rule and rendered as ordinary navy text
+- [x] 1.3 Checked, not assumed: `printerWarranty` and `headWarranty` have **no entry in
+      `PART_A_VISIBILITY`**, so `clearHidden` never reaches them and `fms_ocpi_write_oc:471-472` writes
+      them unconditionally. `headType` — the third thing `chooseMachine` prefills — is ungated too.
+      Proved on the live server: after the save that loses the dryer warranty, both still hold their
+      master values
+- [x] 2.1 ⚠ **Not via the browser** — its profile was in use by the user's own Chrome. Done instead
+      through the app's own `clearHidden` / `dealFacts` / `payloadFromDraft` / `draftFromDeal` against
+      the **real `fms_ocpi_save_draft` RPC**, which tests the claim that actually matters: the value is
+      in the ROW, not just on the screen. The old handler was run too, so the difference is attributable
+      rather than asserted. Throwaway deal deleted
+- [x] 2.2 The row holds `12 Months` after the round trip, so `quotationPdf`'s
+      `.filter(r => r.value.trim() !== "")` keeps the row: 3 warranty rows print, Dryer Warranty
+      among them
+
+#### ⚠ Two live deals still carry the loss
+
+Counted 02-09-2026: **2 deals** whose machine master has a dryer warranty, whose dryer category is real,
+and whose own column is empty. The fix stops new ones; it does not repair a row already written — and it
+deliberately does not, because re-picking the machine is how a person takes the master's answer. They
+need somebody to reopen them. Same shape as OCPI-20's stranded `payment_terms = 'na'`.
 
 ---
 
-### OCPI-33 · The forex clause prints on rupee contracts  `[ ]`
+### OCPI-33 · The forex clause prints on rupee contracts  `[x]` *(migration written, not yet applied)*
 *Found 2026-09-02 by OCPI-12's print audit*
 
 **The summary sheet was fixed for this and the contract was not.** `quotationPdf.ts` prints the dollar
@@ -3372,10 +3442,18 @@ point the summary was corrected for.
 text. If both are fixed, fix them the same way, or the next one will be a third mechanism.
 
 #### Checklist
-- [ ] 0.1 Confirm with the client that a rupee contract should not carry it
-- [ ] 1.1 Decide the mechanism, consistent with OCPI-31
-- [ ] 1.2 The 4 machine sections
-- [ ] 2.1 Render one INR and one USD deal on the same machine and read both pages
+- [x] 0.1 Confirmed 02-09-2026 — USD deals only, matching the summary sheet
+- [x] 1.1 The same mechanism as OCPI-31: `[[if usd]]…[[/if]]`. `isUsdDealRow` is now one exported
+      predicate read by the OC's money rows, the summary's dollar clause and this condition, so the
+      clause and the money printed inches apart on one page cannot disagree about the currency
+- [x] 1.2 ⚠ **WRITTEN AND VERIFIED, NOT YET APPLIED** — in the same migration as OCPI-31. **Exactly 4**,
+      asserted by the migration itself, and each keeps its own wording: two say *"Forex Impact Clause:"*,
+      KoloRado Alpha 3 says *"Forex Clause Impact:"*, and Position Printer's is an unlabelled sentence
+      with no "forex" in it at all — which is why searching for one phrase finds two of four
+- [x] 2.1 Rendered INR and USD on the SAME machine (Rocket) through the real renderer and read both with
+      pdf.js: the clause is on the dollar page only, and the rest of SALE CONDITIONS is intact on both.
+      Position Printer checked separately — its clause is the LAST line of its section, so it exercises
+      the trailing-blank trim rather than the mid-body one
 
 ---
 

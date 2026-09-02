@@ -3156,3 +3156,157 @@ exactly — the one exception is finding 2.
   Rewinding live sequence state was judged riskier than a gap.
 - **One pre-existing orphan was left alone**: an `fms_ocpi_activity` row for QT-M0039
   (`e8eb422a-…`, 01-Sep) whose deal somebody else had already deleted. Not this audit's to clean.
+
+---
+
+# OCPI-31 + OCPI-33 + OCPI-32 — the deal decides what the template sells — 02-Sep-2026
+
+Three defects from OCPI-12's print audit. **31 and 33 were the same bug** — a condition the code already
+knows about, written as unconditional text inside a machine template — so they get one mechanism. 32 is a
+form-state interaction and was built separately.
+
+## The mechanism decision, and why the three obvious options were refused
+
+Machine templates gain an inline conditional, `[[if dryer]] & DRYER[[/if]]`, resolved by the new
+**`lib/conditions.ts`** in the same pass every piece of template text already goes through. The
+vocabulary is closed and small — `dryer`, `centering`, `usd` — with `[[if !x]]` for the mirror case.
+
+**A token was the entry's cheap route and it does not work.** `resolve()` treats an empty value as
+MISSING and prints the ruled blank, so `{{dryer_clause}}` resolving to `""` would print `________` — "no
+renderer change" was never true. For the spec rows the resolver would have had to carry machine-specific
+electrical data (`Dryer：AC380V three phase｜16 kW`) into code. And the forex clause is worded **three
+ways across the four machines that carry it**, so one token flattens four wordings into one — a content
+change to a signed document beyond the fix.
+
+**A conditional SECTION cannot reach two of the five sites.** `supply_description` and `spec_rows` are
+not sections; and the forex clause is one LINE inside a section that must keep printing its transport
+terms, payment terms, insurance and bank block.
+
+**Two supply descriptions per machine** duplicates the most and still reaches neither the spec rows nor
+the forex line.
+
+Only the inline conditional reaches all five sites with one rule, which was the entry's own stated
+requirement: *"pick ONE mechanism and use it for both, or the next occurrence becomes a third."*
+
+### The rules, and the live data behind each
+
+- **Single line only** — the body matcher is `[^\n]`, never `[\s\S]`. This is the load-bearing part: a
+  cross-line matcher would pair a stray marker on line 3 with a close on line 40 and delete thirty-seven
+  lines of a contract. Bounded, the worst mispairing leaves markers on the page, where somebody sees
+  them.
+- **An unknown condition keeps its content** and is reported. Failing open leaves exactly today's
+  wording; failing closed deletes words with no trace. `NO_DEAL_FACTS` makes the same choice for the same
+  reason.
+- **A line that carried a marker and came out empty is dropped**, with a local repair — one blank
+  collapsed where two would remain, and a right-trim when the dropped line was the last. Both halves are
+  needed by real data: **Rocket's dryer paragraph sits between two blank lines**, and **Position
+  Printer's forex sentence is literally the last line of its section**.
+- **A spec row or bullet a condition emptied is dropped, not blanked.** jsPDF's `splitTextToSize("")`
+  returns one empty line rather than none, so an emptied value draws a fully bordered 17pt row labelled
+  *Dryer* with nothing in it. The test is sound because `resolve()` can never shrink a non-empty string
+  to empty.
+- **`facts` is REQUIRED on `OcDocInput`.** The module's open-default doctrine does not transplant here:
+  open means *print equipment the customer is not buying*. All four `ocPdfBlob` call sites already
+  computed the facts for the summary sheet and did not pass them on — including both
+  rebuild-from-template paths. Requiring it turned that into a build error.
+
+## 🔴 Three things the entries had wrong, found by recounting
+
+- **Only 7 of the 9 dryer supply lines SELL one.** JPK's `(Without Dryer)` and MP5000's `without dryer`
+  are unconditional too, so a Direct deal that *does* include a dryer denies it. Fixed in the same pass
+  with `[[if !dryer]]` — which is the only reason negation exists.
+- **The centering count of 2 was right and the recount of 1 was wrong.** It searched only `centering`;
+  **Homer K32 says CENTRING DEVICE**. The same one-phrase trap the entry warns about for the forex
+  clause, in the other spelling.
+- **The three sites are five.** A composition bullet (Rocket's `Dryer System`) and a section body
+  (Rocket's SCOPE OF SUPPLY) carry it too — and **both Rocket deals are `Not Applicable`, one already
+  issued**, so this was live on a signed contract in a place nobody had looked.
+
+## 🔴 Two defects found while building, that the plan would otherwise have shipped
+
+**Nested markers deleted words.** `x[[if dryer]]a[[if usd]]b[[/if]]c[[/if]]y` read as one block whose
+body was `a[[if usd]]b`, so a false `dryer` threw away "a" and "b" — two words gone from a contract with
+only a leftover close-marker to show for it. Caught by the harness before any template used a marker. A
+line whose markers do not nest flatly is now not evaluated at all: markers stripped, every word kept,
+author told.
+
+**`dealFacts` does not coalesce onto the machine's category and the SQL does.**
+`fms_ocpi_write_oc` reads `coalesce(d.machine_category_id, m.category_id)`; none of the nine `dealFacts`
+call sites does. Harmless while these flags only chose which QUESTIONS to ask, and newly dangerous once
+they choose which WORDS a contract prints — a row carrying a machine but no category would have dropped
+the dryer from the paper for a machine that has one. `factsForDeal` now does the coalesce on the render
+side. **Counted first: 0 deals with a machine and no category, 0 active machines without one** — so it is
+a provable no-op today, which is exactly when to add it. The FORM side still does not coalesce and is
+raised, not fixed.
+
+## OCPI-32 — the fix belongs on the re-fill side, and nowhere else
+
+The dryer-category `onChange` now fills `dryerWarranty` from the machine master **when the box is empty**
+— `carry`'s rule — **in the same patch that sets the category**. That last part is what makes it work:
+`clearHidden` reads the draft after the patch, sees a dryer category, and keeps the value it would
+otherwise blank. The pattern is `CustomerPicker`'s `gstNo` + `gstAvailable`.
+
+`clearHidden` was not touched, and could not have been: `fms_ocpi_write_oc:393` nulls the column on
+`not v_has_dryer` whatever the browser sends. **The loss is entirely client-side** — traced through
+`fms_ocpi_save_draft`, the server is willing to store the warranty on the save that follows picking a
+category; the payload simply arrives empty. So OCPI-32 needed no migration at all.
+
+**`WarrantyReadout` gained a third state** — the master value is passed in, so *"this model offers none"*
+and *"we lost it"* stop looking alike. ⚠ It renders in `text-orange`: `text-ryg-amber` was the obvious
+class and **there is no amber in this palette** (`ryg` is red / yellow / green), so it would have emitted
+no rule and shown as ordinary navy text. Two other apps carry that same dead class today.
+
+**The other two warranties were checked, not assumed.** `printerWarranty` and `headWarranty` have no
+entry in `PART_A_VISIBILITY`, so `clearHidden` never reaches them and the SQL writes them
+unconditionally — and both were observed surviving the very save that loses the dryer's.
+
+## How it was verified — no browser, and stronger for it
+
+The Playwright profile was in use by the user's own Chrome, so nothing was driven through the UI. What
+replaced it is closer to the claim being made:
+
+- **The real `buildOcPdf`, run headlessly against the live rows**, once with today's templates and once
+  with the migration applied in memory, and **both pages read back with pdf.js**. Nine order
+  confirmations. The dryer words leave the supply line, the spec table, the composition and SCOPE OF
+  SUPPLY on a no-dryer deal; the forex clause appears on the dollar page only; **the with-dryer page on
+  the same machine is byte-identical to today**, as is the real K64 USD deal.
+- **The byte-identity test across all 631 template strings.** With every wrapper held open, every one
+  resolves to exactly what it prints today.
+- **Whitespace, under every combination of the three conditions** — no double space, stray full stop,
+  tripled newline or trailing blank introduced anywhere.
+- **OCPI-32 against the real `fms_ocpi_save_draft` RPC**, walking machine → save → reopen → category →
+  save and reading the ROW back each time. The OLD handler was run too, so the difference is
+  attributable rather than asserted. Throwaway deal deleted.
+- 36 unit checks on the parser itself, including the nesting case above.
+- `npm run build` clean; orphan sweep over `apps/ocpi` — 58 files, 0 candidates.
+
+## ⚠ Open / worth knowing
+
+- 🔴 **The migration is written and NOT applied** —
+  `20261104120000_fms_ocpi_the_deal_decides_what_the_template_sells.sql`. Against the frontend on
+  `master` the markers print crisply on a contract, so the order is deploy-then-migrate: the OCPI-18
+  rule, in the same direction. Its assertion block was dry-run against live and parses; it reads 0
+  everywhere today and must read 11 / 5 / 8 / 1 / 2 / **4**.
+- ⚠ **`replaceSections` can silently revert it.** It is a delete-then-reinsert of whatever the Machine
+  template screen is holding, and that screen seeds once and never re-seeds — so an admin with the tab
+  open across the migration who presses "Save template" reverts that machine entirely. The assertion
+  block is re-runnable as a standalone `select` for exactly this reason.
+- **Two live deals still carry the OCPI-32 loss** and need a person to reopen them. The fix stops new
+  ones and deliberately does not repair old ones — re-picking the machine is how a person takes the
+  master's answer.
+- **Two Homer K32 deals never answered the centering question.** `incl_centering = null` counts as no —
+  taken deliberately, because the composition on those same pages already lists no centring device — so
+  they lose "WITH CENTRING DEVICE" from the priced line on their next reprint.
+- **`lib/tokens.ts` was deliberately not touched.** `frontend/scripts/ocpi-field-map.mjs` reads it as
+  TEXT, slicing from `export function tokensFor` to the `const TOKEN_RE` line and throwing if that shape
+  changes. Conditions live in a sibling file, so `resolve()` stays byte-identical and `npm run field-map`
+  keeps working.
+- **Raised, not fixed:** JPK's whole `DRYER INFORMATION` section, which wants section-level visibility ·
+  Rocket's `Install Power` (`145 Kw ( Dryer & rotary110 Kw)` — a conditional cannot do arithmetic) ·
+  Position Printer's composition hard-coding the three things `optionalExtras` adds per deal, so a
+  centering deal gets that bullet twice · P8D/P8S and the six Sublimation `Front Dryer` bullets, and
+  JPK's "Centering group for unwinder axial" — is that equipment part of the machine? · `carry` has
+  OCPI-32's shape for the ink/head invoice cells, though recoverably · the summary's `documentPayload`
+  freezes the RAW template, so it will hold literal markers · `OCPI-FIELD-MAP.md` scans `{{…}}` only, so
+  `dryerType`, `inclCentering` and `dealValueCurrency` now reach a document by a route the map does not
+  show.

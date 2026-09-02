@@ -5,7 +5,7 @@ import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
 import { ocFileName, ocPdfBlob, ocSummaryFileName } from "../lib/ocPdf";
 import { quotationPdfBlob } from "../lib/quotationPdf";
-import { dealFacts } from "../lib/fieldSpec";
+import { factsForDeal } from "../lib/fieldSpec";
 import type { OcpiDeal } from "../types";
 
 /**
@@ -68,7 +68,7 @@ export default function ApprovedOcPreview({
               machine,
               profile: s.profileFor(deal.companyId),
               versionNo: deal.quotationVersionNo || 1,
-              facts: dealFacts(s.dryerTypes, deal.dryerType ?? "", s.machineCategories, deal.machineCategoryId ?? ""),
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, deal, machine),
               warrantyNote: s.config.warrantyNote,
             }),
           );
@@ -83,6 +83,7 @@ export default function ApprovedOcPreview({
               deal,
               machine,
               sections: s.sectionsFor(machine.id),
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, deal, machine),
               profile: s.profileFor(deal.companyId),
               validityDays: s.config.quotationValidityDays,
               warranty: s.config.warranty,

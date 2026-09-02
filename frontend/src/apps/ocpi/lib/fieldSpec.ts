@@ -127,6 +127,13 @@ export interface QuotationDraft {
 
   dealValueCurrency: string;
   dealValueAmount: string;
+  /**
+   * ⚠ RETIRED, NOT REMOVED (OCPI-18). No input renders this any more, and no
+   *   paper prints it. It stays in the draft — with its default, label,
+   *   `draftFromDeal` and `payloadFromDraft` entries — so the 23 deals that
+   *   recorded an answer round-trip it byte-identically through an edit instead
+   *   of being silently cleared. Same shape as `otherCommitments` below.
+   */
   paymentType: string;
   paymentTerms: string;
   deliveryDate: string;
@@ -249,6 +256,12 @@ export interface QuotationDraft {
   insuranceClauseAgreed: boolean | null;
 
   refNo: string;
+  /**
+   * ⚠ RETIRED, NOT REMOVED (OCPI-18) — see `paymentType` above for the shape and
+   *   the reason. `{{delivery_days}}` was rewritten out of all 21 SALE CONDITIONS
+   *   sections in the same change, so nothing prints it; the 20 deals that
+   *   answered it keep their answer.
+   */
   deliveryDays: string;
   tradeTerm: string;
   machineModelNo: string;
@@ -287,6 +300,34 @@ export interface QuotationDraft {
  *   consumables always come from Orange O Tec, whichever entity sells the machine.
  */
 export const CONSUMABLES_SUPPLIER = "Orange O Tec Pvt Ltd";
+
+/**
+ * The company's GST rate — a LAST RESORT, not the source (OCPI-29, 02-09-2026).
+ *
+ * 🔴 THE SOURCE IS `fms_ocpi_config.default_gst_rate`, and after this task it is
+ *    the only place a person can change the rate: the form no longer asks for it
+ *    (it was 18 on every one of the 25 deals that carry one, and never anything
+ *    else), so it is company policy rather than a per-deal question. Settled with
+ *    Ritesh Bhai as DEVELOPER-ONLY — there is no admin screen for it and none is
+ *    wanted.
+ *
+ * ⚠ THIS CONSTANT EXISTS SO THERE IS ONE FALLBACK RATHER THAN FOUR. The number
+ *   used to be written out three separate times — here in `EMPTY_DRAFT`, again in
+ *   `draftFromDeal`, and again as `?? 18` in `ocpiFetch` — beside the config row
+ *   that was supposed to govern them. Four copies of a tax rate is how "the
+ *   developer will change it" becomes a rate changed in three places and still
+ *   wrong in the fourth. All three now read this.
+ *
+ * ⚠ IT IS NOT ZERO AND MUST NEVER BECOME ZERO. A High Seas sale attracts no GST
+ *   at all: `branching.ts` hides the field, the server stores NULL, and both
+ *   renderers omit the tax row entirely. A row reading "0% GST — ₹ 0" is a
+ *   different legal claim from no row at all.
+ *
+ * ⚠ IT LIVES HERE, ABOVE `EMPTY_DRAFT`, for the same reason CONSUMABLES_SUPPLIER
+ *   does — the object literal below reads it at module load, and a const declared
+ *   further down the file is a temporal-dead-zone error.
+ */
+export const DEFAULT_GST_RATE = "18";
 
 export const EMPTY_DRAFT: QuotationDraft = {
   salespersonName: "",
@@ -392,7 +433,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   machineModelNo: "",
   preparedBy: "",
   approvedBy: "",
-  gstRate: "18",
+  gstRate: DEFAULT_GST_RATE,
   machineValueInr: "",
   gstAmountInr: "",
   totalInr: "",
@@ -418,10 +459,29 @@ export const EMPTY_DRAFT: QuotationDraft = {
  *   cannot honour.
  */
 
-export const PAYMENT_TYPES = [
-  { value: "advance", label: "Any Advance" },
-  { value: "credit", label: "On Credit" },
-] as const;
+/*
+  ⚠ `PAYMENT_TYPES` IS RETIRED (OCPI-18, 01-Sep-2026) — Any Advance / On Credit.
+    The client asked for the question to go: "Terms of payment" below it is a
+    free-text box that carries the real answer ("30% advance and rest PDC
+    cheque"), and a two-button summary of it added nothing the paper did not
+    already say better.
+
+    It is deleted rather than left standing because nothing rendered it any more,
+    and a vocabulary with no control behind it is exactly the orphan the FIX-4
+    rule in CLAUDE.md is about. What stays:
+
+      · the `payment_type` COLUMN, and the `paymentType` draft field, default,
+        label and payload entry — additive-only, so the 23 deals that recorded an
+        answer keep it and still round-trip it through an edit;
+      · the `PaymentType` type in types/index.ts, which `OcpiDeal` still reads.
+
+    What went with it: the ChoiceButtons block in Commercial terms, the
+    "Term of Payment" row on the summary sheet, the `missingForSubmit` entry, and
+    the `payment_type is not null` conjunct of fms_ocpi_complete_when_submitted.
+    Removing the form field without the last of those would have left the
+    database demanding an answer the form had stopped asking for, and nothing
+    could have been submitted.
+*/
 
 /**
  * The head of Section C, and the choice everything commercial follows from.
@@ -471,6 +531,26 @@ export const CURRENCIES = ["INR", "USD"] as const;
  */
 export const isUsdDeal = (d: QuotationDraft): boolean =>
   d.dealValueCurrency === "USD" || d.transportTerms === "high_seas";
+
+/**
+ * The same question, asked of a SAVED ROW rather than a draft.
+ *
+ * ⚠ IT DELIBERATELY DROPS THE HIGH-SEAS DISJUNCT, and the reason is written
+ *   above: that term exists to bridge the window BETWEEN choosing High Seas and
+ *   saving, because `fms_ocpi_write_quotation` only forces the currency on save.
+ *   A row has already been through that writer, so on this side the disjunct is
+ *   redundant — verified live on 02-Sep-2026: five high-seas deals, none of them
+ *   anything but USD.
+ *
+ * 🔴 IT EXISTS SO THE CLAUSE AND THE MONEY CANNOT DISAGREE ON ONE PAGE. Three
+ *    places test the stored currency — the order confirmation's money rows, the
+ *    summary sheet's dollar clause, and (since OCPI-33) the `usd` template
+ *    condition. If those drifted, one contract could print "Machine Value USD"
+ *    with no forex clause, or a rupee-only money block carrying one. Four copies
+ *    of a tax rate is how `DEFAULT_GST_RATE` came to exist; this is the same
+ *    lesson applied before it is learned again.
+ */
+export const isUsdDealRow = (d: OcpiDeal): boolean => d.dealValueCurrency === "USD";
 
 /**
  * Everything a branch rule needs that is NOT on the draft.
@@ -555,6 +635,43 @@ export function dealFacts(
     showsCentering: cat?.showsCentering === true,
     showsExtras: cat?.showsExtras === true,
   };
+}
+
+/**
+ * The same facts, for a SAVED ROW that is about to be printed — with the
+ * machine's own category as the fallback.
+ *
+ * 🔴 THE SQL COALESCES AND THE FORM DOES NOT, AND UNTIL OCPI-31 THAT DID NOT
+ *    MATTER. `fms_ocpi_write_oc` reads the category as
+ *    `coalesce(d.machine_category_id, m.category_id)`; every `dealFacts` caller
+ *    passes the deal's column alone, and an id nobody matches yields
+ *    `showsDryer: false`. That was harmless while these flags only decided which
+ *    QUESTIONS a form asked. It stops being harmless the moment they decide
+ *    which WORDS a contract prints: a row carrying a machine but no category
+ *    would drop the dryer from the paper for a machine that has one.
+ *
+ * ⚠ IT IS A NO-OP ON TODAY'S DATA, and that is exactly when to add it. Counted
+ *   02-Sep-2026: zero deals with a machine and no category, zero active machines
+ *   with no category. `chooseMachine` snaps the two together on every pick, so
+ *   the hole is currently unreachable — the guard is here so that a row written
+ *   by anything other than this form cannot quietly rewrite a contract.
+ *
+ * ⚠ THE FORM SIDE IS DELIBERATELY LEFT ALONE. `clearHidden` on such a row would
+ *   blank every dryer, centering and extras answer the server would have kept —
+ *   a real defect, pre-existing, and not this change's to fix. Raised separately.
+ */
+export function factsForDeal(
+  dryerTypes: { name: string; meansNoDryer: boolean }[],
+  categories: { id: string; showsDryer: boolean | null; showsCentering: boolean | null; showsExtras: boolean | null }[],
+  deal: OcpiDeal,
+  machine?: OcpiMachine,
+): DealFacts {
+  return dealFacts(
+    dryerTypes,
+    deal.dryerType ?? "",
+    categories,
+    deal.machineCategoryId ?? machine?.categoryId ?? "",
+  );
 }
 
 /**
@@ -659,20 +776,78 @@ export const INSURANCE_CLAUSE =
 */
 
 /**
- * The house wording for the terms of payment (OCPI-20, 01-Sep-2026).
+ * The house wordings for the terms of payment (OCPI-20, extended by OCPI-30).
  *
- * ⚠ ONE CONSTANT FOR THREE USES — the placeholder, the persistent hint under the
- *   box, and the "Use this format" button. They were allowed to drift once
- *   already: the old placeholder read "25% advance, 75% before delivery", which
- *   is not the wording anybody actually uses, so the box was teaching a format
- *   nobody follows.
+ * OCPI-20 shipped ONE format. It did not cover the deals actually being written:
+ * of 24 deals, 12 distinct wordings, and once the seeded 13 are set aside EVERY
+ * remaining deal is worded differently from every other — two pairs differing
+ * only by a typo ("Installment" / "Instalment", "50% advance with order" /
+ * "50% with order"), which is the clearest possible evidence that people are
+ * retyping from memory. These seven are those wordings, generalised.
  *
- * ⚠ THE FIELD STAYS FREE TEXT. This is guidance, never a constraint — a
- *   negotiated deal must still be able to say something else. `payment_terms`
- *   remains one free-text column feeding `{{payment_terms}}` on ~21 templates.
+ * ✅ SEVEN, APPROVED TO THE CHARACTER 02-09-2026, and no eighth. "100% advance"
+ *    was offered and declined — "just seven options are good to go for now" — and
+ *    it appears in no deal on record. The field stays free text, so a full-advance
+ *    deal is still typable; if it turns out to be common, an eighth is one line.
+ *
+ * ⚠ THE BLANKS ARE `______`, DELIBERATELY NOT `{{token}}` SYNTAX. tokens.ts sets
+ *   out the reasoning: a printed `______` reads as a blank somebody must fill,
+ *   whereas a stray `{{x}}` reads as software that broke. If a salesperson
+ *   inserts a format and forgets to complete it, an underscore run is the failure
+ *   that gets noticed and corrected rather than shipped.
+ *
+ * ✅ ALWAYS `₹`, ON EVERY DEAL INCLUDING USD (settled 02-09-2026). Ritesh Bhai:
+ *    "in the USD we are always going to show the conversion, so we can just show
+ *    the rupee amount there" — a dollar deal already carries a frozen FX rate and
+ *    its rupee equivalent, and both print, so rupee payment terms are consistent
+ *    with the rest of the paper.
+ *
+ *    🟢 AND THAT IS WHY THESE ARE PLAIN STRINGS. No currency placeholder, nothing
+ *       to resolve at insertion time — and so no bug when a salesperson switches
+ *       the deal's currency AFTER inserting a format. Had the symbol followed the
+ *       deal, an INR sentence typed before a switch to USD would have been left
+ *       saying the wrong thing, with a silent rewrite of a typed commercial term
+ *       as the only "fix". That whole class of problem does not arise.
+ *
+ * ⚠ ONE CONSTANT, ONE DEFINITION. It drives the placeholder and every row of the
+ *   insert list. The single format it replaces was already allowed to drift once
+ *   — the old placeholder read "25% advance, 75% before delivery", a wording
+ *   nobody uses — and copies drifting apart is the bug this whole line of work
+ *   exists to close.
+ *
+ * ⚠ THE FIELD STAYS FREE TEXT. These are starting points, not a vocabulary — a
+ *   deal that fits none of the seven must still be writable. `payment_terms`
+ *   remains one free-text column feeding `{{payment_terms}}` on 21 templates.
  */
-export const PAYMENT_TERMS_FORMAT =
-  "25% advance with the order, 75% against the shipping documents.";
+export const PAYMENT_TERMS_FORMATS = [
+  "___% advance with the order, ___% against the shipping documents.",
+  "___% advance with the order, ___% before dispatch.",
+  "___% advance with the order, balance ___% in ___ equal PDC cheques.",
+  "___% plus GST advance with the order, balance ___% in ___ equal PDC cheques.",
+  "₹______ advance with the order, balance in ___ equal instalments after delivery.",
+  "₹______ advance with the order, balance ₹______ in ___ equal PDC cheques (₹______ × ___).",
+  "Payment in ___ equal monthly instalments (______).",
+] as const;
+
+/**
+ * The condition the machine delivery date is given under (OCPI-18, 01-Sep-2026).
+ *
+ * 🔴 THIS SENTENCE PRINTS ON A SIGNED CONTRACT. It is shown under the date on the
+ *    form, printed under the date on the summary sheet, and written into the SALE
+ *    CONDITIONS OF THE SUPPLY clause of all 21 machine decks that have one. The
+ *    form and the contract must state the delivery condition in the SAME WORDS —
+ *    a customer reading two slightly different sentences about when a date starts
+ *    running has two different answers to which one governs.
+ *
+ * ⚠ THERE IS A THIRD COPY, IN SQL, AND THERE HAS TO BE. The 21 template bodies
+ *   hold the sentence as literal text — a migration cannot import a TypeScript
+ *   const. It was written by
+ *   `supabase/migrations/20261102120000_fms_ocpi_delivery_date_on_the_contract.sql`,
+ *   whose post-flight assertion counts 21 bodies carrying this exact string.
+ *   Changing the wording here means a new migration rewriting those 21 bodies;
+ *   changing only one of the two is how the form and the paper drift apart.
+ */
+export const DELIVERY_DATE_REMARK = "Applicable from the date of signing of this contract.";
 
 /*
   ⚠ THERE IS NO GROUP TABLE HERE ANY MORE, AND THAT IS DELIBERATE.
@@ -748,7 +923,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   dealValueAmount: "Total deal value (excl. GST)",
   paymentType: "Type of payment",
   paymentTerms: "Terms of payment",
-  deliveryDate: "Machine delivery date (tentative)",
+  deliveryDate: "Tentative machine delivery date",
   transportTerms: "Deal type",
   highSeasVia: "High seas delivery via",
   highSeasCostBy: "High seas cost borne by",
@@ -841,8 +1016,22 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
 
 const s = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
 
-/** Load an existing deal into the form's shape. */
-export function draftFromDeal(d: OcpiDeal): QuotationDraft {
+/**
+ * Load an existing deal into the form's shape.
+ *
+ * ⚠ `defaultGstRate` IS THE CONFIG ROW, PASSED IN (OCPI-29). A deal whose
+ *   `gst_rate` is null falls back to it, and the caller that has the store hands
+ *   over `s.config.default_gst_rate`; the parameter defaults to the constant only
+ *   for callers that do not, so the number is never written out a second time.
+ *   A null rate is nearly always a High Seas deal, where the fallback is
+ *   irrelevant — `clearHidden` blanks the field and the server nulls it again —
+ *   but an Others deal saved before the column existed needs a rate to send, or
+ *   `fms_ocpi_write_oc` derives no GST amount at all.
+ */
+export function draftFromDeal(
+  d: OcpiDeal,
+  defaultGstRate: string = DEFAULT_GST_RATE,
+): QuotationDraft {
   return {
     salespersonName: s(d.salespersonName),
     salespersonUserId: s(d.salespersonUserId),
@@ -952,7 +1141,8 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     machineModelNo: s(d.machineModelNo),
     preparedBy: s(d.preparedBy),
     approvedBy: s(d.approvedBy),
-    gstRate: d.gstRate === null || d.gstRate === undefined ? "18" : String(d.gstRate),
+    gstRate:
+      d.gstRate === null || d.gstRate === undefined ? defaultGstRate : String(d.gstRate),
     machineValueInr: s(d.machineValueInr),
     gstAmountInr: s(d.gstAmountInr),
     totalInr: s(d.totalInr),
@@ -1117,171 +1307,25 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     says why.
 */
 
-/**
- * What still has to be answered before this quotation can be finalised.
- *
- * Returns human sentences, not field keys — they are shown to the salesperson.
- * The table CHECK `fms_ocpi_complete_when_submitted` enforces the same minimum
- * server-side; this exists so the user finds out before pressing the button.
- *
- * ⚠ SECTIONS B AND C ARE MANDATORY (revision stage B), but a CONDITIONAL field
- *   is only required when its own branch is open. A deal that includes no head
- *   must never be blocked on a head count it was never asked for — which is why
- *   each dependent is tested against the answer that reveals it, not on its own.
- */
-export function missingForSubmit(
-  d: QuotationDraft,
-  deal: DealFacts = NO_DEAL_FACTS,
-  /**
-   * How many print heads the chosen machine offers.
-   *
-   * ⚠ ONLY A CHOICE CAN BE MISSING (OCPI-14). A model with ONE mapped head fills
-   *   `headType` in itself and a model with NONE — the three Pengda and both POD
-   *   printers — legitimately has no head at all. Only the seven models whose
-   *   sheet says "EX600 or RC" can leave this unanswered, and on those a blank
-   *   would print a contract that does not say which head the customer is
-   *   getting. Defaults to 0 so a caller that does not know asks for nothing.
-   */
-  headOptions = 0,
-): string[] {
-  const out: string[] = [];
+/*
+  ⚠ `missingForSubmit` AND `missingForDetailSheet` NOW LIVE IN lib/completeness.ts
+    (OCPI-15). Recorded here rather than silently deleted, because both are named
+    by comments all over this module and by the two RPCs they mirror.
 
-  if (!d.customerName.trim()) out.push("the customer name");
-  if (!d.salespersonName.trim()) out.push("the salesperson");
-  if (!d.machineId) out.push("the machine");
-  if (!d.machineCount.trim()) out.push("how many machines");
-  if (headOptions > 1 && !d.headType.trim()) out.push("which print head is being supplied");
+    THE MOVE WAS FORCED, NOT TIDY-MINDED. OCPI-15 splits completeness into two
+    tiers — what blocks GENERATE and what blocks SEND FOR APPROVAL — and drives
+    the form's own required markers from the same table, so a marker and a
+    blocker cannot disagree. To do that the table has to ask `isVisible` whether
+    a field is on the salesperson's screen at all, and `branching.ts` already
+    imports `isUsdDeal` FROM this file. Keeping them here would have made
+    fieldSpec → branching → fieldSpec a cycle.
 
-  // Section B · Deal inclusions
-  if (d.inclInk === null) out.push("whether the deal includes ink");
-  else if (d.inclInk && !d.inkQtyIncluded.trim()) out.push("how much ink is included");
-  if (d.inclSpares === null) out.push("whether the deal includes spare parts");
-  else if (d.inclSpares && !d.spareDetails.trim()) out.push("which spare parts are included");
-  /*
-    OCPI-14 · the centering device, required ONLY where it is asked.
+    `missingForDetailSheet` went with it because the two are a pair whose
+    comments explain each other: one blocks and the other only warns, and reading
+    either without the other loses the reason for both.
 
-    ⚠ THIS IS THE FORM'S REQUIREMENT AND NOT THE DATABASE'S, deliberately.
-      `fms_ocpi_complete_when_submitted` was left untouched: a CHECK is
-      re-validated on every UPDATE, so a conjunct naming incl_centering would
-      have made all 20 deals already on record un-updatable and thrown on every
-      approval or signature stamp. OCPI-7 hit exactly that and rejected it.
-
-    ⚠ AND IT IS GATED, or every Sublimation deal becomes un-generatable — the
-      question is not on their screen at all.
-  */
-  if (deal.showsCentering) {
-    if (d.inclCentering === null) out.push("whether the deal includes a centering device");
-    else if (d.inclCentering && !d.centeringDetails.trim())
-      out.push("which centering device is included");
-  }
-  if (d.inclHead === null) out.push("whether the deal includes a head");
-  else if (d.inclHead && !d.headsIncluded.trim()) out.push("how many heads are included");
-
-  /*
-    OCPI-7 · the NO branch. Answering the rate question at all is OPTIONAL —
-    silence means it was never discussed — but a Yes must carry its numbers,
-    or the quotation prints a promise with no figure beside it.
-
-    ⚠ THIS MIRRORS THE SQL CONSTRAINT CONJUNCT FOR CONJUNCT. The server's
-      fms_ocpi_complete_when_submitted carries the same two rules. If the two
-      ever disagree the salesperson gets a raw Postgres constraint violation
-      naming no field, on a deal this list said was ready.
-  */
-  if (d.inclInk === false && d.inkOfferAgreed === true) {
-    if (!d.inkOfferQty.trim()) out.push("how many litres of ink are offered at the subsidized rate");
-    if (!d.inkOfferRate.trim()) out.push("the subsidized rate for ink, per litre");
-  }
-  if (d.inclHead === false && d.headOfferAgreed === true) {
-    if (!d.headOfferQty.trim()) out.push("how many heads are offered at the subsidized rate");
-    if (!d.headOfferRate.trim()) out.push("the subsidized rate for a head");
-  }
-
-  // Section C · Commercial terms
-  if (!d.transportTerms) out.push("the deal type (High Seas or Others)");
-  else if (d.transportTerms === "high_seas") {
-    if (!d.highSeasVia) out.push("how the printer is delivered on high seas");
-    if (!d.highSeasCostBy) out.push("who bears the high-seas cost");
-  } else if (d.transportTerms === "local" && !d.localCostBy) {
-    out.push("who bears the local delivery cost");
-  }
-  if (!d.dealValueCurrency) out.push("the currency");
-  if (!d.dealValueAmount.trim()) out.push("the total deal value");
-  // ⚠ A DOLLAR DEAL WITHOUT A RATE PRINTS A BLANK TOTAL. The rupee value is
-  //   derived from amount × rate server-side; with no rate it is null, and the
-  //   null carries all the way through to "Total Value (INR)" on both papers.
-  //   Nothing used to require it — not here, and not in the table's
-  //   `fms_ocpi_complete_when_submitted` check, which now asks for it too.
-  if (isUsdDeal(d) && !d.fxRate.trim()) out.push("the USD to INR rate");
-  if (!d.paymentType) out.push("the type of payment");
-  if (!d.paymentTerms.trim()) out.push("the terms of payment");
-  if (!d.deliveryDate) out.push("the machine delivery date");
-
-  return out;
-}
-
-/**
- * Which lines the DETAILED sheet will print as ruled blanks.
- *
- * ⚠ THIS IS A WARNING, NEVER A BLOCK. The client asked for the detail fields to
- *   be optional at first so a quotation can go out during a negotiation before
- *   the warranty and delivery terms are settled. The sheet prints a ruled blank
- *   where an answer is missing; this exists so the salesperson knows which lines
- *   are blank BEFORE sending it, rather than discovering it in the customer's
- *   reply.
- *
- * Conditional groups are skipped when their branch is shut, for the same reason
- * missingForSubmit skips them: a deal with no dryer has no dryer warranty to be
- * missing.
- */
-export function missingForDetailSheet(
-  d: QuotationDraft,
-  deal: DealFacts = NO_DEAL_FACTS,
-): string[] {
-  const out: string[] = [];
-
-  // ⚠ THE THREE WARRANTY CHECKS ARE STILL GONE, and their absence is still the
-  //   point — but the reason has changed (OCPI-14). They used to be a fixed
-  //   SETTING that could never be blank; they are now a per-machine default, and
-  //   a machine whose warranty is NULL means NOT APPLICABLE, so the question is
-  //   not asked and no line is printed. Either way, warning a salesperson about
-  //   a field they cannot see is a warning they cannot act on.
-  if (!d.deliveryDays.trim()) out.push(FIELD_LABEL.deliveryDays);
-  if (!d.tradeTerm.trim()) out.push(FIELD_LABEL.tradeTerm);
-
-  /*
-    ⚠ THE SHIPMENT ROWS ARE NO LONGER GATED ON THE INCLUSIONS (OCPI-14), so
-      these two are no longer gated either. They used to read
-      `d.inclHead === true && !d.headShipMode`, which was right while the row
-      only appeared for an included item; now the row appears on every deal and
-      the warning must too, or the sheet prints a blank the form never mentioned.
-
-      Spare parts and ink join it for the same reason. Centering is the one that
-      stays conditional, because its row is the one the category still gates.
-  */
-  if (!d.headShipMode) out.push(FIELD_LABEL.headShipMode);
-  if (!d.inkShipMode) out.push(FIELD_LABEL.inkShipMode);
-  if (!d.sparesShipMode) out.push(FIELD_LABEL.sparesShipMode);
-  if (deal.showsCentering && !d.centeringShipMode) out.push(FIELD_LABEL.centeringShipMode);
-
-  /*
-    ⚠ THE CATEGORY OPENS THE QUESTION AND THE DRYER CATEGORY DECIDES IT, and it
-      takes BOTH. It read `dryerType !== 'Not Applicable'` originally — the
-      salesperson's own pick — so a machine that took no dryer was still nagged
-      for a chamber count. Then (OCPI-3, stage E) it read the machine alone and
-      the opposite fault appeared: a salesperson who answered "no dryer on this
-      deal" was still told the sheet would print a blank dryer name, a warning
-      they could not act on because the field was unfillable. OCPI-8 fixed that,
-      and OCPI-14 moved the first term from the machine to the category.
-
-      It asks the same question `hasDryerDetails` asks in branching.ts, and the
-      same one fms_ocpi_write_oc asks before it nulls these columns. All three
-      must agree: a field this warns about must be one the form shows and the
-      server keeps.
-  */
-  if (deal.showsDryer && d.dryerType.trim() !== "" && !deal.noDryerCategory) {
-    if (!d.dryerName.trim()) out.push(FIELD_LABEL.dryerName);
-    if (!d.dryerChambers.trim()) out.push(FIELD_LABEL.dryerChambers);
-  }
-
-  return out;
-}
+    Both keep their names and their signatures. `missingForSubmit` now returns
+    `{ key, label }` instead of prose sentences — the key is what lets the panel
+    scroll to the field and focus it, which is the whole of what OCPI-15 asked
+    for.
+*/
