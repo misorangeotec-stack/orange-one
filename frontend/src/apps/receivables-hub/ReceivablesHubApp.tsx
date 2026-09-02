@@ -18,6 +18,7 @@ import FollowupsPage from "@hub/pages/Followups";
 import SalespersonAnalysis from "@hub/pages/SalespersonAnalysis";
 import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport";
 import CustomerDetail from "@hub/pages/CustomerDetail";
+import DebtorAnalysis from "@hub/pages/DebtorAnalysis";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import SalesReport from "@hub/pages/SalesReport";
@@ -112,6 +113,14 @@ function HubRoutes() {
           <Route path="collection-live" element={<Navigate to="../salesperson-collection" replace />} />
           <Route path="customer/:id" element={<CustomerDetail />} />
           <Route path="group/:id" element={<CustomerDetail />} />
+          {/* The Debtor Analysis one-pager, per customer / per group. SIBLINGS of the two routes
+              above, not children: CustomerDetail is not a layout and renders no <Outlet/>.
+              Deliberately outside RequireHubMenu / RequireReportAccess, exactly as its parents
+              are — this is a customer page, not a catalogued report, and a fail-closed report
+              guard would bounce it to the hub home. Per-salesperson scoping still applies: the
+              page reads useAppData, whose chokepoints drop out-of-scope ledgers. */}
+          <Route path="customer/:id/analysis" element={<DebtorAnalysis />} />
+          <Route path="group/:id/analysis" element={<DebtorAnalysis />} />
           <Route path="import" element={<ImportDashboard />} />
           {/* Alias kept for old bookmarks. Deliberately OUTSIDE RequireReportAccess: it has no
               catalogue entry of its own, so a fail-closed guard would bounce it to the hub home

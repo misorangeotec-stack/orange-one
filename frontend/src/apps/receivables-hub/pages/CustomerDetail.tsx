@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from "react-rout
 import {
   ArrowLeft, Download, ShieldAlert, Clock, AlertTriangle,
   CreditCard, TrendingUp, RefreshCw, BookOpen, Building2, ChevronDown, X, Search,
-  ArrowUpDown, ArrowUp, ArrowDown, Columns3, Loader2, Plus, Info,
+  ArrowUpDown, ArrowUp, ArrowDown, Columns3, Loader2, Plus, Info, FileBarChart2,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -1890,6 +1890,30 @@ export default function CustomerDetail() {
           </div>
         </div>
         <div className="flex items-end gap-2">
+          {/* The Debtor Analysis one-pager for this customer. Company / location / sale type ride
+              along so arriving from a narrowed view does not silently change the basis of the
+              figures — that page has no filter controls of its own and states its scope in the
+              subline instead. rebase() keeps the drill-through on the current set (default vs
+              Live), exactly as every other link on this page does. */}
+          <Button
+            data-export-hide
+            variant="outline" size="sm"
+            onClick={() => {
+              const params = new URLSearchParams();
+              if (saleTypeFilterAvailable && effectiveSaleType !== "all") params.set("saleType", effectiveSaleType);
+              if (entityCompany  !== "all") params.set("company",  entityCompany);
+              if (entityLocation !== "all") params.set("location", entityLocation);
+              const qs = params.toString();
+              const seg = isGroupRoute ? "group" : "customer";
+              navigate(rebase(
+                `/outstanding-dashboard/${seg}/${encodeURIComponent(decoded)}/analysis${qs ? `?${qs}` : ""}`,
+              ));
+            }}
+            className="rounded-button border-border"
+          >
+            <FileBarChart2 className="h-4 w-4 mr-2" />
+            Debtor Analysis
+          </Button>
           <Button
             variant="outline" size="sm"
             onClick={handleExport}
