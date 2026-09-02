@@ -3,16 +3,14 @@
 Bushra's own day-to-day work: the tasks, answers and sheets that are hers to move, filed
 **module-wise**. Ask *"what's on Bushra's list?"* and this file is the answer.
 
-**This is now the ONLY work list.** `WORKLIST.md`, the team build log this file was written as a
-companion to, was deleted on 2026-09-02 at Bushra's instruction. It is recoverable from git history
-(`git show HEAD~1:WORKLIST.md`) and nowhere else. This file holds what is **Bushra's to decide,
-supply or walk through**.
+This is a **companion** to [WORKLIST.md](WORKLIST.md), the team build log — not a replacement for
+it. That file stays where it is. This one holds what is **Bushra's to decide, supply or walk
+through**.
 
-⚠ **The main-list IDs below (`OD-2`, `AM-1`, `PF-14`, `OCPI-3`, …) no longer resolve to anything in
-the working tree.** They were deliberately written as links rather than restatements, on the rule
-that a task written in two places is a task nobody trusts — so the full write-up behind each ID now
-exists only in git history. Keep the IDs: they still identify the work, and old notes and messages
-that quote them still make sense.
+The main-list IDs below (`OD-2`, `AM-1`, `PF-14`, `OCPI-3`, …) are written as **links, not
+restatements**, on the rule that a task written in two places is a task nobody trusts. The full
+write-up behind each one lives in [WORKLIST.md](WORKLIST.md); the line here says only what is
+Bushra's part of it.
 
 **ID prefix:** `BW-`, with the module named on the italic line under the heading. `BW-` numbers are
 this file's own and never collide with the main list's.
@@ -50,9 +48,9 @@ this is the first place to look.
 
 ## What the main list is waiting on from ME
 
-The rows that named Bushra in the retired `WORKLIST.md`'s "Waiting for" table, pulled together so
+The rows that name Bushra in [WORKLIST.md](WORKLIST.md)'s "Waiting for" table, pulled together so
 they are visible in one place. **These are the things whose absence is stopping other people.**
-This is now the only copy — clear one and strike it here.
+Clear one and strike it in both places.
 
 | What is needed | Blocks | Waiting since | Status |
 |---|---|---|---|
@@ -67,9 +65,8 @@ This is now the only copy — clear one and strike it here.
 
 ## Questions on the table for me
 
-Decisions the build is waiting on. Each was written up in full under its own ID in the retired
-`WORKLIST.md`, so the summary below is now the working copy — the fuller version is in git history.
-**Answer here.**
+Decisions the build is waiting on. Each is written up in full under its own ID in
+[WORKLIST.md](WORKLIST.md); the summary below is the short form. **Answer here.**
 
 ### Order to Dispatch
 

@@ -1635,7 +1635,7 @@ already draws. It changes existing behaviour, so it is called out rather than do
 
 # OCPI-3 · the build  —  started 27-Aug-2026
 
-The spec is **OCPI-3** in the retired `WORKLIST.md` (git history), sections A–M. **Section M says what the later
+The spec is **OCPI-3** in [WORKLIST.md](WORKLIST.md), sections A–M. **Section M says what the later
 pointers superseded** — read it before A–J or you will build the withdrawn version.
 
 Gate for every stage: `cd frontend && npm run build` green. Supabase changes are **additive only**.
