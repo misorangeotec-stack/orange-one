@@ -2210,6 +2210,74 @@ sign which fields are required. On a form of this length that is a hunt.
       generated with gaps that were filled later? *(Not asked yet — raise it when the panel is built and
       there is something to look at.)*
 
+### OCPI-16 · Name the steps after what you actually do, and say it in one line when the step opens  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai · **BUILT AND VERIFIED 02-09-2026***
+
+Two steps were named after a *person signing* when the work is *uploading a copy somebody has already
+signed on paper*. Renamed after the action, and each given a one-liner shown when the step is opened.
+
+| Step | Was | Now | Short | One-liner |
+|---|---|---|---|---|
+| `customer_signoff` | Customer Signature | **Upload Customer Signed Copy** | Cust Copy | *"Upload the scanned copy the customer has signed."* |
+| `management_signoff` | Management Signature | **Upload Management Signed Copy** | Mgmt Copy | *"Upload the copy signed by management."* |
+
+✅ **Only these two were renamed**, and **only these two carry a one-liner** — `blurb` is optional on
+`STEPS` and the renderers show nothing at all when it is absent, not an empty line. The management
+line **stops at the upload** and does not mention Finance: step 5, *Hand Over to Finance*, follows it.
+Settled with Ritesh Bhai on 01-09-2026 knowing that.
+
+#### The real finding — the name lived in THREE places and they had already drifted
+
+| Where | Said |
+|---|---|
+| `lib/steps.ts` `STEPS.title` — the sidebar | "Customer Signature" |
+| `components/OcpiStepper.tsx` — a **second hardcoded list** | "Customer Signature" |
+| The queue page `<h1>` — a **third wording** | *"Out for customer signature"* |
+
+Renaming in one place would have left two behind. **`OcpiStepper`'s list is gone** — the stages are
+now derived from `LIVE_STEPS`, so the rail cannot drift from the sidebar again.
+
+⚠ Per CLAUDE.md's container rule, that array carried **four** things, not one: the labels, the order
+(which is the user-visible numbering — `PoStageRail` prints `i + 1`), a synthetic `closed` node with
+`step: null` that `STEPS` has no row for, and a `key` used as both React key and rail node key. It was
+**derived, not deleted**; only the labels went, and the numbering agreement with Settings became
+structural instead of hand-maintained.
+
+⚠ **The rail captions with `short`, not `title`** — decided 02-09-2026, because a rail circle
+truncates to one line and "Upload Customer Signed Copy" does not fit. That also shortened the four
+steps nobody asked to rename (*Approve Quotation* → **Qtn Appr**, *Hand Over to Finance* → **To
+Finance**) and the two retired ones (*Order Confirmation* → **OC (old)**). Accepted knowingly; the
+full title is shown under the rail instead. `STAGE_LABEL` still reads `title`, because it feeds a
+sentence — *"last returned from …"* — where "Mgmt Copy" reads as a typo.
+
+🔴 **`quotationPdf.ts` also contains "Customer Signature" and was NOT touched** — that is the
+signature block printed on the customer's quotation, beside "Salesperson Signature" and "Authorised
+Signatory". Not a step name; it only looks like one.
+
+#### Verified — live browser + pdf.js, 02-09-2026
+
+- `cd frontend && npm run build` — tsc strict + vite, clean.
+- Sidebar, breadcrumb, both queue headings, Control Center's step column and filter, Settings → Step
+  Owners (numbered 1–6) and Settings → Due Dates all read the new titles; the rail and the Dashboard
+  KPI tiles read the new `short`s. **Zero** occurrences of the four old strings on any screen.
+- The one-liner shows on steps 3 and 4. On QT-M0037 (`quotation_approval`) the rail card ends at the
+  rail with **no paragraph element at all** — nothing rendered, no gap.
+- QT-M0033 (`on_hold`, parked at `customer_signoff`) shows the rail and the hold chip and **no
+  blurb** — a parked deal is not told to go and upload something.
+- 🔴 A quotation PDF re-rendered fresh and read back with **pdf.js** still prints
+  `Salesperson Signature | Customer Signature | Authorised Signatory`.
+- Sweep: no code anywhere matches on a step title — every lookup is on `step_key`, in `frontend/src`
+  and in all of `supabase/`. Frontend-only; no migration.
+
+#### Open
+
+- ⚠ **The retired-chain rail is unexercised** — no deal has ever travelled it, so the two spliced
+  nodes could not be seen on screen.
+- ⚠ **`STATUS_LABEL` was not renamed** (`lib/format.ts`): a deal page reads *Status: Awaiting customer
+  signature* above *Upload Customer Signed Copy*. Both are true and answer different questions, so it
+  was left rather than widened past the settled scope. Worth deciding whether the status vocabulary
+  should follow the steps.
+
 ### OCPI-17 · Two small form fixes — the machine category order, and Platter loses "Not Applicable"  `[x]`
 *Raised 2026-09-01 · Asked for by Ritesh Bhai, from two screenshots*
 
@@ -2613,8 +2681,25 @@ an unusual deal does not end up recorded in Special remarks. Stored in new addit
 `payment_terms`, which would keep holding the composed sentence so the token is unaffected.
 **Not being built now — recorded so the analysis is not redone.**
 
-### OCPI-21 · `ChoiceButtons` still loses a value it cannot match — Print head is the one left exposed  `[ ]`
-*Raised 2026-09-01, found while building OCPI-17*
+### OCPI-21 · `ChoiceButtons` still loses a value it cannot match — Print head is the one left exposed  `[x]`
+*Raised 2026-09-01, found while building OCPI-17 · **FIXED AND VERIFIED 02-09-2026***
+
+> ✅ **DONE, locally — the shared component was not touched.** Print head's strip feeds the deal's own
+> value back in as an option, the same way OCPI-17 did for Platter. Verified live on **QT-M0035**
+> (draft · Rocket · offers *EX600* / *RC* · holds *KATANA 600 DPI - HANGLORY*): three buttons, the
+> stored one lit with `aria-checked="true"` and `tabIndex=0`, so Tab lands on IT and changes nothing.
+> Saved without touching the field and re-read in SQL — `head_type` unchanged.
+>
+> ⚠ **`optsWithCurrent`, not `masterOpts`.** `masterOpts` filters on `active`, and `headsFor` in
+> `store.tsx` deliberately does not ("a machine mapped to a head somebody has since retired should
+> still say so"). All 13 head types are active today so the two behave identically; the difference
+> bites the day one is deactivated.
+>
+> ⚠ **It makes the loss VISIBLE, not impossible.** ↓ still moves off the lit button and the retired
+> option then disappears — the documented one-way door `optsWithCurrent` already carries. Confirmed as
+> the wanted behaviour on 02-09-2026.
+>
+> 🔴 **A SECOND divergence in the same field was found and fixed** — see OCPI-24 below.
 
 `shared/components/ui/ChoiceButtons.tsx` is fully controlled and never writes back on mount, so a
 stored value that matches no option **survives a save**. But it shows as nothing at all: no button
@@ -2639,6 +2724,45 @@ The fix is either `masterOpts` at that call site too, or generic unknown-value h
 `ChoiceButtons`. ⚠ The shared component has **26 call sites across 10 apps** and there is no test
 runner, so the local fix is the cheaper one. If it is done centrally, Print head's bespoke read-out
 must be reconciled or it will double-report.
+
+### OCPI-24 · Print head: the screen showed the MACHINE's head while the paper printed the DEAL's  `[x]`
+*Found 2026-09-02 while building OCPI-21 · **FIXED AND VERIFIED THE SAME DAY***
+
+The same class of defect as OCPI-21 — a stored value that matches no option, shown as something else —
+but in the branch that has **no buttons**, so no keystroke was involved and nothing was ever lost. It
+was quieter than OCPI-21 and arguably worse, because the wrong value was on the screen rather than
+missing from it.
+
+Where a machine maps **exactly one** print head, the field is shown and not chosen (OCPI-14). That
+read-only box printed `mappedHeads[0].name` **unconditionally** — so a deal quoted before the 01-09
+mapping refresh showed the machine's current head, while `quotationPdf.ts` went on printing the deal's
+frozen `head_type`. **Screen and paper disagreed.**
+
+Six live deals were in that state on 02-09-2026:
+
+| Quotation | Machine | Machine maps | Deal holds — and prints |
+|---|---|---|---|
+| **QT-M0026** | Kolorado Alpha 15 | I3200 | **KYOCERA KJ4B** |
+| **QT-M0027** | MP5000 | EX600 | **RICOH GEN 6 HEAD** |
+| **QT-M0028** | KoloRado Alpha II — 1.8 m | I3200 | **KYOCERA KJ4B** |
+| **QT-M0032** | Fab Pro 1I | RICOH GEN 6 | **RICOH GEN 6 HEAD** |
+| **QT-M0034** | JPK | KJ4B | **RICOH GEN 6 HEAD** |
+| **QT-M0038** | Kolorado Alpha 15 | I3200 | **EPSON PRINTHEAD I 3200** |
+
+⚠ Note QT-M0032 and QT-M0038: the two strings are the *same head under a different name*. The master
+holds thirteen head types of which several are near-duplicates (`RICOH GEN 6` / `RICOH GEN 6 HEAD`,
+`I3200` / `EPSON PRINTHEAD I 3200`, four spellings of KJ4B). Only six of the thirteen are mapped to any
+machine at all. **Worth a de-duplication pass on the head master** — not attempted here, and not
+required by the fix.
+
+**The fix.** `soleHeadAgrees` in `QuotationForm.tsx`: where one head is mapped and the deal holds
+something else, show what the deal holds — which is what prints — and add a grey line naming what the
+machine maps today. No data was changed and no migration was needed.
+
+**Verified 02-09-2026.** QT-M0026 opened live: the box reads *KYOCERA KJ4B* with *"The machine master
+now lists I3200 for this model. This deal was quoted on the head above, and that is what prints."* —
+and the freshly rendered summary PDF, read back with pdf.js, prints `Type of Head  KYOCERA KJ4B`.
+Screen and paper now agree.
 
 ### OCPI-22 · A live deal says its consumables come from "customer", and the field can no longer be edited  `[!]`
 *Raised 2026-09-01, found while building OCPI-19 · **needs a person, not code***

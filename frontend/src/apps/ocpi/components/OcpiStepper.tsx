@@ -4,7 +4,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../store";
 import { stepActorId, stepCompletedIso } from "../lib/queues";
 import { dmy } from "../lib/format";
-import { isRetiredStep, type StepKey } from "../lib/steps";
+import { LIVE_STEPS, STEPS, isRetiredStep, stepByKey, type StepDef, type StepKey } from "../lib/steps";
 import { STATUS_STEP, type OcpiDeal, type OcpiStatus } from "../types";
 
 /**
@@ -15,31 +15,48 @@ import { STATUS_STEP, type OcpiDeal, type OcpiStatus } from "../types";
  *   USER-VISIBLE STEP NUMBERING. It must line up 1:1 with `STEPS[].index` in
  *   lib/steps.ts, which is what Settings → Step Owners and Settings → Due Dates
  *   number too. A rail that numbers a step differently from Settings is the
- *   exact mismatch the Import FMS had to go back and fix.
+ *   exact mismatch the Import FMS had to go back and fix. Since OCPI-16 that is
+ *   STRUCTURAL rather than hand-maintained: the stages ARE `LIVE_STEPS`, in its
+ *   order, so they cannot fall out of step with it.
  *
  * ⚠ `quotation` IS A REAL STEP HERE even though it has no queue. It is ownable
  *   (OWNER_STEPS includes it) and it is where a deal spends the whole
  *   negotiation, so leaving it off would make the rail start at an approval for
  *   a document nobody is shown the author of.
+ *
+ * 🔴 THIS USED TO BE A SECOND HARDCODED LIST OF STEP NAMES (OCPI-16). It carried
+ *    four things, not one — the labels, the order, the synthetic `closed` node,
+ *    and a `key` used as both the React key and the rail node key — so it is
+ *    derived rather than deleted, and all four survive. What does NOT survive is
+ *    the labels: they were a second copy that had already drifted from
+ *    `STEPS[].title`, and renaming a step in one place left the rail behind.
  */
 type Stage = { key: string; label: string; step: StepKey | null };
 
-/** The chain a deal raised today travels. */
+/**
+ * ⚠ THE RAIL CAPTIONS WITH `short`, NOT `title`. A rail circle truncates to one
+ *   line, and "Upload Customer Signed Copy" does not fit — `short` is the field
+ *   that exists for exactly this, and is what the Dashboard tiles and the
+ *   cross-FMS scoreboard already caption with. The full title is shown under the
+ *   rail instead, for the step the deal is actually standing on.
+ */
+const stageOf = (st: StepDef): Stage => ({ key: st.key, label: st.short, step: st.key });
+
+/**
+ * The chain a deal raised today travels.
+ *
+ * ⚠ `closed` IS SYNTHETIC — there is no such row in `STEPS`, because being over is
+ *   not work anybody does. Its `step: null` is load-bearing three times over:
+ *   `activeIndex` parks a closed deal on it, the node renders with no owners and
+ *   no caption, and `STAGE_LABEL` guards on it (see below).
+ */
 const LIVE_STAGES: Stage[] = [
-  { key: "quotation",          label: "Quotation",            step: "quotation" },
-  { key: "quotation_approval", label: "Approve Quotation",    step: "quotation_approval" },
-  { key: "customer_signoff",   label: "Customer Signature",   step: "customer_signoff" },
-  { key: "management_signoff", label: "Management Signature", step: "management_signoff" },
-  { key: "finance_handover",   label: "Hand Over to Finance", step: "finance_handover" },
-  { key: "finance_receipt",    label: "Finance Receipt",      step: "finance_receipt" },
-  { key: "closed",             label: "Closed",               step: null },
+  ...LIVE_STEPS.map(stageOf),
+  { key: "closed", label: "Closed", step: null },
 ];
 
 /** The two steps the stage-F cutover removed, in the place they used to occupy. */
-const RETIRED_STAGES: Stage[] = [
-  { key: "order_confirmation", label: "Order Confirmation", step: "order_confirmation" },
-  { key: "oc_approval",        label: "Approve OC",         step: "oc_approval" },
-];
+const RETIRED_STAGES: Stage[] = STEPS.filter((st) => st.retired).map(stageOf);
 
 /**
  * Did this deal travel the OLD chain?
@@ -139,16 +156,19 @@ const HALTED: Partial<Record<OcpiStatus, string>> = {
 };
 
 /**
- * The step a deal was last returned from, in the words the rail uses.
+ * The step a deal was last returned from.
  *
  * ⚠ THE NULL CHECK IS LOAD-BEARING, not defensive. The Closed node carries
  *   `step: null`, so a lookup for a deal with no recorded rework stage used to
  *   match it and the chip read "sent back from Closed" — a step nothing is ever
  *   returned from, on a deal that had been bounced from an approval.
+ *
+ * ⚠ IT READS `title`, NOT THE RAIL'S `short`. This goes into a sentence — "last
+ *   returned from …" — where "Mgmt Copy" reads as a typo rather than as a step.
+ *   The rail abbreviates because a circle is narrow; prose has no such excuse.
  */
 const STAGE_LABEL = (stage: string | null): string =>
-  (stage ? [...LIVE_STAGES, ...RETIRED_STAGES].find((s) => s.step === stage)?.label : null) ??
-  "an approval";
+  (stage ? stepByKey(stage)?.title : null) ?? "an approval";
 
 /**
  * The horizontal lifecycle rail for one deal — the same rail Order to Dispatch,
@@ -177,6 +197,8 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
   const active = activeIndex(deal, stages);
   const finished = deal.status === "closed";
   const haltedLabel = HALTED[deal.status];
+  /** The step the rail has landed on — `undefined` on the synthetic Closed node. */
+  const activeStep = stepByKey(stages[active]?.step ?? "");
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const name = (id: string | null): string | null => personById(id)?.name ?? null;
@@ -280,6 +302,29 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
       )}
 
       <PoStageRail nodes={nodes} activeIndex={active} finished={finished} stopped={!!haltedLabel} fit={fit} />
+
+      {/*
+        WHAT THE STEP IT IS STANDING ON ACTUALLY ASKS OF SOMEBODY (OCPI-16).
+
+        The rail says where the deal is, in the two words a circle can hold. This
+        says it in full, and — where the step carries one — adds the one-liner, so
+        somebody who has landed on a deal they did not raise knows what is expected
+        without asking. One source: the words come from `STEPS`, the same place the
+        sidebar and the queue heading read.
+
+        ⚠ NOTHING IS RENDERED WHEN THE STEP HAS NO BLURB, which is four of the six.
+          Not an empty line, not a reserved gap — the paragraph does not exist.
+
+        ⚠ NOR ON A DEAL THAT IS NOT MOVING. On hold, rejected, cancelled and closed
+          all park the rail on a step for the honest reason that it is where the
+          deal STOPPED. Telling a reader to go and upload something there would be
+          an instruction nobody can act on, and the chips above already say why.
+      */}
+      {activeStep?.blurb && !finished && !haltedLabel && (
+        <p className="text-[12.5px] text-grey-2">
+          <span className="font-semibold text-navy">{activeStep.title}</span> — {activeStep.blurb}
+        </p>
+      )}
     </div>
   );
 }

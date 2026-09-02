@@ -737,6 +737,17 @@ export default function QuotationForm({
   );
 
   /**
+   * Where the machine maps exactly ONE head: does the deal actually hold it?
+   *
+   * A single mapped head is shown, not chosen, so there is no strip to light and
+   * no keystroke to guard — but the same unmatched-value problem still exists, and
+   * quieter, because the read-only box simply printed the machine's head over the
+   * deal's. An unanswered deal counts as agreeing: there is nothing to contradict.
+   */
+  const soleHeadAgrees =
+    mappedHeads.length !== 1 || !draft.headType || draft.headType === mappedHeads[0].name;
+
+  /**
    * Which questions this deal is obliged to answer (OCPI-15).
    *
    * 🔴 IT IS THE SAME TABLE THE BLOCKERS READ. `requiredKeys`, `missingForGenerate`
@@ -1257,11 +1268,35 @@ export default function QuotationForm({
             ⚠ AN OLD DEAL'S HEAD MATCHES NO BUTTON, and must not be blanked.
               `head_type` is frozen TEXT and 22 of the 28 machines changed their
               mapping in the 01-09 refresh, so a deal quoted as
-              "Homer + KATANA 600 DPI - HANGLORY" now matches nothing. It renders
-              as a read-out beside the buttons instead of silently showing as
-              unanswered — `ChoiceButtons` leaves an unmatched value selected by
-              nothing and never clears it, so without this the salesperson would
-              see a blank where a real answer is stored.
+              "Homer + KATANA 600 DPI - HANGLORY" now matches nothing. Ten live
+              deals were in that state on 02-09.
+
+            🔴 THE READ-OUT ALONE WAS NOT THE FIX, and OCPI-21 is what proved it.
+              `ChoiceButtons` leaves an unmatched value selected and never clears
+              it, so the answer did survive a save — but with nothing lit, its
+              `index` is -1, the roving tabindex parks focus on button 0, and
+              `onKeyDown` computes `from = -1`. A single ↓ on a tabbed-to strip
+              therefore fired `onChange(options[0])` — replacing a recorded answer
+              while the screen appeared not to move at all.
+
+              So the value is FED BACK IN AS AN OPTION, exactly as OCPI-17 did for
+              Platter: it lights a button, `aria-checked` is true on it, Tab lands
+              on IT rather than on button 0, and the index is real, so the arrow
+              keys move between options the way they do everywhere else. The
+              read-out below stays — it now explains why there is a button the
+              machine does not list, which is the job it can actually do.
+
+            ⚠ IT MAKES THE LOSS VISIBLE, NOT IMPOSSIBLE. ↓ still moves off the lit
+              button, and the retired option then disappears, because it exists
+              only while it is the stored value. That one-way door is deliberate
+              and is documented on `optsWithCurrent`: a withdrawn option should not
+              be re-selectable once it has been given up.
+
+            ⚠ `optsWithCurrent`, NOT `masterOpts`, even though this is a master
+              list. `masterOpts` filters on `active`, and `headsFor` deliberately
+              does not — a machine mapped to a head somebody has since retired
+              should still say so. Routing through `masterOpts` would re-apply a
+              filter the store had just decided against.
 
             ⚠ THE COPY STILL HAPPENS IN `chooseMachine`, NEVER IN AN EFFECT. An
               effect would overwrite the head text on a deal quoted before the
@@ -1280,7 +1315,7 @@ export default function QuotationForm({
             {mappedHeads.length > 1 ? (
               <div className="space-y-1.5">
                 <ChoiceButtons
-                  options={mappedHeads.map((h) => ({ value: h.name, label: h.name }))}
+                  options={optsWithCurrent(mappedHeads.map((h) => h.name), draft.headType)}
                   value={draft.headType}
                   onChange={(v) => patch({ headType: v })}
                   disabled={disabled}
@@ -1295,14 +1330,30 @@ export default function QuotationForm({
               </div>
             ) : (
               <div className="min-h-9 rounded-lg border border-line bg-page px-3 py-2 text-[13px] text-navy">
-                {mappedHeads.length === 1 ? (
+                {/*
+                  🔴 THE DEAL'S OWN ANSWER OUTRANKS THE MACHINE'S, and the check on
+                    `soleHeadAgrees` is what makes that true. This branch used to
+                    print `mappedHeads[0].name` UNCONDITIONALLY, so a deal holding
+                    a different head was shown the machine's — while
+                    `quotationPdf.ts` printed the deal's. Six live deals were in
+                    that state on 02-09 (QT-M0026, 27, 28, 32, 34, 38): the screen
+                    said I3200 and the paper said KYOCERA KJ4B.
+
+                    It is the same defect as the buttons above, minus the keyboard:
+                    a stored value that matches no option, silently not shown. A
+                    single mapped head is not a choice, so there is nothing to pick
+                    here — the honest thing is to show what will be printed, and
+                    name what the machine maps beside it.
+                */}
+                {mappedHeads.length === 1 && soleHeadAgrees ? (
                   <span className="rounded-md border border-line bg-white px-1.5 py-0.5 text-[12px]">
                     {mappedHeads[0].name}
                   </span>
                 ) : draft.headType ? (
-                  // A deal quoted before the mapping existed. Show what it holds
-                  // rather than an empty box that reads as "no head".
-                  <span title="recorded on this deal; not mapped on the machine">
+                  // A deal quoted before the mapping existed, or against a head the
+                  // machine has since changed. Show what it holds rather than an
+                  // empty box that reads as "no head", or a head it does not have.
+                  <span title="recorded on this deal; not what this machine maps today">
                     {draft.headType}
                   </span>
                 ) : (
@@ -1313,6 +1364,12 @@ export default function QuotationForm({
                   </span>
                 )}
               </div>
+            )}
+            {mappedHeads.length === 1 && !soleHeadAgrees && draft.headType && (
+              <p className="mt-1.5 text-[12px] text-grey-2">
+                The machine master now lists <b className="text-navy">{mappedHeads[0].name}</b> for
+                this model. This deal was quoted on the head above, and that is what prints.
+              </p>
             )}
           </FieldLabel>
         </div>

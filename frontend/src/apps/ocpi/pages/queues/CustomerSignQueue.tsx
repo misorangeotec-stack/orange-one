@@ -5,8 +5,18 @@ import Button from "@/shared/components/ui/Button";
 import { useOcpiStore } from "../../store";
 import DueCell from "@/shared/components/ui/DueCell";
 import { dealRef, dueIsoFor } from "../../lib/queues";
+import { stepByKey } from "../../lib/steps";
 import { dmy, fmtDealValue } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
+
+/**
+ * ⚠ THE HEADING IS THE STEP, NOT A SENTENCE SOMEBODY WROTE HERE (OCPI-16). This
+ *   page used to open with "Out for customer signature" while the sidebar link
+ *   that reaches it said "Customer Signature" and the rail said something else
+ *   again — three wordings for one step, drifting independently. `STEPS` decides
+ *   it now, and the one-liner under it comes from the same row.
+ */
+const STEP = stepByKey("customer_signoff");
 
 /**
  * Confirmed order confirmations that are out with the customer.
@@ -131,11 +141,9 @@ export default function CustomerSignQueue() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-[20px] font-bold text-navy">Out for customer signature</h1>
-        <p className="mt-0.5 text-[13.5px] text-grey-2">
-          Confirmed order confirmations waiting to come back signed. Open one to print it, or to
-          file the signed copy.
-        </p>
+        <h1 className="text-[20px] font-bold text-navy">{STEP?.title}</h1>
+        {/* Absent on four of the six steps, and then nothing renders at all. */}
+        {STEP?.blurb && <p className="mt-0.5 text-[13.5px] text-grey-2">{STEP.blurb}</p>}
       </div>
 
       <QueueTable
