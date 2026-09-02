@@ -878,6 +878,43 @@ see **PD-1** for why.
 
 ---
 
+### PF-15 · 🔴 No spreadsheet this portal has ever produced has a frozen header row  `[~]`
+*Raised 2026-09-02 · Found while building OCPI-5 · **partly fixed** — the new export is correct, every
+other one still is not*
+
+`shared/lib/exportXlsx.ts` set `ws["!freeze"] = { xSplit: 0, ySplit: 1 }` on every sheet it wrote, and
+three comments around it described the header row as frozen. **It writes nothing.** The community
+`xlsx-js-style` writer emits every sheet as
+
+    <sheetViews><sheetView workbookViewId="0"/></sheetViews>
+
+— a self-closing `sheetView` with no `<pane>` child — and there is no key it reads that produces one.
+Panes are a Pro feature of the upstream library. So the line has been dead since the helper was
+written, and **every export in the portal scrolls its header off the top**: the Deal Register, the
+Weekly Scorecard, Master Analysis, the asset reports, `MasterCrud`'s Excel button, the receivables
+reports, the user list. Nobody reported it because nobody reads far enough down a 25-row export to
+notice, which is exactly why it survived.
+
+🟢 **The mechanism to fix it now exists and is proven.** OCPI-5 added `freezeCols` to `ExportSheet`:
+after `XLSX.write`, the workbook is re-opened with JSZip (already a dependency, already used in the
+browser by receivables-hub) and the `<pane>` element injected into the sheets that asked, mapping
+sheet name → XML part through `xl/workbook.xml` and its rels rather than guessing `sheet1.xml`.
+Verified by opening the file in Excel: `FreezePanes=True`, `SplitColumn=4`, `SplitRow=4`.
+
+🔴 **Deliberately NOT switched on for the other exports**, and that is the open half. The OCPI-5 brief
+required the helper change to be strictly additive, so a sheet that does not ask still gets no pane.
+Turning it on globally would change the output of four modules' spreadsheets at once — almost
+certainly for the better, but not as a side effect of an unrelated build.
+
+**What to do:** default `freezeCols` to 0 with the header row frozen for every sheet, i.e. always run
+the pane pass with `ySplit = headerRow + 1`. It is a one-line default and one deleted condition. Then
+re-open one export per module and confirm, because — as this entry is the proof — reading the code
+does not settle it.
+
+⚠ **The dead `!freeze` line is gone, but check for the belief, not the line.** Any new export written
+by copying an old one may carry the same comment. Grep for `!freeze` before trusting a claim that
+something freezes.
+
 ### PF-14 · Four modules have no step owners at all, so every approval in them is admin-only  `[!]`
 *Raised 2026-08-27, found while auditing for **PF-13** · this needs the business to name people, not
 code*
@@ -1898,8 +1935,20 @@ already `{{head_count}}`, so no head figure is fixed anywhere.
   Date and place* block, Rocket with a Director signature. Cosmetic.
 
 
-### OCPI-5 · The template comparison workbook — one tab per machine category  `[ ]`
-*Raised 2026-08-31 · Asked for by Ritesh Bhai*
+### OCPI-5 · The template comparison workbook — one tab per machine category  `[x]` — 02-Sep-2026
+*Raised 2026-08-31 · Asked for by Ritesh Bhai · **BUILT 02-09-2026**, see [OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Build green; the file was produced from the real button and opened in Excel, where the
+> freeze, the fills, the wrapping and the empty answer column were all read back and asserted.
+> **Direct: 126 lines — 4 identical, 12 differ, 35 missing on some, 75 on only one or two.**
+> **Sublimation: 49 lines — 9 identical, 13 differ, 8 missing on some, 19 on only one or two.**
+> Other and POD carry a written explanation instead of an empty grid, as specified.
+>
+> 🔴 **Found while building: `ws["!freeze"]` writes NOTHING, in every export this repo has ever
+> produced.** The community `xlsx-js-style` writer emits a self-closing `sheetView` with no `pane`
+> child. So no spreadsheet from `exportXlsx.ts` has ever had a frozen header row, and four modules'
+> comments say it does. Fixed HERE ONLY, opt-in via `freezeCols`, so no existing export changed —
+> see **PF-15** for the rest.
 
 **The question this answers.** Nineteen machines will each carry a template that was transcribed from
 its own PowerPoint deck, written by different people over several years. Nobody has ever seen them
@@ -1983,33 +2032,54 @@ grid: *"Not compared — no template imported: Pengda PD-1700XD-800, Pengda PD-1
 #### Phase-wise checklist
 
 **Phase 0 · Settle the shape**
-- [ ] 0.1 Confirm the live category list, and where the client sheet's two **"JAY"** machines (Label
-      Printer, Book Printer) actually sit — the sheet had four values, the module has three
-- [ ] 0.2 Confirm inactive machines are excluded (they are out of the quotation dropdown, so they are
-      not a document anyone can issue)
-- [ ] 0.3 Confirm the four fills survive a black-and-white print and a colour-blind reader — pair each
-      with a one-letter code or a legend row rather than relying on hue alone
+- [x] 0.1 Confirmed against the live database 02-09: **four** categories, and OCPI-14 already put both
+      JAY machines in **POD**. Nothing was left to decide
+- [x] 0.2 Inactive machines are excluded and named under the grid on their own line, separately from
+      the untemplated ones — "switched off" and "never written" are different sentences for a reader.
+      ⚠ **All 28 machines are active today**, so this changes nothing yet; it is built so the sheet
+      stays true the day one is deactivated
+- [x] 0.3 **The fill is never the only carrier of a finding.** Every row states its verdict in WORDS in
+      a `Status` column — `Same`, `Differs (3 of 10)`, `Missing on 4 of 10`, `Only 2 of 10` — and
+      within a row the marked cells are then self-evident: on `Differs` every cell has text and only
+      the odd ones are amber; on `Missing` the marked cells are the empty ones; on `Only 1–2` the
+      non-empty ones. A legend row on each tab says exactly that
 
 **Phase 1 · The diff**
-- [ ] 1.1 `lib/templateDiff.ts` — normalise, build the pointer union per category, classify each cell as
-      `same | differs | missing | unique`. Pure, no XLSX in it, so the classification can be checked by
-      eye on two machines before nineteen are trusted
-- [ ] 1.2 Sections match on `key`, **not** on title — two machines may title the same clause differently,
-      and that difference is itself a finding to show, not a reason to split the row in two
-- [ ] 1.3 Spec rows match on normalised **label**; a label only one machine uses becomes a `unique` row
+- [x] 1.1 `lib/templateDiff.ts` — pure, no XLSX. **Checked by eye on Homer K24 vs K32 before it was
+      trusted on ten**: hand-predicted 32 same / 8 differ / 0 missing / 6 unique across 46 lines, and
+      the code returned exactly that. It caught a real typo nobody had seen — K24 says
+      "Tension-adjustable **continuous**", K32 "**continous**"
+- [x] 1.2 Sections match on `key`. Where a key's titles disagree the sheet emits a second `↳ its heading`
+      row carrying each machine's wording — the difference is SHOWN rather than splitting one clause
+      into two half-empty rows. Fires on exactly three keys in Direct (`installation`, `pc_spec`,
+      `warranty`) and none in Sublimation, which matches the database
+- [x] 1.3 Spec rows match on normalised label. Direct's union is 36 labels across 10 machines, 21 of
+      them carried by a single machine
 
 **Phase 2 · The workbook**
-- [ ] 2.1 `cellStyle` on `ExportSheet` in `shared/lib/exportXlsx.ts` (additive — every existing export unchanged)
-- [ ] 2.2 `lib/exportTemplateComparison.ts` — three tabs, summary block, legend, excluded-machines footer
-- [ ] 2.3 The standard **"About this export"** sheet: what was compared, what "same" means after
-      normalisation, and that tokens are compared unresolved
+- [x] 2.1 `cellStyle` on `ExportSheet`, plus `preamble`, `rowHeights`, `headerStyle` and `freezeCols`.
+      All optional, all no-ops when absent; the three existing `exportSheetsToXlsx` callers and the
+      eight `exportRowsToXlsx` ones were each opened and confirmed, not assumed
+- [x] 2.2 `lib/exportTemplateComparison.ts` — **four** tabs (the entry predates POD), summary line,
+      legend, per-band breakdown and excluded-machines footer. Button on OCPI → Reports beside the
+      Deal Register
+- [x] 2.3 "About this export" carries all three, plus each tab's counts and the row-height cap
 
 **Phase 3 · Verify**
-- [ ] 3.1 `cd frontend && npm run build`
-- [ ] 3.2 Open the file in Excel — fills present, column A frozen and wrapped, tab names right
-- [ ] 3.3 Spot-check by hand: take one amber row and one red row per tab and read both templates on
-      screen to confirm the sheet is telling the truth
-- [ ] 3.4 Confirm a machine with no sections at all does not silently vanish from its tab
+- [x] 3.1 `npm run build` green
+- [x] 3.2 **Opened in Excel via COM and asserted, not eyeballed**: `FreezePanes=True`,
+      `SplitColumn=4`, `SplitRow=4`; all four fills present (81 blue, 126 amber, 135 red);
+      `WrapText=True` on the line name, the answer column and the machine cells; row heights varying
+      16–91pt; tab names Direct / Sublimation / Other / POD / About this export; the
+      agreed-wording column blank on all 144 rows and filled on none
+- [x] 3.3 Spot-checked cell by cell against the raw table, both tabs. Direct `Sign-off wording` ambers
+      exactly the three Fab Pros (the `checked_by` minority against seven `approved_by`); Direct
+      `Model no.` reds exactly Homer K32, the one machine with none; Sublimation `Model no.` blues
+      exactly P8D and OT-1908A, the only two that carry one; Sublimation `Sign-off wording` ambers
+      exactly the four `approved_by` against six `checked_by`. Every fill was where it should be
+- [x] 3.4 Proved by stripping every section off Fab Pro 2I and rebuilding: 10 columns before, 10 after,
+      absent on all 19 section rows, its other bands untouched. The columns come from the MACHINE
+      list, never from the pointers, so this cannot regress silently
 
 #### Open questions
 - [ ] Is this sheet a **one-off read**, or the input to a clean-up where the differing clauses get

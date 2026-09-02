@@ -2889,3 +2889,143 @@ PDC-based domestic terms, none uses the approved sentence, which makes the case 
 📋 **The revision diff will show consumables as "added"** on a deal frozen with NULL and re-generated
 after this. `revisionDiff` iterates `FIELD_LABEL`, which includes the field. That is accurate — the
 new paper really does print what the old one left blank — and should not be suppressed.
+
+# OCPI-5 · The template comparison workbook — twenty templates side by side — 02-Sep-2026
+
+Twenty-one machines each carry a contract template transcribed from its own PowerPoint deck, by
+different people over several years. Nobody had ever seen them together. One `.xlsx`, one tab per
+machine category, template lines down the side and machines across the top.
+
+**It is the input to a clean-up, not a one-off read.** Ritesh Bhai will settle a single agreed wording
+for each line that differs and have the templates updated to match, so every row carries a blank
+**Agreed wording** cell for him to write into. ⚠ Applying those answers is a separate, later job — it
+rewrites the words that print on signed contracts across twenty-one machines.
+
+## What the sheet found
+
+| Tab | Machines | Lines | Identical | Differ | Missing on some | On only one or two |
+|---|---|---|---|---|---|---|
+| **Direct** | 10 | 126 | 4 | 12 | 35 | 75 |
+| **Sublimation** | 10 | 49 | 9 | 13 | 8 | 19 |
+| Other | 1 | — | *a comparison needs two columns* | | | |
+| POD | 0 | — | *no machine carries a template* | | | |
+
+Four identical lines out of 126 is the answer to the question the sheet was built to ask.
+
+## The two decisions the client took, before a line was written
+
+- **The answer column is pinned, not parked at the far right.** Columns A–D — *Template line*, *Band*,
+  *Status*, *Agreed wording* — freeze together, so the answer box never scrolls away while he reads
+  machine eight's wording. He sees about two machines at a time instead of three; that is the trade,
+  and he chose it.
+- **Four tabs, not five.** The "all machines ignoring category" tab that WORKLIST.md floats stays an
+  open question, unbuilt.
+
+## 🔴 Freeze panes have never worked in this codebase, in any export
+
+`shared/lib/exportXlsx.ts` set `ws["!freeze"]` on every sheet and three comments described the header
+row as frozen. It writes **nothing** — the community `xlsx-js-style` writer emits
+`<sheetViews><sheetView workbookViewId="0"/></sheetViews>`, a self-closing element with no `pane`
+child, and no key it reads produces one. Panes are a Pro feature upstream.
+
+The fix here: after `XLSX.write`, re-open the workbook with **JSZip** (already a dependency, already
+used in the browser by receivables-hub) and inject the `pane` element into the sheets that asked.
+Sheet name → XML part is resolved through `xl/workbook.xml` and `xl/_rels/workbook.xml.rels`, not by
+assuming `sheet1.xml` is the first tab — guessing would have frozen column A of the one-column "About
+this export" sheet.
+
+⚠ **Opt-in only.** The brief required the helper change to stay additive, so every other export still
+has no pane. Logged as **PF-15** with the one-line change that would switch it on portal-wide.
+
+## Five additive options on `ExportSheet`, and why each exists
+
+- `cellStyle(row, colIndex)` — the one the brief asked for. `rowStyle` paints the full width; a band
+  cannot say "this one cell disagrees with its neighbours", which is the entire job here.
+- `preamble` — rows above the header, for the summary line and the legend. The header, the autofilter
+  and the frozen `ySplit` all shift by its length. ⚠ **A long preamble is a trap**: everything above
+  the header freezes with it, so a fifteen-row summary block would have frozen half the screen. It is
+  three rows, and the per-band breakdown went *below* the grid instead.
+- `rowHeights` — `!rows` / `hpt` IS honoured by the writer, unlike `!freeze`. Verified in the bundle
+  before being used.
+- `headerStyle` — machine names run to 45 characters and have to wrap in the header.
+- `freezeCols` — above.
+
+## How the classification avoids being confidently wrong
+
+- **Normalised comparison, original display.** Case, leading and trailing space, repeated spaces,
+  blank lines, trailing full stops and commas, and curly quotes and dashes are all ignored when
+  deciding "same". The cell always prints the raw text. The quote folding is not cosmetic: these decks
+  came out of PowerPoint, which rewrites a straight apostrophe to a curly one as you type, and two
+  transcriptions of one clause routinely differ by nothing else.
+- **`{{tokens}}` are never resolved.** `lib/tokens.ts` is deliberately not imported. Two machines both
+  saying `{{head_count}}` are identical; resolving first would make every machine differ from every
+  other and the sheet would be uniformly amber.
+- **Sections match on `key`, never on title.** `installation` carries two distinct titles and
+  `warranty` three. Keyed on the title they would have split into five half-empty rows and reported a
+  hundred false gaps. Where titles do disagree, a `↳ its heading` row shows each machine's — the
+  difference is a finding to display, not a reason to split. It fires on exactly three keys in Direct
+  and none in Sublimation.
+- **A row can carry two fills.** The brief's four cases do not cover "some machines are missing it AND
+  the ones that have it disagree" — real, and `Model no.` on Direct is exactly it: one machine has
+  none and the other nine are all different. Red marks the gap, amber the disagreement, and the Status
+  reads *"Missing on 1 of 10; wordings differ"*. Reporting only the gap would send somebody to add a
+  clause without telling them the clause has no agreed wording yet.
+- **The columns come from the MACHINE list, never from the pointers.** A machine with no sections at
+  all keeps its column and reads red down that band. Derived from the pointers it would have vanished
+  from its own category's tab — and the emptiest template in the company is the one the sheet would
+  have hidden.
+
+## 🔴 Ordering is a finding, not tidiness
+
+A line only one machine carries is slotted **where that machine puts it**, never appended to the end
+of its band. Composition bullets carry the model name inside the sentence — *"…Printing unit model
+Homer K24 to print from 4 to 8 colors…"* — so ten machines produce ten one-off bullets that are the
+same clause differing in a word. Appended, K32's variant landed eleven rows below K24's and nothing
+told the reader they were one line; the finding *"make this one sentence with a token in it"* was
+invisible. Direct's composition union is 62 bullets across 10 machines, so this is most of that band.
+
+The rule: place an unseen line immediately **before** the next line of that machine already placed;
+if it has none left, append.
+
+## Black and white, without relying on hue
+
+Three pale tints print as three pale greys. So the fill is never the only carrier: every row states
+its verdict in words in a `Status` column, and within a row the marked cells are then self-evident —
+on `Differs` every cell has text and only the odd ones are amber; on `Missing` the marked cells are
+the empty ones; on `Only 1–2` the non-empty ones. A legend row on each tab says exactly that.
+
+## Verified — 02-09-2026
+
+- **Gate first, on two machines.** Hand-predicted Homer K24 vs K32 — 32 same, 8 differ, 0 missing,
+  6 unique across 46 lines — and the code returned exactly that, band for band. Nothing downstream was
+  written until it did. It caught a typo nobody had seen: K24 says *"Tension-adjustable **continuous**
+  unwinding"*, K32 *"**continous**"*.
+- `npm run build` green. All three `exportSheetsToXlsx` callers and all eight `exportRowsToXlsx` ones
+  opened and confirmed against the async change, not assumed.
+- **Produced from the real button** in the running app, and **opened in Excel via COM**:
+  `FreezePanes=True`, `SplitColumn=4`, `SplitRow=4`; four fills present (81 blue, 126 amber, 135 red,
+  50 band); `WrapText=True` on the line name, the answer column and the machine cells; row heights
+  varying 16–91pt; the agreed-wording column blank on all 144 rows and filled on none.
+- **Spot-checked cell by cell against the raw table.** Direct `Sign-off wording` ambers exactly the
+  three Fab Pros — the `checked_by` minority against seven `approved_by`. Direct `Model no.` reds
+  exactly Homer K32, the one machine with none. Sublimation `Model no.` blues exactly P8D and
+  OT-1908A, the only two that carry one. Sublimation `Sign-off wording` ambers exactly the four
+  `approved_by` against six `checked_by`. Every fill was where it should be.
+- **The no-sections invariant proved**, not asserted: stripped every section off Fab Pro 2I and
+  rebuilt — 10 columns before, 10 after, absent on all 19 section rows, other bands untouched.
+- Read-only throughout. No migration, no write path, nothing in the database touched.
+
+## Open / worth knowing
+
+- **`Model no.` on Direct is technically a finding and practically noise.** Nine distinct model
+  numbers across nine machines is correct — they *should* differ — but the sheet ambers eight of them
+  against an arbitrary reference. Harmless, and the Status makes it obvious, but if more such rows
+  appear it may be worth a "values are expected to differ" mark per line.
+- **A clause taller than about eight lines is clipped.** The longest section body is 6,242 characters,
+  roughly ninety wrapped lines; Excel's ceiling is 409pt, about twenty-seven. The cell holds the whole
+  text and the legend and the About sheet both say so, but there is no setting that shows everything.
+- **Filtering hides the footer.** The excluded-machines lines and the per-band breakdown sit inside
+  the autofilter range, so filtering on Status hides them along with the band banners. The About sheet
+  repeats everything that matters.
+- Direct's composition band is 62 lines with only 46 carried by a single machine each. That is the
+  honest picture, and it is also the biggest single clean-up opportunity the sheet exposes.
