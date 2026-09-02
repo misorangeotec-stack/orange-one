@@ -3029,3 +3029,130 @@ the empty ones; on `Only 1–2` the non-empty ones. A legend row on each tab say
   repeats everything that matters.
 - Direct's composition band is 62 lines with only 46 carried by a single machine each. That is the
   honest picture, and it is also the biggest single clean-up opportunity the sheet exposes.
+
+# OCPI-12 + OCPI-23 — the K64 print audit, and the field→document map — 02-Sep-2026
+
+**The question nobody had asked: does everything a salesperson types actually reach the paper?** Five
+fresh deals, ten rendered PDFs, every one read back with pdf.js. OCPI-23's map is the by-product and
+closes with it.
+
+Papers live in `Misc/Bushra Reports/OCPI/print-audit/` (gitignored, local to the machine that ran this),
+with a README naming what each pair tested. The map is `OCPI-FIELD-MAP.md` at the repo root, generated
+by `cd frontend && npm run field-map`.
+
+## What was built
+
+- **`frontend/scripts/ocpi-field-map.mjs`** — the OCPI-23 map, GENERATED rather than written. It reads
+  `FIELD_LABEL`, `quotationPdf.ts`, `ocPdf.ts`, `tokensFor` and the live `fms_ocpi_machine_sections`,
+  and emits one row per field with the two long-form routes as **separate columns**: rendered directly,
+  and via a `{{token}}` — the second carrying a **count**, never a tick, because the long form is per
+  machine. 103 fields, 8 live tokens, denominator **21** (the active machines that have a template).
+- Registered as `npm run field-map`, beside the existing `backup` and `asset-template` scripts.
+
+## 🔴 Two premises the brief was written on had gone stale
+
+- **Centering is no longer gated on `opt_external_centering`.** OCPI-14 moved it to the machine
+  CATEGORY, so it appears on all 11 Direct machines, not the 5 the brief named.
+- **The denominator is 21, not 28.** Seven active machines have no template and print no long form at
+  all — neither "prints" nor "missing".
+- And the one that changed the plan: **K64's nine sections use only seven tokens**, and
+  `{{consumables_supplier}}` is not among them. OCPI-19's line is structurally unshowable on K64, so a
+  fifth deal was raised on **Kolorado Alpha 15** — one of the 12 machines that do use it, and
+  Sublimation, which doubles as the only non-Direct case.
+
+## ✅ The standing "High Seas prints no rupee total" bug is CLOSED
+
+Recorded 27-Aug-2026 and unfixed since: picking High Seas disabled the currency picker without setting
+the draft's currency, so the FX box never rendered, no rate was captured, and every rupee figure came out
+blank on both papers.
+
+Both halves are now closed, and the second is the one that makes it safe:
+
+1. `QuotationForm.tsx` patches `dealValueCurrency: "USD"` when High Seas is picked — verified live, the
+   control flipped INR → USD and went disabled.
+2. `completeness.ts` puts `fxRate` at tier `generate`, so **Generate is disabled** with
+   `title="Still needed: USD to INR rate"` until a rate is entered. The blank-figure contract can no
+   longer be produced at all.
+
+`K64-3-high-seas-shipment-summary.pdf` prints *Value in INR ₹ 1,90,11,375 (at 88.4250 per USD)*.
+
+## 🔴 What the rendered pages found
+
+### 1 · A contract for a machine with NO DRYER still sells a dryer
+
+The deal-derived dryer block is correctly absent on `dryer_type = Not Applicable` — OCPI-8 works. The
+**machine template's own wording is not gated**, so the same contract still prints two dryer spec rows
+and, in the line the customer signs under TOTAL NET AMOUNT OF THE SUPPLY,
+`…WITH 64 PRINTHEADS AND CENTERING SYSTEM & DRYER`.
+
+**9 of 21** templated machines name a dryer in `supply_description`, **10** in their spec rows — and all
+9 are Direct, the only category where Not Applicable can be chosen. **2 of 21** (K64, Homer K32) name a
+centering system the same way, so a deal that excludes one still sells it. Raised as **OCPI-25**.
+
+### 2 · The dryer warranty is silently lost, and the screen asserts it does not exist
+
+Pick the machine, save the draft, then choose the dryer category — the natural order — and the warranty
+`chooseMachine` prefilled is gone. `clearHidden` drops it while no dryer category is set and nothing puts
+it back. The read-out then reads **"Not applicable"** on a K64 whose master says **12 Months**, and the
+summary sheet's Dryer Warranty row disappears.
+
+Proved both ways: the read-out said "Not applicable"; re-picking the same machine restored "12 Months".
+Raised as **OCPI-26**.
+
+### 3 · The forex clause prints on rupee contracts
+
+The summary was deliberately changed so the dollar clause shows on a USD deal alone — *"a rupee customer
+used to be shown, and asked to agree to, a term that could not apply to them."* The CONTRACT carries it
+unconditionally in its SALE CONDITIONS text; all three INR K64 contracts printed it. **4 of 21** machines.
+The fix reached one paper and not the other. Raised as **OCPI-27**.
+
+### 4 · Three questions asked and never printed
+
+- **`insuranceClauseAgreed`** — the clause TEXT prints as standing terms on the summary; the
+  salesperson's Yes/No prints nowhere, while `dollarClauseAgreed` prints "Clause Agreed: Yes" on the
+  same page.
+- **The subsidized rates never reach the contract.** OCPI-7's figures print on the summary in full; the
+  order confirmation carries neither. A price promise bounded to a quantity is on the quotation and
+  absent from the paper the customer signs.
+- **"Manufacturer's model no." claims a prefill that does not happen** — the hint says *"pre-filled from
+  the machine's template"*, nothing fills it, and the box is empty on every new deal. Harmless on paper
+  only because 0 of 21 templates use `{{machine_model_no}}`.
+
+All three in **OCPI-28**, which is a set of questions for the client rather than defects.
+
+### 5 · `fms_ocpi_machines.doc_title` is never read by either renderer
+
+A required choice on the Machines master that reaches no document: both papers head from
+`docHeading(deal)`, which returns ORDER CONFIRMATION / ORDER QUOTATION from the OC number alone. So
+MP5000's **"OFFER QUOTE"** can never print. In **OCPI-28**.
+
+## ✅ Verified working, on rendered pages
+
+OCPI-7's subsidized rates, sub-totals and quantity-bounding notes · OCPI-8's absent dryer block ·
+OCPI-10's four options, their composition bullets and the Others box · OCPI-11's five-row shipment grid
+with the server's own sub-totals and its caption · OCPI-18's delivery date and condition on BOTH papers,
+with "Term of Payment" gone · OCPI-19's consumables line · OCPI-20's payment terms · category gating on
+Sublimation · long text wrapping across page breaks without truncation.
+
+**The money guard holds.** Shipment sub-totals summing to ₹12,05,20,500 appear in neither `total_inr` nor
+`grand_total_inr`.
+
+**The form→payload binding is clean.** All 28 hand-filled fields on deal 1 round-tripped to the row
+exactly — the one exception is finding 2.
+
+## ⚠ Open / worth knowing
+
+- **These are the QUOTATION-STAGE papers, not the approved pair.** The sole owner of
+  `quotation_approval` is Ritesh, and self-approval is refused by BOTH the panel (`blockedBySelf`) and
+  the SQL (*"You raised this quotation, so somebody else has to approve it"*). Same two renderers, same
+  resolved sections, same frozen revision — they differ only in the title bar and the absent OC number.
+  **An audit of the approved pair needs a second account.**
+- **The audit describes the WORKING TREE, not what is deployed.** `master` was 33 commits behind and
+  OCPI-18/19/20 were uncommitted when this ran.
+- **The three-line dryer money block is unreachable on any new deal** — OCPI-14 removed the dryer-price
+  box, which is documented on `dryerIncluded` in `fieldSpec.ts`. Both renderers still carry the block.
+  Not a fault; worth knowing nothing exercises it.
+- **Counters burned, by decision:** quotation 46 → 52, `oc:2627` untouched (no deal was approved).
+  Rewinding live sequence state was judged riskier than a gap.
+- **One pre-existing orphan was left alone**: an `fms_ocpi_activity` row for QT-M0039
+  (`e8eb422a-…`, 01-Sep) whose deal somebody else had already deleted. Not this audit's to clean.

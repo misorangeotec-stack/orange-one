@@ -3255,6 +3255,171 @@ answers, but it cannot repair the ones already recorded.**
 
 ---
 
+### OCPI-31 · A contract for a machine with NO DRYER still sells a dryer  `[ ]`
+*Found 2026-09-02 by OCPI-12's print audit · **on a document the customer signs***
+
+🔴 **The deal says Not Applicable and the contract still sells a dryer.** OCPI-8 gated the deal-derived
+dryer block correctly — on `dryer_type = Not Applicable` the four dryer rows are gone from both papers,
+verified on a rendered page. What is **not** gated is the MACHINE TEMPLATE'S OWN WORDING, which is where
+the dryer is actually described. `K64-4-no-dryer-long-text-oc.pdf` prints, on a deal with no dryer:
+
+- spec row — `Dryer: AC380V three phase | 16 kW | 50Hz/60Hz`
+- spec row — `Dryer   Oil + Electric`
+- and, in the line above the signature block, under **TOTAL NET AMOUNT OF THE SUPPLY**:
+  `DIGITAL TEXTILE PRINTING MACHINE WITH STANDARD ACCESSORIES WITH 64 PRINTHEADS AND CENTERING SYSTEM
+  & DRYER (Model No: HM1800B-TK64-A1)`
+
+The third one is the commercial problem: the customer signs for a supply that names a dryer the deal
+does not include.
+
+#### How wide it is — counted live, 02-09-2026
+
+| | Machines |
+|---|---|
+| name a dryer in `supply_description` | **9 of 21** — and **all 9 are Direct**, the only category where "Not Applicable" can be chosen |
+| name a dryer in their spec rows | **10 of 21** |
+| name a **centering system** in `supply_description` | **2 of 21** — K64 and Homer K32 |
+
+The centering half is the same defect: `incl_centering = false` still prints "AND CENTERING SYSTEM".
+
+#### The traps
+
+⚠ **This is TEMPLATE CONTENT, not a renderer bug.** `ocPdf.ts` prints `spec_rows` and
+`supply_description` verbatim, which is correct — they are the machine's own description. The fix has to
+decide *where* the condition lives: a token, a conditional section, or two supply descriptions per
+machine.
+
+⚠ **A token is the cheap route and it has a cost.** `{{dryer_clause}}` resolving to "& DRYER" or "" would
+fix the supply line without touching the renderer — but it needs a migration over 9 machine rows, and
+`tokens.ts` warns that a template using a token the resolver does not know prints a ruled blank. The
+token must exist before the migration runs. Same ordering OCPI-18 had to respect.
+
+⚠ **The spec rows are a different question from the supply line.** A dryer's electrical draw on the spec
+sheet of a machine that CAN take a dryer is arguably correct even when this deal has none. Settle with
+the client whether all three go or only the supply line.
+
+#### Checklist
+- [ ] 0.1 Ask the client: on a no-dryer deal, should the spec rows go too, or only the supply line?
+- [ ] 1.1 Decide the mechanism — token vs conditional section — and write down why
+- [ ] 1.2 The 9 `supply_description` rows, and the centering half on 2 of them
+- [ ] 2.1 Re-render a Not Applicable deal and read the page; the words must be gone
+- [ ] 2.2 Re-render a WITH-dryer deal on the same machine; the words must still be there
+
+---
+
+### OCPI-32 · The dryer warranty is silently lost, and the screen says it does not exist  `[ ]`
+*Found 2026-09-02 by OCPI-12's print audit*
+
+🔴 **Fill the form in the natural order and the dryer warranty disappears.** Pick the machine, save the
+draft, come back and choose the dryer category — and the warranty that `chooseMachine` prefilled from the
+machine master is gone for good.
+
+The chain:
+
+1. `chooseMachine` prefills `dryerWarranty: m?.dryerWarranty ?? ""`.
+2. `branching.ts` shows `dryerWarranty` only when `hasDryerDetails` — which needs a dryer category.
+3. **`clearHidden` drops it on save**, because at that moment no category is picked.
+4. Choosing the category afterwards reveals the read-out again and **nothing re-fills it**. Only
+   re-picking the same machine does, and nothing tells anybody that.
+
+**Two consequences, and the first is worse.** The read-out then reads **"Not applicable"** — an
+assertion, not a blank — on a K64 whose master says **12 Months**. And the summary sheet's *Dryer
+Warranty* row vanishes, because `quotationPdf.ts` filters warranty rows with an empty value.
+
+Proved both ways, 02-09-2026: the read-out said "Not applicable"; re-picking the same machine restored
+"12 Months" instantly. `K64-1-everything-included-summary.pdf` has no Dryer Warranty row; deals 2 and 3,
+which carried the value, print one.
+
+#### The traps
+
+⚠ **"Not applicable" is the right words for the wrong reason.** `WarrantyReadout` renders it for an
+empty value, which IS correct on the 15 models with no head warranty. Here the same words state
+something false. Whatever the fix, the read-out must be able to tell *"this model offers none"* from
+*"we lost it"*.
+
+⚠ **Do NOT fix it by removing the field from `clearHidden`.** The rule that a hidden question stores no
+answer is the module's defining invariant and has a twin in `fms_ocpi_write_oc`. The fix belongs on the
+re-fill side: prefill when the dryer category is chosen, the way `chooseMachine` does when the machine is.
+
+⚠ **The same shape may exist for the other two warranties.** They are not gated on a dryer category so
+they survive today — but check before assuming.
+
+#### Checklist
+- [ ] 1.1 Re-prefill the dryer warranty when a dryer category is chosen, from the machine master
+- [ ] 1.2 Make the read-out distinguish "none offered" from "not answered"
+- [ ] 1.3 Check the machine and head warranties for the same gap
+- [ ] 2.1 Browser: machine → save → category, and confirm the value survives
+- [ ] 2.2 Re-render and confirm the Dryer Warranty row is back on the summary
+
+---
+
+### OCPI-33 · The forex clause prints on rupee contracts  `[ ]`
+*Found 2026-09-02 by OCPI-12's print audit*
+
+**The summary sheet was fixed for this and the contract was not.** `quotationPdf.ts` prints the dollar
+clause on a USD deal alone, and says why: *"A rupee customer used to be shown, and asked to agree to, a
+term that could not apply to them."*
+
+The **order confirmation** still carries it on every deal, because it is literal text inside the
+machine's own SALE CONDITIONS section rather than something the renderer decides. All three INR K64
+contracts rendered in the audit print *"Forex Impact Clause: If payment terms exceed 3 months with equal
+instalments, the Dollar exchange difference will be adjusted via Debit Note/Credit Note"*.
+
+**4 of the 21** templated machines carry it. So the two papers of one rupee deal disagree on exactly the
+point the summary was corrected for.
+
+⚠ **Same shape as OCPI-31** — a condition the renderer knows about, expressed as unconditional template
+text. If both are fixed, fix them the same way, or the next one will be a third mechanism.
+
+#### Checklist
+- [ ] 0.1 Confirm with the client that a rupee contract should not carry it
+- [ ] 1.1 Decide the mechanism, consistent with OCPI-31
+- [ ] 1.2 The 4 machine sections
+- [ ] 2.1 Render one INR and one USD deal on the same machine and read both pages
+
+---
+
+### OCPI-34 · Five questions asked on screen that reach no document — decisions needed  `[!]`
+*Found 2026-09-02 by OCPI-12's print audit · **questions for Ritesh Bhai, not defects***
+
+The audit's field→document map (`OCPI-FIELD-MAP.md`, regenerate with `cd frontend && npm run field-map`)
+found **18 fields that reach no document at all**. Most are documented-deliberate — `paymentType` and
+`deliveryDays` were retired by OCPI-18 with the reasoning written down, `externalCentering` is frozen
+history, `postWarrantyHeadPrice` had its token retired, and the identity columns were never meant to
+print. These five were not decided by anybody.
+
+1. 🔴 **`insuranceClauseAgreed` — agreed on screen, printed nowhere.** The clause TEXT prints as standing
+   terms at the foot of the summary; the salesperson's Yes/No appears on neither paper. Meanwhile
+   `dollarClauseAgreed` prints **"Clause Agreed: Yes"** on the same sheet. Two clauses, two treatments,
+   one page. **Should the insurance agreement print beside its clause?**
+2. 🔴 **The subsidized rates never reach the contract.** OCPI-7's figures print on the summary in full —
+   *"Subsidized Ink Price ₹ 5,00,000"* with a note bounding it to 400 litres — and the order confirmation
+   carries neither. A price promise, bounded to a quantity, on the quotation and not on the paper the
+   customer signs. **Should it print on the contract too?**
+3. **`customerEmail` and `customerMobile`** are captured on every deal and print nowhere. Plausibly
+   right — the Attn line names the person — but nobody wrote it down.
+4. **"Manufacturer's model no." claims a prefill that does not happen.** The hint reads *"pre-filled from
+   the machine's template"*; nothing fills it, so the box is empty on every new deal. Harmless on paper
+   only because **0 of 21** templates use `{{machine_model_no}}` — but the frozen document payload
+   separately records the machine's own value, so screen and snapshot already disagree. That is the
+   OCPI-24 shape, currently without consequences. **Fix the hint, or add the prefill?**
+5. **`fms_ocpi_machines.doc_title` is never read by either renderer.** It is a REQUIRED choice on the
+   Machines master, and both papers head from `docHeading(deal)` — ORDER CONFIRMATION / ORDER QUOTATION,
+   from the OC number alone. So MP5000's **"OFFER QUOTE"** can never print. **Either the field drives the
+   heading or it should come off the master.**
+
+Also unresolved, lower stakes: `locationId` is neither asked nor printed, and the three FX provenance
+columns (`fxRateAt`, `fxRateSource`, `fxRateOverridden`) are screen-only with no note saying so.
+
+#### Checklist
+- [ ] 0.1 Walk items 1–5 with Ritesh Bhai
+- [ ] 1.1 Whatever is decided, write the reason next to the field — the map re-reads the code each time,
+      so a documented "screen only" stops being a finding on the next run
+- [ ] 1.2 Anything that should print becomes its own entry; this one is the decision, not the build
+
+---
+
+
 ## R&D  *(new module)*
 
 ### RD-1 · R&D module — log initiatives, let management see them  `[!]`
