@@ -3282,11 +3282,20 @@ replaced it is closer to the claim being made:
 
 ## ⚠ Open / worth knowing
 
-- 🔴 **The migration is written and NOT applied** —
-  `20261104120000_fms_ocpi_the_deal_decides_what_the_template_sells.sql`. Against the frontend on
-  `master` the markers print crisply on a contract, so the order is deploy-then-migrate: the OCPI-18
-  rule, in the same direction. Its assertion block was dry-run against live and parses; it reads 0
-  everywhere today and must read 11 / 5 / 8 / 1 / 2 / **4**.
+- 🔴 **The migration is APPLIED and the database is now ahead of the deployed frontend.** Ran
+  02-09-2026: 15 rows, 24 fields, assertions reading **11 / 5 / 8 / 1 / 2 / 4** with 0 stray markers,
+  and nine order confirmations re-rendered from the live rows and read back with pdf.js — no marker
+  reaches any page. **`master` must be deployed.** Until it is, a contract generated in production on
+  one of the 11 touched machines prints `[[if dryer]] & DRYER[[/if]]` legibly, because `[` and `]` pass
+  `safeText` and Poppins carries both.
+
+  It was applied on instruction rather than after the deploy, in a quiet window — last deal activity
+  three hours old — and **the rollback was rehearsed on live data first, not merely written down**:
+  applied → verified → rolled back → compared byte-for-byte against a frozen pre-migration baseline →
+  re-applied → verified again. The way back is `node flip.mjs old` in the session scratchpad, which
+  restores all 15 rows exactly. The migration file's own guards match the pre-state, so it stays the
+  reproducible record; the row values were written by the same generator that produced the file, so the
+  strings that were verified and the strings that landed are the same strings.
 - ⚠ **`replaceSections` can silently revert it.** It is a delete-then-reinsert of whatever the Machine
   template screen is holding, and that screen seeds once and never re-seeds — so an admin with the tab
   open across the migration who presses "Save template" reverts that machine entirely. The assertion

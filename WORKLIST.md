@@ -3255,7 +3255,7 @@ answers, but it cannot repair the ones already recorded.**
 
 ---
 
-### OCPI-31 · A contract for a machine with NO DRYER still sells a dryer  `[x]` *(migration written, not yet applied)*
+### OCPI-31 · A contract for a machine with NO DRYER still sells a dryer  `[x]`
 *Found 2026-09-02 by OCPI-12's print audit · **on a document the customer signs***
 
 🔴 **The deal says Not Applicable and the contract still sells a dryer.** OCPI-8 gated the deal-derived
@@ -3301,19 +3301,28 @@ paragraph describing four drying chambers and oil heating). **Both Rocket deals 
 contract, in a place this entry never looked. JPK's whole 14-line `DRYER INFORMATION` section is the
 sixth and is deliberately left: it wants section-level visibility, which is a different mechanism.
 
-#### ⚠ THE MIGRATION MUST NOT RUN UNTIL THE PARSER IS DEPLOYED
+#### 🔴 THE DATABASE IS NOW AHEAD OF THE DEPLOYED FRONTEND — DEPLOY
 
-`[` and `]` are not in `pdfBrand`'s `GLYPH_FALLBACK` and Poppins carries both, so against the frontend
-currently on `master` these markers print **crisply** on a customer's contract — strictly worse than the
-bug being fixed. OCPI is live and deployed and real deals were raised today, so the order is: **merge and
-deploy the code, confirm it is live, then run the migration.** Same ordering OCPI-18 had to respect for
-`{{delivery_date}}`, in the same direction.
+The migration ran on 02-09-2026 while the parser was still only on `daily-reports`. `[` and `]` are not
+in `pdfBrand`'s `GLYPH_FALLBACK` and Poppins carries both, so **until `master` is deployed, an order
+confirmation generated in production prints `[[if dryer]] & DRYER[[/if]]` on the page** for the 11
+machines the migration touched. It was applied on instruction, in a quiet window — the last deal activity
+was three hours old — with the rollback rehearsed first.
 
-⚠ And once it has run, `replaceSections` is a delete-then-reinsert of whatever the Machine template
-screen is holding, and that screen seeds its state once and never re-seeds. **An admin with that tab open
-across the migration who presses "Save template" silently reverts it for that machine** — sections, spec
-rows and supply description alike. The migration's assertion block is re-runnable as a standalone
-`select` for exactly this reason; run it again the next morning.
+**Until the deploy lands, the way back is one command**, proved on live data before it was needed:
+
+```
+node flip.mjs old     # restores all 15 rows byte-for-byte to the pre-migration text
+```
+
+It was run for real — rollback, byte-identical comparison against the frozen baseline, then re-apply —
+so this is a rehearsed procedure rather than a written intention.
+
+⚠ Separately: `replaceSections` is a delete-then-reinsert of whatever the Machine template screen is
+holding, and that screen seeds its state once and never re-seeds. **An admin who had that tab open across
+the migration and presses "Save template" silently reverts it for that machine** — sections, spec rows and
+supply description alike. The assertion block is re-runnable as a standalone `select` for exactly this
+reason; run it again the next morning. It must read **11 / 5 / 8 / 1 / 2 / 4** with 0 stray markers.
 
 The centering half is the same defect: `incl_centering = false` still prints "AND CENTERING SYSTEM".
 
@@ -3341,11 +3350,11 @@ the client whether all three go or only the supply line.
       the same pass as `{{tokens}}`. A token cannot do it — `resolve()` prints a ruled blank for an
       empty value, so it could not resolve to nothing without changing `resolve()` anyway. Reasoning in
       full in OCPI.md and in the file's own header
-- [x] 1.2 ⚠ **WRITTEN AND VERIFIED, NOT YET APPLIED** —
-      `20261104120000_fms_ocpi_the_deal_decides_what_the_template_sells.sql`. 15 guarded UPDATEs: 11
+- [x] 1.2 **APPLIED 02-09-2026** —
+      `20261104120000_fms_ocpi_the_deal_decides_what_the_template_sells.sql`. 15 rows, 24 fields: 11
       supply-line wraps across 9 machines, 5 whole `Dryer` spec rows, 8 dryer lines inside multi-line
-      spec values, 1 composition bullet, 2 section lines, 4 forex clauses. **It must not run until the
-      parser is deployed** — see the entry's own note below
+      spec values, 1 composition bullet, 2 section lines, 4 forex clauses. Every count asserted against
+      the rows afterwards, and 0 unbalanced markers anywhere
 - [x] 2.1 Rendered headlessly through the real `buildOcPdf` from the live rows and read back with
       pdf.js: on a no-dryer Homer K32, K64 and Rocket the dryer words are gone from the supply line,
       the spec table, the composition and SCOPE OF SUPPLY
@@ -3423,7 +3432,7 @@ need somebody to reopen them. Same shape as OCPI-20's stranded `payment_terms = 
 
 ---
 
-### OCPI-33 · The forex clause prints on rupee contracts  `[x]` *(migration written, not yet applied)*
+### OCPI-33 · The forex clause prints on rupee contracts  `[x]`
 *Found 2026-09-02 by OCPI-12's print audit*
 
 **The summary sheet was fixed for this and the contract was not.** `quotationPdf.ts` prints the dollar
@@ -3446,7 +3455,7 @@ text. If both are fixed, fix them the same way, or the next one will be a third 
 - [x] 1.1 The same mechanism as OCPI-31: `[[if usd]]…[[/if]]`. `isUsdDealRow` is now one exported
       predicate read by the OC's money rows, the summary's dollar clause and this condition, so the
       clause and the money printed inches apart on one page cannot disagree about the currency
-- [x] 1.2 ⚠ **WRITTEN AND VERIFIED, NOT YET APPLIED** — in the same migration as OCPI-31. **Exactly 4**,
+- [x] 1.2 **APPLIED 02-09-2026** — in the same migration as OCPI-31. **Exactly 4**,
       asserted by the migration itself, and each keeps its own wording: two say *"Forex Impact Clause:"*,
       KoloRado Alpha 3 says *"Forex Clause Impact:"*, and Position Printer's is an unlabelled sentence
       with no "forex" in it at all — which is why searching for one phrase finds two of four
