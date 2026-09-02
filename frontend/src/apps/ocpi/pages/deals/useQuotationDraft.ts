@@ -77,7 +77,7 @@ export function useQuotationDraft(dealId?: string) {
     if (seeded.current) return;
     if (dealId) {
       if (!existing) return; // still loading
-      setDraft(draftFromDeal(existing));
+      setDraft(draftFromDeal(existing, String(s.config.defaultGstRate)));
       seeded.current = true;
       return;
     }
@@ -108,6 +108,9 @@ export function useQuotationDraft(dealId?: string) {
       ...EMPTY_DRAFT,
       salespersonName: me?.name ?? "",
       salespersonUserId: me?.id ?? "",
+      // OCPI-29 · the rate is no longer typed, so it is seeded from the config
+      // row rather than from the literal in EMPTY_DRAFT.
+      gstRate: String(s.config.defaultGstRate),
     });
     seeded.current = true;
   }, [dealId, existing, s, salespeople, rosterLoading]);
@@ -116,6 +119,28 @@ export function useQuotationDraft(dealId?: string) {
     setDraft((d) => ({ ...d, ...p }));
     setSavedAt(null);
   }, []);
+
+  /**
+   * The GST rate, guaranteed present before a payload is built (OCPI-29).
+   *
+   * 🔴 `fms_ocpi_write_oc` DERIVES THE TAX FROM THE PAYLOAD, NOT FROM THE CONFIG:
+   *      v_rate := case when v_transport = 'high_seas' then null
+   *                     else nullif(p->>'gst_rate', '')::numeric end;
+   *    so an empty `gst_rate` on an Others deal does not fall back to 18 — it
+   *    derives a NULL amount, drops the tax row from both papers and understates
+   *    the total by 18%, with nothing on screen to notice. The form stopped
+   *    asking for the rate; it must not stop SENDING it.
+   *
+   * ⚠ IT RUNS BEFORE `clearHidden`, never after. High Seas still has to end up
+   *   with nothing — `clearHidden` blanks the field and the RPC nulls it again —
+   *   and reversing the order would put a rate back on a contract that legally
+   *   attracts none.
+   */
+  const withGstRate = useCallback(
+    (d: QuotationDraft): QuotationDraft =>
+      d.gstRate.trim() ? d : { ...d, gstRate: String(s.config.defaultGstRate) },
+    [s],
+  );
 
   /*
     ⚠ THE FACTS GO IN TOO (OCPI-14). The centering inclusion is required only on
@@ -154,7 +179,8 @@ export function useQuotationDraft(dealId?: string) {
     try {
       const payload = payloadFromDraft(
         clearHidden(
-          draft,
+          // ⚠ withGstRate FIRST, clearHidden SECOND — see withGstRate.
+          withGstRate(draft),
           dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
         ),
       );
@@ -169,7 +195,7 @@ export function useQuotationDraft(dealId?: string) {
     } finally {
       setBusy(false);
     }
-  }, [draft, savedId, s]);
+  }, [draft, savedId, s, withGstRate]);
 
   /**
    * Save, then freeze a revision and produce the PDF.
@@ -188,7 +214,8 @@ export function useQuotationDraft(dealId?: string) {
     try {
       const payload = payloadFromDraft(
         clearHidden(
-          draft,
+          // ⚠ withGstRate FIRST, clearHidden SECOND — see withGstRate.
+          withGstRate(draft),
           dealFacts(s.dryerTypes, draft.dryerType, s.machineCategories, draft.machineCategoryId),
         ),
       );
@@ -311,7 +338,7 @@ export function useQuotationDraft(dealId?: string) {
     } finally {
       setBusy(false);
     }
-  }, [draft, savedId, s]);
+  }, [draft, savedId, s, withGstRate]);
 
   return {
     draft,

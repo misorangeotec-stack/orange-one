@@ -154,7 +154,44 @@ marked differently:
 
 ## Order to Dispatch
 
-*(nothing yet)*
+- **BW-1 · The sales bill carries its own quantity** `[~]`
+  *Order to Dispatch — Generate Sales Bill, and everything downstream of it*
+
+  `ship_qty` — the store keeper's "Ship now" at Check Material Status — was the only quantity in
+  the system. The gate pass printed it, the gate-out and delivery recaps showed it, and the order's
+  delivered total was worked out from it. The billing desk could see what had been picked but had
+  **no way to say the Tally invoice covered less**, and no screen would have shown the difference.
+
+  Generate Sales Bill now carries a per-line **Sales bill qty**, typed by whoever owns that step
+  (rights needed nothing new — `fms_dispatch_can_act` already gates the step). From there on it is
+  the figure that counts: it prints on the gate pass, the gate-out and delivery screens show it, and
+  the order settles against it. **A line released as 60 but billed 40 settles 40** — the 20 stays
+  pending and comes back as its own round, exactly as a short-shipped line does.
+
+  Decided with Karan on 2026-09-02: the box opens **blank** on a first record (pre-filling would make
+  "bill everything" the accidental default), and is **capped per line at what the store released** —
+  a gate pass must never list more than is on the vehicle.
+
+  Two things rode along, both found while building it:
+  - **Every remark is now visible to the next desk.** Each step collected a Remarks box only its own
+    step could read, so the store keeper could not see why credit released part of the order and the
+    gate could see neither that nor the store's note. The recap panel carries the whole trail now,
+    with who wrote each and when.
+  - The quantity box had to be sized on its **wrapper**, not on the input: `cn()` is a plain string
+    joiner, not tailwind-merge, so a `w-24` className never replaced the `w-full` baked into
+    `fieldBase`. Worth knowing — **the same trap is live in `ShipLinesGrid`**, and in any other grid
+    that sizes a shared field by className.
+
+  **Where it stands.** Migration `20261104120000` is **applied to the live database** (2026-09-02) —
+  verified: 3,172 archived rows backfilled, none left null, and **zero orders whose delivered total
+  would move**. A compatibility shim means the old screen still bills normally, so nothing broke for
+  anyone while the frontend waits. The screens are on branch `Bushra-O2D` with a PR open; they reach
+  the team when it merges and Vercel deploys.
+
+  **To discuss with Karan:**
+  - [ ] Should `ShipLinesGrid`'s "Ship now" box get the same width fix?
+  - [ ] A line released but left blank on the bill has physically left the gate with no invoice
+        against it. The order keeps asking for it — who reconciles that, and is it worth a report?
 
 ---
 

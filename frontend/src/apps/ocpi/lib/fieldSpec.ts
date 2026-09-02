@@ -301,6 +301,34 @@ export interface QuotationDraft {
  */
 export const CONSUMABLES_SUPPLIER = "Orange O Tec Pvt Ltd";
 
+/**
+ * The company's GST rate — a LAST RESORT, not the source (OCPI-29, 02-09-2026).
+ *
+ * 🔴 THE SOURCE IS `fms_ocpi_config.default_gst_rate`, and after this task it is
+ *    the only place a person can change the rate: the form no longer asks for it
+ *    (it was 18 on every one of the 25 deals that carry one, and never anything
+ *    else), so it is company policy rather than a per-deal question. Settled with
+ *    Ritesh Bhai as DEVELOPER-ONLY — there is no admin screen for it and none is
+ *    wanted.
+ *
+ * ⚠ THIS CONSTANT EXISTS SO THERE IS ONE FALLBACK RATHER THAN FOUR. The number
+ *   used to be written out three separate times — here in `EMPTY_DRAFT`, again in
+ *   `draftFromDeal`, and again as `?? 18` in `ocpiFetch` — beside the config row
+ *   that was supposed to govern them. Four copies of a tax rate is how "the
+ *   developer will change it" becomes a rate changed in three places and still
+ *   wrong in the fourth. All three now read this.
+ *
+ * ⚠ IT IS NOT ZERO AND MUST NEVER BECOME ZERO. A High Seas sale attracts no GST
+ *   at all: `branching.ts` hides the field, the server stores NULL, and both
+ *   renderers omit the tax row entirely. A row reading "0% GST — ₹ 0" is a
+ *   different legal claim from no row at all.
+ *
+ * ⚠ IT LIVES HERE, ABOVE `EMPTY_DRAFT`, for the same reason CONSUMABLES_SUPPLIER
+ *   does — the object literal below reads it at module load, and a const declared
+ *   further down the file is a temporal-dead-zone error.
+ */
+export const DEFAULT_GST_RATE = "18";
+
 export const EMPTY_DRAFT: QuotationDraft = {
   salespersonName: "",
   salespersonUserId: "",
@@ -405,7 +433,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   machineModelNo: "",
   preparedBy: "",
   approvedBy: "",
-  gstRate: "18",
+  gstRate: DEFAULT_GST_RATE,
   machineValueInr: "",
   gstAmountInr: "",
   totalInr: "",
@@ -691,20 +719,58 @@ export const INSURANCE_CLAUSE =
 */
 
 /**
- * The house wording for the terms of payment (OCPI-20, 01-Sep-2026).
+ * The house wordings for the terms of payment (OCPI-20, extended by OCPI-30).
  *
- * ⚠ ONE CONSTANT FOR THREE USES — the placeholder, the persistent hint under the
- *   box, and the "Use this format" button. They were allowed to drift once
- *   already: the old placeholder read "25% advance, 75% before delivery", which
- *   is not the wording anybody actually uses, so the box was teaching a format
- *   nobody follows.
+ * OCPI-20 shipped ONE format. It did not cover the deals actually being written:
+ * of 24 deals, 12 distinct wordings, and once the seeded 13 are set aside EVERY
+ * remaining deal is worded differently from every other — two pairs differing
+ * only by a typo ("Installment" / "Instalment", "50% advance with order" /
+ * "50% with order"), which is the clearest possible evidence that people are
+ * retyping from memory. These seven are those wordings, generalised.
  *
- * ⚠ THE FIELD STAYS FREE TEXT. This is guidance, never a constraint — a
- *   negotiated deal must still be able to say something else. `payment_terms`
- *   remains one free-text column feeding `{{payment_terms}}` on ~21 templates.
+ * ✅ SEVEN, APPROVED TO THE CHARACTER 02-09-2026, and no eighth. "100% advance"
+ *    was offered and declined — "just seven options are good to go for now" — and
+ *    it appears in no deal on record. The field stays free text, so a full-advance
+ *    deal is still typable; if it turns out to be common, an eighth is one line.
+ *
+ * ⚠ THE BLANKS ARE `______`, DELIBERATELY NOT `{{token}}` SYNTAX. tokens.ts sets
+ *   out the reasoning: a printed `______` reads as a blank somebody must fill,
+ *   whereas a stray `{{x}}` reads as software that broke. If a salesperson
+ *   inserts a format and forgets to complete it, an underscore run is the failure
+ *   that gets noticed and corrected rather than shipped.
+ *
+ * ✅ ALWAYS `₹`, ON EVERY DEAL INCLUDING USD (settled 02-09-2026). Ritesh Bhai:
+ *    "in the USD we are always going to show the conversion, so we can just show
+ *    the rupee amount there" — a dollar deal already carries a frozen FX rate and
+ *    its rupee equivalent, and both print, so rupee payment terms are consistent
+ *    with the rest of the paper.
+ *
+ *    🟢 AND THAT IS WHY THESE ARE PLAIN STRINGS. No currency placeholder, nothing
+ *       to resolve at insertion time — and so no bug when a salesperson switches
+ *       the deal's currency AFTER inserting a format. Had the symbol followed the
+ *       deal, an INR sentence typed before a switch to USD would have been left
+ *       saying the wrong thing, with a silent rewrite of a typed commercial term
+ *       as the only "fix". That whole class of problem does not arise.
+ *
+ * ⚠ ONE CONSTANT, ONE DEFINITION. It drives the placeholder and every row of the
+ *   insert list. The single format it replaces was already allowed to drift once
+ *   — the old placeholder read "25% advance, 75% before delivery", a wording
+ *   nobody uses — and copies drifting apart is the bug this whole line of work
+ *   exists to close.
+ *
+ * ⚠ THE FIELD STAYS FREE TEXT. These are starting points, not a vocabulary — a
+ *   deal that fits none of the seven must still be writable. `payment_terms`
+ *   remains one free-text column feeding `{{payment_terms}}` on 21 templates.
  */
-export const PAYMENT_TERMS_FORMAT =
-  "25% advance with the order, 75% against the shipping documents.";
+export const PAYMENT_TERMS_FORMATS = [
+  "___% advance with the order, ___% against the shipping documents.",
+  "___% advance with the order, ___% before dispatch.",
+  "___% advance with the order, balance ___% in ___ equal PDC cheques.",
+  "___% plus GST advance with the order, balance ___% in ___ equal PDC cheques.",
+  "₹______ advance with the order, balance in ___ equal instalments after delivery.",
+  "₹______ advance with the order, balance ₹______ in ___ equal PDC cheques (₹______ × ___).",
+  "Payment in ___ equal monthly instalments (______).",
+] as const;
 
 /**
  * The condition the machine delivery date is given under (OCPI-18, 01-Sep-2026).
@@ -893,8 +959,22 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
 
 const s = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
 
-/** Load an existing deal into the form's shape. */
-export function draftFromDeal(d: OcpiDeal): QuotationDraft {
+/**
+ * Load an existing deal into the form's shape.
+ *
+ * ⚠ `defaultGstRate` IS THE CONFIG ROW, PASSED IN (OCPI-29). A deal whose
+ *   `gst_rate` is null falls back to it, and the caller that has the store hands
+ *   over `s.config.default_gst_rate`; the parameter defaults to the constant only
+ *   for callers that do not, so the number is never written out a second time.
+ *   A null rate is nearly always a High Seas deal, where the fallback is
+ *   irrelevant — `clearHidden` blanks the field and the server nulls it again —
+ *   but an Others deal saved before the column existed needs a rate to send, or
+ *   `fms_ocpi_write_oc` derives no GST amount at all.
+ */
+export function draftFromDeal(
+  d: OcpiDeal,
+  defaultGstRate: string = DEFAULT_GST_RATE,
+): QuotationDraft {
   return {
     salespersonName: s(d.salespersonName),
     salespersonUserId: s(d.salespersonUserId),
@@ -1004,7 +1084,8 @@ export function draftFromDeal(d: OcpiDeal): QuotationDraft {
     machineModelNo: s(d.machineModelNo),
     preparedBy: s(d.preparedBy),
     approvedBy: s(d.approvedBy),
-    gstRate: d.gstRate === null || d.gstRate === undefined ? "18" : String(d.gstRate),
+    gstRate:
+      d.gstRate === null || d.gstRate === undefined ? defaultGstRate : String(d.gstRate),
     machineValueInr: s(d.machineValueInr),
     gstAmountInr: s(d.gstAmountInr),
     totalInr: s(d.totalInr),

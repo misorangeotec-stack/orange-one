@@ -19,20 +19,26 @@ export const carriesUnit = (mt: ProductionMasterType) => HAS_UNIT.includes(mt);
  * here without adding it to that RPC's insert chain silently drops it on approve.
  */
 export function masterFields(mt: ProductionMasterType, ctx: MasterFieldCtx): MasterFieldDef[] {
-  // 'bom' never reaches here — BOMs are built on their own screen, not through
-  // MasterCrud or the request modal — but name it explicitly so the fallthrough
-  // can't quietly label a future caller's field "Unit name".
+  // 'bom' and 'coa_parameter' never reach here — both are built on their own
+  // screen, not through this shared schema or the request modal — but name them
+  // explicitly so the fallthrough can't quietly label a future caller's field
+  // "Unit name". That fallthrough is a real trap: it is the LAST arm, so every
+  // master type nobody remembered to add lands on it looking deliberate.
   const label =
     mt === "category" ? "Category name"
     : mt === "raw_material" ? "Raw material name"
     : mt === "packaging_item" ? "Packaging item name"
     : mt === "fg_item" ? "FG item name"
     : mt === "bom" ? "BOM name"
+    : mt === "test_equipment" ? "Test equipment name"
+    : mt === "coa_parameter" ? "COA parameter name"
     : "Unit name";
   const placeholder =
     mt === "unit" ? "e.g. KGS, LTR, PCS"
     : mt === "category" ? "e.g. Ink"
     : mt === "packaging_item" ? "e.g. Carton, Label"
+    : mt === "test_equipment" ? "e.g. PHS-3C, Brookfield"
+    : mt === "coa_parameter" ? "e.g. Viscosity (cps)"
     : "e.g. name";
 
   const fields: MasterFieldDef[] = [{ key: "name", label, type: "text", required: true, placeholder }];

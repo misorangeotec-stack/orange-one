@@ -85,8 +85,42 @@ const REQUIREMENTS: readonly Requirement[] = [
   // ── Blocks Generate ──────────────────────────────────────────────────────
   { key: "customerName", tier: "generate" },
   { key: "salespersonName", tier: "generate" },
+
+  /*
+    OCPI-27 · THE ASTERISK IS THE POINT, AND THIS RULE WILL ALMOST NEVER FIRE.
+
+    🟢 Choosing a machine already sets the category — `chooseMachine` snaps it
+       (OCPI-14) — and every existing deal was back-filled, so a deal that has a
+       machine always has a category and a deal with no machine is already
+       blocked on `machineId` below. Only 2 deals on record carry no category,
+       and both are blocked on the machine anyway.
+
+    That is not a reason to leave it out. What Ritesh Bhai asked for is the
+    SCREEN SAYING THIS FIELD MATTERS, plus a guard against a future path that
+    sets a machine without a category. ⚠ DO NOT delete it later on the grounds
+    that it never catches anything — never firing is the expected behaviour, and
+    this note is here so that is not mistaken for dead code.
+  */
+  { key: "machineCategoryId", tier: "approval" },
   { key: "machineId", tier: "generate" },
   { key: "machineCount", tier: "generate" },
+
+  /*
+    OCPI-27 · It prints on the CUSTOMER's summary sheet — "No. of Print Heads
+    Required" (`quotationPdf.ts`) — as an empty string when it is null, so a
+    blank is a hole in a document rather than an unasked question.
+
+    ⚠ APPROVAL, NOT GENERATE. OCPI-15 settled that only the barest identity and
+      the price block Generate, so a specification can still go out
+      mid-negotiation before this is settled.
+
+    ⚠ ZERO IS A LEGAL ANSWER. 5 machines have no head type mapped at all — the
+      three Pengda models, Label Printer and Book Printer — and the box takes
+      digits, so a machine that genuinely carries none is answered with 0 rather
+      than left blank. `isAnswered` reads "0" as answered; the column's own CHECK
+      allows `>= 0`.
+  */
+  { key: "headCount", tier: "approval" },
 
   /*
     OCPI-14 · ONLY A CHOICE CAN BE MISSING. A model with ONE mapped head fills

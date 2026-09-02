@@ -12,12 +12,18 @@ import { useProductionStore } from "../store";
  */
 export interface MasterFieldCtx {
   unitOptions: ComboOption[];
+  /** The COA parameter form's optional equipment picker (its own screen, not
+   *  masterFields — but it reads the same context so the lists cannot drift). */
+  testEquipmentOptions: ComboOption[];
 }
 
 export function useMasterFieldCtx(): MasterFieldCtx {
   const s = useProductionStore();
   return useMemo(
-    () => ({ unitOptions: s.activeUnits.map((u) => ({ value: u.id, label: u.name })) }),
-    [s.activeUnits],
+    () => ({
+      unitOptions: s.activeUnits.map((u) => ({ value: u.id, label: u.name })),
+      testEquipmentOptions: s.activeTestEquipments.map((e) => ({ value: e.id, label: e.name })),
+    }),
+    [s.activeUnits, s.activeTestEquipments],
   );
 }

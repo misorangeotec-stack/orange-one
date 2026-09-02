@@ -22,6 +22,7 @@ import PackingQueue from "./pages/queues/PackingQueue";
 import ReadyToDispatchQueue from "./pages/queues/ReadyToDispatchQueue";
 import FgTransferQueue from "./pages/queues/FgTransferQueue";
 import Masters from "./pages/masters/Masters";
+import CoaRegister from "./pages/CoaRegister";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import LotCycleTime from "./pages/reports/LotCycleTime";
@@ -66,6 +67,13 @@ function RequireQueue({ step, children }: { step: QueueStep; children: ReactNode
   return <>{children}</>;
 }
 
+/** The COA register. Same disjunction the sidebar asks, so the two cannot drift. */
+function RequireCoaRegister({ children }: { children: ReactNode }) {
+  const { canSeeQueue, canMonitor } = useProductionStore();
+  if (!canSeeQueue("quality_check") && !canMonitor) return <AccessDenied />;
+  return <>{children}</>;
+}
+
 /**
  * Root of the Production Entry FMS. Mounted per-user (App.tsx wraps it in
  * RequireModule); what each person sees is decided by the nav, the store's
@@ -96,6 +104,10 @@ export default function ProductionEntryApp() {
           <Route path="queues/packing" element={<RequireQueue step="packing_entry"><PackingQueue /></RequireQueue>} />
           <Route path="queues/ready-to-dispatch" element={<RequireQueue step="ready_to_dispatch"><ReadyToDispatchQueue /></RequireQueue>} />
           <Route path="queues/fg-transfer" element={<RequireQueue step="fg_transfer"><FgTransferQueue /></RequireQueue>} />
+          {/* The COA register is a Quality Checking record: its owners and the
+              coordinators reach it, and so do monitors, for whom it is the
+              module-wide view of what was certified. */}
+          <Route path="coa" element={<RequireCoaRegister><CoaRegister /></RequireCoaRegister>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="reports/lots" element={<RequireMonitor><LotCycleTime /></RequireMonitor>} />
           <Route path="reports/stages" element={<RequireMonitor><StageCycleTime /></RequireMonitor>} />
