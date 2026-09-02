@@ -1,5 +1,4 @@
 import { useState } from "react";
-import ReassignStepModal from "./ReassignStepModal";
 import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import PillToggle from "@/shared/components/ui/PillToggle";
@@ -19,7 +18,6 @@ import StepModal from "./StepModal";
 import StatusPill, { OutcomePill } from "./StatusPill";
 import GatePassButton from "./GatePassButton";
 import type { DispatchOrder } from "../types";
-import type { OwnerStepKey } from "../lib/steps";
 
 /**
  * A per-step STAGE view. Two tabs over the same step: the work still owed —
@@ -60,7 +58,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   */
   const hold = STEP_HOLD[stepKey];
   const [heldOnly, setHeldOnly] = useState(false);
-  const [reassigning, setReassigning] = useState<DispatchOrder | null>(null);
 
   const pending = s.myQueue(stepKey);
   const completedAll = s.completedFor(stepKey);
@@ -396,14 +393,17 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
               {stepKey === "gate_out" && (
                 <GatePassButton order={r.order} view={currentRoundView(r.order)} />
               )}
-              {/* Reassign THIS order's step, or take it back. Ownership here is
-                  per (step, location) and several steps are configured one person
-                  deep at each site, so any of them can stall on one absence. */}
-              {s.canReassignStep(stepKey as OwnerStepKey, r.order) && (
-                <Button size="sm" variant="ghost" onClick={() => setReassigning(r.order)}>
-                  Reassign
-                </Button>
-              )}
+              {/*
+                ⚠ THERE IS NO Reassign BUTTON HERE, AND IT IS NOT AN OVERSIGHT.
+                  Dispatch was given the shared per-step reassignment in
+                  20260827180000 alongside the other six modules, and it was
+                  withdrawn from THIS module only — the ask was that the step
+                  stays with whoever owns it at that location. The store still
+                  exposes `canReassignStep` / `reassignStep`, Setup still carries
+                  its Reassignment tab, and `fms_dispatch_reassign_step` is still
+                  granted, so the feature can be restored by putting this button
+                  back. Every other FMS keeps its own, unchanged.
+              */}
               {s.canEdit && s.canActOn(stepKey, r.order) ? (
                 <Button size="sm" onClick={() => acting.openEdit({ order: r.order, view: currentRoundView(r.order) })}>
                   {cfg.actionLabel}
@@ -437,13 +437,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         // A row opened from the Completed tab is an EDIT; from Pending it is a record.
         editing={!!acting.row && stage.showingCompleted && !acting.isView}
         readOnly={acting.isView}
-      />
-
-      <ReassignStepModal
-        order={reassigning}
-        step={stepKey as OwnerStepKey}
-        open={reassigning !== null}
-        onClose={() => setReassigning(null)}
       />
     </div>
   );
