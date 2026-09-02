@@ -11,6 +11,7 @@ import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../../store";
 import { OCPI_MASTERS_QK, fetchOcpiMasters } from "../../data/ocpiMasters";
 import { exportDealRegister } from "../../lib/exportRegister";
+import { exportTemplateComparison } from "../../lib/exportTemplateComparison";
 import { STATUS_LABEL } from "../../lib/format";
 import DealsTable from "../deals/DealsTable";
 import type { OcpiStatus } from "../../types";
@@ -87,8 +88,22 @@ export default function DealRegister() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, status, machineId, salesperson, custQuery, customer, s.machines]);
 
+  /**
+   * The template comparison workbook (OCPI-5).
+   *
+   * Everything it needs is already in the module snapshot — machines, their
+   * sections and the categories — so it reads nothing new and writes nothing.
+   */
+  function downloadTemplates() {
+    return exportTemplateComparison({
+      categories: s.machineCategories,
+      machines: s.machines,
+      sections: s.machineSections,
+    });
+  }
+
   function download() {
-    exportDealRegister(
+    return exportDealRegister(
       rows,
       {
         machineById: s.machineById,
@@ -119,10 +134,27 @@ export default function DealRegister() {
             Every deal, at every stage. Filter it, then take the spreadsheet.
           </p>
         </div>
-        <Button onClick={download} disabled={rows.length === 0}>
-          Export {rows.length} {rows.length === 1 ? "deal" : "deals"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+            ⚠ NOT A SCREEN, AND NOT A FILTER ON THIS ONE (OCPI-5). The ask is a
+              spreadsheet with a tab per machine category and one column per
+              machine — a ten-column diff grid is a spreadsheet's job, not a
+              table's. It shares nothing with the register above it except the
+              page, which is where a person already comes to take a file away.
+          */}
+          <Button variant="ghost" onClick={() => void downloadTemplates()} disabled={s.machines.length === 0}>
+            Template comparison
+          </Button>
+          <Button onClick={() => void download()} disabled={rows.length === 0}>
+            Export {rows.length} {rows.length === 1 ? "deal" : "deals"}
+          </Button>
+        </div>
       </div>
+
+      <p className="-mt-1 text-[12.5px] text-grey-2">
+        Template comparison lays every machine's order-confirmation template side by side, one tab per
+        category, and marks the lines that differ, are missing, or only one machine carries.
+      </p>
 
       <Card className="space-y-3 p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
