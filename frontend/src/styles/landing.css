@@ -1010,9 +1010,10 @@
   color: var(--orange);
   transform: translateX(3px);
 }
-.lp .ic-line {
+.lp .ic-line,
+.lp .foot-col a.ic-line {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   color: #93a2be;
   font-size: 13.5px;
@@ -1024,7 +1025,6 @@
   height: 16px;
   color: var(--orange);
   flex: none;
-  margin-top: 2px;
 }
 .lp a.ic-line:hover {
   color: var(--orange);
