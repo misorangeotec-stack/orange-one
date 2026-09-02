@@ -47,8 +47,27 @@ import {
  *   figure on it is what Save draft is for.
  */
 
-/** The three answers whose absence shows on the CUSTOMER's own copy. */
-const CUSTOMER_FACING = new Set<string>(["transportTerms", "paymentTerms", "deliveryDate"]);
+/**
+ * The answers whose absence shows on the CUSTOMER's own copy.
+ *
+ * ⚠ HEAD COUNT JOINED THEM IN OCPI-27, and only because that task made it
+ *   required — this set filters `q.missing`, so a field that could never be
+ *   missing could never appear here. `quotationPdf.ts` prints "No. of Print
+ *   Heads Required" in the machine block on every summary sheet, as an empty
+ *   string when the answer is null, which is exactly what this card is for.
+ *
+ * ⚠ MACHINE CATEGORY DID NOT JOIN THEM, and that is not an omission. It became
+ *   required in the same task, but it prints on NO paper — it is a branch input
+ *   that decides which questions the form asks. A card that warned about it
+ *   would be telling the salesperson the customer will see a blank that does
+ *   not exist.
+ */
+const CUSTOMER_FACING = new Set<string>([
+  "transportTerms",
+  "paymentTerms",
+  "deliveryDate",
+  "headCount",
+]);
 
 /**
  * The missing answers, as things you can press.
@@ -108,11 +127,12 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
    *
    * ⚠ A DIFFERENT STATEMENT FROM "YOU CANNOT SEND THIS YET", and it earns its
    *   own card for that reason. `quotationPdf.ts` prints Deal Type (:160),
-   *   Tentative Machine Delivery Date (:236), Payment Terms (:240) and Term of
-   *   Delivery (:241) from these three answers, and prints each of them as an
-   *   empty string when the answer is null. Generating with them blank is
-   *   allowed — it is how a specification goes out mid-negotiation — but it must
-   *   not be a surprise discovered in the customer's reply.
+   *   Tentative Machine Delivery Date (:236), Payment Terms (:240), Term of
+   *   Delivery (:241) and No. of Print Heads Required (:345) from these four
+   *   answers, and prints each of them as an empty string when the answer is
+   *   null. Generating with them blank is allowed — it is how a specification
+   *   goes out mid-negotiation — but it must not be a surprise discovered in the
+   *   customer's reply.
    */
   const blankOnCustomerCopy = useMemo(
     () => q.missing.filter((m) => CUSTOMER_FACING.has(m.key)),

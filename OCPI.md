@@ -3117,3 +3117,145 @@ brief, and adding a slot that renders nothing is churn.
   reason it has not been done.
 - **QT-M0035 gained an `updated_at` from the verification save.** Nothing else about it changed; it is
   a `ZZ TEST` draft (*ZZ TEST Emirates Print House*) and stays a draft.
+
+---
+
+# OCPI-26 + OCPI-27 + OCPI-29 + OCPI-30 — four changes to one form, and three things the briefs had wrong — 02-Sep-2026
+
+Built together because all four edit `components/QuotationForm.tsx`; splitting them guarantees a
+collision. No migration, no RPC change, no CHECK change, no column dropped.
+
+## What was built
+
+- **OCPI-26** — *Delivery term* and *Type of ink* are `ChoiceButtons` strips instead of `Combobox`
+  dropdowns. Ink's `onCreate` + master-request shortcut removed, deliberately.
+- **OCPI-27** — `machineCategoryId` and `headCount` added to `REQUIREMENTS` in `lib/completeness.ts`,
+  tier `approval`, in the form's reading order inside section A.
+- **OCPI-29** — the GST % input is gone. `fms_ocpi_config.default_gst_rate` is the single source, and
+  four copies of the rate collapse to one config row plus one shared constant.
+- **OCPI-30** — one house payment format becomes seven, each insertable in one click.
+
+## 🔴 Three things the briefs asserted that the live data contradicted
+
+### 1 · The delivery term was NOT a clean swap — `opts()` would have overwritten a contract term
+
+WORKLIST-26 called it "the clean swap … nothing else to preserve but `clearable`". One deal carries
+**`CIF Jebel Ali`**, which is not one of `TRADE_TERMS`' four. `ChoiceButtons` renders a value it cannot
+match as *nothing selected*, the roving `tabIndex` then sits on the first option, and a single ↓ writes
+`options[0]` — over a term that prints in the SALE CONDITIONS clause of a signed contract. It uses
+**`optsWithCurrent`**. This is the OCPI-21 failure exactly, and the brief walked into it.
+
+The same trap on the ink half, where the brief did get it right: **5 deals carry `Pigment Ink` while the
+master says `Pigment`**, so `masterOpts` is load-bearing rather than defensive.
+
+### 2 · The GST rate is derived from the PAYLOAD, not from the config
+
+`fms_ocpi_write_oc`, live:
+
+```sql
+v_rate := case when v_transport = 'high_seas' then null
+               else nullif(p->>'gst_rate', '')::numeric end;
+```
+
+"Remove the input and let config supply the rate" would therefore have derived a **null** amount on
+every Others deal, dropped the tax row from both papers and understated every total by 18% — with
+nothing on screen to notice. The question is removed; **the value still travels**. `withGstRate` in
+`useQuotationDraft` guarantees it before `clearHidden` on both payload builders.
+
+### 3 · Both renderers omit the GST row, not just the summary
+
+WORKLIST-29 cites `quotationPdf.ts:176`. `ocPdf.ts:429` does the same on the detailed sheet — and its
+own comment records that it once read `gstRate === null ? 18 : gstRate` and printed "+ 18% GST Value
+INR" with a blank figure on exactly the deals that carry no tax. Verification covered both.
+
+## ✅ `ChoiceButtons`' own rule, settled rather than drifted into (OCPI-26 item 0.3)
+
+The header forbade master lists because "a strip sized to today's data breaks the first time somebody
+adds a row". **That premise was already false** — the radiogroup is `flex flex-wrap gap-2`. Ink is the
+fourth call site to break the rule (after dryer category, print head, selling entity), and a rule four
+callers correctly break is a rule stated wrongly.
+
+The header now allows a **short master whose growth is an admin decision**, and states the real
+boundary: **a strip cannot be searched**, so anything that can run to dozens stays a `Combobox`.
+`optsWithCurrent`'s comment, which quoted the old rule verbatim, was reconciled with it.
+
+Measured: the worst case in the module — 5 delivery buttons including the retired `CIF Jebel Ali` —
+wraps to 2 lines at full width and never overflows its column, down to a **200px** column.
+
+## 🔴 OCPI-27 ships with 7 deals already carrying a blank head count
+
+Counted before applying and put to Ritesh Bhai, who chose to ship both rules anyway.
+
+| At `awaiting_quotation_approval` — past the gate, blocked only if reworked | Drafts |
+|---|---|
+| AADESH DIGITAL PRINTS · LOTUS FIVE DIGITAL WORLD-MACHINE · SWAMI TEXTILES PVT. LTD (UNIT-II) · `ZZ TEST OCPI-15 gate move` | **LOTUS FIVE DIGITAL WORLD** (the one real deal blocked today) · Growth Saga (already blocked on `machineId`) · `ZZ TEST Kesari Textile Mills` |
+
+⚠ **`0` is a legal answer, and it has to be.** 5 machines have no head type mapped at all — the three
+Pengda models, Label Printer, Book Printer. The box takes digits, `isAnswered` reads `"0"` as answered,
+and the column CHECK allows `>= 0`. Exactly one deal sits on such a machine and it is already in the
+list above, so the rule blocks no additional deal.
+
+**No SQL was changed.** Neither `fms_ocpi_submit_quotation` nor `fms_ocpi_complete_when_submitted`
+carries either column, and the RPC's header states it mirrors the CHECK conjunct-for-conjunct and is
+never stricter. The **form** is deliberately the stricter of the two — it already was, for the print
+head and the centering inclusion — so it refuses first, by field name.
+
+## 🟢 Two things neither brief anticipated
+
+**The asterisks were not automatic.** Both `FieldLabel`s were missing `required={req.has(…)}` *and*
+`anchor={FIELD_ANCHOR(…)}` altogether — not a second source of truth, simply never wired.
+
+**Head count belongs in `CUSTOMER_FACING`.** `quotationPdf.ts:345` prints "No. of Print Heads
+Required" on every summary sheet, blank when null, so once it is required it qualifies for the card
+that warns what the customer will see blank. Added. **Machine category is not** — it prints on no paper,
+so warning about it would name a blank that does not exist.
+
+## Where the GST rate lives now
+
+One config row (`default_gst_rate = {"rate": 18}`) plus one shared constant `DEFAULT_GST_RATE`, read by
+`EMPTY_DRAFT`, `draftFromDeal` (which now takes the config rate as an argument) and `ocpiFetch`'s
+fallback. ⚠ The constant must stay **above `EMPTY_DRAFT`**, beside `CONSUMABLES_SUPPLIER` — the object
+literal reads it at module load, so anywhere lower is a temporal-dead-zone error.
+
+The value field gained one hint — "GST at 18% is added on the papers" — because its caption says
+*excluding GST* and the rate is otherwise invisible. **Read from config, so it is not a fifth copy**,
+and suppressed on High Seas by the same `show("gstRate")` the box used.
+
+## Verified — live browser + SQL + pdf.js, 02-Sep-2026
+
+- `npm run build` (tsc strict + vite) clean. Orphan sweep over `apps/ocpi`: 58 files, 0 candidates.
+- **The retired-value guard works.** On the `CIF Jebel Ali` deal the value renders as a lit 5th button
+  **carrying the roving `tabIndex=0`**, so arrow keys start from a real index, not −1. Same on a
+  `Pigment Ink` deal. Saved both and re-read the rows — values survived.
+- **`{{trade_term}}` still resolves.** ⚠ The clause is **worded per machine**, and "Transport Terms:" —
+  the phrase both the brief and the work list use — is not what either deck checked actually says:
+  Position Printer prints `Trade Terms (Machine): Ex-Work Surat`, Homer K24 prints `Delivery Terms: CIF`.
+  No `{{token}}` left unresolved in either paper.
+- **A master addition reaches the form by itself.** Added a fourth ink type, it appeared with no code
+  change, the strip wrapped to 2 lines without overflow, and the deal's own retired value stayed
+  selected. Test row removed.
+- **GST figures byte-identical.** Others deal saved through the GST-less form: `gst_rate 18.00`,
+  `gst_amount_inr 207,000.00`, `total_inr 1,357,000.00` — unchanged. Papers print `GST @ 18% ₹ 2,07,000`
+  / `Total Value (INR) ₹ 13,57,000` (summary) and `+ 18% GST Value INR` / `Total Value INR` (detailed).
+- **High Seas prints no GST row on either paper** — the only "GST" on the summary is the customer's
+  `GST No. :` label. Not a zero row. Totals unchanged.
+- **The new-deal seeding path works too**: a deal created from scratch saved with `gst_rate 18.00` and a
+  server-derived `180,000` / `1,180,000`. (Throwaway deal deleted afterwards.)
+- **All seven payment formats** render to the character with `₹` intact; an empty box fills on the first
+  click; a typed box shows "Replace what is typed?" in the clicked row and leaves the text alone until
+  Replace is pressed.
+
+## ⚠ Open / worth knowing
+
+- **Five ZZ TEST seed deals vanished during this session and it was not this session.** `ZZ TEST Alpha15
+  Consumables`, `ZZ TEST K64 Everything Included`, `ZZ TEST K64 High Seas Shipment` (×2), `ZZ TEST K64 No
+  Dryer Long Text` and `ZZ TEST K64 Subsidized Rates` were present in the baseline taken at the start of
+  the work and absent an hour later. The only deletes issued here were one throwaway deal by id
+  (`returning` proved one row) and one unused ink-master row; `fms_ocpi_deals` has **no FK to
+  `fms_ocpi_ink_types`** — `ink_type` is plain text — and the only triggers on either table are
+  `set_updated_at`. Another session was almost certainly clearing seed data. Worth confirming before
+  anybody treats the recorded test-data inventory as current.
+- **One deal still has `payment_terms = 'na'`** (carried over from OCPI-20). Formats stop new bad
+  answers; they cannot repair a row already written. Still needs a person.
+- **`{{gst_rate}}` stays registered and is used by 0 machine sections** — re-verified against
+  `fms_ocpi_machine_sections`. Removing the input left no ruled blank anywhere.

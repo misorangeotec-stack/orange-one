@@ -15,7 +15,7 @@ import { useSalespeople } from "../lib/useSalespeople";
 import { fmtDealValue } from "../lib/format";
 import {
   COST_BEARERS, CURRENCIES, DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, HEAD_SHIP_MODES,
-  HEAD_SHIP_VIA, HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TERMS_FORMAT,
+  HEAD_SHIP_VIA, HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TERMS_FORMATS,
   PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
@@ -149,9 +149,12 @@ const masterOpts = (rows: { name: string; active: boolean }[], current: string) 
  *   answer renders as a lit button, and the index is real, so the arrow keys move
  *   between options the way they do everywhere else.
  *
- * ⚠ THIS IS NOT A LICENCE TO SIZE A STRIP BY DATA — `ChoiceButtons` says "only for
- *   a fixed vocabulary declared in code", and that still holds. It adds at most
- *   ONE button, and only on a deal quoted against an option since withdrawn.
+ * ⚠ THIS IS NOT A LICENCE TO SIZE A STRIP BY DATA. It adds at most ONE button,
+ *   and only on a deal quoted against an option since withdrawn — it is a
+ *   retired-value guard, not a way to drive a strip from a growing list.
+ *   `ChoiceButtons`' own header states the boundary: a short vocabulary, whether
+ *   declared in code or held in a master an admin edits, and never a list that
+ *   can run to dozens, because a strip cannot be searched.
  *
  * Clearing is a one-way door: the retired button disappears once the value goes,
  * which is intended — a withdrawn option should not be re-selectable.
@@ -982,7 +985,16 @@ export default function QuotationForm({
    *   payment terms are the word "na". Appending was the other candidate and is
    *   worse still: two payment sentences in one clause, on a signed contract.
    */
-  const [confirmPaymentFormat, setConfirmPaymentFormat] = useState(false);
+  /**
+   * Which house format is waiting on a "yes, replace what I typed" (OCPI-30).
+   *
+   * ⚠ IT HOLDS THE FORMAT, NOT A FLAG. Under OCPI-20 there was one format, so a
+   *   boolean was enough to remember which one the Replace button would insert.
+   *   With seven, the answer to "replace with what?" is the pending format
+   *   itself; a boolean would have made Replace insert whichever one the code
+   *   happened to name.
+   */
+  const [pendingFormat, setPendingFormat] = useState<string | null>(null);
 
   /**
    * A high seas sale is a dollar deal with no GST, both fixed by the deal type.
@@ -1185,7 +1197,12 @@ export default function QuotationForm({
               were given POD by the 01-09 sheet — so clearing is a browsing
               gesture, never the only way to reach a model.
           */}
-          <FieldLabel label="Machine category" hint="decides what this quotation asks">
+          <FieldLabel
+            label="Machine category"
+            hint="decides what this quotation asks"
+            required={req.has("machineCategoryId")}
+            anchor={FIELD_ANCHOR("machineCategoryId")}
+          >
             <Combobox
               value={draft.machineCategoryId}
               onChange={(v) => {
@@ -1387,7 +1404,14 @@ export default function QuotationForm({
               disabled={disabled}
             />
           </FieldLabel>
-          <FieldLabel label="No. of print heads required">
+          {/* ⚠ 0 IS AN ANSWER (OCPI-27). Five machines carry no head type at
+              all, and the rule is mandatory on every deal — so a machine with
+              none is answered with a zero rather than left blank. */}
+          <FieldLabel
+            label="No. of print heads required"
+            required={req.has("headCount")}
+            anchor={FIELD_ANCHOR("headCount")}
+          >
             <TextInput
               inputMode="numeric"
               value={draft.headCount}
@@ -1398,23 +1422,49 @@ export default function QuotationForm({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
+          {/*
+            ⚠ BUTTONS, NOT A DROPDOWN (OCPI-26, asked for by Ritesh Bhai). Three
+              options, so a strip is fewer clicks and shows every answer at once.
+
+            ⚠ WHAT THE COMBOBOX CARRIED, one at a time (the CLAUDE.md container
+              rule — account for every control before replacing the container):
+              · `searchable` — genuinely goes. A search box over three values is
+                noise.
+              · `clearable` — KEPT. The field is optional and stays optional
+                (settled under OCPI-27, alongside Platter), so without a way back
+                the first click would be irreversible.
+              · `masterOpts(s.inkTypes, draft.inkType)` — KEPT, and it is
+                load-bearing rather than tidy: 5 deals on record carry
+                "Pigment Ink" while the master says "Pigment". `ChoiceButtons`
+                renders an unmatched value as NOTHING SELECTED and a single ↓
+                then overwrites it (the OCPI-21 failure). Feeding the deal's own
+                value back in as a fourth button is the guard.
+              · `onCreate` + `createLabel` + `setAsk({ type: "ink_type" })` —
+                🔴 DELETED ON PURPOSE, NOT BY OVERSIGHT. Settled 02-09-2026:
+                Ritesh Bhai — the ink list is fixed by the master, and if a new
+                ink is needed it is added on the Masters screen and appears here
+                by itself. A salesperson does not invent one mid-deal. This note
+                is the record that the feature was accounted for and chosen
+                against; do not "restore" it as a lost affordance.
+
+                ⚠ THE CAPABILITY IS NOT GONE, only this shortcut to it. The OCPI
+                  **Master Requests** page still raises an `ink_type` request,
+                  `fms_ocpi_resolve_master_request` still handles it, and
+                  `setAsk` is still called by the Machine picker above — so
+                  neither the state, the modal nor the master type is an orphan.
+
+            ⚠ RENDERED FROM THE LIVE MASTER, never a hardcoded three. With no way
+              to type an ink, a master addition that did not reach this strip
+              would leave a salesperson with no route to it at all.
+          */}
           <FieldLabel label="Type of ink">
-            <Combobox
+            <ChoiceButtons
               value={draft.inkType}
               onChange={(v) => patch({ inkType: v })}
               options={masterOpts(s.inkTypes, draft.inkType)}
-              placeholder="Choose or type"
-              searchable
               clearable
               disabled={disabled}
-              onCreate={(label) => {
-                // Non-blocking: the typed value is KEPT on the deal, and the
-                // list is asked to grow so the next person can pick it.
-                patch({ inkType: label });
-                setAsk({ type: "ink_type", name: label });
-                return label;
-              }}
-              createLabel={(q) => `Use “${q}”`}
+              ariaLabel="Type of ink"
             />
           </FieldLabel>
           {/*
@@ -2248,11 +2298,23 @@ export default function QuotationForm({
               ariaLabel="Currency"
             />
           </FieldLabel>
-          <div className={show("gstRate") ? undefined : "sm:col-span-2"}>
+          {/*
+            ⚠ ALWAYS TWO COLUMNS NOW (OCPI-29). This used to widen only when the
+              GST box was hidden — `show("gstRate") ? undefined : "sm:col-span-2"`
+              — because the box was the third cell of a three-column grid. The box
+              is gone on every deal, so the condition is dead and the class is
+              unconditional. The grid still reads currency (1) + value (2) = 3.
+          */}
+          <div className="sm:col-span-2">
             <FieldLabel
               label="Total deal value (excluding GST)"
               required={req.has("dealValueAmount")}
               anchor={FIELD_ANCHOR("dealValueAmount")}
+              // ⚠ THE RATE IS NOT A COPY — it is read from the config row that
+              //   governs it. The caption says "excluding GST" and the rate is no
+              //   longer on screen anywhere, so without this the salesperson is
+              //   told what the figure excludes and never what will be added.
+              hint={show("gstRate") ? `GST at ${s.config.defaultGstRate}% is added on the papers` : undefined}
             >
               <TextInput
                 inputMode="decimal"
@@ -2264,29 +2326,35 @@ export default function QuotationForm({
             </FieldLabel>
           </div>
           {/*
-            ⚠ GST % MOVED HERE (OCPI-3, stage G) AND WAS VERY NEARLY LOST. It sat
-              inside the "Delivery & tax" block, which the client asked to be
-              deleted — the instruction was about the delivery term, and the tax
-              rate merely happened to share the box. Deleting the block wholesale
-              would have broken nothing visibly: every deal would simply have been
-              taxed at the 18% default for ever, with no way to change it and no
-              error to notice.
+            🔴 THE GST % BOX IS GONE (OCPI-29, 02-09-2026) — THE QUESTION, NOT THE
+               VALUE. It was 18 on all 25 deals that carry a rate and has never
+               been anything else, so asking it on every quotation only invited a
+               typo into a tax figure. `fms_ocpi_config.default_gst_rate` is now
+               the single source, settled as developer-only; there is no admin
+               screen for it and none is wanted.
 
-              It belongs beside the value it completes: the field above is
-              labelled "excluding GST", and this is the rate that finishes the
-              sentence. Hidden on a high seas sale — no GST applies, so there is
-              no rate to ask for, and the server stores NULL rather than 0.
+            🔴 THE DRAFT STILL CARRIES `gstRate` AND THE PAYLOAD STILL SENDS
+               `gst_rate`, AND THAT IS NOT LEFTOVER. `fms_ocpi_write_oc` derives
+               the tax from the PAYLOAD — `nullif(p->>'gst_rate','')::numeric` —
+               so a form that stopped sending it would derive a null amount, drop
+               the tax row from both papers and understate every Others total by
+               18%, with nothing on screen to notice. See `withGstRate` in
+               useQuotationDraft, which guarantees the rate is there.
+
+            ⚠ THE HIGH SEAS BRANCH SURVIVES INTACT, and it is the reason this is
+              not simply "default everything to 18". `branching.ts` still hides
+              `gstRate` on a high seas sale, `clearHidden` still blanks it, the
+              server still stores NULL and BOTH renderers still omit the tax row —
+              `quotationPdf.ts` and `ocPdf.ts` alike. A high seas sale attracts no
+              GST at all, and a row reading "0% GST — ₹ 0" is a different legal
+              claim from no row. `show("gstRate")` above is what keeps the hint
+              off such a deal.
+
+            ⚠ NOTHING IS LEFT AS A RULED BLANK. `{{gst_rate}}` stays registered in
+              tokens.ts but is used by ZERO machine templates — checked against
+              fms_ocpi_machine_sections — so unlike delivery_days (OCPI-18) there
+              is no clause waiting for it.
           */}
-          {show("gstRate") && (
-            <FieldLabel label="GST %">
-              <TextInput
-                value={draft.gstRate}
-                onChange={(e) => patch({ gstRate: e.target.value.replace(/[^\d.]/g, "") })}
-                inputMode="decimal"
-                disabled={disabled}
-              />
-            </FieldLabel>
-          )}
         </div>
 
         {/*
@@ -2433,32 +2501,56 @@ export default function QuotationForm({
             </FieldLabel>
             <p className="mt-1 text-[12px] text-grey-2">{DELIVERY_DATE_REMARK}</p>
           </div>
+          {/*
+            ⚠ BUTTONS, NOT A DROPDOWN (OCPI-26, asked for by Ritesh Bhai). Four
+              options from a FIXED list in code, so the strip shows every answer
+              without opening anything. `searchable` was never on it and the
+              placeholder goes with the dropdown; `clearable` is kept, because
+              the field is optional — it sits in `DETAIL_SHEET_FIELDS`, which
+              WARNS about a blank and never blocks one.
+
+            🔴 `optsWithCurrent`, NOT `opts`, AND THAT IS NOT DEFENSIVE CODING —
+               one deal on record carries "CIF Jebel Ali", which is not one of
+               the four. `ChoiceButtons` renders a value it cannot match as
+               nothing selected, and a single ↓ on the tabbed-to strip would
+               then overwrite a term that prints on a signed contract. See the
+               helper for the whole failure.
+
+            🔴 THIS CHANGES THE CONTROL AND NOTHING ELSE. `{{trade_term}}` is
+               live in the SALE CONDITIONS clause — "Transport Terms: …" — of 21
+               machine templates, and `fms_ocpi_write_oc` stores it verbatim.
+               The stored value, the payload key and the token are untouched.
+          */}
           <FieldLabel label="Delivery term" hint="prints on the contract">
-            <Combobox
+            <ChoiceButtons
               value={draft.tradeTerm}
               onChange={(v) => patch({ tradeTerm: v })}
-              options={opts(TRADE_TERMS)}
-              placeholder="Choose"
+              options={optsWithCurrent(TRADE_TERMS, draft.tradeTerm)}
               clearable
               disabled={disabled}
+              ariaLabel="Delivery term"
             />
           </FieldLabel>
         </div>
         {/*
-          ⚠ THE FORMAT IS A HINT UNDER THE BOX, NOT A PLACEHOLDER (OCPI-20). A
-            placeholder was already here and did not work: it vanishes the moment
-            anybody types, so a salesperson editing a saved draft never saw it at
-            all. Six different wordings across 18 deals came out of that box —
-            including one whose payment terms are the word "na". The placeholder
-            is corrected too, so the empty state and the hint agree, but the hint
-            is the part that had been missing.
+          ⚠ THE FORMATS ARE A LIST UNDER THE BOX, NOT A PLACEHOLDER (OCPI-20,
+            extended to seven by OCPI-30). A placeholder was already here and did
+            not work: it vanishes the moment anybody types, so a salesperson
+            editing a saved draft never saw it at all. Twelve different wordings
+            across 24 deals came out of that box — including one whose payment
+            terms are the word "na".
+
+          ⚠ SEVEN SENTENCES IN FULL, NOT A MENU. One click to insert is what made
+            OCPI-20 work, and a menu costs a second click to open. Printing them
+            in full is also the fix for the actual defect: people were retyping
+            from memory, which is why two pairs of deals differ only by a typo.
 
           ⚠ THE FIELD STAYS FREE TEXT. No dropdown, no advance-% field, no new
             column — `payment_terms` is one column feeding `{{payment_terms}}` on
-            ~21 templates, and a negotiated deal must still be able to say
-            something else. This is guidance, not a constraint.
+            21 templates, and a negotiated deal must still be able to say
+            something else. These are starting points, not a vocabulary.
 
-          ⚠ THE HINT AND BUTTON SIT OUTSIDE `FieldLabel`, which renders a <label>.
+          ⚠ THE HINT AND BUTTONS SIT OUTSIDE `FieldLabel`, which renders a <label>.
             A <button> inside it would focus the textarea on every click, so the
             confirm step would fight the caret.
         */}
@@ -2473,53 +2565,75 @@ export default function QuotationForm({
             onChange={(e) => {
               patch({ paymentTerms: e.target.value });
               // Typing answers the question the confirm was asking.
-              setConfirmPaymentFormat(false);
+              setPendingFormat(null);
             }}
-            placeholder={PAYMENT_TERMS_FORMAT}
+            placeholder={PAYMENT_TERMS_FORMATS[0]}
             disabled={disabled}
           />
         </FieldLabel>
-        {/* `-mt-2`: the Card is `space-y-4`, so the hint has to be pulled back to
+        {/* `-mt-2`: the Card is `space-y-4`, so the list has to be pulled back to
             hug the field it describes — same as Special remarks below. */}
-        <div className="-mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <div className="-mt-2 space-y-1">
+          {/*
+            ⚠ THE HINT NAMES NO FORMAT (OCPI-30). It used to read "House format:
+              …" and quote the single one. With seven, naming one would contradict
+              the six beneath it, so it points at the list instead.
+          */}
           <p className="text-[12px] text-grey-2">
-            House format: <b className="text-navy">{PAYMENT_TERMS_FORMAT}</b>
+            {disabled
+              ? "Common formats"
+              : "Common formats — click one to insert, then fill the blanks."}
           </p>
-          {!disabled &&
-            (confirmPaymentFormat ? (
-              <span className="flex items-baseline gap-2 text-[12px]">
-                <span className="text-grey-2">Replace what is typed?</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    patch({ paymentTerms: PAYMENT_TERMS_FORMAT });
-                    setConfirmPaymentFormat(false);
-                  }}
-                  className="font-semibold text-orange underline underline-offset-2"
-                >
-                  Replace
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmPaymentFormat(false)}
-                  className="text-grey-2 underline underline-offset-2 hover:text-ink"
-                >
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  // An empty box has nothing to lose, so it fills on the first click.
-                  if (!draft.paymentTerms.trim()) patch({ paymentTerms: PAYMENT_TERMS_FORMAT });
-                  else setConfirmPaymentFormat(true);
-                }}
-                className="text-[12px] font-semibold text-orange underline underline-offset-2"
-              >
-                Use this format
-              </button>
-            ))}
+          {!disabled && (
+            <ul className="space-y-0.5">
+              {PAYMENT_TERMS_FORMATS.map((format) => (
+                <li key={format}>
+                  {pendingFormat === format ? (
+                    /*
+                      ⚠ THE OVERWRITE GUARD, KEPT FROM OCPI-20 AND NOW PER-ROW. It
+                        must never silently replace text a salesperson has typed —
+                        that text is a negotiated commercial term. The confirm
+                        replaces the row it belongs to, so the sentence being
+                        offered stays in front of the person deciding.
+                    */
+                    <span className="flex flex-wrap items-baseline gap-2 text-[12px]">
+                      <span className="text-grey-2">Replace what is typed?</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          patch({ paymentTerms: format });
+                          setPendingFormat(null);
+                        }}
+                        className="font-semibold text-orange underline underline-offset-2"
+                      >
+                        Replace
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingFormat(null)}
+                        className="text-grey-2 underline underline-offset-2 hover:text-ink"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // An empty box has nothing to lose, so it fills on the
+                        // first click. Anything typed asks first.
+                        if (!draft.paymentTerms.trim()) patch({ paymentTerms: format });
+                        else setPendingFormat(format);
+                      }}
+                      className="text-left text-[12px] text-grey-2 underline decoration-transparent underline-offset-2 transition hover:text-orange hover:decoration-current"
+                    >
+                      {format}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </Card>
 
@@ -2783,6 +2897,15 @@ export default function QuotationForm({
             That last one is why this comment exists. "Most of this is redundant"
             is not a finding about the rest of it; see the FIX-4 rule in
             CLAUDE.md, which this block is now an example of going right.
+
+            ⚠ AND THE GST % BOX HAS SINCE GONE ANYWAY (OCPI-29, 02-09-2026) — but
+              asked for by name, and on the opposite reasoning to the accident
+              above. What made deleting it in stage G a mistake was that the rate
+              would have become unchangeable by anybody; what makes removing it
+              now correct is that `fms_ocpi_config.default_gst_rate` is a real,
+              deliberate single source, the draft still carries the value, and the
+              payload still sends it. The stage-G lesson is unchanged: an
+              accidental deletion and a chosen one are not the same act.
         */}
 
         {/*
