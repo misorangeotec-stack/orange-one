@@ -138,9 +138,27 @@ export interface QuotationDraft {
   paymentTerms: string;
   deliveryDate: string;
   transportTerms: string;
+  /**
+   * ⚠ NO LONGER ASKED, STILL WRITTEN (OCPI-35). The form's "High seas delivery
+   *   via" control is gone -- `deliveryVia` below asks it once, on both deal
+   *   types -- but this field stays on the draft and in the payload because the
+   *   COLUMN is still required. `payloadFromDraft` derives it; see the note
+   *   there for the three constraints and the one RPC that depend on it.
+   */
   highSeasVia: string;
   highSeasCostBy: string;
   localCostBy: string;
+
+  /* OCPI-35 · THE ONE DELIVERY QUESTION, and the detail each answer needs.
+   *
+   * `deliveryVia` is asked on BOTH deal types; the three below are its
+   * follow-ups and are branch-gated in `PART_A_VISIBILITY`. All four compose
+   * into `tradeTerm`, which is what actually prints -- see `composeTradeTerm`.
+   */
+  deliveryVia: string;
+  deliveryPort: string;
+  deliveryFactoryCity: string;
+  deliveryLeg: string;
 
   /* The FX position, for a dollar deal. Held on the draft so the salesperson can
    * override the fetched rate before generating, and so the rate that was used
@@ -374,6 +392,10 @@ export const EMPTY_DRAFT: QuotationDraft = {
   highSeasVia: "",
   highSeasCostBy: "",
   localCostBy: "",
+  deliveryVia: "",
+  deliveryPort: "",
+  deliveryFactoryCity: "",
+  deliveryLeg: "",
   fxRate: "",
   fxRateAt: "",
   fxRateSource: "",
@@ -495,7 +517,47 @@ export const TRANSPORT_TERMS = [
   { value: "local", label: "Others" },
 ] as const;
 
-export const HIGH_SEAS_VIA = ["CIF", "EX Factory", "FOB"] as const;
+/**
+ * THE ONE DELIVERY QUESTION (OCPI-35), asked on BOTH deal types.
+ *
+ * ⚠ RENAMED FROM `HIGH_SEAS_VIA`, NOT COPIED. Two identical lists would be a
+ *   drift waiting to happen, and the old name was wrong the moment the question
+ *   stopped being High Seas only.
+ *
+ * 🔴 THESE THREE STRINGS ARE ALSO EXACTLY WHAT `high_seas_via`'s COLUMN CHECK
+ *    ALLOWS, and `payloadFromDraft` mirrors the answer into that column on a
+ *    High Seas deal. Add a fourth value here and the mirror needs its own list
+ *    first, or the save is refused by the database.
+ *
+ * ⚠ `Ex-Work Surat` IS DELIBERATELY NOT HERE. It left the vocabulary for new
+ *   deals (settled with Ritesh Bhai, 02-09-2026). The deals that already carry
+ *   it keep it: `optsWithCurrent` in QuotationForm feeds a deal's own value back
+ *   in as an extra button, so it renders and cannot be arrowed over.
+ */
+export const DELIVERY_VIA = ["CIF", "EX Factory", "FOB"] as const;
+
+/**
+ * ⚠ HARDCODED, AND THAT IS A RECORDED DRIFT RISK RATHER THAN AN OVERSIGHT.
+ *   OCPI-25 wants the same two cities read from `fms_ocpi_company_profiles`,
+ *   but exactly one profile is active today, so reading from the branches would
+ *   render a one-button strip with Noida unreachable -- and OCPI-25 is blocked
+ *   waiting on the Enterprises bank details. OCPI-25 is where the two lists
+ *   reconcile; do not add a third copy in the meantime.
+ */
+export const DELIVERY_FACTORY_CITIES = ["Surat", "Noida"] as const;
+
+/**
+ * Where the CUSTOMER's own delivery leg starts, on a High Seas deal whose cost
+ * they bear. Ritesh Bhai's own words, 02-09-2026, and they print verbatim.
+ *
+ * 🔴 DO NOT RELABEL THESE "end-to-end" AND "port-to-port". Both wordings end at
+ *    the customer premises; the ONLY difference is which port the customer's
+ *    leg begins from. The shorter names state a different thing.
+ */
+export const DELIVERY_LEGS = [
+  { value: "manufacturer_port", label: "From manufacturer port to customer premises" },
+  { value: "indian_port", label: "From Indian port to customer premises" },
+] as const;
 
 export const COST_BEARERS = [
   { value: "customer", label: "Customer" },
@@ -670,7 +732,85 @@ export const PLATTER_OPTIONS = ["With Platter", "Without Platter"] as const;
     prose warranty options: whatever fills these tokens must be a NUMBER.
 */
 
-export const TRADE_TERMS = ["Ex-Work Surat", "CIF", "FOB", "EX Factory"] as const;
+/**
+ * The delivery answer AS IT PRINTS -- what goes into `trade_term`, and from
+ * there into `{{trade_term}}` in the SALE CONDITIONS clause of all 21 templated
+ * machines, plus the summary sheet's "Term of Delivery" row.
+ *
+ * ⚠ THIS REPLACED `TRADE_TERMS`, THE OLD FOUR-VALUE PICKLIST (OCPI-35). The
+ *   delivery term stopped being something typed and became something composed,
+ *   so the list had no caller left. `Ex-Work Surat` left the vocabulary with it
+ *   -- see `DELIVERY_VIA` for what happens to the deals that still hold it.
+ *
+ * 🔴 CASING IS DELIBERATE AND MUST NOT BECOME A MIX. It reads `Ex Factory
+ *    Surat`, title case, settled with Ritesh Bhai on 02-09-2026. The BUTTON
+ *    still says `EX Factory` because that exact string is what `high_seas_via`'s
+ *    CHECK allows and what the mirror writes; only the printed term is
+ *    title-cased. The form shows the composed value under the strip so the two
+ *    cannot be confused for each other.
+ *
+ * 🔴 CALLED ON CHANGE, NEVER ON LOAD. `draftFromDeal` does not run this. A deal
+ *    nobody touches must save its stored `trade_term` byte-identically -- 17
+ *    deals read `Ex-Work Surat` and one reads `CIF Jebel Ali`, all of them on
+ *    signed or issued paper, and none of them would survive a recompose from a
+ *    vocabulary that no longer contains their answer.
+ */
+export function composeTradeTerm(d: {
+  deliveryVia: string;
+  deliveryPort: string;
+  deliveryFactoryCity: string;
+  deliveryLeg: string;
+  transportTerms: string;
+  highSeasCostBy: string;
+}): string {
+  const via = d.deliveryVia.trim();
+  if (!via) return "";
+
+  let term: string;
+  if (via === "CIF") {
+    const port = d.deliveryPort.trim();
+    term = port ? `CIF ${port}` : "CIF";
+  } else if (via === "EX Factory") {
+    const city = d.deliveryFactoryCity.trim();
+    // Title case here and nowhere else -- see the casing note above.
+    term = city ? `Ex Factory ${city}` : "Ex Factory";
+  } else {
+    // FOB, and any retired value an older deal still carries, verbatim.
+    term = via;
+  }
+
+  /*
+    The customer's leg joins the term rather than getting a line of its own.
+    Settled 02-09-2026: a token would print nowhere until all 21 decks were
+    rewritten, and a field captured but never printed is the defect OCPI-12
+    exists to find. Appending reaches both papers with no template change.
+
+    ⚠ Guarded on the SAME two conditions as its branch rule in branching.ts. The
+      RPC nulls the column on a Company-borne deal, so without this guard the
+      screen and the paper would disagree for one render after the bearer moved.
+  */
+  if (d.transportTerms === "high_seas" && d.highSeasCostBy === "customer") {
+    const leg = DELIVERY_LEGS.find((l) => l.value === d.deliveryLeg);
+    /*
+      ⚠ ONLY THE FIRST LETTER DROPS CASE. The label reads "From Indian port to
+        customer premises" and joins mid-sentence, so the leading "From" should
+        not be capitalised — but `toLowerCase()` on the whole label also lowered
+        "Indian", and "from indian port" is wrong on a document a customer
+        signs. Caught on the composed clause, not in review.
+
+      🔴 THE SEPARATOR IS A COMMA, AND THAT IS A DELIBERATE CLIMBDOWN FROM AN
+         EM DASH. An em dash reads better and is what this codebase uses in
+         prose — but it appears in ZERO of the 180 live template bodies, so it
+         is an UNPROVEN GLYPH in these PDFs, and jsPDF draws a glyph the
+         embedded font subset lacks as nothing at all. Silently, on a document
+         the customer signs. A comma is ASCII, cannot fail, and reads correctly
+         in the clause. Upgrade it only after rendering one and reading it back
+         with pdf.js.
+    */
+    if (leg) term = `${term}, ${leg.label.charAt(0).toLowerCase()}${leg.label.slice(1)}`;
+  }
+  return term;
+}
 
 /* ── Standing clauses ─────────────────────────────────────────────────────── */
 
@@ -871,6 +1011,13 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   highSeasVia: "High seas delivery via",
   highSeasCostBy: "High seas cost borne by",
   localCostBy: "Local delivery cost borne by",
+  // OCPI-35 · inserted HERE, beside the questions they are read with on screen.
+  // This object's key order is revisionDiff.ts's row order, so a reader
+  // scanning a diff travels the same path as a reader scanning the form.
+  deliveryVia: "Delivery term",
+  deliveryPort: "Port",
+  deliveryFactoryCity: "Ex-factory location",
+  deliveryLeg: "Customer's delivery leg",
   fxRate: "USD to INR rate",
   fxRateAt: "Rate fetched at",
   fxRateSource: "Rate source",
@@ -945,7 +1092,11 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   insuranceClauseAgreed: "Insurance clause agreed",
   refNo: "Reference no.",
   deliveryDays: "Delivery days",
-  tradeTerm: "Delivery term",
+  // ⚠ RELABELLED IN PLACE, NEVER MOVED (OCPI-35). Its position is revision-diff
+  //   history. The name distinguishes it from `deliveryVia` above, which is the
+  //   QUESTION; this is the composed answer that actually reaches the paper, and
+  //   two rows captioned "Delivery term" in one diff would be unreadable.
+  tradeTerm: "Delivery term (as printed)",
   machineModelNo: "Manufacturer's model no.",
   preparedBy: "Prepared by",
   approvedBy: "Approved by",
@@ -1020,6 +1171,43 @@ export function draftFromDeal(
     highSeasVia: s(d.highSeasVia),
     highSeasCostBy: s(d.highSeasCostBy),
     localCostBy: s(d.localCostBy),
+
+    /*
+      OCPI-35 · HYDRATING THE ONE DELIVERY QUESTION FROM WHATEVER THE DEAL HAS.
+
+      🔴 THE ORDER IS LOAD-BEARING, AND IT IS WHAT KEEPS 18 CONTRACT TERMS ALIVE.
+         `delivery_via` is null on every deal raised before this change, so
+         without a fallback the strip would render blank on all of them, the
+         asterisk would call a filled-in field missing, and the first save would
+         compose an empty term over one that prints on a signed contract.
+
+           1 · delivery_via   -- answered since OCPI-35. Always wins.
+           2 · high_seas_via  -- a High Seas deal's own answer. Always one of
+                                 the three, so a real button lights up. It comes
+                                 BEFORE trade_term deliberately: on QT-M0035
+                                 trade_term reads "CIF Jebel Ali", and the strip
+                                 must select CIF, not the whole sentence.
+           3 · tradeTerm      -- an Others deal's only delivery answer. 17 of
+                                 them read "Ex-Work Surat", which no button
+                                 matches; `optsWithCurrent` renders it as an
+                                 extra, lit button so it survives (OCPI-21).
+    */
+    deliveryVia: s(d.deliveryVia) || s(d.highSeasVia) || s(d.tradeTerm),
+    /*
+      ⚠ AND THE PORT COMES BACK OUT OF THE SENTENCE. One deal was improvised by
+        hand as `trade_term = "CIF Jebel Ali"` because there was nowhere else to
+        put the port -- the strongest evidence that this feature was needed.
+        Recovering it means the box shows the truth and a later edit recomposes
+        the same string instead of dropping " Jebel Ali". Read-time only:
+        nothing is written until somebody saves.
+    */
+    deliveryPort:
+      s(d.deliveryPort) ||
+      (!d.deliveryVia && d.highSeasVia === "CIF" && s(d.tradeTerm).startsWith("CIF ")
+        ? s(d.tradeTerm).slice("CIF ".length).trim()
+        : ""),
+    deliveryFactoryCity: s(d.deliveryFactoryCity),
+    deliveryLeg: s(d.deliveryLeg),
     fxRate: s(d.fxRate),
     fxRateAt: s(d.fxRateAt),
     fxRateSource: s(d.fxRateSource),
@@ -1161,9 +1349,38 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     payment_terms: d.paymentTerms,
     delivery_date: d.deliveryDate,
     transport_terms: d.transportTerms,
-    high_seas_via: d.highSeasVia,
+    /*
+      🔴 DERIVED FROM THE MERGED ANSWER, NOT FROM A CONTROL (OCPI-35). The form
+         no longer asks "High seas delivery via" -- and the column still HAS to
+         be written, because four live things demand it on a High Seas deal:
+
+           · fms_ocpi_deals_high_seas_via_check  -- CIF / EX Factory / FOB only,
+             which is why the value is mirrored only when it is one of those.
+           · fms_ocpi_transport_coherent  -- it may not be set AT ALL on an
+             Others deal, which is why the mirror is gated on the deal type.
+           · fms_ocpi_complete_when_submitted  -- 🔴 stop writing it and NO HIGH
+             SEAS DEAL CAN EVER BE SENT FOR APPROVAL AGAIN, as a raw constraint
+             violation naming no field. That CHECK must not be touched: it is
+             re-validated against every row on every UPDATE.
+           · fms_ocpi_submit_quotation's "Still needed ..." list.
+
+      Falling back to the draft's own `highSeasVia` rather than to null is what
+      stops an untouched older deal losing its answer on the next save.
+    */
+    high_seas_via:
+      d.transportTerms === "high_seas" &&
+      (DELIVERY_VIA as readonly string[]).includes(d.deliveryVia)
+        ? d.deliveryVia
+        : d.highSeasVia,
     high_seas_cost_by: d.highSeasCostBy,
     local_cost_by: d.localCostBy,
+    // OCPI-35 · PART A. fms_ocpi_write_quotation runs unconditionally and holds
+    // the matching clearing rules, so these need no entry in save_draft's
+    // part-B key gate.
+    delivery_via: d.deliveryVia,
+    delivery_port: d.deliveryPort,
+    delivery_factory_city: d.deliveryFactoryCity,
+    delivery_leg: d.deliveryLeg,
     fx_rate: d.fxRate,
     fx_rate_at: d.fxRateAt,
     fx_rate_source: d.fxRateSource,

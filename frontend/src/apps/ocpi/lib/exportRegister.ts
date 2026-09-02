@@ -215,9 +215,14 @@ export function exportDealRegister(
     /*
       ⚠ "Delivery term" STAYS — settled with the client on 29-Aug-2026, after an
         earlier instruction to remove it. It is the only delivery route an
-        "Others" deal records anywhere: commercial terms asks a route on High
-        Seas deals alone, and 11 of the 12 ordinary deals on record had filled
-        this in. It also feeds "Delivery Terms:" on all ten contract templates.
+        "Others" deal records anywhere. It feeds the delivery clause of all 21
+        contract templates through `{{trade_term}}`.
+
+      ⚠ IT IS NOW A COMPOSED VALUE (OCPI-35), not one picked from a list — "CIF
+        Jebel Ali", "Ex Factory Surat" — so this column carries more than it used
+        to. The parts it is built from have their own columns on the deal and are
+        deliberately NOT added here: the composed term is what prints, and
+        splitting it across four columns would invite a reader to reconcile them.
     */
     { header: "Delivery term", width: 16, value: (d) => d.tradeTerm ?? "" },
     /*

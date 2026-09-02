@@ -62,8 +62,18 @@ import {
  *   would be telling the salesperson the customer will see a blank that does
  *   not exist.
  */
+/*
+ * ⚠ THE DELIVERY TERM JOINED THEM IN OCPI-35, and it is the strongest member of
+ *   the set: it is the ONE answer here that shows on BOTH papers. Blank, it
+ *   leaves the summary sheet's "Term of Delivery" row naming only the deal type
+ *   and the cost bearer, and it rules an actual blank — "Transport Terms:
+ *   ________" — in the SALE CONDITIONS clause of all 21 contract templates.
+ *   Its three follow-ups are NOT here: they cannot be missing while the term
+ *   itself is answered, because they compose into it.
+ */
 const CUSTOMER_FACING = new Set<string>([
   "transportTerms",
+  "deliveryVia",
   "paymentTerms",
   "deliveryDate",
   "headCount",

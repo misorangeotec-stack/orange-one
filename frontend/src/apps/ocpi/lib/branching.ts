@@ -428,9 +428,35 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   inclCentering: (_d, f) => f.showsCentering,
   centeringDetails: (d, f) => f.showsCentering && d.inclCentering === true,
 
+  /*
+    ⚠ highSeasVia HAS NO CONTROL ANY MORE, AND KEEPS ITS RULE ANYWAY (OCPI-35).
+      The question merged into `deliveryVia` below, but the COLUMN is still
+      written -- see payloadFromDraft -- and `fms_ocpi_transport_coherent`
+      forbids it on an Others deal outright. This rule is what makes
+      `clearHidden` blank it when the deal type moves, matching the server. Do
+      not delete it as dead just because nothing renders it.
+  */
   highSeasVia: (d) => d.transportTerms === "high_seas",
   highSeasCostBy: (d) => d.transportTerms === "high_seas",
   localCostBy: (d) => d.transportTerms === "local",
+
+  /*
+    OCPI-35 · THE ONE DELIVERY QUESTION AND ITS THREE FOLLOW-UPS.
+
+    ⚠ `deliveryVia` IS DELIBERATELY ABSENT FROM THIS MAP. A field with no rule
+      is always shown, and being asked on BOTH deal types is the entire point of
+      the change. Adding `() => true` would read as a rule somebody could
+      "tighten" later.
+
+    The three below mirror fms_ocpi_write_quotation conjunct for conjunct. The
+    server is the backstop; these are the courtesy copy, and they must agree.
+  */
+  deliveryPort: (d) => d.deliveryVia === "CIF",
+  deliveryFactoryCity: (d) => d.deliveryVia === "EX Factory",
+  // 🔴 TWO CONDITIONS, NOT ONE. Both answers end "to customer premises", so the
+  //    question is meaningless once the COMPANY bears the cost -- settled with
+  //    Ritesh Bhai: "when we select a company, we don't have to ask this thing."
+  deliveryLeg: (d) => d.transportTerms === "high_seas" && d.highSeasCostBy === "customer",
 
   // RULE 4 — a dollar term, asked only of dollar deals.
   dollarClauseAgreed: isUsdDeal,

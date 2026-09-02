@@ -168,9 +168,37 @@ const REQUIREMENTS: readonly Requirement[] = [
 
   // ── Section C · Commercial terms ─────────────────────────────────────────
   { key: "transportTerms", tier: "approval" },
-  { key: "highSeasVia", tier: "approval" },
+
+  /*
+    OCPI-35 · `highSeasVia` WAS HERE, AND HAD TO GO WITH ITS CONTROL.
+
+    🔴 A REQUIREMENT WITH NOTHING TO CLICK IS A DEAD END. The form stopped
+       asking "High seas delivery via"; leaving the rule would have put an
+       asterisk on no field, listed a name in the missing panel that jumps
+       nowhere, and blocked Send for approval on a question the salesperson
+       cannot answer. `deliveryVia` is that question now.
+
+    ⚠ THE COLUMN IS STILL REQUIRED BY THE DATABASE, and that is fine: it is
+      derived from this answer in payloadFromDraft, so satisfying the rule below
+      satisfies the CHECK too. Nothing server-side was relaxed.
+
+    ⚠ COUNTED BEFORE SHIPPING. Requiring the delivery term on BOTH deal types
+      is wider than the rule it replaces, but the hydration in `draftFromDeal`
+      means every deal that answered anything already passes: 17 read
+      "Ex-Work Surat", the High Seas deals read their own high_seas_via. The
+      only deals it newly blocks are QT-M0037 and QT-M0046 -- local, blank
+      trade_term, already past the gate, so only on a rework -- and the empty
+      drafts, which are blocked on the machine and the price anyway.
+  */
+  { key: "deliveryVia", tier: "approval" },
+  { key: "deliveryPort", tier: "approval" },
+  { key: "deliveryFactoryCity", tier: "approval" },
+
   { key: "highSeasCostBy", tier: "approval" },
   { key: "localCostBy", tier: "approval" },
+  // Asked only on High Seas + cost by Customer, and required there: it composes
+  // into a clause the customer signs, so a blank is a commitment left unstated.
+  { key: "deliveryLeg", tier: "approval" },
 
   { key: "dealValueCurrency", tier: "generate" },
   { key: "dealValueAmount", tier: "generate" },
@@ -327,6 +355,13 @@ export function requiredKeys(
  * ⚠ THE DELIVERY DAYS WARNING IS STILL GONE (OCPI-18) because the line it warned
  *   about is gone — all 21 decks carry the delivery DATE now. The delivery TERM
  *   below is a different field and still prints.
+ *
+ * ⚠ `tradeTerm` STAYS HERE EVEN THOUGH `deliveryVia` NOW BLOCKS (OCPI-35), and
+ *   the two are not duplicates. `deliveryVia` is the QUESTION and is checked at
+ *   the approval tier; this is the COMPOSED ANSWER and is the direct test of
+ *   "will {{trade_term}} rule a blank on the contract" — which is exactly what
+ *   this list is for. It also still fires at Generate, where `deliveryVia` is
+ *   not yet demanded, and on an older deal whose term was never answered.
  */
 const DETAIL_SHEET_FIELDS: readonly (keyof QuotationDraft)[] = [
   "tradeTerm",

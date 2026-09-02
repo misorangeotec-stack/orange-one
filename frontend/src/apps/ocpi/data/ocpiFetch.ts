@@ -351,6 +351,11 @@ const mapDeal = (r: any): OcpiDeal => ({
   highSeasVia: r.high_seas_via ?? null,
   highSeasCostBy: r.high_seas_cost_by ?? null,
   localCostBy: r.local_cost_by ?? null,
+  // OCPI-35 · the one delivery question and its three follow-ups.
+  deliveryVia: r.delivery_via ?? null,
+  deliveryPort: r.delivery_port ?? null,
+  deliveryFactoryCity: r.delivery_factory_city ?? null,
+  deliveryLeg: r.delivery_leg ?? null,
   remarks: r.remarks ?? null,
   dollarClauseAgreed: r.dollar_clause_agreed ?? null,
 

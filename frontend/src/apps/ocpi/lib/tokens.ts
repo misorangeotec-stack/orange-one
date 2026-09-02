@@ -280,7 +280,8 @@ export const TOKEN_HELP: { token: string; means: string }[] = [
   { token: "bank_block", means: "the selling company's full bank details" },
   { token: "delivery_date", means: "the tentative machine delivery date, dd-mmm-yyyy" },
   { token: "payment_terms", means: "the agreed payment terms" },
-  { token: "trade_term", means: "Ex-Work / CIF / FOB" },
+  // OCPI-35 · composed from the delivery question and its follow-up, not typed.
+  { token: "trade_term", means: "the delivery term, e.g. CIF Jebel Ali / Ex Factory Surat / FOB" },
   { token: "machine_value_inr", means: "machine value in rupees" },
   { token: "gst_rate", means: "GST percentage" },
   { token: "gst_amount_inr", means: "GST amount in rupees" },
