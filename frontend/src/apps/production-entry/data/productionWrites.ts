@@ -252,6 +252,8 @@ const MASTER_TABLE: Record<ProductionMasterType, string> = {
   packaging_item: "fms_production_packaging_items",
   fg_item: "fms_production_fg_items",
   unit: "fms_production_units",
+  test_equipment: "fms_production_test_equipments",
+  coa_parameter: "fms_production_coa_parameters",
   // Present so this record stays exhaustive over ProductionMasterType, but BOMs
   // are NOT written through insertMaster/updateMaster — a header plus its
   // component list has to move in one transaction, so it goes via saveBom below.
@@ -264,14 +266,31 @@ export interface MasterInput {
   sortOrder: number;
   /** Raw materials only: the material's own unit (fms_production_units id). */
   unitId?: string | null;
+  /** COA parameters only: the default specification, free text. */
+  standard?: string | null;
+  /** COA parameters only: the instrument, OPTIONAL — not every test uses one. */
+  testEquipmentId?: string | null;
+  /** COA parameters only: which generated copy prints this parameter. */
+  appearsOn?: string | null;
 }
 
-/** Base columns + the raw-material-only unit_id when supplied. */
+/**
+ * Base columns + whichever per-master extras the caller actually supplied.
+ *
+ * ⚠ EVERY EXTRA IS KEYED ON `!== undefined`, NOT ON TRUTHINESS. A master that
+ * does not carry the column must send no key at all — PostgREST would reject the
+ * write for a column that table has never heard of — while one that does must be
+ * able to send an explicit null (clearing a COA parameter's equipment back to
+ * "no instrument" is a real edit, and `input.x || null` cannot tell the two apart).
+ */
 const masterRow = (input: MasterInput) => ({
   name: input.name,
   active: input.active,
   sort_order: input.sortOrder,
   ...(input.unitId !== undefined ? { unit_id: input.unitId || null } : {}),
+  ...(input.standard !== undefined ? { standard: input.standard || null } : {}),
+  ...(input.testEquipmentId !== undefined ? { test_equipment_id: input.testEquipmentId || null } : {}),
+  ...(input.appearsOn !== undefined ? { appears_on: input.appearsOn || "both" } : {}),
 });
 
 export async function insertMaster(mt: ProductionMasterType, input: MasterInput): Promise<void> {
@@ -281,6 +300,83 @@ export async function insertMaster(mt: ProductionMasterType, input: MasterInput)
 
 export async function updateMaster(mt: ProductionMasterType, id: string, input: MasterInput): Promise<void> {
   const { error } = await db.from(MASTER_TABLE[mt]).update(masterRow(input)).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/* ----------------------------------- COA ---------------------------------- */
+
+/** One line of a COA as it is SENT. Snake_case because the RPC stores the array
+ *  verbatim — these keys are what `fms_production_coas.lines` will hold forever,
+ *  so they are the wire contract with lib/coaVm.ts, not a passing shape. */
+export interface CoaLineInput {
+  parameter_id: string | null;
+  name: string;
+  standard: string | null;
+  observed: string | null;
+  equipment_id: string | null;
+  equipment_name: string | null;
+  appears_on: string;
+  sort_order: number;
+}
+
+export interface CoaInput {
+  requestId: string;
+  /**
+   * The certificate being CORRECTED, when one is open; null issues a new one.
+   *
+   * ⚠ THE ROUND IS NEVER SENT — the server stamps it from the card, or takes it
+   *   from this row when correcting. Sending an id rather than a round is what
+   *   stops "correct Test 1 while Test 2 is open" from minting a duplicate.
+   */
+  coaId: string | null;
+  /** yyyy-mm-dd. Blank lets the server stamp today (in IST, not UTC). */
+  issueDate: string;
+  conclusion: string;
+  /** ⚠ The CERTIFICATE's remark — internal copy only. Not the test's remark. */
+  remarks: string;
+  /**
+   * The signed copy, OMITTED unless a new file was just uploaded.
+   *
+   * ⚠ UNDEFINED, NOT NULL, WHEN THERE IS NOTHING NEW. `JSON.stringify` drops an
+   *   undefined key, so the RPC sees no key and keeps whatever is stored — the
+   *   same presence rule the step payloads use. Sending null would wipe it.
+   */
+  attachmentPath?: string;
+  attachmentName?: string;
+  /**
+   * Standards the user asked to push back to the COA-parameter master.
+   *
+   * ⚠ Empty unless the tick under the table is set. The server re-checks that
+   *   the value actually differs, writes an activity row per change, and does it
+   *   under the SAME authority that issues the COA — see the migration.
+   */
+  pushStandards: { parameter_id: string; standard: string | null }[];
+  lines: CoaLineInput[];
+}
+
+/**
+ * Issue or correct ONE TEST ROUND's COA for a job card.
+ *
+ * ⚠ The product name and lot number are deliberately NOT sent. The RPC reads
+ * them off the card, so a certificate can never name a product the job card does
+ * not — see fms_production_save_coa.
+ */
+export async function saveCoa(input: CoaInput): Promise<void> {
+  const { error } = await db.rpc("fms_production_save_coa", {
+    p: {
+      request_id: input.requestId,
+      coa_id: input.coaId,
+      issue_date: input.issueDate,
+      conclusion: input.conclusion,
+      remarks: input.remarks,
+      // Present only when a file was just uploaded — see the note on the field.
+      ...(input.attachmentPath !== undefined
+        ? { attachment_path: input.attachmentPath, attachment_name: input.attachmentName ?? "" }
+        : {}),
+      push_standards: input.pushStandards,
+      lines: input.lines,
+    },
+  });
   if (error) throw new Error(error.message);
 }
 

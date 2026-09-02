@@ -3592,37 +3592,822 @@ fit them automatically, so this is now about completeness of the record, not abo
 
 ---
 
-### PE-3 · COA at the QC step — import the Excel, generate two PDFs  `[!]`
-*Raised 2026-08-20 · From the factory visit · **Blocked:** waiting on the sample PDF and raw Excel*
+### PE-3 · COA at the QC step — enter the details, generate the customer and internal copies  `[~]`
+*Raised 2026-08-20 · **Unblocked 2026-09-01** by the shared sheet
+(`Misc/Bushra Reports/Daily Quality Monitoring Sheet OOT QC FMT 002 (1).xlsx` → tab **COA (Both)**) ·
+**built and verified 2026-09-01** · migration `20260901120000_fms_production_coa.sql` **applied** ·
+frontend on `daily-reports` and **deliberately NOT being deployed** — the client has asked that
+nothing go to the live server until the production team has audited it (01-Sep-2026)*
 
-Today the COA lives in an Excel sheet the team maintains, and they generate the PDF out of it.
-Bring it into Production at the **QC step**: they hand us the Excel, we **import** it, and from that
-import we generate **two PDF views** —
+A **Certificate of Analysis** raised against a lot once its Quality Check is **approved**, printed in
+two audiences off one entry: a **customer** copy and an **internal** copy. Same header, same table,
+different parameter list — five parameters on the customer copy, nine on the internal.
 
-1. **Client side** — the copy that goes out to the customer.
-2. **Internal factory side** — the copy the factory keeps.
+⚠ **The scope changed when the sheet arrived.** The original entry assumed we would *import* the
+team's Excel and render it. The tab is not data, it is a **form**: the parameters are a controlled
+list, the standards belong to that list, and the only thing anyone types per lot is the **Observed**
+column. So this became two masters plus an entry form, and nothing is imported.
 
-The factory is sharing the PDF they produce today plus a raw Excel sheet; both feed the build.
+**What a user sees now**
 
-**Notes:** nothing named COA exists in the codebase. Two patterns to copy rather than invent, both
-already in this module:
+- **Masters → COA Parameters** — a new tab: parameter name, **Standard**, an **optional** Test
+  Equipment mapping, **Prints on** (Both / Customer only / Internal only), an **Order** and the
+  Active flag. Seeded with the nine parameters off the sheet.
+- **Masters → Test Equipment** — a new plain master. Seeded PHS-3C, FE30K, K6, BROOKFIELD, TU1810,
+  Pycnometer.
+- **A *Certificate of Analysis* card on the job card**, and an **Issue COA** action on the Quality
+  Checking queue's Completed tab — both only on an **approved** lot. Product Name (the FG item) and
+  Lot No (the Lot/Batch Card number) are read off the card; Issue Date defaults to today and may be
+  **back-dated but never post-dated**. Then one row per active parameter: the Standard pre-filled
+  from the master and editable here, the **Observed** value typed, the equipment shown read-only.
+- **Two download rows — Customer copy and Internal copy** — each offering PDF, Excel or both per a
+  new **Setup → COA** setting. Print is always there.
+- **All three outputs reproduce the factory's own sheet**, not the portal's report chrome: the Orange
+  O Tec wordmark top-left, company and address to its right, a centred *Certification of Analysis*,
+  the three label/value rows, the four-column grid whose **first header cell is blank** (as on the
+  sheet — the parameter column is unlabelled), the conclusion row, then the two signature rules. The
+  PDF is drawn plainly in black on white rather than through `headerBand`/`drawTable`, so the PDF,
+  the Excel and the printer produce the same piece of paper. *(The .xlsx carries the letterhead as
+  text only — SheetJS cannot embed an image.)*
+- **COA Register** under Reports — every certificate issued, newest first, sortable and filterable
+  on every column, with an *Observed n/9* column so a half-filled certificate is visible from the
+  list.
 
-- **Import in the business's own file shape.** [bomIo.ts](frontend/src/apps/production-entry/lib/bomIo.ts)
-  reads the BOM master from the exact block layout the business already writes its formulations in,
-  deliberately *not* a normalised one-row-per-record sheet. That is the right instinct here — take
-  their COA sheet as it is, rather than asking QC to reformat it.
-- **PDF generation.** [printIssueSlip.ts](frontend/src/apps/production-entry/lib/printIssueSlip.ts)
-  renders an HTML form to the browser print dialog via a hidden iframe, and is already reused across
-  two documents with one layout and different data. COA is the mirror image — one set of data, two
-  layouts — so the shared piece is the data, not the template.
-- The QC step already exists as `quality_check` ("Quality Checking", step 4, request-scoped) in
-  [steps.ts](frontend/src/apps/production-entry/lib/steps.ts), so there is a place to hang this.
+**Decisions taken (01-Sep-2026, with the client)**
 
-**To confirm when the files arrive:** which fields differ between the client and internal copies
-(and whether anything on the internal one must never reach a customer); whether the COA attaches to
-a job / batch / request and how it is numbered; whether the import is per batch or a sheet of many;
-whether the generated PDF must be stored and re-openable later or just printed; and whether QC can
-edit values after import or only import-and-generate.
+1. **Not a step in the chain.** QC approve/reject advances the card to the Log Book exactly as
+   before; the COA hangs off the approved card and blocks nothing. No new status, no queue, no SLA.
+   A **repackaging card never gets one** — it bypasses Quality Check entirely.
+2. **The standard is a master default that is editable per COA**, and what was typed is stored.
+3. **One COA per lot, edited in place** by the Quality Checking owners, the coordinators and admins.
+4. **"Both" is the common case, not "Customer".** The five customer parameters print on the internal
+   copy as well — the sheet's two blocks are nested, not disjoint. Reading them as two disjoint
+   lists is the easy mistake and would have produced a four-row internal copy.
+
+⚠ **What was printed is FROZEN onto the certificate.** Each line snapshots the parameter name,
+standard and equipment as they read when it was saved. Verified on live data: a standard changed in
+the master afterwards left the issued certificate untouched. Without this, correcting a standard next
+month would silently rewrite a certificate already in a customer's hands.
+
+**Six things the audit caught before they shipped** — each cost a build cycle if missed:
+
+1. **Two `master_type` CHECK constraints** (`fms_production_master_managers`,
+   `fms_production_master_requests`) hard-list the types; assigning an owner to a new master fails
+   until both are widened.
+2. **`fms_production_email_payload` needs a `test_equipment` label arm**, or those requests email as
+   *"category"* — the same omission that already shipped once for `packaging_item`.
+3. **`masterFields()`'s label chain ends in `: "Unit name"`**, so a new master type with no arm is
+   labelled *"Unit name"* in two modals.
+4. **Order was not editable in ANY Production master** — `MasterCrud` shows the column but renders
+   no input, so every other master can only be re-ordered through the Excel round trip. This master
+   declares its own Order field.
+5. **The PDF truncated the longest parameter.** `drawTable` ellipsizes, and *"10% Ink Solution in
+   Water Foam Volume in Millilitre (1 g ink + 9 g water)"* printed as *"…(1 g…"* — a certificate
+   abbreviating the name of the test. Names now wrap onto continuation rows. Caught by extracting
+   the text of a generated PDF, not by reading the code.
+6. **Greek `μ` (U+03BC) is missing from the embedded Poppins**, checked against the shipped cmap.
+   The micro sign `µ` (U+00B5) and `³` that the seeded names actually use are both present and both
+   render — but the master is free text, and a symbol-picker mu would print as a **silent blank** on
+   a certificate. `GLYPH_FALLBACK` in [pdfBrand.ts](frontend/src/shared/lib/pdfBrand.ts) now maps it.
+
+**Verified on live data (01-Sep-2026), then removed.** A COA was issued against an approved lot,
+both copies generated, and the row plus its activity deleted afterwards — the observed values were
+invented, and fabricated lab measurements must not sit against a real lot. Confirmed: 5 customer rows
+vs 9 internal; the server refuses a future issue date, an unapproved lot and a repackaging card
+independently of the client; back-dating accepted; the standard freeze holds; PDF and Excel both
+carry `µ` and `³`; the Setup setting removes the Excel button rather than greying it.
+
+⚠ **THREE SAMPLE COAs ARE SITTING IN THE LIVE DATABASE** *(seeded 01-Sep-2026, for the client to look
+at the screens before the frontend ships)* — lots **2608-1344**, **2608-1342** and **2608-1339**. They
+hang off REAL approved lots and **every observed value is invented**; the lot numbers and product
+names are stamped off the job card and could not be faked, so the only thing marking them is the
+conclusion, which reads `[ZZ TEST DATA - DO NOT SEND] Pass / Qualified` and prints on **both** copies.
+
+⚠ **THEY STAY FOR NOW — do not delete them.** *(Client's instruction, 01-Sep-2026.)* The production
+team has to audit the COA against how they actually work before anything else is decided, and the
+three samples are what they will be looking at. Remove them only when that audit says so.
+
+When that time comes it is one statement, safe to re-run, and it cannot touch a genuine certificate
+because it keys on the marker:
+
+```sql
+delete from public.fms_production_coas where conclusion like '[ZZ TEST DATA%';
+```
+
+They were inserted directly rather than through `fms_production_save_coa`, so no activity rows were
+written and there is nothing else to clean. The nine parameters and six test equipments are **not**
+test data — they came with the migration and stay.
+
+**Still to confirm with the factory / Bushra** — none of it blocks use:
+
+1. The sheet misspells two parameters — *"Surface Tention"* and *"Mililiter"* (the Daily QC tab
+   spells the first correctly). Both are seeded corrected; confirm, since one prints on a
+   customer-facing document.
+2. **Analyst / Q.C. Head** — currently ruled lines to sign by hand, as on the paper form. Print the
+   recorded user's name instead?
+3. Does the customer copy need a **document number / revision / ISO line** the way the Daily QC sheet
+   carries `OOT-QA-FMT-004 · ISO 9001-2015`? The COA tab carries none.
+4. Units live **inside** the parameter names ("Conductivity (ms/cm)") — keep, or split a Unit column?
+5. Should the customer copy ever be **emailed** from the system, or is downloading it enough?
+   (Out of scope as built. The COA save deliberately writes no notification, so it sends no mail.)
+
+---
+
+### PE-5 · The COA moves into the quality check itself — filled standards, a COA per test round, and Print COA on the completed row  `[~]`
+*Raised 2026-09-02 · from the client, walking the Record quality check screen · builds on **PE-3**,
+which is built and verified but **deliberately not deployed** pending the production team's audit.
+This lands on the same `daily-reports` branch and ships with it.*
+
+**ALL EIGHT ITEMS ARE BUILT AND VERIFIED, 02-Sep-2026 — except B, which is not code.** Two
+migrations, both **applied** to the live database:
+`20260902120000_fms_production_coa_per_round.sql` (A and F's per-round half) and
+`20260902130000_fms_production_coa_remarks_and_signed_copy.sql` (D, C and F's upload half).
+E, H and G are frontend only. The frontend sits on `daily-reports` and, as with PE-3, is
+**deliberately NOT deployed**. What shipped is recorded inside each item below.
+
+**Still open: B alone** — the nine standard values, which QC has to state. It is data entry, not
+code, and everything around it works: the form pre-fills from the master, and item C now lets QC
+type them once on a certificate and push them up.
+
+The COA exists (PE-3) but it hangs *beside* the quality check rather than being part of it: the
+action is a button on the Completed tab, the form opens cold, and once a certificate is saved there
+is nowhere on that screen to print it. This entry moves it inside the step and closes the loop —
+issue, print, re-test, re-issue — and drops the testing attachment once the certificate is doing
+that job.
+
+**Eight items. They are not equally sized: B, E and H are small, F changes the schema.**
+
+**A · Issue COA inside the Record quality check form, before Approve or Reject**
+
+Today the action is `rowExtra` on the Quality Checking queue's Completed tab
+([QualityQueue.tsx:24-33](frontend/src/apps/production-entry/pages/queues/QualityQueue.tsx#L24-L33)),
+rendered only when `r.qcStatus === "approved"`. It is wanted in the step form itself — the
+`isQuality` arm of [StepModal.tsx](frontend/src/apps/production-entry/components/StepModal.tsx),
+above the Approve / Reject pair, so the certificate is entered as part of recording the test rather
+than remembered afterwards.
+
+⚠ **This collides with the server guard, not just with the layout.** `fms_production_save_coa`
+refuses outright unless `qc_status = 'approved'`
+([migration L529-531](supabase/migrations/20260901120000_fms_production_coa.sql#L529-L531)) — and
+before the user has pressed Approve, `qc_status` is `null` on a first round and `rejected` on a
+re-test. So "issue the COA *before* approving" cannot be saved through the RPC as it stands. Two
+readings, and they are materially different:
+
+**DECIDED 02-Sep-2026 — relax the guard. The COA is saved even when the round is REJECTED, it
+prints, and the paper says the lot failed.** The client was asked twice, plainly, and chose this
+both times.
+
+The reasoning is sound and worth writing down, because the code will look wrong to whoever reads it
+next: **the COA form is the test-results record, not only the certificate.** The observed values on
+a failed lot are real measurements and are the evidence for the rejection. Throwing them away
+because the verdict went the other way loses the lab's actual work.
+
+What it costs:
+
+- ⚠ **The server guard comes out** —
+  `if coalesce(v_qc,'') <> 'approved' then raise` in
+  [fms_production_save_coa](supabase/migrations/20260901120000_fms_production_coa.sql#L529-L531).
+  **The repackaging refusal directly above it STAYS** — a repackaging card runs no quality check at
+  all, so it has no test to record. Do not remove both because they sit together.
+- ⚠ **The QC result must be stamped ONTO the certificate**, per round, at save — the same freeze
+  rule as the standards. Re-reading `qc_status` at print time would relabel an old certificate when
+  a later round changes the verdict.
+- **All three outputs carry the verdict**: the PDF, the Excel and the browser print. It belongs
+  where a reader cannot miss it — next to the conclusion, not in a corner — and it touches
+  [coaVm.ts](frontend/src/apps/production-entry/lib/coaVm.ts),
+  [coaPdf.ts](frontend/src/apps/production-entry/lib/coaPdf.ts),
+  [coaXlsx.ts](frontend/src/apps/production-entry/lib/coaXlsx.ts) and
+  [printCoa.ts](frontend/src/apps/production-entry/lib/printCoa.ts) together.
+- **The COA Register needs a Result column**, or a failed certificate is indistinguishable from a
+  passed one in the list it is most likely to be found from.
+
+**The marking is a WATERMARK — decided 02-Sep-2026.** `REJECTED` printed large and pale across the
+page, behind the text, the way a DRAFT stamp works. The client was shown the alternatives (a red
+band at the top, or one line beside the Conclusion) and chose this.
+
+⚠ **The Excel copy CANNOT do this, and must not be left unmarked.** SheetJS embeds no images and has
+no watermark layer — the same limit that already forces the .xlsx to carry the letterhead as text
+only (PE-3). The PDF gets a rotated grey string and the browser print gets a CSS overlay, but the
+Excel needs a **plain text fallback** stating the rejection, placed where it cannot be scrolled past.
+Left to itself, the one output that silently loses the marking is the one people forward as an
+attachment.
+
+⚠ **A pale watermark is the weakest of the three against a bad photocopy or a low-toner printer** —
+this was raised and the client chose it anyway, which is their call. Worth pairing with the result on
+the Conclusion line so there is a plain-text statement underneath the visual, and worth printing one
+real page on the factory's own printer before this ships rather than judging it on screen.
+
+
+---
+
+**✅ BUILT 02-Sep-2026 — what item A actually shipped**
+
+- **A *Certificate of Analysis · Test n* block sits in the `isQuality` arm, directly above the
+  Approve / Reject pair.** It names its own round, says whether that test has a certificate, and
+  opens `CoaModal` — rendered as a **sibling** of the dialog with `stacked`, never a child (a
+  stacked modal inside a read-only `<fieldset disabled>` comes up inert).
+- **The Test history rows now show which earlier rounds carry a certificate**, and open it. That is
+  where the rounds are already listed, so it is where one-per-round becomes visible to the user.
+- **The server guard came out; the repackaging refusal stayed** — and a third refusal replaced the
+  one that went: *a card that has not reached quality checking has no test to certify*. Dropping
+  the approved-only guard with nothing in its place would have let a certificate be issued against
+  a lot nobody had tested.
+- **The verdict is stamped per round by TWO writers that agree**: `fms_production_save_coa` reads
+  that round's own record at save (null when the certificate is entered first), and
+  `fms_production_record_quality` stamps the round it has just recorded. That is what makes "fill
+  the certificate, then press Reject" come out labelled.
+- **All four outputs carry it.** `coaVm.ts` gained `result` / `resultText` / `watermark`; the PDF
+  draws a pale rotated stamp *before* each page's content, the print view a rotated CSS overlay at
+  `z-index:-1`, and the .xlsx — which can do neither — a **bold red banner row directly under the
+  title**. A **Result :** row prints under the Conclusion on **both copies** in all three.
+- **The COA Register grew Test and Result columns** (sort + filter on each, per the repo default).
+
+⚠ **A CERTIFICATE WITH NO VERDICT YET IS MARKED TOO — decided 02-Sep-2026.** The COA can now be
+saved before Approve/Reject is pressed, so there is a window in which it is printable and the lot
+has not been passed. It prints `NOT VERIFIED` and reads *"Result : Not yet recorded (Test n)"*.
+Printing it clean would have read as a pass. The form says so before you save it, too.
+
+⚠ **A REJECTED LOT IS NOT ON THE QUEUE'S COMPLETED TAB, AND CANNOT BE — the finding that changed
+this item's shape.** `completedFor` keys on `qcAt`, and `qc_at` is stamped **only in the approved
+branch** of `fms_production_record_quality`. So a lot whose test was rejected has `qcAt = null` and
+sits in the **Pending** tab as a tracking row while its top-up loop runs. The step form is
+therefore not a convenience for the rejected case — **it is the only route to it**, alongside the
+job card. (The comment in `QualityQueue.tsx` claimed otherwise and has been corrected.)
+
+⚠ **Two rounds legitimately disagree inside the quality form, and both are right.** On a blocked
+tracking row the heading reads *"Test 2 — retest"* (the test ahead) while the certificate belongs
+to **Test 1** (the test that just failed). The COA block therefore always names its own round
+rather than inheriting the heading — see `lib/coaRound.ts`, which states the rule once and mirrors
+the server.
+
+⚠ **Still to do before this is judged:** print one real page on the factory's own printer. The
+watermark was checked by rendering the PDF and reading it back, and it is pale by design — that is
+a screen judgement, not a paper one. **The exact wording on a customer-facing certificate for a
+failed lot is still open** (question 2 below).
+
+---
+
+**B · The standards open blank — diagnosed, and it is data, not code**
+
+The prefill is correct. `seedRows` copies `p.standard ?? ""` off the master for every active
+parameter ([CoaModal.tsx:80-108](frontend/src/apps/production-entry/components/CoaModal.tsx#L80-L108)).
+The reason every row is empty is that **the seed never wrote a standard**: the insert lists
+`(name, test_equipment_id, appears_on, sort_order)` and no `standard` column
+([migration L602](supabase/migrations/20260901120000_fms_production_coa.sql#L602)), so all nine
+parameters carry `standard = NULL`.
+
+Nothing needs rewriting, and ⚠ **the values are not in the QC sheet — checked against the workbook,
+02-Sep-2026.** It has a **Standard Specs.** tab holding exactly one cell — *"We will enter manually
+afterwards for our internal reference (No relsation with software)"* — and the **COA (Both)** tab
+leaves the Standard column empty for all nine parameters. The seed omitted the column because the
+sheet it was built from omitted it too. So there is no import to write and no file to wait for:
+**QC has to state the nine standards, and someone types them into Masters → COA Parameters once**
+(or a follow-up `update` migration ships them with the module).
+
+⚠ **Read that sheet cell before treating this as settled.** The factory's own position was that
+standards are internal reference with *"no relation with software"*. The client's 02-Sep ask — that
+the COA form pre-fill them from the master — is the opposite of that, so the standards are now in
+scope where they deliberately were not. Worth confirming once with QC rather than assumed.
+
+Everything downstream — the freeze, the per-COA override, both printed copies — already works and
+was verified on live data on 01-Sep; it has simply had nothing to pre-fill *with*.
+
+**C · An edited standard offers to go back to the master**
+
+New. When a row's Standard is changed away from the master default, offer to save the new value to
+the master too — a per-row tick, or one line at the foot of the table ("3 standards differ from the
+master — update the master as well?"). Unticked, behaviour is exactly what it is today: the change
+lives on this certificate only.
+
+⚠ **It must not reach certificates already issued, and does not** — `lines` is a frozen `jsonb`
+snapshot per COA and is never re-read from the masters (PE-3, and verified on live data). Saying so
+here so that nobody later "helpfully" back-fills the issued rows to match a corrected master.
+
+**DECIDED 02-Sep-2026 — anyone who may issue a COA may also push the standard to the master.** The
+tick is offered to Quality Checking owners, coordinators and admins alike. The client's reasoning:
+the people running the test are the people who know the right value, and a wrong standard should be
+correctable at the moment it is noticed rather than queued behind whoever owns the master.
+
+⚠ **It is still a MASTER edit made from a step form, so it must be recorded like one.** This is now
+the only place in the module where a master changes without going through Masters or a master
+request. Write an activity row naming who changed which standard, from what to what — without it,
+a standard that quietly drifts has no trail and the next argument about a certificate has no answer.
+
+⚠ **The write needs its own path, and PostgREST will refuse a lazy one.** Updating one parameter's
+`standard` must be fully qualified on the row id; an unqualified update is rejected outright, and a
+rollback-wrapped SQL test will never show it.
+
+**✅ BUILT 02-Sep-2026.** One line at the foot of the table with a single tick, unticked by default
+and never remembered between openings — *"1 standard differs from the master — update the master as
+well?"*, naming which. The per-row tick was the alternative and was not taken: **every master
+standard is still null (item B)**, so the ordinary case for months is somebody typing all nine and
+wanting all nine kept, and nine separate ticks would be worst at exactly the job this does most.
+
+⚠ **IT COULD NOT BE A TABLE WRITE, and the reason is worth keeping.** Two separate refusals stop
+the obvious `db.from('fms_production_coa_parameters').update(...)`: RLS on that table admits only
+an admin or a `coa_parameter` **master manager** — and the decision is that anyone who may ISSUE a
+COA may push, which a Quality Checking step owner is neither — and `fms_production_activity` is
+**admin-write only**, so the trail could not be written from the browser at all. Both now run
+inside `fms_production_save_coa`, under the `fms_production_can_act('quality_check', …)` check that
+is *precisely* `is_admin OR is_coordinator OR is_step_owner`. The update is fully qualified on the
+parameter row id.
+
+The push runs **after** the certificate is written, so a save that fails for any other reason
+cannot leave a master edited behind it; it skips a value that already matches the master, so a
+change that did not happen leaves no trail; and each real change writes
+`type = 'coa_standard_updated'` with a human note — *Standard for "PH" updated in the master:
+(blank) → 6.5 - 8.5*.
+
+**Verified on live data, then reversed:** the master moved, the activity row named who/which/
+from/to, and — the thing this item most needed to prove — **the three issued certificates' `lines`
+were byte-identical before and after** (md5 of the jsonb, compared). Two further saves with the
+tick untouched wrote no second activity row.
+
+**D · Remarks, alongside Conclusion**
+
+The form ends in a single free-text Conclusion
+([CoaModal.tsx:271-279](frontend/src/apps/production-entry/components/CoaModal.tsx#L271-L279)).
+Add **Remarks** under it. One nullable `remarks` column on `fms_production_coas` (additive), a
+`TextArea` in the modal, and the register gains a column.
+
+**DECIDED 02-Sep-2026 — Remarks print on the INTERNAL copy only, never on the customer copy.** The
+reason is the one that makes the field usable at all: staff must be able to write plainly about a
+batch without a customer reading it. ⚠ **This makes Remarks the first field whose audience is fixed
+in CODE rather than by the parameter master's `appears_on`** — every other difference between the
+two copies is data-driven. Put it behind the same audience switch the line rows already use, not a
+second mechanism, or the two copies start diverging in two places at once.
+
+It touches
+[coaVm.ts](frontend/src/apps/production-entry/lib/coaVm.ts),
+[coaPdf.ts](frontend/src/apps/production-entry/lib/coaPdf.ts),
+[coaXlsx.ts](frontend/src/apps/production-entry/lib/coaXlsx.ts) and
+[printCoa.ts](frontend/src/apps/production-entry/lib/printCoa.ts) together, because all three
+outputs must stay the same piece of paper.
+
+**✅ BUILT 02-Sep-2026.** Nullable `remarks` on `fms_production_coas`, a `TextArea` under Conclusion
+in `CoaModal`, and a sortable + text-filterable **Remarks** column in the register. Shown on the job
+card's certificate block too, when present, so nobody thinks the field was lost.
+
+⚠ **The audience switch is `showsOn`, the same one the line rows use.** `coaVm.ts` declares a single
+`REMARKS_AUDIENCE = "internal"` and feeds it through that function; `buildCoaDocument` then returns
+`remarks: null` on the customer copy and **all three renderers simply omit the row when it is
+null** — none of them re-checks `audience`. That is the whole point: a second mechanism is how the
+two copies start diverging in two places at once.
+
+**Verified:** on the internal copy the Remarks row prints in the PDF (pdf.js extraction, with a
+control string), in the .xlsx and in the print HTML; on the customer copy it is absent from all
+three, and `buildCoaDocument(...).remarks` is null.
+
+⚠ **Two Remarks fields now sit on adjacent screens and they are NOT the same thing.** `qcRemarks`
+on the quality step form is the TEST's remark; this one belongs to the CERTIFICATE. Nothing is
+wired between them, both carry a comment saying so, and the step form's label now reads *"the
+TEST's remark — the certificate has its own, in the COA form"*.
+
+**E · Download and print from the quality check screen, once the COA is issued**
+
+The control already exists and needs no design:
+[CoaExports.tsx](frontend/src/apps/production-entry/components/CoaExports.tsx) is the two labelled
+rows — **Customer copy** and **Internal copy** — each with PDF / Excel / Print per Setup → COA. It
+is mounted in the register ([CoaRegister.tsx:149](frontend/src/apps/production-entry/pages/CoaRegister.tsx#L149))
+and on the job card ([RequestDetail.tsx:530](frontend/src/apps/production-entry/pages/requests/RequestDetail.tsx#L530)),
+and in **`CoaModal` it is not mounted at all**. Mounting it there — visible once a COA exists on the
+lot — is the whole of this item.
+
+**✅ BUILT 02-Sep-2026** — mounted in `CoaModal`, visible once that round's certificate exists,
+labelled *Download or print — Test n* and carrying the signed copy's link beside it.
+
+⚠ **IT HAD A TRAP IN IT, and it is the one this item was most likely to fail on.** `CoaModal` in
+read-only mode wraps its body in `<fieldset disabled>` — so exports mounted in the body would be
+**inert for exactly the person E is for**: a viewer who opened a certificate to print it. `Modal`'s
+`readOnlyHeader` renders above the body and outside the fieldset, and its own doc comment says it
+exists for precisely this.
+
+⚠ **And the obvious fix renders it TWICE.** `Modal`'s read-only branch emits `readOnlyHeader` *and*
+its children — not one or the other — so mounting in both places unguarded gives a viewer two
+copies, one live above and one dead below. The body copy is therefore guarded on `!readOnly`, and
+the block is a single `const` rendered in exactly one of the two places.
+
+**F · Round two asks for a COA again, and a signed COA can be uploaded**  🔴 *the schema one*
+
+⚠ **This reverses a decision taken on 01-Sep.** `fms_production_coas.request_id` is **unique**
+([migration L160](supabase/migrations/20260901120000_fms_production_coa.sql#L160)), deliberately —
+*"a COA is EDITED IN PLACE, never re-issued as a new row"* (PE-3, decision 3). But Quality Checking
+is multi-round: a rejected lot loops through the Additional Issue Slip and returns as Test 2, and
+the rounds are already stored and rendered as **Test history**
+([StepModal.tsx:1035-1050](frontend/src/apps/production-entry/components/StepModal.tsx#L1035-L1050)).
+Asking for a COA again on the re-test means one of two things:
+
+**DECIDED 02-Sep-2026 — one COA per (lot, test round). Both certificates are kept.** Test 1 keeps
+what it issued; Test 2 gets its own. The client's reason is the right one: a certificate that may
+already be in a customer's hands must not be silently overwritten by a later test.
+
+What that costs, and none of it is optional:
+
+- Drop the unique key on `request_id`; add a `round` column and make the pair unique instead.
+- `coaForRequest()` becomes one-of-several. The job-card COA card, the queue button, the register
+  row and the modal's "already issued" subtitle all currently assume a single certificate.
+- **Which round a COA belongs to must be stamped at save**, from the card's round count, not chosen
+  by the user — otherwise two certificates can claim the same test.
+- The register grows a Round column, and the "Observed n/9" completeness column now reads per round.
+- ⚠ **The existing three sample COAs and any real one carry no round.** Back-fill them to round 1
+  in the same migration, or they sort and group as an unlabelled fourth thing.
+
+**Plus:** *upload* a COA — a signed or scanned copy attached to the row. Two nullable columns (`attachment_path`, `attachment_name`) and
+the storage path the step attachments in this module already use; no new pattern.
+
+
+**✅ BUILT 02-Sep-2026 — the per-round half** (the upload half followed the same day; see below).
+
+Every cost listed above was paid:
+
+- `request_id`'s unique key is gone and **`(request_id, round)` is unique instead** — as a unique
+  *index*, which is what `on conflict (request_id, round)` needs. ⚠ The old constraint was dropped
+  by its **column list, not by a guessed name**: it was created implicitly by `request_id ... unique`,
+  so its name was a Postgres convention rather than something this repo chose.
+- **All three existing certificates were back-filled to round 1** — the samples on lots 2608-1344 /
+  2608-1342 / 2608-1339, which stay. ⚠ **`qc_result` was back-filled too**, from each card's own
+  round record and *not* from `qc_status`; left null they would print `NOT VERIFIED`, and they are
+  exactly what the production team is about to audit.
+- **`coaForRequest()` is gone**, replaced by `coasForRequest()` (a list, oldest test first) and
+  `coaForRound()`. All four call sites moved: the job card now renders **one block per certificate**
+  (Test n · verdict · issue date · conclusion · downloads · Edit), the queue button and the step
+  form open the current round, and the register's Edit carries the row's own round.
+- **The round is stamped by the server, never sent.** When an existing certificate is corrected the
+  client sends `coa_id` and the server keeps that row's round — which is what stops "correct Test 1
+  while Test 2 is open" from silently minting a duplicate.
+- **The register grew Test and Result columns**; `Observed n/9` already read per row, so it now
+  reads per round for free.
+
+⚠ **A NEW ROUND'S CERTIFICATE SEEDS FROM THE PREVIOUS ROUND'S** — parameters, standards and
+equipment copied forward, **Observed deliberately blank**, because that is the one thing the new
+test measures. Without it a Test 2 form opens completely empty (all nine master standards are null
+— item B), so QC would retype every standard they typed an hour earlier. It reads a frozen
+snapshot and writes a new row, so it cannot reach back and alter what Test 1 issued. *This was a
+judgement call taken inside the ask, not a client decision — say so if it is wrong.*
+
+⚠ **NOT EXERCISED ON LIVE DATA: no lot in the book has ever reached a second test round** (125 job
+cards, one rejected round in the whole history, and that card was cancelled). The schema half was
+proved instead by a rolled-back probe — two rounds coexist on one card, a duplicate `(request_id,
+round)` is refused — and the rejected-round save was proved end to end on the real card. **The
+previous-round seeding is verified by construction only**; it will meet its first real re-test on
+the floor.
+
+**✅ THE UPLOAD HALF IS BUILT TOO, 02-Sep-2026.** Two nullable columns
+(`attachment_path`, `attachment_name`) and a `FileCapture` in `CoaModal` — the same control the log
+book uses, which suits this because a signed COA is a scan or a phone photo of a signed sheet.
+Stored through the existing `uploadStepDocument(requestId, "coa", file)` under
+`<request_id>/coa/`, and opened through the existing `StepDocLink`, which mints its own signed URL.
+No storage migration was needed: the bucket's policies are bucket-wide with no folder predicate.
+
+⚠ **THE COLUMNS ARE KEYED ON PRESENCE, NOT ON VALUE** — `case when p ? 'attachment_path'` — so an
+edit that uploads no new file keeps the stored one. The client simply omits the keys (an
+`undefined` disappears in `JSON.stringify`), the same rule the step payloads follow and the same
+one `fms_production_update_quality` already uses. **Verified on live data:** a file was uploaded,
+the row saved again with nothing new picked, and the path survived.
+
+⚠ **There is no way to REMOVE a signed copy once attached.** Not asked for, and storage here is
+additive-only. Worth knowing before someone attaches the wrong file.
+
+**⚠ The multi-round display WAS proved after all** (the note above stands for the *seeding*): a
+marked second-round row was inserted against lot 2608-1344, the queue's Print COA panel listed both
+Test 1 (Approved) and Test 2 (Rejected) each with its own Customer/Internal rows, and the row was
+deleted immediately. Only the previous-round **seeding** remains unexercised.
+
+**G · "Attachment of testing" goes once the COA is in place**
+
+It is rendered **hardcoded in the `isQuality` arm**
+([StepModal.tsx:1083-1092](frontend/src/apps/production-entry/components/StepModal.tsx#L1083-L1092)),
+not through config. Worth knowing before anyone goes looking: `hasAttachment` is declared on
+`StepCfg` ([stepConfig.ts:42](frontend/src/apps/production-entry/lib/stepConfig.ts#L42)) and is
+**set by no step**, so the generic block at `StepModal.tsx:1638` and the `StepDocLink` at `:535` are
+already unreachable and are not what is on screen.
+
+**DECIDED 02-Sep-2026 — the upload box goes for everyone, and every file already attached STAYS
+readable.** No cut-off date, no per-lot condition.
+
+**Why removing it outright is safe, which was not obvious before today's other decisions.** The
+worry was that a round with no COA would be left with no evidence at all. Decision A removes that:
+the COA is now enterable on **every** round, rejected ones included, so there is no longer any test
+whose only record could have been an attached file. The box has nothing left to do.
+
+⚠ **FIX-4 applies — this is a deletion, so list what goes with it before cutting.** The save path
+that uploads the file and writes `qc_attachment_path` / `qc_attachment_name`
+([StepModal.tsx:455-462](frontend/src/apps/production-entry/components/StepModal.tsx#L455-L462));
+and the `qcFile` state and its setter. **What must STAY, and this is now an explicit client
+instruction rather than an inference:** the per-round attachment links inside Test history
+([:1046](frontend/src/apps/production-entry/components/StepModal.tsx#L1046)). Live cards already
+carry files against earlier rounds, they were somebody's evidence for a test that really happened,
+and they must keep opening. The columns stay too (additive-only) — nothing is deleted from storage.
+
+⚠ **This is the FIX-4 trap in its exact classic form**: the upload input, the save path and the
+history links all read the same two columns, and only the first two are going. Deleting the pair
+"because the attachment feature is being removed" would take the history links with them, and
+nothing would fail — not the build, not `tsc` — until someone went looking for a file that no
+longer had a way to be opened.
+
+**✅ BUILT 02-Sep-2026 — three things went, and only three:** the `FieldLabel` upload block in the
+quality arm, the `if (qcFile) { uploadStepDocument(…) }` in the save path, and the `qcFile` state
+with its reset. A comment stands where the block was, saying why it went and what did not.
+
+**What stayed, checked one at a time:** the M/C Testing arm's identical-looking block (a different
+step, and it keeps its own `setMcFile` and `StepDocLink`); the per-round links in Test history; the
+generic block behind `cfg.hasAttachment`, which no step sets and which was already unreachable; both
+DB columns; and every stored file. The orphan sweep afterwards flagged only `setLogFile` and
+`setSignedFile`, both the documented false-positive shape — a setter handed to `FileCapture` as a
+prop.
+
+⚠ **The quality save now sends NO attachment keys at all, and that is safe in both directions.** On
+a new round there is nothing to send; on an EDIT, `fms_production_update_quality` keys those two
+columns on presence, so a round recorded before this change keeps its file and its Test history link
+keeps working.
+
+⚠ **AND THE FIX-4 WORRY TURNED OUT TO BE EMPTY IN FACT, THOUGH IT WAS RIGHT IN PRINCIPLE.** Checked
+against live data: of 77 job cards carrying recorded test rounds, **not one has ever had a quality
+attachment** — zero at round level, zero at card level. The control being removed had never been
+used, so nothing could be stranded by it. That also means the "file still opens" check could not be
+run on real data; the history link is conditional on `r.attachmentPath` and is code this change did
+not touch.
+
+⚠ **`RequestDetail`'s Progress panel was the other place to check, and it was already right**:
+`stageAttachments()` prefers the per-round files and falls back to the card-level column only for
+legacy cards with no rounds at all.
+
+**H · Print COA on a completed quality check**
+
+The completed row today shows one ghost button reading `Issue COA` or `COA`, and it opens the entry
+form ([QualityQueue.tsx:26-33](frontend/src/apps/production-entry/pages/queues/QualityQueue.tsx#L26-L33))
+— there is no way to print from the queue at all. Add a second action, **Print COA**, rendered only
+when the row has a certificate (`s.coaForRound(r.id, currentCoaRound(r))` — `coaForRequest` no longer exists, see F), opening the same block the register uses: the
+panel at [CoaRegister.tsx:141-151](frontend/src/apps/production-entry/pages/CoaRegister.tsx#L141-L151)
+wrapping `<CoaExports />`.
+
+⚠ **Wording:** the ask says *"internal and company"*. The two copies are **Customer** and
+**Internal**, "company" here meaning the customer-facing one. Keep the existing labels — which copy
+you are downloading is the single most consequential thing on that control, and it is the reason
+they are two labelled rows rather than a toggle.
+
+**✅ BUILT 02-Sep-2026.** A second `rowExtra` action, **Print COA**, on any completed row whose lot
+carries a certificate, opening a panel below the queue in the register's own shape. Labels kept:
+Customer copy / Internal copy, two labelled rows per round.
+
+⚠ **IT LISTS EVERY ROUND, which is the whole reason this item was flagged.** Each certificate gets
+its own heading — *Test n*, its frozen verdict, its issue date — and its own export rows, so a lot
+rejected at Test 1 and approved at Test 2 offers both and neither can be printed in the belief that
+it is the other. **Verified**: a marked second-round row was inserted against lot 2608-1344, the
+panel listed both with the right verdicts and exactly one Customer/Internal pair each, and the row
+was removed. Rows with no certificate offer no Print COA at all; on live data that is 3 of 25.
+
+**~~Sequence to build in~~ — all of it is built, 02-Sep-2026.** A and F's per-round half went
+first, against the planned order, because the client asked for them by name and both carried the
+decisions (server guard, schema) that everything else would have had to be rebuilt around. Then E,
+H, D, C, G and F's upload half followed in one pass. **Only B is left, and B is not code** — the
+nine standard values, which QC has to state.
+
+⚠ **Two things the build changed about B's shape, worth knowing before it is done.** C now lets QC
+type the nine values on a certificate and tick them up to the master, so B no longer needs anybody
+to open Masters at all — the first COA of the day can populate it. And the sheet's own line that
+standards are internal-only with *"no relation with software"* still stands unresolved against the
+02-Sep ask; that is a question for QC, not a data-entry task.
+
+**⚠ Unchanged by this entry:** the three sample COAs on lots **2608-1344**, **2608-1342** and
+**2608-1339** stay in the live database until the production team's audit says otherwise (PE-3,
+client's instruction 01-Sep-2026). Verified at the end of this build: their `lines` are
+byte-identical to what they were before it, and no master standard was left set.
+
+**To discuss with the client / Bushra:**
+
+1. **The nine standard values.** Not a file request — they are not in the QC sheet and never were
+   (see B). QC has to state them. Note the sheet's own line that standards are internal-only, with
+   *"no relation with software"*, which the 02-Sep ask reverses.
+2. ~~Can a COA be issued before Approve?~~ **Decided 02-Sep-2026: yes — saved even on Reject, and
+   it prints, with the failure stated on the paper.** Recorded in A. **Still open: the exact
+   wording** that appears on a customer-facing certificate for a failed lot.
+3. ~~One COA per lot, or one per test round?~~ **Decided 02-Sep-2026: one per test round, both
+   kept.** Recorded in F.
+4. ~~Who may push an edited standard back to the master?~~ **Decided 02-Sep-2026: anyone who may
+   issue a COA.** Recorded in C, along with the activity trail it now needs.
+5. ~~Does Remarks print, and on which copy?~~ **Decided 02-Sep-2026: internal copy only.**
+   Recorded in D.
+6. ~~When the testing attachment is removed, does it go for everyone at once?~~ **Decided
+   02-Sep-2026: yes, for everyone — and every file already attached stays readable.** Recorded in G.
+7. **The wording on a failed customer copy** *(now live code, so it has a default rather than a
+   blank)*: the paper reads **`Result : Rejected — this lot failed the quality test (Test n)`** with
+   `REJECTED` across it. Confirm the phrasing, since it is what a customer would read.
+8. **Should a certificate be printable before the verdict is recorded at all?** As built, yes — it
+   prints `NOT VERIFIED`, on the reasoning that an unmarked print would read as a pass. The
+   alternative (refuse the download until the test is saved) was offered and not taken; say if that
+   is preferred.
+9. **A cancelled job card can still be certified.** It could before this change too (PE-3 never
+   guarded on it), and it is out of scope here — but it is the sort of thing that reads as a defect
+   the first time someone notices it. Worth a decision either way.
+10. **A signed COA cannot be un-attached.** Attaching the wrong scan is a one-way action today;
+    correcting it means attaching the right one over the top, and the wrong file stays in storage.
+    Say if a Remove is wanted (F did not ask for one).
+11. **Nobody has ever attached a quality-test file** — 77 cards with recorded rounds, zero files, at
+    either level. Item G removed a control that had never been used, which is reassuring, but it
+    also raises the question the other way: was the lab meant to be attaching reports and simply
+    not doing it? If so the COA now has to carry that weight, and the signed-copy upload (F) is the
+    place for it.
+
+---
+
+### PE-6 · Separate owners for Production and Repackaging on the last four steps  `[ ]`
+*Raised 2026-09-02 · from the client · four decisions taken the same day, recorded below ·
+**the shape is already built and running in Order to Dispatch** — this is that migration applied to
+a different dimension, not a new idea*
+
+A job card is raised as **Production** or **Repackaging**, and from **Packing Material Transfer**
+onward both types sit in the same four queues. The people who handle repacking are not the people
+who handle production, and today they see each other's work. Assign owners **per step per card
+type**, and a person then sees only the cards of the type they were given.
+
+The four steps, and they are the only ones that can mean anything here:
+`pm_transfer` · `packing_entry` · `ready_to_dispatch` · `fg_transfer`
+([steps.ts](frontend/src/apps/production-entry/lib/steps.ts)). The other seven are in
+`REPACK_BYPASSED_STEPS` — a repackaging card is raised straight into `awaiting_pm_transfer` and
+never touches them — so a "repackaging owner of Quality Checking" would be an owner-set that can
+never match a card. **Keep the type split to these four**, and let the CHECK constraint say so.
+
+**Decided 2026-09-02, with the client**
+
+1. **Queue-level, not a database boundary.** The four queues show only the owner's type. The
+   Control Center, the reports, the registers and the job-card page keep showing every card.
+2. **Everyone already assigned becomes an "all types" owner on apply**, so nothing changes on the
+   day it ships. The split starts biting only when an admin adds a type-specific row.
+3. **A type row overrides the general row for its own type only.** Give PM Transfer a Repackaging
+   owner and the existing general owner keeps every production card. Assigning one type never
+   silently strips the other.
+4. **Notifications and email follow the type.** A repackaging card reaching PM Transfer notifies and
+   emails the repackaging owners only. ⚠ **This module's email is live** — a wrong fan-out here
+   sends real mail to the wrong person.
+
+**⚠ Why decision 1 and not a real boundary.** The obvious move is to copy Dispatch exactly and put
+the boundary in Postgres. It does not transfer. Location partitions the *business* — a Vapi owner
+has no business seeing an Ahmedabad order at any point in its life. Card type partitions only the
+*tail of one chain*: a production card runs all twelve steps, so withholding production cards from a
+repackaging-only user would empty their Control Center, their reports and every register, not just
+the four queues. The rows still reach the browser, so this is a **work-assignment boundary, not a
+secrecy one** — say so plainly rather than letting anyone believe otherwise.
+
+---
+
+**The shape — copy `20260820120000_fms_dispatch_location_scoped_ownership.sql` line for line**
+
+That migration did precisely this for Dispatch: one owner-set per step became one per
+(step × location), with `null` meaning "everywhere" — the fallback grant. Read it before writing a
+line of this one; it already carries the traps, and its header is the argument for decision 2.
+
+[`fms_production_step_owners`](supabase/migrations/20260725120000_add_fms_production_foundations.sql#L60-L69)
+gains a nullable **`card_type`** column. `null` = all types = the fallback. Then:
+
+```sql
+-- one owner-set per step gives way to one per (step, card_type)
+alter table public.fms_production_step_owners
+  drop constraint if exists fms_production_step_owners_step_key_key;
+```
+
+⚠ **TWO partial indexes, not one composite unique — the same trap Dispatch documented.** Postgres
+treats NULLs as distinct, so `unique (step_key, card_type)` alone would happily accept five fallback
+rows for one step, i.e. five different answers to "who owns this by default".
+
+```sql
+create unique index ... on public.fms_production_step_owners (step_key, card_type)
+  where card_type is not null;
+create unique index ... on public.fms_production_step_owners (step_key)
+  where card_type is null;
+```
+
+Plus a CHECK that a typed row only exists on the four steps, alongside the existing
+`step_key <> 'issue_slip'` one. It is one line to widen later if more steps ever split.
+
+**The good news: the two functions that decide this already take the argument and throw it away.**
+
+- **Server** — `fms_production_can_act(p_step_key, p_req, p_uid)` accepts a request id and
+  [never references it](supabase/migrations/20260725120100_add_fms_production_requests.sql#L168-L178).
+  It becomes: read `card_type` off that request, pass it down. **The signature does not change, so
+  not one of its ~25 call sites moves.**
+- **`fms_production_is_step_owner(p_step_key, p_uid)`** gains a third **defaulted** argument
+  `p_card_type text default null`, exactly as Dispatch did — so every existing call keeps compiling
+  and keeps meaning *"owns this step for any type"*.
+- **Frontend** — `canActOn` is declared
+  [`(stepKey: QueueStep, _r: ProductionRequest)`](frontend/src/apps/production-entry/store.tsx#L362).
+  The underscore is the whole story: the card is already in hand and deliberately ignored. Drop the
+  underscore and read `r.cardType`.
+
+**And because `myQueue` already filters on `canActOn`, the pending half of every one of the four
+queues comes right for free** —
+[store.tsx:492-498](frontend/src/apps/production-entry/store.tsx#L492-L498), and `trackingFor`
+directly below it. `StageQueue` and the four page components are untouched.
+
+**🔴 But the Completed tab is NOT free, and this is what would ship half-done.**
+`completedFor` is [`completedForPure(snapshot, stepKey)`](frontend/src/apps/production-entry/store.tsx#L630)
+— a pure function of the snapshot with **no ownership filter at all**. Every card that has ever
+passed the step is listed, for everyone. The pending tab would split and the Completed tab beside it
+would keep showing the other type's cards, on the same screen, under the same header. It needs the
+filter added explicitly. Decide at the same time whether a repackaging owner should still see
+production cards they can no longer act on in **history** — the honest default is no, matching the
+tab next to it.
+
+**⚠ `canSeeQueue` must stay type-blind, and this is not an oversight.** It answers *"may this person
+open the page"* and has no card to look at
+([store.tsx:373-374](frontend/src/apps/production-entry/store.tsx#L373-L374)). A repackaging owner
+of PM Transfer must still be able to open PM Transfer. The defaulted third argument gives this for
+free — leave it alone, and say so in the code, or someone will "fix" it into a 403.
+
+---
+
+**🔴 The latent bug that fires the moment the first type-specific owner is assigned**
+
+[`fms_production_step_owner_ids(p_step_key)`](supabase/migrations/20260725120000_add_fms_production_foundations.sql#L209-L220)
+is a **scalar subquery** over a table that has, until now, had exactly one row per step:
+
+```sql
+select coalesce(
+  (select o.employee_ids from public.fms_production_step_owners o where o.step_key = p_step_key),
+  '{}'::uuid[]
+);
+```
+
+A second row for the same `step_key` makes it raise **`more than one row returned by a subquery used
+as an expression`** — at runtime, inside the RPC, so the *entire step write rolls back*. Not a
+notification that goes missing: the packing entry itself fails to save. Dispatch hit exactly this
+and rewrote it as `array_agg(distinct e)` over `unnest`.
+
+⚠ **It must be fixed in the same migration that adds the column.** Ship the column first and the
+first thing an admin does in Setup breaks four live queues.
+
+**Threading the type through the fan-out (decision 4).** Give it a defaulted second argument —
+**the request id, not the card type**: `fms_production_step_owner_ids(p_step_key text, p_req uuid
+default null)`, which looks the type up itself. Every announce site already has the request in scope
+and already passes `req_no` in its meta, so it is a one-token edit each, and it reads properly at
+the call site. **Omitting it falls back to "both types"** — over-notify, never under-notify, which
+is the safe direction and the current behaviour.
+
+⚠ **Find the LIVE definition of each RPC, not the first one.** These functions are `create or
+replace`d across ~25 migrations; the last one wins. `fms_production_step_owner_ids` alone is called
+from 50+ places across the file history, and most of those lines are superseded. Read the live
+bodies out of the database (`pg_get_functiondef`) and edit from those — Dispatch's migration ends
+with a `do $check$` assertion block that does exactly this, and it is worth copying too. Only the
+sites announcing at the four steps need the request threaded.
+
+---
+
+**The rest of the frontend**
+
+- `StepOwner` + `mapStepOwner` gain `cardType`
+  ([productionFetch.ts](frontend/src/apps/production-entry/data/productionFetch.ts#L517)).
+- `stepOwnerFor(stepKey)` → `stepOwnerFor(stepKey, cardType)`. Dispatch's is
+  `stepOwnerFor(step, locationId)` — same signature, same semantics.
+- `setStepOwner` gains the type; a **`deleteStepOwner(step, cardType)`** is new, to remove an
+  override and fall back to the general row. ⚠ **PostgREST refuses an unqualified write** — the
+  delete must key on both `step_key` and `card_type`, and a rollback-wrapped SQL test will not
+  reveal the problem.
+- **Setup → Step Owners** ([StepOwnersSection.tsx](frontend/src/apps/production-entry/pages/settings/StepOwnersSection.tsx)):
+  the four steps gain sub-rows — *All types* / *Production* / *Repackaging*. Dispatch's version is
+  the template down to the details worth stealing: the cell that says **"inherits"** rather than
+  "Unassigned" when no override exists (its line 118), and the delete-the-override button (line 260).
+- [ProductionStepper.tsx:73](frontend/src/apps/production-entry/components/ProductionStepper.tsx#L73)
+  calls `stepOwnerFor(st.step)` to name the owner of each step on the job card. It has the card in
+  hand, so it should name the owner for *that card's* type — otherwise it tells a repackaging card's
+  reader that a production owner is handling it.
+
+**Two downstream consumers that are easy to miss**
+
+1. **The work-snapshot email** reads `fms_production_step_owners`
+   ([workSnapshot.bundle.js:3288](supabase/functions/_shared/workSnapshot.bundle.js#L3288)) and
+   bundles the app's own queue logic rather than re-implementing it in SQL. Untouched, it will keep
+   emailing a repackaging-only owner about production cards they can no longer see — a *daily* wrong
+   mail, which is worse than a one-off. The bundle has to be **regenerated and the function
+   redeployed**; that is a deploy step, not a code change, and it is the one most likely to be
+   forgotten.
+2. **`pc_step_owner_contacts()`** — the Process Coordinator dashboard's owner directory
+   ([migration](supabase/migrations/20261012120300_add_pc_step_owner_contacts.sql#L84)). It unions
+   every module's owners into a uniform shape and its header states plainly that
+   *"`fms_dispatch_step_owners` is **the one table** with several rows per step"*. **That comment
+   stops being true**, and production-entry will start returning two rows per step where the caller
+   expects one. Re-read it against the new shape and correct the comment either way.
+
+**Not changing, and worth stating so nobody adds it:** admins and the process coordinator keep
+seeing and acting on everything; `issue_slip` stays untyped (raising a card is the same act for both
+types, and the CHECK already bars owning it); RLS on `fms_production_requests` stays
+`using (true)`; and no queue gains a Card Type *filter* as part of this — every grid already sorts
+and filters on every column, and `CardTypePill` is already a column on these queues.
+
+**Build order.** Migration first, with the scalar-subquery fix and the two partial indexes in the
+same file — it is inert on apply, because every existing row becomes an all-types grant (decision 2).
+Then `can_act` and `is_step_owner`. Then the frontend read model and `canActOn`. Then the Completed
+tab filter. Then Setup. Then the fan-out and the work-snapshot rebuild — last, because that is the
+half that sends mail, and it should not go live until the queues it describes are already correct.
+
+**To confirm with the client / Bushra:**
+
+1. **Who actually owns what** — the real names for Production and Repackaging on each of the four
+   steps. Nothing is testable end-to-end without them, and the module ships inert until they are set.
+2. Should a repackaging owner still see the other type's cards in the **Completed tab** of those
+   four steps (history they cannot act on), or should Completed split the same way as Pending?
+3. Is the split ever needed on a **fifth step**, or is Packing Material Transfer genuinely where the
+   two teams part company? The CHECK is one line to widen, but the answer decides whether it is
+   written at all.
 
 ---
 

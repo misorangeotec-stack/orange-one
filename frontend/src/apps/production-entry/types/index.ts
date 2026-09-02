@@ -46,6 +46,104 @@ export interface FgItem extends NamedMaster {
 }
 export type Unit = NamedMaster;
 
+/* ---------------------------------- COA ----------------------------------- */
+
+/** The instrument a COA parameter is measured on (PHS-3C, Brookfield, …). */
+export type TestEquipment = NamedMaster;
+
+/** Which copy a parameter prints on / which copy is being generated. */
+export type CoaAudience = "customer" | "internal";
+
+/**
+ * ONE PARAMETER a Certificate of Analysis measures.
+ *
+ * `standard` is the DEFAULT specification: it pre-fills a new COA and stays
+ * editable there, so one lot's correction never rewrites the master. Free text,
+ * because the factory writes ranges ("6.5 - 8.5"), limits ("< 5") and words.
+ *
+ * `appearsOn` decides which generated copy PRINTS the parameter — entry always
+ * captures every active one. ⚠ "both" is the common case, not "customer": the
+ * five parameters on the customer copy appear on the internal copy as well.
+ *
+ * `testEquipmentId` is OPTIONAL — three of the nine parameters have no instrument.
+ */
+export interface CoaParameter extends NamedMaster {
+  standard: string | null;
+  testEquipmentId: string | null;
+  appearsOn: CoaAudience | "both";
+}
+
+/**
+ * One line of a saved COA — a FROZEN snapshot of the parameter as it read when
+ * the certificate was saved, never a live join.
+ *
+ * ⚠ The name, standard and equipment name are copies ON PURPOSE. Re-reading the
+ * masters at print time would mean that editing a standard next month silently
+ * rewrites a certificate that has already gone to a customer.
+ */
+export interface CoaLine {
+  parameterId: string | null;
+  name: string;
+  standard: string | null;
+  observed: string | null;
+  equipmentId: string | null;
+  equipmentName: string | null;
+  appearsOn: CoaAudience | "both";
+  sortOrder: number;
+}
+
+/**
+ * The Certificate of Analysis for ONE TEST ROUND of a job card.
+ *
+ * ⚠ ONE PER (CARD, ROUND), NOT ONE PER CARD. Quality Checking is multi-round: a
+ * rejected lot loops through the Additional Issue Slip and comes back as Test 2,
+ * and Test 1 KEEPS the certificate it issued — one that may already be in a
+ * customer's hands must never be silently overwritten by a later test. (This
+ * reverses the original one-per-lot design, deliberately.)
+ *
+ * `round` and `qcResult` are both stamped by the RPC, never sent: the round from
+ * the card's own test count, and the verdict from THAT ROUND's record. `qcResult`
+ * is null while the round is still being recorded — a certificate may now be
+ * entered before Approve/Reject is pressed, and the verdict lands a moment later.
+ *
+ * ⚠ NEVER re-derive the verdict from `ProductionRequest.qcStatus` at print time:
+ * that mirrors the LATEST round, so a second test would relabel the first test's
+ * certificate. Same freeze rule the frozen `lines` follow.
+ *
+ * `productName` and `lotNo` are stamped by the RPC off the card itself, so a COA
+ * can never name a product the job card does not.
+ */
+export interface Coa {
+  id: string;
+  requestId: string;
+  /** Which test this certificate is for: 1 = the first test. */
+  round: number;
+  /** That round's verdict, frozen on. Null = the round was not recorded yet. */
+  qcResult: "approved" | "rejected" | null;
+  productName: string | null;
+  lotNo: string | null;
+  issueDate: string;
+  conclusion: string | null;
+  /**
+   * Free text about this batch — ⚠ PRINTED ON THE INTERNAL COPY ONLY, so staff
+   * can write plainly without a customer reading it. The audience rule lives in
+   * coaVm.ts behind the same switch the line rows use.
+   *
+   * ⚠ NOT the same field as `ProductionRequest.qcRemarks`, which is the TEST's
+   * remark and belongs to the quality step. They sit on adjacent screens and
+   * nothing is wired between them.
+   */
+  remarks: string | null;
+  /** A signed or scanned copy of this certificate, in fms-production-docs. */
+  attachmentPath: string | null;
+  attachmentName: string | null;
+  lines: CoaLine[];
+  issuedBy: string | null;
+  issuedAt: string;
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
 /**
  * BOM MASTER — one named formulation of one FG item. An FG may have several
  * (alternate recipes); the one flagged `isDefault` is what a job card auto-loads.
@@ -356,7 +454,15 @@ export interface ProductionRequest {
 
 /* ------------------------------ master governance ------------------------- */
 
-export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "unit" | "packaging_item" | "bom";
+export type ProductionMasterType =
+  | "category"
+  | "raw_material"
+  | "fg_item"
+  | "unit"
+  | "packaging_item"
+  | "bom"
+  | "test_equipment"
+  | "coa_parameter";
 
 // Category is retained in the union above (legacy master_requests / managers rows
 // may still reference it) but is intentionally omitted from this registry so it no
@@ -367,6 +473,7 @@ export const PRODUCTION_MASTER_TYPES: { value: ProductionMasterType; label: stri
   { value: "packaging_item", label: "Packaging Item", plural: "Packaging Items" },
   { value: "fg_item", label: "FG Item", plural: "FG Items" },
   { value: "unit", label: "Unit", plural: "Units" },
+  { value: "test_equipment", label: "Test Equipment", plural: "Test Equipment" },
 ];
 
 /**
@@ -378,10 +485,17 @@ export const PRODUCTION_MASTER_TYPES: { value: ProductionMasterType; label: stri
  * its RLS write policy is `is_admin OR is_master_manager('bom', …)`, so without
  * a row here that owner branch would be unreachable and BOMs would be
  * admin-only forever. Used ONLY by MasterOwnersSection.
+ *
+ * 'coa_parameter' is here for the SAME reason. A COA parameter carries a standard,
+ * an audience and an equipment alongside its name, which that single-payload modal
+ * cannot express either — and the resolve RPC would silently drop the extras on
+ * approve, exactly as it once did to a raw material's unit. It is created on its
+ * own Masters tab instead, but its RLS policy still names an owner.
  */
 export const PRODUCTION_OWNABLE_MASTER_TYPES: { value: ProductionMasterType; label: string; plural: string }[] = [
   ...PRODUCTION_MASTER_TYPES,
   { value: "bom", label: "BOM", plural: "BOMs" },
+  { value: "coa_parameter", label: "COA Parameter", plural: "COA Parameters" },
 ];
 
 export interface ProductionMasterManager {
