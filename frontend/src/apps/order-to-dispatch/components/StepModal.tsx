@@ -16,6 +16,7 @@ import { creditHeadroomOf, currentRoundView, type RoundView } from "../lib/round
 import OrderRefPanel, { OrderRefDocs } from "./OrderRefPanel";
 import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
+import BillLinesGrid, { billLinesFrom, overBilledCount, type BillLineValue } from "./BillLinesGrid";
 import StepDocLink from "./StepDocLink";
 import GatePassButton from "./GatePassButton";
 import ReceiverCopyCapture, { type ReceiverPage } from "./ReceiverCopyCapture";
@@ -90,6 +91,10 @@ export default function StepModal({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [shipLines, setShipLines] = useState<ShipLineValue[]>([]);
+  /** The sales bill’s own per-line quantity. Its own state for the same reason
+   *  the ship grid has one: a grid of inputs has nowhere to live in the
+   *  string-keyed `values` map. */
+  const [billLines, setBillLines] = useState<BillLineValue[]>([]);
   /** The partial credit release. Its own state because it is a pair of linked
    *  inputs, not a single descriptor-driven field — see CreditApprovalPanel. */
   const [approvedQty, setApprovedQty] = useState("");
@@ -117,6 +122,12 @@ export default function StepModal({
     for (const f of cfg.fields) next[f.key] = f.get(order, view);
     setValues(next);
     setShipLines(cfg.lines === "ship" ? shipLinesFrom(order) : []);
+    /*
+      Seeds from what is STORED, which is blank on a first record and the saved
+      figure on an edit. That asymmetry is the point: billing everything must be
+      a decision someone types, but correcting a bill must show the bill.
+    */
+    setBillLines(cfg.lines === "bill" ? billLinesFrom(order) : []);
     /*
       The panel asks for THIS decision's quantity; the column stores the
       CUMULATIVE ceiling. Headroom is the conversion, and it is exact here:
@@ -171,6 +182,12 @@ export default function StepModal({
   const shipTotal = shipLines.reduce((a, l) => a + (Number(l.ship_qty) || 0), 0);
   const overCredit = creditHeadroom !== null && shipTotal > creditHeadroom;
 
+  /* The billing grid's two failure states. `overBilled` counts LINES rather than
+     comparing totals: billing 60 of item A and 0 of item B sums to the same 60
+     that went out, and only a per-line test catches it. */
+  const billTotal = billLines.reduce((a, l) => a + (Number(l.bill_qty) || 0), 0);
+  const overBilled = order && cfg.lines === "bill" ? overBilledCount(order, billLines) : 0;
+
   /**
    * Why Save cannot be pressed yet, or null.
    *
@@ -188,6 +205,10 @@ export default function StepModal({
   const blocked: string | null =
     cfg.lines === "ship" && shipTotal <= 0 ? "nothing entered"
     : cfg.lines === "ship" && overCredit ? "over the credit ceiling"
+    // An invoice covering nothing is not an invoice, and it would burn a gate
+    // pass number on a consignment that settles no quantity at all.
+    : cfg.lines === "bill" && billTotal <= 0 ? "nothing billed"
+    : cfg.lines === "bill" && overBilled > 0 ? "over what is going out"
     : showApprovedQty && order && approvedQtyError(order, approvedQty) ? "approved quantity"
     : null;
 
@@ -323,6 +344,21 @@ export default function StepModal({
       const bad = approvedQtyError(order, approvedQty);
       if (bad) { setError(bad); return; }
     }
+    // Both billing refusals, re-checked here. The grid says each one in place —
+    // a red box on the offending line, and the running total under the column —
+    // so this only ever fires for a save that got past a disabled button.
+    if (cfg.lines === "bill" && billTotal <= 0) {
+      setError("Enter the sales bill quantity against at least one line.");
+      return;
+    }
+    if (cfg.lines === "bill" && overBilled > 0) {
+      setError(
+        overBilled === 1
+          ? "One line is billed for more than is going out. Reduce it to what the store released."
+          : `${overBilled} lines are billed for more than is going out. Reduce them to what the store released.`,
+      );
+      return;
+    }
     // The credit ceiling, enforced at the point of typing as well as in the RPC —
     // the store keeper should see the limit while filling the grid, not after.
     if (cfg.lines === "ship" && overCredit) {
@@ -347,6 +383,20 @@ export default function StepModal({
         payload.lines = shipLines
           .filter((l) => Number(l.ship_qty) > 0)
           .map((l) => ({ id: l.id, ship_qty: l.ship_qty, lot_no: l.lot_no }));
+      }
+
+      /*
+        ⚠ SENT ON EVERY SAVE OF THIS STEP, INCLUDING A REMARKS-ONLY EDIT — which
+          is the opposite of the attachment contract two blocks down, and
+          deliberately so. The RPC presence-tests `lines`: omitting the key keeps
+          whatever is stored, and since this grid always carries the stored
+          figures, sending them is a no-op on an edit that changed nothing and
+          the only way to save one that did.
+      */
+      if (cfg.lines === "bill") {
+        payload.lines = billLines
+          .filter((l) => Number(l.bill_qty) > 0)
+          .map((l) => ({ id: l.id, bill_qty: l.bill_qty }));
       }
 
       // Sent only on a partial. On a full approval the RPC sets the ceiling to
@@ -486,7 +536,7 @@ export default function StepModal({
         a remark stay `lg`; widening those would only strand a lone dropdown in a
         lot of white.
       */
-      size={cfg.lines === "ship" || cfg.context?.showLines || cfg.context?.showOrderLines ? "xl" : "lg"}
+      size={cfg.lines || cfg.context?.showLines || cfg.context?.showOrderLines ? "xl" : "lg"}
       /* Steps filled in on a phone open as a bottom sheet under `sm`. */
       mobileFull={cfg.mobileFirst}
       readOnly={locked}
@@ -620,6 +670,19 @@ export default function StepModal({
           <section className="space-y-2">
             <SectionHeading>What is going out</SectionHeading>
             <ShipLinesGrid order={order} values={shipLines} onChange={setShipLines} readOnly={locked} />
+          </section>
+        )}
+
+        {/*
+          THE GRID IS THIS STEP'S ITEM LIST, which is why `showLines` was taken
+          off the sales bill's context: the recap above already carries the
+          header, and repeating the same rows twice on one dialog made the first
+          table look like the answer and the second like a duplicate.
+        */}
+        {cfg.lines === "bill" && (
+          <section className="space-y-2">
+            <SectionHeading>What the invoice covers</SectionHeading>
+            <BillLinesGrid order={order} values={billLines} onChange={setBillLines} readOnly={locked} />
           </section>
         )}
 

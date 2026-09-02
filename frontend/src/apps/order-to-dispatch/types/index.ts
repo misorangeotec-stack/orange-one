@@ -411,6 +411,16 @@ export interface OrderLine {
   dispatchedQty: number;
   /** This round's selection. Null ⇒ this line is not going out this time. */
   shipQty: number | null;
+  /**
+   * What the SALES BILL invoices for this line this round — typed by the billing
+   * desk, capped at `shipQty`.
+   *
+   * ⚠ NULL AND ZERO MEAN DIFFERENT THINGS. `0` is "this line went out and was
+   *   deliberately not billed"; `null` is "this round has not reached the billing
+   *   grid yet". Read it as `billedQtyOf`, never bare — a bare null would settle
+   *   nothing on rows that predate the column.
+   */
+  billQty: number | null;
   /** Typed by the store keeper. Free text — there is no LOT master. */
   lotNo: string | null;
 }
@@ -431,7 +441,13 @@ export interface RoundItem {
   itemName: string;
   unitName: string | null;
   orderedQty: number;
+  /** What physically left the gate. Frozen; a correction no longer rewrites it. */
   shipQty: number;
+  /**
+   * What was invoiced — and therefore what `dispatched_qty` was settled from.
+   * Null only on rounds archived before the column existed; use `billedQtyOf`.
+   */
+  billQty: number | null;
   lotNo: string | null;
 }
 

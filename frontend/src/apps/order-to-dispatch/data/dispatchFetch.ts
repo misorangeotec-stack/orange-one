@@ -409,6 +409,7 @@ const mapLine = (r: any): OrderLine => ({
   lineRemark: str(r.line_remark),
   dispatchedQty: Number(r.dispatched_qty ?? 0),
   shipQty: num(r.ship_qty),
+  billQty: num(r.bill_qty),
   lotNo: str(r.lot_no),
 });
 
@@ -422,6 +423,7 @@ const mapRoundItem = (r: any): RoundItem => ({
   unitName: str(r.unit_name),
   orderedQty: Number(r.ordered_qty ?? 0),
   shipQty: Number(r.ship_qty ?? 0),
+  billQty: num(r.bill_qty),
   lotNo: str(r.lot_no),
 });
 

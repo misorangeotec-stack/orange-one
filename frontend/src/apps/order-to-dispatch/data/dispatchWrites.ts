@@ -157,7 +157,15 @@ export async function holdSalesBill(orderId: string, hold: boolean, reason: stri
 
 export interface AmendRoundLine {
   id: string;
-  shipQty: string;
+  /**
+   * The corrected BILLED quantity — what the order settles against.
+   *
+   * ⚠ NOT ship_qty, which it used to be. Since the sales bill carries its own
+   *   quantity, "what was actually delivered" is the billed figure; correcting
+   *   the shipped one would rewrite the store's record of what left the gate and
+   *   change nothing the customer was charged for.
+   */
+  billQty: string;
   lotNo?: string | null;
 }
 
@@ -193,7 +201,7 @@ export async function amendRound(
   if (input.dcStatus) payload.dc_status = input.dcStatus;
   if (input.lines?.length) {
     payload.lines = input.lines.map((l) => ({
-      id: l.id, ship_qty: l.shipQty, lot_no: l.lotNo ?? "",
+      id: l.id, bill_qty: l.billQty, lot_no: l.lotNo ?? "",
     }));
   }
   // All three keys travel together or none of them do — a new primary sent

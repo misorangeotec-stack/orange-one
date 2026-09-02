@@ -18,7 +18,7 @@ import SalesReturnModal from "../../components/SalesReturnModal";
 import ReceiverCopyCapture, { type ReceiverPage } from "../../components/ReceiverCopyCapture";
 import { uploadReceiverPages } from "../../lib/receiverPages";
 import type { StepDoc } from "../../types";
-import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
+import { allRoundViews, billedQtyOf, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
 import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, DISPATCH_TYPE_LABEL,
@@ -290,6 +290,10 @@ export default function OrderDetail() {
                   <th className="py-2 pr-3 font-semibold text-right">Dispatched</th>
                   <th className="py-2 pr-3 font-semibold text-right">Pending</th>
                   <th className="py-2 pr-3 font-semibold text-right">Going out now</th>
+                  {/* What the invoice covers. Blank until the bill is raised — see
+                      the note on RefLines: a dash here would read as "nothing is
+                      being billed" rather than "nobody has said yet". */}
+                  <th className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</th>
                   <th className="py-2 pr-3 font-semibold">LOT no.</th>
                 </tr>
               </thead>
@@ -307,6 +311,9 @@ export default function OrderDetail() {
                         {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
                       </td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.shipQty ?? "—"}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums font-semibold text-orange">
+                        {l.billQty ?? "—"}
+                      </td>
                       <td className="py-2 pr-3 text-grey">{l.lotNo ?? "—"}</td>
                     </tr>
                   );
@@ -324,7 +331,10 @@ export default function OrderDetail() {
                   </td>
                   <td className="py-2 pr-3 text-right tabular-nums font-bold">{totals.dispatched || "—"}</td>
                   <td className="py-2 pr-3 text-right tabular-nums font-bold">{totals.pending || "—"}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums font-bold text-orange">{totals.shipping || "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold">{totals.shipping || "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold text-orange">
+                    {order.lines.reduce((a, l) => a + (Number(l.billQty) || 0), 0) || "—"}
+                  </td>
                   <td className="py-2 pr-3" />
                 </tr>
               </tfoot>
@@ -404,7 +414,16 @@ export default function OrderDetail() {
                         ? v.items.map((i) => (
                             <div key={i.id}>
                               {i.itemName ? `${i.itemName} · ` : ""}
-                              {i.shipQty} {i.unitName ?? ""}
+                              {billedQtyOf(i)} {i.unitName ?? ""}
+                              {/* Only when they disagree. On the overwhelming
+                                  majority of rounds the two are one number, and
+                                  printing both every time would bury the rounds
+                                  where the difference is the whole story. */}
+                              {billedQtyOf(i) !== i.shipQty && (
+                                <span className="text-[11.5px] text-grey-2">
+                                  {" "}(of {i.shipQty} sent)
+                                </span>
+                              )}
                               {i.lotNo ? ` · LOT ${i.lotNo}` : ""}
                             </div>
                           ))
@@ -699,8 +718,15 @@ function AmendRoundModal({
 }: { round: RoundView; orderId: string; orderNo: string; onClose: () => void }) {
   const s = useDispatchStore();
   const [outcome, setOutcome] = useState<string>(round.dcStatus ?? "delivered");
+  /*
+    ⚠ SEEDED FROM THE BILLED FIGURE, AND IT IS THE BILLED FIGURE THIS CORRECTS.
+      "Actually delivered" is what the order settles against, and since the sales
+      bill quantity became that, correcting ship_qty here would rewrite the
+      store's record of what physically left the gate while changing nothing the
+      customer was charged for.
+  */
   const [qty, setQty] = useState<Record<string, string>>(
-    () => Object.fromEntries(round.items.map((i) => [i.id, String(i.shipQty)])),
+    () => Object.fromEntries(round.items.map((i) => [i.id, String(billedQtyOf(i))])),
   );
   const [reason, setReason] = useState("");
   /**
@@ -742,8 +768,8 @@ function AmendRoundModal({
         dcStatus: outcome === "returned" ? "returned" : "delivered",
         reason: reason.trim(),
         lines: round.items
-          .filter((i) => qty[i.id] !== String(i.shipQty))
-          .map((i) => ({ id: i.id, shipQty: qty[i.id] })),
+          .filter((i) => qty[i.id] !== String(billedQtyOf(i)))
+          .map((i) => ({ id: i.id, billQty: qty[i.id] })),
         receiver,
       });
       onClose();
@@ -791,7 +817,7 @@ function AmendRoundModal({
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
                 <th className="py-1.5 pr-3 font-semibold">Item</th>
-                <th className="py-1.5 pr-3 font-semibold text-right">Recorded</th>
+                <th className="py-1.5 pr-3 font-semibold text-right">Billed</th>
                 <th className="py-1.5 pr-3 font-semibold">Actually delivered</th>
               </tr>
             </thead>
@@ -800,7 +826,7 @@ function AmendRoundModal({
                 <tr key={i.id} className="border-b border-line/70 last:border-0">
                   <td className="py-1.5 pr-3 text-navy">{i.itemName}</td>
                   <td className="py-1.5 pr-3 text-grey text-right tabular-nums">
-                    {i.shipQty} {i.unitName ?? ""}
+                    {billedQtyOf(i)} {i.unitName ?? ""}
                   </td>
                   <td className="py-1.5 pr-3">
                     <TextInput
