@@ -168,7 +168,7 @@ marked differently:
   the order settles against it. **A line released as 60 but billed 40 settles 40** — the 20 stays
   pending and comes back as its own round, exactly as a short-shipped line does.
 
-  Decided with Karan on 2026-09-02: the box opens **blank** on a first record (pre-filling would make
+  Decided 2026-09-02: the box opens **blank** on a first record (pre-filling would make
   "bill everything" the accidental default), and is **capped per line at what the store released** —
   a gate pass must never list more than is on the vehicle.
 
@@ -188,7 +188,7 @@ marked differently:
   anyone while the frontend waits. The screens are on branch `Bushra-O2D` with a PR open; they reach
   the team when it merges and Vercel deploys.
 
-  **To discuss with Karan:**
+  **To discuss:**
   - [ ] Should `ShipLinesGrid`'s "Ship now" box get the same width fix?
   - [ ] A line released but left blank on the bill has physically left the gate with no invoice
         against it. The order keeps asking for it — who reconciles that, and is it worth a report?
