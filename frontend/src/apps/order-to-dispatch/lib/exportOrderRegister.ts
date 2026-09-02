@@ -14,7 +14,7 @@
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { STEPS } from "./steps";
 import { orderStepRows, type OrderVmDeps } from "./orderVm";
-import { allRoundViews, type RoundView } from "./rounds";
+import { allRoundViews, billedQtyOf, type RoundView } from "./rounds";
 import { DISPATCH_TYPE_LABEL, STATUS_LABEL, dmy } from "./format";
 import type { DispatchOrder } from "../types";
 
@@ -78,7 +78,14 @@ export function exportOrderRegister(
     {
       header: "Dispatched This Round",
       width: 24,
-      value: (r) => r.view.items.map((i) => `${i.itemName} ${i.shipQty}`).join(", "),
+      // The billed figure, because that is what the round actually settled. A
+      // line sent but not invoiced shows "40 of 60 sent", which is the whole
+      // reason the balance came back.
+      value: (r) => r.view.items.map((i) => (
+        billedQtyOf(i) === i.shipQty
+          ? `${i.itemName} ${i.shipQty}`
+          : `${i.itemName} ${billedQtyOf(i)} of ${i.shipQty} sent`
+      )).join(", "),
     },
     {
       header: "LOT No.",

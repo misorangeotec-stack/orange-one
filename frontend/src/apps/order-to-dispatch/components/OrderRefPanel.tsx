@@ -3,7 +3,7 @@ import { Field } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
 import StepDocLink from "./StepDocLink";
-import type { RoundView } from "../lib/rounds";
+import { billedQtyOf, isBilled, roundBillTotal, type RoundView } from "../lib/rounds";
 import { CREDIT_STATUS_LABEL, DISPATCH_TYPE_LABEL, dmy, qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
 
@@ -38,7 +38,7 @@ export interface OrderRefPanelProps {
   readOnly?: boolean;
   /** Credit outcome + the remark behind it. */
   showCredit?: boolean;
-  /** The full item list: ordered · dispatched · pending · going out now · LOT. */
+  /** This round's consignment: item · going out · sales bill qty (once billed) · unit · LOT. */
   showLines?: boolean;
   /** The order as raised: item · quantity · unit · line remark. */
   showOrderLines?: boolean;
@@ -92,7 +92,6 @@ export default function OrderRefPanel({
         <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
         <Field label="Order date" value={dmy(order.orderDate)} />
         <Field label="Raised by" value={order.requesterName} />
-        {order.orderRemarks && <Field label="Order remarks" value={order.orderRemarks} />}
 
         {/*
           ⚠ READ OFF THE ORDER HEADER, NOT THE ROUND, and that is deliberate. This
@@ -114,7 +113,6 @@ export default function OrderRefPanel({
             }
           />
         )}
-        {showCredit && order.ccRemarks && <Field label="Credit remark" value={order.ccRemarks} />}
 
         {/* How this consignment left, recorded at the stock check. Round-scoped and
             optional, so they appear only once someone has actually answered. */}
@@ -142,6 +140,12 @@ export default function OrderRefPanel({
         {children}
       </div>
 
+      {/* Directly under the facts, ABOVE the documents and the item table. A
+          remark is the one thing on this panel that nobody can guess from
+          anywhere else, and parked at the foot it sat below a table people stop
+          scrolling at. */}
+      <RemarksTrail order={order} round={round} />
+
       {/* The invoice itself, and the e-way bill when the consignment carries one —
           the gate is exactly where both get checked. See the trap note above for
           why this is gated. */}
@@ -159,6 +163,86 @@ export default function OrderRefPanel({
       {showOrderLines && <OrderedLines order={order} />}
       {showLines && <RefLines round={round} />}
     </RefPanel>
+  );
+}
+
+/**
+ * EVERY REMARK RECORDED SO FAR, in the order the steps happen.
+ *
+ * WHY IT EXISTS: each step already collected a Remarks box, and each one was
+ * readable only on the step that wrote it. So the store keeper could not see why
+ * credit had released only part of the order, the billing desk could not see the
+ * store keeper’s note about the consignment, and the gate could see neither —
+ * every desk wrote into a box the next desk never opened.
+ *
+ * ⚠ IT REPLACES THE TWO REMARK CELLS THAT USED TO SIT IN THE FACT GRID (order
+ *   remarks, credit remark) rather than joining them. Nothing was dropped: both
+ *   appear here, first and second. They moved because a remark is a sentence and
+ *   the grid gave it a quarter of the width — four words a line, wrapped into a
+ *   column, which is the shape people stop reading.
+ *
+ * ⚠ ROUND-SCOPED, EXCEPT WHERE THE ANSWER GENUINELY IS NOT. The ms/sb/go/dc
+ *   remarks are read off the ROUND, so an archived round shows its own. Credit is
+ *   the exception in the same way it is everywhere else in this module: a live
+ *   round running under an earlier approval carries no decision of its own, so it
+ *   falls back to the order header — the decision actually governing it. An
+ *   archived round does NOT fall back, because there the header has moved on and
+ *   borrowing it would print a later decision under an older heading.
+ */
+function RemarksTrail({ order, round }: { order: DispatchOrder; round: RoundView }) {
+  const s = useDispatchStore();
+
+  const entries: { step: string; text: string | null; who: string | null; at: string | null }[] = [
+    { step: "Order", text: order.orderRemarks, who: order.requesterName, at: order.orderDate },
+    {
+      step: "Credit",
+      text: round.isArchived ? round.ccRemarks : (round.ccRemarks ?? order.ccRemarks),
+      who: s.personName(round.ccBy ?? order.ccBy),
+      at: round.ccAt ?? order.ccAt,
+    },
+    { step: "Stock check", text: round.msRemarks, who: s.personName(round.msBy), at: round.msAt },
+    {
+      // The reason an invoice has NOT been raised. Only while the hold is live —
+      // once the bill goes out the hold is history and the sales-bill remark
+      // below is the current word.
+      step: "Bill on hold",
+      text: round.sbAt ? null : round.sbHoldReason,
+      who: s.personName(round.sbHoldBy),
+      at: round.sbHoldAt,
+    },
+    { step: "Sales bill", text: round.sbRemarks, who: s.personName(round.sbBy), at: round.sbAt },
+    { step: "Gate outward", text: round.goRemarks, who: s.personName(round.goBy), at: round.goAt },
+    { step: "Delivery", text: round.dcRemarks, who: s.personName(round.dcBy), at: round.dcAt },
+  ].filter((e) => !!(e.text ?? "").trim());
+
+  // No heading over an empty list. Most orders carry one remark or none, and a
+  // standing "Remarks" label with nothing under it reads as a loading failure.
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="border-t border-line pt-3 space-y-2">
+      <div className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+        Remarks so far
+      </div>
+      <ul className="space-y-2">
+        {entries.map((e) => (
+          <li key={e.step} className="text-[12.5px] leading-5">
+            <div className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="font-semibold text-navy">{e.step}</span>
+              {e.who && e.who !== "—" && <span className="text-grey-2">· {e.who}</span>}
+              {e.at && <span className="text-grey-2">· {dmy(e.at)}</span>}
+            </div>
+            {/*
+              `whitespace-pre-wrap` keeps the line breaks the writer typed — a
+              three-point note stays three lines instead of collapsing into one
+              paragraph. `break-words` is what stops a pasted reference number or
+              a URL widening the dialog instead of wrapping inside it.
+            */}
+            <p className="text-grey whitespace-pre-wrap break-words">{e.text}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -228,7 +312,17 @@ function RefLines({ round }: { round: RoundView }) {
   const s = useDispatchStore();
   const items = round.items;
 
-  const total = items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
+  /*
+    ⚠ THE BILLED COLUMN APPEARS ONLY ONCE THERE IS A BILL. Before the invoice
+      is raised there is no billed figure to state, and a column of dashes beside
+      the picked quantity would read as "nothing is being invoiced" rather than
+      "nobody has said yet". After it, BOTH are shown: the gate person is
+      checking a vehicle against an invoice, and a consignment where those two
+      disagree is exactly what they need to see rather than have averaged away.
+  */
+  const billed = isBilled(round);
+  const shipTotal = items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
+  const billTotal = roundBillTotal(round);
   const totalUnit = sharedUnit(items.map((i) => ({ unit: i.unitName })));
 
   if (items.length === 0) {
@@ -242,26 +336,42 @@ function RefLines({ round }: { round: RoundView }) {
           <tr className="text-left text-grey-2 border-b border-line">
             <th className="py-1.5 pr-3 font-semibold min-w-[200px]">Item</th>
             <th className="py-1.5 pr-3 font-semibold text-right whitespace-nowrap">Going out</th>
+            {billed && (
+              <th className="py-1.5 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</th>
+            )}
             <th className="py-1.5 pr-3 font-semibold">Unit</th>
             <th className="py-1.5 pr-3 font-semibold min-w-[130px]">LOT no.</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((i) => (
-            <tr key={i.id} className="border-b border-line/70 last:border-0">
-              <td className="py-1.5 pr-3 text-navy">{i.itemName || s.itemName(i.itemId)}</td>
-              <td className="py-1.5 pr-3 text-navy font-semibold text-right tabular-nums">{i.shipQty}</td>
-              <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{i.unitName || "—"}</td>
-              <td className="py-1.5 pr-3 text-grey">{i.lotNo ?? "—"}</td>
-            </tr>
-          ))}
+          {items.map((i) => {
+            const q = billedQtyOf(i);
+            return (
+              <tr key={i.id} className="border-b border-line/70 last:border-0">
+                <td className="py-1.5 pr-3 text-navy">{i.itemName || s.itemName(i.itemId)}</td>
+                <td className="py-1.5 pr-3 text-navy font-semibold text-right tabular-nums">{i.shipQty}</td>
+                {billed && (
+                  /* Orange because it is the operative figure from here on — the
+                     one on the gate pass and the one the order settles against. */
+                  <td className="py-1.5 pr-3 font-semibold text-right tabular-nums text-orange">{q}</td>
+                )}
+                <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{i.unitName || "—"}</td>
+                <td className="py-1.5 pr-3 text-grey">{i.lotNo ?? "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr className="border-t border-line text-navy">
             <td className="py-1.5 pr-3 text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
-              Total going out
+              {billed ? "Total" : "Total going out"}
             </td>
-            <td className="py-1.5 pr-3 text-right tabular-nums font-bold text-orange">{total}</td>
+            <td className={`py-1.5 pr-3 text-right tabular-nums font-bold${billed ? "" : " text-orange"}`}>
+              {shipTotal}
+            </td>
+            {billed && (
+              <td className="py-1.5 pr-3 text-right tabular-nums font-bold text-orange">{billTotal}</td>
+            )}
             <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{totalUnit || "—"}</td>
             <td className="py-1.5 pr-3" />
           </tr>

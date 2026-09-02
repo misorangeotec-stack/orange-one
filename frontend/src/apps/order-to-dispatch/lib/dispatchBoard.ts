@@ -17,7 +17,7 @@
  */
 import type { DateRange } from "@/shared/components/ui/DateRangeFilter";
 import { dateInRange } from "@/shared/components/ui/DateRangeFilter";
-import { allRoundViews } from "./rounds";
+import { allRoundViews, billedQtyOf } from "./rounds";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -94,9 +94,13 @@ export function consignmentsOf(orders: DispatchOrder[]): Consignment[] {
       // intention. Without this the board would count every open order twice.
       if (!v.sbInvoiceNo && !v.sbActualDate && !v.goActualDate) continue;
 
+      // A consignment on this board has been billed or gated, so the quantity it
+      // represents is the INVOICED one — the same figure on the gate pass and on
+      // the order's ledger. Counting what was picked would overstate every round
+      // that was billed short.
       const qtyByUnit: Record<string, number> = {};
       for (const i of v.items) {
-        const q = Number(i.shipQty) || 0;
+        const q = billedQtyOf(i);
         if (q <= 0) continue;
         const unit = (i.unitName ?? "").trim() || "—";
         qtyByUnit[unit] = (qtyByUnit[unit] ?? 0) + q;

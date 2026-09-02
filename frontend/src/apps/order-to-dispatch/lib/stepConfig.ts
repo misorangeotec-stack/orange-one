@@ -180,8 +180,16 @@ export interface StepConfig {
    *   have made the second one required too, or hidden it.
    */
   attachments?: StepAttachment[];
-  /** Renders the per-line ship-quantity grid. */
-  lines?: "ship";
+  /**
+   * Renders a per-line quantity grid.
+   *   "ship" — the store keeper's "what is going out", at the stock check.
+   *   "bill" — the billing desk's "what the invoice covers", capped at "ship".
+   *
+   * ⚠ A STEP HAS AT MOST ONE. They are two different questions asked by two
+   *   different desks a step apart, not one grid with an extra column, and the
+   *   modal holds one grid's state.
+   */
+  lines?: "ship" | "bill";
   /**
    * Renders the linked percentage / quantity control for a partial credit
    * release. A flag rather than a field descriptor for the same reason `lines`
@@ -325,7 +333,15 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record sales bill",
     description: "Consignments picked and waiting for the invoice to be raised in Tally.",
     completedBlurb: "Bills you record appear here, and stay revisable until the gate outward entry is recorded.",
-    context: { showCredit: true, showLines: true },
+    /*
+      ⚠ NO `showLines` HERE ANY MORE, AND IT MUST NOT COME BACK. The recap's item
+        table and the billing grid below list the same rows off the same round;
+        showing both put two tables of identical item names on one dialog, the
+        first of which quietly ignored the figure the second was asking for.
+        The grid IS the item list for this step — it carries the going-out
+        column the recap used to be here for.
+    */
+    context: { showCredit: true },
     fields: [
       {
         key: "sb_invoice_no", label: "Tally invoice no.", kind: "text", required: true,
@@ -349,7 +365,25 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
         getPath: (v) => v.sbEwayPath, getName: (v) => v.sbEwayName,
       },
     ],
-    captured: { key: "sbInvoiceNo", header: "Invoice no.", get: (_o, v) => s(v.sbInvoiceNo) || "—" },
+    lines: "bill",
+    captured: {
+      key: "sbInvoiceNo", header: "Invoice no.",
+      /*
+        The number, plus what it actually covers when that is LESS than what the
+        store released. A bill short of its consignment is the one thing this
+        column could not previously show, and it is the thing a reader scanning
+        the Completed tab most needs to notice — it is why the order will be
+        back. A full bill just prints the number; saying "220 of 220" on every
+        row would bury the exception in noise.
+      */
+      get: (_o, v) => {
+        const no = s(v.sbInvoiceNo);
+        if (!no) return "—";
+        const ship = v.items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
+        const billed = v.items.reduce((a, i) => a + (Number(i.billQty ?? i.shipQty) || 0), 0);
+        return billed < ship ? `${no} · ${billed} of ${ship} billed` : no;
+      },
+    },
   },
 
   gate_out: {

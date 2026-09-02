@@ -167,6 +167,7 @@ function liveItems(order: DispatchOrder): RoundItem[] {
       unitName: l.unit,
       orderedQty: l.quantity,
       shipQty: l.shipQty ?? 0,
+      billQty: l.billQty,
       lotNo: l.lotNo,
     }));
 }
@@ -332,9 +333,32 @@ export function allRoundViews(order: DispatchOrder): RoundView[] {
 export const roundViewNo = (order: DispatchOrder, roundNo: number): RoundView | null =>
   allRoundViews(order).find((v) => v.roundNo === roundNo) ?? null;
 
-/** Totals for one round's consignment. */
+/** Totals for one round's consignment, as PICKED by the store. */
 export const roundShipTotal = (v: RoundView): number =>
   v.items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
+
+/**
+ * THE OPERATIVE QUANTITY on one line, from the sales bill onwards.
+ *
+ * ⚠ READ THIS, NEVER `billQty` BARE. Null does not mean zero: it means the row
+ *   predates the billed quantity entirely, and for those the shipped figure IS
+ *   what was invoiced. An explicit 0 — written by the server against every line
+ *   that went out but was left blank on the bill — really is zero. The server's
+ *   `coalesce(bill_qty, ship_qty)` is this same rule, and the two must agree or
+ *   the screen and the ledger will disagree about what was delivered.
+ */
+export const billedQtyOf = (i: { shipQty: number; billQty: number | null }): number =>
+  Number(i.billQty ?? i.shipQty) || 0;
+
+/** What this round actually invoices — what the gate pass prints and the ledger settles. */
+export const roundBillTotal = (v: RoundView): number =>
+  v.items.reduce((a, i) => a + billedQtyOf(i), 0);
+
+/**
+ * Has this round been billed yet? Until it has there is no billed figure to
+ * show, and every recap must fall back to what the store picked.
+ */
+export const isBilled = (v: RoundView): boolean => !!v.sbAt || !!v.sbInvoiceNo;
 
 /** Has this order ever been split across more than one consignment? */
 export const isMultiRound = (o: DispatchOrder): boolean =>

@@ -10,7 +10,7 @@
  * This file is the DATA half only. The slip is laid out and sent to the printer
  * in `printGatePass.ts` — it prints, it does not download; see the note there.
  */
-import type { RoundView } from "./rounds";
+import { billedQtyOf, type RoundView } from "./rounds";
 
 export interface GatePassData {
   /** e.g. `OTEC-2608-001`. Null means no invoice yet — callers must not get here. */
@@ -65,14 +65,22 @@ export function gatePassFromRound(
     invoiceNo: view.sbInvoiceNo,
     invoiceDateIso: view.sbActualDate,
     orderNo: meta.orderNo,
+    /*
+      ⚠ THE BILLED QUANTITY, NOT THE PICKED ONE. The slip travels with the
+        invoice and is checked against it at the gate, so it must state what was
+        invoiced. A line released but left off the bill carries no quantity at
+        all and drops off the slip entirely — it is not on this consignment's
+        paperwork, and printing it would put a figure in a guard's hand that no
+        invoice backs.
+    */
     lines: view.items
-      .filter((i) => (Number(i.shipQty) || 0) > 0)
+      .filter((i) => billedQtyOf(i) > 0)
       .map((i) => ({
         // The frozen name on a reprint of an archived round, the master's
         // current name on a live one. Both are right for their case: history
         // should not be rewritten by a rename, and a live round has no snapshot.
         name: i.itemName || meta.itemName(i.itemId) || "Item",
-        qty: Number(i.shipQty) || 0,
+        qty: billedQtyOf(i),
         unit: i.unitName,
       })),
   };
