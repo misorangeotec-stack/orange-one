@@ -1,5 +1,5 @@
 /**
- * Orange One landing markup — ported verbatim from the original static index.html
+ * Orange One landing markup - ported verbatim from the original static index.html
  * (body content only; scripts live in Landing.tsx as a React effect).
  * Interactive entry points carry data-nav attributes so Landing.tsx can wire them
  * to client-side routes without editing this markup.
@@ -8,8 +8,8 @@ export const LANDING_HTML = `
 <!-- ============ NAV ============ -->
 <header class="nav">
   <div class="wrap nav-inner reveal d1">
-    <a class="brand" href="#" aria-label="Orange — Orang O Tec">
-      <img class="logo-img" src="/assets/Orang_O_Tec_logo.jpg" alt="Orange — Orang O Tec" />
+    <a class="brand" href="#" aria-label="Orange - Orang O Tec">
+      <img class="logo-img" src="/assets/Orang_O_Tec_logo.jpg" alt="Orange - Orang O Tec" />
     </a>
     <button class="hamburger" id="hamb" aria-label="Toggle menu" aria-expanded="false" aria-controls="navc">
       <span></span><span></span><span></span>
@@ -266,9 +266,9 @@ export const LANDING_HTML = `
   <div class="wrap foot-grid stagger">
     <div class="foot-brand" style="--i:0">
       <div class="brand-dark">
-        <img src="/assets/orange-one-logo-dark.png" alt="Orange One — Orange O Tec" style="height:42px;width:auto;display:block" />
+        <img src="/assets/orange-one-logo-dark.png" alt="Orange One - Orange O Tec" style="height:42px;width:auto;display:block" />
       </div>
-      <p>One unified platform to manage operations, approvals, tasks and business insights — built for Orange O Tec.</p>
+      <p>One unified platform to manage operations, approvals, tasks and business insights - built for Orange O Tec.</p>
       <div class="socials">
         <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5A2.5 2.5 0 1 1 0 3.5a2.5 2.5 0 0 1 4.98 0zM0 8h5v16H0zM7.5 8h4.8v2.2h.07c.67-1.2 2.3-2.5 4.73-2.5 5.06 0 6 3.3 6 7.6V24h-5v-7.1c0-1.7 0-3.9-2.37-3.9-2.38 0-2.74 1.85-2.74 3.77V24h-5z"/></svg></a>
         <a href="#" aria-label="X"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2H22l-7.3 8.3L23 22h-6.7l-5.2-6.8L5.1 22H2l7.8-8.9L1.4 2h6.8l4.7 6.2zM17.8 20h1.7L7.3 3.9H5.5z"/></svg></a>
