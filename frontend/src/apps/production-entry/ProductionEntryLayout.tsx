@@ -40,12 +40,15 @@ export default function ProductionEntryLayout() {
         isAdmin,
         canManageMasters: s.canSeeMasters,
         canMonitor: s.canMonitor,
+        // Same predicate the route guard uses, so the sidebar can never offer a
+        // screen that then refuses you.
+        canSeeCoaRegister: s.canSeeQueue("quality_check") || s.canMonitor,
         hasRequests,
         canRaise: s.canRaise,
         pendingReviews: s.resolvableRequests.length,
         queues,
       }),
-    [isAdmin, s.canSeeMasters, s.canMonitor, hasRequests, s.canRaise, s.resolvableRequests.length, queues],
+    [isAdmin, s.canSeeMasters, s.canMonitor, s, hasRequests, s.canRaise, s.resolvableRequests.length, queues],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

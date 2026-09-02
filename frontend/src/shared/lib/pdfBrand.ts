@@ -104,6 +104,18 @@ const GLYPH_FALLBACK: Record<string, string> = {
   "✓": "y", "✔": "y", "✗": "x",                  // ✓ ✔ ✗
   "№": "No.",                                              // №
   /**
+   * GREEK SMALL LETTER MU → MICRO SIGN. Poppins carries U+00B5 but NOT U+03BC,
+   * and the two are visually identical, so this is invisible until it is printed.
+   *
+   * ⚠ IT IS THE ONE A SYMBOL PICKER GIVES YOU. Production Entry's COA parameter
+   *   master is free text and one of its parameters is "0.25µ Volume Drop
+   *   Spreading Time" — typed from the sheet it is the micro sign and renders,
+   *   typed from a picker or autocorrected by Word it is the Greek letter and the
+   *   character vanishes from a customer-facing certificate. Both verified
+   *   against the shipped cmap.
+   */
+  "μ": "µ",                                                // μ (U+03BC) → µ (U+00B5)
+  /**
    * FULLWIDTH FORMS, which arrive with anything copied out of a Chinese-authored
    * document — and OCPI's machine templates are transcribed from exactly that.
    *

@@ -38,6 +38,8 @@ export function buildProductionNav(opts: {
   isAdmin: boolean;
   canManageMasters: boolean;
   canMonitor: boolean;
+  /** Sees the COA register — a Quality Checking owner, a coordinator or a monitor. */
+  canSeeCoaRegister: boolean;
   hasRequests: boolean;
   canRaise: boolean;
   /** Master requests waiting on THIS user (owner or admin) — 0 for everyone else. */
@@ -69,11 +71,18 @@ export function buildProductionNav(opts: {
     queueUsed = true;
   }
 
+  // The COA register is a QC record, so it follows the QUALITY QUEUE rather than
+  // canMonitor: the people who issue certificates are the people who look them up.
+  // Monitors get it too, because it is also the module-wide view of what shipped.
+  if (opts.canSeeCoaRegister) {
+    nav.push({ label: "COA Register", to: `${B}/coa`, icon: ic.report, section: "Reports" });
+  }
+
   // Cycle-time reads the same job cards the Control Center does and is management
   // data, so it rides the SAME canMonitor flag rather than inventing a permission.
   if (opts.canMonitor) {
     nav.push(
-      { label: "Lot Cycle Time", to: `${B}/reports/lots`, icon: ic.report, section: "Reports" },
+      { label: "Lot Cycle Time", to: `${B}/reports/lots`, icon: ic.report, section: opts.canSeeCoaRegister ? undefined : "Reports" },
       { label: "Stage Cycle Time", to: `${B}/reports/stages`, icon: ic.report },
     );
   }

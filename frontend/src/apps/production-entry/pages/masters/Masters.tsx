@@ -2,6 +2,7 @@ import { useState } from "react";
 import Tabs from "@/shared/components/ui/Tabs";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import BomMaster from "./BomMaster";
+import CoaParameterMaster from "./CoaParameterMaster";
 import { useProductionStore } from "../../store";
 import { carriesUnit, masterFields } from "../../lib/masterFields";
 import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
@@ -20,13 +21,16 @@ export default function Masters() {
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<ProductionMasterType>("raw_material");
 
-  // BOMs are appended rather than living in PRODUCTION_MASTER_TYPES: they are a
-  // header plus a component list, so they get their own surface below instead of
-  // a MasterCrud tab — and staying out of that registry is what keeps them out of
-  // the "request a new master" modal, where they would not fit.
+  // BOMs and COA parameters are appended rather than living in
+  // PRODUCTION_MASTER_TYPES: a BOM is a header plus a component list, and a COA
+  // parameter carries a standard, an audience and an equipment beside its name.
+  // Neither fits the single-payload "request a new master" modal, and staying out
+  // of that registry is what keeps them out of it. Both get their own surface
+  // below instead of a plain MasterCrud tab.
   const tabs = [
     ...PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length })),
     { key: "bom", label: "BOMs", count: s.boms.length },
+    { key: "coa_parameter", label: "COA Parameters", count: s.coaParameters.length },
   ];
 
   // Raw materials, packaging items AND FG items each carry their own unit. The
@@ -59,6 +63,8 @@ export default function Masters() {
 
       {tab === "bom" ? (
         <BomMaster />
+      ) : tab === "coa_parameter" ? (
+        <CoaParameterMaster />
       ) : (
       <MasterCrud<NamedMaster>
         key={tab}

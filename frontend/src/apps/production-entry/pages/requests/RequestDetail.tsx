@@ -10,6 +10,8 @@ import { formatDateTime } from "@/shared/lib/time";
 import StepModal from "../../components/StepModal";
 import StepDocLink from "../../components/StepDocLink";
 import ProductionStepper from "../../components/ProductionStepper";
+import CoaModal from "../../components/CoaModal";
+import CoaExports from "../../components/CoaExports";
 import ExportButtons from "../../components/ExportButtons";
 import StatusPill from "../../components/StatusPill";
 import CardTypePill from "../../components/CardTypePill";
@@ -20,6 +22,7 @@ import { buildRepackSlipExport, exportRepackSlipXlsx, printRepackSlip } from "..
 import { buildBatchCardExport, exportBatchCardXlsx, printBatchCard } from "../../lib/batchCard";
 import { dmy, numOrDash, packFinalQty, requestSubject } from "../../lib/format";
 import { openStep, stepDoneAt, stepDoneBy, type QueueStep } from "../../lib/queues";
+import { currentCoaRound, hasReachedQuality } from "../../lib/coaRound";
 import { STEPS, stepAppliesTo } from "../../lib/steps";
 import { STEP_CONFIG } from "../../lib/stepConfig";
 import { useProductionStore } from "../../store";
@@ -158,6 +161,8 @@ export default function RequestDetail() {
   const [modalStep, setModalStep] = useState<QueueStep | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  /** Which round's certificate is open, or null. One COA per test round. */
+  const [coaRound, setCoaRound] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -201,6 +206,16 @@ export default function RequestDetail() {
   const fgUnitName = s.unitById(s.fgItemById(r.fgItemId)?.unitId ?? null)?.name ?? null;
   const aisAdditional = r.aisRounds.reduce((a, rd) => a + (rd.aisQty ?? 0), 0);
   const totalFgQty = (r.fgQty ?? 0) + aisAdditional;
+
+  // The certificates on this lot, and whether this person may write one. Issuing
+  // a COA is a Quality Checking action, so it takes that step's authority — NOT
+  // the card's current step, which has usually moved on by the time QC gets to it.
+  //
+  // ⚠ ONE PER TEST ROUND, so this is a LIST. A lot rejected at Test 1 and passed
+  //   at Test 2 carries two certificates and both are kept.
+  const coas = s.coasForRequest(r.id);
+  const coaRoundNow = currentCoaRound(r);
+  const canIssueCoa = s.canEdit && s.canActOn("quality_check", r);
   const fgQtyLabel = (q: number | null) => (q == null ? "—" : `${Math.round(q * 1000) / 1000}${fgUnitName ? ` ${fgUnitName}` : ""}`);
 
   // Lookups the issue-slip + batch-card view-model builders need.
@@ -500,6 +515,86 @@ export default function RequestDetail() {
         </Card>
       )}
 
+      {/* Certificate of Analysis — one per TEST ROUND, available from the moment
+          the lot reaches quality checking and unaffected by how far the card has
+          since travelled. A repackaging card never reaches here: it bypasses
+          quality checking entirely.
+
+          ⚠ THE GATE IS "HAS BEEN TESTED", NOT "WAS APPROVED". A rejected round
+            gets a certificate too — it is the record of a real test — so gating
+            on qcStatus would hide the very certificates that have nowhere else
+            to be read from once the card moves on. */}
+      {(hasReachedQuality(r) || coas.length > 0) && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <SectionHeading>Certificate of Analysis</SectionHeading>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setCoaRound(coaRoundNow)}
+              disabled={!canIssueCoa && !s.coaForRound(r.id, coaRoundNow)}
+            >
+              {s.coaForRound(r.id, coaRoundNow)
+                ? canIssueCoa ? `Edit Test ${coaRoundNow} details` : `View Test ${coaRoundNow} details`
+                : `Enter Test ${coaRoundNow} details`}
+            </Button>
+          </div>
+          {coas.length > 0 ? (
+            <div className="mt-3 space-y-4">
+              {coas.map((coa) => (
+                <div key={coa.id} className="rounded-xl border border-line p-3.5 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[13px] font-semibold text-navy">Test {coa.round}</span>
+                      {/* The verdict frozen ON THIS CERTIFICATE, never re-read
+                          from the card — a later test must not relabel it. */}
+                      <span
+                        className={`text-[12px] font-semibold ${
+                          coa.qcResult === "approved"
+                            ? "text-ryg-green"
+                            : coa.qcResult === "rejected"
+                              ? "text-ryg-red"
+                              : "text-grey-2"
+                        }`}
+                      >
+                        {coa.qcResult === "approved"
+                          ? "Approved"
+                          : coa.qcResult === "rejected"
+                            ? "Rejected — prints with a REJECTED watermark"
+                            : "Verdict not recorded — prints NOT VERIFIED"}
+                      </span>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => setCoaRound(coa.round)}>
+                      {canIssueCoa ? "Edit" : "View"}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <Field label="Lot No" value={coa.lotNo || "—"} />
+                    <Field label="Issue Date" value={dmy(coa.issueDate)} />
+                    <Field label="Conclusion" value={coa.conclusion || "—"} />
+                    {/* Shown when present so nobody thinks the field was lost —
+                        it prints on the internal copy only, not on nothing. */}
+                    {coa.remarks && <Field label="Remarks" value={coa.remarks} />}
+                  </div>
+                  {coa.attachmentPath && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-grey-2">Signed copy:</span>
+                      <StepDocLink path={coa.attachmentPath} name={coa.attachmentName} />
+                    </div>
+                  )}
+                  <CoaExports coa={coa} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12.5px] text-grey-2 mt-1">
+              Not issued yet. Enter the observed values against each parameter to generate the
+              customer and internal copies.
+            </p>
+          )}
+        </Card>
+      )}
+
       <Card className="p-5 space-y-4">
         <h2 className="text-[15px] font-bold text-navy">Progress</h2>
         {queueSteps.map((st) => {
@@ -539,6 +634,14 @@ export default function RequestDetail() {
       )}
 
       {modalStep && <StepModal stepKey={modalStep} open onClose={() => setModalStep(null)} request={r} />}
+
+      <CoaModal
+        open={coaRound !== null}
+        onClose={() => setCoaRound(null)}
+        request={r}
+        round={coaRound ?? 1}
+        readOnly={!canIssueCoa}
+      />
 
       <Modal
         open={holdOpen}

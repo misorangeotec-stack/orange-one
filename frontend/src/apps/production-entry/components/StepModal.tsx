@@ -10,6 +10,7 @@ import type { ComboOption } from "@/shared/components/ui/Combobox";
 import ExportButtons from "./ExportButtons";
 import StepDocLink from "./StepDocLink";
 import RequestMasterModal from "./RequestMasterModal";
+import CoaModal from "./CoaModal";
 import PackLinesGrid from "./PackLinesGrid";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
@@ -18,6 +19,7 @@ import { packLinePayload, type PackRow } from "../lib/packLines";
 import type { MasterValues } from "../lib/masterFields";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import { isAisLoopBlocked, type QueueStep } from "../lib/queues";
+import { currentCoaRound } from "../lib/coaRound";
 import type { ProductionMasterType, ProductionRequest } from "../types";
 
 /** Today as yyyy-mm-dd in the browser's LOCAL timezone. Deliberately not the
@@ -169,7 +171,6 @@ export default function StepModal({
   const [qcResult, setQcResult] = useState<"approved" | "rejected" | "">("");
   const [qcRemarks, setQcRemarks] = useState("");
   const [qcTestDate, setQcTestDate] = useState("");
-  const [qcFile, setQcFile] = useState<File | null>(null);
   const [mcResult, setMcResult] = useState<"approved" | "rejected" | "bypassed" | "">("");
   const [mcRemarks, setMcRemarks] = useState("");
   const [mcTestDate, setMcTestDate] = useState("");
@@ -183,6 +184,14 @@ export default function StepModal({
   // it drives is rendered OUTSIDE this dialog (see the return) — a stacked child
   // inside a read-only Modal's <fieldset disabled> comes up inert.
   const [raise, setRaise] = useState<{ mt: ProductionMasterType; prefill: MasterValues } | null>(null);
+  /**
+   * The COA opened from inside this form — the ROUND it is for, or null.
+   *
+   * ⚠ A round number rather than a boolean: the Test history offers earlier
+   *   rounds' certificates as well as the current one, and one COA per round
+   *   means "which" is the whole question.
+   */
+  const [coaRound, setCoaRound] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /** Seed the log-book rows from the recorded entry when editing, else from the
@@ -324,7 +333,6 @@ export default function StepModal({
       setQcRemarks(editing ? lastQc?.remarks ?? "" : "");
       // Default a fresh test to today; when correcting, keep the recorded date.
       setQcTestDate(editing ? (lastQc?.testDate ?? "").slice(0, 10) : todayLocalIso());
-      setQcFile(null);
       // M/C testing: a single approve/reject. When editing, show the recorded
       // result read-only; when recording, start blank (a prior rejection is shown
       // for context but the result is re-picked).
@@ -338,6 +346,7 @@ export default function StepModal({
       if (fileRef.current) fileRef.current.value = "";
       setErr(null);
       setBusy(false);
+      setCoaRound(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, request, cfg, isHandover, isLogBook, isProduction, isPmTransfer, isPacking, isQuality, isMc, isAis, editing]);
@@ -454,11 +463,11 @@ export default function StepModal({
       }
 
       if (isQuality) {
-        if (qcFile) {
-          const up = await uploadStepDocument(request.id, "quality", qcFile);
-          payload.qc_attachment_path = up.path;
-          payload.qc_attachment_name = up.name;
-        }
+        // ⚠ NO ATTACHMENT KEYS ARE SENT ANY MORE (PE-5 item G). On a NEW round
+        //   that is right — there is no upload to send. On an EDIT the RPC keeps
+        //   whatever is stored, because fms_production_update_quality keys those
+        //   two columns on PRESENCE, so a round recorded before this change keeps
+        //   its file and its Test history link keeps working.
         payload.qc_remarks = qcRemarks;
         if (editing) {
           payload.qc_actual_date = qcTestDate; // update the last round's date
@@ -990,6 +999,16 @@ export default function StepModal({
           const totalFg = (request.fgQty ?? 0) + aisAdditional;
           const uSuffix = fgUnit ? <span className="text-[12px] font-normal text-grey-2"> {fgUnit}</span> : null;
           const round = request.qcRounds.length + (editing ? 0 : 1);
+          /**
+           * ⚠ TWO DIFFERENT ROUNDS LIVE IN THIS ARM, and they are both right.
+           *   `round` above is the test this FORM is about to record — on a card
+           *   blocked mid-top-up it is the retest ahead. `coaRoundHere` is the
+           *   test a CERTIFICATE would belong to, which for that same blocked
+           *   card is the test that just failed. Same rule the server stamps by.
+           */
+          const coaRoundHere = currentCoaRound(request);
+          const coaHere = s.coaForRound(request.id, coaRoundHere);
+          const canWriteCoa = s.canEdit && s.canActOn("quality_check", request);
           const roundLabel = round === 1 ? "Test 1 — first test" : `Test ${round} — retest`;
           // Where the blocked lot's top-up currently sits — for the message.
           const loopStageLabel =
@@ -1043,6 +1062,18 @@ export default function StepModal({
                         </span>
                         <span className="text-grey-2">{dmy(r.testDate)}</span>
                         <span className="flex-1 text-grey truncate">{r.remarks || ""}</span>
+                        {/* Which earlier tests have a certificate, and a way into
+                            it. One COA per round now, so the rounds are where the
+                            certificates belong. */}
+                        {s.coaForRound(request.id, r.round) && (
+                          <button
+                            type="button"
+                            className="shrink-0 text-[12px] font-semibold text-orange hover:underline"
+                            onClick={() => setCoaRound(r.round)}
+                          >
+                            COA
+                          </button>
+                        )}
                         {r.attachmentPath && <StepDocLink path={r.attachmentPath} name={r.attachmentName} />}
                       </div>
                     ))}
@@ -1055,6 +1086,44 @@ export default function StepModal({
                   Retest due by {dmy(request.qcRetestDue)}
                 </div>
               )}
+
+              {/*
+                THE CERTIFICATE, ENTERED AS PART OF RECORDING THE TEST — above
+                Approve / Reject rather than remembered afterwards on another
+                screen (PE-5 item A).
+
+                ⚠ IT NAMES ITS OWN ROUND rather than inheriting the heading
+                  below. On a card sitting in the top-up loop the heading reads
+                  "Test 2 — retest" (the blocked test ahead) while the
+                  certificate belongs to Test 1 (the test that just failed).
+                  Both are right, and only saying so avoids the trap.
+
+                ⚠ It stays available on a REJECTED round — that is the point:
+                  the observed values are the evidence for the rejection, and
+                  this form is the only place a rejected lot's certificate can
+                  be entered from, since a rejected card never reaches the
+                  queue's Completed tab (see QualityQueue).
+              */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-3.5 py-3">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold text-navy">
+                    Certificate of Analysis · Test {coaRoundHere}
+                  </div>
+                  <div className="text-[12px] text-grey-2 mt-0.5">
+                    {coaHere
+                      ? `Issued ${dmy(coaHere.issueDate)} · ${coaHere.lines.filter((l) => (l.observed ?? "").trim() !== "").length} of ${coaHere.lines.length} observed`
+                      : "Not issued for this test. The observed values are recorded here, whichever way the test goes."}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={readOnly || (!canWriteCoa && !coaHere)}
+                  onClick={() => setCoaRound(coaRoundHere)}
+                >
+                  {coaHere ? (canWriteCoa ? "Edit COA" : "View COA") : "Issue COA"}
+                </Button>
+              </div>
 
               <div className="space-y-3">
                 <div className="text-[13px] font-semibold text-navy">{roundLabel}</div>
@@ -1076,18 +1145,26 @@ export default function StepModal({
                   <TextInput type="date" max={todayLocalIso()} disabled={readOnly} value={qcTestDate} onChange={(e) => setQcTestDate(e.target.value)} />
                 </FieldLabel>
 
-                <FieldLabel label="Remarks">
+                <FieldLabel label="Remarks" hint="the TEST's remark — the certificate has its own, in the COA form">
                   <TextArea rows={2} disabled={readOnly} value={qcRemarks} onChange={(e) => setQcRemarks(e.target.value)} placeholder="Testing remarks" />
                 </FieldLabel>
+                {/*
+                  ⚠ "ATTACHMENT OF TESTING" WAS REMOVED FROM THIS STEP, 02-Sep-2026
+                    (PE-5 item G) — deliberately, for every user and with no
+                    cut-off. The certificate now does that job: a COA can be
+                    entered on EVERY round, rejected ones included, so no test is
+                    left without a record.
 
-                <FieldLabel label="Attachment of testing" hint={editing ? "choose a file to replace it" : "optional"}>
-                  <input
-                    type="file"
-                    disabled={readOnly}
-                    onChange={(e) => setQcFile(e.target.files?.[0] ?? null)}
-                    className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-                  />
-                </FieldLabel>
+                  ⚠ NOTHING ELSE WENT WITH IT, and that is the point. The two
+                    columns stay, every stored file stays, and the per-round links
+                    in Test history above still open them — live cards carry files
+                    against earlier rounds and they were somebody's evidence for a
+                    test that really happened. The M/C Testing arm keeps its own
+                    upload; it is a different step.
+
+                  A signed copy of the CERTIFICATE is uploaded in the COA form
+                  instead (PE-5 item F).
+                */}
               </div>
             </>
           );
@@ -1660,6 +1737,20 @@ export default function StepModal({
       lockType
       stacked
       prefill={raise?.prefill}
+    />
+
+    {/* Same rule as above: a sibling, not a child. ⚠ In READ-ONLY (View) mode the
+        trigger inside the body is disabled with the rest of the fieldset, so this
+        cannot be opened from here — the certificate stays reachable from the job
+        card and the COA Register, which is the accepted trade for keeping the
+        control where the ask puts it, above Approve / Reject. */}
+    <CoaModal
+      open={coaRound !== null}
+      onClose={() => setCoaRound(null)}
+      request={request}
+      round={coaRound ?? 1}
+      stacked
+      readOnly={!s.canEdit || !request || !s.canActOn("quality_check", request)}
     />
     </>
   );

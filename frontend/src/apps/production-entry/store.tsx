@@ -10,6 +10,7 @@ import {
   fetchProductionData,
   fetchProductionWorkflow,
   productionQueryKey,
+  type CoaOutputFormat,
   type ProductionData,
 } from "./data/productionFetch";
 import {
@@ -26,6 +27,7 @@ import {
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
   saveBom as saveBomWrite,
+  saveCoa as saveCoaWrite,
   setConfig as setConfigWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
@@ -37,6 +39,7 @@ import {
   type BomImportBlock,
   type BomImportResult,
   type BomInput,
+  type CoaInput,
   type MasterInput,
   type RequestInput,
   type StepOwnerInput,
@@ -61,6 +64,8 @@ import type {
   Bom,
   BomComponent,
   Category,
+  Coa,
+  CoaParameter,
   Designation,
   FgItem,
   NamedMaster,
@@ -70,6 +75,7 @@ import type {
   ProductionMasterRequest,
   ProductionMasterType,
   ProductionNotification,
+  TestEquipment,
   ProductionRequest,
   RawMaterial,
   PackagingItem,
@@ -107,6 +113,23 @@ interface ProductionStoreValue {
   unitById: (id: string | null) => Unit | undefined;
   masterList: (mt: ProductionMasterType) => NamedMaster[];
 
+  // COA masters + the certificates themselves
+  testEquipments: TestEquipment[];
+  activeTestEquipments: TestEquipment[];
+  testEquipmentById: (id: string | null) => TestEquipment | undefined;
+  coaParameters: CoaParameter[];
+  /** Active parameters in PRINT order — what the entry form lists, top to bottom. */
+  activeCoaParameters: CoaParameter[];
+  coas: Coa[];
+  /** Every certificate on a card, oldest test first. ⚠ ONE-OF-SEVERAL: a lot
+   *  re-tested after a rejection carries a certificate per round. */
+  coasForRequest: (requestId: string | null) => Coa[];
+  /** The certificate for ONE test round, if it has been issued. */
+  coaForRound: (requestId: string | null, round: number) => Coa | undefined;
+  /** Issue or correct one round's certificate. The RPC re-checks the caller owns
+   *  the step and stamps the round itself, so this wrapper stays thin. */
+  saveCoa: (input: CoaInput) => Promise<void>;
+
   // BOM master
   boms: Bom[];
   activeBoms: Bom[];
@@ -126,6 +149,9 @@ interface ProductionStoreValue {
   stepSla: StepSlaMap;
   batchSeqStart: number;
   batchNoPreview: string;
+  /** Which formats the COA copies offer (Setup → COA). */
+  coaOutput: CoaOutputFormat;
+  setCoaOutput: (format: CoaOutputFormat) => Promise<void>;
 
   // capabilities
   isAdmin: boolean;
@@ -259,6 +285,9 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const packagingItems = data?.packagingItems ?? [];
   const fgItems = data?.fgItems ?? [];
   const units = data?.units ?? [];
+  const testEquipments = data?.testEquipments ?? [];
+  const coaParameters = data?.coaParameters ?? [];
+  const coas = data?.coas ?? [];
   const boms = data?.boms ?? [];
   const bomComponents = data?.bomComponents ?? [];
   const masterManagers = data?.masterManagers ?? [];
@@ -269,6 +298,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const batchSeqStart = data?.config.batchSeqStart ?? 1;
+  const coaOutput = data?.config.coaOutput ?? "both";
   const batchNoPreview = data?.batchNoPreview ?? "";
 
   const value = useMemo<ProductionStoreValue>(() => {
@@ -385,6 +415,8 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       packaging_item: packagingItems,
       fg_item: fgItems,
       unit: units,
+      test_equipment: testEquipments,
+      coa_parameter: coaParameters,
       bom: boms,
     };
 
@@ -502,6 +534,23 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       unitById: (id) => idById(units, id),
       masterList: (mt) => MASTER_LIST[mt],
 
+      testEquipments,
+      activeTestEquipments: byOrder(testEquipments),
+      testEquipmentById: (id) => idById(testEquipments, id),
+      coaParameters,
+      activeCoaParameters: byOrder(coaParameters),
+      coas,
+      coasForRequest: (requestId) =>
+        requestId ? coas.filter((c) => c.requestId === requestId).sort((a, b) => a.round - b.round) : [],
+      coaForRound: (requestId, round) =>
+        requestId ? coas.find((c) => c.requestId === requestId && c.round === round) : undefined,
+      saveCoa: async (input) => {
+        await saveCoaWrite(input);
+        // The fast path: a certificate belongs to one job card, so none of the
+        // twelve master tables can have moved.
+        await refreshWorkflow();
+      },
+
       boms,
       activeBoms,
       bomById: (id) => idById(boms, id),
@@ -515,6 +564,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       stepSla,
       batchSeqStart,
       batchNoPreview,
+      coaOutput,
 
       isAdmin,
       canEdit,
@@ -658,6 +708,10 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite("batch_seq_start", { start });
         await invalidate();
       },
+      setCoaOutput: async (format) => {
+        await setConfigWrite("coa_output", { format });
+        await invalidate();
+      },
 
       insertMaster: async (mt, input) => {
         await insertMasterWrite(mt, input);
@@ -684,6 +738,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     boms, bomComponents,
     masterManagers, masterRequests, requests, activity, notifications, stepOwners, processCoordinatorIds,
     stepSla, batchSeqStart, batchNoPreview, queryClient, session.user, orgPeople,
+    testEquipments, coaParameters, coas, coaOutput,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

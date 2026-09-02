@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import Button from "@/shared/components/ui/Button";
@@ -42,6 +43,7 @@ export default function StageQueue({
   stepKey,
   rowPrint,
   rowExcel,
+  rowExtra,
   viewOnlyWhenDone,
 }: {
   stepKey: QueueStep;
@@ -52,6 +54,18 @@ export default function StageQueue({
   /** When set, a "Download Excel" action is shown on each COMPLETED row (e.g. the
    *  Batch Card .xlsx on the Log Book queue). */
   rowExcel?: (r: ProductionRequest) => void;
+  /**
+   * Anything else this step wants on a completed row — rendered after the Excel
+   * and Print actions.
+   *
+   * ⚠ A SLOT RATHER THAN ANOTHER `rowX` CALLBACK, because the caller has to be
+   *   able to decide PER ROW whether to offer anything at all. `rowPrint` and
+   *   `rowExcel` render on every completed row, which is right for a document
+   *   that always exists. Quality Checking is not like that: a lot rejected
+   *   mid-Additional-Issue-Slip loop sits in this same Completed tab, and it has
+   *   no certificate to issue. Returning null is the honest answer for those.
+   */
+  rowExtra?: (r: ProductionRequest) => ReactNode;
   /**
    * Per ROW, not per step: "this completed entry has nothing to change, so offer
    * a clean View and no Edit".
@@ -302,6 +316,7 @@ export default function StageQueue({
               {rowPrint && (
                 <Button size="sm" variant="ghost" onClick={() => rowPrint(e.row)}>Print</Button>
               )}
+              {rowExtra?.(e.row)}
             </div>
           )}
         />

@@ -5,6 +5,7 @@ import MasterOwnersSection from "./MasterOwnersSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import BatchNumberingSection from "./BatchNumberingSection";
+import CoaOutputSection from "./CoaOutputSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 
 export default function Setup() {
@@ -13,6 +14,7 @@ export default function Setup() {
     { key: "owners", label: "Step Owners" },
     { key: "due", label: "Due Dates" },
     { key: "numbering", label: "Batch Numbering" },
+  { key: "coa", label: "COA" },
     { key: "coordinators", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
     { key: "notifications", label: "Notifications" },
@@ -22,13 +24,14 @@ export default function Setup() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Who owns each step, the per-step deadlines, the process coordinators, and who owns each master.
+          Who owns each step, the per-step deadlines, the COA output format, the process coordinators, and who owns each master.
         </p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === "owners" && <StepOwnersSection />}
       {tab === "due" && <StepDueDatesSection />}
       {tab === "numbering" && <BatchNumberingSection />}
+      {tab === "coa" && <CoaOutputSection />}
       {tab === "coordinators" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}
       {tab === "notifications" && <EmailNotificationsSection />}

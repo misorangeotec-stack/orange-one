@@ -7,9 +7,14 @@ import type {
   Bom,
   BomComponent,
   Category,
+  Coa,
+  CoaAudience,
+  CoaLine,
+  CoaParameter,
   Designation,
   FgItem,
   NamedMaster,
+  TestEquipment,
   ProductionActivity,
   ProductionEntityType,
   ProductionMasterManager,
@@ -40,6 +45,9 @@ type Tbl =
   | "fms_production_packaging_items"
   | "fms_production_fg_items"
   | "fms_production_units"
+  | "fms_production_test_equipments"
+  | "fms_production_coa_parameters"
+  | "fms_production_coas"
   | "fms_production_boms"
   | "fms_production_bom_components"
   | "fms_production_master_managers"
@@ -70,6 +78,18 @@ export interface ProductionConfig {
   stepSla: StepSlaMap;
   /** Admin-set starting number for the continuous batch counter (default 1). */
   batchSeqStart: number;
+  /** Which formats the COA offers on each copy (Setup → COA). Default "both". */
+  coaOutput: CoaOutputFormat;
+}
+
+/** The COA download formats an admin can offer. "print" is always available — it
+ *  is the browser's own dialog, not a generated file, so it costs nothing. */
+export type CoaOutputFormat = "pdf" | "excel" | "both";
+
+/** Read the stored setting defensively: an unset key, a typo or a value written
+ *  before this setting existed must land on "both", never on an empty toolbar. */
+function resolveCoaOutput(v: unknown): CoaOutputFormat {
+  return v === "pdf" || v === "excel" ? v : "both";
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -85,6 +105,8 @@ export interface ProductionData {
   packagingItems: PackagingItem[];
   fgItems: FgItem[];
   units: Unit[];
+  testEquipments: TestEquipment[];
+  coaParameters: CoaParameter[];
   boms: Bom[];
   bomComponents: BomComponent[];
   masterManagers: ProductionMasterManager[];
@@ -92,6 +114,7 @@ export interface ProductionData {
   requests: ProductionRequest[];
   activity: ProductionActivity[];
   notifications: ProductionNotification[];
+  coas: Coa[];
   /** The next Lot/Batch (Issue Slip) number that will be issued (preview, no consume). */
   batchNoPreview: string;
 }
@@ -99,6 +122,47 @@ export interface ProductionData {
 const num = (v: any): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
 
 const mapMaster = (r: any): NamedMaster => ({ id: r.id, name: r.name, active: r.active, sortOrder: r.sort_order ?? 0 });
+
+const mapCoaParameter = (r: any): CoaParameter => ({
+  ...mapMaster(r),
+  standard: r.standard ?? null,
+  testEquipmentId: r.test_equipment_id ?? null,
+  appearsOn: (r.appears_on ?? "both") as CoaAudience | "both",
+});
+
+/** One frozen COA line. Defaults are generous because the row is a SNAPSHOT: an
+ *  old certificate written before a key existed must still render, not blank out. */
+const mapCoaLine = (l: any): CoaLine => ({
+  parameterId: l?.parameter_id ?? null,
+  name: String(l?.name ?? ""),
+  standard: l?.standard ?? null,
+  observed: l?.observed ?? null,
+  equipmentId: l?.equipment_id ?? null,
+  equipmentName: l?.equipment_name ?? null,
+  appearsOn: (l?.appears_on ?? "both") as CoaAudience | "both",
+  sortOrder: Number(l?.sort_order ?? 0) || 0,
+});
+
+const mapCoa = (r: any): Coa => ({
+  id: r.id,
+  requestId: r.request_id,
+  // Both default generously for the same reason mapCoaLine's fields do: a row
+  // written before the per-round migration must still render, as Test 1.
+  round: Number(r.round ?? 1) || 1,
+  qcResult: r.qc_result === "approved" || r.qc_result === "rejected" ? r.qc_result : null,
+  productName: r.product_name ?? null,
+  lotNo: r.lot_no ?? null,
+  issueDate: r.issue_date,
+  conclusion: r.conclusion ?? null,
+  remarks: r.remarks ?? null,
+  attachmentPath: r.attachment_path ?? null,
+  attachmentName: r.attachment_name ?? null,
+  lines: (Array.isArray(r.lines) ? r.lines : []).map(mapCoaLine).sort((a: CoaLine, b: CoaLine) => a.sortOrder - b.sortOrder),
+  issuedBy: r.issued_by ?? null,
+  issuedAt: r.issued_at,
+  updatedBy: r.updated_by ?? null,
+  updatedAt: r.updated_at,
+});
 
 const mapBom = (r: any): Bom => ({
   ...mapMaster(r),
@@ -393,20 +457,25 @@ export interface ProductionWorkflowSlice {
   requests: ProductionRequest[];
   activity: ProductionActivity[];
   notifications: ProductionNotification[];
+  /** COAs ride the FAST path, not the full read: a certificate is written per
+   *  job card, so saving one changes nothing in the twelve master tables. */
+  coas: Coa[];
   batchNoPreview: string;
 }
 
 export async function fetchProductionWorkflow(): Promise<ProductionWorkflowSlice> {
-  const [requests, activity, notifications, batchPeek] = await Promise.all([
+  const [requests, activity, notifications, coas, batchPeek] = await Promise.all([
     fetchAll("fms_production_requests", "submitted_at"),
     fetchAll("fms_production_activity"),
     fetchAll("fms_production_notifications"),
+    fetchAll("fms_production_coas"),
     db.rpc("fms_production_peek_batch_no"),
   ]);
   return {
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
+    coas: coas.map(mapCoa),
     batchNoPreview: (batchPeek.data as string) ?? "",
   };
 }
@@ -414,6 +483,7 @@ export async function fetchProductionWorkflow(): Promise<ProductionWorkflowSlice
 export async function fetchProductionData(): Promise<ProductionData> {
   const [
     stepOwners, configRows, designations, categories, rawMaterials, packagingItems, fgItems, units,
+    testEquipments, coaParameters, coas,
     boms, bomComponents,
     masterManagers, masterRequests, requests, activity, notifications,
     // The next Lot/Batch number to be issued (preview — does not consume the
@@ -429,6 +499,9 @@ export async function fetchProductionData(): Promise<ProductionData> {
     fetchAll("fms_production_packaging_items"),
     fetchAll("fms_production_fg_items"),
     fetchAll("fms_production_units"),
+    fetchAll("fms_production_test_equipments"),
+    fetchAll("fms_production_coa_parameters"),
+    fetchAll("fms_production_coas"),
     fetchAll("fms_production_boms"),
     fetchAll("fms_production_bom_components"),
     fetchAll("fms_production_master_managers"),
@@ -444,6 +517,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
     batchSeqStart: Number(byKey.get("batch_seq_start")?.start ?? 1) || 1,
+    coaOutput: resolveCoaOutput(byKey.get("coa_output")?.format),
   };
 
   return {
@@ -455,6 +529,9 @@ export async function fetchProductionData(): Promise<ProductionData> {
     packagingItems: packagingItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     fgItems: fgItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     units: units.map(mapMaster),
+    testEquipments: testEquipments.map(mapMaster),
+    coaParameters: coaParameters.map(mapCoaParameter),
+    coas: coas.map(mapCoa),
     boms: boms.map(mapBom),
     bomComponents: bomComponents.map(mapBomComponent),
     masterManagers: masterManagers.map(mapMasterManager),
