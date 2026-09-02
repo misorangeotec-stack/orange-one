@@ -76,8 +76,22 @@ export interface OcpiDoc {
 export type DealCurrency = "INR" | "USD";
 
 export type TransportTerms = "high_seas" | "local";
+/**
+ * ⚠ RETAINED, DERIVED, AND NO LONGER ASKED (OCPI-35). The form merged this
+ *   question into the one delivery question -- `deliveryVia`, asked on BOTH
+ *   deal types -- but the COLUMN is still written, from that answer, because
+ *   three live constraints and one RPC demand it on a High Seas deal. See the
+ *   note on `deliveryVia` below.
+ */
 export type HighSeasVia = "CIF" | "EX Factory" | "FOB";
 export type CostBearer = "customer" | "company";
+/**
+ * Where the customer's own delivery leg starts, on a High Seas deal whose cost
+ * the CUSTOMER bears. Both wordings end at the customer premises; only the
+ * starting port differs, which is why they are not "end-to-end" and
+ * "port-to-port". The printed sentences live in `DELIVERY_LEGS`.
+ */
+export type DeliveryLeg = "manufacturer_port" | "indian_port";
 export type PaymentType = "advance" | "credit";
 export type HeadShipMode = "with_machine" | "separate";
 export type HeadShipVia = "directly" | "hss" | "local_sales";
@@ -207,6 +221,19 @@ export interface OcpiDeal {
   highSeasVia: HighSeasVia | null;
   highSeasCostBy: CostBearer | null;
   localCostBy: CostBearer | null;
+  /*
+    OCPI-35 · THE ONE DELIVERY QUESTION, and the detail each answer needs.
+
+    ⚠ `deliveryVia` IS PLAIN `string`, NOT `HighSeasVia`, and that is the whole
+      reason it is a column of its own. It is asked on BOTH deal types, and on
+      an older deal it hydrates from that deal's own `tradeTerm` -- which may
+      read `Ex-Work Surat`, a value `high_seas_via`'s CHECK has never allowed
+      and `fms_ocpi_transport_coherent` forbids on an Others deal outright.
+  */
+  deliveryVia: string | null;
+  deliveryPort: string | null;
+  deliveryFactoryCity: string | null;
+  deliveryLeg: DeliveryLeg | null;
   remarks: string | null;
   dollarClauseAgreed: boolean | null;
 

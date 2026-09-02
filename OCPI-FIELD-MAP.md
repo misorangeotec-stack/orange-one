@@ -101,6 +101,10 @@ placeholder exists, so any machine's deck *could* print this, and not one of the
 | `highSeasVia` | High seas delivery via | ✓ (section undetermined) | — | — | prints |
 | `highSeasCostBy` | High seas cost borne by | ✓ (section undetermined) | — | — | prints |
 | `localCostBy` | Local delivery cost borne by | ✓ (section undetermined) | — | — | prints |
+| `deliveryVia` | Delivery term | — | — | — | prints — composed into `tradeTerm` |
+| `deliveryPort` | Port | — | — | — | prints — composed into `tradeTerm` |
+| `deliveryFactoryCity` | Ex-factory location | — | — | — | prints — composed into `tradeTerm` |
+| `deliveryLeg` | Customer's delivery leg | — | — | — | prints — composed into `tradeTerm` |
 | `fxRate` | USD to INR rate | C · Commercial Terms | ✓ | — | prints |
 | `fxRateAt` | Rate fetched at | — | — | — | 🔴 **screen only — deliberate?** |
 | `fxRateSource` | Rate source | — | — | — | 🔴 **screen only — deliberate?** |
@@ -152,7 +156,7 @@ placeholder exists, so any machine's deck *could* print this, and not one of the
 | `insuranceClauseAgreed` | Insurance clause agreed | — | — | — | 🔴 **screen only — deliberate?** |
 | `refNo` | Reference no. | — | ✓ | `{{ref_no}}` · **0/21** | prints |
 | `deliveryDays` | Delivery days | — | — | — | 🔴 **screen only — deliberate?** |
-| `tradeTerm` | Delivery term | — | — | `{{trade_term}}` · **21/21** | prints |
+| `tradeTerm` | Delivery term (as printed) | ✓ (section undetermined) | — | `{{trade_term}}` · **21/21** | prints |
 | `machineModelNo` | Manufacturer's model no. | — | — | `{{machine_model_no}}` · **0/21** | **token offered, no template uses it** |
 | `preparedBy` | Prepared by | — | ✓ | — | prints |
 | `approvedBy` | Approved by | — | ✓ | — | prints |

@@ -5,7 +5,7 @@ import {
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import {
-  DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
+  COST_BEARERS, DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
   SUBSIDIZED_RATE_NOTE, isUsdDealRow, type DealFacts,
 } from "./fieldSpec";
 import { docHeading, fmtDealValue, paperDate } from "./format";
@@ -140,12 +140,47 @@ function sectionRows(
   // `usd` template condition — see `isUsdDealRow`.
   const isUsd = isUsdDealRow(d);
 
+  /*
+    ── "Term of Delivery" · THE ONE DELIVERY SENTENCE (OCPI-35) ───────────────
+
+    This row used to name the delivery method from `highSeasVia`, and only on a
+    High Seas deal. That field stopped being asked, so reading it would have
+    quietly degraded the row to "High Seas · cost by customer" — the delivery
+    method vanishing off a customer's quotation with nothing to notice.
+
+    It now prints the COMPOSED term, which is the same string the contract's
+    SALE CONDITIONS clause carries. Stage J.2 recorded that the two papers had
+    never said the same thing about delivery — "Local Delivery · cost by
+    Customer" on one, "Ex-Work Surat" on the other, under two similar headings.
+    They now do.
+
+    ⚠ THE FALLBACK TO `highSeasVia` IS NOT DECORATION. It keeps every deal
+      raised before OCPI-35 printing exactly what it printed yesterday, whatever
+      order the migration and the deploy land in.
+
+    ⚠ AND AN "OTHERS" DEAL FINALLY NAMES ITS ROUTE HERE. It never did: the row
+      was built from the deal type and the cost bearer alone, so the only
+      delivery answer an ordinary deal records reached the contract and not the
+      quotation.
+  */
+  const deliveryTerm = d.tradeTerm || d.highSeasVia || null;
+  /*
+    ⚠ THE COST BEARER IS A STORED CODE, AND THIS ROW USED TO PRINT IT RAW.
+      `highSeasCostBy` holds "customer" / "company"; the form shows "Customer" /
+      "Company" from COST_BEARERS, and this line interpolated the code, so the
+      customer's own sheet read "cost by customer" in lower case. `ocPdf.ts`
+      solves exactly this with lookup maps for ship mode and route; the summary
+      sheet simply never did.
+  */
+  const costBy = (v: string | null) => {
+    const m = COST_BEARERS.find((c) => c.value === v);
+    return m ? `cost by ${m.label}` : null;
+  };
+
   const transport = isHighSeas
-    ? ["High Seas", d.highSeasVia, d.highSeasCostBy ? `cost by ${d.highSeasCostBy}` : null]
-        .filter(Boolean)
-        .join(" · ")
+    ? ["High Seas", deliveryTerm, costBy(d.highSeasCostBy)].filter(Boolean).join(" · ")
     : d.transportTerms === "local"
-      ? ["Local Delivery", d.localCostBy ? `cost by ${d.localCostBy}` : null].filter(Boolean).join(" · ")
+      ? ["Local Delivery", deliveryTerm, costBy(d.localCostBy)].filter(Boolean).join(" · ")
       : "";
 
   /*

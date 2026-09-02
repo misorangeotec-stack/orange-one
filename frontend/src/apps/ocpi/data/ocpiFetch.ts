@@ -14,6 +14,10 @@ import type {
   OcpiDryer, OcpiMachineHead,
 } from "../types";
 import type { StepSla } from "../lib/sla";
+// ⚠ A VALUE IMPORT, and safe: `fieldSpec` imports only from `../types`, so this
+//   is not a cycle. See DEFAULT_GST_RATE's own note for why the number is shared
+//   rather than written out here.
+import { DEFAULT_GST_RATE } from "../lib/fieldSpec";
 
 /**
  * A stored step_sla map as it comes OUT of the config table: every key optional,
@@ -347,6 +351,11 @@ const mapDeal = (r: any): OcpiDeal => ({
   highSeasVia: r.high_seas_via ?? null,
   highSeasCostBy: r.high_seas_cost_by ?? null,
   localCostBy: r.local_cost_by ?? null,
+  // OCPI-35 · the one delivery question and its three follow-ups.
+  deliveryVia: r.delivery_via ?? null,
+  deliveryPort: r.delivery_port ?? null,
+  deliveryFactoryCity: r.delivery_factory_city ?? null,
+  deliveryLeg: r.delivery_leg ?? null,
   remarks: r.remarks ?? null,
   dollarClauseAgreed: r.dollar_clause_agreed ?? null,
 
@@ -540,7 +549,11 @@ export async function fetchOcpiData(): Promise<OcpiData> {
       processCoordinatorIds: cfg.get("process_coordinators")?.user_ids ?? [],
       salespersonDepartmentIds: cfg.get("salesperson_departments")?.department_ids ?? [],
       quotationValidityDays: cfg.get("quotation_validity_days")?.days ?? 30,
-      defaultGstRate: cfg.get("default_gst_rate")?.rate ?? 18,
+      // ⚠ ONE FALLBACK, SHARED (OCPI-29). This used to be a bare `?? 18`, a third
+      //   copy of a tax rate alongside two more in fieldSpec. The config row is
+      //   the source; the constant is what a database missing that row falls back
+      //   to, and it is now the only literal 18 in the module.
+      defaultGstRate: cfg.get("default_gst_rate")?.rate ?? Number(DEFAULT_GST_RATE),
       // The fallbacks are the client's settled figures, so a database where the
       // migration has not run still prints the right periods rather than a blank.
       warranty: {

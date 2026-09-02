@@ -14,9 +14,10 @@ import { isVisible } from "../lib/branching";
 import { useSalespeople } from "../lib/useSalespeople";
 import { fmtDealValue } from "../lib/format";
 import {
-  COST_BEARERS, CURRENCIES, DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, HEAD_SHIP_MODES,
-  HEAD_SHIP_VIA, HIGH_SEAS_VIA, INSURANCE_CLAUSE, PAYMENT_TERMS_FORMATS,
-  PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRADE_TERMS, TRANSPORT_TERMS, dealFacts,
+  COST_BEARERS, CURRENCIES, DELIVERY_DATE_REMARK, DELIVERY_FACTORY_CITIES, DELIVERY_LEGS,
+  DELIVERY_VIA, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA, INSURANCE_CLAUSE,
+  PAYMENT_TERMS_FORMATS, PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRANSPORT_TERMS,
+  composeTradeTerm, dealFacts,
   type QuotationDraft,
 } from "../lib/fieldSpec";
 import { FIELD_ANCHOR, QUOTATION_FORM_ANCHOR, requiredKeys } from "../lib/completeness";
@@ -1071,6 +1072,27 @@ export default function QuotationForm({
   }, [s, draft.dryerType, draft.dryerName]);
 
   const show = (k: keyof QuotationDraft) => isVisible(k, draft, dealAnswers);
+
+  /**
+   * OCPI-35 · Patch a delivery answer AND the term it composes into, together.
+   *
+   * 🔴 THE TERM IS COMPOSED ON CHANGE, NEVER ON LOAD, and that is the whole
+   *    safety property of this change. `draftFromDeal` does not recompose, so a
+   *    deal nobody touches saves its stored `trade_term` byte-identically —
+   *    which is what protects the 17 deals reading "Ex-Work Surat" and the one
+   *    reading "CIF Jebel Ali", all of them on issued or signed paper.
+   *
+   * ⚠ IT IS ALSO WHY EVERY CONTROL THAT FEEDS THE TERM MUST CALL THIS ONE AND
+   *   NOT `patch`. Five do: the deal type, the strip, the port, the ex-factory
+   *   city and the HIGH SEAS cost bearer. The LOCAL cost bearer deliberately
+   *   does not — it feeds nothing the term prints.
+   *
+   * ⚠ It reads the MERGED draft, not `draft`, because React state has not
+   *   updated yet at this point; composing from `draft` would use the answer
+   *   before the one just given.
+   */
+  const patchDelivery = (next: Partial<QuotationDraft>) =>
+    patch({ ...next, tradeTerm: composeTradeTerm({ ...draft, ...next }) });
 
 
   /**
@@ -2301,7 +2323,11 @@ export default function QuotationForm({
                 //   dollars, and a rate-less USD deal prints a blank total on both
                 //   papers. Setting it here makes the screen tell the truth
                 //   immediately; the server still has the last word.
-                patch(
+                // ⚠ AND IT RECOMPOSES THE DELIVERY TERM (OCPI-35), because the
+                //   customer's-leg clause is appended on High Seas alone.
+                //   Leaving it would strand that sentence on an Others deal's
+                //   contract after a change of mind.
+                patchDelivery(
                   v === "high_seas"
                     ? { transportTerms: v, dealValueCurrency: "USD" }
                     : { transportTerms: v },
@@ -2312,19 +2338,113 @@ export default function QuotationForm({
               ariaLabel="Deal type"
             />
           </FieldLabel>
-          {show("highSeasVia") && (
+          {/*
+            ── OCPI-35 · ONE DELIVERY QUESTION, WHERE THERE WERE TWO ───────────
+
+            This strip replaces BOTH "High seas delivery via" (which stood here,
+            High Seas only) and the separate "Delivery term" dropdown that stood
+            300 lines below beside the delivery date. They asked the same thing
+            with overlapping vocabularies, and one deal on record proved it: its
+            term had been typed by hand as "CIF Jebel Ali" because there was
+            nowhere to record the port.
+
+            It sits HERE, at the head of the section, so the whole delivery story
+            reads in one run — and so the customer's-leg question below can nest
+            under the cost bearer, which it depends on.
+
+            🔴 `optsWithCurrent`, NOT `opts`, AND THAT IS NOT DEFENSIVE CODING.
+               17 deals on record read "Ex-Work Surat" and one reads
+               "CIF Jebel Ali"; neither is one of the three buttons.
+               `ChoiceButtons` renders a value it cannot match as NOTHING
+               SELECTED, its roving tabIndex then starts from index −1, and a
+               single ↓ on the tabbed-to strip fires onChange(options[0]) —
+               overwriting a term that prints in the SALE CONDITIONS clause of a
+               signed contract, with no click and nothing to see. Feeding the
+               deal's own value back in as an extra button fixes all three at
+               once. See the helper for the whole failure (OCPI-21, OCPI-26).
+
+            ⚠ WHAT IT IS BOUND TO IS `deliveryVia`, WHICH HYDRATES FROM THREE
+              PLACES. `delivery_via` is null on every deal raised before this
+              change, so `draftFromDeal` falls back to `high_seas_via` and then
+              to the stored `trade_term`. Without that the strip would read blank
+              on all 30 deals. See the note there — the ORDER matters.
+
+            ⚠ `clearable` IS DRIVEN BY THE REQUIREMENT, and evaluates to FALSE
+              today — `deliveryVia` has no branch rule, so it is always asked and
+              therefore always required. Written as an expression rather than
+              omitted so it stays correct if the tier ever narrows.
+              `ChoiceButtons`' own header forbids `clearable` on a required
+              field: it would hand the form a way to un-answer something it will
+              then refuse to submit. The three strips beside it still set both,
+              which is a pre-existing contradiction and not one to copy.
+          */}
+          <div>
             <FieldLabel
-              label="High seas delivery via"
-              required={req.has("highSeasVia")}
-              anchor={FIELD_ANCHOR("highSeasVia")}
+              label="Delivery term"
+              required={req.has("deliveryVia")}
+              anchor={FIELD_ANCHOR("deliveryVia")}
             >
               <ChoiceButtons
-                value={draft.highSeasVia}
-                onChange={(v) => patch({ highSeasVia: v })}
-                options={opts(HIGH_SEAS_VIA)}
-                clearable
+                value={draft.deliveryVia}
+                onChange={(v) => patchDelivery({ deliveryVia: v })}
+                options={optsWithCurrent(DELIVERY_VIA, draft.deliveryVia)}
+                clearable={!req.has("deliveryVia")}
                 disabled={disabled}
-                ariaLabel="High seas delivery via"
+                ariaLabel="Delivery term"
+              />
+            </FieldLabel>
+            {/*
+              ⚠ THE COMPOSED TERM IS SHOWN BECAUSE THE BUTTON AND THE PAPER
+                DISAGREE ON PURPOSE. The button must read "EX Factory" — that
+                exact string is what `high_seas_via`'s CHECK allows and what the
+                mirror writes — while the contract prints "Ex Factory Surat",
+                title case, settled with Ritesh Bhai. Showing the result is what
+                stops that looking like a bug, and it means nobody has to save a
+                deal to find out what the clause will say.
+
+              ⚠ OUTSIDE `FieldLabel`, which renders a <label>: text inside it is
+                part of the label, so clicking the sentence would activate the
+                strip. Same reason the delivery-date remark sits outside its own.
+            */}
+            {draft.tradeTerm.trim() !== "" && (
+              <p className="mt-1 text-[12px] text-grey-2">
+                Prints on the contract as{" "}
+                <span className="font-medium text-navy">{draft.tradeTerm}</span>
+              </p>
+            )}
+          </div>
+          {show("deliveryPort") && (
+            <FieldLabel
+              label="Port"
+              hint="e.g. Jebel Ali"
+              required={req.has("deliveryPort")}
+              anchor={FIELD_ANCHOR("deliveryPort")}
+            >
+              {/*
+                FREE TEXT, NOT A MASTER — settled 02-09-2026. Only one port has
+                ever been used, so there is no list to seed and inventing one
+                would constrain a field nobody has mapped.
+              */}
+              <TextInput
+                value={draft.deliveryPort}
+                onChange={(e) => patchDelivery({ deliveryPort: e.target.value })}
+                placeholder="e.g. Jebel Ali"
+                disabled={disabled}
+              />
+            </FieldLabel>
+          )}
+          {show("deliveryFactoryCity") && (
+            <FieldLabel
+              label="Ex-factory location"
+              required={req.has("deliveryFactoryCity")}
+              anchor={FIELD_ANCHOR("deliveryFactoryCity")}
+            >
+              <ChoiceButtons
+                value={draft.deliveryFactoryCity}
+                onChange={(v) => patchDelivery({ deliveryFactoryCity: v })}
+                options={optsWithCurrent(DELIVERY_FACTORY_CITIES, draft.deliveryFactoryCity)}
+                disabled={disabled}
+                ariaLabel="Ex-factory location"
               />
             </FieldLabel>
           )}
@@ -2334,9 +2454,17 @@ export default function QuotationForm({
               required={req.has("highSeasCostBy")}
               anchor={FIELD_ANCHOR("highSeasCostBy")}
             >
+              {/*
+                ⚠ RECOMPOSES THE TERM (OCPI-35). The customer's-leg answer is
+                  appended to the delivery term only while the CUSTOMER bears
+                  the cost, so moving the bearer to Company must take it back out
+                  of the printed sentence — the server nulls the column on the
+                  same condition, and this is what keeps the screen agreeing with
+                  it before the save rather than after.
+              */}
               <ChoiceButtons
                 value={draft.highSeasCostBy}
-                onChange={(v) => patch({ highSeasCostBy: v })}
+                onChange={(v) => patchDelivery({ highSeasCostBy: v })}
                 options={optsKV(COST_BEARERS)}
                 clearable
                 disabled={disabled}
@@ -2358,6 +2486,34 @@ export default function QuotationForm({
                 clearable
                 disabled={disabled}
                 ariaLabel="Local delivery cost borne by"
+              />
+            </FieldLabel>
+          )}
+          {show("deliveryLeg") && (
+            <FieldLabel
+              label="Customer's delivery leg"
+              hint="joins the delivery term on the contract"
+              required={req.has("deliveryLeg")}
+              anchor={FIELD_ANCHOR("deliveryLeg")}
+            >
+              {/*
+                🔴 ASKED ONLY ON HIGH SEAS **AND** COST BY CUSTOMER — a third
+                   nested condition, settled with Ritesh Bhai on 02-09-2026:
+                   "when we select a company, we don't have to ask this thing."
+                   Both answers end at the customer premises, so the question is
+                   meaningless when the company is moving the goods.
+
+                🔴 THESE TWO WORDINGS ARE HIS OWN AND PRINT VERBATIM. They are
+                   two STARTING POINTS, not "everything vs part" — do not
+                   shorten them to end-to-end / port-to-port, which states a
+                   different thing entirely.
+              */}
+              <ChoiceButtons
+                value={draft.deliveryLeg}
+                onChange={(v) => patchDelivery({ deliveryLeg: v })}
+                options={optsKV(DELIVERY_LEGS)}
+                disabled={disabled}
+                ariaLabel="Customer's delivery leg"
               />
             </FieldLabel>
           )}
@@ -2534,31 +2690,44 @@ export default function QuotationForm({
             Both COLUMNS stay, and both values still round-trip: see the notes on
             `paymentType` and `deliveryDays` in fieldSpec.ts.
 
-          ⚠ THE DELIVERY TERM STAYS — SETTLED WITH THE CLIENT, 29-Aug-2026, and
-            recorded here because the instruction that came first said the
-            opposite. It was originally to be removed, on the reasoning that the
-            route is "already covered in commercial terms". Checking that turned
-            up why it is not:
+          ⚠ THE DELIVERY TERM MOVED UP, IT DID NOT GO (OCPI-35, 02-Sep-2026). A
+            "Delivery term" dropdown stood in this grid, beside the date. It now
+            sits at the HEAD of this section, merged with what used to be "High
+            seas delivery via" — the two asked the same question with
+            overlapping vocabularies, on a form where one of them was hidden
+            half the time. The strip up there is the same control; only the
+            question it answers got wider and gained its follow-ups.
 
-              · `{{trade_term}}` is written into the SALE CONDITIONS OF THE
-                SUPPLY clause of ALL TEN machine templates, as "Delivery Terms:
-                {{trade_term}}". An unresolved token prints a ruled blank by
-                design, so removing the field would have printed "Delivery Terms:
-                ________" on every detailed sheet.
+            The field itself was NOT removed, and the reasoning that saved it in
+            stage J.2 still holds and still governs:
 
-              · It is the ONLY delivery route an ordinary deal records anywhere.
-                Commercial terms asks "delivered via" on a HIGH SEAS deal alone,
-                so an "Others" deal answers nothing else about the route — and 11
-                of the 12 ordinary deals on record had filled this in.
+              · `{{trade_term}}` is live in the SALE CONDITIONS OF THE SUPPLY
+                clause of all 21 templated machines. An unresolved token prints a
+                ruled blank by design, so deleting the field would have printed
+                "Transport Terms: ________" on every contract. It is now COMPOSED
+                rather than picked — see `composeTradeTerm` — but it is the same
+                column feeding the same token, and no template was touched.
 
-              · The two papers were never saying the same thing anyway. The
-                SUMMARY sheet's "Term of Delivery" is built from the deal type
-                and who bears the cost ("Local Delivery · cost by Customer"); the
-                CONTRACT's "Delivery Terms" is this field ("Ex-Work Surat"). Two
-                different facts under two similar headings, on two papers.
+              · It is the ONLY delivery route an ordinary deal records anywhere,
+                which is exactly why the merged question is asked on BOTH deal
+                types now instead of on High Seas alone.
 
-            Do not remove this without re-reading the above. Stage J.2 is closed
-            as "no change", not as "not done yet".
+              · The two papers were never saying the same thing. The SUMMARY
+                sheet's "Term of Delivery" was built from the deal type and the
+                cost bearer ("Local Delivery · cost by Customer") while the
+                CONTRACT's clause carried this field ("Ex-Work Surat"). Two facts,
+                two similar headings, two papers. `quotationPdf.ts` now puts the
+                composed term into that row, so they finally agree.
+
+            ⚠ EVERYTHING THE DELETED BLOCK CARRIED WENT SOMEWHERE, ONE AT A TIME
+              (the container rule in CLAUDE.md): its `clearable` is on the merged
+              strip and is now conditional on the field being required; its
+              `optsWithCurrent` guard and the comment explaining it moved with
+              it; its "prints on the contract" hint became the composed read-out
+              that shows what the clause will actually say; its `FIELD_LABEL`
+              entry stayed put and was relabelled, because that key order is
+              revision-diff history; and `TRADE_TERMS`, the four-value list it
+              was the only caller of, was deleted with it.
         */}
         <div className="grid gap-3 sm:grid-cols-2">
           {/*
@@ -2589,36 +2758,6 @@ export default function QuotationForm({
             </FieldLabel>
             <p className="mt-1 text-[12px] text-grey-2">{DELIVERY_DATE_REMARK}</p>
           </div>
-          {/*
-            ⚠ BUTTONS, NOT A DROPDOWN (OCPI-26, asked for by Ritesh Bhai). Four
-              options from a FIXED list in code, so the strip shows every answer
-              without opening anything. `searchable` was never on it and the
-              placeholder goes with the dropdown; `clearable` is kept, because
-              the field is optional — it sits in `DETAIL_SHEET_FIELDS`, which
-              WARNS about a blank and never blocks one.
-
-            🔴 `optsWithCurrent`, NOT `opts`, AND THAT IS NOT DEFENSIVE CODING —
-               one deal on record carries "CIF Jebel Ali", which is not one of
-               the four. `ChoiceButtons` renders a value it cannot match as
-               nothing selected, and a single ↓ on the tabbed-to strip would
-               then overwrite a term that prints on a signed contract. See the
-               helper for the whole failure.
-
-            🔴 THIS CHANGES THE CONTROL AND NOTHING ELSE. `{{trade_term}}` is
-               live in the SALE CONDITIONS clause — "Transport Terms: …" — of 21
-               machine templates, and `fms_ocpi_write_oc` stores it verbatim.
-               The stored value, the payload key and the token are untouched.
-          */}
-          <FieldLabel label="Delivery term" hint="prints on the contract">
-            <ChoiceButtons
-              value={draft.tradeTerm}
-              onChange={(v) => patch({ tradeTerm: v })}
-              options={optsWithCurrent(TRADE_TERMS, draft.tradeTerm)}
-              clearable
-              disabled={disabled}
-              ariaLabel="Delivery term"
-            />
-          </FieldLabel>
         </div>
         {/*
           ⚠ THE FORMATS ARE A LIST UNDER THE BOX, NOT A PLACEHOLDER (OCPI-20,

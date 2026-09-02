@@ -34,6 +34,32 @@
  * frontend/.env.local, and signs in with the local browser-testing account file
  * so the masters are readable under RLS. The password is never printed.
  */
+/**
+ * ⚠ FIELDS THAT REACH A PAPER THROUGH ANOTHER FIELD, WHICH GREPPING CANNOT SEE.
+ *
+ * Everything else in this script is derived — that is the point of it. This is
+ * the one thing it cannot derive, so it is declared, and kept as short as the
+ * truth allows.
+ *
+ * A COMPOSED field is not rendered under its own name anywhere: it is folded
+ * into another field's value before that value reaches a renderer. OCPI-35's
+ * delivery answers are the case that forced this — `deliveryVia` + its three
+ * follow-ups compose into `tradeTerm` in `composeTradeTerm`, and `tradeTerm` is
+ * what `{{trade_term}}` prints on all 21 contracts. Without this table all four
+ * report as "screen only", which is the opposite of true, and the next print
+ * audit re-raises them as findings every time it runs.
+ *
+ * ⚠ ADDING A KEY HERE IS A CLAIM THAT MUST BE CHECKED ON A RENDERED PAGE, not a
+ *   way to silence the report. The target must itself print, and this script
+ *   asserts that below.
+ */
+const COMPOSES_INTO = {
+  deliveryVia: "tradeTerm",
+  deliveryPort: "tradeTerm",
+  deliveryFactoryCity: "tradeTerm",
+  deliveryLeg: "tradeTerm",
+};
+
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -231,18 +257,40 @@ const rows = fields.map((f) => {
     ? toks.map((t) => `\`{{${t}}}\` · **${usage.get(t)?.size ?? 0}/${denom}**`).join("<br>")
     : "—";
 
-  const printsAnywhere =
+  const rendersOwnName =
     shortRefs > 0 || longRefs > 0 || toks.some((t) => (usage.get(t)?.size ?? 0) > 0);
   const tokenDeclaredUnused = toks.length > 0 && !toks.some((t) => (usage.get(t)?.size ?? 0) > 0);
+  const composesInto = COMPOSES_INTO[f.key] ?? null;
+  const printsAnywhere = rendersOwnName || composesInto !== null;
 
-  const verdict = printsAnywhere
+  const verdict = rendersOwnName
     ? "prints"
-    : tokenDeclaredUnused
-      ? "**token offered, no template uses it**"
-      : "🔴 **screen only — deliberate?**";
+    : composesInto
+      ? `prints — composed into \`${composesInto}\``
+      : tokenDeclaredUnused
+        ? "**token offered, no template uses it**"
+        : "🔴 **screen only — deliberate?**";
 
-  return { ...f, short, long, tokenCell, verdict, printsAnywhere };
+  return { ...f, short, long, tokenCell, verdict, printsAnywhere, composesInto, rendersOwnName };
 });
+
+/*
+  ⚠ A COMPOSITION IS ONLY AS GOOD AS ITS TARGET. If `tradeTerm` ever stopped
+    printing, the four delivery answers would stop printing with it — silently,
+    and this map would still say "prints". Checked rather than assumed.
+*/
+for (const r of rows) {
+  if (!r.composesInto) continue;
+  const target = rows.find((x) => x.key === r.composesInto);
+  if (!target) {
+    throw new Error(`COMPOSES_INTO: ${r.key} names ${r.composesInto}, which is not a field`);
+  }
+  if (!target.rendersOwnName) {
+    throw new Error(
+      `COMPOSES_INTO: ${r.key} claims to print through ${r.composesInto}, but ${r.composesInto} reaches no document`,
+    );
+  }
+}
 
 /*
    ⚠ TWO DIFFERENT FAULTS, AND THEY ARE NOT THE SAME QUESTION.
