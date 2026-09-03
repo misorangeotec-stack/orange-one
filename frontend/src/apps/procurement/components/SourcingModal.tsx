@@ -12,6 +12,12 @@ import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
 import { RequestRefPanel } from "./PoRefPanel";
+import SourcingDocsCapture, {
+  asStoredDoc,
+  uploadSourcingFiles,
+  type SourcingFile,
+} from "./SourcingDocsCapture";
+import { SourcingDocsList } from "./DocLinks";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 /** One shortlisted vendor. Deliberately carries NO rate — see the header note. */
@@ -74,6 +80,18 @@ export default function SourcingModal({
    */
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reason, setReason] = useState("");
+  /**
+   * The evidence behind the rates. Held here, not in the capture component, so
+   * it survives the component's own re-renders and is reset by the same effect
+   * that resets everything else when the requisition changes.
+   *
+   * ⚠ NOT DRAFTED. `useStepDraft` persists to localStorage, and a File cannot
+   *   be serialised — a drafted list would come back as empty objects and the
+   *   upload would fail on a file that is no longer there. Stored files are
+   *   re-read from the requisition on open; unsent picks are deliberately lost
+   *   with the tab, which is the honest behaviour.
+   */
+  const [docs, setDocs] = useState<SourcingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
@@ -140,6 +158,7 @@ export default function SourcingModal({
     );
     setSelected(new Set(viewLines.map((l) => l.id)));
     setReason(request.sourcingReason ?? "");
+    setDocs(s.sourcingDocsForRequest(request.id).map(asStoredDoc));
     // Anything already saved counts as deliberate — never auto-overwrite it.
     setTouched(
       new Set(
@@ -328,6 +347,16 @@ export default function SourcingModal({
 
     setBusy(true);
     try {
+      /*
+        Attachments first, and deliberately so. If the upload dies halfway the
+        rates are still unsaved and the form is still on screen, which the buyer
+        can retry; `uploadSourcingFiles` remembers what already landed so the
+        retry does not re-upload it. The other order would bank the rates and
+        drop the evidence with nothing on screen to say it had happened.
+      */
+      const uploaded = await uploadSourcingFiles(request.id, docs, s.uploadSourcingDoc, setDocs);
+      await s.saveSourcingDocs(request.id, uploaded);
+
       await s.saveSourcingRequest({
         requestId: request.id,
         vendors: filledVendors.map((v) => ({ vendorId: v.vendorId, remark: v.remark.trim() || null })),
@@ -359,6 +388,10 @@ export default function SourcingModal({
       onClose={onClose}
       size="2xl"
       readOnly={readOnly}
+      /* The links must sit OUTSIDE Modal's disabled read-only fieldset or they
+         come up inert — see SourcingDocsList. In edit mode the capture below
+         renders its own tiles instead. */
+      readOnlyHeader={readOnly ? <SourcingDocsList docs={s.sourcingDocsForRequest(request.id)} /> : undefined}
       title={`Sourcing — ${request.requestNo}`}
       subtitle={
         readOnly
@@ -664,6 +697,24 @@ export default function SourcingModal({
             </p>
           )}
         </div>
+
+        {/* ---- what the rates are based on ---- */}
+        {!readOnly && (
+        <SourcingDocsCapture
+          value={docs}
+          onChange={setDocs}
+          onError={setErr}
+          onOpenStored={(d) => {
+            void (async () => {
+              try {
+                window.open(await s.sourcingDocUrl(d.path), "_blank", "noopener,noreferrer");
+              } catch (e) {
+                setErr((e as Error).message);
+              }
+            })();
+          }}
+        />
+        )}
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>

@@ -5,6 +5,7 @@ import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useImportStore } from "../store";
 import QtyTotal from "./QtyTotal";
 import { RequestRefPanel } from "./PoRefPanel";
+import { SourcingDocsList } from "./DocLinks";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 /**
@@ -66,6 +67,22 @@ export default function ApprovalModal({
     [allLines, editing, readOnly]
   );
 
+  /**
+   * Every file the buyer attached while sourcing, pooled across the lines shown.
+   *
+   * ⚠ POOLED, BECAUSE THE TWO STEPS WORK AT DIFFERENT GRAINS. Import sources one
+   *   LINE at a time but approves a WHOLE requisition, so a four-line request is
+   *   four separate sets of quotations arriving at one decision. Showing only
+   *   one line's files would silently hide the rest from the approver.
+   *   `allLines` rather than `lines`: a view narrows nothing, and a decision
+   *   should see the evidence for every line on the requisition, including any
+   *   already decided.
+   */
+  const sourcingDocs = useMemo(
+    () => allLines.flatMap((l) => s.sourcingDocsForLine(l.id)),
+    [allLines, s]
+  );
+
   useEffect(() => {
     if (!open) return;
     setMode("none");
@@ -113,12 +130,23 @@ export default function ApprovalModal({
       subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${s.vendorById(recommendedId)?.name ?? "—"}${
         editing && !readOnly ? " · revisable until the PO is generated" : ""
       }`}
+      /*
+        ⚠ RENDERED TWICE ON PURPOSE — see the copy in the body below. `Modal`
+          renders `readOnlyHeader` ONLY in read-only mode, and it puts the body
+          inside a disabled <fieldset>; each link mints a signed URL on click, so
+          a link in the body is dead in a view and a link in this slot never
+          appears while the approver is actually deciding.
+      */
+      readOnlyHeader={<SourcingDocsList docs={sourcingDocs} />}
     >
       <div className="space-y-4">
         {/* Who this spend is being approved FOR, and against whom. The vendor is
             in the subtitle too, but an approver reading a money decision should
             not have to find it there. */}
         <RequestRefPanel request={request} vendorId={recommendedId} vendorFieldLabel="Recommended Vendor" />
+
+        {/* The deciding half of the pair described on `readOnlyHeader` above. */}
+        {!readOnly && <SourcingDocsList docs={sourcingDocs} />}
 
         {/* ---- the items (quantity only) ---- */}
         <div className="overflow-x-auto rounded-xl border border-line">

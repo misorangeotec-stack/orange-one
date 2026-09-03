@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FileText, Image } from "lucide-react";
 import { useProcurementStore } from "../store";
-import type { Grn, Pi, PurchaseOrder, QcInspection, TallyBooking } from "../types";
+import type { Grn, Pi, PurchaseOrder, QcInspection, SourcingDoc, TallyBooking } from "../types";
 
 /**
  * The stored-file links, one per document a PO can carry.
@@ -104,4 +104,35 @@ export function PoDocLink({ po }: { po: PurchaseOrder }) {
   // Always "PO PDF", never the stored filename: a PO is shared as one known
   // document, and vendors' filenames are noise next to that.
   return <DocButton name={null} fallback="PO PDF" icon="file" getUrl={() => s.poDocumentUrl(po.documentPath!)} />;
+}
+
+/**
+ * Every file attached at sourcing, as one row of links.
+ *
+ * ⚠ THIS IS THE READ-ONLY HALF OF THE FEATURE, AND IT MUST SIT IN `Modal`'s
+ *   `readOnlyHeader`. Each link mints a short-lived signed URL on click, so it
+ *   has to be a button, and `Modal` puts its body inside a disabled `<fieldset>`
+ *   in read-only mode — a button in the body comes up inert. Same rule, and the
+ *   same reason, as `PoRefDocs`.
+ *
+ * Renders nothing when there is nothing attached, so a caller can pass it
+ * unconditionally.
+ */
+export function SourcingDocsList({ docs }: { docs: SourcingDoc[] }) {
+  const s = useProcurementStore();
+  if (docs.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Sourcing attachments</span>
+      {docs.map((d) => (
+        <DocButton
+          key={d.path}
+          name={d.name}
+          fallback="View file"
+          icon={/\.(png|jpe?g|gif|webp|heic|heif|bmp)$/i.test(d.name) ? "image" : "file"}
+          getUrl={() => s.sourcingDocUrl(d.path)}
+        />
+      ))}
+    </div>
+  );
 }

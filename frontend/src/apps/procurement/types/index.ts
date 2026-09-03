@@ -167,6 +167,21 @@ export interface RequestVendor {
   sortOrder: number;
 }
 
+/**
+ * One file attached at sourcing on a requisition — a vendor's quotation, a rate
+ * comparison, a photographed sheet. Many per requisition, ordered by
+ * `sortOrder`; the whole list is replaced on every save.
+ */
+export interface SourcingDoc {
+  id: string;
+  requestId: string;
+  path: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  sortOrder: number;
+}
+
 export type LineStatus =
   | "sourcing"
   | "approval"
