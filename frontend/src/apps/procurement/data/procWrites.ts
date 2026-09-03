@@ -1346,3 +1346,61 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
     .in("id", ids);
   if (error) throw new Error(error.message);
 }
+
+/* --------------------------- sourcing attachments -------------------------- */
+
+/**
+ * A file attached at sourcing. `path` is the object key in `fms-purchase-docs`;
+ * `name` is what the buyer's machine called it, kept because a key built from a
+ * timestamp tells the approver nothing about which vendor's quote they are about
+ * to open.
+ */
+export interface SourcingDocInput {
+  path: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+}
+
+/**
+ * Upload one sourcing attachment. Namespaced `sourcing/<requestId>/` inside the
+ * bucket the app already uses — a new bucket would need its own policies for no
+ * gain, and the prefix is what keeps these apart from the PI and PO files.
+ */
+export async function uploadSourcingDoc(requestId: string, file: File): Promise<SourcingDocInput> {
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const path = `sourcing/${requestId}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(PI_DOCS_BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  return { path, name: file.name, mimeType: file.type || null, sizeBytes: file.size };
+}
+
+/** Short-lived signed URL for a stored sourcing attachment. */
+export async function sourcingDocUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(PI_DOCS_BUCKET).createSignedUrl(path, 60 * 10);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}
+
+/**
+ * Replace the whole attachment list for a requisition's sourcing.
+ *
+ * Called separately from `saveSourcingRequest`, and BEFORE it: a failure here
+ * leaves the rates unsaved and the form still on screen, which is recoverable.
+ * The reverse order would save rates and lose the evidence with no sign that it
+ * had happened.
+ */
+export async function saveSourcingDocs(requestId: string, docs: SourcingDocInput[]): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_save_sourcing_docs", {
+    p_request_id: requestId,
+    p_docs: docs.map((d) => ({
+      path: d.path,
+      name: d.name,
+      mime_type: d.mimeType ?? "",
+      size_bytes: d.sizeBytes ?? "",
+    })) as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}

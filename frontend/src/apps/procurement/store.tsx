@@ -23,6 +23,7 @@ import type {
   PurchaseRequest,
   RequestItem,
   RequestVendor,
+  SourcingDoc,
   VendorItemPrice,
   Quotation,
   PurchaseOrder,
@@ -116,6 +117,9 @@ import {
   saveSourcing as saveSourcingWrite,
   decideApproval as decideApprovalWrite,
   saveSourcingRequest as saveSourcingRequestWrite,
+  uploadSourcingDoc as uploadSourcingDocWrite,
+  sourcingDocUrl as sourcingDocUrlWrite,
+  saveSourcingDocs as saveSourcingDocsWrite,
   decideApprovalRequest as decideApprovalRequestWrite,
   updateApprovalRequest as updateApprovalRequestWrite,
   reassignApprovalRequest as reassignApprovalRequestWrite,
@@ -176,6 +180,7 @@ import {
   type QuotationInput,
   type SourcingVendorInput,
   type SourcingLineInput,
+  type SourcingDocInput,
   type ApprovalDecision,
   type ApprovalLineOverride,
   type PiItemInput,
@@ -285,6 +290,7 @@ interface ProcurementStoreValue {
   myRequests: PurchaseRequest[];
   requestItems: RequestItem[];
   requestVendors: RequestVendor[];
+  sourcingDocs: SourcingDoc[];
   vendorItemPrices: VendorItemPrice[];
   quotations: Quotation[];
   pos: PurchaseOrder[];
@@ -297,6 +303,8 @@ interface ProcurementStoreValue {
   quotationsForLine: (lineId: string) => Quotation[];
   /** The up-to-3 vendor shortlist captured at sourcing, in display order. */
   vendorsForRequest: (requestId: string) => RequestVendor[];
+  /** The files attached at sourcing, in the order the buyer arranged them. */
+  sourcingDocsForRequest: (requestId: string) => SourcingDoc[];
   /** The standing rate-card row for a (vendor, item), if one exists. */
   priceFor: (vendorId: string, itemId: string) => VendorItemPrice | undefined;
   /** Sum of the lines currently under approval — what the band is picked on. */
@@ -496,6 +504,12 @@ interface ProcurementStoreValue {
     lines: SourcingLineInput[];
     sourcingReason: string | null;
   }) => Promise<void>;
+  /** Upload one sourcing attachment; returns what `saveSourcingDocs` needs back. */
+  uploadSourcingDoc: (requestId: string, file: File) => Promise<SourcingDocInput>;
+  /** A short-lived signed URL for a stored sourcing attachment. */
+  sourcingDocUrl: (path: string) => Promise<string>;
+  /** Replace the whole attachment list for a requisition's sourcing. */
+  saveSourcingDocs: (requestId: string, docs: SourcingDocInput[]) => Promise<void>;
   /** Stage 3 — one decision for the whole requisition, banded on its total. Returns 'approved' | 'rerouted' | 'ok'. */
   decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null; lines?: ApprovalLineOverride[] | null }) => Promise<string>;
   /** Stage 3 correction — change an already-approved requisition's decision. Returns 'approved' | 'rerouted' | 'ok'. */
@@ -679,6 +693,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
   const requestVendors = data?.requestVendors ?? [];
+  const sourcingDocs = data?.sourcingDocs ?? [];
   const vendorItemPrices = data?.vendorItemPrices ?? [];
   const quotations = data?.quotations ?? [];
   const pos = data?.pos ?? [];
@@ -1094,9 +1109,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       lineById: (id) => (id ? requestItems.find((l) => l.id === id) : undefined),
       quotationsForLine: (lineId) => quotations.filter((q) => q.requestItemId === lineId),
       requestVendors,
+      sourcingDocs,
       vendorItemPrices,
       vendorsForRequest: (requestId) =>
         requestVendors.filter((v) => v.requestId === requestId).sort((a, b) => a.sortOrder - b.sortOrder),
+      sourcingDocsForRequest: (requestId) =>
+        sourcingDocs.filter((d) => d.requestId === requestId).sort((a, b) => a.sortOrder - b.sortOrder),
       priceFor: (vendorId, itemId) =>
         vendorItemPrices.find((p) => p.active && p.vendorId === vendorId && p.itemId === itemId),
       requestApprovalTotal: requestApprovalTotalOf,
@@ -1228,6 +1246,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         });
         await invalidate();
         return id;
+      },
+      uploadSourcingDoc: (requestId, file) => uploadSourcingDocWrite(requestId, file),
+      sourcingDocUrl: (path) => sourcingDocUrlWrite(path),
+      saveSourcingDocs: async (requestId, docs) => {
+        await saveSourcingDocsWrite(requestId, docs);
+        await invalidate();
       },
       saveSourcingRequest: async (input) => {
         await saveSourcingRequestWrite(input);

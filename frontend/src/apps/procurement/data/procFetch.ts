@@ -18,6 +18,7 @@ import type {
   PurchaseRequest,
   RequestItem,
   RequestVendor,
+  SourcingDoc,
   VendorItemPrice,
   Quotation,
   PurchaseOrder,
@@ -70,6 +71,7 @@ type Tbl =
   | "fms_purchase_requests"
   | "fms_purchase_request_items"
   | "fms_purchase_request_vendors"
+  | "fms_purchase_sourcing_docs"
   | "fms_purchase_vendor_item_prices"
   | "fms_purchase_quotations"
   | "fms_purchase_pos"
@@ -100,6 +102,34 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
     if (rows.length < PAGE) break;
   }
   return out;
+}
+
+/**
+ * `fetchAll` for a table the deployed database may not have yet.
+ *
+ * ⚠ THIS EXISTS FOR EXACTLY ONE HAZARD, the one CLAUDE.md calls out under
+ *   "Deploy ordering matters". Every other read here is inside the same
+ *   `Promise.all`, and `fetchAll` throws — so one missing relation does not
+ *   degrade a panel, it takes down the ENTIRE app's data load. The sourcing
+ *   attachments table ships in migration 20260903120000; a frontend that
+ *   reaches production first would otherwise black out Purchase for everyone
+ *   until the SQL was applied.
+ *
+ * It swallows ONLY "relation does not exist" (Postgres 42P01, surfaced by
+ * PostgREST as PGRST205). Every other error still throws — a permissions
+ * failure or a dropped connection must not quietly read as "no attachments".
+ *
+ * Once the migration is applied everywhere, this can go back to plain
+ * `fetchAll`.
+ */
+async function fetchAllOptional(table: Tbl, orderBy = "created_at"): Promise<any[]> {
+  try {
+    return await fetchAll(table, orderBy);
+  } catch (e) {
+    const msg = (e as Error).message ?? "";
+    if (/does not exist|schema cache/i.test(msg)) return [];
+    throw e;
+  }
 }
 
 export interface ProcConfig {
@@ -143,6 +173,7 @@ export interface ProcurementData {
   requests: PurchaseRequest[];
   requestItems: RequestItem[];
   requestVendors: RequestVendor[];
+  sourcingDocs: SourcingDoc[];
   vendorItemPrices: VendorItemPrice[];
   quotations: Quotation[];
   pos: PurchaseOrder[];
@@ -292,6 +323,16 @@ const mapRequest = (r: any): PurchaseRequest => ({
   cancelledBy: r.cancelled_by ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
+});
+
+const mapSourcingDoc = (r: any): SourcingDoc => ({
+  id: r.id,
+  requestId: r.request_id,
+  path: r.path,
+  name: r.name,
+  mimeType: r.mime_type ?? null,
+  sizeBytes: r.size_bytes === null || r.size_bytes === undefined ? null : Number(r.size_bytes),
+  sortOrder: r.sort_order ?? 0,
 });
 
 const mapRequestVendor = (r: any): RequestVendor => ({
@@ -588,6 +629,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     followups,
     activity,
     notifications,
+    sourcingDocs,
   ] = await Promise.all([
     fetchAll("fms_purchase_companies"),
     fetchAll("fms_purchase_categories"),
@@ -619,6 +661,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     fetchAll("fms_purchase_followups"),
     fetchAll("fms_purchase_activity"),
     fetchAll("fms_purchase_notifications"),
+    fetchAllOptional("fms_purchase_sourcing_docs"),
   ]);
 
   const configByKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -647,6 +690,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     requests: requests.map(mapRequest),
     requestItems: requestItems.map(mapRequestItem),
     requestVendors: requestVendors.map(mapRequestVendor),
+    sourcingDocs: sourcingDocs.map(mapSourcingDoc),
     vendorItemPrices: vendorItemPrices.map(mapVendorItemPrice),
     quotations: quotations.map(mapQuotation),
     pos: pos.map(mapPo),

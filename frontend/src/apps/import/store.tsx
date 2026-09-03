@@ -24,6 +24,7 @@ import type {
   PurchaseRequest,
   RequestItem,
   Quotation,
+  SourcingDoc,
   PurchaseOrder,
   PoItem,
   Pi,
@@ -108,6 +109,9 @@ import {
   updateRequest as updateRequestWrite,
   cancelRequest as cancelRequestWrite,
   saveSourcing as saveSourcingWrite,
+  uploadSourcingDoc as uploadSourcingDocWrite,
+  sourcingDocUrl as sourcingDocUrlWrite,
+  saveSourcingDocs as saveSourcingDocsWrite,
   decideApproval as decideApprovalWrite,
   decideApprovalRequest as decideApprovalRequestWrite,
   updateApprovalRequest as updateApprovalRequestWrite,
@@ -167,6 +171,7 @@ import {
   type NewRequestLine,
   type EditRequestLine,
   type QuotationInput,
+  type SourcingDocInput,
   type ApprovalDecision,
   type GrnItemInput,
 } from "./data/importWrites";
@@ -280,6 +285,8 @@ interface ImportStoreValue {
   cancellableLinesForRequest: (requestId: string) => RequestItem[];
   lineById: (id: string | null) => RequestItem | undefined;
   quotationsForLine: (lineId: string) => Quotation[];
+  /** The files attached at sourcing on a LINE, in the order the buyer arranged them. */
+  sourcingDocsForLine: (lineId: string) => SourcingDoc[];
   poById: (id: string | null) => PurchaseOrder | undefined;
   poItemsForPo: (poId: string) => PoItem[];
   poItemForLine: (requestItemId: string) => PoItem | undefined;
@@ -480,6 +487,12 @@ interface ImportStoreValue {
     finalRate: number;
     sourcingReason: string | null;
   }) => Promise<void>;
+  /** Upload one sourcing attachment; returns what `saveSourcingDocs` needs back. */
+  uploadSourcingDoc: (requestItemId: string, file: File) => Promise<SourcingDocInput>;
+  /** A short-lived signed URL for a stored sourcing attachment. */
+  sourcingDocUrl: (path: string) => Promise<string>;
+  /** Replace the whole attachment list for a line's sourcing. */
+  saveSourcingDocs: (requestItemId: string, docs: SourcingDocInput[]) => Promise<void>;
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   /** One decision for the whole requisition, banded on its total (Import's request-scoped approval). `override` carries revised per-line rates. */
   decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null; rates?: { requestItemId: string; rate: number }[] | null }) => Promise<void>;
@@ -653,6 +666,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
   const quotations = data?.quotations ?? [];
+  const sourcingDocs = data?.sourcingDocs ?? [];
   const pos = data?.pos ?? [];
   const poItems = data?.poItems ?? [];
   const pis = data?.pis ?? [];
@@ -1059,6 +1073,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         cancellableLinesOf((itemsByGroupId.get(requestId) ?? []).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt))),
       lineById: (id) => (id ? requestItems.find((l) => l.id === id) : undefined),
       quotationsForLine: (lineId) => quotations.filter((q) => q.requestItemId === lineId),
+      sourcingDocsForLine: (lineId) =>
+        sourcingDocs.filter((d) => d.requestItemId === lineId).sort((a, b) => a.sortOrder - b.sortOrder),
       poById: (id) => (id ? pos.find((p) => p.id === id) : undefined),
       poItemsForPo: (poId) => poItems.filter((pi) => pi.poId === poId),
       poItemForLine: (requestItemId) => poItemByLine.get(requestItemId),
@@ -1204,6 +1220,12 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       },
       cancelRequest: async (requestId, reason) => {
         await cancelRequestWrite(requestId, reason);
+        await invalidate();
+      },
+      uploadSourcingDoc: (requestItemId, file) => uploadSourcingDocWrite(requestItemId, file),
+      sourcingDocUrl: (path) => sourcingDocUrlWrite(path),
+      saveSourcingDocs: async (requestItemId, docs) => {
+        await saveSourcingDocsWrite(requestItemId, docs);
         await invalidate();
       },
       saveSourcing: async (input) => {

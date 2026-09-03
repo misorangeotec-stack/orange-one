@@ -10,6 +10,7 @@ import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
 import { RequestRefPanel } from "./PoRefPanel";
+import { SourcingDocsList } from "./DocLinks";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 /**
@@ -272,6 +273,18 @@ export default function ApprovalModal({
       readOnly={readOnly}
       title={`${readOnly ? "Approval" : editing ? "Edit approval" : "Approve"} — ${request.requestNo}`}
       subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${s.vendorById(recommendedId)?.name ?? "—"}`}
+      /*
+        What the buyer attached at sourcing — the quotations and the comparison
+        behind the rates below.
+        ⚠ IT HAS TO BE RENDERED TWICE, and this is not a duplicate by accident.
+          `Modal` renders `readOnlyHeader` ONLY in read-only mode, and it puts
+          the body inside a disabled <fieldset>; each link mints a signed URL on
+          click, so a link in the body is dead in a view and a link in this slot
+          never appears while the approver is actually deciding. So: this slot
+          covers the view, and the copy in the body covers the decision. Same
+          split, same reason, as `PoRefDocs` on the PO stages.
+      */
+      readOnlyHeader={<SourcingDocsList docs={s.sourcingDocsForRequest(request.id)} />}
     >
       <div className="space-y-4">
         <DraftBar draft={draft} />
@@ -318,6 +331,9 @@ export default function ApprovalModal({
             <strong className="text-navy">Single-source reason:</strong> {request.sourcingReason}
           </p>
         )}
+
+        {/* The deciding half of the pair described on `readOnlyHeader` above. */}
+        {!readOnly && <SourcingDocsList docs={s.sourcingDocsForRequest(request.id)} />}
 
         {/* ---- the items — editable in override mode, read-only otherwise ---- */}
         <div className="overflow-x-auto rounded-xl border border-line">

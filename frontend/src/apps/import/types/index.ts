@@ -190,6 +190,26 @@ export interface PurchaseRequest {
   editedBy: string | null;
 }
 
+/**
+ * One file attached at sourcing on an Import request LINE — a vendor's
+ * quotation, a rate comparison, a photographed sheet.
+ *
+ * ⚠ PER LINE, NOT PER REQUISITION, unlike the Domestic app's SourcingDoc.
+ *   `fms_import_save_sourcing` sources one line at a time, so two lines of the
+ *   same requisition are two separate sourcing events with two separate sets of
+ *   quotations. Keying these on the requisition would make the second line
+ *   appear to inherit the first line's files.
+ */
+export interface SourcingDoc {
+  id: string;
+  requestItemId: string;
+  path: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  sortOrder: number;
+}
+
 export type LineStatus =
   | "sourcing"
   | "approval"

@@ -6,6 +6,11 @@ import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import RequestMasterModal from "./RequestMasterModal";
 import { RequestRefPanel } from "./PoRefPanel";
+import SourcingDocsCapture, {
+  asStoredDoc,
+  uploadSourcingFiles,
+  type SourcingFile,
+} from "./SourcingDocsCapture";
 import { useImportStore } from "../store";
 import { inr, fxMoney } from "../lib/format";
 import type { RequestItem } from "../types";
@@ -41,6 +46,14 @@ export default function SourcingModal({
   const [finalQty, setFinalQty] = useState("");
   const [finalRate, setFinalRate] = useState("");
   const [reason, setReason] = useState("");
+  /**
+   * The evidence behind the rates — see SourcingDocsCapture.
+   *
+   * ⚠ Held here, not in the capture component, and NOT persisted: a File cannot
+   *   be serialised, so unsent picks are deliberately lost with the tab. Stored
+   *   files are re-read from the line whenever the modal opens on it.
+   */
+  const [docs, setDocs] = useState<SourcingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
@@ -74,6 +87,7 @@ export default function SourcingModal({
     setFinalQty(String(line.finalQty ?? line.quantity));
     setFinalRate(line.finalRate === null ? "" : String(line.finalRate));
     setReason(line.sourcingReason ?? "");
+    setDocs(s.sourcingDocsForLine(line.id).map(asStoredDoc));
     setErr(null);
     setRequested(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,6 +128,16 @@ export default function SourcingModal({
 
     setBusy(true);
     try {
+      /*
+        Attachments first, and deliberately so. If the upload dies halfway the
+        quotations are still unsaved and the form is still on screen, which the
+        buyer can retry; `uploadSourcingFiles` remembers what already landed so
+        the retry does not re-upload it. The other order would bank the rates
+        and drop the evidence with nothing on screen to say it had happened.
+      */
+      const uploaded = await uploadSourcingFiles(line.id, docs, s.uploadSourcingDoc, setDocs);
+      await s.saveSourcingDocs(line.id, uploaded);
+
       await s.saveSourcing({
         requestItemId: line.id,
         quotations: filledRows.map((r) => ({
@@ -234,6 +258,22 @@ export default function SourcingModal({
             <TextInput value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. single-source vendor" />
           </FieldLabel>
         )}
+
+        {/* ---- what the rates are based on ---- */}
+        <SourcingDocsCapture
+          value={docs}
+          onChange={setDocs}
+          onError={setErr}
+          onOpenStored={(d) => {
+            void (async () => {
+              try {
+                window.open(await s.sourcingDocUrl(d.path), "_blank", "noopener,noreferrer");
+              } catch (e) {
+                setErr((e as Error).message);
+              }
+            })();
+          }}
+        />
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>

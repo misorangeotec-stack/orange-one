@@ -2758,6 +2758,9 @@ export type Database = {
           qualification_ids: string[]
           reject_reason: string | null
           rejected_at: string | null
+          reopen_reason: string | null
+          reopened_at: string | null
+          reopened_by: string | null
           reporting_to_ids: string[]
           reporting_to_note: string | null
           request_date: string
@@ -2823,6 +2826,9 @@ export type Database = {
           qualification_ids?: string[]
           reject_reason?: string | null
           rejected_at?: string | null
+          reopen_reason?: string | null
+          reopened_at?: string | null
+          reopened_by?: string | null
           reporting_to_ids?: string[]
           reporting_to_note?: string | null
           request_date?: string
@@ -2888,6 +2894,9 @@ export type Database = {
           qualification_ids?: string[]
           reject_reason?: string | null
           rejected_at?: string | null
+          reopen_reason?: string | null
+          reopened_at?: string | null
+          reopened_by?: string | null
           reporting_to_ids?: string[]
           reporting_to_note?: string | null
           request_date?: string
@@ -5647,6 +5656,50 @@ export type Database = {
           },
         ]
       }
+      fms_purchase_sourcing_docs: {
+        Row: {
+          created_at: string
+          id: string
+          mime_type: string | null
+          name: string
+          path: string
+          request_id: string
+          size_bytes: number | null
+          sort_order: number
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name: string
+          path: string
+          request_id: string
+          size_bytes?: number | null
+          sort_order?: number
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name?: string
+          path?: string
+          request_id?: string
+          size_bytes?: number | null
+          sort_order?: number
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_sourcing_docs_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_purchase_requests: {
         Row: {
           category_id: string
@@ -8198,6 +8251,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_hr_reopen_requisition: {
+        Args: { p_reason: string; p_req: string }
+        Returns: undefined
+      }
       fms_hr_resolve_master_request: {
         Args: {
           p_approve: boolean
@@ -8893,6 +8950,13 @@ export type Database = {
           p_recommended_vendor_id: string
           p_request_item_id: string
           p_sourcing_reason?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_save_sourcing_docs: {
+        Args: {
+          p_docs: Json
+          p_request_id: string
         }
         Returns: undefined
       }
