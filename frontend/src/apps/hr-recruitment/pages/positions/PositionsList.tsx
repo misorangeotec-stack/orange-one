@@ -8,6 +8,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import { formatDateDMY } from "@/shared/lib/date";
 import { dueState } from "@/shared/lib/workingDays";
 import { HoldCancelModal } from "../../components/MrfModals";
+import { stateNoteText } from "../../components/StateNote";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
@@ -110,10 +111,18 @@ export default function PositionsList() {
       {
         key: "status",
         header: "State",
+        // Hover says WHY it stopped — reason, person, date — without opening the position.
+        // Closed keeps its own green: a vacancy that filled every seat is a success, and
+        // painting it the same grey as an abandoned one is what made the two look alike.
         cell: (r) => (
           <span
+            title={stateNoteText(r, s.personName) ?? undefined}
             className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
-              isLivePosition(r) ? "bg-[#E9F8EF] text-ryg-green" : "bg-page text-grey-2"
+              isLivePosition(r)
+                ? "bg-[#E9F8EF] text-ryg-green"
+                : r.status === "closed"
+                  ? "bg-[#E9F7EF] text-ryg-green"
+                  : "bg-page text-grey-2"
             }`}
           >
             {isLivePosition(r) ? "Open" : REQ_STATUS_LABEL[r.status]}
@@ -328,7 +337,10 @@ export default function PositionsList() {
                     onClick={() => setHoldFor({ r, mode: "cancel" })}
                     className="text-[12.5px] text-grey hover:text-ryg-red hover:underline"
                   >
-                    Close
+                    {/* "Cancel", because that is the status it writes. It said "Close" for
+                        months and cancelled five real vacancies — and `closed` is not even
+                        reachable from here: only the seats-filled sync ever writes it. */}
+                    Cancel
                   </button>
                 )}
               </div>

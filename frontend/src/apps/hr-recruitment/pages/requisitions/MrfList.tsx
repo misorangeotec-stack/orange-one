@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDateDMY } from "@/shared/lib/date";
 import StatusPill from "../../components/StatusPill";
+import { stateNoteText } from "../../components/StateNote";
 import { useHrStore } from "../../store";
 import { REQ_STATUS_LABEL, salaryLabel } from "../../lib/format";
 import type { Requisition } from "../../types";
@@ -105,7 +106,7 @@ export default function MrfList() {
       {
         key: "status",
         header: "Status",
-        cell: (r) => <StatusPill status={r.status} />,
+        cell: (r) => <StatusPill status={r.status} title={stateNoteText(r, s.personName) ?? undefined} />,
         sortValue: (r) => REQ_STATUS_LABEL[r.status],
         // Tick any combination, and open on everything EXCEPT Closed: a filled
         // vacancy is finished business, and on a list of live work it is the one

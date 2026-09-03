@@ -8,6 +8,7 @@ import { bucketOf, todayLocalIso } from "@/shared/lib/dueBuckets";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StatusPill from "../components/StatusPill";
+import { stateNoteText } from "../components/StateNote";
 import ReportTable, { type ReportColumn } from "../components/ReportTable";
 import {
   ChartCard,
@@ -655,7 +656,9 @@ export default function Dashboard() {
                     {r.mrfNo}
                   </Link>
                   <span className="text-navy">{r.jobTitle}</span>
-                  <StatusPill status={r.status} />
+                  {/* The requester's own list — the one place a cancellation reason was
+                      always aimed and never arrived. Hover shows why, who and when. */}
+                  <StatusPill status={r.status} title={stateNoteText(r, s.personName) ?? undefined} />
                   <span className="ml-auto flex items-center gap-2 text-[12.5px] text-grey-2">
                     {stepByKey(step)?.short}
                     <DueCell dueIso={s.dueIsoFor(r, step)} />

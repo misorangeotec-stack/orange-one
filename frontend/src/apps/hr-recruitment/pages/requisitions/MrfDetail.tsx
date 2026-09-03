@@ -8,6 +8,7 @@ import { Field } from "@/shared/components/ui/Readout";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import Tabs from "@/shared/components/ui/Tabs";
 import MrfStepper from "../../components/MrfStepper";
+import StateNote from "../../components/StateNote";
 import StatusPill from "../../components/StatusPill";
 import CandidateBoard from "../../components/kanban/CandidateBoard";
 import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
@@ -97,7 +98,10 @@ export default function MrfDetail() {
   const dept = s.departments.find((d) => d.id === r.departmentId)?.name ?? "—";
   const loc = s.locations.find((l) => l.id === r.locationId)?.name ?? "—";
   const jobType = s.jobTypes.find((t) => t.id === r.jobTypeId)?.name ?? "—";
-  const person = (uid: string | null) => (uid ? (s.profileById(uid)?.name ?? "Unknown") : "—");
+  // `personName`, not `profileById`: the directory is scoped by RLS to the reader's own
+  // department, so every actor outside it — the approver, the canceller, whoever raised
+  // it — rendered as "Unknown". This page is mostly a record of who did what.
+  const person = (uid: string | null) => (uid ? s.personName(uid) : "—");
   const peopleList = (ids: string[], note: string | null) => {
     const names = ids.map((uid) => person(uid)).filter(Boolean);
     const all = [...names, ...(note ? [note] : [])];
@@ -246,24 +250,9 @@ export default function MrfDetail() {
         </div>
         <MrfStepper requisition={r} />
 
-        {r.status === "sent_back" && r.sentBackReason && (
-          <div className="rounded-xl border border-ryg-red/30 bg-[#FDECEC]/50 px-4 py-3">
-            <div className="text-[12px] font-semibold uppercase tracking-wide text-ryg-red">Sent back</div>
-            <p className="mt-1 text-[13px] text-navy">{r.sentBackReason}</p>
-          </div>
-        )}
-        {r.status === "rejected" && r.rejectReason && (
-          <div className="rounded-xl border border-ryg-red/30 bg-[#FDECEC]/50 px-4 py-3">
-            <div className="text-[12px] font-semibold uppercase tracking-wide text-ryg-red">Rejected</div>
-            <p className="mt-1 text-[13px] text-navy">{r.rejectReason}</p>
-          </div>
-        )}
-        {r.status === "on_hold" && r.holdReason && (
-          <div className="rounded-xl border border-line bg-page px-4 py-3">
-            <div className="text-[12px] font-semibold uppercase tracking-wide text-grey">On hold</div>
-            <p className="mt-1 text-[13px] text-navy">{r.holdReason}</p>
-          </div>
-        )}
+        {/* Sent back / Rejected / On hold / Cancelled / Closed — one component, so the
+            reason, the person and the date are stated the same way everywhere. */}
+        <StateNote requisition={r} />
 
         {(r.hrRemarks || r.mgmtRemarks) && (
           <div className="grid gap-3 sm:grid-cols-2">

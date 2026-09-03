@@ -2727,6 +2727,7 @@ export type Database = {
           experience_max_years: number | null
           experience_min_years: number | null
           freshers_ok: boolean
+          held_by: string | null
           hiring_manager_ids: string[]
           hold_at: string | null
           hold_reason: string | null
@@ -2795,6 +2796,7 @@ export type Database = {
           experience_max_years?: number | null
           experience_min_years?: number | null
           freshers_ok?: boolean
+          held_by?: string | null
           hiring_manager_ids?: string[]
           hold_at?: string | null
           hold_reason?: string | null
@@ -2863,6 +2865,7 @@ export type Database = {
           experience_max_years?: number | null
           experience_min_years?: number | null
           freshers_ok?: boolean
+          held_by?: string | null
           hiring_manager_ids?: string[]
           hold_at?: string | null
           hold_reason?: string | null

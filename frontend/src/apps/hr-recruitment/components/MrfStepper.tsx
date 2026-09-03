@@ -184,14 +184,8 @@ export default function MrfStepper({ requisition: r }: { requisition: Requisitio
     return { activeIndex: best, finished: false };
   }, [s, r, steps]);
 
-  return (
-    <div className="space-y-2">
-      <PoStageRail nodes={nodes} activeIndex={activeIndex} finished={finished} />
-      {(r.status === "rejected" || r.status === "cancelled") && (
-        <span className="inline-block rounded-full bg-[#FDECEC] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-ryg-red">
-          {r.status === "rejected" ? "Rejected" : "Cancelled"}
-        </span>
-      )}
-    </div>
-  );
+  // No status chip here any more. It said only the word — "CANCELLED" — and `StateNote`
+  // now renders directly beneath this rail with the same word plus the reason, the person
+  // and the date. Two red chips 8px apart, one of which explained nothing.
+  return <PoStageRail nodes={nodes} activeIndex={activeIndex} finished={finished} />;
 }
