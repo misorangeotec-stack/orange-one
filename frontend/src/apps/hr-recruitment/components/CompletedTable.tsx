@@ -47,6 +47,12 @@ export default function CompletedTable({
   const s = useHrStore();
   const deptName = (id: string | null) =>
     id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—";
+  /**
+   * The vacancy this entry was for. Same shape as `deptName`: the entry carries an id,
+   * the table resolves the label — and `departmentId` is itself derived from this same
+   * requisition (`deptOfReq` in the store), so the two columns cannot disagree.
+   */
+  const jobTitle = (id: string | null) => (id ? (s.requisitionById(id)?.jobTitle ?? "—") : "—");
 
   const columns: QueueColumn<StageEntry<CompletedRow>>[] = [
     {
@@ -64,6 +70,17 @@ export default function CompletedTable({
       sortValue: (e) => deptName(e.departmentId),
       filter: { kind: "select", get: (e) => deptName(e.departmentId) },
       tdClassName: "whitespace-nowrap",
+    },
+    {
+      // WHICH VACANCY. A completed interview used to read "Purvi Upadhyay · Sales" and
+      // never say what she was interviewed for; an approver's own decisions read
+      // "MRF-2627-0021 · Sales" with no job title anywhere on the row. Sits directly
+      // after Department so the pair reads in the same order as the Pending tab.
+      key: "position",
+      header: "Position",
+      cell: (e) => <span className="text-grey">{jobTitle(e.requisitionId)}</span>,
+      sortValue: (e) => jobTitle(e.requisitionId),
+      filter: { kind: "select", get: (e) => jobTitle(e.requisitionId) },
     },
     {
       key: "step",

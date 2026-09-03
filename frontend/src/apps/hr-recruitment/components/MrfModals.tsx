@@ -343,8 +343,11 @@ export function HoldCancelModal({
       }
       footer={
         <>
+          {/* "Go back", NOT "Cancel". This dialog is titled "Cancel this requisition", so a
+              dismiss button reading Cancel is the one a user reaches for to do the very
+              thing it refuses to do. */}
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-            Cancel
+            Go back
           </Button>
           <Button size="sm" onClick={submit} disabled={busy || (needsReason && !reason.trim())}>
             {busy ? "Saving…" : "Confirm"}

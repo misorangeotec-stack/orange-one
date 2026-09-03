@@ -17,6 +17,7 @@
 import { addMonths, addWorkingDays, localDateIso } from "@/shared/lib/workingDays";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import type { StepKey } from "./steps";
+import { REQ_STATUS_LABEL } from "./format";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type {
   Candidate,
@@ -731,7 +732,9 @@ export function stageEntryOf<T>(
 export function reqTerminalBar(r: Requisition, what: string): string | null {
   if (r.status === "on_hold") return `This requisition is on hold — take it off hold before editing its ${what}.`;
   if (r.status === "cancelled" || r.status === "rejected" || r.status === "closed") {
-    return `This requisition was ${r.status} — its ${what} can no longer be changed.`;
+    // The LABEL, not the enum — this string is shown to the reader, and "sent_back" or a
+    // bare "closed" reads as a leaked database value rather than a sentence.
+    return `This requisition was ${REQ_STATUS_LABEL[r.status].toLowerCase()} — its ${what} can no longer be changed.`;
   }
   return null;
 }

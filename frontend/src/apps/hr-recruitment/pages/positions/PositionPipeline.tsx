@@ -4,12 +4,14 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { formatDateDMY } from "@/shared/lib/date";
 import CandidateBoard from "../../components/kanban/CandidateBoard";
 import PipelineSummary from "../../components/positions/PipelineSummary";
+import StateNote from "../../components/StateNote";
 import StatusPill from "../../components/StatusPill";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
 import { isLivePosition } from "../../lib/positions";
 import { isOpenCandidate } from "../../lib/queues";
+import { REQ_STATUS_LABEL } from "../../lib/format";
 
 /**
  * One position, and the people moving through it.
@@ -88,9 +90,13 @@ export default function PositionPipeline() {
         )}
       </div>
 
+      {/* Why it stopped, then what that means for this board. The note carries the reason,
+          the person and the date; the sentence below it only explains the read-only state. */}
+      <StateNote requisition={r} />
+
       {!live && (
         <p className="rounded-xl border border-line bg-page/60 px-4 py-2.5 text-[12.5px] text-grey-2">
-          This position is {r.status === "on_hold" ? "on hold" : r.status}. Its board is read-only — candidates cannot be
+          This position is {REQ_STATUS_LABEL[r.status].toLowerCase()}. Its board is read-only — candidates cannot be
           moved until it is taking applications again.
         </p>
       )}

@@ -8,6 +8,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import { EMPTY_COUNTS, bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
 import { formatDate } from "@/shared/lib/time";
 import { useHrStore } from "../../store";
+import { stateNoteText } from "../../components/StateNote";
 import { STAGES, STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import type { QueueEntry } from "../../lib/queues";
 import { appName } from "@/apps/appInfo";
@@ -270,7 +271,7 @@ export default function ControlCenter() {
                 <Link
                   key={r.id}
                   to={`/hr-recruitment/requisitions/${r.id}`}
-                  title={r.holdReason ?? undefined}
+                  title={stateNoteText(r, s.personName) ?? undefined}
                   className="inline-flex items-center gap-2 rounded-lg border border-line bg-page/60 px-2.5 py-1.5 text-[12px] transition hover:border-orange/40"
                 >
                   <span className="font-semibold text-navy">{r.mrfNo}</span>

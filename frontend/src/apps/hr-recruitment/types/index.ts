@@ -341,8 +341,19 @@ export interface Requisition {
   holdReason: string | null;
   /** When it was parked. Drives the "held N days" age — a held vacancy must not go quiet. */
   holdAt: string | null;
+  /** Who parked it. Null on vacancies held before attribution was captured (as `postedBy`). */
+  heldBy: string | null;
   cancelReason: string | null;
   closedAt: string | null;
+  /**
+   * Who rejected, sent back, OR cancelled — whichever happened last.
+   *
+   * ⚠ ONE SHARED SLOT, not a per-event actor: all three RPCs write it. Safe to read only
+   * against the CURRENT status, because each write coincides with the status it explains.
+   * Never read it for a hold — a requisition sent back by A and later held by B names A.
+   * Hold has its own {@link heldBy}.
+   */
+  decidedBy: string | null;
   /** When a COMPLETED approval step was last corrected via the Completed tab. Distinct from updatedAt. */
   editedAt: string | null;
   editedBy: string | null;
