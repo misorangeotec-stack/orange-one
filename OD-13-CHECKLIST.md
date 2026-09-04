@@ -152,14 +152,34 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
 > owner at every site may *act* on it but cannot *see* it, so it is inert today — visibility is the
 > binding constraint. Changing it would move the staff flow, which this task must not do.
 
-## P3 — The order shape
+## P3 — The order shape  ·  DONE
 
-- [ ] Migration: `intake_source`, `intake_completed_at`; `dispatch_type drop not null`
-- [ ] `fms_dispatch_submit_customer_order(p jsonb)`
-- [ ] `fms_dispatch_customer_window_open(p_order)` — **including the rounds test** (Correction 5)
-- [ ] `fms_dispatch_update_customer_order`; narrow `fms_dispatch_cancel_order` for external raisers
-- [ ] `DispatchType | null` — fix the 9 `tsc` sites in 6 files
-- [ ] Correct the two now-false comments (`types.ts:339`, `stepConfig.ts:150` / `OrderRefPanel.tsx:73`)
+- [x] Migration: `intake_source`, `intake_completed_at`; `dispatch_type drop not null`
+      *(the existing CHECK already passes on NULL, so no constraint edited and no row rewritten)*
+- [x] `fms_dispatch_submit_customer_order(p jsonb)` — a **sibling** of `submit_order`, never a branch
+- [x] `fms_dispatch_customer_window_open(p_order)` — **including the rounds test** (Correction 5)
+- [x] `fms_dispatch_update_customer_order` + `fms_dispatch_cancel_customer_order` (window, then hand off)
+- [x] 🔴 **`fms_dispatch_replace_customer_lines` — the plan said reuse `replace_lines` unchanged, and
+      that is wrong.** It validates against the order's single `customer_id` (the provisional primary
+      ledger), so **26 of the 62 items the picker offers Bishen would be refused** — in our internal
+      words, "Add the pair in Central Masters". The sibling validates against the union of ticked ledgers
+- [x] `fms_dispatch_announce` also **adds** the org's named recipients: on a customer order the twelve
+      call sites' own choices resolve to nobody, so a customer cancellation would have reached no one
+- [x] `fms_dispatch_my_customer_profile()` / `_my_items()` / `_my_orders()` — the customer reads **no
+      table directly**. `my_items()` de-duplicates by name (62 for Bishen, matching the audit)
+- [x] `DispatchType | null` — the audit said 9 sites in 6 files; it is **17 `tsc` positions across the
+      same 6 files** (`StageQueue`'s union inference multiplies them). One helper, `dispatchTypeText()`
+- [x] "Not yet decided", not a bare `—` — delivered here, where the sites were being touched anyway
+- [x] `SalesOrderFormState.dispatchType` widened to `DispatchType | ""`; a new staff order still starts
+      at "local", and `toInput` **throws** rather than casting, so a caller that skips `validate()` fails loudly
+- [x] Correct the two now-false comments (`stepConfig.ts` "no step legitimately does not know them",
+      `OrderRefPanel.tsx` "settled the moment the order is raised") — plus the `DispatchType` doc comment
+- [x] Verify: submit → notify (recipient 1, customer 0) → `my_orders` reads *placed*, `can_change` true →
+      edit inside the window → credit check → window shut, edit **and** cancel refused →
+      **part-delivered loop-back: the obvious rule reopens (`t`), ours stays shut (`f`), the customer
+      reads *part_dispatched* not *placed*, and the cancel is refused by the SERVER**
+- [x] Verify: an item mapped only to a NON-primary book is accepted (`NOVACRON YELLOW XKS HD 1000`)
+- [x] `npm run build` green; SO counter unchanged (1131) — the counter is a table, so tests roll back
 
 ## P4 — Credit check completes the order
 

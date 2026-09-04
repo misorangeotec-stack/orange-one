@@ -52,6 +52,32 @@ export const DISPATCH_TYPE_LABEL: Record<DispatchType, string> = {
   transport: "Transport",
 };
 
+/**
+ * What a reader is told when the intake has not been finished yet.
+ *
+ * ⚠ NOT a bare "—", and the difference matters on screen. A dash reads as *missing
+ *   data* — something that should be there and is not. On a customer-raised order
+ *   the billing company, our dispatch site and the dispatch type are legitimately
+ *   empty until credit check fills them in (OD-13 Q1/Q2), so the honest word is
+ *   that nobody has decided yet. The dash is kept for the genuinely old orders
+ *   that predate these columns, where "not yet decided" would be a lie.
+ */
+export const NOT_YET_DECIDED = "Not yet decided";
+
+type IntakeFields = {
+  dispatchType: DispatchType | null;
+  intakeSource: "customer" | null;
+  intakeCompletedAt: string | null;
+};
+
+/** "Local" · "Transport" · "Not yet decided" · "—". Never an index into a Record with null. */
+export const dispatchTypeText = (o: IntakeFields): string =>
+  o.dispatchType
+    ? DISPATCH_TYPE_LABEL[o.dispatchType]
+    : o.intakeSource === "customer" && !o.intakeCompletedAt
+      ? NOT_YET_DECIDED
+      : "—";
+
 export const CREDIT_STATUS_LABEL: Record<CreditStatus, string> = {
   approved: "Approved",
   partial: "Partially approved",
