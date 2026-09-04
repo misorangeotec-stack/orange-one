@@ -12,7 +12,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import { STEP_CONFIG } from "../lib/stepConfig";
-import { DISPATCH_TYPE_LABEL, dmy, isoFromDmy, qtyTotals, STEP_HOLD } from "../lib/format";
+import { dispatchTypeText, dmy, isoFromDmy, qtyTotals, STEP_HOLD } from "../lib/format";
 import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
@@ -158,9 +158,9 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     {
       key: "type",
       header: "Type",
-      cell: (r) => <span className="text-grey">{DISPATCH_TYPE_LABEL[r.order.dispatchType]}</span>,
-      sortValue: (r) => r.order.dispatchType,
-      filter: { kind: "select", get: (r) => DISPATCH_TYPE_LABEL[r.order.dispatchType] },
+      cell: (r) => <span className="text-grey">{dispatchTypeText(r.order)}</span>,
+      sortValue: (r) => dispatchTypeText(r.order),
+      filter: { kind: "select", get: (r) => dispatchTypeText(r.order) },
     },
     {
       key: "items",

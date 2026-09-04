@@ -15,7 +15,17 @@ import type { DispatchMasterType, DispatchOrder, DispatchType } from "../../type
  * round let a single order bill two different entities.
  */
 export interface SalesOrderFormState {
-  dispatchType: DispatchType;
+  /**
+   * `""` means NOTHING CHOSEN YET — reachable only by opening a CUSTOMER-raised
+   * order, where the field is legitimately empty until credit check fills it in
+   * (OD-13 Q2). A new staff order still starts at "local" exactly as before, so
+   * nothing about the ordinary intake changes.
+   *
+   * ⚠ Defaulting it to "local" here instead would have been silent and wrong: the
+   *   form would show a confident answer nobody gave, on the one order type where
+   *   the whole point is that WE decide it and the customer never sees it.
+   */
+  dispatchType: DispatchType | "";
   companyId: string;
   /** OUR site the goods leave from. Not `customerLocation` — see the types file. */
   locationId: string;
@@ -83,7 +93,7 @@ const seededState = (s: DispatchStoreValue): SalesOrderFormState => {
 };
 
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
-  dispatchType: o.dispatchType,
+  dispatchType: o.dispatchType ?? "",
   companyId: o.companyId ?? "",
   locationId: o.locationId ?? "",
   customerId: o.customerId,
@@ -227,6 +237,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   const filledLines = useMemo(() => lines.filter((l) => !isLineBlank(l)), [lines]);
 
   const validate = (): string | null => {
+    if (!form.dispatchType) return "Choose how this order travels — Local or Transport.";
     if (!form.companyId) return "Choose the company that bills this order.";
     // Compulsory only where the company HAS sites — mirrors fms_dispatch_submit_order.
     // A company nobody has added locations to must not block order entry.
@@ -247,7 +258,13 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     return null;
   };
 
-  const toInput = (requesterName: string): OrderInput => ({
+  const toInput = (requesterName: string): OrderInput => {
+    // `validate()` already guarantees this, and both callers (NewOrder, EditOrder)
+    // run it and bail first. THROWING rather than casting is the point: a future
+    // caller that skips validate() fails loudly here instead of posting an order
+    // with no dispatch type, which the RPC would then refuse with its own wording.
+    if (!form.dispatchType) throw new Error("Choose how this order travels — Local or Transport.");
+    return {
     dispatchType: form.dispatchType,
     companyId: form.companyId,
     locationId: form.locationId || null,
@@ -265,7 +282,8 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
       quantity: l.quantity,
       lineRemark: l.lineRemark.trim() || null,
     })),
-  });
+    };
+  };
 
   return {
     // The order being edited, if any. `SalesOrderFields` needs it to keep a

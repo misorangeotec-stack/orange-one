@@ -341,8 +341,16 @@ export interface DispatchNotification {
  *
  * Since the reshape this is a LABEL: the delivery-confirmation step no longer
  * branches on it (it collects one outcome and a receiver copy either way). It is
- * kept because it is how the sales team describes the order, and it is still
- * NOT NULL on the table.
+ * kept because it is how the sales team describes the order.
+ *
+ * ⚠ NO LONGER NOT NULL ON THE TABLE — OD-13. A customer never sees this field
+ *   (decision Q2) and never picks it, so an order they punch arrives with it
+ *   empty and credit check fills it in. `DispatchOrder.dispatchType` is therefore
+ *   `DispatchType | null`, and every `DISPATCH_TYPE_LABEL[…]` lookup has to cope.
+ *
+ *   The existing CHECK is `dispatch_type = ANY (ARRAY['local','transport'])`,
+ *   which already PASSES on NULL under SQL three-valued logic — so dropping the
+ *   NOT NULL needed no change to the constraint and rewrote no data.
  */
 export type DispatchType = "local" | "transport";
 
@@ -526,14 +534,20 @@ export interface DispatchOrder {
   orderNo: string;
 
   // ---- intake ----
-  dispatchType: DispatchType;
+  /**
+   * Null on a CUSTOMER-raised order until credit check completes the intake —
+   * the customer is never shown this field (OD-13, decision Q2). Also null on a
+   * handful of orders that predate the column.
+   */
+  dispatchType: DispatchType | null;
   /**
    * WHICH OF OUR ENTITIES BILLS THIS ORDER. Asked once, on the intake form, by
    * the person who actually knows the answer.
    *
    * ⚠ It is ORDER-scoped, not round-scoped, so `fms_dispatch_archive_round` must
    *   NOT wipe it — every round of an order bills the same entity. Null only on
-   *   orders raised before 20260817120000 moved the question here.
+   *   orders raised before 20260817120000 moved the question here, and on a
+   *   customer-raised order before credit check completes the intake (OD-13 Q1).
    */
   companyId: string | null;
   /**
@@ -547,6 +561,19 @@ export interface DispatchOrder {
    * locations configured — the form asks for one only where one exists.
    */
   locationId: string | null;
+  /**
+   * `"customer"` when the CUSTOMER punched this order themselves through the
+   * Orange Order Desk; null for every staff-raised order, past and future.
+   *
+   * ⚠ Paired with `intakeCompletedAt`, this is what "incomplete" means — the
+   *   order exists but the three fields the customer never sees are still empty.
+   *   Deliberately NOT a new `status` value: `status` drives every queue, filter,
+   *   export and report in the staff app, and widening it would move the staff
+   *   flow this feature must leave alone.
+   */
+  intakeSource: "customer" | null;
+  /** When credit check filled in the company, site and dispatch type. */
+  intakeCompletedAt: string | null;
   customerId: string;
   /** Where this consignment goes. Seeded from the customer master, overridable. */
   customerLocation: string | null;

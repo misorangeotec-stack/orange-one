@@ -490,9 +490,11 @@ const mapOrder = (r: any): DispatchOrder => ({
   id: r.id,
   orderNo: r.order_no,
 
-  dispatchType: r.dispatch_type,
+  dispatchType: r.dispatch_type ?? null,
   companyId: r.company_id ?? null,
   locationId: r.location_id ?? null,
+  intakeSource: r.intake_source ?? null,
+  intakeCompletedAt: r.intake_completed_at ?? null,
   customerId: r.customer_id,
   customerLocation: str(r.customer_location),
   customerPoNo: str(r.customer_po_no),

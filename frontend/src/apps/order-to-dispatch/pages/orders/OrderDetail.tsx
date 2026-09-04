@@ -21,7 +21,7 @@ import type { StepDoc } from "../../types";
 import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
 import {
-  CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, DISPATCH_TYPE_LABEL,
+  CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dispatchTypeText,
   dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
 
@@ -125,7 +125,7 @@ export default function OrderDetail() {
             {order.closedReason && <OutcomePill label="Closed early" tone="grey" />}
           </div>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            {s.customerName(order.customerId)} · {DISPATCH_TYPE_LABEL[order.dispatchType]} · raised by{" "}
+            {s.customerName(order.customerId)} · {dispatchTypeText(order)} · raised by{" "}
             {order.requesterName} on {dmy(order.submittedAt)}
           </p>
         </div>
@@ -347,7 +347,7 @@ export default function OrderDetail() {
               value={s.masterName("company_location", order.locationId)}
             />
             <Field label="Customer PO no." value={order.customerPoNo ?? "—"} />
-            <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
+            <Field label="Dispatch type" value={dispatchTypeText(order)} />
             <Field label="Order date" value={dmy(order.orderDate)} />
             <Field label="Round" value={`#${order.roundNo}`} />
             {/* The decision GOVERNING the order — the header, not the round. A

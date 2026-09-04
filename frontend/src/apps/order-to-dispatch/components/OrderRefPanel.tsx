@@ -4,7 +4,7 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
 import StepDocLink from "./StepDocLink";
 import type { RoundView } from "../lib/rounds";
-import { CREDIT_STATUS_LABEL, DISPATCH_TYPE_LABEL, dmy, qtyTotals, sharedUnit } from "../lib/format";
+import { CREDIT_STATUS_LABEL, dispatchTypeText, dmy, qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -71,9 +71,16 @@ export default function OrderRefPanel({
         <Field label="Customer" value={s.customerName(order.customerId)} />
         <Field label="Customer location" value={order.customerLocation ?? "—"} />
         {/*
-          Unconditional, all three of them. They are settled the moment the order
-          is raised, so every step from the credit check onwards can be shown the
-          answer — there is no step that legitimately does not know them.
+          Unconditional, all three of them. On a STAFF-raised order they are
+          settled the moment it is raised, so every step from the credit check
+          onwards can be shown the answer.
+
+          ⚠ A CUSTOMER-raised order does NOT know them yet (OD-13 Q1/Q2): the
+            customer never sees a billing company, our dispatch site or the
+            dispatch type, and credit check fills all three in. They still print
+            unconditionally — it is the VALUE that changes. `masterName` renders a
+            null as "—", and the dispatch type says "Not yet decided", which is the
+            honest reading: nobody has chosen yet, as against data going missing.
 
           ⚠ `round.companyId ?? order.companyId` and not just one of the two: the
             live projection reads the order header, an ARCHIVED round reads its own
@@ -89,7 +96,7 @@ export default function OrderRefPanel({
           value={s.masterName("company_location", round.locationId ?? order.locationId)}
         />
         <Field label="Customer PO no." value={order.customerPoNo ?? "—"} />
-        <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
+        <Field label="Dispatch type" value={dispatchTypeText(order)} />
         <Field label="Order date" value={dmy(order.orderDate)} />
         <Field label="Raised by" value={order.requesterName} />
         {order.orderRemarks && <Field label="Order remarks" value={order.orderRemarks} />}

@@ -149,10 +149,18 @@ export interface StepContext {
   showOrderLines?: boolean;
   /*
    * ⚠ There is no `showCompany`. It was opt-in while the company was decided
-   *   mid-flow, so the steps before the stock check had nothing to show. The
-   *   order now carries it from the moment it is raised, along with the customer
-   *   location and PO — so OrderRefPanel prints all three unconditionally and
-   *   there is no flag to forget.
+   *   mid-flow, so the steps before the stock check had nothing to show. A
+   *   STAFF-raised order carries it from the moment it is raised, along with the
+   *   customer location and PO — so OrderRefPanel prints all three
+   *   unconditionally and there is no flag to forget.
+   *
+   * ⚠ AND SINCE OD-13 THERE IS ONE STEP THAT LEGITIMATELY DOES NOT KNOW THEM.
+   *   A CUSTOMER-raised order arrives with no billing company, no dispatch site
+   *   and no dispatch type — the customer is never shown those fields (Q1/Q2) and
+   *   credit check fills them in. The panel still prints all three
+   *   unconditionally; it is the VALUE that changes, reading "Not yet decided"
+   *   instead of a dash, so an unfinished intake is legible as unfinished rather
+   *   than as missing data. Still no flag to forget.
    */
   /** Tally invoice no. + a button that opens the invoice. */
   showInvoice?: boolean;

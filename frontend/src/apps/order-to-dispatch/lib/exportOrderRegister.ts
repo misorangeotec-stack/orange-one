@@ -15,7 +15,7 @@ import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { STEPS } from "./steps";
 import { orderStepRows, type OrderVmDeps } from "./orderVm";
 import { allRoundViews, type RoundView } from "./rounds";
-import { DISPATCH_TYPE_LABEL, STATUS_LABEL, dmy } from "./format";
+import { dispatchTypeText, STATUS_LABEL, dmy } from "./format";
 import type { DispatchOrder } from "../types";
 
 export interface RegisterDeps extends OrderVmDeps {
@@ -47,7 +47,7 @@ export function exportOrderRegister(
     { header: "SR No.", width: 16, value: (r) => `${r.order.orderNo} - R${r.view.roundNo}` },
     { header: "Order No.", width: 14, value: (r) => r.order.orderNo },
     { header: "Round", width: 8, value: (r) => r.view.roundNo },
-    { header: "Type", width: 12, value: (r) => DISPATCH_TYPE_LABEL[r.order.dispatchType] },
+    { header: "Type", width: 12, value: (r) => dispatchTypeText(r.order) },
     { header: "Order Date", width: 13, value: (r) => dmy(r.order.orderDate) },
     { header: "Customer Name", width: 26, value: (r) => deps.customerName(r.order.customerId) },
     { header: "Customer Location", width: 20, value: (r) => r.order.customerLocation ?? "" },

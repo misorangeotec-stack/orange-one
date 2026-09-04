@@ -12,7 +12,7 @@ import { useDispatchStore } from "../../store";
 import { STEPS, STAGES, stepByKey, type StepKey } from "../../lib/steps";
 import { stepVariance } from "../../lib/orderVm";
 import {
-  DISPATCH_TYPE_LABEL, dmy, isCreditHeld, isStepHeld, stepHoldLabel, stepHoldReason,
+  dispatchTypeText, dmy, isCreditHeld, isStepHeld, stepHoldLabel, stepHoldReason,
 } from "../../lib/format";
 import type { QueueEntry } from "../../lib/queues";
 
@@ -207,14 +207,14 @@ export default function ControlCenter() {
       header: "Type",
       cell: (e) => {
         const o = s.orderById(e.entityId);
-        return <span className="text-grey">{o ? DISPATCH_TYPE_LABEL[o.dispatchType] : "—"}</span>;
+        return <span className="text-grey">{o ? dispatchTypeText(o) : "—"}</span>;
       },
-      sortValue: (e) => s.orderById(e.entityId)?.dispatchType ?? "",
+      sortValue: (e) => { const o = s.orderById(e.entityId); return o ? dispatchTypeText(o) : ""; },
       filter: {
         kind: "select",
         get: (e) => {
           const o = s.orderById(e.entityId);
-          return o ? DISPATCH_TYPE_LABEL[o.dispatchType] : "—";
+          return o ? dispatchTypeText(o) : "—";
         },
       },
     },
