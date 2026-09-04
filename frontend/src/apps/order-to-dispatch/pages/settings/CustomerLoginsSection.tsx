@@ -42,6 +42,22 @@ export default function CustomerLoginsSection() {
     staleTime: 30_000,
   });
 
+  /**
+   * Refetch BEFORE the dialog closes, and await it.
+   *
+   * `invalidateQueries` returns a promise, and firing it without waiting leaves a
+   * window — short after an edit, ~a second after a create, because that one also
+   * waits on the Edge Function — where the dialog has gone and the grid still shows
+   * what it showed before. On the very first customer that window reads "0 customers"
+   * under a full empty state, which is not a slow refresh but a wrong answer: the
+   * obvious response to it is to press "Add a customer" again and make a second
+   * account for the same firm.
+   *
+   * (I saw exactly that once while testing the create path and could NOT reproduce
+   * it — the same reload demonstrably refreshes on the edit path, so it was most
+   * likely my screenshot racing the refetch rather than a defect. Awaiting it costs
+   * nothing and removes the question.)
+   */
   const reload = () => qc.invalidateQueries({ queryKey: CUSTOMER_ORGS_QK });
 
   const columns: QueueColumn<CustomerOrg>[] = useMemo(
@@ -155,11 +171,14 @@ export default function CustomerLoginsSection() {
         <OrgModal
           org={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); reload(); }}
+          onSaved={async () => { await reload(); setEditing(null); }}
         />
       )}
       {adding && (
-        <AddCustomerModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); }} />
+        <AddCustomerModal
+          onClose={() => setAdding(false)}
+          onSaved={async () => { await reload(); setAdding(false); }}
+        />
       )}
     </div>
   );
@@ -245,11 +264,31 @@ export default function CustomerLoginsSection() {
       return out.sort((a, b) => a.label.localeCompare(b.label));
     }, [partyIds]);
 
+    /*
+      LANDSCAPE, TWO COLUMNS — not a narrow stack in a wider box.
+
+      Widening the dialog alone would only have added whitespace either side of
+      the same single file of fields. The pairing is by MEANING rather than to
+      fill a row: who they are sits beside where they take delivery, and the two
+      optional pre-fills sit together with the switch that decides whether any of
+      it is live yet.
+
+      ⚠ THE TWO LEDGER CONTROLS STAY FULL WIDTH. A Tally ledger label reads
+        "BISHEN DYEING PRINTING & WEAVING MILLS · ORANGE O TEC PRIVATE LIMITED
+        (01-04-25TO31-03-27)" — the book is carried in the label precisely because
+        the name alone is five identical strings, and half a row would truncate
+        exactly the half that tells them apart.
+    */
     return (
       <div className="space-y-4">
-        <FieldLabel label="What they are called" required hint="Shown at the head of their own screen — their name, not a Tally ledger name.">
-          <TextInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Bishen Dyeing" />
-        </FieldLabel>
+        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+          <FieldLabel label="What they are called" required hint="Shown at the head of their own screen — their name, not a Tally ledger name.">
+            <TextInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Bishen Dyeing" />
+          </FieldLabel>
+          <FieldLabel label="Where they take delivery" hint="Shown to them as text. They do not pick it.">
+            <TextInput value={customerLocation} onChange={(e) => setCustomerLocation(e.target.value)} placeholder="MUMBAI" />
+          </FieldLabel>
+        </div>
 
         <FieldLabel
           label="Their ledgers"
@@ -277,10 +316,6 @@ export default function CustomerLoginsSection() {
           />
         </FieldLabel>
 
-        <FieldLabel label="Where they take delivery" hint="Shown to them as text. They do not pick it.">
-          <TextInput value={customerLocation} onChange={(e) => setCustomerLocation(e.target.value)} placeholder="MUMBAI" />
-        </FieldLabel>
-
         <FieldLabel
           label="Who we tell when they order"
           required
@@ -289,8 +324,20 @@ export default function CustomerLoginsSection() {
           <MultiSelect values={notifyUserIds} onChange={setNotifyUserIds} options={notifyOptions} placeholder="Choose who is told" searchable />
         </FieldLabel>
 
-        <div className="grid grid-cols-2 gap-4">
-          <FieldLabel label="Usually dispatched from" hint="Optional. Only pre-fills credit check; always changeable there.">
+        {/*
+          TWO ACROSS, NOT THREE, AND THE HINTS ARE SHORT.
+
+          `FieldLabel` lays the hint out on the SAME LINE as the label, right-aligned.
+          At a third of this dialog that is about 120px, so "Optional. Only pre-fills
+          credit check; always changeable there." wrapped to five lines and pushed its
+          input a row below the other two — the columns stopped lining up at all.
+          Caught in the browser; it is invisible in the markup.
+
+          The full explanation lives in the paragraph above the pair instead, where
+          there is room for a sentence.
+        */}
+        <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+          <FieldLabel label="Usually dispatched from" hint="Optional">
             <Combobox
               value={defaultLocationId ?? ""}
               onChange={(v) => setDefaultLocationId(v || null)}
@@ -298,7 +345,7 @@ export default function CustomerLoginsSection() {
               placeholder="No default"
             />
           </FieldLabel>
-          <FieldLabel label="Usually sent by" hint="Optional. Only pre-fills credit check.">
+          <FieldLabel label="Usually sent by" hint="Optional">
             <Combobox
               value={defaultDispatchType ?? ""}
               onChange={(v) => setDefaultDispatchType((v || null) as "local" | "transport" | null)}
@@ -307,8 +354,12 @@ export default function CustomerLoginsSection() {
             />
           </FieldLabel>
         </div>
+        <p className="text-[11.5px] text-grey-2 -mt-1">
+          Both only pre-fill the credit-check screen, and stay changeable there — they are a
+          shortcut, never a decision.
+        </p>
 
-        <label className="flex items-center gap-2 text-[13px] text-ink">
+        <label className="flex items-center gap-2 text-[13px] text-ink border-t border-line pt-4">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
           They may place orders now
         </label>
@@ -316,7 +367,7 @@ export default function CustomerLoginsSection() {
     );
   }
 
-  function OrgModal({ org, onClose, onSaved }: { org: CustomerOrg; onClose: () => void; onSaved: () => void }) {
+  function OrgModal({ org, onClose, onSaved }: { org: CustomerOrg; onClose: () => void; onSaved: () => Promise<void> }) {
     const [displayName, setDisplayName] = useState(org.displayName);
     const [partyIds, setPartyIds] = useState<string[]>(org.partyIds);
     const [primaryPartyId, setPrimaryPartyId] = useState<string | null>(org.primaryPartyId);
@@ -336,7 +387,7 @@ export default function CustomerLoginsSection() {
           customerLocation: customerLocation.trim() || null,
           notifyUserIds, defaultLocationId, defaultDispatchType, active,
         });
-        onSaved();
+        await onSaved();
       } catch (e) {
         setErr((e as Error).message);
       } finally {
@@ -350,7 +401,7 @@ export default function CustomerLoginsSection() {
         onClose={onClose}
         title={org.displayName}
         subtitle="What we recognise as this customer, and who hears from them."
-        size="lg"
+        size="3xl"
         footer={
           <div className="flex items-center gap-3">
             <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
@@ -369,7 +420,7 @@ export default function CustomerLoginsSection() {
     );
   }
 
-  function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
     const [displayName, setDisplayName] = useState("");
     const [partyIds, setPartyIds] = useState<string[]>([]);
     const [primaryPartyId, setPrimaryPartyId] = useState<string | null>(null);
@@ -395,7 +446,7 @@ export default function CustomerLoginsSection() {
           loginEmail: loginEmail.trim(),
           loginPassword,
         });
-        onSaved();
+        await onSaved();
       } catch (e) {
         setErr((e as Error).message);
       } finally {
@@ -409,7 +460,7 @@ export default function CustomerLoginsSection() {
         onClose={onClose}
         title="Add a customer"
         subtitle="Creates their login, their ordering access and this record — all of it, in one go."
-        size="lg"
+        size="3xl"
         footer={
           <div className="flex items-center gap-3">
             <Button size="sm" onClick={save} disabled={busy}>{busy ? "Creating…" : "Create"}</Button>
@@ -432,17 +483,52 @@ export default function CustomerLoginsSection() {
               password is a real one you choose and tell them; it is never their phone number, and no later
               admin save will change it back.
             </p>
-            <div className="grid grid-cols-2 gap-4">
+            {/*
+              ⚠ autoComplete="new-password" ON BOTH, AND IT IS NOT COSMETIC.
+
+                Found in the browser, not in review: Chrome's password manager sees an
+                email field beside a password field, decides this is a sign-in form, and
+                fills in THE ADMIN'S OWN credentials — their address in "Sign-in email"
+                and their real password, in plain text once the eye is clicked, in a
+                field about to be handed to a customer.
+
+                Best case the admin notices and clears it. Next best, they press Create
+                and the Edge Function refuses ("already registered"). Worst, they change
+                only the email and hand an outside firm a login whose password is the
+                admin's own — which they would then keep using, unaware.
+
+                `autoComplete="off"` is NOT enough: Chrome ignores it on inputs it has
+                decided are a login. `new-password` is the value it does honour, and it
+                is the honest description — this IS a new password, for a new account.
+            */}
+            <div className="grid gap-x-5 gap-y-4 sm:grid-cols-3">
               <FieldLabel label="Sign-in email" required>
-                <TextInput value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="orders@bishen.example" />
+                <TextInput
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="orders@bishen.example"
+                  autoComplete="new-password"
+                  name="od13-customer-email"
+                />
               </FieldLabel>
               <FieldLabel label="Password" required hint="At least 6 characters.">
-                <PasswordInput value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                <PasswordInput
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  autoComplete="new-password"
+                  name="od13-customer-password"
+                />
+              </FieldLabel>
+              <FieldLabel label="Name on the account" hint="Defaults to the customer's name.">
+                <TextInput
+                  value={loginName}
+                  onChange={(e) => setLoginName(e.target.value)}
+                  placeholder={displayName || "Bishen Dyeing"}
+                  autoComplete="new-password"
+                  name="od13-customer-loginname"
+                />
               </FieldLabel>
             </div>
-            <FieldLabel label="Name on the account" hint="Defaults to the customer's name.">
-              <TextInput value={loginName} onChange={(e) => setLoginName(e.target.value)} placeholder={displayName || "Bishen Dyeing"} />
-            </FieldLabel>
           </div>
         </div>
       </Modal>
