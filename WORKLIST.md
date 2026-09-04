@@ -8,7 +8,7 @@ a task touching several modules is filed under its primary one and cross-referen
 from the others.
 
 **Status:** `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked
-**Priority:** 🔴 marks a task that is hurting live work and jumps the queue · 🟢 marks a low-priority
+**Priority:** 🔴 high — hurting live work, jumps the queue · 🟡 medium · 🟢 marks a low-priority
 task that is worth doing and depends on nothing, so it can be picked up in parallel with whatever
 else is running.
 
@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-29
+**Last updated:** 2026-09-03
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -41,12 +41,26 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Who owns the approvals in OCPI, Customer Onboarding, Asset Maintenance and Travel Desk — no step owners are configured at all | Ritesh Bhai / Bushra | **PF-14** | 2026-08-27 |
 | The calibration sheets (the Excel report QC keeps today) | Factory / QC team | **PE-1** | 2026-08-20 |
 | The final list of production steps to add | Factory, then Bushra | Widens **PE-2** (no longer blocks it) | 2026-08-20 |
-| The R&D flow and the form | Factory team | **RD-1** | 2026-08-20 |
-| The COA sample PDF + the raw Excel sheet | Factory team | **PE-3** | 2026-08-20 |
-| A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
-| The filled asset register sheet (vehicles, IT, air conditioners) | Ritesh Bhai / Finance | **AM-2** | 2026-08-29 |
+| The filled asset register sheet — vehicles, IT equipment, air conditioners. ⚠ **The whole Asset Maintenance module now waits on this one file.** The template, the importer and the walkthrough plan are all done and idle; the register holds 10 rows of which **9 are seeded `[TEST DATA]`**, so until it comes back the module reminds nobody about anything. Sent 29-Aug. The walkthrough with Bushra happens *after* the real assets are punched in, not before | Ritesh Bhai / Finance | **AM-4** — the module's only open item | 2026-08-29 |
+| 🔴 **Can the ConnectWave mirror expose batch-wise stock?** — company × item × godown × **batch** × quantity, ideally with the batch's dates. **Nothing on OD-12 is buildable until this is answered.** Every Tally view we consume today (`v_master_stock_item`, `v_clevel_stock_item` and the rest) is **item-level; not one carries a batch**, so the lot picker has no source. ⚠ That is read off our own code — it lists what we consume, not necessarily what ConnectWave holds | ConnectWave team, via Ritesh Bhai | **OD-12** — the live LOT number, high priority | 2026-09-04 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
-| The REAL dryer names, Indian and Chinese — six `[SAMPLE]` placeholders are standing in so the 11 machines that take a dryer can name one | Ritesh Bhai / Bushra | **OCPI-3 go-live** | 2026-08-29 |
+| The REAL dryer names, Indian and Chinese — six placeholders are standing in so the 11 machines that take a dryer can name one. ⚠ **They no longer say `[SAMPLE]`** (OCPI-8, 01-Sep, client's instruction), so nothing on screen marks them as invented and one can reach a signed contract looking real. More urgent than it was, not less | Ritesh Bhai / Bushra | **OCPI-28** — the exact five questions to ask | 2026-08-29 |
+| The nine COA parameter **standard values**, to type into Masters → COA Parameters. ⚠ **They are NOT in the QC sheet and never were** — its *Standard Specs.* tab holds one cell reading *"We will enter manually afterwards for our internal reference (No relsation with software)"*, and the COA tab leaves the Standard column blank. Nothing is owed as a file; QC has to state the values | Factory / QC team, via Bushra | **PE-5 · B** | 2026-09-02 |
+| Who owns Production vs Repackaging on the four tail steps (PM Transfer, Packing Entry, Ready to Dispatch, FG Transfer) — the split ships inert until the names are set, so nothing is testable end to end without them | Bushra / factory | **PE-6 go-live** | 2026-09-02 |
+| The PI's **page-2 sales page** for the seven machines that have never had one: **MP5000 · JPK · Mini Lario · Kolorado Alpha 16 · Foil Machine · Label Printer · Book Printer** — plus two confirmations: does **Fab Pro 1I / 3I** share the Fab Pro 2i page, and does **P8D** share Sub Pro II+? 🟢 **The twelve existing pages are BUILT and seeded** (OCPI-36, 02-09) — 18 of 28 machines now print one. Each missing page needs a heading, a tagline, one paragraph and the bullets; likely already in the machine brochure. A machine without one issues its PI one page shorter, which is a correct form | Bushra | **OCPI-36** page 2 — delays those 10 machines only | 2026-09-02 |
+| Were the duplicate CV re-uploads deliberate? **Purvi Upadhyay + Manali Desai** re-added to the EA vacancy on 02-Sep after both were rejected on 31-Aug; **Harsha Jain** twice on Marketing Executive; **Kajal Bhalerao THREE times** on Finance manager, sitting at Interview R3, Telephonic and disqualified simultaneously. If deliberate the new rows are right and the old ones are noise; if accidental it is the reverse. **No data has been touched** | Saloni Rathod, via Bushra | **FIX-5** cleanup — the duplicate-check fix itself is unblocked | 2026-09-03 |
+| **Two wording confirmations on the Alpha 15 sales page**, now that it is seeded. 🟢 The old question — *which of the two pages is current* — is **ANSWERED and no longer blocking:** `Advantages of KOLORADO ALPHA 15` and `Advantages of FEDAR 15` were both rendered and compared and are **identical word for word**; only the heading differs, so it was seeded under the Kolorado one. What is still open is cosmetic: (a) Kolorado or FEDAR as the printed heading, and (b) both 2026-27 papers print **`ALPHA15` with no space** — is that intended? Either is a one-word edit on the master | Bushra | Nothing — the page is live either way | 2026-09-02 |
+| 🔴 **`machine_model_no` is still blank on 13 of 28 machines — and every templated one of them is a KoloRado Alpha.** Re-checked 03-09-2026 after OCPI-39's fills. **7 templated, all Alphas:** `Kolorado Alpha 15` · `Kolorado Alpha 16` · `KoloRado Alpha 3 — 12 heads` · `KoloRado Alpha 3.2 — 8 heads` · `KoloRado Alpha 3.2 — 24 heads` · `KoloRado Alpha II — 1.8 m` · `KoloRado Alpha II — 2.2 m`. **6 untemplated:** `Book Printer` · `Foil Machine` · `KoloRado Alpha 3.2 — 16 heads` · `Label Printer` · `Mini Lario` · `Pengda PD-1800XD-800`. ⚠ **This may be a fact about the Alphas rather than a hole in the master** — the only Alpha with a code is the II 1.9 m (`OT-1908A`), taken off its own contract's spec row, and real contract 125 prints the label *"Model No:"* **with nothing after it**. So either the Alphas genuinely have no manufacturer code and the answer is "leave them blank", or the codes exist and nobody has written them down. 🟢 **Two candidates already on file** if the answer is the latter: `Mini Lario` → **`MS-MINI LARIO-1.8 MTR`** and `Pengda PD-1800XD-800` → **`PD-1800XD-800`**, both stated on the decks supplied 02-09. 🟢 **Three were filled from real contracts on 03-09 (OCPI-39):** K32 `HM1800B-TK32-B1`, P8S `HM1800R-P8S-A1`, Pengda 800 `PD-1700XD-800` — 15 of 28 now filled. **Nothing is broken meanwhile:** both the PI and the OC omit the phrase entirely rather than printing a gap | Ritesh Bhai, with Bushra | **OCPI-36 / OCPI-39** — cosmetic, blocks nothing | 2026-09-03 |
+| 🔴 **Five machines have NO billing name, and it is the line that prints on the contract.** `Fab Pro 2I` · `Fab Pro 3I` · `JPK` · `Mini Lario` · `MP5000` all carry a null `billing_name`, so a contract for any of them names the machine and then says nothing about what is being sold. `KoloRado Alpha 3 — 12 heads` was the sixth and **is now filled** — its siblings all read `LARGE FORMAT INKJET PRINTER WITH <n> HEADS WITH STD. ACCESSORIES`, so 12 went in the slot, copied not composed. The other five have **no sibling pattern and no real paper stating one**, and a billing description on a signed contract is not something to infer. **Needed: one line each, in Bushra's own wording.** ⚠ The OCPI-40 audit reported this as ONE machine because the sweep was keyed `name ilike '%alpha%'` — the unfiltered count is six | Bushra / Ritesh Bhai | **OCPI-41 C-2** | 2026-09-03 |
+| **Eighteen deals are filed under a salesperson the roster does not know.** `Afrin Saiyed` (**13 deals**) · `Nakul Sir` (3) · `KARAN SIR` (1) · `UMESH BHAI` (1). Each has exactly one obvious owner — AFRIN AMIN SAIYED, Nakuleshwar Sharma, Karan Toshniwal, UMESHKUMAR SOLANKI — but attributing 18 commercial documents to a person on the strength of a nickname is a word to be given, not an inference to make, so **none was changed**. Until then that person's deals split across two identities in every report. 🟢 The unambiguous half is done: 9 deals (`Yash Agarwal` 7, `Khurshid Alam` 2) named a roster person with no `salesperson_user_id` and have been linked. ⚠ Frozen revisions keep whatever name they printed either way | Ritesh Bhai | **OCPI-41 C-3** | 2026-09-03 |
+| 🔴 **Does the same HSN code cover the other 17 machines?** **Held for Ritesh Bhai 03-09-2026** — the client does not know offhand and it is an accounts / CHA question, not a development one. What the papers prove: **one code, `84433910`**, swept across all 90 PDFs in both years — 14 occurrences, no disagreement — but **all 14 sit on just four machines** (K32 scanning, K64, Rocket single-pass, Position Printer), which are now filled and print on both papers. **The KoloRado, Fab Pro and P8S contracts state no HSN at all**, so there is no document to read it off for the other 17 and **none was invented** — an HSN on a signed contract is a tax classification, not a label. ⚠ The inference is that they match (8443.39.10 is the customs heading for ink-jet printing machinery and all 17 are ink-jet printers) but that is a guess, not a paper. **Needed: does Orange bill its whole printer range under 84433910?** Yes → one statement fills all 17. Otherwise name the ones that differ; the column is per-machine so each can hold its own | Ritesh Bhai (with accounts / CHA) | **OCPI-39** — the four proven machines are done and printing; this is the other 17 | 2026-09-03 |
+| **K64 has two different model numbers on file, and it is the best seller.** Laxmipati's PI (109) says **`HM3200B-TK64-A1`**; Modi's (120) says **`HM1800B-TK64-A1`**. That reads as two build widths sold under one master row. The master holds the 1800 and now prints it on the contract's priced line, so a 3.2 m machine would go out under the 1.8 m code. Deliberately not guessed at | Bushra | **OCPI-39** — one row either way; every other machine is settled | 2026-09-03 |
+| **The PI puts the technical model code where Bushra's papers put the friendly name.** Found 03-09 by typing folders 127 and 120 into the form and diffing the generated PI against the client's own PDF. Her convention is **friendly name in the subject line, technical code down in the description beside the HSN** — 127 reads `Subject: Model No: ALPHA II (WITH PRINTHEADS)`, 120 reads `Subject: Model No: HOMER K64(With 64 Heads)`. The module prints `machine_model_no` in **both** places, so those two subjects come out as `OT-1908A` and `HM1800B-TK64-A1`. The **billing name** differs the same way: hers say `LARGE FORMAT INKJET PRINTER (1.9 Meter) WITH STANDARD ACCESSORIES (WITH PRINTHEADS)` and `…WITH DRYER AND CENTERING SYSTEM`, the master says neither. ⚠ **Deliberately not overwritten** — the OC and the summary sheet already print the master's wording, so changing it moves three documents, not one. Needs either a confirmation that the master text is fine on the PI too, or a second field for the sales name. Distinct from the blank-model-no row above: this is about *which text goes where*, not about missing values | Bushra | **OCPI-36** — cosmetic, blocks nothing | 2026-09-03 |
+| **Is "Productivity" meant to be a bullet or a heading on the K24 / K32 / Rocket sales pages?** The real papers set it two ways — a bullet inside the Applications list on those three, a sub-heading with its figure beneath on Sub Pro II+. Both were transcribed exactly as printed rather than tidied. One answer fixes all three | Bushra | Nothing — cosmetic | 2026-09-02 |
+| Does every machine need a **"consumables not covered under warranty" list**, or is Homer K32 the only one? 🔴 The K32 list — 11 parts plus 2 notes — is on **4 real contracts and in none of our 21 templates** (OCPI-37 found it). It is being added to K32. **If the other machines need one too, then every K24, K64, P8S and Alpha contract currently promises to replace consumables free.** Needed: the equivalent list per machine, or confirmation that K32 is genuinely the only one | Bushra | **OCPI-37 · Q1** — K32 itself is unblocked and being fixed; this is the rest of the estate | 2026-09-02 |
+| 🔴 **What should a contract say when the machine is sold WITHOUT print heads?** Folder 108 (MK Fashion) is a real signed deal for a machine supplied without heads — its own composition line reads `WITH STANDARD ACCESSORIES (Without printheads)`. Entered exactly that way on 04-09, the row stored `incl_head = false` and **the contract printed the opposite**: `WITH STANDARD ACCESSORIES (With 8 printheads)`. **Ten of the 21 templates assert the heads unconditionally** — Fab Pro 1I/2I/3I · Homer K32 · K64 · all three Alpha IIs · P8S · Rocket — while the dryer and the centring device beside them ARE guarded. There is no `[[if head]]` to write: `conditions.ts` exposes only `dryer`, `centering` and `usd`. 🟢 **The switch is ours and is safe to build** (a `head` condition plus its SQL twin, additive). ⚠ **The replacement sentence is contract text on ten machines and is NOT ours to invent** — folder 108's own *(Without printheads)* is the obvious candidate. Ritesh Bhai, 04-09: keep it in the artifact and settle it with him | Ritesh Bhai / Bushra | **OCPI-42 · N-10** | 2026-09-04 |
+| 🔴 **One signed K64 order confirmation.** K64 is the best-selling machine and **there is no OC for it anywhere** — every PDF, Word and PowerPoint file in both years was swept, and the only two K64 folders (109 Laxmipati, 120 Modi) hold Performa Invoices with no contract body. So the one machine that sells most has never been checked against a paper a customer signed. It is covered three weaker ways — 7 of its 9 clauses are byte-identical to Homer K24's, which *was* checked; its own deck covers the other 2; the two PIs cover the money and terms — but none of them can answer the question that matters: **does a real K64 contract carry a clause its deck omits?** That is exactly how the K32 consumables list went missing | Bushra | **OCPI-37** — the audit is done; this closes its one real blind spot | 2026-09-03 |
+| **The wording Orange actually intends to offer on `Mini Lario`.** Its deck (supplied 02-09) carries **`MARKEM-IMAJE`** — another manufacturer — inside its limited-warranty, limitation-of-liability, indemnity, data-privacy and governing-law clauses, so those terms appear to have been lifted from a third party's contract rather than written for Orange O Tec. Transcribed as they stand, an Orange contract would offer another firm's warranty disclaimer and bind the customer to their dispute resolution. Nobody should transcribe this deck until a person has said which of those clauses Orange means to stand behind | Ritesh Bhai | Blocks building the Mini Lario template; nothing else | 2026-09-03 |
 
 ---
 
@@ -60,6 +74,173 @@ comes back. Two kinds of item live here and they are marked differently:
 - **`[open]`** — nothing built either way; the answer changes what gets built.
 
 ### OCPI
+
+**0. `[open]` 🔴 Does the Performa Invoice ever CHARGE for the extras, or only list them?** *(02-09-2026)*
+
+The one decision OCPI-36 could not make from the data. Swept all **42 real PIs**:
+
+| | Count |
+|---|---|
+| One priced line — the machine alone | **41** |
+| Two priced lines | **1** — Clothera (124) |
+
+So the PI now prints **Machine Value · GST · Total** and nothing else, which matches 41 of the 42 and
+adds up. Where ink or heads are mentioned on a real paper they sit in the `Note:` in words —
+*"Ink Price- CMY-Rs 475+GST (30 Days Credit)"* — never as invoice rows.
+
+Clothera is the exception: **2 machines + 30 print heads, and the heads ARE in the total**
+(46,50,000 + 21,00,000 + GST 12,15,000 = 79,65,000). **That shape is not reproduced today.** The
+system stores the print-head / ink / dryer figures as things billed on a *separate* invoice, so its
+stored total deliberately excludes them — pricing them on the PI printed ₹62.35L of line items above a
+₹61.36L total that left every one of them out. Rather than have the browser add the figures up itself,
+which this module has always refused to do on a customer document, it prices the machine only.
+
+> **The question:** is Clothera a one-off, or do you expect to bill heads and ink on the same PI
+> regularly? If regularly, the total has to be worked out and saved in the database first — a change
+> to how the money is calculated, and the other two papers get re-checked afterwards.
+
+**0a. `[open]` 🔴 The Performa Invoice's delivery line: DAYS or a DATE?** *(03-09-2026)*
+
+🔴 **NOT ONE PERFORMA INVOICE IN THE YEAR PROMISES A DATE. Twenty-eight promise a number of days. We
+print a date.**
+
+That is the whole of it. Found by typing two real deals into the form and diffing the output against the
+client's own PDFs (folders 127 and 120), then counted across every PI in the folder. Both the label and
+the content differ:
+
+| | |
+|---|---|
+| 127 | `Delivery Terms : 30 Days from the date of confirmation` |
+| 120 | `Delivery Terms : 30 Days After Order confirmation` |
+| 118, 124 | `Shipment Terms : 30 Days after Order Confirmation.` |
+| 106 | `Shipment Terms : 30 to 45 Days from Order confirmation.` |
+| **ours** | `Delivery : Tentative delivery 15-Oct-2026, applicable from the date of signing of this contract.` |
+
+Counted across **all 36** PIs in the 2026-27 folder (identified by content, not by file name — 11 of them
+are not named `… PI.pdf`): **28 state days, 0 state a date, 8 state nothing.**
+
+🔴 **There are TWO labels in use, and neither is ours:** `Shipment Terms :` on **16** papers and
+`Delivery Terms :` on **12**. So the label is a three-way choice, not a two-way one.
+
+This was **not** fixed, because it is not a slip. OCPI-18 retired `delivery_days` on purpose so that a
+deal's two papers could not carry two different delivery promises — the column is still there, unused.
+Restoring it on the PI alone re-opens exactly that: the contract would promise a date and the invoice a
+duration, on the same deal.
+
+> **The question:** should the PI go back to *"30 Days from the date of confirmation"* — and if so, does
+> the **contract** say the same thing, or does it keep its tentative date? One answer, both papers.
+
+Same shape, smaller, and it can be settled in the same breath: **`Insurance :`** prints our standing
+~30-word clause where the real papers print `Insurance : Insurance will be borne by customer`. Ours says
+more and says it correctly; theirs is what the customer has seen before.
+
+**0c. `[open]` The trade term cannot say what the real papers say.** *(03-09-2026)*
+
+The trade term is **composed** from the delivery-term answers, never typed, and neither real paper is
+reachable:
+
+🟢 **BOTH HALVES ARE NOW BUILT AND THE ITEM HAS NARROWED TO ONE THING (OCPI-43, 04-09-2026).**
+
+1. The *who bears transport* answer reaches the paper — the composer appends the papers' own
+   `(Transportation bear by <party>)`, counted across every parsed real contract rather than chosen,
+   and names the selling entity when the company bears it.
+2. 🔴 **The term reads `Ex-Work Surat`, reversing the 02-09-2026 decision.** Ritesh Bhai, 04-09:
+   *"instead of X factory surat, you can do X work surat."* Folders 101, 122 and 127 all write it that
+   way, and so do the 17 deals already on file — so a new deal now composes byte-identically to what
+   the old ones hold. ⚠ The BUTTON still reads `EX Factory`: that exact string is what
+   `high_seas_via`'s CHECK allows. The answer and the printed term are deliberately different strings,
+   which is why the form shows the composed value under the strip.
+
+| Paper prints | The form produces | What is still missing |
+|---|---|---|
+| `Ex-Work Surat Factory (Transportation bear by Customer)` | `Ex-Work Surat (Transportation bear by Customer)` | ✅ nothing — matches |
+| `CIF NHAVA SHEVA PORT (Under EPCG License)` | `CIF NHAVA SHEVA PORT` | `(Under EPCG License)` — no field holds it |
+
+> **The question:** should the composer be widened (add the bearer to the printed term, and a free-text
+> tail for things like *Under EPCG License*), or should the trade term simply become a typed field with
+> the composed value as its default? The second is less work and matches how Bushra actually writes it;
+> the first keeps the answers structured.
+
+**The recommendation is the typed field, and the evidence is that every structured field added so far has
+been overtaken by the next paper.** Folder 106 is the clearest case — `CIF, NHAVA SHEVA (UNDER HIGH SEAS
+SALES AGREEMENT) (UNDER EPCG License)`: a comma after CIF and **two** parentheticals, where 120 has one
+and 127 has a different one again. No fixed vocabulary reaches that, and the next contract will carry
+something none of them anticipated. A typed field defaulted to the composed value keeps the structure
+where it helps and stops the paper being limited by it.
+
+🔴 **ONE ANSWER FIXES BOTH PAPERS.** This was found on the Performa Invoice and, independently the same
+day, on the **order confirmation** — the OC audit has the contract printing `Ex Factory Surat` where the
+real one reads `Ex-Work Surat (Transportation cost bear by customer)`. Same `composeTradeTerm`, same root
+cause, both documents. So this is one decision, not two, and it closes a finding on each.
+
+🟢 **WHAT IS LEFT IS THE FREE TAIL ALONE** — parentheticals no vocabulary reaches, e.g. folder 106's
+`CIF, NHAVA SHEVA (UNDER HIGH SEAS SALES AGREEMENT) (UNDER EPCG License)`. The recommendation above —
+a typed field defaulted to the composed value — stands, and is now the whole of this item.
+
+**0b. `[open]` What number should the order-confirmation series be set to?** *(02-09-2026)*
+
+The counter stands at **14** *(was 9; UI testing on 03-09 took 10–14 — see OCPI-40 and the parallel PI
+session)*; Bushra's paper book for 26-27 runs to **127**. The next quotation generated will take
+`OTPL/OC/15/26-27` unless it is moved in **Settings → Order confirmation numbering**. It was
+deliberately left until after testing, so the serials testing consumed are discarded by the jump
+rather than left as gaps inside the live series — which is working as intended: 10–14 are below the
+jump and vanish with it.
+
+⚠ **This is why the jump should happen BEFORE the next UI test run, not after.** Every run consumes
+more serials, and none of them come back on delete. Five went in one afternoon.
+
+⚠ **It is now taken at Generate, not at approval** (your decision, 02-09) — so a quotation that is
+never approved still consumes one, as a paper folder that never closes already does. Confirm **128**,
+or whatever the real last number is.
+
+*For Ritesh Bhai: one number, set once, before the next real quotation is generated.*
+
+**0d. `[open]` 🔴 When print heads are sold at their own price, should that money be part of the
+contract total?** *(03-09-2026)*
+
+**In one line:** on Clothera's real contract the print heads are priced separately AND counted in the
+total — our system can price them, or count them, but not both.
+
+**What the real paper does** *(order confirmation 124, Clothera — a signed contract, not a draft)*:
+
+| | |
+|---|---|
+| Machine | ₹46,50,000 |
+| 30 Epson print heads | ₹21,00,000 |
+| GST 18% | ₹12,15,000 |
+| **Total** | **₹79,65,000** |
+
+**What our system would print for the same deal: ₹54,87,000.** The ₹21,00,000 of heads is simply not
+in it — **understated by ₹24,78,000**.
+
+**Why.** The form has one box for the deal value, and it means the MACHINE. The Shipment & invoice
+table below it can take a quantity and a price for print heads, ink, dryer, spares and the centering
+device — but it only offers those boxes when the item is ticked as billed on a **separate invoice**,
+and money on a separate invoice is deliberately kept out of this contract's total, so the customer is
+not charged twice. Both halves are sensible on their own. Together they leave nowhere to put an item
+that has its own price and belongs on THIS contract.
+
+**What we would change — nothing new appears on the screen.** The Shipment & invoice table already
+asks *"separate invoice: yes or no"* on every row. Two changes to it:
+
+1. Offer the quantity and price boxes on **both** answers, not only on Yes.
+2. Let that answer decide where the money goes — **No → the line prints on the contract and is added
+   to the total; Yes → exactly as today, printed and excluded.**
+
+Clothera would then be typed as: machine ₹46,50,000 · print head, qty 30, ₹70,000 each, separate
+invoice **No** — and the contract prints both lines and totals ₹79,65,000, matching the signed paper.
+
+> **The question, in plain terms:** is Clothera a one-off, or will heads (or ink, or a dryer) be
+> priced on the same contract regularly? If regularly, we make the change above. If it is genuinely a
+> one-off, the workaround costs nothing today — put the combined ₹67,50,000 in the deal-value box and
+> the GST and total come out right; the contract then prints one lump sum instead of naming the heads.
+
+⚠ **This is the same commercial question as item 0 above, asked about the CONTRACT instead of the
+Performa Invoice.** One answer settles both papers. The sweep behind item 0 is the evidence for how
+often it happens: of 42 real Performa Invoices, **41 price the machine alone and 1 — Clothera —
+prices the heads as well.**
+
+*For Ritesh Bhai: a commercial decision, not a preference. Nothing is built until he answers.*
 
 **1. `[decided]` The print-head price sentence — reworded on 4 machines.** *(29-Aug-2026)*
 
@@ -158,23 +339,12 @@ that is done the question would simply stop appearing anywhere.
   column tracks the **Kyocera** head. Rocket reads *"EX600 RC & KYOCERA"* with DPI **300**, so RC 600 +
   Kyocera 300 is consistent. Mapped that way; mention only if it looks wrong.
 
-**5. `[answered]` What is "JAY"? — it is **POD**.** *(01-Sep-2026, from the client's own 01-09 sheet.)*
+**5. `[open]` What is "JAY"?**
 
-The 29-Aug sheet's TYPE OF MACHINE column read DIRECT (10), SUBLIMATION (12), OTHER (4) and **JAY (2)**
-— the two being **Label Printer** and **Book Printer**. "JAY" sat where a machine type goes and was not
-one, so it read like a name typed into the wrong cell, and both machines were left **uncategorised**.
-
-The **01-09 sheet replaces it with POD**, which is a machine type. OCPI-14 created the category (sort
-25, so *Other* stays last in the dropdown) and moved both machines into it. POD asks no dryer, no
-centering device and no optional extras — the same as Sublimation and Other.
-
-⚠ **They were quotable before only because a blank category showed all 28 machines.** That is no longer
-a happy accident to rely on: the category now decides what the form asks, so a machine without one
-would be quotable but would never be asked a dryer or centering question. **Every machine now has a
-category** — an assertion in `20261030120000_fms_ocpi_master_refresh_01_09.sql` enforces it.
-
-This also answers **OCPI-5's open 0.1** ("confirm the live category list, and where the two JAY machines
-sit"): four categories, and the template comparison workbook gains a fourth tab.
+The machine sheet's TYPE OF MACHINE column reads DIRECT (10), SUBLIMATION (12), OTHER (4) — and **JAY
+(2)**. The two are **Label Printer** and **Book Printer**. "JAY" sits where a machine type goes and is
+not one, so it reads like a name typed into the wrong cell. Both machines are left **uncategorised**;
+they are still fully quotable, since the machine list shows all 28 when no category is chosen.
 
 **6. `[decided]` A separately-charged dryer DOES attract GST.** *(29-Aug-2026)*
 
@@ -195,32 +365,174 @@ Built and verified against those exact figures. Two things came out of doing it 
 *For Ritesh Bhai: confirm the dryer is taxed at the same rate as the machine, rather than at a rate of
 its own.*
 
-**7. `[answered]` On a machine that takes no centering device, should BOTH centering questions disappear?**
-*(asked 29-Aug-2026 · **CLOSED by OCPI-14, 01-Sep-2026** — the question stopped applying rather than
-being answered either way.)*
+**7. `[open]` On a machine that takes no centering device, should BOTH centering questions disappear?**
+*(put to the client 29-Aug-2026 — they do not know; it needs Ritesh Bhai.)*
 
-It asked whether the **machine's** capability should hide both centering questions together, and
-offered a second tick on the machine master if the answer was no.
+There are **two** centering questions on the quotation, and the client asked for them to be kept
+separate. They are separate:
 
-**Neither option was taken, because the machine stopped deciding.** OCPI-14 moved every one of these
-branches onto the **machine CATEGORY**: a Direct deal is asked about a centering device, and a
-Sublimation, Other or POD deal is not — whatever `opt_external_centering` says on the model. So the
-five machines that could carry one became **eleven**, and Mini Lario, Rocket and the three Fab Pro
-models are now asked despite their own mapping.
+1. **"External centering system"** — a yes/no tick under *Deal inclusions*. Asks: *is it part of this
+   deal?*
+2. **"Centering device"** — a row under *Shipment & invoice*. Asks: *how does it ship, and is it billed
+   on its own invoice?*
 
-The two questions also stopped being two. The **tick** in *Deal inclusions* is gone; a full inclusion
-with details and quantity replaced it, because a bare yes/no could say neither which device nor how
-many. What remains is that inclusion plus the *Shipment & invoice* row, and both follow the category.
+**But both of them only appear when the machine is marked as able to take a centering device.** So on a
+machine marked **"No"**, **neither** question shows.
 
-⚠ `opt_external_centering` still exists and is still edited on the Machines master — it records what a
-model can take. **Nothing branches on it any more.** If the client ever wants the machine to overrule
-the category, that is a new decision and a new entry, not this one.
+*For Ritesh Bhai: is that correct?*
+
+- **Yes** → nothing to do. This is how it is built today.
+- **No** → i.e. there is a case where a customer is billed for a centering device on a machine that does
+  not normally take one (or the reverse). Then the machine list needs a **second tick**, so the two can
+  be set independently — a small build change in the machine master and in both rule engines.
 
 ---
 
+**8. `[open]` 🔴 Does EVERY machine need a "consumables not covered under warranty" list, or is Homer K32
+the only one?** *(raised 02-Sep-2026 by OCPI-37 · **for Bushra, with Ritesh Bhai present***)
+
+Bushra's real **Homer K32** contracts carry a clause our templates do not have at all:
+
+> **HOMER K32 CONSUMABLES PARTS LIST WHICH NOT COVER UNDER WARRANTY**
+> Sponge roll cover · Washing brush · Squeezee rubber · Head wiper · Washing brush bearing · Ink filter ·
+> Degassing · Sponge roll bearing · Ink male connector · Ink female connector · Ink pipe
+> *1) Physically damaged parts are not covered under warranty period.*
+> *2) Any air-pressure-related part damaged due to water entering the air pipe will not be covered.*
+
+It is on **4 real contracts** and in **none of our 21 templates** — verified against every
+`fms_ocpi_machine_sections` row.
+
+🔴 **Why it matters commercially.** The clause limits what Orange O Tec must replace free. Without it, a
+contract issued from the module promises to replace eleven wearing parts under warranty that the paper
+contract specifically excludes.
+
+**Already decided (02-Sep-2026):** ✅ **add it to Homer K32.** That half is not in question.
+
+*The question for the meeting:*
+
+- **Is K32 the only machine with such a list?** → then nothing further; K32 is fixed and we are done.
+- **Or do the others need one too?** → then **every K24, K64, P8S, Alpha and Fab Pro contract currently
+  gives away consumables**, and we need the equivalent list per machine. ⚠ This is the more likely
+  answer: the parts named are generic to any belt printer, and K32 looks like the one deck where
+  somebody happened to write it down.
+
+⚠ **Ask for the LIST, not a yes/no.** "Yes the others need one" without the parts per machine leaves us
+exactly where we are. If one list covers several machines, say which.
+⚠ Frozen revisions never change — anything already issued keeps the contract it printed. This affects
+new deals only.
+
+---
+
+### New Recruitment
+
+**1. `[decided]` The management pipeline dashboard — how it is gated, how wide it reads, how it opens.**
+*(02-Sep-2026 · full audit, traps and phase plan: **NR-2**)*
+
+Management asked for one screen carrying every position's pipeline, with the candidate's own detail
+readable from it. Nineteen positions and 119 candidates today, so "look at the pipeline" is nineteen
+page-opens. Three calls were made the same day:
+
+- **Nobody is named "management" in code.** The permission becomes a **list in Setup** — an admin
+  adds whichever users should have it — seeded with the Directors. Copies `process_coordinators`
+  and `salary_viewers`, both already edited from Setup.
+- **Five phase columns**, not ten stages: Screening · Interviewing · Offer · Hired · Dropped. Fits
+  one screen with no sideways scroll; a cell click still drills to the exact stage.
+- **Actionable, gated exactly as elsewhere.** Record an R3 result, make an offer, disqualify — the
+  buttons appear only where the rules already allow. Nothing new is permitted.
+- **Two modes on one route**, not a side-by-side split. The detail is already three columns and folds
+  the sidebar to fit them, so there is no width to put a list beside it. The matrix stays put and the
+  list area swaps to the detail at full width, with a breadcrumb back to the list you had.
+
+⚠ **The Setup list alone will produce an empty screen, and it will look like a broken build.** Row
+access is gated in SQL, not by a config key: `fms_hr_can_read_requisition()` admits admins,
+coordinators, owners of any step except `mrf`, and a requisition's own hiring manager. Someone added
+to the list who owns no recruitment step sees nineteen positions and zero candidates. It needs one
+additive migration — `fms_hr_is_pipeline_viewer()`, OR'd into that function — **applied before the
+frontend ships**. Same shape as PC-1's "view, not edit" trap. It also means **the Setup list is a
+PII grant**: names, phones, CVs, expected salary. It should be worded as one.
+
+**2. `[open]` Two things left on it.**
+
+- **Does it replace Positions for management, or sit beside it?** Positions is also where a vacancy
+  is held or cancelled.
+- **Should closed and cancelled positions appear?** Five are cancelled today — and since **NR-6** each
+  one now states why, by whom and when, on the page and on hover. That is most of what made a cancelled
+  row worth showing, so this is easier to answer than it was.
+
+⚠ Separately, and not a question — **Nakuleshwar Sharma takes Director rounds and has no access to
+the module at all.** One edit in the admin User form.
+
+**3. `[decided]` HR states the department → HOD mapping in Setup, rather than sending us a list.** *(02-Sep-2026 — raised by NR-3)*
+
+HR raises most requisitions on a department's behalf, and the form's "who will manage this hire"
+picker is scoped by RLS to the raiser's own department — **Saloni Rathod can see 5 of 64 people**,
+so no HOD outside HR is even in the list. It therefore falls back to the raiser every time:
+**17 of 19 live positions have the raiser as hiring manager, and on 14 of them that is Saloni.**
+
+On the module's own rules that makes HR the HOD for those vacancies — HOD shortlist, Interview
+Round 2 and all four probation reviews — across **96 in-play candidates**. And it cannot be
+corrected today: no function in the database writes `hiring_manager_ids` after the MRF is created,
+so the mapping is frozen on every live position, for everyone including an admin.
+
+**NR-3 Part A** fixes the picker and adds the missing edit path. **Part B** answers the rest without
+asking anyone for a spreadsheet: a **Setup → Department HODs** master, one row per department, which
+both pre-fills every new requisition and drives the backfill of the 19 open ones.
+
+⚠ Nothing in the portal already holds this. `departments` has **no `hod_id`**, and `user_hods` is a
+reporting line that cannot be aggregated into one — it names **five** different heads for Accounting
+& Finance, four for Supply Chain, three for Sales, and **nobody at all for 13 of 23 departments**.
+It has to be stated, which is exactly what the Setup screen is for.
+
+**Also decided:** the Setup mapping fills **both** people boxes on the position — *who will manage
+this hire* and *who will they report to* — both editable before saving. The second is empty on 15 of
+23 requisitions today, and the Round 2 interviewer picker reads it alongside the hiring manager, so
+leaving it blank is half of why that picker offers almost nobody (**NR-1**).
+
+Nothing on NR-3 is open. It is specified and parked with the rest of the HR list.
+
+---
+
+
+### Outstanding Dashboard
+
+**1. `[open]` The three collectors are already restricted by SALESPERSON. What happens to those tags
+when Collection Team scoping arrives?** *(03-Sep-2026 · for **Jayshree** and Ritesh Bhai · full audit
+and plan: **RC-11**)*
+
+Collection Team and Salesperson are two separate things — but they are not separate *settings*. Both
+are limits on the same account, and three of the four collectors already carry salesperson tags
+today. Add a team tag without clearing them and each person ends up with **two limits at once**.
+
+**What is actually set right now** (measured 03-Sep-2026):
+
+| User | Salesperson tags today | Dashboard access |
+|---|---|---|
+| **Jayshree Patil** | 13 tags — AAYUSH SIR · DHANANJAY · KARAN SIR · KHURSHID JI · MANMOHAN JI · PURAV SHAH · **OTHERS** · **Others** · NAKUL JI · MAYANK · SUHEL · UMESH JI · ABHISHEK | edit |
+| **Nitesh Prajapati** | 8 tags — ABHISHEK · DHANANJAY · SUHEL · PURAV SHAH · OTHERS · NAKUL JI · UMESH JI · KARAN SIR | edit |
+| **VIJAY** | **1 tag — NAKUL JI** | edit |
+| **BENI MADHAV MOHTA** | none | 🔴 **no access at all** |
+
+**The questions:**
+
+- **Should the salesperson tags be cleared on these three**, so each is limited by Collection Team
+  only? ⚠ If Vijay keeps `NAKUL JI` *and* gains team `Vijay`, he sees only the customers that are in
+  **both** — likely a handful, not the **114** the sheet assigns him.
+- **Jayshree already sees everything.** The sheet holds 11 salespeople and her 13 tags cover all 11
+  (plus `MAYANK`, who has no customers in it). So "Jayshree views all" is already true — just spelled
+  out name by name rather than granted as a rule. Should it become a proper "all teams" grant?
+- 🔴 **Mohta ji cannot open the Outstanding Dashboard at all.** He has a login and no module access.
+  One edit in Admin → Module Access — but worth confirming he is meant to have it.
+- ⚠ **Her tags contain both `OTHERS` and `Others`.** Tags are matched **exactly and case-sensitively**,
+  so somebody has already hit this and worked around it by tagging both spellings. The same trap sits
+  in the new data: the sheet stores **`Vijay` (102 rows) and `vijay` (12 rows)** as two different
+  teams. Both want cleaning at source, not in code.
+
+---
+
+
 ## Platform — all modules
 
-### PF-1 · Save Draft on every entry form  `[ ]`
+### PF-1 · Save Draft on every entry form  🟡  `[ ]`
 *Raised 2026-08-20 · **Order: Production Entry first, then Order to Dispatch**, then the rest*
 
 A standard **Save Draft** on all entry forms. On save the entry is **not published**; the same user
@@ -260,8 +572,27 @@ state that dies with the page.
 
 ---
 
-### PF-2 · 🔴 HIGH — queues tell approvers "Nothing here" while they are still loading  `[~]`
-*Raised 2026-08-20 · Reported by the team · **Critical: this is delaying live work***
+### PF-2 · 🟢 Queues tell approvers "Nothing here" while they are still loading  `[~]`
+*Raised 2026-08-20 · **Downgraded 🔴 → 🟢 on 03-09-2026 (client’s call).** ⚠ Re-raise it the moment
+the team complains again — the original symptom is NOT fixed; see the status check below.*
+
+#### Where this actually stands — checked in the code, 03-09-2026
+
+The entry below says step 1 was *"shipped, not yet deployed"*. **That note is stale: step 1 IS
+deployed** — `QueueTable`’s `loading` prop is on `master`, and master’s head deploys green. But the
+task is nowhere near done:
+
+| Step | State |
+|---|---|
+| **1 · Loading state instead of "Nothing here"** | **Partly done and live.** 33 of 77 `QueueTable` files pass `loading`. **Eight modules have ZERO coverage** and still lie on first paint: procurement (8 files), hr-recruitment (9), hr-exit (8), import (8), asset-maintenance (3), office-supplies (3), sampling (3), master-report (1). Much of the coverage that does exist came free with travel-desk and OCPI, which were built later — not from this task. |
+| **2 · `refetchOnWindowFocus`** | **Not started.** Still `false` in `main.tsx`. |
+| **3 · `refetchInterval` on FMS queues** | **Not started.** No polling anywhere in the default config. |
+| **4 · Realtime on the FMS tables** | **Not started.** `postgres_changes` still exists in exactly ONE file, task-management’s notifications. No FMS has it. |
+
+⚠ **So the thing the team actually complained about is untouched.** An approver’s open tab is still
+never told that someone else changed the data — no timer, no realtime, and not even a refetch when
+they alt-tab back. Their screen shows yesterday’s picture until they reload. Steps 2–4 are the fix;
+step 1 only stopped the screen *lying* about it while it loads.
 
 Two symptoms, one cause:
 
@@ -359,7 +690,7 @@ list in the portal**, not just Dispatch.
 
 ---
 
-### PF-3 · 🔴 The `mst-refresh-company-links` job rebuilds ~2,100 rows from scratch every 15 minutes  `[ ]`
+### PF-3 · 🟢 The `mst-refresh-company-links` job rebuilds ~2,100 rows from scratch every 15 minutes  `[ ]`
 *Raised 2026-08-20 · Found while investigating **PF-2***
 
 A cron job added on **17-Aug** (`cron.job` id 30, schedule `5,20,35,50 * * * *`) runs
@@ -459,9 +790,19 @@ actually read — not its whole schema.
 
 ---
 
-### PF-6 · 🔴 A view-only user gets the module dashboard and nothing else  `[~]`
-*Raised 2026-08-21 · **Order: Order to Dispatch first as the pilot**, then the rest · Follows on from
-**PF-5**, which shipped the view/edit level itself*
+### PF-6 · A view-only user gets the module dashboard and nothing else  `[x]`
+*Raised 2026-08-21 · **VERIFIED LIVE 03-09-2026** — it is NOT waiting to be pushed; it already
+shipped. Checked three ways: all three migrations are applied on `icutjkrqkbzwvmnfbzpr`
+(`enforce_view_only_in_the_database`, `view_only_reads_the_whole_module`,
+`view_only_reads_supplies_exit_and_requisitions`, 20–21 Aug); `isModuleViewer` is on **master** in
+`session.tsx` and wired through **12 modules**; and **11 live `view` grants** exist in `app_access`,
+so it is in real use, not merely deployed. · Follows on from **PF-5**, which shipped the view/edit
+level itself*
+
+⚠ **One piece was deliberately left out and is still out — the My Work feed.** It filters on
+`hasModule` and consults no write ceiling, so a view-only user who is *also* a step owner still gets
+an actionable worklist. That was a conscious exclusion (see the foot of this entry), not an
+oversight — and it is the only thing anyone could argue keeps this open.
 
 We can now grant a module at **View only** instead of full access. The intent is written into
 [session.tsx](frontend/src/core/platform/session.tsx) in as many words — *"a view-only user opens the
@@ -522,7 +863,7 @@ render empty.
 
 ---
 
-### PF-8 · Give the other FMS modules the treatment Dispatch just had  🟢  `[ ]`
+### PF-8 · Every save in the other 7 FMS modules re-downloads the whole module — 260 write paths to fix  🟢  `[ ]`
 *Raised 2026-08-21 · **not blocked** · **low priority on purpose** — nobody is waiting on it and no
 module is hurting today. Pick it up when there is room, or when one of them starts to feel slow.*
 
@@ -690,7 +1031,7 @@ lock that still opens the entry read-only. The comment above it says so.
 
 ---
 
-### PF-9 · Browser notifications, on top of the bell and the emails  `[ ]`
+### PF-9 · Browser notifications, on top of the bell and the emails  🟢  `[ ]`
 *Raised 2026-08-21 · Touches every module that has a bell*
 
 We already notify at two points: the **in-app notification bank** (the bell in the topbar) and
@@ -776,8 +1117,10 @@ overdue, the collection report going out) as against the ones that would make it
 number it goes to, given `profiles.phone` already exists; and whether a message is one-way or
 expects a reply.
 
-### PF-11 · Training videos, and a place in the hub to watch them  `[ ]`
-*Raised 2026-08-22 · **Joint work with Bushra** · touches every module*
+### PF-11 · Training videos, and a place in the hub to watch them  🔴  `[!]`
+*🔴 **HIGH priority, and BLOCKED on the business, not on us** (03-09-2026): the videos have to be
+recorded by **Bushra and Ritesh Bhai**. Nothing can be built until the content exists — the hub page
+is the small half. · Raised 2026-08-22 · **Joint work with Bushra** · touches every module*
 
 Two halves, and neither is much use without the other:
 
@@ -793,34 +1136,48 @@ where the files are hosted, since a video in the repo is a mistake and Supabase 
 whether a new joiner is *pointed* at them by the portal or has to go looking; and whether they need
 re-recording every time a screen changes, which is the reason most such libraries die.
 
-### PF-12 · The reports management actually wants  `[ ]`
-*Raised 2026-08-22 · **Next week's first job** · sit with Ritesh Bhai before building anything*
+### PF-15 · 🟢 No spreadsheet this portal has ever produced has a frozen header row  `[~]`
+*Raised 2026-09-02 · Found while building OCPI-5 · **partly fixed** — the new export is correct, every
+other one still is not*
 
-Brainstorm with **Ritesh Bhai** to understand what he needs out of the hub **on the report side**,
-then build those reports into Orange One.
+`shared/lib/exportXlsx.ts` set `ws["!freeze"] = { xSplit: 0, ySplit: 1 }` on every sheet it wrote, and
+three comments around it described the header row as frozen. **It writes nothing.** The community
+`xlsx-js-style` writer emits every sheet as
 
-**The session comes first, and it is the point.** We have nine modules stamping who did what and
-when, so most of what he asks for is probably derivable from data we already hold — but which cuts
-matter, at what frequency, and delivered how (a screen, a scheduled mail, an Excel) is his call, not
-ours. Guessing produces reports nobody opens.
+    <sheetViews><sheetView workbookViewId="0"/></sheetViews>
 
-**What already exists, so we do not rebuild it:** the receivables side is well covered — the
-Salesperson Collection Report, the Risk Register, Saved Views, and the scheduled mail behind
-**RC-2** ([RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md)) which already renders a
-PDF and a workbook from the app's own code. The FMS side has almost nothing by comparison: the
-Master Control Center is a live-status board, not a report, and **PE-2** (how long each production
-step took) is the only report anyone has asked for. That gap is most likely where this lands.
+— a self-closing `sheetView` with no `<pane>` child — and there is no key it reads that produces one.
+Panes are a Pro feature of the upstream library. So the line has been dead since the helper was
+written, and **every export in the portal scrolls its header off the top**: the Deal Register, the
+Weekly Scorecard, Master Analysis, the asset reports, `MasterCrud`'s Excel button, the receivables
+reports, the user list. Nobody reported it because nobody reads far enough down a 25-row export to
+notice, which is exactly why it survived.
 
-**To settle in the session:**
-- [ ] Which decisions he is making today without a number in front of him — start there, not from a
-      list of tables we could join.
-- [ ] Per report: the period (day, week, month), who receives it, and whether it is a screen he
-      opens or a mail that arrives.
-- [ ] Whether these are per-module reports or one management view across modules — the second is a
-      different build, closer to **PC-1**'s dashboard than to a report.
-- [ ] What he wants that the data cannot answer yet, so we know early what needs capturing first.
-### PF-14 · Four modules have no step owners at all, so every approval in them is admin-only  `[!]`
-*Raised 2026-08-27, found while auditing for **PF-13** · this needs the business to name people, not
+🟢 **The mechanism to fix it now exists and is proven.** OCPI-5 added `freezeCols` to `ExportSheet`:
+after `XLSX.write`, the workbook is re-opened with JSZip (already a dependency, already used in the
+browser by receivables-hub) and the `<pane>` element injected into the sheets that asked, mapping
+sheet name → XML part through `xl/workbook.xml` and its rels rather than guessing `sheet1.xml`.
+Verified by opening the file in Excel: `FreezePanes=True`, `SplitColumn=4`, `SplitRow=4`.
+
+🔴 **Deliberately NOT switched on for the other exports**, and that is the open half. The OCPI-5 brief
+required the helper change to be strictly additive, so a sheet that does not ask still gets no pane.
+Turning it on globally would change the output of four modules' spreadsheets at once — almost
+certainly for the better, but not as a side effect of an unrelated build.
+
+**What to do:** default `freezeCols` to 0 with the header row frozen for every sheet, i.e. always run
+the pane pass with `ySplit = headerRow + 1`. It is a one-line default and one deleted condition. Then
+re-open one export per module and confirm, because — as this entry is the proof — reading the code
+does not settle it.
+
+⚠ **The dead `!freeze` line is gone, but check for the belief, not the line.** Any new export written
+by copying an old one may carry the same comment. Grep for `!freeze` before trusting a claim that
+something freezes.
+
+### PF-14 · OCPI, Customer Onboarding, Asset Maintenance and Travel Desk have no step owners at all — every approval in them is admin-only  `[!]`
+*🔴 **BLOCKED ON: Ritesh Bhai and Bushra** — they must NAME the people. Four lists to fill:
+OCPI quotation approval · Customer Onboarding’s three approvals · Asset Maintenance `verify_close` ·
+Travel Desk director / advance / finance. Six travel trips are already sitting with no approver. ·
+Raised 2026-08-27, found while auditing for **PF-13** · this needs the business to name people, not
 code*
 
 `fms_ocpi_step_owners`, `fms_customer_step_owners`, `fms_asset_step_owners` and
@@ -833,20 +1190,6 @@ steps have nobody configured at all: only an admin can move them, because only t
 **Reassign cannot help this** — there is nobody to reassign *from*. It is a configuration gap, and it
 is the reason **PF-13** stops where it does.
 
-**Two more of the same class, found while building PF-13 and confirmed on live data:**
-
-- **Seven of HR Exit's fifteen step owners cannot act on the steps they own.**
-  `fms_exit_is_step_owner` is module-gated and these four people have `hr-exit` access `none`:
-  DHARMISHTHA PRAJAPATI (`asset_return`, `handover`, `leave_verification`), Ritesh Tulsyan
-  (`fnf_approve`), Bushra (`fnf_generate`, `payroll_inputs`) and Jyoti (`fnf_payment`). `fnf_approve`
-  is one of the module's two approvals, so those seven steps are admin-and-coordinator only. The fix
-  is a module grant, not code.
-- **Nobody has Travel Desk edit access at all** — zero rows in `app_access` at level `edit` — so every
-  non-admin is refused before any ownership rule is consulted, on top of the empty step-owner table.
-
-- [ ] Grant those four people `hr-exit` edit access, or move the steps to somebody who has it.
-- [ ] Decide who gets Travel Desk edit access when the module goes live.
-
 **To discuss with Ritesh Bhai / Bushra:**
 - [ ] OCPI — who approves a quotation, and is it banded by value the way Purchase is?
 - [ ] Customer Onboarding — who signs off each of the three approvals?
@@ -856,12 +1199,39 @@ is the reason **PF-13** stops where it does.
 - [ ] For each of them: **two names, not one.** A one-person step is exactly the thing PF-13 exists
       to work around, so naming a single person here just recreates the problem.
 
+### Dropped — PF-12 and PF-13  *(03-09-2026, client’s call)*
+
+Both removed from the list on Ritesh Bhai’s instruction. Recorded here because **seven entries
+still cross-reference PF-13**, and a reference to nothing is worse than a reference to a decision.
+
+- **PF-12 · The reports management actually wants** — *dropped.* It was never a build, it was a
+  brainstorm: *sit with Ritesh Bhai, find out what he needs on the report side, then build it.*
+  Nothing was specified, so nothing was lost. ⚠ If reporting gaps come up later they will arrive as
+  their own concrete tasks, which is the better shape anyway.
+- **PF-13 · Reassign an approval — the remaining four modules** — *dropped: already done for most
+  modules.* The reassign pattern shipped for Purchase, Import, Dispatch and HR Recruitment. What
+  PF-13 covered was porting it to **Office Supplies, HR Exit, Travel Desk and Customer Onboarding**.
+  Client will say if it is wanted again.
+  ⚠ **This does NOT close PF-14**, which is a different problem and still open: those four modules
+  have **no step owners at all**, so there is nobody to reassign *from*. Naming people is still
+  needed regardless of whether reassign is ever ported.
+
+
 ---
 
 ## Process Coordinator Dashboard  *(new)*
 
-### PC-1 · Consolidated dashboard for the process coordinator  `[~]`
-*Also touches: Admin / Masters · every FMS · Raised 2026-08-20 · **Built 2026-08-23**, awaiting
+### PC-1 · Consolidated dashboard for the process coordinator  `[x]`
+*Raised 2026-08-20 · Built 2026-08-23 · **CLOSED 03-09-2026 — live and verified on the server.**
+`processCoordinatorApp` is registered on `master` and master’s head deploys green. Reachable at
+**`/process-coordinator`** (opens on Approvals; the other screen is `/process-coordinator/processes`),
+shown on the launcher as **Process Coordinator** under the **Control** category.*
+
+⚠ **Closed as BUILT, not as in use.** Checked 03-09-2026: `app_access` holds **zero**
+`process-coordinator` grants, so today only admins see it at all. Whenever a coordinator is named,
+give them TWO grants — `process-coordinator`, **and `view` (NOT `edit`) on every FMS module**.
+Several modules test for `view` *exactly*, so an `edit` grant makes them read **zero** for precisely
+the modules that matter most. That trap is the reason this note stays here after closing.
 the access grants below before it shows anything to a non-admin.*
 
 **What shipped.** A new module at `/process-coordinator` (Control category, between the
@@ -949,8 +1319,11 @@ twelve stores — `canActOn`, `canRaise`, `canCancelOrder`, `canTickCheck` and H
 `canReadConfidential`, which guards the exit-interview PII tier. Only the ten
 `*_resolve_master_request` RPCs were widened, one authorisation line each.
 
-### PC-2 · A user's phone doubles as their login password  `[ ]`
-*Platform / Admin · Raised 2026-08-23, out of PC-1*
+### PC-2 · 🟢 A user's phone doubles as their login password  `[ ]`
+*🟢 **Low priority — client’s call, 03-09-2026.** ⚠ Recorded as a security exposure, not a
+feature gap: 56 of 60 users have signed in and signing in does not change the password, so most
+logins are probably still the person’s mobile number. Anyone who knows a colleague’s mobile can
+likely sign in as them. Deprioritised knowingly. · Platform / Admin · Raised 2026-08-23, out of PC-1*
 
 Per platform convention a user's mobile number IS their initial password, set on create and
 re-pinned every time the admin user form is saved. Nothing ever forces a change. Measured
@@ -966,7 +1339,7 @@ phone; or stop re-pinning the password on every user-form save; or both. Note th
 "Share login" modal (`core/admin/Users.tsx:227`) passes `defaultPassword={shareFor?.phone}`,
 so it depends on the convention and would need to change with it.
 
-### PC-3 · Collapse the ten duplicated master-request systems  `[ ]`
+### PC-3 · 🟢 Collapse the ten duplicated master-request systems  `[ ]`
 *Also touches: every FMS · Raised 2026-08-23, out of PC-1 · **This is Central Masters Phase 3***
 
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) already tracks this as Phase 3, not started. PC-1
@@ -989,8 +1362,17 @@ migration file.
 
 ## OCPI  *(new module)*
 
-### OCPI-1 · Build the OCPI module, standalone  `[~]`
-*Raised 2026-08-20 · **Built 2026-08-22**, phases 0–9d of 10 done. Live checklist and build log:
+### OCPI-1 · Build the OCPI module, standalone  `[x]`
+*Raised 2026-08-20 · Built 2026-08-22 · **CLOSED 03-09-2026 — live, deployed and in real use.**
+Verified: `ocpiApp` is registered on `master`, the manifest reads `status: "live"`, and every phase
+in [OCPI.md](OCPI.md) is `[x]` through 9d (Stage H · Teardown + go-live done 25-Aug-2026). The
+database holds **33 deals, 15 of them real (non-test)**, latest 02-Sep — so it is not merely
+deployed, it is being used.*
+
+⚠ **Closing the BUILD, not the module.** Ongoing OCPI work continues as its own numbered entries
+(OCPI-25, -28, -34, -40 and whatever follows), and a second session is actively working it. This
+entry was the original "build the module" task and it is finished; leaving it open made the list
+read as though the module had never shipped.
 [OCPI.md](OCPI.md). Not yet cut over — see "Before it goes live" below.*
 
 A **complete, standalone module** for OCPI, covering the whole thing end to end. What is built:
@@ -1555,6 +1937,11 @@ folder either. This names them for OCPI-1's standing question: **K64, JP7, JPK, 
 Position Printer, KoloRado Alpha 3 (12 heads), KoloRado Alpha 3.2 (8 heads), Pengda PD-1700XD-800,
 Pengda PD-1800XD-800, Rocket.**
 
+✅ **RESOLVED 31-Aug-2026 for nine of the eleven.** Bushra supplied the decks in
+`Misc/Bushra Reports/OCPI/31-08-2026/` and they were imported under **OCPI-4** — the system now has
+**19 templates, not 10**. Only **Pengda PD-1700XD-800** and **Pengda PD-1800XD-800** remain missing
+from this list.
+
 **L · Print heads are many-per-machine, and the name mapping**  *(settled 27-Aug-2026)*
 
 41. **A machine may carry several heads**, and the quotation shows **all** of them. Point 3 assumed one;
@@ -1692,6 +2079,1289 @@ Combobox moves.
       on both; it does not, and there is no token for it. Now that it is the only remark box, decide:
       add it to the detailed sheet, or correct the hint.
 
+### OCPI-4 · The 31-08-2026 template batch — nine of the eleven missing decks  `[x]`  — imported, applied and render-verified 31-Aug-2026
+*Raised 2026-08-31 · Source: `Misc/Bushra Reports/OCPI/31-08-2026/` (12 files → 9 machines)*
+
+Bushra has supplied **nine of the eleven decks** OCPI-3 §K named as missing. Every one maps onto a
+master row that already exists with `has_template = false`, so this is an **update, not a new machine**.
+Only **Pengda PD-1700XD-800** and **Pengda PD-1800XD-800** remain outstanding after this.
+
+Takes the module from **10 of 28** machines printing a detailed contract to **19 of 28**.
+
+| Deck | Machine row |
+|---|---|
+| `K64.pptx` (+ `.docx`) | `K64` |
+| `POSITIONAL  PRINTER.pptx` | `Position Printer` |
+| `ALPHA  3  12 PH.pptx` | `KoloRado Alpha 3 — 12 heads` |
+| `ALPHA  2  3.2 - 8.pptx` | `KoloRado Alpha 3.2 — 8 heads` |
+| `FABPRO 1I.pptx` (+ `.docx`) | `Fab Pro 1I` |
+| `Fab Pro 2I.pptx` | `Fab Pro 2I` |
+| `JP7.pptx` | `JP7` |
+| `JP K EVO.pptx` | `JPK` |
+| `ROCKET  MACHINE  OC.docx` (+ `ROCKET MACHINE.docx`) | `Rocket` |
+
+**Baseline before any write (31-Aug-2026):** 28 machines · 10 templates · 82 sections · 19 deals.
+Two of those deals are **real** (AARNAV FASHIONS, `QT-M0037` / `QT-M0038`) and sit on Homer K32 and
+Kolorado Alpha 15 — both already templated, so **no live deal changes behaviour**. The six deals on
+this batch's machines are all `ZZ TEST`.
+
+#### Phase-wise checklist
+
+**Phase 0 · Baseline and safety net**
+- [x] 0.1 Record counts and a per-template md5 of the existing ten, to prove afterwards they were not touched
+- [x] 0.2 Confirm which existing deals sit on the nine machines, and that none is real
+- [x] 0.3 Check whether PowerPoint / Word are already running before touching COM
+
+**Phase 1 · Render the decks (never transcribe from raw OOXML — see the finding below)**
+- [x] 1.1 Export every slide of the 8 `.pptx` to PNG via PowerPoint COM
+- [x] 1.2 Export `ROCKET  MACHINE  OC.docx` (and the three Performas, for cross-check) to PDF via Word COM
+- [x] 1.3 Read every render; reconcile against the structured XML walk used for the audit
+
+**Phase 2 · Transcribe, one machine at a time**
+- [x] 2.1 K64 · [x] 2.2 Position Printer · [x] 2.3 Alpha 3 — 12 heads · [x] 2.4 Alpha 3.2 — 8 heads
+- [x] 2.5 Fab Pro 1I · [x] 2.6 Fab Pro 2I · [x] 2.7 JP7 · [x] 2.8 JPK · [x] 2.9 Rocket
+
+**Phase 3 · The migration**
+- [x] 3.1 Machine header updates (`intro_text`, `machine_model_no`, `supply_description`, `spec_rows`, `composition`, `header_fields`, `signoff_style`, `has_template`), each guarded `where name = … and has_template = false`
+- [x] 3.2 Sections in a `do $seed$` block, one loop per family, skipping any machine that already has sections
+- [x] 3.3 Master gaps the decks answer — model numbers, and `Fab Pro 1I` sign-off → `checked_by`
+
+**Phase 4 · Apply and verify**
+- [x] 4.1 Apply to `icutjkrqkbzwvmnfbzpr`
+- [x] 4.2 SQL: 19/28 templates; all nine non-zero on specs + composition + sections; **the ten baseline fingerprints unchanged**
+- [x] 4.3 Token sweep — every `{{…}}` is in `TOKEN_HELP`; zero `post_warranty_head_price` / `dryer_warranty`
+- [x] 4.4 `cd frontend && npm run build`
+- [x] 4.5 Browser: each of the nine in *Machine template*, no "placeholders not recognised" warning
+- [x] 4.6 End-to-end render — **all nine** rendered through the app's own `buildOcPdf`, 4–7 pages each, **0 render errors, 0 ruled blanks, 0 unresolved `{{…}}`**. No test deal was raised and **no quotation number was burned**: the nine were rendered by importing the module against live store data, and JP7 was additionally seen on a real deal page.
+- [x] 4.7 The `ZZ TEST` JP7 deal at `awaiting_customer_sign` now shows a **Detailed sheet tab it never had**, banner "Rebuilt from the template — the approved file could not be found". Renders correctly and `{{head_count}}` resolved to the deal's **4**, not the deck's 16. Behaviour change confirmed, and honest on its face.
+
+**Phase 5 · Record**
+- [x] 5.1 `OCPI.md` — new 31-08-2026 entry; Phase 3's counts and the "who supplies the missing templates" open item are now stale
+- [x] 5.2 `WORKLIST.md` — tick this entry, correct §K's "the eleven decks are not in the folder either", and file the findings below
+- [x] 5.3 Memory — 19 of 28 templated, and the render-don't-parse rule now has evidence
+
+#### What the audit turned up
+
+⚠ **Raw OOXML text is unusable for four of the nine decks — now proven, not suspected.** Both Alpha
+decks and both Fab Pro decks extract with words fused (`Followingupyourkind order`,
+`THEMACHINEISCOMPOSEDASFOLLOWS`). K64, JP7, JPK and Position Printer read cleanly, which is why the
+problem was missed the first time. Transcription is from a **render**, always.
+
+🔴 **`FABPRO 1I.pptx` is a filled-in live contract, not a blank template.** It carries customer
+**PRINTING PARADISE**, their Tirupur address, **GST 33AAPFP8156P1ZD**, and the price
+**₹40,00,000 + ₹7,20,000 GST = ₹47,20,000** with payment terms *25% Advance and remain in 8 equal PDC*.
+Transcribed verbatim it would put **another customer's name, GST number and price on every future Fab
+Pro contract.** Stripped to tokens on import.
+
+🔴 **The retired head-price token appears five more times.** K64, Position Printer, Fab Pro 1I/2I
+(*"1.75 lacs plus GST"*) and Rocket (*"INR 1,50,000.00 to 1,80,000.00 plus GST"*) all carry the
+post-warranty print-head price sentence. `{{post_warranty_head_price}}` no longer resolves and would
+print a **ruled blank in a signed contract**. All five take the reworded sentence already live on
+K24/K32/P8D/P8S.
+
+🔴 **Machine-warranty conflict.** Config is fixed at machine 12 / head 18 months. The decks say
+Position Printer 12, Fab Pro 1I 12, JPK *"12 and no longer than 15"*, K64 blank — and **Rocket 24**.
+Using the token prints **12 on Rocket, whose deck promises 24**. Proceeding with the token, because
+OCPI-3 §F made warranties fixed company policy; **listed for Ritesh Bhai** below.
+
+🟢 **A real dryer name, at last.** `JP K EVO.pptx` slide 3 carries a full Dryer Information block naming
+**POWER-D Dryer (ELECTRIC)** — electrical heating H18, third passage H18, folder H18. Six placeholders
+are standing in for exactly this; since OCPI-8 they no longer carry the `[SAMPLE]` prefix, so nothing
+marks them out. See the *Waiting for* row on real dryer names.
+
+🔴 **F18 · `{{machine_model_no}}` does not read the machine master, and Homer K24 is live with it.**
+The token resolves from `deal.machineModelNo` — a free-text box the salesperson types on the quotation
+form, which is **never prefilled from the machine**. K64, Position Printer and Rocket were first written
+with the token and all three then rendered *"Model No: ________"* against a real deal; caught in the
+render sweep, they now carry the literal model number, which is what their decks state anyway.
+**Homer K24's live supply line still reads `(Model No: {{machine_model_no}})`**, so any K24 contract
+raised without that box filled prints a ruled blank on a signed document. Not changed here — it is
+existing contract text and outside this batch. The Machines form's hint *"Available in templates as
+`{{machine_model_no}}`"* is misleading for the same reason.
+
+🔴 **F16 · Position Printer's contract says it is a Homer K32.** Its deck's composition reads *"Printing
+unit model Homer K32 to print from 4 to 8 colors"* — a copy-paste leftover from the K32 deck, carried
+across verbatim under the deck-verbatim rule. **First thing for the proof-read.** The same deck also
+carries a "Manufacture" label with no value and no token behind it, which was dropped rather than printed
+as a dangling label. And the Alpha 3.2 deck's composition says *"model KoloRado alpha III"*.
+
+🔴 **F17 · The two new Alpha decks state different commercial terms from their five siblings.** Not
+wording drift — three substantive differences: NOT INCLUDED says *"Transportation Charges will be bear by
+us"* where the five say local transportation is the customer's; WARRANTY says *"AMC charges will be
+applicable"* where the five say **no** AMC applies if the customer uses Orange ink; and CANCELLATION opens
+with *"Once order is placed; it will not be cancelled"*. Transcribed as the decks read, so seven Alpha
+machines now carry two different sets of terms. Worth a decision.
+
+#### Follow-up the same day — two siblings copied, 19 become 21
+
+`20261023130000_seed_fms_ocpi_machine_templates_batch2b.sql`. **Fab Pro 3I ← Fab Pro 2I** and
+**Kolorado Alpha 16 ← Kolorado Alpha 15**, asked for as "copy the sibling, change the model code".
+Neither has a deck, so ⚠ **this content is not transcribed from a source document** — it is a sibling's
+text with the model name changed, on the instruction that the specs are otherwise the same. Both clause
+sets were checked to mention no model name or head count, then copied in SQL rather than retyped. Both
+render clean (4 and 3 pages, 0 errors, 0 unresolved tokens, 0 ruled blanks, no stale "2i"/"15" left).
+
+🔴 **Confirm Fab Pro 3I's rows and installable heads.** It carries 2I's figures verbatim — *Two* rows,
+*16 Heads* installable, *(16H)* in the composition — but the family scales 1i = one row / 8 heads,
+2i = Two / 16, so a 3i would normally be **Three rows / 24 heads**. Three figures on that contract are
+wrong if so. Left as instructed. What the customer buys is safe either way: that row is `{{head_count}}`.
+
+⚠ On **Alpha 16**, "15"/"16" is the model designation, **not a head count** — Alpha 15's own head row is
+already `{{head_count}}`, so no head figure is fixed anywhere.
+
+**Held deliberately (7 of 28 still without a template):**
+- 🔴 **`PENGDA 800 DIA.pptx` cannot supply the two 800 machines** — fingerprinted 31-Aug-2026. Slides 1
+  and 3 are **byte-identical** to the 1000 deck; slides 2 and 4 differ only by two boilerplate typos.
+  Its spec table reads **Model: Pengda PD-1700XD-1000, Drum Diameter: 1000 mm** — no 800 data at all.
+  Reading the naming as **PD-{working width}XD-{drum diameter}**, what is missing is the dimensions,
+  initial power and voltage; the 1000's (2750×1750×2250 mm, 71 KW, 42 KW) will not fit an 800 drum.
+  **A real 800 spec sheet is still needed.**
+- **`KoloRado Alpha 3.2 — 16 heads`** — there is no "3.2 — 15 heads" to copy from, and the two that
+  exist differ materially: 8 heads is 1800 | 2200 mm, 1000 Meter roll, no front dryer; 24 heads is
+  3200 mm, 10000 Meter roll, with front dryer. **Client is supplying the detail.**
+- `Mini Lario`, `Foil Machine`, `Label Printer`, `Book Printer` — never had a deck.
+
+**Module gaps the decks expose, none blocking this import:**
+- **JPK is priced in EURO.** The module supports **INR and USD only**. A JPK deal cannot be quoted in
+  its own currency today.
+- **Rocket's layout drawing cannot be reproduced** — a 2.9 MB JPEG in the OC document, referenced by its
+  "Layout :" line. `fms_ocpi_machine_sections` is text and the renderer draws no images.
+- **JPK's spec table has no *No. of Machine Supply* and no *installed printing heads* row**, so
+  `{{machine_count}}` / `{{head_count}}` have nowhere to sit — unlike all 27 other machines. Both rows
+  are being added, since the deal genuinely varies them.
+- **JP7 cites a document not in the folder** — *"Printheads warranty: Please refer enclosed Policy
+  document for Printheads."*
+- **Sign-off shapes the renderer cannot express** — JPK closes with a two-party *Signature / Position /
+  Date and place* block, Rocket with a Director signature. Cosmetic.
+
+
+### OCPI-5 · The template comparison workbook — one tab per machine category  `[x]` — 02-Sep-2026
+*Raised 2026-08-31 · Asked for by Ritesh Bhai · **BUILT 02-09-2026**, see [OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Build green; the file was produced from the real button and opened in Excel, where the
+> freeze, the fills, the wrapping and the empty answer column were all read back and asserted.
+> **Direct: 126 lines — 4 identical, 12 differ, 35 missing on some, 75 on only one or two.**
+> **Sublimation: 49 lines — 9 identical, 13 differ, 8 missing on some, 19 on only one or two.**
+> Other and POD carry a written explanation instead of an empty grid, as specified.
+>
+> 🔴 **Found while building: `ws["!freeze"]` writes NOTHING, in every export this repo has ever
+> produced.** The community `xlsx-js-style` writer emits a self-closing `sheetView` with no `pane`
+> child. So no spreadsheet from `exportXlsx.ts` has ever had a frozen header row, and four modules'
+> comments say it does. Fixed HERE ONLY, opt-in via `freezeCols`, so no existing export changed —
+> see **PF-15** for the rest.
+
+**The question this answers.** Twenty-one machines each carry a template transcribed from its own
+PowerPoint deck, written by different people over several years. Nobody has ever seen them side by side.
+So nobody knows which clauses every machine says identically, which say the same thing in different
+words, which a machine is simply missing, and which one machine carries alone. Reading twenty-one
+templates one screen at a time cannot answer that — the eye cannot hold twenty-one wordings.
+
+**What it is.** One `.xlsx` download, one tab per machine category.
+
+#### 🔴 RE-CHECKED 02-09-2026 — the shape has changed since this was written, in two ways that matter
+
+**There are now FOUR categories, not three.** OCPI-14 added **POD**. And the templated counts have moved:
+
+| Category | Machines | With a template | Not templated |
+|---|---|---|---|
+| **Direct** | 11 | **10** | Mini Lario |
+| **Sublimation** | 12 | **10** | Foil Machine, KoloRado Alpha 3.2 — 16 heads |
+| **Other** | 3 | **1** | Pengda PD-1700XD-800, Pengda PD-1800XD-800 |
+| **POD** | 2 | **0** | Book Printer, Label Printer |
+
+🔴 **ONLY TWO TABS CAN ACTUALLY BE COMPARED.** A diff needs at least two columns. **Other has ONE**
+templated machine (Position Printer moved to Direct in OCPI-14) and **POD has NONE**. So:
+
+- **Direct (10) and Sublimation (10)** are the real work, and they are what Ritesh Bhai actually wants.
+- **Other** renders as a single column with nothing to compare it against — every row is trivially
+  "unique". Emit the tab, but **say at the top that a comparison needs two machines and this has one.**
+- **POD** has nothing at all. **Emit the tab with a one-line explanation, not an empty grid** — a blank
+  sheet reads as a bug, and someone will re-run the export thinking it failed.
+
+Tell Ritesh Bhai this before building, in case he would rather have two tabs and a footnote than four.
+
+🟢 **The parked Label Printer / Book Printer question is answered by the data.** OCPI-14 put both in
+**POD**. Nothing to decide.
+
+Within a tab:
+
+| | Homer K24 | Homer K32 | Homer K64 | … |
+|---|---|---|---|---|
+| *(pointer)* | *(that machine's value)* | | | |
+
+- **Columns are the machines** of that category, in master sort order. Column A is the pointer name,
+  and it freezes so a reader scrolled across to the twelfth machine can still see which line they are on.
+- **Rows are the pointers** — the UNION of every pointer any machine in that tab carries, so a line
+  only one machine has still gets a row, with blanks across the rest. That blank IS the finding.
+- Rows are **banded by where the pointer lives** in the template, since a missing spec row and a
+  missing clause are not the same kind of gap:
+
+  | Band | Source | Pointer = |
+  |---|---|---|
+  | Header | `doc_title`, `intro_text`, `machine_model_no`, `supply_description`, `signoff_style` | the field name |
+  | Header fields | `header_fields[]` | each field label |
+  | Specification | `spec_rows[]` | the row **label**; the cell is its **value** |
+  | Composition | `composition[]` | the bullet itself; the cell is ✓ / blank |
+  | Sections | `fms_ocpi_machine_sections` | the section **title** (keyed on `key`); the cell is the **body** |
+
+**The highlighting — the whole point of the sheet.** Fixed content stays quiet; variable content shouts.
+
+| Case | Treatment |
+|---|---|
+| Every machine in the tab carries it, all values identical | **no fill** — settled boilerplate, leave it alone |
+| Every machine carries it, values differ | **amber** on the cells that differ from the tab's most common value |
+| Some machines carry it, some do not | **red** on the empty cells — *missing* |
+| Only one or two machines carry it | **blue** on the cells that have it — *additional* |
+
+⚠ **Comparison is on normalised text, not raw text** — trim, collapse runs of whitespace, case-fold and
+strip trailing punctuation before deciding "same". Otherwise `Ex-works Ahmedabad` and
+`Ex-Works, Ahmedabad ` colour amber and the sheet reports a difference that does not exist. The cell
+still prints the **original** text; only the equality test is normalised.
+
+⚠ **`{{tokens}}` are compared as tokens, never as resolved values.** Two machines both saying
+`{{head_count}}` are identical even though every deal prints a different number there. Resolving first
+would make every templated machine differ from every other and the sheet would be all amber.
+
+A leading **summary block** on each tab, above the grid: machines in this tab, pointers in the union,
+how many are common / differing / partial / unique. That is the number the sheet exists to produce —
+"how far apart are these documents" — and it should not have to be counted by eye.
+
+**Where the button goes.** OCPI → Reports, beside the Deal Register, and on the Machines master. Not a
+screen: the ask is explicitly a spreadsheet with tabs, and a nineteen-column diff grid is a
+spreadsheet's job, not a table's.
+
+⚠ **`exportSheetsToXlsx` styles by ROW, not by CELL.** `rowStyle` in `shared/lib/exportXlsx.ts` calls
+`styleRow`, which paints the whole width. This sheet needs one fill on one cell. Add an optional
+`cellStyle?: (row, colIndex) => object | undefined` beside `rowStyle` — `xlsx-js-style` already supports
+per-cell fills, so it is a helper change, not a new library. Column A must also **wrap**, since a section
+body is a paragraph; set row heights or the grid is unreadable.
+
+⚠ **Freeze panes are inert in this codebase.** `!freeze` writes nothing, so "column A freezes" needs the
+pane/view keys or it silently does not happen — and this is the one export where an unfrozen first
+column makes the sheet useless. Verify by opening the file, never by reading the code.
+
+#### Sequencing and scope
+
+🟢 **The OCPI-4 gate is cleared** — the 31-08 batch is in, so **19 of 28** machines carry a template and
+there is something real to compare. Had this been built a day earlier, against the previous 10, nine of
+the columns would not have existed and the sheet would have reported a hundred pointers as "missing"
+that were merely not imported yet. Worth remembering if another template batch is ever pending: run the
+comparison **after** the import, never across it.
+
+🔴 **Machines with `has_template = false` are excluded, and the tab says so by name.** An untemplated
+machine is not a machine that disagrees with the others — it is a machine with nothing to compare.
+Included as an all-blank column it would drown every real finding in false red. List them under the
+grid: *"Not compared — no template imported: Pengda PD-1700XD-800, Pengda PD-1800XD-800."*
+
+#### Phase-wise checklist
+
+**Phase 0 · Settle the shape**
+- [x] 0.1 Confirmed against the live database 02-09: **four** categories, and OCPI-14 already put both
+      JAY machines in **POD**. Nothing was left to decide
+- [x] 0.2 Inactive machines are excluded and named under the grid on their own line, separately from
+      the untemplated ones — "switched off" and "never written" are different sentences for a reader.
+      ⚠ **All 28 machines are active today**, so this changes nothing yet; it is built so the sheet
+      stays true the day one is deactivated
+- [x] 0.3 **The fill is never the only carrier of a finding.** Every row states its verdict in WORDS in
+      a `Status` column — `Same`, `Differs (3 of 10)`, `Missing on 4 of 10`, `Only 2 of 10` — and
+      within a row the marked cells are then self-evident: on `Differs` every cell has text and only
+      the odd ones are amber; on `Missing` the marked cells are the empty ones; on `Only 1–2` the
+      non-empty ones. A legend row on each tab says exactly that
+
+**Phase 1 · The diff**
+- [x] 1.1 `lib/templateDiff.ts` — pure, no XLSX. **Checked by eye on Homer K24 vs K32 before it was
+      trusted on ten**: hand-predicted 32 same / 8 differ / 0 missing / 6 unique across 46 lines, and
+      the code returned exactly that. It caught a real typo nobody had seen — K24 says
+      "Tension-adjustable **continuous**", K32 "**continous**"
+- [x] 1.2 Sections match on `key`. Where a key's titles disagree the sheet emits a second `↳ its heading`
+      row carrying each machine's wording — the difference is SHOWN rather than splitting one clause
+      into two half-empty rows. Fires on exactly three keys in Direct (`installation`, `pc_spec`,
+      `warranty`) and none in Sublimation, which matches the database
+- [x] 1.3 Spec rows match on normalised label. Direct's union is 36 labels across 10 machines, 21 of
+      them carried by a single machine
+
+**Phase 2 · The workbook**
+- [x] 2.1 `cellStyle` on `ExportSheet`, plus `preamble`, `rowHeights`, `headerStyle` and `freezeCols`.
+      All optional, all no-ops when absent; the three existing `exportSheetsToXlsx` callers and the
+      eight `exportRowsToXlsx` ones were each opened and confirmed, not assumed
+- [x] 2.2 `lib/exportTemplateComparison.ts` — **four** tabs (the entry predates POD), summary line,
+      legend, per-band breakdown and excluded-machines footer. Button on OCPI → Reports beside the
+      Deal Register
+- [x] 2.3 "About this export" carries all three, plus each tab's counts and the row-height cap
+
+**Phase 3 · Verify**
+- [x] 3.1 `npm run build` green
+- [x] 3.2 **Opened in Excel via COM and asserted, not eyeballed**: `FreezePanes=True`,
+      `SplitColumn=4`, `SplitRow=4`; all four fills present (81 blue, 126 amber, 135 red);
+      `WrapText=True` on the line name, the answer column and the machine cells; row heights varying
+      16–91pt; tab names Direct / Sublimation / Other / POD / About this export; the
+      agreed-wording column blank on all 144 rows and filled on none
+- [x] 3.3 Spot-checked cell by cell against the raw table, both tabs. Direct `Sign-off wording` ambers
+      exactly the three Fab Pros (the `checked_by` minority against seven `approved_by`); Direct
+      `Model no.` reds exactly Homer K32, the one machine with none; Sublimation `Model no.` blues
+      exactly P8D and OT-1908A, the only two that carry one; Sublimation `Sign-off wording` ambers
+      exactly the four `approved_by` against six `checked_by`. Every fill was where it should be
+- [x] 3.4 Proved by stripping every section off Fab Pro 2I and rebuilding: 10 columns before, 10 after,
+      absent on all 19 section rows, its other bands untouched. The columns come from the MACHINE
+      list, never from the pointers, so this cannot regress silently
+
+#### Open questions
+- [x] ✅ **SETTLED 01-09-2026 — this sheet is the INPUT TO A CLEAN-UP, not a one-off read.** Ritesh Bhai
+      intends to decide a single agreed wording for each line that differs, and have the templates
+      updated to match. **So the grid needs a blank *"Agreed wording"* column beside each banded group**,
+      wide and wrapped, for him to write into. Without it he would be marking up a sheet with nowhere to
+      put the answer, and the whole exercise would need regenerating.
+      ⚠ **The applying is a SEPARATE, LATER TASK** — rewriting the agreed wording into the templates is
+      editing the words that print on signed contracts, across up to 19 machines. Do not let it get
+      folded into the workbook build. Raise it as its own entry when the filled-in sheet comes back.
+- [ ] Should the sheet also carry a fourth tab of **all machines**, ignoring category, for the clauses
+      that ought to be identical company-wide (payment terms, warranty, jurisdiction) regardless of
+      what the machine is?
+- [ ] Where do **Label Printer** and **Book Printer** belong — Other, or a category of their own?
+      ⚠ **DEFERRED by Ritesh Bhai, 01-09-2026** — he will decide later. Do **not** block the workbook on
+      it: build the three tabs from whatever category those two actually carry today, and if that leaves
+      them somewhere odd, say so in the sheet's footer rather than guessing a home for them.
+
+### OCPI-6 · The machine master cannot be read for active vs inactive  `[x]` — 01-Sep-2026
+*Raised 2026-08-31 · Reported by Ritesh Bhai as "creating quite a confusion" · **BUILT 01-09-2026**,
+portal-wide in `MasterCrud`, see [OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Build green, verified in the browser on the Machines master AND on Organisation →
+> Departments (23 rows, 11 inactive — the segment reads `All · 23 / Active · 12 / Inactive · 11`).
+> Status moved from the twelfth column to the second: measured, the table is **1748px wide in an
+> 836px window**, so the badge is now visible unscrolled where its old position is not.
+
+Activate / Deactivate works, and every part of it is present — and yet the screen is unreadable, because
+the three pieces sit as far apart as the layout allows.
+
+🔴 **The Status badge is the LAST of twelve columns, on the widest master in the app.** Machines carries
+ten columns of its own (Machine code, Billing name, Category, Print heads, Dryer, Centering, Document
+heading, Model no., Template, Sign-off) plus `MasterCrud`'s Actions and Status. Status sits **off the
+right edge** of the `ScrollableTable`, so on a normal screen "is this one active" cannot be answered
+without scrolling sideways.
+
+🔴 **The button is at the far LEFT and its result at the far RIGHT.** *Deactivate* lives in the Actions
+column; the badge that confirms it lives twelve columns away, out of view. You click, nothing you can
+see changes, so you click again. That is the confusion, exactly.
+
+🔴 **The Status filter has the same problem.** `MasterCrud` does render a searchable Active/Inactive
+filter — in the last cell of the filter row, off-screen with the badge. So the control being asked for
+**already exists and cannot be found**, which is worse than it not existing.
+
+🔴 **Nothing on the screen says what deactivating a machine DOES.** It is not a delete and it is not
+cosmetic: `QuotationForm.tsx:290` filters the model dropdown to `m.active || m.id === draft.machineId`
+— an inactive machine **stops being quotable**, while a draft already sitting on one keeps it. That is
+the entire meaning of the switch, and the master never mentions it, so nobody can tell whether
+deactivating will break an open deal. (It will not. The screen should say so.)
+
+⚠ **Default sort already puts live rows first** (`MasterCrud.tsx:371`), but only *within* the sort — with
+28 rows across two pages, inactive machines still interleave into the page the reader is on, and there
+is no count anywhere of how many of each there are.
+
+#### What to build
+
+- [x] 1 **A status segment at the top of the master — All · Active · Inactive, each with its count.**
+      Built as a `PillToggle` first in the toolbar row, above the `Card` so it stays reachable when the
+      body is empty. It holds **no state of its own** — it reads and writes the very same
+      `colFilters.__status` the column dropdown does, proved bidirectionally in the browser (picking
+      *Active* in the dropdown moves the segment, and the reverse). Counts come from the existing
+      `narrow(searched, "__status")` pass, so they cascade with the search and the other columns and cost
+      no extra walk over the rows.
+- [x] 2 **Default the segment to Active**, with *"N inactive hidden"* beside it. On Departments it reads
+      *"11 inactive hidden"*. A **constant**, never seeded from `rows` — the FMS stores load
+      asynchronously, so a lazy initialiser would run against an empty array. Filtered-empty keeps the
+      header, the filter row and *Clear all filters*, and the segment stays on screen throughout.
+- [x] 3 **Status moved to the second column**, immediately left of the master's first column, plus a
+      muted band and a 3px grey leading rule on inactive rows (transparent when live, so nothing shifts).
+      ⚠ Deliberately **not** `opacity` — that would fade the *Activate* link on exactly the rows somebody
+      opened the screen to switch back on.
+- [x] 4 **The badge now sits beside the button**, measured at 0px between the two cells.
+      ⚠ **One consequence worth knowing:** on the default *Active* view, deactivating a row makes it
+      **leave the table** rather than show its new badge — it no longer matches the filter. The feedback
+      is real and immediate (the segment counts move and *"1 inactive hidden"* appears), but the badge
+      itself is only watchable from *All* or *Inactive*.
+- [x] 5 **Said once, under the toolbar.** `statusNote` prop; Machines passes the wording above, and every
+      other master gets a generic default that is true of all of them ("An inactive department cannot be
+      picked on new records. Anything already using it is unaffected.").
+- [x] 6 **Portal-wide, confirmed with the client before building.** Lands on ~50 `MasterCrud` call sites.
+- [x] 7 Verified: build green; Machines and Organisation → Departments both checked; segment and column
+      filter proved to agree in both directions; a `Book Printer` deactivate → activate round trip left
+      the row `active = true`, confirmed in SQL. **A defect was found by this check and fixed** — see the
+      `statusOptions` note in OCPI.md.
+
+**Not in scope:** the Activate/Deactivate mechanism itself, which works. This is legibility only.
+
+### OCPI-7 · Deal inclusions — when it is NOT included, ask whether it is offered at a rate  `[x]`
+*Raised 2026-08-31 · Asked for by Ritesh Bhai · **BUILT 31-08-2026**, see [OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Migration `20261024120000_fms_ocpi_a_no_may_still_carry_a_rate.sql` applied, build green,
+> truth table and money guard proved in SQL, form checked in the browser on a `ZZ TEST` deal.
+> **Narrowed mid-build to ink and head only** — spare parts keeps today's behaviour, a No ends it.
+> The second question reads **"Offered at a subsidized rate?"**, prints on the **quotation only**, and
+> prints **the final price alone**.
+
+**What is being added.** Section B asks three questions — *Deal includes ink · spare parts · head* —
+and today a **No** ends the conversation. It should not. "Not included in the machine price" is not the
+same as "not being sold": the customer still buys ink, still buys spares, still buys heads, and the
+rate is usually agreed at the same table as the machine. Today that agreement lives nowhere, so it is
+re-negotiated later from memory.
+
+**The branch, on each of the three items:**
+
+```
+Deal includes ink?                    ── Yes ──▶ Quantity of ink included        (unchanged)
+                                      └─ No  ──▶ Offered at an agreed rate?
+                                                   ├─ No  ──▶ nothing further
+                                                   └─ Yes ──▶ Quantity · Rate · Sub-total
+```
+
+- **Sub-total is derived, never typed** — `quantity × rate`, read-only, recalculating as either changes.
+  A typed sub-total that disagrees with its own two factors is a contradiction printed on a contract.
+- Identically for **ink**, **spare parts** and **heads** — three items, the same three fields each.
+- The pattern already exists in this form: *Shipment & invoice* asks the same four questions of four
+  items rather than four bespoke blocks. Build this the same way — **one small component, three callers**,
+  not three copies (`QuotationForm.tsx:105` is the precedent and says so).
+
+#### The traps
+
+🔴 **Every branch rule in this module shows on `true`. These show on `false`.** `branching.ts:125–129`
+reads `d.inclInk === true`, and all eight of the form's rules plus the five of our own are the same
+shape. `=== false` is new, and `null` (unanswered) must show **nothing** — the third state is real here,
+since an unanswered inclusion must not present a rate question as though the answer were already No.
+
+🔴 **The server clears hidden fields, and it will clear these too — with the wrong condition.**
+`fms_ocpi_write_quotation` / `fms_ocpi_write_oc` null every column their branches hide, on *every*
+write: `ink_qty_included = case when v_incl_ink is distinct from true then null else … end`. The new
+columns need the **inverted** guard (`is distinct from false`) *and* a second guard on the rate Yes/No.
+Get it wrong and either the rate silently vanishes on the next save, or a rate agreed while the answer
+was No survives a change to Yes and prints on the contract beside "Inclusive of Ink: Yes". The
+migration comment calls this clearing "the backstop" — it is, and it is also the thing most likely to
+eat this feature.
+
+⚠ **The write RPCs have been redefined five times** (`20260929120400`, `20261019120100`,
+`20261019120200`, `20261021140000`, …). Base the new migration on the **live** definition pulled from
+the database, not on whichever file grep finds first, or an older revision's body is silently restored
+over four later changes.
+
+🔴 **Do NOT reuse the `*InvoiceQty` / `*InvoiceAmount` fields.** `headInvoiceQty` / `sparesInvoiceQty`
+already exist and mean something different: a head that **is** included but is billed on a separate
+invoice. The new fields are for an item that is **not** included at all. Same words, opposite meaning,
+and they are mutually exclusive by construction — `inclHead = true` can only have the invoice pair,
+`inclHead = false` only the rate pair. Name them so a reader cannot confuse them
+(`headRateQty` / `headRate` / `headRateSubtotal`, or similar) and never let both be non-null on one row.
+
+🔴 **The currency question has to be answered before anything is built.** The deal carries
+`dealValueCurrency` (INR / USD only — JPK's EURO gap is already logged under OCPI-4). A rate must
+follow the deal's currency, not carry one of its own, or the sheet shows two money columns with no way
+to tell them apart. And if a USD deal's rate is to appear in rupees, it has to use the deal's
+**frozen** `fxRate` — never a rate looked up again at print time (`types/index.ts:127` — *"FROZEN,
+NEVER RE-DERIVED"*).
+
+#### Every place a Section B field is touched — all of them, or the feature half-lands
+
+| File | What has to change |
+|---|---|
+| `types/index.ts` | six or nine new nullable fields on `OcpiDeal` |
+| `lib/fieldSpec.ts` | draft type (~l.64), `EMPTY` defaults (~l.202), **`FIELD_LABEL`** (~l.497), `fromDeal` (~l.607), the snake_case row payload (~l.714), and the missing-fields list (~l.829) |
+| `lib/branching.ts` | the new show-on-`false` rules |
+| `lib/quotationPdf.ts` | Section B prints today at l.275–279 — decide whether the rate lines print, and where |
+| `supabase/migrations/` | additive nullable columns + both write RPCs' clearing and completeness predicate |
+| `lib/revisionDiff.ts` | **nothing** — it iterates `FIELD_LABEL` (l.50), so a label is all a field needs to appear in the revision diff. Noted so it is not done twice |
+
+⚠ **The completeness gate is in SQL as well as in the form.** `20261019120100:251–255` carries
+`incl_ink is not null and (incl_ink is not true or ink_qty_included is not null)` — the server's own
+"is this deal ready to submit". If the rate fields are required when shown, they join that predicate
+too, or the form will let a deal through that the RPC then refuses, with no message a salesperson can act on.
+
+#### Phase-wise checklist
+
+**Phase 0 · Settle**
+- [x] 0.1 The shape — sub-total outside the deal value, one rate per item, ink in litres *(see Settled, below)*
+- [x] 0.2 Final wording — **"Offered at a subsidized rate?"**
+- [x] 0.3 **Quotation only, never the OC — and only the FINAL PRICE prints.** Quantity and rate are
+      captured and appear in the revision diff, but the paper shows one figure per item
+- [x] 0.4 **Heads are a plain count.** Spares needed no answer in the end — see the narrowing below
+- [x] 0.5 ⚠ **The currency question is answered: the rate follows the deal's own
+      `deal_value_currency`.** No second currency column and nothing is converted, so the frozen-FX
+      hazard the trap warned about never arises. Proved live on a USD deal, which rendered `$ 4,50,450`
+
+**Phase 1 · SQL, additive**
+- [x] 1.1 Eight nullable columns, one migration, nothing altered or dropped
+      (`20261024120000_fms_ocpi_a_no_may_still_carry_a_rate.sql`)
+- [x] 1.2 🔴 **ONE writer, not both — the plan here was wrong.** Section B is part A, so only
+      `fms_ocpi_write_quotation` was re-issued, from its **live** body (which did differ from the
+      newest file: two comments, every executable line identical). `fms_ocpi_write_oc` was
+      deliberately left alone — their column separation is what stops saving one from blanking the
+      other, and it sits one revision ahead of the file that last defined both. Leaving it alone is
+      also what makes the invoice/offer exclusion *structural* rather than a convention
+- [x] 1.3 Completeness predicate extended in step with the form's — **but only where it is vacuous on
+      existing rows.** Requiring an *answer* to the rate question was rejected: a CHECK is
+      re-validated on every UPDATE, so it would have made the four deals already answering No to head
+      un-updatable, and every approval or signature stamp on them would throw
+
+**Phase 2 · Form**
+- [x] 2.1 One `RateOffer` component, **two** callers, sub-total read-only and derived — and empty
+      rather than `₹ 0` while either factor is blank
+- [x] 2.2 Branch rules for the `false` case; `null` shows nothing
+- [x] 2.3 All six `fieldSpec.ts` touch-points — ⚠ **plus `data/ocpiFetch.ts`'s `mapDeal`**, which the
+      table above omits and which fails *silently* if missed (`r` is `any`, so the column simply
+      arrives as null)
+
+**Phase 3 · Documents**
+- [x] 3.1 The quotation prints the final price alone, in the deal's currency, on a row that appears
+      only when the rate question was actually answered — so a deal saved before this existed still
+      prints exactly the six rows it always did
+
+**Phase 4 · Verify**
+- [x] 4.1 `cd frontend && npm run build` — green
+- [x] 4.2 Browser on `ZZ TEST Saraswati Fabrics` (**nothing saved; the row is unchanged**): unanswered
+      inclusion → nothing at all; No → the question alone; No → rate Yes → three fields.
+      `4 × 125,000` → `$ 5,00,000` live, `$ 5,20,000` when the rate changed, **empty** when the
+      quantity was cleared. Ink toggled to No → the litres block appeared and *Quantity of ink
+      included* vanished with it. Integer guard strips `.` and letters; the decimal one keeps `500.5`
+- [x] 4.2b 🔴 **The switch-back, proved in SQL against the live writer** rather than through the
+      screen — a stronger test than the one asked for here. Rate stored, then the inclusion flipped to
+      Yes **with the rate still in the payload**: all four columns came back **null**, and the
+      Yes-branch details (`200 litres`, `2`) returned. The whole truth table was run the same way,
+      including *inclusion unanswered + rate answers sent* → stores nothing
+- [x] 4.3 The two factors carry `FIELD_LABEL` entries (*"Ink — subsidized rate (per litre)"*), placed
+      positionally so the diff sorts them beside their own question. `revisionDiff.ts` needed nothing
+- [x] 4.4 An older deal still opens and prints **identically** — both flags are null on every deal on
+      record, so nothing is pushed into Section B and it is the same six rows
+- [x] 4.5 🔴 **The money guard — passed.** Both blocks filled with large round rates and `write_oc`
+      re-run: `deal_value_amount`, `deal_value_inr`, `machine_value_inr`, `gst_rate`, `gst_amount_inr`,
+      `total_inr`, `dryer_value_inr`, `dryer_gst_inr` and `grand_total_inr` all **byte-identical**.
+      It is guarded three ways beyond that test: the sub-total carries no `_inr` suffix, it is not in
+      rupees at all, and the migration's own assertion **fails the deploy** if `fms_ocpi_write_oc`
+      ever so much as mentions one of the eight columns. The new Deal Register columns sit at the far
+      end of the sheet, away from the deal-value block, so no contiguous numeric range sweeps them up
+- [x] 4.6 The completeness gate, all three ways: a subsidized Yes with no figures is **refused**
+      (hard-asserted, not merely observed); accepted once the figures are given; and an unanswered
+      rate question does not block submission
+
+#### Settled  *(answered by Ritesh Bhai, 31-08-2026)*
+
+🔴 **The sub-total does NOT form part of the deal value, and must never be added to it.** The reasoning
+is the branch's own: this question is only ever asked when the item is **not** inclusive of the deal, so
+its money cannot be part of the deal's money. Concretely — `deal_value_amount` is untouched, the GST
+derivation is untouched, the frozen FX conversion is untouched, and the quotation's headline figure stays
+the machine price. The rate is agreed alongside, quoted separately, invoiced when they actually order.
+
+⚠ **This is a rule to defend, not merely a decision to record.** Three sub-totals sitting on the same row
+as a deal value are an obvious thing for a later "grand total" to sweep up, and a contract that adds an
+un-ordered ink rate into the machine price is a commercial error, not a display bug. Every place that
+sums money on a deal — the PDF total, the Deal Register's numeric columns, any future dashboard roll-up —
+must exclude these three by construction. Say so in the column comments, so the next person reads it
+before they add it up.
+
+- 🔴 **INK AND HEAD ONLY — spare parts is NOT part of this** *(narrowed by Ritesh Bhai mid-build,
+  31-08-2026)*. Spare parts keeps today's behaviour: a No ends the conversation. That removed a whole
+  column family and the description field spares would otherwise have needed, and it is why the
+  component has **two** callers rather than three. The paragraph above still says "three sub-totals";
+  read it as two. Everything else in it stands unchanged.
+- **One rate per item, not a list.** Two fixed field-groups — ink and head — one quantity/rate/sub-total
+  each. No repeatable line-item grid. This is what makes it flat columns per item rather than a child
+  table, and it settled Phase 1's shape.
+- **Ink quantity is in LITRES.** So the rate is *per litre* and the field is **numeric** — not free text
+  like the existing *Quantity of ink included* beside it — and the unit is stated so nobody has to infer
+  it.
+- [x] **Units settled: heads are a plain count** (`headsIncluded` next door already is), rate per head.
+      Spare parts became moot when the client dropped them from this feature.
+- ⚠ **"Label both with the unit" turned out to be half-wrong, and the data is why.** The new numeric
+  field says litres because the client fixed it there. The old free-text `ink_qty_included` does **not**,
+  because of the 17 deals carrying a value, 15 say litres and two say **"25 Kgs"** and **"3000kg"**.
+  `FIELD_LABEL` is also the revision diff's heading, so labelling it *(litres)* would restate two real
+  deals in a unit they never agreed to. Its hint asks the salesperson to **state the unit** instead of
+  asserting one — which answers the original worry (two fields measuring the same substance three rows
+  apart) without printing a claim that is not true.
+#### Three more answers, same day *(31-08-2026, after the first version shipped)*
+
+- ✅ **`ink_price` and the subsidized rate are separate things** and both stay. The question logged
+  here is closed.
+- 🔴 **The subsidized rate is ALWAYS IN RUPEES — this reverses 0.5 above.** It no longer follows the
+  deal's currency: a machine may be sold in dollars, but ink and heads are bought here and are rated
+  in rupees regardless. A High Seas sheet now shows a **dollar machine price and a rupee ink price on
+  one page**, each with its own symbol. Nothing is converted, so `fxRate` still never enters this
+  block. Comments-only migration `20261024130000`; no data or arithmetic changed, because the stored
+  figures were never converted in the first place.
+  ⚠ **This removed one of the money guard's defences and it is worth knowing which.** The first
+  version argued the sub-total could not join `total_inr` partly *because it was not in rupees* —
+  an ~85× error announces itself. It is now the same unit as the money path, so a wrong sum would
+  look plausible. The **migration assertion that fails the deploy if `fms_ocpi_write_oc` mentions an
+  offer column** is now the load-bearing guard. Do not weaken it.
+- ✅ **A rate now carries the quantity it is bounded by.** `SUBSIDIZED_RATE_NOTE`, beside the existing
+  `DOLLAR_CLAUSE` and `INSURANCE_CLAUSE`. Shown **on the form under the rate as it is typed** — so the
+  salesperson sees the commitment before writing the figure — and printed on the quotation:
+  *"This is a subsidized rate, agreed for 500 litres and valid for that quantity only. Any further
+  quantity will be charged at the rate prevailing at the time of that order."*
+  ⚠ **The printed sentence names the quantity, which bends "the final price only" on purpose.** A note
+  reading *"valid for the stated quantity"* is empty when the quantity appears nowhere on the page. It
+  goes inside the sentence rather than into a ruled row, so the sheet still shows one price per item.
+
+### OCPI-8 · Dryer details — hide them on "Not Applicable", buttons for the category, and drop the `[SAMPLE]` prefix  `[x]` — 01-Sep-2026
+*Raised 2026-08-31 · Asked for by Ritesh Bhai · three changes to one card*
+
+#### 1 · "Not Applicable" must hide the dryer detail fields
+
+Today the whole *Dryer details* card appears when the **machine** takes a dryer (`show("dryerType")`,
+11 of 28 machines) and everything inside it then shows regardless of the category chosen. Pick **Not
+Applicable** and *Dryer · chambers · heating medium · included in the deal · dryer price* all stay on
+screen, all unfillable, and the completeness warning keeps asking for a dryer name that cannot be given.
+
+Keep the **category** selector visible; hide everything below it unless the category is **Indian** or
+**Chinese**.
+
+🟢 **This closes a known open question rather than opening one.** OCPI.md already records it: *"Picking
+it on a machine that needs a dryer leaves the name unfillable and the completeness warning standing.
+That guides rather than blocks — but somebody will report it as a fault. Whether a dryer machine should
+be offered Not Applicable at all is a business decision."* Somebody has now reported it, and the
+business decision is made: **Not Applicable stays on offer, and it means no dryer details.**
+
+🔴 **The server clears hidden fields too, and it does not know about this rule.** `fms_ocpi_write_oc`
+nulls every dryer column off the machine's `needs_dryer` flag. It must now *also* null them when the
+category is Not Applicable — otherwise a chamber count and a dryer price typed before the salesperson
+switched to Not Applicable stay on the row and print on the contract, under a card the form no longer
+shows. Same trap as OCPI-7; same fix, in the same two RPCs.
+
+🔴 **`missingForDetailSheet` has to stop asking for a dryer name.** It is what makes the deal
+incomplete today. If the field is hidden and the check still demands it, the deal becomes
+**un-submittable** rather than merely untidy — a worse bug than the one being fixed.
+
+⚠ **The branch has to key on something more durable than the word "Not Applicable".** `dryer_type` on
+the deal is **TEXT — the category's name**, frozen into every revision payload (that is why the column
+kept its name through OCPI-3's relabel). Match the literal string and renaming the category in Masters
+silently switches the branch off, with no error anywhere. Resolve the name back to its master row and
+branch on the row, or accept that this category name can never be edited and say so on the Masters screen.
+
+#### 2 · The dryer category becomes click buttons, not a dropdown
+
+Three options — Indian · Chinese · Not Applicable. A searchable Combobox for three values is more
+clicks than reading them, and this is the field that now decides whether half a card exists, so it
+should be visible at a glance rather than folded into a closed dropdown.
+
+⚠ **Account for what the Combobox carries before replacing it** — CLAUDE.md's container rule, and this
+control has three things buried in it:
+
+| On the Combobox today | Survives as buttons? |
+|---|---|
+| `searchable` | not needed at three options — genuinely goes away |
+| `clearable` | **decide** — buttons need an explicit way back to "not chosen", or the first click is irreversible |
+| `onCreate` + `setAsk({ type: "dryer_type" })` | **a real feature**: a salesperson can type a category that does not exist, it is kept on the deal, and the master is asked to grow. Buttons remove the only route to it |
+
+If the "request a new category" path still matters, it needs a **+ Other** button opening the same ask.
+If it does not, say so deliberately — do not let it disappear because the dropdown did.
+
+⚠ **Render the buttons from the live master (`s.dryerTypes`), never from a hardcoded three.** Hardcode
+them and a category added on the Masters screen never appears on the form, and the two screens disagree
+with no clue why.
+
+#### 3 · Drop the `[SAMPLE]` prefix from the dryer names
+
+The six placeholder dryers read `[SAMPLE] …` today — three Indian, three Chinese: *2-Chamber Electric*,
+*3-Chamber Thermic Fluid*, *4-Chamber Gas Fired*. Remove the prefix on both categories and use the name
+alone. Rename, do not delete — `fms_ocpi_deals.dryer_name` stores the **text**, so the rows can be
+renamed in place without touching any saved quotation.
+
+🔴 **Raising the risk once, because it prints on a customer's paper.** The prefix is not clutter; it was
+put there on purpose and OCPI.md says why: *"a dryer name **prints on the customer's quotation**, so
+accidental use shows on the paper instead of passing silently."* Strip it and *3-Chamber Thermic Fluid*
+reads on a signed contract exactly like a real product name — and the real names are **still
+outstanding** (see *Waiting for*). Two further consequences:
+
+- The documented removal statement stops working. `delete from fms_ocpi_dryers where name like
+  '[SAMPLE]%'` is how the placeholders were to be cleared when the real list arrived; afterwards
+  nothing distinguishes a placeholder from a real dryer, in the master or on a deal.
+- **One real name already exists** — `JP K EVO.pptx` named **POWER-D Dryer (ELECTRIC)**. So the real
+  list is not entirely unknown, and it may be quicker to replace the six than to de-label them.
+
+Proceeding as asked. If the prefix should stay until the real names land, or if the six should simply be
+replaced by the real ones now, say so and this becomes a smaller change.
+
+⚠ Read as **Indian**, not Italian — the three live categories are Indian · Chinese · Not Applicable, and
+there is no Italian one. Correct me if a fourth category is actually wanted.
+
+#### Phase-wise checklist
+
+- [x] 1.1 Branch: dryer detail fields shown only for a real category; category selector always visible.
+      `hasDryerDetails` in `branching.ts`. ⚠ **The five fields were NOT individually gated in the form** —
+      only `dryerPrice` was — and `clearHidden` iterates every rule regardless, so adding the rules
+      alone would have blanked the answers on save while leaving the boxes on screen. One group guard;
+      three now-unreachable affordances removed with it
+- [x] 1.2 ⚠ **ONE write RPC, not both, and that is a decision.** `fms_ocpi_write_quotation` owns exactly
+      one dryer column — `dryer_type` — and that *is* the answer; nulling it would erase the choice.
+      `fms_ocpi_write_oc` narrows its existing gate in three lines, which covers the detail columns,
+      the price and its derived rupee figures, and the six shipment columns
+- [x] 1.3 `missingForDetailSheet` no longer demands a dryer name. ⚠ **It is the ONLY place that did** —
+      neither `fms_ocpi_complete_when_submitted` nor `fms_ocpi_submit_oc` names a dryer column, so the
+      deal was untidy rather than un-submittable
+- [x] 1.4 **NEW — the branch keys on a marker, not the name.** `fms_ocpi_dryer_types.means_no_dryer`
+      (nullable, additive); the literal name survives in exactly one place, the migration's one-time
+      `update`. A trigger refuses to rename a flagged row, since deals store the category as text
+- [x] 1.5 **NEW — the Dryer row hides from Shipment & invoice too** (client, 01-Sep). One variable
+      governs every dryer clearing in the RPC, so leaving the row visible would have been a
+      form/server disagreement
+- [x] 2.1 Category as a button row from `s.dryerTypes`, reusing `ChoiceButtons`. **`clearable` KEPT**
+      (the field is required by neither completeness check, so it is optional). `searchable` genuinely
+      goes. ⚠ Deliberate exception to `ChoiceButtons`' "never a master list" rule — recorded in OCPI.md
+- [x] 2.1a **`+ Other` built, then REMOVED at Ritesh Bhai's instruction on sight (01-Sep).** It was
+      added so the "request a new category" path would not vanish with the dropdown; he removed it
+      because **the three categories are the whole vocabulary and a fourth is an admin decision**, not
+      something a salesperson invents mid-quotation. Head / ink / machine keep their `onCreate` — those
+      lists genuinely grow. ⚠ The capability survives on the **Master Requests** page; only the
+      shortcut from this field is gone. Its `onRequested` handler went with the button (orphan rule)
+- [x] 2.2 **NEW — the summary sheet stops printing four ruled blanks** under a category that says there
+      is no dryer. Optional `noDryerCategory` on `QuotationDocInput`; a half-filled *real* category
+      still prints its blanks, which is deliberate
+- [x] 3.1 `update fms_ocpi_dryers set name = …` — renamed in place, both categories, no deletes
+- [x] 3.2 OCPI.md's removal note rewritten — **the `LIKE '[SAMPLE]%'` statement no longer matches
+      anything** and is replaced by a delete-by-name, with the warning that nothing now distinguishes a
+      placeholder from a real dryer. *Waiting for* row re-worded
+- [x] 4.1 `cd frontend && npm run build` — green
+- [x] 4.2 Browser on **K64**: *Indian* → the five fields appeared; filled a dryer name, chambers 4,
+      heating Thermic Fluid, included *No*, price ₹1,25,000, plus a separate dryer invoice 3 × ₹40,000.
+      Saved → the row held all of it plus `dryer_value_inr` / `dryer_gst_inr` / `dryer_invoice_subtotal`.
+      Switched to **Not Applicable and saved** → **every dryer column null except `dryer_type`**,
+      shipment columns included. **Gone, not hidden.** Re-opened after a reload: category still shown,
+      warning names 3 lines with no dryer, **Generate enabled**. Counterfactual: back to *Indian*
+      returned all five fields, the shipment row, and the 4th warning line
+- [x] 4.3 QT-M0026's stored 25-Aug paper still prints `Dryer Required | Indian` under the pre-stage-E
+      label, served as stored. The **new** NA deal's PDF, read with pdf.js, prints `Dryer Category`
+      alone — no chambers, no heating medium, no ruled blanks
+- [x] 4.4 The rename is refused on screen; buttons follow the master (a temporary 4th category appeared
+      and went). `+ Other` was verified opening the request modal locked to *Dryer type*, then removed
+      the same day — see 2.1a. Test data deleted, zero residue
+
+### OCPI-9 · Blank values cannot be filtered for — on the machines master and every other grid  `[x]` — 01-Sep-2026
+*Raised 2026-08-31 · Reported by Ritesh Bhai · shipped with **OCPI-6** · **BUILT 01-09-2026**, see
+[OCPI.md](OCPI.md) at the foot*
+
+> 🟢 **Done.** Blanks are a first-class filter value in both shared grids, defined once in
+> `shared/lib/blankFilter.ts`. On the machines master *Billing name → (Blank)* returns **exactly the
+> 6 machines** SQL says have none — by name, not just by count. ⚠ **WORKLIST said seven; it is six**
+> (Fab Pro 2I, Fab Pro 3I, JP7, JPK, KoloRado Alpha 3 — 12 heads, Mini Lario).
+
+"Which machines have no billing name?" is unanswerable from the machines master today. There is no
+**(Blank)** entry in any filter dropdown, so the rows that are missing a value are the ones you cannot
+select for — and they are usually the rows you are looking for, because a blank is a gap to be filled.
+
+**The cause is one line.** `MasterCrud.tsx:244` ends the value extraction with `.filter(Boolean)`, so a
+row with no value yields an **empty array**. Two things follow, and the second is worse than the first:
+
+1. The blank contributes nothing to `filterOptions`, so no **(Blank)** option is ever offered.
+2. `narrow` matches with `.some(x => want.has(x))` (l.300) — and `.some` on an empty array is always
+   `false`. So the moment you pick *any* value in that column, every blank row disappears. They are not
+   just unselectable; they are actively excluded.
+
+⚠ **Three of the machines master's columns are affected and one is not, which is the real lesson.**
+*Billing name*, *Print heads* and *Model no.* all return `""` for a blank and vanish. *Dryer* does not —
+its `filter.get` returns the literal `"Not set"` for null, so it works. One author remembered to handle
+the blank case and three did not, which is exactly why **the fix belongs in the shared component, not in
+each column**. Left per-column, the next new column will get it wrong again.
+
+**What to build**
+- [x] 1 `MasterCrud`'s `colValue` no longer ends `.filter(Boolean)` — a row with nothing left carries a
+      `BLANK_VALUE` sentinel, so it offers **(Blank)** and picking it returns exactly those rows.
+      `narrow` needed **no change**: `.some` was always false on the empty array, which is what made
+      blanks unselectable *and* silently excluded; the sentinel fixes both halves at once.
+- [x] 2 **Cascades**, because the options are built from `narrow(searched, header)`, which already
+      excludes the column's own filter. Proved: Category → *Other* (4 machines, none blank) makes
+      **(Blank) disappear** from Billing name. And picking a normal value no longer drops rows blank in
+      a *different* column — two rows with no Model no. survived a Category filter.
+- [x] 3 **Pinned last, deliberately**, by `sortFilterOptions`, matching MasterCrud's existing
+      "blanks last in BOTH directions" sort rule.
+- [x] 4 Same treatment in `QueueTable` (`selectOptions`, `matches`, the dropdown labels and the export's
+      About sheet). ⚠ **The note here was half right and the correction matters:** `QueueTable` has **no
+      `nodeText` fallback** — a column with no `filter` gets no filter box at all — so only `MasterCrud`
+      derives values from rendered text, and only there is an em-dash *invented*. Settled with the
+      client: **"" / null / undefined → (Blank) in both components**, an em-dash the component invented
+      is stripped, and an em-dash an **author wrote** is left alone (77 sites; on a few it means
+      something else entirely — Dispatch's hold column reads "On hold" / "—" where the dash means NOT
+      held). Verified outside OCPI on Dispatch → Orders: the authored `—` is still spelled `—`, still
+      selects, and returns 58 of 921 orders — matching SQL exactly.
+- [x] 5 **Dryer's hand-rolled `"Not set"` dropped**, so all four affected columns on that table read
+      **(Blank)**. ⚠ Unobservable on today's data and said plainly rather than claimed: all 28 machines
+      carry a dryer answer (`needs_dryer is null` = 0), so that column has no blank to show either way.
+      The literal "Not set" is gone from the dropdown, which is what was checked.
+- [x] 6 Verified: build green; Billing name → (Blank) cross-checked against SQL **by row name**; the
+      cascade proved by making the option disappear; one queue outside OCPI checked. **Audit finding
+      folded in:** the sentinel would have silently broken blanks-last sorting on every column with no
+      explicit `sortValue` — caught before shipping, fixed, and re-proved in the browser ascending *and*
+      descending.
+
+### OCPI-10 · Section B becomes seven pointers plus Others — the four extras move in and stop being gated  `[x]` — 31-Aug-2026
+*Raised 2026-08-31 · Asked for by Ritesh Bhai · **sequence AFTER OCPI-7** — same card, same file*
+
+**What is being asked.** *Deal inclusions* (section B) today asks three questions — ink, spare parts,
+head. The four **Options included** — *Air blade · External centering system · Ink dust exhauster ·
+Chilling system* — live in a different card entirely (*Document details*, `QuotationForm.tsx:1460`,
+block at l.1588). Move them into section B, so it reads as **seven pointers**, and add an eighth
+free-text **Others** for anything not on the list.
+
+The four are **plain Yes/No capture — nothing follows either answer.** They do *not* get OCPI-7's
+"offered at an agreed rate?" branch. Only the original three do.
+
+⚠ **Which means section B will hold seven questions that behave in two different ways.** Three open a
+rate follow-up on No; four do nothing. That is what was asked for and it is defensible — a chilling
+system is not sold by the litre — but a salesperson will notice it within a day. Worth grouping the
+two kinds visually so the difference reads as intentional rather than as a bug.
+
+#### 1 · Show THREE of the four always — the gating goes, except on centering
+
+🔴 **This deliberately reverses OCPI-3 stage E**, and the reversal should be made with the original
+reasoning in view. All four *used* to be asked on every deal. The client's own machine sheet then
+mapped them per model as **no / optional / yes**, and WORKLIST recorded it as *"A good idea nobody
+asked for… Adopted."* `no` means the machine physically cannot carry it, so the question was hidden.
+**Only 7 of the 28 machines can carry any extra at all** — so always-on means asking about a chilling
+system on 21 machines that cannot have one, and a salesperson answering No to a question that was
+never a question. Proceeding as asked; flagging it because it undoes a decision that came from the
+client's own sheet, and if the intent is only *"stop hiding them so section B reads consistently"*
+there is a middle option: show all four, but grey the ones the machine cannot carry with the reason.
+
+🔴 **THE SERVER WILL SILENTLY DISCARD THE ANSWER. This is the one that makes the feature do nothing.**
+`fms_ocpi_write_oc` carries:
+
+```sql
+air_blade = case when coalesce(v_air, 'no') = 'no' then null else (p->>'air_blade')::boolean end
+```
+
+— and the same for the other three. The capability is read off the **machine**, so on any machine
+whose sheet says `no`, the salesperson's answer is nulled on save no matter what the form shows. Ship
+the form change alone and the questions appear, accept a click, and lose it on the next save, on most
+machines, with no error anywhere. **The RPC clearing must go in the same migration as the form change.**
+
+🔴 **CENTERING IS THE EXCEPTION TO "SHOW ALL FOUR" — settled 31-08-2026.** `optExternalCentering` gates
+two things (`types/index.ts:393`, `QuotationForm.tsx:1583-1586`) and **BOTH keep their machine gate.**
+Ritesh Bhai's words: the centering system follows the dryer's logic — *if it is backed by the machine,
+show it; otherwise do not* — and **both** centering controls are covered by that, not just the shipment
+block.
+
+| Pointer | Gated by | Appears on |
+|---|---|---|
+| Air blade | nothing — always shown | all 28 |
+| Ink dust exhauster | nothing — always shown | all 28 |
+| Chilling system | nothing — always shown | all 28 |
+| **External centering — the tick** | **the machine's capability** | **5** — Homer K24, K32, JP7, JPK, K64 |
+| **External centering — shipment questions** | **the machine's capability** | **the same 5** |
+
+✅ **This settles the parked question in *To discuss* — "whether the two centering questions should hide
+together". They DO. They always did, and they stay that way.**
+
+⚠ So section B holds **seven pointers on most deals and six on the other 23 machines**, because the
+centering row is absent there. That is the intended behaviour, not a rendering fault — do not "fix" it
+by always rendering the row.
+
+⚠ **The centering work is therefore NO CHANGE at all.** Nothing about centering is being ungated,
+moved or rewired beyond relocating the tick into section B with the other three. `branching.ts`'s
+`externalCentering` rule and the RPC's `external_centering` clearing both stay exactly as they are —
+only the air blade, ink dust exhauster and chilling system lose their gates.
+
+⚠ **Three machines are gated by a DATA GAP, not a decision.** `opt_external_centering` is **blank** on
+Fab Pro 1I, 2I and 3I — the client's sheet was empty on those rows from the extras column onward — and
+blank is read as "no". So they are hidden because nobody answered, not because the machine cannot carry
+one. The same three are blank for air blade, ink dust exhauster and chilling system. Worth confirming
+with Bushra rather than baking the gap in, since the shipment block now depends on this column alone.
+
+⚠ **Decide what the machine master's four columns are FOR afterwards.** `optAirBlade`,
+`optExternalCentering`, `optInkDustExhauster`, `optChillingSystem` are edited on the Machines master
+and would no longer hide anything. Either they keep driving the *"standard on this machine"* hint —
+which is worth keeping — or they become a master field that does nothing, which is how a screen starts
+lying. Do not leave that undecided.
+
+⚠ **The hint must NOT become a pre-selected answer.** `standardHint` (l.99) shows *"standard on this
+machine"* for `yes` and deliberately does not tick the box; the comment above it says why —
+*"Answering it for them would put a value on the deal nobody entered."* That reasoning survives this
+change intact.
+
+⚠ **Moving a block leaves the old one.** After the move, grep all four field names and **count the
+renders** — the repo has been bitten by exactly this before. `anyExtra` (l.467) exists only to hide the
+whole block and becomes an orphan once nothing is hidden; `show("airBlade")` and the four rules at
+`branching.ts:215` likewise. `noUnusedLocals` is **false**, so none of this fails the build. Run the
+orphan sweep from CLAUDE.md over `apps/ocpi` afterwards.
+
+#### 2 · The "Others" free-text box
+
+🟢 **`otherCommitments` is NOT in the way — it is a retired field with no input.** It exists on the deal
+and still prints (`quotationPdf.ts:209-210`), but `QuotationForm.tsx:1397-1421` renders it **read-only
+and labelled "retired"**, and only on old deals that already carry a value; a new quotation shows
+nothing at all. There is no box to type it into and has not been for some time. So the new Others is
+not competing with it, and reusing that column would mean un-retiring a field the module deliberately
+withdrew. **Add a new field.**
+
+⚠ **The real overlap is with `remarks` — *Special remarks*, section D — which IS live.** It is the field
+`otherCommitments` was retired *in favour of*: the retirement notice on screen reads *"to change any of
+it, write the new wording into Special remarks above."* So the module has already decided once that
+free text about a deal belongs in Special remarks, and this adds a second box in section B that means
+something adjacent. That is defensible — *what else is included in the deal* is a narrower question than
+*anything else about this deal* — but the labels have to make the split obvious, or salespeople will use
+whichever box their eye lands on first and the two will drift into meaning the same thing. Decide the
+wording deliberately, and consider a hint on each pointing at the other.
+
+- [x] Does Others take the OCPI-7 rate follow-up? Reading the ask as **no** — it is a note, not a
+      priced line — but say so, since the three above it will have one.
+
+#### Sequencing
+
+🔴 **Do not run this alongside OCPI-7.** Both rewrite the same card in the same file
+(`QuotationForm.tsx`, *Deal inclusions*), both add columns to the same table, and both touch the same
+two write RPCs. Land OCPI-7 first, verify it, then start this. Two sessions in section B at once will
+collide, and the RPC is the kind of file where a collision is resolved by silently restoring an older
+body over newer work.
+
+> 🟢 **OCPI-7 LANDED 31-08-2026 — this is now clear to start.** Three things it leaves you:
+> **(1)** `fms_ocpi_write_quotation`'s live body is now migration
+> `20261024120000_fms_ocpi_a_no_may_still_carry_a_rate.sql`, **not** `20261021140000`. Base anything on
+> the body you pull from the database, and note that the live body was *already* found to differ from
+> the newest file before OCPI-7 touched it. **(2)** OCPI-7 changed **one** RPC, not two — Section B is
+> part A. Your dryer columns are part **B**, so yours is `fms_ocpi_write_oc`, which OCPI-7 deliberately
+> did not touch. **(3)** Section B's card now holds two `RateOffer` blocks between the inclusion rows;
+> `QuotationForm.tsx` line numbers have moved.
+
+#### Phase-wise checklist
+
+- [x] 0.1 Settle the four questions below
+- [x] 1.1 Move all four `YesNo` blocks from *Document details* into *Deal inclusions*; delete the old
+      block and prove nothing else rendered them. The centering one moves too — it just keeps its gate
+- [x] 1.2 Drop the capability gating for **air blade, ink dust exhauster and chilling system** only
+      (`branching.ts:215`). ⚠ **Leave the `externalCentering` rule untouched.** `anyExtra` (l.467) can no
+      longer hide the block, but centering still needs `show("externalCentering")` on its own row —
+      re-check what is genuinely orphaned rather than deleting all four gates together
+- [x] 1.3 Keep `standardHint` — hint only, never a default answer
+- [x] 2.1 The Others field — new, not the retired `otherCommitments` — plus its six `fieldSpec.ts`
+      touch-points
+- [x] 3.1 **Migration in step with the form**: remove the `case when … = 'no' then null` clearing for
+      `air_blade`, `ink_dust_exhauster` and `chilling_system` in both write RPCs, from the LIVE bodies.
+      ⚠ **`external_centering` keeps its clearing** — it is still a gated field
+- [x] 3.2 Centering — **no change of any kind.** Both its tick and its shipment questions keep the
+      machine gate. ⚠ Do not "tidy" centering into matching the other three; the difference is deliberate
+- [x] 4.1 `cd frontend && npm run build`
+- [x] 4.2 🔴 **The persistence test, on a machine whose sheet says `no` for an extra** (21 of 28 qualify):
+      answer all four, save, re-open, and **read the row in SQL**. All four answers must still be there.
+      This is the test that catches the clearing trap, and no other test does
+- [x] 4.3 `ocPdf.ts:119` prints an extra only when true, so a No prints nothing — confirm that is still
+      wanted now that No is a deliberate answer rather than a hidden question
+- [x] 4.4 An older deal, saved while the gating existed, still opens and still prints
+
+#### Built — 31-Aug-2026
+
+Migration `20261025120000_fms_ocpi_extras_stop_being_gated.sql` (applied, 7 machine checks pass) plus
+seven frontend files. Full write-up in **OCPI.md**. Three corrections to what this entry assumed:
+
+1. **"Both write RPCs" was one.** Only `fms_ocpi_write_oc` carried the clearing. `fms_ocpi_save_draft`
+   names the four in its part-B **key-sniff array**, not a clearing — it needed the new
+   `other_inclusions` key added, which is a different job.
+2. **`v_centering` had to survive.** `v_air`/`v_exhauster`/`v_chilling` were read only on the three
+   gate lines, but `v_centering` is read **six** times — the tick plus the five centering shipment
+   clearings this entry says not to touch. Removing all four would have broken that block silently.
+3. 🔴 **The quotation paper was not in scope and had to be.** `quotationPdf.ts` prints a boxed
+   *B. Deal Inclusions* — with **No as well as Yes** — and the four extras appeared on **no** quotation
+   at all, only on the order confirmation and only when true. Left alone, section B would have asked
+   seven questions and printed three. Ritesh Bhai, 31-Aug: print all seven on the quotation, Yes and
+   No; keep the OC as it is (a Yes adds a bullet, a No prints nothing); Other inclusions on both.
+
+Settled with the client the same day: label is **"Other inclusions"**; always-on rather than
+grey-with-reason; the machine master's four columns keep the hint on all four and the gate on
+centering alone, and the Machines master hints were reworded to say exactly that.
+
+⚠ **Still open — the only thing this did not settle:** Fab Pro 1I / 2I / 3I are **blank** for all four
+extras and blank reads as "no", so their centering shipment block can never appear. A data gap, not a
+decision. *(For Bushra.)*
+
+#### Questions
+- [x] **Grey-with-reason, or genuinely always-on?** Showing all four but marking the ones the machine
+      cannot carry keeps section B consistent without asking anyone to answer an impossible question.
+- [x] **How does Others differ from *Special remarks*?** Settled that it is a NEW field (the old
+      `otherCommitments` is retired with no input). But Special remarks is live and adjacent, so the two
+      labels have to draw a line a salesperson in a hurry will actually see.
+- [ ] **Are Fab Pro 1I / 2I / 3I really "no" for all four extras, or just unanswered on the sheet?**
+      They are blank, and blank is read as no — so the centering shipment block will never appear on
+      them. A data gap, not a decision. *(For Bushra.)*
+- [x] **Should the four print on the documents when the answer is No?** Today only the Yeses print.
+
+### OCPI-11 · Shipment & invoice becomes a table, gains an Ink row, and calculates a sub-total  `[x]` — built, verified and DEPLOYED 31-Aug-2026
+*Raised 2026-08-31 · Asked for by Ritesh Bhai · **sequence LAST** — after OCPI-7 and OCPI-10*
+
+**Live on master as `dfc230a`.** Migration `20261026120000_fms_ocpi_shipment_becomes_a_table.sql`
+applied to `icutjkrqkbzwvmnfbzpr` before the frontend shipped, so the database was ahead throughout.
+Ten new columns, ten assertions, Vercel deploy green.
+
+**What is being asked.** *Shipment & invoice* today stacks each item as its own box, one under another
+(`QuotationForm.tsx:1180-1270`, four `ShipmentRow` callers). Three changes:
+
+1. **Add Ink**, and make sure **Head** is there — ordered Head, … Dryer, … Centering device.
+2. **Lay it out as a table** — items down the left, the questions across the top — instead of stacked boxes.
+3. **Auto-calculate a sub-total** from quantity × amount, as OCPI-7 does in section B.
+
+Target shape:
+
+| | How it ships | Ship via | Separate invoice | Qty | Amount | Sub-total |
+|---|---|---|---|---|---|---|
+| Print head | | | | | | *(calculated)* |
+| Ink | | | | | | |
+| Dryer | | | | | | |
+| Spare parts | | | | | | |
+| Centering device | | | | | | |
+
+#### What is actually there today
+
+⚠ **Head is already built — it is hidden, not missing.** `ShipmentRow title="Print head"` exists at
+l.1189 and shows when `inclHead === true` (`branching.ts:203`). It was absent on the deal being looked
+at because that deal does not include a head. **Ink is the only genuinely new row.**
+
+🔴 **Ink has NO shipment columns at all.** The other four each carry five fields
+(`*ShipMode`, `*ShipVia`, `*SeparateInvoice`, `*InvoiceQty`, `*InvoiceAmount`). Ink carries none. So this
+is five new nullable columns, five `fieldSpec.ts` touch-points, new branch rules and new RPC handling —
+not a layout change. It is the largest single piece of this entry.
+
+#### The traps
+
+🔴 **Every row rule has a twin in the RPC that nulls what the form hides.** The section's own comment
+says it: *"Every rule here has its twin in `fms_ocpi_write_oc`, which nulls what it hides on every
+save."* Change which rows show without changing the RPC and the answers are silently discarded on save.
+Third time this trap appears in one day (OCPI-7, OCPI-10, here) — it is the module's defining hazard.
+
+🔴 **The sub-total must NOT feed `total_inr`.** The section already states the rule: *"AMOUNTS ARE
+EXCLUSIVE OF TAX… nothing here is added to `total_inr`, which is derived server-side from the deal value
+alone."* A new calculated column sitting in a table is exactly the thing a later "grand total" sweeps
+up. Same defence as OCPI-7 — say it in the column comment.
+
+🔴 **After OCPI-7 there will be TWO quantity/amount pairs for ink, and two for the head.** Section B
+will ask *quantity and rate* for ink that is **not** included; this section asks *quantity and amount*
+for ink that **is** included and separately invoiced. Same words, opposite meaning, both on one form,
+now both in grid form with a calculated sub-total. Without clearly different labels a salesperson will
+fill the wrong one, and the contract will carry a price for something the deal did not include.
+**This is the strongest argument for doing OCPI-7 first and looking at it on screen before laying this
+out.**
+
+⚠ **Each row has THREE nested conditions, not one.** Taking the head as the pattern
+(`branching.ts:203-206`): the row shows when the deal includes a head; **Ship via** only when the mode
+is *separate*; **Qty / Amount** only when *separate invoice* is Yes. In stacked boxes those simply
+vanish. In a table they become cells that appear and disappear mid-grid, which reads as broken. Decide
+deliberately: greyed and disabled with a reason on hover, or genuinely blank. Do not let it emerge from
+the markup.
+
+⚠ **The centering row stays machine-gated** — per OCPI-10, settled today. So the table has **five rows
+on 5 machines and four rows on the other 23**. Intended, not a fault.
+
+⚠ **A table inside a form needs `ScrollableTable`**, and per CLAUDE.md any custom dropdown trigger
+inside one needs the arrow-key `stopPropagation` guard that `Combobox`/`MultiSelect` carry — or ↓
+scrolls the table instead of opening the menu. Six columns of controls on a narrow screen is the real
+design risk here; a table that scrolls sideways to reach the Amount field is worse than the boxes it
+replaced.
+
+⚠ **`anyShipment` gates the whole card** and `ShipmentRow`'s `why` prop explains each row's condition in
+words. Both may be orphaned by this. Per CLAUDE.md's container rule, account for them rather than
+deleting the component wholesale — and run the orphan sweep over `apps/ocpi` afterwards.
+
+#### Phase-wise checklist
+
+- [x] 0.1 Answer the three questions below
+- [x] 1.1 SQL: five new nullable ink shipment columns; both write RPCs handle them, from the LIVE bodies
+      — and a **third** function nobody had listed, `fms_ocpi_save_draft`, whose part-B key array gates
+      whether `write_oc` runs at all. Migration `20261026120000_fms_ocpi_shipment_becomes_a_table.sql`,
+      applied 31-Aug-2026 with 10 assertions.
+- [x] 1.2 `types/index.ts` + the six `fieldSpec.ts` touch-points + `branching.ts` rules for ink
+- [x] 2.1 The sub-total — derived in `fms_ocpi_write_oc`, read-only, per row; the form shows the same
+      product live as a preview only. **Ten** new columns, not five: five ink shipment + five sub-totals,
+      because printing the stored figure is what stops screen and paper disagreeing (OCPI-7's rule).
+- [x] 3.1 Rebuilt as a table; every per-row condition intact; cells that do not apply show a greyed dash
+      with the reason on hover rather than a blank, which in a grid reads as "nobody filled this in".
+      `ScrollableTable` + `table-fixed`.
+- [x] 3.2 Row order per 0.1 — Head · Ink · Dryer · Spare parts · Centering device
+- [x] 4.1 `cd frontend && npm run build` — clean
+- [x] 4.2 Browser: ZZ TEST Suryodaya Prints (Homer K24, head + ink + dryer + spares) — all five rows,
+      all three nested conditions toggling, sub-totals recomputing live, blank rather than ₹ 0
+- [x] 4.3 🔴 The money guard: 62.35 lakh of sub-totals filled across the grid; deal value 52,00,000,
+      GST 9,36,000 and total 61,36,000 all unchanged, before and after the form save
+- [x] 4.4 Saved through the form and re-read in SQL — the ink answers persist and the sub-total is the
+      server's own product (175 × 4200 = 7,35,000)
+- [x] 4.5 An older deal (QT-M0026) still opens and still prints; `ocPdfBlob` regenerates at 245 KB with
+      the seven-column table
+
+#### Questions
+- [x] **Where do Ink and Spare parts sit in the order?** ANSWERED 31-Aug-2026: **Head · Ink · Dryer ·
+      Spare parts · Centering device**, as assumed — ink beside the head it feeds, and the three the
+      client named keep their stated sequence.
+- [x] **Do all rows now show always, or still only the parts the deal carries?** ANSWERED 31-Aug-2026:
+      **only the parts the deal carries**, as assumed. So the table has five rows on the 5
+      centering-capable machines and four on the other 23, fewer again without a head or spares — and
+      the RPC's clearing stays honest, because no question is asked whose answer it would discard.
+- [x] **Does the sub-total print, and where?** ANSWERED 31-Aug-2026: **yes, as a seventh column on the
+      OC contract**, printed from the stored column rather than recomputed. The quotation prints no
+      shipment section today and does not start. The caption gained a sentence saying the sub-totals are
+      not included in the totals above — a rupee column a customer cannot account for reads as an
+      unexplained charge.
+
+#### What was found while building it
+- 🔴 **A third write function nobody had listed.** `fms_ocpi_save_draft` calls `write_oc` only when the
+      payload carries one of ~46 literal key names — its own comment calls this *"the easiest thing in
+      this module to miss"*. The five ink keys were added to that array.
+- ✅ **Trap 3 is structurally closed, not merely mitigated.** OCPI-7's ink offer fires on
+      `inclInk === false` and this row on `inclInk === true`, so the two quantity/amount pairs can never
+      be on screen together and no deal can hold both. Labels still differ ("invoice" against
+      "subsidized") because a missing-fields list shows the label and nothing else.
+- ✅ **Trap 6 was width only.** `ChoiceButtons`, `Combobox` and `ScrollableTable` already carry the
+      arrow-key guards between them, so no new keyboard wiring was needed. The two pickers became
+      Comboboxes purely to keep the table inside a laptop screen.
+- ⚠ **`table-fixed` is load-bearing.** Under auto layout a `<th>` width is only a hint, and because
+      `ChoiceButtons` wraps internally its minimum is ONE button — so the Separate-invoice column
+      collapsed below ~1400px and every row went from 73px to 138px. A `min-w` on the cell does not fix
+      it; fixed layout does.
+- 📋 **Existing deals that include ink now show an Ink row with blanks.** Correct, not a regression: the
+      question did not exist when they were filled. 17 of the 19 deals on record include ink.
+
+### OCPI-12 · Does everything the salesperson types actually reach the paper? A K64 print audit  `[x]` — audited, reported and torn down 02-Sep-2026
+*Raised 2026-09-01 · Asked for by Ritesh Bhai · **do LAST**, after OCPI-5, 6 and 9*
+
+**The question.** A salesperson fills in something over a hundred fields. Two documents come out — the
+summary sheet (`quotationPdf.ts`) and the detailed order confirmation (`ocPdf.ts`). Nobody has ever
+checked, field by field, that what goes in comes out. Some fields are screen-only **on purpose**; the
+audit is to establish which, and to find the ones that are screen-only **by accident**.
+
+🔴 **This is overdue rather than speculative — four features landed in 48 hours, all of them adding
+fields to the form**: OCPI-7 (subsidized rates), OCPI-8 (dryer), OCPI-10 (seven pointers + Others),
+OCPI-11 (the shipment table with its calculated sub-totals). Every one of them added something a
+customer may need to see, and the print path is the least-exercised part of this module.
+
+🔴 **A gap of exactly this kind is already on record and still unfixed.** *High Seas prints no rupee
+total* — the form leaves currency on INR, the rate box never shows, and the contract prints blank rupee
+figures. That is one bug found by accident. This audit is the systematic version of how it was found.
+
+#### Why K64
+
+Ritesh Bhai's reason — highest-selling, most permutations — is borne out by its configuration. Checked
+live 01-09-2026:
+
+| | K64 |
+|---|---|
+| `has_template` | **true** — 13 spec rows, 13 composition lines, 9 sections, so **BOTH papers print** |
+| `needs_dryer` | **true** — the whole dryer card applies, including OCPI-8's new Not Applicable branch |
+| `opt_external_centering` | **optional** — one of only **5 of 28** machines where the centering questions appear at all |
+| air blade · ink dust exhauster · chilling system | all **yes** — all three carry the *"standard on this machine"* hint |
+| `doc_title` | ORDER CONFIRMATION |
+
+No other machine has this many branches live at once. A field that prints correctly on K64 has been
+exercised through nearly every conditional in the module.
+
+#### Part 1 · The trace — every field, where it goes
+
+🅿️ **READ OCPI-23 BEFORE STARTING THIS PART.** Ritesh Bhai asked separately for a durable *field →
+document* map and then parked it here, because this walk produces exactly that analysis. OCPI-23 holds
+the thinking already done — chiefly that **the long form is per-machine**, so "does this field print?"
+has a COUNT as its answer (`{{delivery_date}}` is in 21 of 28 machines, `{{consumables_supplier}}` in 12)
+and a yes/no map would be actively wrong. **When this part is finished, decide with Ritesh Bhai whether
+the output is kept as a maintained map or discarded as working notes, then close OCPI-23 either way.**
+
+Walk `FIELD_LABEL` in `fieldSpec.ts` (it is the module's own list of every question) and classify each:
+
+| Verdict | Meaning |
+|---|---|
+| **Prints** | reaches `quotationPdf.ts`, `ocPdf.ts`, or both — say which |
+| **Screen-only, deliberate** | there is a reason, and the reason is written down somewhere |
+| **Screen-only, undocumented** | ← **the finding.** Captured, stored, never printed, and nobody decided that |
+
+⚠ **Do the trace in code, but do NOT conclude from it.** A field can be referenced in `ocPdf.ts` and
+still not appear on the page — inside a branch that never fires, in a section the machine has no rows
+for, or rendered into a column that overflows. The code trace produces the *checklist*; the rendered
+PDFs produce the *verdict*. Same lesson OCPI-4 paid for: **render, don't parse.**
+
+#### Part 2 · The variations — cover every FIELD, not every combination
+
+⚠ **"All permutations" is not achievable and should not be attempted.** Two currencies × two deal types
+× three ink states × three head states × spares × four options × three dryer categories × the shipment
+grid runs to thousands of documents. **The target is coverage: every field filled, and every branch
+taken, in at least one deal.** Roughly six K64 deals will do it. Sketch — refine before building:
+
+1. **Everything included, INR, Others** — ink/spares/head all Yes, all four options Yes, dryer Indian
+   and included, no separate invoices. The maximal "nothing is missing" paper.
+2. **Nothing included, INR, with subsidized rates** — ink and head both No → both offered at a rate with
+   quantity, rate and sub-total. Spares No (a No ends it, per OCPI-7's narrowing).
+3. **USD + High Seas** — exercises the FX freeze, the dollar clause, and ⚠ **the known rupee-total bug**.
+   Confirm it or close it.
+4. **Dryer = Not Applicable** — OCPI-8's new branch. The dryer block must be absent from both papers,
+   and no orphaned dryer wording may survive.
+5. **The shipment table, fully loaded** — all five rows, separate invoices on each, every quantity /
+   amount / sub-total filled. OCPI-11's grid has never been printed at volume.
+6. **The long-text deal** — Others, Special remarks and spare-part details all long enough to wrap or
+   overflow. Truncation is a silent failure and only a rendered page shows it.
+
+#### The traps
+
+🔴 **CHECK THE OCPI EMAIL SWITCH BEFORE TOUCHING ANYTHING.** FMS module email is live in this portal and
+browser-testing a flow has sent real mail before. Confirm OCPI's own switch is off, or six test deals
+walking through approval will email real people.
+
+🔴 **THREE REAL deals exist on this module as of 01-09-2026** — AARNAV FASHIONS `QT-M0037` (awaiting
+quotation approval) and `QT-M0038` (draft), plus **`QT-M0040` AADESH DIGITAL PRINTS** (draft), which is
+new and is NOT in OCPI-4's older "two real deals" count. Re-run the count before any cleanup rather than
+trusting this line — the module is in live use now and a fourth may appear. Do not touch them,
+do not re-render them, and do not include them in any cleanup statement.
+
+⚠ **Name every test deal `ZZ TEST`**, the module's existing convention, and **tear them down afterwards
+— storage before SQL**, in that order, or the generated PDFs are orphaned in the bucket with no row
+pointing at them.
+
+⚠ **A quotation's paper is FROZEN per revision.** Re-rendering an old deal does not re-derive it, so an
+old deal cannot prove a new field prints. Every one of the six must be a **fresh** deal raised after the
+current code is live.
+
+⚠ **Read the PDFs, do not trust the checklist.** The deliverable is a table of findings backed by the
+rendered pages, plus the six PDFs kept somewhere Ritesh Bhai can open them.
+
+#### Phase-wise checklist — DONE 02-09-2026
+
+- [x] 0.1 OCPI email switch confirmed **off** (`ocpi.enabled = false`, unchanged since 22-Aug-2026), and
+      still off afterwards. Nothing to restore
+- [x] 0.2 Baseline **28 deals**, every id recorded before a single row was written. A 28th appeared
+      mid-audit — a live draft by another user — and was left alone
+- [x] 1.1 The trace, **generated rather than written**: `frontend/scripts/ocpi-field-map.mjs` →
+      `OCPI-FIELD-MAP.md`, `npm run field-map`. 103 fields, **18 reaching no document**, 8 live tokens,
+      denominator **21**. This is also OCPI-23's deliverable
+- [x] 2.1 Five variations agreed with Ritesh Bhai before anything was raised — including the fifth, on
+      **Kolorado Alpha 15**, because K64's template does not use `{{consumables_supplier}}` and OCPI-19's
+      line could not otherwise be seen on any page
+- [x] 2.2 Five `ZZ TEST` deals raised — deal 1 **filled field by field through the real form**, deal 3
+      driven through the Deal type control, the rest seeded through the module's own
+      `payloadFromDraft(clearHidden(...))` → `saveDraft` path
+- [x] 3.1 **All ten PDFs read with pdf.js**, every extraction control-checked. Reconciled against the map
+- [x] 3.2 OCPI-7, 8, 10, 11, 18, 19 and 20 all verified on rendered pages — see OCPI.md
+- [x] 3.3 🔴 **The High Seas rupee-total bug is CLOSED.** Picking High Seas flips the currency to USD, the
+      rate box appears, and **Generate stays disabled** — *"Still needed: USD to INR rate"* — so the
+      blank-figure contract can no longer be produced at all
+- [x] 4.1 Findings in OCPI.md; ten PDFs + `README.md` in `Misc/Bushra Reports/OCPI/print-audit/`, written
+      to disk **at render time** so the teardown could not take them
+- [x] 4.2 Raised as **OCPI-31** (a no-dryer contract still sells a dryer), **OCPI-32** (the dryer warranty
+      is silently lost), **OCPI-33** (the forex clause on rupee contracts) and **OCPI-34** (five
+      screen-only questions needing a decision). **Nothing was fixed during the audit**
+- [x] 4.3 Torn down — storage first (12 objects), then the rows, then the orphaned activity and
+      notification rows that carry no FK. Verified back to **28 deals, the baseline set exactly**
+
+#### What the audit had to change about its own brief
+- 🔴 **The approved pair could not be captured.** The sole owner of `quotation_approval` is Ritesh, and
+  self-approval is refused by BOTH the panel and the SQL. These are the **quotation-stage** papers —
+  same renderers, same resolved sections, same frozen revision, differing only in the title bar and the
+  absent OC number. Auditing the approved pair needs a second account
+- ⚠ **Centering is category-gated now** (11 Direct machines), not `opt_external_centering` (5) — OCPI-14
+  moved it. And the token denominator is **21**, not 28: seven active machines have no template at all
+- ⚠ **Counters burned, by decision:** quotation 46 → 52. `oc:2627` untouched, since nothing was approved
+
+#### Questions
+- [x] **Do you want the five variations agreed with you first?** ANSWERED 02-09-2026: yes, agreed before
+      raising, and the agreement is what caught that K64 cannot show OCPI-19's consumables line
+✅ **Where the PDFs go — settled 01-09-2026: a folder on disk**, `Misc/Bushra Reports/OCPI/print-audit/`,
+beside the machine decks this module was built from. Ritesh Bhai opens them there whenever he likes, and
+they survive the test-deal teardown — which the storage bucket does not, since deleting the deals takes
+their papers with them.
+
+🔴 **`Misc/` IS GITIGNORED** (`.gitignore:65`). So the files are **local to the machine that runs this
+audit** and will never be committed or pushed. Two consequences the executing session must respect:
+- **Run this audit locally, not in a cloud session.** A cloud sandbox would write twelve PDFs into a
+  folder that is thrown away when the session ends, and Ritesh Bhai would see nothing.
+- Do not "fix" the gitignore to commit them. Twelve rendered PDFs do not belong in the repository; the
+  folder being untracked is correct, it just dictates where the work is done.
+
+Name them so the variation is readable without opening the file — e.g.
+`K64-2-nothing-included-subsidized-rates-summary.pdf` / `…-oc.pdf`, one pair per variation, plus a short
+`README.md` in the folder saying what each one was testing.
 ---
 
 ### OCPI-13 · The Salesperson list comes from the users, not from what somebody typed last  `[x]` — built, browser-verified and DEPLOYED 01-Sep-2026
@@ -1774,8 +3444,13 @@ a pre-change deal → reads `Afrin Saiyed`, **not blank**. Test draft deleted.
       RLS-scoped read, so a non-admin sees a short list there for the same reason this entry exists.
       `list_org_people_detail()` is what would fix them.
 
-### OCPI-14 · The machine TYPE decides what is asked, not the machine  `[x]` — built, browser-verified and DEPLOYED 01-Sep-2026
-*Raised 2026-09-01 · Asked for by Ritesh Bhai · plan: `right-now-the-shipment-eventual-stallman.md`*
+### OCPI-14 · The machine TYPE decides what is asked, not the machine  `[x]`
+*Raised 2026-09-01 · Asked for by Ritesh Bhai · **CLOSED 03-09-2026 — shipped.** Verified in the
+code, not from notes: **72 `OCPI-14` markers** across the module. `branching.ts` RULE 8 states it
+outright — *"THERE IS NO CONNECTION TO THE DEAL INCLUSIONS ANY MORE"* — and the other asks are all
+there too: the centering device as a deal inclusion in its own right (`QuotationForm.tsx`), per-model
+warranties (`ocpiMachineWrites.ts`), and category-driven branching (`ocpiFetch.ts`). · plan:
+`right-now-the-shipment-eventual-stallman.md`*
 
 **What is being asked.** Three things the form decides today from the wrong place:
 
@@ -1886,7 +3561,7 @@ signed contract.
       re-points its dryer and centering gates and re-gates the three extras with `else false`;
       ⚠ `fms_ocpi_save_draft`'s ~53-key sniff array gains the two new part-B keys
 - [x] 3.2 The `do $check$` assertions re-derived, or the migration fails on apply
-- [x] 3.3 ⚠ The old-form/new-server window: dryer is identical, centering is strictly wider, only the
+- [ ] 3.3 ⚠ The old-form/new-server window: dryer is identical, centering is strictly wider, only the
       extras differ. Apply immediately before the Phase 4 deploy, not the day before
 
 **Phase 4 · Frontend, in dependency order**
@@ -1985,12 +3660,12 @@ which look at what the form actually renders.
       "Machine warranty · from the machine master · 12 Months" with ZERO editable warranty inputs.
 
 **Phase 7 · Ship**
-- [x] 7.1 Migration applied **before** the frontend goes live
-- [x] 7.2 `OCPI.md` — the second `ChoiceButtons` exception; the `opt_*` columns are now informational
-- [x] 7.3 **Closes open question 7** (*"should both centering questions disappear together?"*) and
+- [ ] 7.1 Migration applied **before** the frontend goes live
+- [ ] 7.2 `OCPI.md` — the second `ChoiceButtons` exception; the `opt_*` columns are now informational
+- [ ] 7.3 **Closes open question 7** (*"should both centering questions disappear together?"*) and
       answers **OCPI-5's open 0.1** — the two JAY machines sit in **POD**, so the comparison workbook
       gains a fourth tab
-- [x] 7.4 **OCPI-12 (the K64 print audit) must run AFTER this**, not before — this changes K64's form
+- [ ] 7.4 **OCPI-12 (the K64 print audit) must run AFTER this**, not before — this changes K64's form
       substantially and an audit of the old shape would be wasted
 
 ### OCPI-15 · Nothing is mandatory until Send for approval — and then say plainly what is missing  `[x]`
@@ -2200,7 +3875,7 @@ sign which fields are required. On a form of this length that is a hunt.
       and NOT in `fms_ocpi_write_quotation`; that the CHECK was already status-gated; why
       `completeness.ts` could not live in `fieldSpec.ts`; the asterisk convention; `FIELD_ANCHOR`.
 - [x] 6.2 Tick this checklist as each phase lands.
-- [ ] 6.3 ⚠ Stage only my own hunks — `WORKLIST.md`, `OCPI.md` and `index.css` are shared with other
+- [x] 6.3 ⚠ Stage only my own hunks — `WORKLIST.md`, `OCPI.md` and `index.css` are shared with other
       sessions and the tree already carries OCPI-18's uncommitted work.
 
 #### Questions
@@ -2213,70 +3888,119 @@ sign which fields are required. On a form of this length that is a hunt.
 ### OCPI-16 · Name the steps after what you actually do, and say it in one line when the step opens  `[x]`
 *Raised 2026-09-01 · Asked for by Ritesh Bhai · **BUILT AND VERIFIED 02-09-2026***
 
-Two steps were named after a *person signing* when the work is *uploading a copy somebody has already
-signed on paper*. Renamed after the action, and each given a one-liner shown when the step is opened.
+> ✅ **DONE.** Both steps renamed, the one-liner added and rendered, and `OcpiStepper`'s second
+> hardcoded label list deleted — the stages are now derived from `LIVE_STEPS`, so the rail cannot
+> drift from the sidebar again. Verified live: sidebar, breadcrumb, queue heading, Control Center,
+> Settings → Step Owners and Settings → Due Dates all read the new titles; the rail and the Dashboard
+> tiles read the new `short`s; a fresh quotation PDF still prints "Customer Signature". Full write-up
+> in [OCPI.md](OCPI.md).
+>
+> ⚠ **The rail now captions with `short`, not `title`** — decided 02-09-2026 because a rail circle
+> truncates to one line and "Upload Customer Signed Copy" does not fit. That also shortened the four
+> steps nobody asked to rename ("Approve Quotation" → "Qtn Appr", "Hand Over to Finance" →
+> "To Finance") and the two retired ones ("Order Confirmation" → "OC (old)"). Accepted knowingly; the
+> full title is shown under the rail instead.
+>
+> ⚠ **`STATUS_LABEL` was NOT renamed** (`lib/format.ts`) — a deal page still reads *Status: Awaiting
+> customer signature* above *Upload Customer Signed Copy*. Both are true and they answer different
+> questions (what the deal is waiting on / what our side does about it), so it was left alone rather
+> than widened past the settled scope. Same for the two queues' Excel `exportTitle`s, which name the
+> rows rather than the step. Raise a new entry if either should follow.
 
-| Step | Was | Now | Short | One-liner |
-|---|---|---|---|---|
-| `customer_signoff` | Customer Signature | **Upload Customer Signed Copy** | Cust Copy | *"Upload the scanned copy the customer has signed."* |
-| `management_signoff` | Management Signature | **Upload Management Signed Copy** | Mgmt Copy | *"Upload the copy signed by management."* |
+**The ask.** Two steps are named after a *person signing*, when the work is *uploading a copy somebody
+has already signed on paper*:
 
-✅ **Only these two were renamed**, and **only these two carry a one-liner** — `blurb` is optional on
-`STEPS` and the renderers show nothing at all when it is absent, not an empty line. The management
-line **stops at the upload** and does not mention Finance: step 5, *Hand Over to Finance*, follows it.
-Settled with Ritesh Bhai on 01-09-2026 knowing that.
+| Step | Reads today | What the person actually does |
+|---|---|---|
+| `customer_signoff` | **Customer Signature** | upload the copy the **customer** signed |
+| `management_signoff` | **Management Signature** | upload the copy **management** signed, and hand the final signed copy to Finance |
 
-#### The real finding — the name lived in THREE places and they had already drifted
+Rename them to describe the action, and give every step a **one-liner** shown when it is opened, so
+somebody landing on the queue knows what is expected without asking.
 
-| Where | Said |
-|---|---|
-| `lib/steps.ts` `STEPS.title` — the sidebar | "Customer Signature" |
-| `components/OcpiStepper.tsx` — a **second hardcoded list** | "Customer Signature" |
-| The queue page `<h1>` — a **third wording** | *"Out for customer signature"* |
+#### The real finding — the label already exists in three places and they already disagree
 
-Renaming in one place would have left two behind. **`OcpiStepper`'s list is gone** — the stages are
-now derived from `LIVE_STEPS`, so the rail cannot drift from the sidebar again.
+| Where | Customer step | Management step |
+|---|---|---|
+| `lib/steps.ts` `STEPS.title` — drives the **sidebar** | "Customer Signature" | "Management Signature" |
+| `lib/steps.ts` `STEPS.short` — drives the **rail** | "Cust Sign" | "Mgmt Sign" |
+| `components/OcpiStepper.tsx:31-33` — a **second hardcoded copy** | "Customer Signature" | "Management Signature" |
+| The queue page `<h1>` — a **third, different wording** | *"Out for customer signature"* | *"Countersign order confirmations"* |
 
-⚠ Per CLAUDE.md's container rule, that array carried **four** things, not one: the labels, the order
-(which is the user-visible numbering — `PoStageRail` prints `i + 1`), a synthetic `closed` node with
-`step: null` that `STEPS` has no row for, and a `key` used as both React key and rail node key. It was
-**derived, not deleted**; only the labels went, and the numbering agreement with Settings became
-structural instead of hand-maintained.
+So the sidebar, the stepper and the page heading are three separate strings for the same step, and the
+page heading is already saying something else. **Rename in one place only and two of the three will
+silently keep the old wording.** Fold the stepper's copy into `STEPS` while doing this — one source, or
+this drifts again the next time somebody is asked to reword it.
 
-⚠ **The rail captions with `short`, not `title`** — decided 02-09-2026, because a rail circle
-truncates to one line and "Upload Customer Signed Copy" does not fit. That also shortened the four
-steps nobody asked to rename (*Approve Quotation* → **Qtn Appr**, *Hand Over to Finance* → **To
-Finance**) and the two retired ones (*Order Confirmation* → **OC (old)**). Accepted knowingly; the
-full title is shown under the rail instead. `STAGE_LABEL` still reads `title`, because it feeds a
-sentence — *"last returned from …"* — where "Mgmt Copy" reads as a typo.
+🔴 **`quotationPdf.ts:716` also contains the string "Customer Signature" — DO NOT TOUCH IT.** That is
+the **signature block printed on the customer's quotation**, beside "Salesperson Signature" and
+"Authorised Signatory". It is not a step name; it only looks like one. A find-and-replace across the
+repo would rename the signature line on every quotation that goes out.
 
-🔴 **`quotationPdf.ts` also contains "Customer Signature" and was NOT touched** — that is the
-signature block printed on the customer's quotation, beside "Salesperson Signature" and "Authorised
-Signatory". Not a step name; it only looks like one.
+#### The wording — SETTLED 01-09-2026, use exactly this
 
-#### Verified — live browser + pdf.js, 02-09-2026
+| Step | New name | Short | One-liner |
+|---|---|---|---|
+| `customer_signoff` | **Upload Customer Signed Copy** | Cust Copy | *"Upload the scanned copy the customer has signed."* |
+| `management_signoff` | **Upload Management Signed Copy** | Mgmt Copy | *"Upload the copy signed by management."* |
 
-- `cd frontend && npm run build` — tsc strict + vite, clean.
-- Sidebar, breadcrumb, both queue headings, Control Center's step column and filter, Settings → Step
-  Owners (numbered 1–6) and Settings → Due Dates all read the new titles; the rail and the Dashboard
-  KPI tiles read the new `short`s. **Zero** occurrences of the four old strings on any screen.
-- The one-liner shows on steps 3 and 4. On QT-M0037 (`quotation_approval`) the rail card ends at the
-  rail with **no paragraph element at all** — nothing rendered, no gap.
-- QT-M0033 (`on_hold`, parked at `customer_signoff`) shows the rail and the hold chip and **no
-  blurb** — a parked deal is not told to go and upload something.
-- 🔴 A quotation PDF re-rendered fresh and read back with **pdf.js** still prints
-  `Salesperson Signature | Customer Signature | Authorised Signatory`.
-- Sweep: no code anywhere matches on a step title — every lookup is on `step_key`, in `frontend/src`
-  and in all of `supabase/`. Frontend-only; no migration.
+✅ **STEPS 4 AND 5 STAY SEPARATE.** The management one-liner **stops at the upload** and does NOT mention
+Finance. There is already a step 5, *"Hand Over to Finance"*, immediately after it — a one-liner on step
+4 describing step 5's work would leave a reader asking why the process has both. Ritesh Bhai chose this
+wording knowing that; do not "improve" it by adding the handover back.
 
-#### Open
+✅ **ONLY THESE TWO STEPS GET A ONE-LINER.** Quotation, Approve Quotation, Hand Over to Finance and
+Finance Receipt get **none** — their names already say what they are. `blurb` is therefore **optional**
+on `STEPS`, and the renderer must simply show nothing when it is absent rather than reserving an empty
+line and leaving a gap under four of the six headings.
 
-- ⚠ **The retired-chain rail is unexercised** — no deal has ever travelled it, so the two spliced
-  nodes could not be seen on screen.
-- ⚠ **`STATUS_LABEL` was not renamed** (`lib/format.ts`): a deal page reads *Status: Awaiting customer
-  signature* above *Upload Customer Signed Copy*. Both are true and answer different questions, so it
-  was left rather than widened past the settled scope. Worth deciding whether the status vocabulary
-  should follow the steps.
+✅ **Only these two steps are RENAMED.** The other four keep the names they have.
+
+⚠ **`short` has a length constraint** — it sits on the stage rail, where a long label wraps or clips.
+"Cust Copy" / "Mgmt Copy" match the width of today's "Cust Sign" / "Mgmt Sign"; do not lengthen them.
+
+#### What to build
+
+- [x] 1 Add an **optional `blurb`** field to `STEPS` in `lib/steps.ts`, set on `customer_signoff` and
+      `management_signoff` only. The other four have none, by decision — the renderer must show nothing
+      at all when it is absent, not an empty line that leaves a gap under four of the six headings
+- [x] 2 Render it wherever a step is opened: the queue page, under the heading, and on the deal page's
+      step panel. One place decides the wording; every screen reads it.
+- [x] 3 Retitle `customer_signoff` and `management_signoff` per the wording agreed in 0.1
+- [x] 4 **Delete `OcpiStepper.tsx`'s hardcoded label list** and read `STEPS` instead. It carried FOUR
+      things, not one — labels, order, a synthetic `closed` node with `step: null`, and a `key` used as
+      both React key and rail node key. Derived rather than deleted; all four survive.
+- [x] 5 Bring the two queue-page `<h1>`s in line, or delete them in favour of the step title — both now
+      read `stepByKey(...).title`, and the hand-written sentence under each was replaced by the blurb
+- [x] 6 Sweep for anything that MATCHES on the title string rather than the step key. **Zero hits** —
+      grepped `title ===` / `.title ==` and all four old literals across `frontend/src`, and all of
+      `supabase/`. Every lookup is on `step_key`. The only surviving "Customer Signature" is
+      `quotationPdf.ts`'s signature block, untouched.
+
+#### Verify
+
+- [x] `cd frontend && npm run build` — tsc strict + vite, clean
+- [x] Sidebar, breadcrumb, queue heading, Control Center, Settings → Step Owners (numbered 1–6) and
+      Settings → Due Dates all read the new titles; the rail and the Dashboard tiles read the new
+      `short`s. Zero occurrences of the four old strings anywhere on screen.
+- [x] The one-liner appears on steps 3 and 4 — and on QT-M0037 (`quotation_approval`) the rail card
+      ends at the rail with **no paragraph element at all**, so there is no gap
+- [x] 🔴 **Quotation PDF re-rendered fresh via `ApprovedOcPreview` and read back with pdf.js** — still
+      prints `Salesperson Signature | Customer Signature | Authorised Signatory`, and no step name
+      leaked into it
+- [x] QT-M0026 (parked at `customer_signoff`) shows correctly. QT-M0033 (`on_hold`, parked at the same
+      step) shows the rail and the hold chip and **no blurb** — a parked deal is not told to go and
+      upload something. Control Center and Deal Register both name the step sensibly.
+- [ ] ⚠ **The retired-chain rail is unexercised** — no deal in the database has ever travelled it
+      (`oca_at` is null on all of them), so the two spliced nodes could not be seen. Their captions
+      now come from `STEPS[].short`: *OC (old)* / *OC Appr (old)*, where the old hardcoded list said
+      *Order Confirmation* / *Approve OC*.
+
+#### Questions
+
+None open. Every decision was taken on 01-09-2026 and is recorded in *The wording* above: the two names,
+the two one-liners, that steps 4 and 5 stay separate, that only these two steps carry a one-liner, and
+that only these two are renamed. **This entry is ready to build as written.**
 
 ### OCPI-17 · Two small form fixes — the machine category order, and Platter loses "Not Applicable"  `[x]`
 *Raised 2026-09-01 · Asked for by Ritesh Bhai, from two screenshots*
@@ -2684,8 +4408,8 @@ an unusual deal does not end up recorded in Special remarks. Stored in new addit
 ### OCPI-21 · `ChoiceButtons` still loses a value it cannot match — Print head is the one left exposed  `[x]`
 *Raised 2026-09-01, found while building OCPI-17 · **FIXED AND VERIFIED 02-09-2026***
 
-> ✅ **DONE, locally — the shared component was not touched.** Print head's strip feeds the deal's own
-> value back in as an option, the same way OCPI-17 did for Platter. Verified live on **QT-M0035**
+> ✅ **DONE, locally — the shared component was not touched.** Print head's strip now feeds the deal's
+> own value back in as an option, the same way OCPI-17 did for Platter. Verified live on **QT-M0035**
 > (draft · Rocket · offers *EX600* / *RC* · holds *KATANA 600 DPI - HANGLORY*): three buttons, the
 > stored one lit with `aria-checked="true"` and `tabIndex=0`, so Tab lands on IT and changes nothing.
 > Saved without touching the field and re-read in SQL — `head_type` unchanged.
@@ -2696,8 +4420,8 @@ an unusual deal does not end up recorded in Special remarks. Stored in new addit
 > bites the day one is deactivated.
 >
 > ⚠ **It makes the loss VISIBLE, not impossible.** ↓ still moves off the lit button and the retired
-> option then disappears — the documented one-way door `optsWithCurrent` already carries. Confirmed as
-> the wanted behaviour on 02-09-2026.
+> option then disappears — the documented one-way door `optsWithCurrent` already carries. Confirmed
+> that is what happens, and confirmed as the wanted behaviour on 02-09-2026.
 >
 > 🔴 **A SECOND divergence in the same field was found and fixed** — see OCPI-24 below.
 
@@ -2725,8 +4449,169 @@ The fix is either `masterOpts` at that call site too, or generic unknown-value h
 runner, so the local fix is the cheaper one. If it is done centrally, Print head's bespoke read-out
 must be reconciled or it will double-report.
 
+### OCPI-22 · A live deal says its consumables come from "customer", and the field can no longer be edited  `[x]` — closed 01-09-2026, no action needed
+*Raised 2026-09-01, found while building OCPI-19*
+
+> ✅ **CLOSED — both deals are dummies.** Ritesh Bhai confirmed **QT-M0042** and **QT-M0045** are throwaway
+> quotations despite carrying real customer names and no `ZZ TEST` prefix. Nothing to correct, and the
+> read-only field introduced by OCPI-19 is doing its job for everything raised from here on.
+>
+> ⚠ **Worth knowing for OCPI-12 and for any future data check: `ZZ TEST` IS NOT A RELIABLE MARKER of
+> test data on this module any more.** Two real-looking, real-named deals at `awaiting_quotation_approval`
+> turned out to be disposable. Never infer "this is a live deal" from the absence of the prefix — ask,
+> as was done here. The K64 print audit's teardown step in particular must not assume the inverse either.
+
+🔴 **TWO real deals, not one — re-checked 01-09-2026.** Both are non-test, both sit at
+`awaiting_quotation_approval`, and both have nonsense in a contract clause:
+
+| Quotation | Customer | Stored value | The contract prints |
+|---|---|---|---|
+| **QT-M0042** | SHAN TEXTILES PRIVATE LIMITED- MACHINE | `customer` | *"purchased directly from M/s **customer**."* |
+| **QT-M0045** | SWAMI TEXTILES PVT. LTD (UNIT-II) | `0` | *"purchased directly from M/s **0**."* |
+
+The 12 templated machines render
+`Consumable items: To be purchased directly from M/s {{consumables_supplier}}.`
+
+⚠ **`0` is not a commercial term** — it is somebody typing into a box they did not understand, which
+settles the question this entry raised about whether `customer` was deliberate. At least one of the two
+is plainly a mistake, and both are one approval away from reaching a customer.
+
+🔴 **OCPI-19 made that field read-only, so nobody can correct it from the form.** Fixing it now takes
+an SQL update or a revision. Rewriting a live deal's stored value was explicitly out of scope for
+OCPI-19, so it was left alone deliberately.
+
+⚠ It also contradicts OCPI-19's premise that the answer is always Orange O Tec — this is the first
+deal that answered otherwise. Worth asking whether it was a genuine commercial term or somebody
+misreading the box, because that decides whether the read-only field is right.
+
+🔴 Same shape as the `payment_terms = 'na'` deal noted under OCPI-20: **the form can stop new bad
+answers, but it cannot repair the ones already recorded.**
+
+### OCPI-23 · A field-to-document map — which answer lands where on the short form and the long form  `[x]` — delivered by OCPI-12, 02-Sep-2026
+*Raised 2026-09-01 · Asked for by Ritesh Bhai · **PARKED 01-09-2026 — do not start this on its own***
+
+> ✅ **DONE — and kept as a MAINTAINED MAP, not thrown away.** OCPI-12 ran on 02-09-2026 and its
+> Part 1 produced this, generated rather than hand-written: **`frontend/scripts/ocpi-field-map.mjs`**,
+> run with **`cd frontend && npm run field-map`**, emitting **`OCPI-FIELD-MAP.md`** at the repo root.
+>
+> It reads the five sources this entry named — `FIELD_LABEL`, `quotationPdf.ts`, `ocPdf.ts`, `tokensFor`
+> and the live `fms_ocpi_machine_sections` — and answers the per-machine problem the way this entry
+> insisted it must: the two long-form routes are **separate columns**, and the token column carries a
+> **count** (`{{delivery_date}}` 21/21, `{{consumables_supplier}}` 12/21), never a tick.
+>
+> **The denominator is 21, not 28** — seven active machines have no template and print no long form at
+> all; they are named in the map rather than counted as gaps.
+>
+> **103 fields, 18 of which reach no document.** Most are documented-deliberate; the five that nobody
+> had decided are **OCPI-34**. The verdicts were checked against ten rendered PDFs, so they are no
+> longer the unverified claims this entry warned about.
+>
+> Everything below is the original thinking, kept because it is what shaped the generator.
+>
+> 🅿️ **PARKED, DELIBERATELY.** Ritesh Bhai's decision: **OCPI-12 (the K64 print audit) covers this
+> ground, so do it there.** When OCPI-12 runs, its Part 1 walk of `FIELD_LABEL` produces exactly this
+> analysis — at that point decide whether the output is kept as a durable map or thrown away as
+> working notes, and close this entry either way.
+>
+> Everything below is the thinking already done, kept so it is not redone: the per-machine problem, why
+> it must be generated rather than hand-written, and the four sources it can be generated from. **Read
+> it when OCPI-12 starts. Do not schedule it as a task of its own.**
+
+**The ask.** For every field captured on the quotation form, be able to see **where it comes out** — on
+the **short form** (the summary sheet, `quotationPdf.ts`) and on the **long form** (the detailed order
+confirmation, `ocPdf.ts` plus the machine's own template sections). A reference you can look at, not a
+one-off investigation.
+
+The scale, checked 01-09-2026: **103 fields** in `FIELD_LABEL` and **28 documented tokens**. Nobody
+holds that in their head, and roughly fifteen of those fields were added in the last three days.
+
+#### ⚠ Its relationship to OCPI-12 — read this before starting either
+
+**OCPI-12 (the K64 print audit) already contains this analysis as its Part 1.** It walks `FIELD_LABEL`
+and classifies each field *Prints / Screen-only deliberate / Screen-only undocumented*. The difference:
+
+| | OCPI-12 | This entry |
+|---|---|---|
+| Purpose | **find what is broken** | **be able to look it up afterwards** |
+| Output | a list of findings | a **durable map** |
+| Lifespan | one afternoon | maintained |
+
+**Do not do the walk twice.** Either run this first and let OCPI-12 verify the map against real rendered
+PDFs, or run OCPI-12 and keep its Part 1 output as the map. **Running this first is better** — it gives
+OCPI-12 a checklist to verify against instead of a blank page.
+
+#### 🔴 The thing that makes this harder than it looks: the long form is PER MACHINE
+
+A field reaches the long form **two different ways**, and only the first is answerable once:
+
+1. **Rendered directly** by `ocPdf.ts` — same for every deal.
+2. **Through a `{{token}}` inside a machine's template section** — and **each machine has its own
+   sections**. `{{delivery_date}}` is in **21 of 28** machines. `{{consumables_supplier}}` is in **12**.
+
+So *"does this field print on the long form?"* has no single answer. It has a **count**: on how many of
+the 28 machines. A map that answers yes/no is wrong, and would be worse than none — it would say a field
+prints when it prints on twelve machines and vanishes on sixteen.
+
+⚠ **A machine with `has_template = false` prints no long form at all** — it issues the summary sheet
+alone. Those machines are neither "prints" nor "missing"; they have no long form to appear on. Say so
+explicitly rather than counting them as gaps.
+
+#### 🔴 Generate it, do not hand-write it
+
+A hand-written map goes stale the first time somebody adds a field — and this module added ~15 fields in
+three days, across OCPI-7, 10, 11, 14, 18. **A stale map is worse than no map**, because it will be
+trusted.
+
+Write a **script that produces the map** from the four sources that already exist:
+
+| Source | Gives |
+|---|---|
+| `fieldSpec.ts` → `FIELD_LABEL` | the 103 fields and their labels — the module's own list |
+| `quotationPdf.ts` | what the short form renders |
+| `ocPdf.ts` | what the long form renders directly |
+| `tokens.ts` → `tokensFor` + `TOKEN_HELP` | which fields are exposed as tokens |
+| `fms_ocpi_machine_sections` (live DB) | which machines' templates actually use each token |
+
+Proposed shape — one row per field:
+
+| Field | Section | Short form | Long form (direct) | Long form (via token) | Verdict |
+|---|---|---|---|---|---|
+| Customer name | A | ✓ header | ✓ header | — | prints |
+| Ink — subsidized rate | B | ✓ | — | — | short form only |
+| Tentative delivery date | C | ✓ | — | `{{delivery_date}}` · **21/28** | prints |
+| Platter | A | — | — | — | **screen only — is that deliberate?** |
+
+The last column is the one that earns the map: **a field captured, stored, and printed nowhere, that
+nobody decided should be invisible.**
+
+⚠ **Static analysis alone will not settle it.** A field can be referenced in `ocPdf.ts` and still never
+appear — inside a branch that never fires, or a section the machine has no rows for. The generated map
+is a **claim**; OCPI-12's rendered PDFs are the **proof**. Mark generated verdicts as unverified until
+OCPI-12 confirms them.
+
+#### Checklist
+
+- [ ] 0.1 Decide where the map lives: a generated `OCPI-FIELD-MAP.md` in the repo, a page in the app, or
+      a sheet like OCPI-5's. ⚠ It must be **regenerable in one command**, wherever it goes
+- [ ] 0.2 Confirm with Ritesh Bhai that per-machine counts (21/28) are what he wants to see, rather than
+      a plain yes/no
+- [ ] 1.1 The generator: walk the four code sources + the live sections table
+- [ ] 1.2 Handle the two-route problem — direct render vs token — as separate columns, never merged
+- [ ] 1.3 Exclude `has_template = false` machines from the denominator and say which they are
+- [ ] 2.1 Produce the map; read it; every "screen only" row is a question for Ritesh Bhai, not a bug
+- [ ] 2.2 Hand the map to OCPI-12 as its Part 1 checklist
+- [ ] 3.1 `cd frontend && npm run build` if anything shipped in `src/`
+
+#### Questions
+- [ ] **Where do you want to read this** — a document in the repo, a screen in the app, or an Excel sheet
+      like the template comparison workbook?
+- [ ] **Is a field that prints on only some machines a problem to fix, or just a fact to see?** It
+      changes whether the map is a report or a to-do list.
+
 ### OCPI-24 · Print head: the screen showed the MACHINE's head while the paper printed the DEAL's  `[x]`
 *Found 2026-09-02 while building OCPI-21 · **FIXED AND VERIFIED THE SAME DAY***
+
+> ✅ **DONE.** Fixed in the same field, in the same session, on Ritesh Bhai's instruction.
 
 The same class of defect as OCPI-21 — a stored value that matches no option, shown as something else —
 but in the branch that has **no buttons**, so no keystroke was involved and nothing was ever lost. It
@@ -2751,67 +4636,2399 @@ Six live deals were in that state on 02-09-2026:
 
 ⚠ Note QT-M0032 and QT-M0038: the two strings are the *same head under a different name*. The master
 holds thirteen head types of which several are near-duplicates (`RICOH GEN 6` / `RICOH GEN 6 HEAD`,
-`I3200` / `EPSON PRINTHEAD I 3200`, four spellings of KJ4B). Only six of the thirteen are mapped to any
-machine at all. **Worth a de-duplication pass on the head master** — not attempted here, and not
-required by the fix.
+`I3200` / `EPSON PRINTHEAD I 3200`, `KJ4B` / `KYOCERA KJ4B` / `600 DPI - KJ4B` / `300DPI - KJ4B`).
+Only six of the thirteen are mapped to any machine at all. **Worth a de-duplication pass on the head
+master** — not attempted here, and not required by the fix.
 
 **The fix.** `soleHeadAgrees` in `QuotationForm.tsx`: where one head is mapped and the deal holds
 something else, show what the deal holds — which is what prints — and add a grey line naming what the
 machine maps today. No data was changed and no migration was needed.
 
-**Verified 02-09-2026.** QT-M0026 opened live: the box reads *KYOCERA KJ4B* with *"The machine master
-now lists I3200 for this model. This deal was quoted on the head above, and that is what prints."* —
-and the freshly rendered summary PDF, read back with pdf.js, prints `Type of Head  KYOCERA KJ4B`.
-Screen and paper now agree.
+**Verified 02-09-2026.** QT-M0026 opened live: the box now reads *KYOCERA KJ4B* with *"The machine
+master now lists I3200 for this model. This deal was quoted on the head above, and that is what
+prints."* — and the freshly rendered summary PDF, read back with pdf.js, prints
+`Type of Head  KYOCERA KJ4B`. Screen and paper now agree.
 
-### OCPI-22 · A live deal says its consumables come from "customer", and the field can no longer be edited  `[!]`
-*Raised 2026-09-01, found while building OCPI-19 · **needs a person, not code***
 
-**QT-M0042 — SHAN TEXTILES PRIVATE LIMITED- MACHINE**, `awaiting_quotation_approval`, holds
-`consumables_supplier = 'customer'`. The 12 templated machines render
-`Consumable items: To be purchased directly from M/s {{consumables_supplier}}.`, so its contract
-prints **"purchased directly from M/s customer."**
+### OCPI-25 · 🟢 Selling entity — show a clean alias, and pick it with buttons rather than a dropdown  `[ ]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai*
 
-🔴 **OCPI-19 made that field read-only, so nobody can correct it from the form.** Fixing it now takes
-an SQL update or a revision. Rewriting a live deal's stored value was explicitly out of scope for
-OCPI-19, so it was left alone deliberately.
+**The ask.** *Selling entity* shows the raw Tally company name with its financial-year suffix —
+`ORANGE O TEC PRIVATE LIMITED (01-04-25TO31-03-27)`. It should read as the company:
+**Orange O Tec Private Limited** and **Orange O Tec Enterprise Private Limited**. Add an **alias** on the
+master, show the alias on the form, and replace the dropdown with the same **`ChoiceButtons`** strip used
+elsewhere in the module.
 
-⚠ It also contradicts OCPI-19's premise that the answer is always Orange O Tec — this is the first
-deal that answered otherwise. Worth asking whether it was a genuine commercial term or somebody
-misreading the box, because that decides whether the read-only field is right.
+#### 🔴 The reason only ONE option shows today is NOT the naming
 
-🔴 Same shape as the `payment_terms = 'na'` deal noted under OCPI-20: **the form can stop new bad
-answers, but it cannot repair the ones already recorded.**
+`mst_companies` holds **five** rows, and the picker lists only those with an **active OCPI company
+profile**. Exactly one has one:
+
+| Tally company | OCPI profile? |
+|---|---|
+| ORANGE O TEC PRIVATE LIMITED (01-04-25TO31-03-27) | ✅ **the only one that appears** |
+| ORANGE O TEC PRIVATE LIMITED-NOIDA-(from 1-Apr-25) | ❌ |
+| ORANGE O TEC ENTERPRISES PVT LTD(F.Y.2026-27) | ❌ |
+| ORANGE O TEC ENTERPRISES PRIVATE LIMITED-NOIDA -FY 26-27 | ❌ |
+| COLORIX DIGITAL PRINTING SOLUTIONS LLP - (from 1-Apr-20) | ❌ |
+
+**So aliases alone will not produce the two buttons Ritesh Bhai expects.** A profile carries the legal
+name, bank account, IFSC, letterhead and ex-works city that print on the paper — without one the module
+cannot issue a document for that entity, which is why `companyOptions` skips it. **Creating the
+Enterprises profile is a DATA task and a prerequisite**, not part of this build, and it needs the real
+bank details. ⚠ Raise it with Ritesh Bhai before building: the second button cannot exist until it does.
+
+#### 🔴 Aliases COLLIDE — this is the design decision, and it must be made first
+
+Five Tally rows collapse onto about three real entities, because Tally splits by **branch** and by
+**financial year**:
+
+- Orange O Tec Private Limited → **2 rows** (main + Noida)
+- Orange O Tec Enterprises Private Limited → **2 rows** (main + Noida)
+- Colorix → 1 row
+
+Give both Orange O Tec PVT rows the alias *"Orange O Tec Private Limited"* and the strip shows **two
+identical buttons**, which is worse than the raw names. So decide:
+
+| Option | What it means |
+|---|---|
+| **A · Alias is a label only** | Each row keeps its own button; the alias just strips the FY suffix. Noida still needs distinguishing — *"Orange O Tec Private Limited — Noida"*. Honest, no ambiguity, but more than two buttons. |
+| **B · Alias groups rows** | One button per alias, and picking it stores **one specific** `company_id`. ⚠ Then something must decide WHICH — and `company_id` drives the bank account that prints. Getting it wrong prints the wrong account on a contract. |
+
+**Recommend A.** The deal stores `company_id`, and one button that could mean two companies is exactly
+the kind of ambiguity that ends up on a customer's paper. Ritesh Bhai's "just two names" is achievable
+under A if only the two main-branch entities get profiles — which is probably what he actually means.
+
+#### The build
+
+- [ ] 0.1 Settle A vs B, and confirm which entities genuinely need to be quotable
+- [!] 0.2 🔴 **BLOCKED 02-09-2026 — WAITING ON RITESH BHAI FOR THE BANK DETAILS.** Creating the OCPI
+      company profile for **Orange O Tec Enterprises Private Limited** needs its legal name, bank name,
+      branch, account number, IFSC, letterhead and ex-works city. He has been asked and will send them.
+      **Until they arrive the second button cannot exist**, because the bank account prints on the
+      contract and the picker skips any company without a profile. This is data, not code — no amount of
+      frontend work unblocks it. ⚠ Do not invent or copy across a bank account to make the button appear.
+- [ ] 1.0 ⚠ **OCPI-35 NOW HARDCODES SURAT / NOIDA TOO, and this entry is where the two reconcile.**
+      Its *Ex-factory location* strip (`DELIVERY_FACTORY_CITIES` in `lib/fieldSpec.ts`) carries the same
+      two cities as the entities here. It was hardcoded deliberately on 02-09-2026 rather than read from
+      `fms_ocpi_company_profiles`, because **exactly one profile is active**, so reading from the
+      branches would have rendered a one-button strip with Noida unreachable — and this entry is blocked
+      on the Enterprises bank details. **When 0.2 unblocks and the second profile exists, decide whether
+      that strip should read from here**, and delete the constant if so. Do not add a third copy.
+- [ ] 1.1 Additive nullable `alias` (or `display_name`) column. ⚠ **On `fms_ocpi_company_profiles`, NOT
+      on `mst_companies`** — the company master is CENTRAL and shared with every other module, and an
+      OCPI-only label does not belong there. It also keeps this additive on a table OCPI owns.
+- [ ] 1.2 Editable wherever the profile is maintained, so it does not need a developer to change
+- [ ] 2.1 `companyOptions` prefers `alias` and falls back to `c.name` — never a blank button
+- [ ] 2.2 Swap the `Combobox` for `ChoiceButtons`. ⚠ **Account for what the Combobox carries first**
+      (CLAUDE.md's container rule): `searchable` — fine to lose at 2–3 options; `clearable` — **blank is
+      a LEGITIMATE answer here**, the code comment at `QuotationForm.tsx:1109` says Tally leaves ~10 of
+      1,888 customers with no company, so the strip MUST keep a way back to unset; and the **`sublabel`**
+      showing *"M/s ORANGE O TEC PVT LTD. · AXIS BANK · Ex-Works Surat"*, which exists so the salesperson
+      can see what will actually print. A bare button loses that — **keep it, under the strip, for the
+      selected entity.**
+- [ ] 2.3 ⚠ `ChoiceButtons` shows an unknown value as **nothing at all** (OCPI-21). An older deal on a
+      company that no longer has a profile must still display — use the `masterOpts` pattern, feeding the
+      deal's own value back in as an option.
+
+#### Verify
+
+- [x] `cd frontend && npm run build`
+- [ ] The strip shows the alias, not the Tally name; the sublabel still says what will print
+- [ ] Clearing the selection still works — blank is legitimate
+- [ ] 🔴 **Raise a deal on each entity and render both papers.** The letterhead, legal name and BANK
+      ACCOUNT must match the button that was pressed. This is the one failure that reaches a customer
+- [ ] An older deal still opens with its company shown, and prints unchanged
+- [ ] ⚠ Nothing outside OCPI reads a renamed company — the alias is on the OCPI profile, so confirm
+      `mst_companies.name` was not touched
+
+#### Questions
+- [ ] **Which entities should actually be quotable?** Two, as asked — or do the Noida branches need to
+      raise their own OCPIs?
+- [ ] **Is Colorix ever a selling entity for OCPI**, or deliberately out?
+
+### OCPI-26 · Type of ink AND Delivery term become buttons, not dropdowns  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai (both, same day) · sibling of OCPI-25 (selling entity)*
+
+**The ask.** Two `Combobox` controls become `ChoiceButtons` strips. Few options each, so buttons are
+fewer clicks and show every answer without opening anything.
+
+#### 🟢 They are NOT the same job — one is safe, one needs a decision
+
+| | Source | Verdict |
+|---|---|---|
+| **Delivery term** (`QuotationForm.tsx:2436`) | `TRADE_TERMS` — **a fixed list in code** (`fieldSpec.ts:645`): Ex-Work Surat · CIF · FOB · EX Factory | ✅ **Exactly what `ChoiceButtons` is for.** No rule bent, nothing buried in the control but `clearable`. Do this one first — it is a clean swap |
+| **Type of ink** (`QuotationForm.tsx:1401`) | `fms_ocpi_ink_types` — **a MASTER** | ⚠ Breaks the component's own rule, and the dropdown carries a real feature. See below |
+
+⚠ **Delivery term prints on the contract** — `{{trade_term}}` is live in the SALE CONDITIONS clause
+(`Transport Terms: {{trade_term}}`) on the same ~21 machines as the delivery date. This task only changes
+the CONTROL; the stored value and the token must be untouched. ⚠ There is also history worth not
+re-treading: the field was **asked to be removed once before** and could not go, because that clause
+depends on it (`QuotationForm.tsx:2771`). It is not being removed now either — only re-rendered.
+
+#### The ink half — the part that needs a decision
+
+*Type of ink* has three options today:
+
+| Ink type | sort |
+|---|---|
+| Sublimation Ink | 10 |
+| Reactive Ink | 20 |
+| Pigment | 30 |
+
+#### 🔴 This is the THIRD exception to `ChoiceButtons`' own rule — make it deliberately
+
+`ChoiceButtons.tsx:19` says it plainly: *"ONLY FOR A FIXED VOCABULARY DECLARED IN CODE — never a master
+list, however short."* Ink types are a **master** (`fms_ocpi_ink_types`), editable on the Masters screen.
+The rule exists because **a strip sized to today's data breaks the first time somebody adds a row**, and
+nobody connects the broken layout to the master they just edited.
+
+OCPI-8 made the first exception (dryer category), OCPI-14 the second (print head), OCPI-25 proposes a
+third (selling entity). This is a fourth. **The exception is becoming the rule**, so either:
+
+- accept it and **say so in the component's comment**, with the criterion — a short master that in
+  practice never grows — so the next author knows the boundary; or
+- **make the strip wrap gracefully** past N options, so a fourth ink type degrades instead of breaking.
+
+The second is better and would retire the whole question. Decide, do not drift into it.
+
+#### 🔴 The Combobox carries a real feature the buttons would delete
+
+Per CLAUDE.md's container rule, account for every control before replacing it:
+
+| On the Combobox today | Survives? |
+|---|---|
+| `searchable` | not needed at three options — genuinely goes away |
+| `clearable` | **decide** — buttons need an explicit way back to "not chosen" |
+| `masterOpts(s.inkTypes, draft.inkType)` | **KEEP.** It feeds the deal's own value back in so an ink type since deactivated still shows. `ChoiceButtons` renders an unknown value as NOTHING (OCPI-21) and a single ↓ then overwrites it — this is the guard against that |
+| **`onCreate` + `setAsk({ type: "ink_type" })`** | 🔴 **A REAL FEATURE.** The placeholder reads *"Search or add…"*: a salesperson can type an ink that does not exist, it is KEPT ON THE DEAL, and the master is asked to grow. Buttons remove the only route to it |
+
+✅ **SETTLED 02-09-2026 — `onCreate` GOES, deliberately. No "+ Other" button, no request path.**
+Ritesh Bhai: the ink list is fixed by the master. If a new ink is ever needed it is **added on the
+Masters screen and appears on the form by itself** — a salesperson does not get to invent one mid-deal.
+
+So remove `onCreate` and `setAsk({ type: "ink_type" })` at this call site. ⚠ **This is a deletion made on
+purpose, not an oversight** — it is exactly the kind of thing CLAUDE.md's container rule exists to catch,
+so this note is the record that it was accounted for and chosen.
+
+⚠ **This makes rendering from the live master non-negotiable.** With no way to type an ink, a master
+addition that does not reach the form leaves a salesperson with no route at all. Never hardcode the three.
+⚠ Check whether `setAsk` / the `ink_type` master-request path is still used by any OTHER field before
+deleting shared machinery — Master Requests is a real screen and other masters use it.
+
+⚠ **Render the buttons from the live master (`s.inkTypes`), never a hardcoded three**, or an ink added on
+the Masters screen never appears on the form and the two screens disagree with no clue why.
+
+#### Checklist
+
+- [x] 0.1 SETTLED — no "+ Other", no request path. The master is the vocabulary; see above
+- [x] 0.2 `clearable` KEPT on both. Neither field is required — ink stays optional under OCPI-27, and
+      the delivery term is a `DETAIL_SHEET_FIELDS` warning, never a block — so `ChoiceButtons`' own
+      rule (clearable for optional fields only) permits it, and without it a first click is final
+- [x] 0.3 DECIDED: **the strip already wraps**, so no component behaviour changed. The radiogroup is
+      `flex flex-wrap gap-2`, which makes the old rule's premise — "a strip sized to today's data
+      breaks the first time somebody adds a row" — simply untrue. The header ⚠ is rewritten to allow a
+      SHORT master whose growth is an admin decision, and to state the real boundary: **a strip cannot
+      be searched**, so anything that can run to dozens stays a `Combobox`. `optsWithCurrent`'s comment,
+      which quoted the old rule, was reconciled with it
+- [x] 1.1 Delivery term done FIRST. 🔴 **BUT NOT THE CLEAN SWAP THIS ENTRY PROMISED** — one deal on
+      record carries **`CIF Jebel Ali`**, which is not one of the four. `opts(TRADE_TERMS)` would have
+      rendered it as nothing selected and a single ↓ would have overwritten a term that prints on a
+      signed contract. It uses **`optsWithCurrent(TRADE_TERMS, draft.tradeTerm)`**. Verified in the
+      browser: the 5-button strip wraps to 2 lines and does not overflow down to a 200px column
+- [x] 1.2 Type of ink done, `masterOpts` kept — and load-bearing: **5 deals carry `Pigment Ink` while
+      the master says `Pigment`**. `onCreate` + `setAsk({type:"ink_type"})` removed deliberately;
+      orphan sweep clean — `setAsk` still serves the Machine picker, and the `ink_type` request path
+      is still live on the Master Requests page
+- [x] 2.1 `npm run build` — tsc strict + vite, clean
+- [x] 2.2 Browser: four delivery terms, three inks, both as strips; picking stores; ✕ clears both and
+      then disappears (nothing left to clear)
+- [x] 2.3 🔴 PASSED on the `CIF Jebel Ali` deal and a `Pigment Ink` deal: the off-master value renders
+      as a lit extra button and **carries the roving `tabIndex=0`**, so the arrow keys start from a
+      real index instead of -1. Saved the deal and re-read the row — the stored value survived
+- [x] 2.4 Added a fourth ink type and it appeared on the form by itself; strip wrapped to 2 lines, no
+      overflow, and the deal's own retired value stayed selected. Test row removed afterwards
+- [x] 2.5 🔴 PASSED, verified with pdf.js on the rendered contract. ⚠ The clause is **worded per
+      machine** and this entry's "Transport Terms:" is not what it says on either deck checked —
+      Position Printer prints `Trade Terms (Machine): Ex-Work Surat`, Homer K24 prints
+      `Delivery Terms: CIF`. What matters is that `{{trade_term}}` resolves, and it does, on both. No
+      `{{token}}` left unresolved anywhere in either paper
+
+### OCPI-27 · Machine category and No. of print heads become mandatory  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai*
+
+**The ask.** In *Machine details* (section A), two fields carry no asterisk and are not required:
+
+| Field | Key | Today | Wanted |
+|---|---|---|---|
+| **Machine category** | `machineCategoryId` | optional | **mandatory** |
+| **No. of print heads required** | `headCount` | optional | **mandatory** |
+
+✅ **Ink type and Platter stay optional** — confirmed correct as they are. Do not touch them.
+
+#### Where the change goes
+
+OCPI-15 replaced the old hand-written checks with a declarative list: `REQUIREMENTS` in
+`lib/completeness.ts`, each entry a key plus a `tier` of `"generate"` or `"approval"`. Neither of these
+two keys is in that list at all. So this is **two rows added to one array** — plus the asterisk, which
+the same list already drives, so the form and the blocker cannot disagree.
+
+⚠ **`REQUIREMENTS` order is the FORM's reading order**, deliberately — somebody working down the missing
+panel works down the page. Both keys belong in section A, near `machineId` / `machineCount`, **not
+appended at the end**. (Separately: `FIELD_LABEL`'s order is the revision-diff row order and must not be
+disturbed — different list, different rule.)
+
+#### Which tier — and an honest note on the category
+
+**`headCount` → `approval`.** It can genuinely be blank, it prints on the contract as the number of heads
+supplied, and OCPI-15 settled that only the barest identity blocks Generate.
+
+**`machineCategoryId` → `approval` as well**, but with eyes open:
+
+🟢 **Choosing a machine already sets the category** — `chooseMachine` snaps it (OCPI-14), and all 24
+existing deals were back-filled. So a deal that has a machine always has a category, and a deal with no
+machine is already blocked on `machineId`. **The rule will therefore almost never fire on its own.**
+
+That is not a reason to skip it. The value Ritesh Bhai is actually asking for here is **the asterisk** —
+the screen saying this field matters — plus a guard against a future path that sets a machine without a
+category. Both are worth having. Just do not expect it to catch anything today, and do not let anyone
+"simplify" it away later on the grounds that it never fires; the note above is why it exists.
+
+#### Checklist
+
+- [x] 1.1 Two entries added to `REQUIREMENTS` in `lib/completeness.ts`, in FORM order within section A —
+      `machineCategoryId` before `machineId`, `headCount` after `machineCount`. Neither needs a `label`
+      override: `FIELD_LABEL` already matches the form's captions exactly
+- [x] 1.2 Asterisks confirmed on screen. ⚠ They were NOT automatic, and that is worth recording: both
+      `FieldLabel`s were missing `required={req.has(…)}` **and** `anchor={FIELD_ANCHOR(…)}` altogether,
+      so the field could not be marked or jumped to. Not a second source — simply never wired
+- [x] 2.1 Pulled live with `pg_get_functiondef`. **Neither `fms_ocpi_submit_quotation` nor the CHECK
+      carries either column, and NO SQL CHANGE WAS MADE.** The RPC's own header says it mirrors the
+      CHECK conjunct-for-conjunct and is *never stricter*, and that the FORM is deliberately stricter
+      already in two places (print head, centering inclusion) so it refuses first, by field name. These
+      two make it four — the documented, intended direction, not a disagreement
+- [x] 2.2 ⚠ CHECK constraint untouched, as required
+- [x] 3.1 `npm run build` — clean
+- [x] 3.2 Browser: clearing head count moved the gate to *"2 answers are still needed"*, and clearing
+      the category made the panel name **"Machine category"** and **"No. of print heads required"** in
+      form order. The customer-copy card correctly names only the head count (see 3.5)
+- [x] 3.3 🔴 **COUNTED BEFORE APPLYING — it is 7, not zero, and it was put to Ritesh Bhai, who said
+      ship both rules anyway.** Four are already past the gate at `awaiting_quotation_approval` and are
+      blocked only if sent back for rework — **AADESH DIGITAL PRINTS**, **LOTUS FIVE DIGITAL
+      WORLD-MACHINE**, **SWAMI TEXTILES PVT. LTD (UNIT-II)** and `ZZ TEST OCPI-15 gate move`. Three are
+      drafts: **LOTUS FIVE DIGITAL WORLD** (the one real deal blocked today), `Growth Saga` (already
+      blocked on `machineId`) and `ZZ TEST Kesari Textile Mills`. Someone should fill the head count on
+      those. Blank `machine_category_id` is 2 deals, both already blocked on the machine
+- [x] 3.4 Ink type and Platter still optional — no asterisk, no block. Confirmed on screen
+- [x] 3.5 🟢 **ONE THING THIS ENTRY DID NOT ANTICIPATE.** `quotationPdf.ts` prints *"No. of Print Heads
+      Required"* on every summary sheet, blank when null — so making it required qualifies it for
+      `CUSTOMER_FACING` in `QuotationEditor.tsx`, the card that warns what the customer will see blank.
+      It is added. **Machine category is NOT**, deliberately: it prints on no paper, so warning about
+      it would name a blank that does not exist
+- [x] 3.6 ⚠ **`0` IS A LEGAL ANSWER, and it has to be.** 5 machines have no head type mapped at all —
+      the three Pengda models, Label Printer, Book Printer — so a machine that genuinely carries none is
+      answered with a zero. The box takes digits, `isAnswered` reads `"0"` as answered, and the column's
+      CHECK allows `>= 0`. Exactly one deal sits on such a machine and it is already in the list above,
+      so the rule blocks no additional deal
+
+### OCPI-28 · The real dryer list from Bushra — exactly what to ask for  `[!]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai · **blocked on Bushra** · the standing [Waiting for](#waiting-for) row is line 48*
+
+**Why this exists.** The *Waiting for* row has said "the REAL dryer names" since 29-Aug, and nothing has
+come back. This entry is the row made **answerable** — a precise list Bushra can work through, rather
+than a request she has to interpret.
+
+#### What is in the system today — all six are invented
+
+| Category | Dryers on file |
+|---|---|
+| **Chinese** | Chinese 2-Chamber Dryer — Electric · Chinese 3-Chamber Dryer — Thermic Fluid · Chinese 4-Chamber Dryer — Gas Fired |
+| **Indian** | Indian 2-Chamber Dryer — Electric · Indian 3-Chamber Dryer — Thermic Fluid · Indian 4-Chamber Dryer — Gas Fired |
+| Not Applicable | none, correctly |
+
+🔴 **These are placeholders and NOTHING ON SCREEN SAYS SO ANY MORE.** They carried a `[SAMPLE]` prefix
+until OCPI-8 removed it on 01-Sep at the client's instruction. The prefix existed precisely because
+**a dryer name prints on the customer's quotation** — it made accidental use visible on the paper
+instead of passing silently. Today *"Chinese 2-Chamber Dryer — Electric"* reads on a signed contract
+exactly like a real product. **11 of the 28 machines take a dryer**, so this is live on every Direct deal.
+
+🟢 **One real name is already known.** The `JP K EVO` deck names **POWER-D Dryer (ELECTRIC)** — electrical
+heating H18, third passage H18, folder H18. So the list is not starting from nothing.
+
+#### The ask for Bushra — five questions, in order of what unblocks most
+
+- [ ] 1 **The Indian dryer models actually sold** — the exact names as they should print on a contract.
+- [ ] 2 **The Chinese dryer models actually sold** — same.
+- [ ] 3 **Is "POWER-D Dryer (ELECTRIC)" one of them, and which category?** It is on the JP K EVO deck, so
+      it is real; we just do not know where it belongs.
+- [ ] 4 **Are "number of chambers" and "heating medium" properties of the DRYER MODEL, or per deal?**
+      They are free-text per deal today. ⚠ The client's own machine sheet has **CHAMBER · HEATING MEDIA**
+      columns and they are **blank for every machine that takes a dryer** (recorded under OCPI-3 §K), so
+      nobody has ever answered this. If they belong to the model, they should prefill from the master and
+      stop being typed by hand on every quotation.
+- [ ] 5 **Should a dryer machine be offered "Not Applicable" at all?** It is currently a valid choice and
+      OCPI-8 made it hide the whole dryer block. Fine as a deliberate answer; worth confirming it is one.
+
+#### What happens when the answer arrives
+
+- [ ] 6 Replace the six placeholders — **rename in place where a real model corresponds, insert/deactivate
+      otherwise.** ⚠ `fms_ocpi_deals.dryer_name` stores the **text, not an id**, so renaming cannot break a
+      saved quotation — but a **frozen revision keeps printing whatever it froze.** Any deal already
+      issued on a placeholder name keeps that name on its paper for ever. **Check for those before
+      renaming and tell Ritesh Bhai the list.**
+- [ ] 7 If the answer to Q4 is "the model", add the two columns to `fms_ocpi_dryers` (additive) and
+      prefill the deal fields from the chosen dryer — leaving them editable, since a deal can vary.
+- [ ] 8 Close the *Waiting for* row at line 48, and correct OCPI.md's note that the placeholders are
+      removable with `delete … where name like '[SAMPLE]%'` — **that statement no longer matches anything.**
+
+⚠ **Until this lands, there is no way to tell a placeholder from a real dryer** — not in the master, not
+on a deal, not on a contract. That is the cost of dropping the prefix, and it was accepted knowingly;
+it just makes this the most time-sensitive of the outstanding data asks.
+
+### OCPI-29 · GST % comes off the form — it is company policy, not a per-deal question  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai*
+
+**The ask.** The deal value is entered excluding GST, and the **GST %** box beside it is always 18. Asking
+it on every quotation invites a typo into a tax figure and adds nothing. Remove the input.
+
+🟢 **The data agrees.** Of 28 deals, **21 carry `gst_rate = 18.00` and not one carries anything else.**
+
+#### 🔴 It is 18 **or nothing** — never 0, and that distinction is load-bearing
+
+The other **7 deals carry NULL**, and that is correct, not missing: `branching.ts:442` hides the field on
+a **High Seas** deal, the server stores NULL, and `quotationPdf.ts:176` omits the GST row from the paper
+entirely. The comment there says why:
+
+> *"HIGH SEAS SALE ATTRACTS NO GST AT ALL, and a row reading `0% GST — ₹ 0` is a different claim from no
+> row at all."*
+
+So this task removes **a question**, not **a value**. After it:
+
+| Deal type | `gst_rate` | The paper |
+|---|---|---|
+| Others | **18**, from config, never typed | `GST @ 18%` with the amount |
+| **High Seas** | **NULL**, as today | **no GST row at all** |
+
+⚠ **Do not "simplify" the High Seas branch away with the input.** Deleting the field and defaulting
+everything to 18 would put an 18% tax line on a High Seas contract that legally attracts none.
+
+#### 🟢 The single place to set it already exists
+
+`fms_ocpi_config` holds **`default_gst_rate`**, read at `ocpiFetch.ts:543` with a fallback of 18. So the
+rate is already configurable without a developer — the form field is a second, redundant way to set the
+same thing. Removing the input leaves the config as the one source, which is the right shape.
+
+- [x] ✅ **SETTLED 02-09-2026 — DEVELOPER-ONLY, and that is the chosen answer.** Ritesh Bhai: *"I don't
+      think that will change. If it will change in the future, then the developer will change this."*
+      So `fms_ocpi_config.default_gst_rate` is the single source and nobody needs a screen for it. **No
+      admin UI is in scope** — do not build one.
+
+      ⚠ **Then the config row must be the ONLY place the number lives.** Today `"18"` is also hardcoded
+      in `EMPTY_DRAFT` (`fieldSpec.ts:408`) and in `fromDeal` (`:1007`), plus a `?? 18` fallback at
+      `ocpiFetch.ts:543`. Four copies of a tax rate is exactly how a "developer will change it" turns into
+      a rate changed in three places and still wrong in the fourth. **Collapsing them is the substance of
+      this task, not a tidy-up** — the removed form field is the easy half.
+
+#### 🟢 Nothing in any template depends on it
+
+`{{gst_rate}}` is a documented token (`tokens.ts:285`) but **ZERO machine templates use it** — verified.
+So unlike `delivery_days` (OCPI-18), removing the input leaves no ruled blank in any contract. Keep the
+token registered; it costs nothing and the summary sheet still resolves the rate.
+
+#### The build
+
+- [x] 1.1 Input removed, and the layout twin's condition with it — `sm:col-span-2` is now unconditional,
+      so the value field always fills the two remaining columns. ⚠ A one-line hint was ADDED to that
+      field: the caption says *"excluding GST"* and the rate is no longer visible anywhere, so it now
+      reads *"GST at 18% is added on the papers"* — **read from the config row, so it is not a fifth
+      copy**, and suppressed on a High Seas deal by the same `show("gstRate")` the box used
+- [x] 1.2 Collapsed to **one config row + one shared TS constant**, `DEFAULT_GST_RATE`. `EMPTY_DRAFT`,
+      `draftFromDeal` (which now takes the config rate as an argument) and `ocpiFetch`'s `?? 18` all
+      read it. ⚠ It had to be declared **above `EMPTY_DRAFT`**, beside `CONSUMABLES_SUPPLIER` — the
+      object literal reads it at module load, so anywhere lower is a temporal-dead-zone error
+- [x] 1.3 `branching.ts` rule and comment untouched
+- [x] 2.1 🔴 **PULLED LIVE, AND IT CHANGED THE BUILD.** `fms_ocpi_write_oc` derives the tax from the
+      **PAYLOAD**, not from the config — `nullif(p->>'gst_rate','')::numeric` — so a form that stopped
+      sending the key would have derived a null amount, dropped the tax row from both papers and
+      understated every Others total by 18%, silently. **The draft still carries `gstRate` and the
+      payload still sends `gst_rate`**, and a `withGstRate` normaliser in `useQuotationDraft` fills it
+      from config before `clearHidden` on both payload builders, so an Others deal can never send blank
+- [x] 2.2 ⚠ CONFIRMED ON LIVE DATA, three ways. Saved an Others deal through the GST-less form:
+      `gst_rate 18.00`, `gst_amount_inr 207,000.00`, `total_inr 1,357,000.00` — **byte-identical** to the
+      figures recorded before the change. Saved a High Seas deal: `gst_rate` still NULL, total unchanged.
+      Created a brand-new deal (the other seeding path) and it saved with `gst_rate 18.00` and a correctly
+      derived `180,000` / `1,180,000`
+- [x] 2.3 ⚠ **BOTH RENDERERS, NOT ONE.** This entry cites `quotationPdf.ts:176`; `ocPdf.ts:429` does the
+      same on the detailed sheet, and its own comment records the bug it fixed — it used to read
+      `gstRate === null ? 18 : gstRate` and printed *"+ 18% GST Value INR"* with a blank figure on
+      exactly the deals that carry no tax. Both were checked
+
+#### Verify
+
+- [x] `cd frontend && npm run build` — tsc strict + vite, clean
+- [x] 🔴 **PASSED, both papers, verified with pdf.js.** Others (ZZ TEST Meridian Fabrics): the summary
+      prints `GST @ 18%  ₹ 2,07,000` and `Total Value (INR)  ₹ 13,57,000`; the detailed sheet prints
+      `+ 18% GST Value INR  ₹ 2,07,000` and `Total Value INR  ₹ 13,57,000`. Identical to the figures
+      recorded before the change
+- [x] 🔴 **PASSED.** High Seas: the only occurrence of "GST" on the summary is the customer's `GST No. :`
+      label — **no rate row, and no zero row** — and the detailed sheet has none either. Totals
+      unchanged (₹ 71,30,663.2 and ₹ 41,96,400)
+- [x] An older deal opens and prints exactly as before; no `{{token}}` left unresolved on either paper
+- [x] The GST box is gone and the field beside it fills the row correctly
+
+### OCPI-30 · More than one house format for payment terms, with blanks to fill  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai · extends OCPI-20, which shipped ONE format and the button*
+
+**The ask.** OCPI-20 gave *Terms of payment* a single house format and a **Use this format** link. One
+format does not cover the deals actually being written. Offer the **five to seven** shapes the business
+really uses, each insertable, with **blanks where the numbers go**.
+
+#### What the deals actually say — 24 deals, 12 distinct wordings
+
+| Stored | Deals |
+|---|---|
+| `25% advance with the order, 75% against the shipping documents.` | **13** *(the seeded house format)* |
+| `30% with order, 70% against shipping documents` | 1 |
+| `50% advance with order, 50% before dispatch` | 1 |
+| `50% with order, 50% before dispatch` | 1 |
+| `30 % advance and rest PDC cheque` | 1 |
+| `30% ADVANCE REST 10 PDC CHEQUE` | 1 |
+| `40% and GST advance and  balance 60% in equal 4 PDC` | 1 |
+| `Rs .5,00,000.00 Advance & Balance 6 Equal Installment after delivery` | 1 |
+| `Rs .5,00,000.00 Advance & Balance 6 Equal Instalment.after delivery` | 1 |
+| `Rs.5,16,380/- advance and balance  Rs.7,71,000/-in equal 3 PDC (2,57,000 x 3)` | 1 |
+| `Payment in 3 equal monthly installment (June ,July & August)` | 1 |
+| **`na`** | **1** — a live defect, see the foot of this entry |
+
+⚠ Strip the seeded 13 and **every remaining deal is worded differently from every other.** Two pairs
+differ only by a typo — *Installment* vs *Instalment*, `50% advance with order` vs `50% with order` —
+which is the clearest possible evidence that people are retyping from memory.
+
+#### The six formats the data actually contains
+
+Blanks are `______`, deliberately **not** `{{token}}` syntax. The module's own reasoning
+(`tokens.ts:8-17`) is that a printed `________` reads as *a blank someone must fill*, whereas a stray
+`{{x}}` reads as *software that broke*. If a salesperson inserts a format and forgets to complete it, an
+underscore run is the failure that gets noticed and corrected.
+
+| # | Format | Seen as |
+|---|---|---|
+| **1** | `___% advance with the order, ___% against the shipping documents.` | the current house format · 14 deals |
+| **2** | `___% advance with the order, ___% before dispatch.` | 2 deals |
+| **3** | `___% advance with the order, balance ___% in ___ equal PDC cheques.` | 3 deals |
+| **4** | `___% plus GST advance with the order, balance ___% in ___ equal PDC cheques.` | 1 deal — the GST-on-advance variant, kept separate because it changes what the advance covers |
+| **5** | `₹______ advance with the order, balance in ___ equal instalments after delivery.` | 2 deals — a **rupee** advance, not a percentage |
+| **6** | `₹______ advance with the order, balance ₹______ in ___ equal PDC cheques (₹______ × ___).` | 1 deal |
+| **7?** | `Payment in ___ equal monthly instalments (______).` | 1 deal — months named, no advance at all |
+
+- [x] ✅ **APPROVED 02-09-2026 — all seven formats, as worded in the table above.** Ritesh Bhai reviewed
+      the list derived from the 24 deals and accepted it. Build exactly those seven, to the character.
+- [x] ✅ **SETTLED 02-09-2026 — SEVEN FORMATS, no eighth.** "100% advance" was offered and declined for
+      now: *"just seven options are good to go for now."* It appears in no deal on record either. **Do not
+      add it.** The field stays free text, so a full-advance deal can still be typed by hand — and if it
+      turns out to be common, an eighth format is a one-line addition to the constant.
+
+✅ **SETTLED 02-09-2026 — ALWAYS `₹`, ON EVERY DEAL INCLUDING USD.** Ritesh Bhai: *"in the USD we are
+always going to show the conversion, so we can just show the rupee amount there."* A dollar deal already
+carries a **frozen** FX rate and its rupee equivalent (`fxRate` / `dealValueInr`), and both print — so
+payment terms stated in rupees are consistent with the rest of the paper, not a mismatch.
+
+🟢 **This makes the formats plain strings.** No currency placeholder, no substitution, nothing to resolve
+at insertion time, and — the reason this matters — **no bug when a salesperson switches the deal's
+currency after inserting a format.** Had the symbol followed the deal, an INR sentence typed before a
+switch to USD would have been left saying the wrong thing, with a silent rewrite of a typed commercial
+term as the only "fix". That whole class of problem does not arise. Hardcode `₹` in formats 5, 6 and 7.
+
+#### How to offer them
+
+- [x] The single **Use this format** link is now the seven sentences printed IN FULL as one-click rows
+      under the box. Full sentences rather than a menu because one click is what made OCPI-20 work and a
+      menu costs a second — and because the wordings being *visible* is the actual fix for people
+      retyping from memory. Verified: an empty box fills on the first click
+- [x] ⚠ Overwrite guard kept and generalised. State went from a boolean to `pendingFormat: string | null`
+      — with seven formats the answer to "replace with what?" is the format itself, and a boolean would
+      have made Replace insert whichever one the code happened to name. The confirm appears **in the row
+      that was clicked**, so the sentence being offered stays in front of the person deciding. Verified:
+      clicking a format with text typed left the box untouched until Replace was pressed, and then
+      inserted the right one; typing clears the pending state
+- [x] ⚠ Field is still a free-text `TextArea`
+- [x] ⚠ One exported constant, `PAYMENT_TERMS_FORMATS`. The old `PAYMENT_TERMS_FORMAT` is gone rather
+      than kept as an alias; the placeholder is `PAYMENT_TERMS_FORMATS[0]`
+- [x] The hint names no format — it reads *"Common formats — click one to insert, then fill the
+      blanks."* Verified in the browser that all seven render to the character, `₹` included
+
+#### Still outstanding from OCPI-20 — a person, not code
+
+🔴 **One deal still has `payment_terms = 'na'`**, and that prints in the payment clause of its contract.
+Formats stop new bad answers; they cannot repair a row already written. It needs correcting by whoever
+owns that deal. Same shape as the consumables values closed under OCPI-22.
+---
+
+### OCPI-31 · A contract for a machine with NO DRYER still sells a dryer  `[x]`
+*Found 2026-09-02 by OCPI-12's print audit · **on a document the customer signs***
+
+🔴 **The deal says Not Applicable and the contract still sells a dryer.** OCPI-8 gated the deal-derived
+dryer block correctly — on `dryer_type = Not Applicable` the four dryer rows are gone from both papers,
+verified on a rendered page. What is **not** gated is the MACHINE TEMPLATE'S OWN WORDING, which is where
+the dryer is actually described. `K64-4-no-dryer-long-text-oc.pdf` prints, on a deal with no dryer:
+
+- spec row — `Dryer: AC380V three phase | 16 kW | 50Hz/60Hz`
+- spec row — `Dryer   Oil + Electric`
+- and, in the line above the signature block, under **TOTAL NET AMOUNT OF THE SUPPLY**:
+  `DIGITAL TEXTILE PRINTING MACHINE WITH STANDARD ACCESSORIES WITH 64 PRINTHEADS AND CENTERING SYSTEM
+  & DRYER (Model No: HM1800B-TK64-A1)`
+
+The third one is the commercial problem: the customer signs for a supply that names a dryer the deal
+does not include.
+
+#### How wide it is — counted live, 02-09-2026
+
+| | Machines |
+|---|---|
+| name a dryer in `supply_description` | **9 of 21** — and **all 9 are Direct**, the only category where "Not Applicable" can be chosen |
+| name a dryer in their spec rows | **10 of 21** |
+| name a **centering system** in `supply_description` | **2 of 21** — K64 and Homer K32 |
+
+#### 🔴 Recounted on the day it was built, and three of those figures were wrong
+
+- **Only 7 of the 9 SELL a dryer.** JPK says `(Without Dryer)` and MP5000 says `without dryer` —
+  unconditionally, so a Direct deal that *does* include a dryer denies one. The mirror defect, fixed in
+  the same pass with `[[if !dryer]]`. JPK's one live deal has an Indian dryer.
+- **Spec rows are 11, not 10** (9 Direct + P8D/P8S), and they come in **two shapes**: five whole `Dryer`
+  rows, and eight dryer LINES buried inside a multi-line `Electrical Voltage` value. A whole-row rule
+  would have missed eight of them.
+- **The centering count of 2 is right, and the recount that said 1 was wrong** — it searched only
+  `centering`. K64 says CENTERING SYSTEM and **Homer K32 says CENTRING DEVICE**. The same trap the entry
+  flags for the forex clause, one line above, in the other spelling.
+
+#### 🔴 And the three sites named above are FIVE
+
+Beyond `supply_description` and `spec_rows`, the same defect lives in a **composition bullet** (Rocket's
+`Dryer System`) and inside a **section body** (Rocket's `SCOPE OF SUPPLY`, a `Dryer System` heading and a
+paragraph describing four drying chambers and oil heating). **Both Rocket deals on record are
+`dryer_type = 'Not Applicable'` and one has been issued** — so this was already live on a signed
+contract, in a place this entry never looked. JPK's whole 14-line `DRYER INFORMATION` section is the
+sixth and is deliberately left: it wants section-level visibility, which is a different mechanism.
+
+#### 🔴 THE DATABASE IS NOW AHEAD OF THE DEPLOYED FRONTEND — DEPLOY
+
+The migration ran on 02-09-2026 while the parser was still only on `daily-reports`. `[` and `]` are not
+in `pdfBrand`'s `GLYPH_FALLBACK` and Poppins carries both, so **until `master` is deployed, an order
+confirmation generated in production prints `[[if dryer]] & DRYER[[/if]]` on the page** for the 11
+machines the migration touched. It was applied on instruction, in a quiet window — the last deal activity
+was three hours old — with the rollback rehearsed first.
+
+**Until the deploy lands, the way back is one command**, proved on live data before it was needed:
+
+```
+node flip.mjs old     # restores all 15 rows byte-for-byte to the pre-migration text
+```
+
+It was run for real — rollback, byte-identical comparison against the frozen baseline, then re-apply —
+so this is a rehearsed procedure rather than a written intention.
+
+⚠ Separately: `replaceSections` is a delete-then-reinsert of whatever the Machine template screen is
+holding, and that screen seeds its state once and never re-seeds. **An admin who had that tab open across
+the migration and presses "Save template" silently reverts it for that machine** — sections, spec rows and
+supply description alike. The assertion block is re-runnable as a standalone `select` for exactly this
+reason; run it again the next morning. It must read **11 / 5 / 8 / 1 / 2 / 4** with 0 stray markers.
+
+The centering half is the same defect: `incl_centering = false` still prints "AND CENTERING SYSTEM".
+
+#### The traps
+
+⚠ **This is TEMPLATE CONTENT, not a renderer bug.** `ocPdf.ts` prints `spec_rows` and
+`supply_description` verbatim, which is correct — they are the machine's own description. The fix has to
+decide *where* the condition lives: a token, a conditional section, or two supply descriptions per
+machine.
+
+⚠ **A token is the cheap route and it has a cost.** `{{dryer_clause}}` resolving to "& DRYER" or "" would
+fix the supply line without touching the renderer — but it needs a migration over 9 machine rows, and
+`tokens.ts` warns that a template using a token the resolver does not know prints a ruled blank. The
+token must exist before the migration runs. Same ordering OCPI-18 had to respect.
+
+⚠ **The spec rows are a different question from the supply line.** A dryer's electrical draw on the spec
+sheet of a machine that CAN take a dryer is arguably correct even when this deal has none. Settle with
+the client whether all three go or only the supply line.
+
+#### Checklist
+- [x] 0.1 Asked and answered 02-09-2026: **everything the deal would have supplied** goes — the supply
+      line, the spec rows, the composition bullet and Rocket's section block. JPK's whole `DRYER
+      INFORMATION` section stays (it wants section-level visibility, and JPK's only deal has a dryer)
+- [x] 1.1 **An inline `[[if dryer]]…[[/if]]` in the template text**, resolved by `lib/conditions.ts` in
+      the same pass as `{{tokens}}`. A token cannot do it — `resolve()` prints a ruled blank for an
+      empty value, so it could not resolve to nothing without changing `resolve()` anyway. Reasoning in
+      full in OCPI.md and in the file's own header
+- [x] 1.2 **APPLIED 02-09-2026** —
+      `20261104120000_fms_ocpi_the_deal_decides_what_the_template_sells.sql`. 15 rows, 24 fields: 11
+      supply-line wraps across 9 machines, 5 whole `Dryer` spec rows, 8 dryer lines inside multi-line
+      spec values, 1 composition bullet, 2 section lines, 4 forex clauses. Every count asserted against
+      the rows afterwards, and 0 unbalanced markers anywhere
+- [x] 2.1 Rendered headlessly through the real `buildOcPdf` from the live rows and read back with
+      pdf.js: on a no-dryer Homer K32, K64 and Rocket the dryer words are gone from the supply line,
+      the spec table, the composition and SCOPE OF SUPPLY
+- [x] 2.2 And the with-dryer page on the same machine is **byte-identical to today** — checked on Homer
+      K32 (Chinese) and on the real K64 USD deal
 
 ---
 
-## R&D  *(new module)*
+### OCPI-32 · The dryer warranty is silently lost, and the screen says it does not exist  `[x]`
+*Found 2026-09-02 by OCPI-12's print audit*
 
-### RD-1 · R&D module — log initiatives, let management see them  `[!]`
-*Raised 2026-08-20 · From the factory visit · **Blocked:** waiting on the flow and form*
+🔴 **Fill the form in the natural order and the dryer warranty disappears.** Pick the machine, save the
+draft, come back and choose the dryer category — and the warranty that `chooseMachine` prefilled from the
+machine master is gone for good.
 
-R&D runs the work behind **new sampling and any new development** — different initiatives with
-different purposes, and they do the sampling for each. Give them a module where a person records:
+The chain:
 
-- **what kind of R&D** they are doing
-- **what they have done**
-- **the aim** of it
+1. `chooseMachine` prefills `dryerWarranty: m?.dryerWarranty ?? ""`.
+2. `branching.ts` shows `dryerWarranty` only when `hasDryerDetails` — which needs a dryer category.
+3. **`clearHidden` drops it on save**, because at that moment no category is picked.
+4. Choosing the category afterwards reveals the read-out again and **nothing re-fills it**. Only
+   re-picking the same machine does, and nothing tells anybody that.
 
-So management can see the R&D initiatives across the board.
+**Two consequences, and the first is worse.** The read-out then reads **"Not applicable"** — an
+assertion, not a blank — on a K64 whose master says **12 Months**. And the summary sheet's *Dryer
+Warranty* row vanishes, because `quotationPdf.ts` filters warranty rows with an empty value.
 
-**Notes:** no R&D module exists — "R&D" appears today only as a lab name in the sampling masters
-and as a sub-department in the org masters. The real neighbour is the live
-[sampling](frontend/src/apps/sampling/) FMS, which already runs a lab request end to end and
-already carries a thin version of two of the three fields above: `requirementType`
-(`"competitor" | "new_product"`) and a free-text `desiredResult`. Since R&D *does the sampling for*
-these initiatives, the likely shape is an R&D initiative that **owns** its sampling requests rather
-than a module that re-implements sampling — worth settling before we build.
+Proved both ways, 02-09-2026: the read-out said "Not applicable"; re-picking the same machine restored
+"12 Months" instantly. `K64-1-everything-included-summary.pdf` has no Dryer Warranty row; deals 2 and 3,
+which carried the value, print one.
 
-**To confirm when the factory sends the flow and form:** what the form's fields actually are and
-which are required; whether an initiative is a one-off entry or a running log with updates over
-time; whether it has stages and owners like the other FMS modules, or is a simple record; whether
-it links to the sampling requests it triggers; and what management's view needs to show — a list of
-live initiatives, or progress and outcomes against the aim.
+#### The traps
+
+⚠ **"Not applicable" is the right words for the wrong reason.** `WarrantyReadout` renders it for an
+empty value, which IS correct on the 15 models with no head warranty. Here the same words state
+something false. Whatever the fix, the read-out must be able to tell *"this model offers none"* from
+*"we lost it"*.
+
+⚠ **Do NOT fix it by removing the field from `clearHidden`.** The rule that a hidden question stores no
+answer is the module's defining invariant and has a twin in `fms_ocpi_write_oc`. The fix belongs on the
+re-fill side: prefill when the dryer category is chosen, the way `chooseMachine` does when the machine is.
+
+⚠ **The same shape may exist for the other two warranties.** They are not gated on a dryer category so
+they survive today — but check before assuming.
+
+#### Checklist
+- [x] 1.1 The dryer-category `onChange` fills `dryerWarranty` from the machine master **when the box is
+      empty** — `carry`'s rule — and does it in the SAME patch that sets the category, which is what
+      makes `clearHidden` keep it. The pattern is `CustomerPicker`'s `gstNo` + `gstAvailable`.
+      `clearHidden` is untouched
+- [x] 1.2 `WarrantyReadout` takes the master value and has three states: the value · "Not applicable"
+      when the model genuinely offers none · **"Not on this deal — the model says 12 Months"** when it
+      was lost. ⚠ It is `text-orange`: `text-ryg-amber` was the obvious class and **there is no amber in
+      the palette**, so it would have emitted no rule and rendered as ordinary navy text
+- [x] 1.3 Checked, not assumed: `printerWarranty` and `headWarranty` have **no entry in
+      `PART_A_VISIBILITY`**, so `clearHidden` never reaches them and `fms_ocpi_write_oc:471-472` writes
+      them unconditionally. `headType` — the third thing `chooseMachine` prefills — is ungated too.
+      Proved on the live server: after the save that loses the dryer warranty, both still hold their
+      master values
+- [x] 2.1 ⚠ **Not via the browser** — its profile was in use by the user's own Chrome. Done instead
+      through the app's own `clearHidden` / `dealFacts` / `payloadFromDraft` / `draftFromDeal` against
+      the **real `fms_ocpi_save_draft` RPC**, which tests the claim that actually matters: the value is
+      in the ROW, not just on the screen. The old handler was run too, so the difference is attributable
+      rather than asserted. Throwaway deal deleted
+- [x] 2.2 The row holds `12 Months` after the round trip, so `quotationPdf`'s
+      `.filter(r => r.value.trim() !== "")` keeps the row: 3 warranty rows print, Dryer Warranty
+      among them
+
+#### ⚠ Two live deals still carry the loss
+
+Counted 02-09-2026: **2 deals** whose machine master has a dryer warranty, whose dryer category is real,
+and whose own column is empty. The fix stops new ones; it does not repair a row already written — and it
+deliberately does not, because re-picking the machine is how a person takes the master's answer. They
+need somebody to reopen them. Same shape as OCPI-20's stranded `payment_terms = 'na'`.
+
+---
+
+### OCPI-33 · The forex clause prints on rupee contracts  `[x]`
+*Found 2026-09-02 by OCPI-12's print audit*
+
+**The summary sheet was fixed for this and the contract was not.** `quotationPdf.ts` prints the dollar
+clause on a USD deal alone, and says why: *"A rupee customer used to be shown, and asked to agree to, a
+term that could not apply to them."*
+
+The **order confirmation** still carries it on every deal, because it is literal text inside the
+machine's own SALE CONDITIONS section rather than something the renderer decides. All three INR K64
+contracts rendered in the audit print *"Forex Impact Clause: If payment terms exceed 3 months with equal
+instalments, the Dollar exchange difference will be adjusted via Debit Note/Credit Note"*.
+
+**4 of the 21** templated machines carry it. So the two papers of one rupee deal disagree on exactly the
+point the summary was corrected for.
+
+⚠ **Same shape as OCPI-31** — a condition the renderer knows about, expressed as unconditional template
+text. If both are fixed, fix them the same way, or the next one will be a third mechanism.
+
+#### Checklist
+- [x] 0.1 Confirmed 02-09-2026 — USD deals only, matching the summary sheet
+- [x] 1.1 The same mechanism as OCPI-31: `[[if usd]]…[[/if]]`. `isUsdDealRow` is now one exported
+      predicate read by the OC's money rows, the summary's dollar clause and this condition, so the
+      clause and the money printed inches apart on one page cannot disagree about the currency
+- [x] 1.2 **APPLIED 02-09-2026** — in the same migration as OCPI-31. **Exactly 4**,
+      asserted by the migration itself, and each keeps its own wording: two say *"Forex Impact Clause:"*,
+      KoloRado Alpha 3 says *"Forex Clause Impact:"*, and Position Printer's is an unlabelled sentence
+      with no "forex" in it at all — which is why searching for one phrase finds two of four
+- [x] 2.1 Rendered INR and USD on the SAME machine (Rocket) through the real renderer and read both with
+      pdf.js: the clause is on the dollar page only, and the rest of SALE CONDITIONS is intact on both.
+      Position Printer checked separately — its clause is the LAST line of its section, so it exercises
+      the trailing-blank trim rather than the mid-body one
+
+---
+
+### OCPI-34 · Five questions asked on screen that reach no document — decisions needed  `[!]`
+*Found 2026-09-02 by OCPI-12's print audit · **questions for Ritesh Bhai, not defects***
+
+The audit's field→document map (`OCPI-FIELD-MAP.md`, regenerate with `cd frontend && npm run field-map`)
+found **18 fields that reach no document at all**. Most are documented-deliberate — `paymentType` and
+`deliveryDays` were retired by OCPI-18 with the reasoning written down, `externalCentering` is frozen
+history, `postWarrantyHeadPrice` had its token retired, and the identity columns were never meant to
+print. These five were not decided by anybody.
+
+1. 🔴 **`insuranceClauseAgreed` — agreed on screen, printed nowhere.** The clause TEXT prints as standing
+   terms at the foot of the summary; the salesperson's Yes/No appears on neither paper. Meanwhile
+   `dollarClauseAgreed` prints **"Clause Agreed: Yes"** on the same sheet. Two clauses, two treatments,
+   one page. **Should the insurance agreement print beside its clause?**
+2. 🔴 **The subsidized rates never reach the contract.** OCPI-7's figures print on the summary in full —
+   *"Subsidized Ink Price ₹ 5,00,000"* with a note bounding it to 400 litres — and the order confirmation
+   carries neither. A price promise, bounded to a quantity, on the quotation and not on the paper the
+   customer signs. **Should it print on the contract too?**
+3. **`customerEmail` and `customerMobile`** are captured on every deal and print nowhere. Plausibly
+   right — the Attn line names the person — but nobody wrote it down.
+4. **"Manufacturer's model no." claims a prefill that does not happen.** The hint reads *"pre-filled from
+   the machine's template"*; nothing fills it, so the box is empty on every new deal. Harmless on paper
+   only because **0 of 21** templates use `{{machine_model_no}}` — but the frozen document payload
+   separately records the machine's own value, so screen and snapshot already disagree. That is the
+   OCPI-24 shape, currently without consequences. **Fix the hint, or add the prefill?**
+5. **`fms_ocpi_machines.doc_title` is never read by either renderer.** It is a REQUIRED choice on the
+   Machines master, and both papers head from `docHeading(deal)` — ORDER CONFIRMATION / ORDER QUOTATION,
+   from the OC number alone. So MP5000's **"OFFER QUOTE"** can never print. **Either the field drives the
+   heading or it should come off the master.**
+
+Also unresolved, lower stakes: `locationId` is neither asked nor printed, and the three FX provenance
+columns (`fxRateAt`, `fxRateSource`, `fxRateOverridden`) are screen-only with no note saying so.
+
+#### Checklist
+- [ ] 0.1 Walk items 1–5 with Ritesh Bhai
+- [ ] 1.1 Whatever is decided, write the reason next to the field — the map re-reads the code each time,
+      so a documented "screen only" stops being a finding on the next run
+- [ ] 1.2 Anything that should print becomes its own entry; this one is the decision, not the build
+
+---
+
+### OCPI-35 · One delivery question instead of two, with the detail each answer needs  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai*
+
+#### ⚠ OCPI-26 already converted this field — and this entry removes it
+
+**OCPI-26 shipped before this was raised**, so *Delivery term* is **already a `ChoiceButtons` strip**
+(`QuotationForm.tsx:2524`, reading `optsWithCurrent(TRADE_TERMS, draft.tradeTerm)`). That work is not
+wasted — the control is exactly what the merged question needs — but **the separate field it lives in is
+what goes.** Read this as *"fold the existing Delivery-term strip into the delivery question"*, not
+*"build a new one"*. Nothing to undo; one control absorbs the other.
+
+#### What is being asked
+
+1. **The delivery options (CIF · EX Factory · FOB) show on *Others* too**, not only High Seas.
+2. **The separate *Delivery term* dropdown goes** — it asks the same question twice.
+3. **CIF → ask which port.**
+4. **EX Factory → ask Surat or Noida.**
+5. **High Seas + cost borne by Customer → ask whether it is end-to-end (factory to customer location)
+   or port to port.**
+
+#### The duplication is real, and the data proves it
+
+Two fields ask the same thing with overlapping vocabularies:
+
+| Field | Values | Shown when |
+|---|---|---|
+| `high_seas_via` | CIF · EX Factory · FOB | High Seas only (`branching.ts:431`) |
+| `trade_term` | Ex-Work Surat · CIF · FOB · EX Factory | **both** deal types |
+
+Live data, 28 deals:
+
+| transport | `high_seas_via` | `trade_term` | deals |
+|---|---|---|---|
+| local | — | **Ex-Work Surat** | 16 |
+| high_seas | CIF | CIF | 2 |
+| high_seas | CIF | **NULL** | **2** |
+| high_seas | CIF | **CIF Jebel Ali** | 1 |
+| local | — | CIF | 1 |
+| *(unanswered)* | — | — | 6 |
+
+Three things fall out of that table:
+
+🔴 **`trade_term` is NULL on two High Seas deals — so `Transport Terms: ________` is ALREADY PRINTING A
+RULED BLANK on those contracts today.** That is a live defect, not a risk this task introduces. It exists
+because the field is optional while the clause that consumes it is not.
+
+🟢 **One deal already reads `trade_term = "CIF Jebel Ali"`.** Somebody typed the port into the trade term
+because there was nowhere else to put it. **The feature being asked for is already being improvised by
+hand** — the strongest possible case for asking for the port properly.
+
+🟢 **A *local* deal already carries `trade_term = CIF`.** So Others deals genuinely do use CIF, which is
+exactly why the options should not be gated to High Seas.
+
+#### 🔴 The constraint that shapes the whole design
+
+`{{trade_term}}` is live in the SALE CONDITIONS clause — `Transport Terms: {{trade_term}}` — on **~21 of
+the 28 machines**. Delete the field and every one of those contracts prints a ruled blank. Same trap as
+`{{delivery_days}}` in OCPI-18.
+
+**So `trade_term` must remain the stored, printed answer.** The right shape is:
+
+- **ONE delivery question**, shown on **both** deal types, retiring `high_seas_via` as an input.
+- Its answer, **plus its detail**, composes into `trade_term` — which keeps feeding the token, so **no
+  template migration and no ruled blank.**
+- `high_seas_via` keeps its column (additive-only) but stops being asked.
+
+Composed examples: `CIF Jebel Ali` · `EX Factory Surat` · `FOB`. ⚠ Note the first is **exactly what one
+deal already has typed by hand** — evidence the composition matches how people actually write it.
+
+⚠ **Store the parts as well as the composed string.** New nullable columns for the port and the factory
+location. Keeping only the sentence means re-opening a deal cannot re-populate the controls and the
+salesperson is back to editing free text — the mistake OCPI-30 exists to undo elsewhere.
+
+#### The 16 "Ex-Work Surat" deals — NO MIGRATION
+
+- [x] ✅ **SETTLED 02-09-2026 — leave them alone.** Ritesh Bhai: *"don't worry about the data or the
+      existing deals because most of them are just dummy data."* **No back-fill, no rewrite of
+      `trade_term`, no data task at all.** Old deals keep their stored text and their frozen papers, and
+      re-opening one simply shows the value as-is.
+      ⚠ Which makes the **unknown-value guard non-optional**: a deal holding `Ex-Work Surat` will not
+      match any new button. Use the `optsWithCurrent` / `masterOpts` pattern (OCPI-21) or the strip shows
+      nothing and one ↓ keystroke destroys the answer.
+
+- [x] ✅ **SETTLED 02-09-2026 — it prints `Ex factory surat`.** Ritesh Bhai chose the new phrasing over
+      the old `Ex-Work Surat`, so `Transport Terms:` on every future contract reads
+      **`Ex factory surat`** / **`Ex factory noida`**.
+      ⚠ **Confirm the exact capitalisation before shipping.** He typed it lower-case mid-sentence; the
+      button says `EX Factory` and today's stored values are title-case (`Ex-Work Surat`). The composed
+      string goes on a signed contract, so pick one casing deliberately — **`Ex Factory Surat`** is the
+      likeliest intent and is consistent with everything else on the page. **Do not ship a mix.**
+      ⚠ `Ex-Work Surat` therefore disappears from the vocabulary for new deals. Old deals keep it as
+      stored text — which is exactly why the unknown-value guard above is required.
+
+#### The three new conditional questions
+
+| Answer | Then ask | Notes |
+|---|---|---|
+| **CIF** | **Which port** | ✅ **FREE TEXT** — settled 02-09-2026. No master, no picklist. Only one port has ever been used (*Jebel Ali*, typed by hand into `trade_term`), so there is no list to seed and inventing one would constrain a field nobody has mapped. ⚠ Give it a placeholder (*"e.g. Jebel Ali"*) — it composes into a printed clause, so a blank or a typo lands on the contract |
+| **EX Factory** | **Surat or Noida** | Two buttons. ⚠ These are the same two cities as the company branches (OCPI-25) — check whether it should read from there rather than a second hardcoded pair |
+| **High Seas + cost by Customer** | **"From manufacturer port to customer premises"** or **"From Indian port to customer premises"** | ✅ Wording settled 02-09-2026, Ritesh Bhai's own. 🔴 Asked **ONLY** when the bearer is **Customer** — settled: *"when we select a company, we don't have to ask this thing."* A third nested condition |
+
+⚠ **These print, or they are pointless.** Decide for each whether it joins `trade_term`, gets its own
+line on the papers, or is screen-only. **A field captured and never printed is the exact defect OCPI-12
+exists to find** — do not create three more.
+
+#### Checklist  — **BUILT AND VERIFIED 02-09-2026.** Live log: [OCPI.md](OCPI.md)
+
+- [x] 0.1 ✅ **SETTLED — `Ex Factory Surat` / `Ex Factory Noida`, title case.** The BUTTON still reads
+      `EX Factory`, because that exact string is what `fms_ocpi_deals_high_seas_via_check` allows and
+      what the derived mirror writes; only the PRINTED term is title-cased. The form shows the composed
+      value under the strip so the two cannot be mistaken for each other. Composed examples:
+      `CIF Jebel Ali` · `Ex Factory Surat` · `FOB` ·
+      `CIF Jebel Ali, from Indian port to customer premises`.
+- [x] 0.2 ✅ **SETTLED — Customer only, and the two options are worded exactly:**
+      **"From manufacturer port to customer premises"** · **"From Indian port to customer premises"**.
+      When the **Company** bears the cost the question is **not asked at all**. ⚠ Note these are two
+      *starting points*, not "everything vs part" — the difference is WHICH PORT the customer's leg
+      begins from, so do not relabel them as end-to-end / port-to-port. ⚠ Both mention *customer
+      premises*, so the field is dead on a Company-borne deal; the RPC nulls it there.
+- [x] 0.3 ✅ SETTLED — the port is a FREE TEXT box, not a master. See the table above
+- [x] 0.4 ✅ **SETTLED — the leg answer PRINTS, appended to the delivery term.** It therefore reaches
+      all 21 contracts and the summary sheet with no template migration and no new token. A token would
+      have printed nowhere until all 21 decks were rewritten — the OCPI-12 defect, created fresh.
+- [x] 0.5 ✅ **SETTLED — Surat / Noida is a HARDCODED pair, and the drift is recorded rather than
+      denied.** OCPI-25 wants the same two from `fms_ocpi_company_profiles`, but exactly one profile is
+      active, so reading from the branches would render a one-button strip with Noida unreachable.
+      Cross-referenced from OCPI-25, which is where the two lists reconcile.
+- [x] 1.1 **FOUR additive nullable columns, not three** — `delivery_via`, `delivery_port`,
+      `delivery_factory_city`, `delivery_leg`. The fourth is the base answer itself, and it is needed
+      because `fms_ocpi_transport_coherent` forbids `high_seas_via` on an Others deal, and because
+      without it *FOB* and *not answered yet* are indistinguishable. `high_seas_via` KEPT.
+      ⚠ **Named `delivery_leg`, NOT `delivery_scope`** — that name is already a machine-template section
+      key on 20 machines ("NOT INCLUDED IN OUR DELIVERY SCOPE").
+- [x] 1.2 The composer → `trade_term`. **No template migration, no token change**, asserted in the
+      migration: section count, section bytes and the count carrying `{{trade_term}}` all unchanged.
+- [x] 2.1 One delivery control on both deal types, at the HEAD of section C; the old *Delivery term*
+      dropdown removed. Container rule discharged item by item — its `clearable` (now conditional on the
+      field being required, per `ChoiceButtons`' own rule), its `optsWithCurrent` guard and comment, its
+      hint (now the composed read-out), its `FIELD_LABEL` entry (kept, relabelled in place because that
+      key order is revision-diff history) and `TRADE_TERMS`, the list it was the only caller of, deleted
+      with it. **Orphan sweep: 58 files, 0 candidates.**
+- [x] 2.2 The three conditional follow-ups, with the nesting — the leg appears only on
+      **High Seas AND cost by Customer**.
+- [x] 3.1 ⚠ **ONE write RPC, not both — and that is a correction to this entry.** `fms_ocpi_write_oc`
+      already writes `trade_term` unconditionally and `'trade_term'` is already in
+      `fms_ocpi_save_draft`'s part-B key gate; the four new columns are **part A**, and
+      `fms_ocpi_write_quotation` runs unconditionally. Only it changed, as a **transform of the live
+      body** (`pg_get_functiondef`, anchor asserted unique, `replace`, assert, `execute`).
+- [x] 3.2 🔴 **`high_seas_via` had to keep being WRITTEN, not merely retained** — a trap this entry did
+      not list and the sharpest thing the build found. **Three constraints and one RPC demand it**, and
+      `fms_ocpi_complete_when_submitted` is one of them: stop writing it and **no High Seas deal could
+      ever be sent for approval again**, as a raw constraint violation naming no field. It is now
+      derived from the merged answer in `payloadFromDraft`. **No CHECK was touched.**
+- [x] 3.3 Applied **before** the frontend, with the **rollback rehearsed on live data** — down to
+      baseline and back up, both verified by md5 of `pg_get_functiondef`.
+- [x] 4.1 `cd frontend && npm run build` — clean.
+- [x] 4.2 🔴 **14 PDFs rendered through the real renderers and read back with pdf.js** — 7 combinations
+      × both papers. `Trade Terms:` is never blank, including the long composed terms; the contract
+      wraps rather than truncates. **The two blank High Seas deals were FIXED** (QT-M0038, a real
+      customer, and QT-M0036) from their own `high_seas_via`, asserted to exactly 2 rows.
+      ⚠ **QT-M0037 and QT-M0046 could NOT be**, and the reason is recorded rather than guessed: they are
+      `local` deals, and a local deal has no `high_seas_via` to derive from. **They need a person.**
+- [x] 4.3 Older deals open and print unchanged — proved on all 30 live deals in SQL:
+      `compose(hydrate(deal)) = deal.trade_term`, **30 of 30 MATCH**, including the 17 `Ex-Work Surat`
+      and the hand-typed `CIF Jebel Ali`, whose port is recovered back into its own box.
+- [x] 4.4 Deal type and cost bearer switched against the live RPC in a rolled-back transaction: the
+      server cleared **exactly** what the form hides and nothing more, on all five rules. Money
+      byte-identical.
+- [ ] 4.5 ⚠ **NOT DONE — the form was never driven in a browser.** The Playwright profile was locked by
+      another session's live Chrome and killing it was not on. Everything needing a rendered page was
+      proved by running the real renderers headlessly instead; what is unclicked is the *interaction* —
+      that the strip lights a retired value and that ↓ on the tabbed-to strip does not destroy it.
+      Same mechanism OCPI-26 verified in a browser on this exact deal. **Worth one pass by hand.**
+
+
+### OCPI-36 · The Performa Invoice — a third document, and the one every deal actually has  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai · source folder:
+`Misc/Bushra Reports/OCPI/2026.27 OC&PI` (27 real deals, 101–127) · read with pdf.js, not parsed*
+
+**The ask.** The module issues two papers — **Summary** and **Detailed sheet**. Bushra's real deals issue
+**three**. The missing one is the **Performa Invoice (PI)**, and the tabs should read, in this order:
+
+> **1. Summary · 2. PI · 3. OC**
+
+Then *Download both* becomes **Download all**, with a tick against each paper, **all three ticked by
+default**, so a person can take one, two or three.
+
+#### ✅ Every open question was answered on 02-09-2026 — this entry is READY TO BUILD
+
+| | Decision |
+|---|---|
+| **Pages** | All three — letter · sales page · invoice. **8 of the sales pages already exist** and are lifted from the current PIs; ~6 families await Bushra |
+| **Number format** | **Bushra's** — `OTPL/OC/128/26-27`. 🔴 This changes `ocNumber()` and the OC too |
+| **When minted** | **At quotation generation**, not at approval. 🔴 One serial serves PI and OC |
+| **Split item PIs** | **No** — one PI per deal. Ink and dryer are rows, not papers |
+| **HSN · MFG · origin** | Three optional boxes on the machine master; **print only when filled** |
+| **Delivery line** | The **same tentative date the contract prints**. `delivery_days` does not come back |
+| **`QT-M####`** | **Internal only.** All three papers carry `OTPL/OC/…` and nothing else |
+
+🔴 **The two riskiest are the numbering ones, and they are the same edit.** Moving `oc_no` earlier breaks
+`docHeading()`, which decides whether a paper says ORDER QUOTATION or ORDER CONFIRMATION purely by asking
+whether the number exists. **Fix that test before moving the number**, or every quotation issues itself as
+a signed contract. Details under Q2 and Q3.
+
+⚠ **A wording correction, because it changes what gets built.** The ask said *"the detailed one is the PI
+document."* It is not. The module's *Detailed sheet* is `ocPdf.ts`, headed **ORDER CONFIRMATION /
+ORDER QUOTATION**, drawn from each machine's transcribed deck — that is the **OC**. The PI is a
+different, shorter paper that does not exist in the module at all. The requested tab order (Summary · PI ·
+OC) is what confirms it. **Nothing is being renamed; a third renderer is being added.**
+
+#### 🟢 The PI is the document that ALWAYS goes out — the OC often does not
+
+Counted across the 27 folders:
+
+| | Folders |
+|---|---|
+| Hold a **PI** | **25 of 27** |
+| Hold an **OC** | **12 of 27** |
+| Hold a **PI and no OC** | **14** |
+
+⚠ The two exceptions name their files after the folder rather than the paper, so the true PI figure is
+25–27. Either way: **the module has been shipping the rarer document and not the universal one.** That is
+the finding that makes this bigger than "add a third tab" — 14 real customers received a PI and no OC.
+
+#### What the paper actually is — read off 6 rendered PIs
+
+Two shapes, and the module needs both:
+
+**A · The MACHINE PI — three pages.** 101, 102, 120, 124, 127 all take this form.
+1. **Cover letter** on the letterhead — *To,* block (name · address · GST), *Dear Sir,* and a fixed
+   four-line company paragraph (*"We are Orange O Tec Pvt Ltd. A Surat based leading digital solutions
+   provider…"*), closing **For Orange O Tec Pvt Ltd / Authorized Signatory**.
+2. **"Key Benefits of `<machine>`"** — a marketing page: a tagline (*"Detailed, Different, Diverse"*,
+   *"Suave. Slick. Sturdy"*, *"Revolutionary. Reputable. Robust"*), a paragraph, and bulleted
+   **Applications · Productivity · Advantages**.
+3. **The invoice page** — repeats the header and *To,* block, then `Subject: Model No: …`, the table, the
+   money block, `Note:`, `Terms & Conditions:` and the bank block.
+
+**B · The ITEM PI — one page.** Folder 107 (Pankaj Fashions) raised **three separate PIs on one deal** —
+`MACHINE`, `INK`, `DRYER`. The item ones are the invoice page alone: no cover letter, no benefits page.
+🔴 **So a PI is not necessarily one-per-deal.** See the numbering finding below.
+
+#### 🔴 The numbering does not match what the module mints — three separate problems
+
+Every real PI is headed **`Performa No. OTPL/OC/127/26-27`**.
+
+1. 🔴 **The format is inverted.** `format.ts:142` mints `OTPL/OC/2627/0009` — financial year first, serial
+   padded to four. The real papers read `OTPL/OC/<serial>/<26-27>` — serial first, unpadded, year
+   hyphenated. **Every OC the module has issued carries a number Bushra's filing does not recognise.**
+   That is a finding about the OC, not only the PI, and it needs deciding before a PI prints one.
+2. 🔴 **The number exists too early for the module to have it.** `format.ts:48` is explicit that
+   `oc_no` is minted **at the Directors' approval**. The real PI carries its number from the day it is
+   raised — the folder is opened at PI time. So a PI rendered today would print **no number at all**, or
+   a ruled blank where `Performa No.` goes.
+3. **Item PIs take a sub-number.** `OTPL/OC/107-1/26-27` (ink), `OTPL/OC/107-2/26-27` (dryer). Nothing in
+   the module mints a `-1` / `-2`.
+
+#### The invoice page, field by field
+
+| On the paper | Where it comes from today |
+|---|---|
+| *To,* name · address · GST | 🟢 `customer_name`, `customer_address`, `gst_no` — all exist |
+| `K/a: Mr. Shan Moondra-9660518900` (102) | 🟢 `customer_attn`, `customer_mobile` — **and this is the one place they print**, which answers OCPI-34 item 3 |
+| `Subject: Model No: HOMER K64(With 64 Heads)` | ⚠ `machine_model_no` is **NULL on 16 of 28 machines** |
+| `(HM1800B-TK64-A1)  HSN CODE: 84433910` | 🔴 **No HSN column anywhere** |
+| `MFG: HAN GLORY (HONG KONG) LIMITED` | 🔴 **No manufacturer column anywhere** |
+| `Country of Origin: HONG KONG , CHINA` | 🔴 **No column anywhere** |
+| Quantity column (`3`, `2`, `1`) | 🟢 `machine_count` exists |
+| Bank block | 🟢 `fms_ocpi_company_profiles` already holds bank/branch/account/IFSC |
+
+#### 🔴 The table is a LINE-ITEM table, not one fixed row
+
+Folder **124 (Clothera)** settles this — two rows and four money lines:
+
+```
+Quantity | Description                                        | Amount
+   2     | Digital Sublimation Printing Machine
+         | KoloRado Alpha III (With 16 print heads)
+  30     | Epson Print heads
+                                    Machine Value INR      46,50,000.00
+                                    Print Heads Value INR  21,00,000.00
+                                    +18% GST INR           12,15,000.00
+                                    Total INR              79,65,000.00
+```
+
+🟢 **OCPI-11 already captures exactly this.** The Shipment & invoice table stores
+`head_invoice_qty / _amount`, and the same pair for ink, dryer, spares and centering, each with its own
+sub-total. **The PI's extra rows are those rows.** Do not invent a second way to say it.
+
+#### The money block has three shapes — and the third one is a legal distinction
+
+| Deal | Prints |
+|---|---|
+| **INR** (127, 101, 102) | `Machine Value INR` · `+18% GST Value INR` · `Total Value INR` |
+| **INR, multi-item** (124) | one value line per item, then `+18% GST INR` · `Total INR` |
+| **USD / High Seas** (107 ink, 107 dryer, 120) | `Machine Value USD 3,85,000.00` · `@ 96 (Fluctuated Rate)` · `Total Value INR 3,69,60,000.00` — **and NO GST LINE** |
+
+🔴 **The no-GST rule is the same one OCPI-29 protected on the summary sheet** — a High Seas sale attracts
+no GST, and a `0%` row is a different claim from no row. Build the PI's money block on the same rule, and
+reuse `quotationPdf.ts`'s existing test rather than writing a second one that can drift.
+
+⚠ The rate line is worded **two ways** in real papers — *"(Fluctuate Rate)"* (107) and *"(Fluctuated
+Rate)"* (120). **Use `(Fluctuated Rate)`** — it is the grammatical one and the one on the larger, more
+recent K64 deal. Not worth a question; flag it to Ritesh Bhai when the first PI is shown to him.
+
+#### `Terms & Conditions:` — the bullets, and which the module already holds
+
+| Bullet | Seen in | Source |
+|---|---|---|
+| **Payment Terms** | all | 🟢 `payment_terms` (OCPI-30's seven formats) |
+| **Trade Terms** | all | 🟢 `trade_term` — **exactly what OCPI-35 just rebuilt**, and the real papers prove it: *"CIF NHAVA SHEVA"*, *"CIF NHAVA SHEVA PORT (Under EPCG License)"*, *"Ex-Work Surat Factory (Transportation bear by Customer)"* |
+| **Delivery Terms** / **Shipment Terms** | varies by deal | ⚠ *"30 Days after Order Confirmation"* — this is `delivery_days`, **retired by OCPI-18**. See the trap below |
+| **Insurance** | most | 🟢 `insurance_clause_agreed` — and this is where it prints, answering **OCPI-34 item 1** |
+| **Country of Origin** | 120 only | 🔴 no column |
+| **Bank Details** | all | 🟢 company profile |
+
+🔴 **THE DELIVERY-DAYS TRAP — ✅ SETTLED 02-09-2026: THE PI PRINTS THE SAME DATE AS THE CONTRACT.**
+OCPI-18 removed *Delivery days* and replaced it with a **tentative delivery date** plus a remark, because
+a day-count told the customer nothing about when. The real PIs still say *"30 Days after Order
+Confirmation"* — **that wording does not come back.** The PI's delivery bullet resolves from
+`deliveryDate`, the same value `{{delivery_date}}` already puts in the SALE CONDITIONS clause of 21 decks:
+
+> `Delivery : Tentative delivery 15-Oct-2026, from the date of signing`
+
+⚠ **DO NOT RESTORE `delivery_days`** — not the column, not the field, not a PI-only variant. Two papers
+carrying two different delivery promises on one deal is the failure this avoids.
+⚠ `deliveryDate` is **optional today**. A PI with no date must omit the bullet, not print
+`Delivery : ________` — see the same empty-means-omit reasoning recorded under Q5.
+⚠ Format it with the **papers'** formatter (`paperDate`), not the screen's — the identical note is on
+`{{delivery_date}}` at `tokens.ts:198`, and it is there because the two disagree.
+
+#### Two things that have no home yet
+
+- 🔴 **The "Key Benefits" page.** Per-machine marketing copy — tagline, paragraph, Applications,
+  Productivity, Advantages. `intro_text` is **not** it (it holds the OC's opening line, *"Following up
+  your kind order…"*), and neither is `composition`. **This needs new per-machine content for all 28
+  machines, and nobody has written it.** ⚠ It is the single largest piece of work in this task and it is
+  **content, not code** — check with Ritesh Bhai whether the PI must carry it at all, or whether pages 1
+  and 2 are optional. **An item PI proves they can be dropped.**
+- **The cover letter's company paragraph** is identical across every folder — that one is a constant, not
+  a data ask.
+
+#### 🔴 Questions for Ritesh Bhai — the first three change the build
+
+- [x] **Q1 · ✅ SETTLED 02-09-2026 — ALL THREE PAGES.** Ritesh Bhai: *"Ideally, we want all three pages."*
+
+      🟢 **And it is far less work than this entry first claimed.** Swept **both** financial-year folders
+      — `2025.26 OC&PI` (20 deals, 78–98) and `2026.27 OC&PI` (27 deals, 101–127), ~60 PDFs, all
+      **rendered with pdf.js**. **Twelve sales pages already exist** and can be lifted straight out:
+
+      | Sales page, as it is headed on the paper | Covers |
+      |---|---|
+      | `Key Benefits of HOMER K24` | Homer K24 |
+      | `Key Benefits of HOMER K32` | Homer K32 |
+      | `Key Benefits of K64` *(also typed `K 64`)* | K64 |
+      | `Key Benefits of HOMER ROCKET MACHINE` | Rocket |
+      | `Key Benefits of Position Printer` | Position Printer |
+      | `Key Benefits of Fab Pro 2i` | Fab Pro 2I *(1I / 3I unverified)* |
+      | `Key Benefits of Sub Pro II+` | P8S *(P8D unverified)* |
+      | `Key Benefits of Alpha II` | Alpha II **1.8 · 1.9 · 2.2** |
+      | `Key Benefits of KoloRado ALPHA III` | Alpha 3 / 3.2 — **8 · 16 · 24 heads** |
+      | `Key Benefits of ALPHA 12` | Alpha 3 — 12 heads |
+      | `Advantages of KOLORADO ALPHA 15` **and** `Advantages of FEDAR 15` | Kolorado Alpha 15 — **two different pages for one machine, see below** |
+      | `Advantages of Heat Transfer Machine 800 Dia` | Pengda — its productivity block quotes **600 / 800 / 1000 mm**, so one page plausibly covers all three variants |
+
+      🟢 **ONE PAGE SERVES A WHOLE FAMILY** — the single *Alpha II* page covers three machines, *ALPHA III*
+      covers three or four. The unit is the **family**, not the machine, so 12 pages already cover
+      roughly **20 of the 28**.
+
+      🔴 **THE HEADING IS NOT ALWAYS `Key Benefits of …`.** Four pages are headed **`Advantages of …`**,
+      and the first sweep of this entry missed all of them by searching for the wrong phrase. **Do not
+      key the extraction on the heading text.** Take page 2 of each PI whole, whatever it is called.
+
+      🔴 **Alpha 15 has TWO different pages under two different names** — `KOLORADO ALPHA 15` (2026-27)
+      and `FEDAR 15` (2025-26), and their bodies differ, not just their titles. *FEDAR* is the OEM brand.
+      **Ask Bushra which one is current** before seeding either; the wrong choice puts an obsolete
+      brochure page in front of a customer.
+      ⚠ `ALPHA 12` may be the *ALPHA III* page under another name, or a genuinely separate one. Compare
+      the two bodies before storing both.
+
+      ⚠ **Still missing — a Bushra ask, not a build task:** **MP5000 · JPK · Mini Lario · Kolorado
+      Alpha 16 · Foil Machine · Label Printer · Book Printer**, plus confirmation on **Fab Pro 1I / 3I**
+      and **P8D**. No deal has ever been raised on these, which is exactly why no page exists. The POD and
+      Foil machines may never need one.
+
+      ⚠ **The item PI (ink / dryer) still has no sales page and must not print one** — folder 107 proves
+      the 1-page form is correct there. The renderer needs both shapes regardless of this answer.
+      ⚠ `K 64` and `K64` are the same page typed two ways. Store one; do not seed the typo.
+- [x] **Q2 · ✅ SETTLED 02-09-2026 — BUSHRA'S FORMAT WINS.** `OTPL/OC/<serial>/<YY-YY>` — serial first and
+      **unpadded**, year hyphenated. Deal 9 is `OTPL/OC/9/26-27`, not `OTPL/OC/2627/0009`.
+
+      🔴 **THIS IS NOT A PI CHANGE — IT CHANGES `ocNumber()` AT `format.ts:142` AND THEREFORE THE OC.**
+      The SQL default quoted in that file's own comment
+      (`'OTPL/OC/' || fy_code(current_date) || '/' || lpad(next_seq(...), 4, '0')`) mints the same wrong
+      shape server-side, so **the client helper and the column default must move together** — exactly the
+      client/server pairing that is this module's defining hazard.
+      ⚠ **Do NOT rewrite `oc_no` on deals already issued.** A frozen paper keeps the number it printed;
+      rewriting the row would put the record and the customer's copy out of step. New numbers only.
+      ⚠ `lpad(…, 4, '0')` goes. Confirm nothing sorts or matches on the fixed width before removing it.
+- [x] **Q3 · ✅ SETTLED 02-09-2026 — THE NUMBER IS MINTED WHEN THE QUOTATION IS GENERATED.** One number
+      serves the PI and the OC, exactly as folder 127 does. Ritesh Bhai accepted that a deal which never
+      closes still consumes a serial — the same thing a folder that never closes already does.
+
+      🔴 **THIS MOVES `oc_no` EARLIER IN THE LIFECYCLE, AND `oc_no` IS LOAD-BEARING.**
+      `format.ts:52` reads:
+      > `return deal.ocNo ? "ORDER CONFIRMATION" : "ORDER QUOTATION";`
+
+      and its comment says *"`oc_no` is therefore the only test"*. **Mint it at quotation time and every
+      quotation instantly heads itself ORDER CONFIRMATION** — a document that says it is a signed contract
+      while it is still an offer. `quotationPdf.ts:601` and `ocPdf.ts:408` also both print the number the
+      moment it is non-null.
+      **So the stage test must stop being "does `oc_no` exist" BEFORE the number moves.** Use the approval
+      timestamp (`oca_at` / `oc_at`) or the status, not the presence of a number. ⚠ Search for every
+      `ocNo ?` and every `oc_no is not null` — in the client, the RPCs and the queue derivations — before
+      changing when it is written. This is the single riskiest part of OCPI-36.
+      ⚠ `queues.ts:41` labels a deal `d.ocNo ?? d.quotationNo ?? …`, so every queue row's title changes
+      too. Probably fine — check it reads sensibly on a deal that has not been approved.
+      ✅ **`QT-M####` SURVIVES, BUT STOPS BEING A CUSTOMER-FACING NUMBER** — settled 02-09-2026.
+      All three papers carry **`OTPL/OC/<serial>/<YY-YY>` and nothing else**; `QT-M####` stays internal,
+      for the deal screen, the register, search and file names. One number the customer quotes back,
+      matching how folder 127 is filed.
+      🔴 **`quotationPdf.ts:615` prints `["Quotation No. :", deal.quotationNo …]` on the summary sheet
+      today** — that row changes to the new number. It is a customer-facing edit to a paper this task was
+      not otherwise touching, so verify the summary renders before and after.
+      ⚠ `quotationPdf.ts:863` and `:730` build **file names** from `quotationNo` / `ocNo`. Those are
+      internal, so they may keep `QT-M####` — but the two must not silently diverge from what the page
+      prints. Decide once and note it.
+      ⚠ The `DRAFT — not yet issued` fallback at `:615` still matters: a draft has no serial either, so
+      the summary must keep saying so rather than printing an empty `OTPL/OC//26-27`.
+- [x] **Q4 · ✅ SETTLED 02-09-2026 — ONE PI PER DEAL. Separate item PIs are OUT OF SCOPE.**
+      Folder 107 is the only one of 27 that split, so the line-item table carries ink and dryer as extra
+      **rows**, not extra papers. No `-1` / `-2` counter, no picker, no variable number of tabs.
+
+      ⚠ **The 1-page shape is still needed, and not because of this.** The renderer must skip the cover
+      letter and sales page whenever the deal has no machine sales page to show — a Pengda or POD deal
+      today. Do not delete the 1-page path on the strength of this answer.
+      ⚠ If splitting is asked for later it is a **new entry**, not a reopening of this one: it needs the
+      sub-serial, a chooser for what lands on which paper, and storage for an unbounded set of papers.
+- [x] **Q5 · ✅ SETTLED 02-09-2026 — ADD THE THREE BOXES, PRINT ONLY WHEN FILLED.**
+      Three nullable columns on `fms_ocpi_machines` and three optional fields on the Machines master. A
+      machine with nothing filled prints **nothing** — not a label, not a ruled blank.
+
+      🟢 **The data says this is the right shape.** Of 34 real PI files: **4 carry an HSN code, 2 carry a
+      country of origin, 1 carries a manufacturer, and 30 carry none of the three.** They appear on the
+      **imported** machines (K64 — `HSN CODE: 84433910`, `MFG: HAN GLORY (HONG KONG) LIMITED`,
+      `Country of Origin: HONG KONG , CHINA`) and never on the Surat-built ones.
+      ⚠ **This is the one place in the PI where empty means "omit", not "blank".** Everywhere else in this
+      module an unanswered token prints a ruled underscore run on purpose (`tokens.ts:8-17`), because the
+      gap is a thing somebody must fill. Here the gap is *correct* — a Homer K24 has no country of origin
+      to state. Write that reason next to the code or the next person makes it consistent with the rest
+      and puts three blanks on every domestic invoice.
+
+#### Build
+
+- [x] 1.1 **Additive nullable columns.** `fms_ocpi_machines`: `hsn_code`, `manufacturer`,
+      `country_of_origin`, and whatever the Key Benefits page needs if Q1 says yes.
+      `fms_ocpi_quotation_versions`: **`pi_pdf_path`**, mirroring `pdf_path` / `oc_pdf_path`.
+      `fms_ocpi_deals`: **`pi_pdf_path`**, mirroring `oc_summary_pdf_path` for the approved stage.
+- [~] 1.2 ⚠ Fill `machine_model_no` on the **16 machines where it is NULL** — the PI's subject line reads
+      `Model No: …` and would print a blank. **Data ask, from the machine sheet.**
+- [x] 2.1 `lib/piPdf.ts` — a **third renderer**. Reuse `letterhead.ts`, `pdfBrand`, and
+      `quotationPdf.ts`'s existing GST / USD rules. **Do not re-derive the money.**
+- [x] 2.2 The line-item table, fed from OCPI-11's invoice quantities and amounts.
+- [x] 2.3 The bank block from the company profile. ⚠ The four entities with **no profile** already warn by
+      name on every screen that produces a document — the PI joins that list, or it prints Orange O Tec's
+      account on a Colorix contract.
+- [x] 3.1 Store and re-read the PI everywhere the other two are: the generate path, the version row, and
+      the approved-OC path.
+- [x] 4.1 **`PaperSet.tsx` — the tab order becomes Summary · PI · OC**, in **all three** call sites:
+      `IssuedPapers.tsx:96`, `ApprovalPanel.tsx:244`, `ApprovedOcPreview.tsx:117`.
+      ⚠ `PaperSet` auto-lands on `papers[0]`, so the order is not cosmetic.
+      ⚠ A paper that does not exist is still a tab, and says why — 7 of 28 machines have no OC template
+      and the PI must not inherit that note.
+- [x] 4.2 **Download all.** *Download both* (`PaperSet.tsx:168`) becomes a **Download all** control with a
+      tick per paper, all ticked by default.
+      🔴 **KEEP THE 400 ms STAGGER** (`PaperSet.tsx:138`). Chrome cancels a second programmatic download
+      fired in the same tick, so a naive three-file loop hands over **one** file and reports success —
+      exactly the failure that comment exists to record. It gets worse with three, not better.
+      ⚠ Only papers that actually exist may be tickable, and the control hides when fewer than two do.
+
+#### Verify
+
+- [ ] `cd frontend && npm run build`
+- [x] 🔴 Render a PI for **each money shape** and read it with **pdf.js**: an INR single-machine deal, the
+      Clothera multi-item shape, and a **USD High Seas deal — which must carry NO GST line.**
+- [x] Compare a generated PI **side by side with folder 127's real one** (Sumati Prints, Alpha II, 3
+      machines, INR, 18% GST). It is the cleanest specimen and matches a shape the module can already
+      produce end to end.
+- [x] 🔴 `Performa No.` is never a ruled blank — on a deal before approval as well as after.
+- [x] Download all with all three ticked delivers **three files**; with one ticked, one. Test in Chrome.
+- [x] An older deal opens and its Summary and OC print unchanged — the PI tab simply says it has none.
+
+
+#### 🔴 Built 02-09-2026 — three corrections to this entry, found by rendering
+
+1. **The money block does NOT price OCPI-11 line items.** Swept all 42 real PIs: **41 carry exactly one
+   priced line (the machine) and one table row**; only Clothera (124) has two. Where ink or heads are
+   mentioned they sit in the `Note:` in words, never as invoice rows. The entry’s assumption printed
+   ₹62.35L of item lines above a Total of ₹61.36L that excluded every one of them — those columns are
+   *separately invoiced* and excluded from every stored total by design. **Clothera’s shape is not
+   reproduced:** charging an extra needs a total that includes it, and no such figure is stored.
+   🔴 **A decision for Ritesh Bhai** — store a PI total server-side, or leave it as it is.
+2. **Alpha 15’s two pages are body-identical.** `Advantages of KOLORADO ALPHA15` and
+   `Advantages of FEDAR 15` differ only in the heading — rendered and compared word for word. The
+   obsolete-brochure risk this entry guarded against does not exist, so the page **is** seeded, under
+   the Kolorado heading. ALPHA 12 vs ALPHA III *was* a real difference; both are stored.
+3. **A fourth PI consumer the entry does not list:** `RevisionHistory.tsx` + `revisionDiff.ts` link the
+   papers per revision. Without the third, every archived revision offers two of its three.
+
+⚠ **Before the next real quotation is generated:** the OC counter stands at **9** and the paper book for
+   26-27 runs to **127**. Move it in Settings → Order confirmation numbering. Deliberately left until
+   after testing so the serials testing burned are discarded by the jump rather than left as gaps.
+⚠ **Deploy `master` promptly** — the migrations are applied and the deployed `docHeading` still tests
+   `oc_no`, so a quotation generated on production before the deploy would head itself ORDER
+   CONFIRMATION. The frontend is safe ahead of the migration; the migration is not safe ahead of it.
+⚠ **For Bushra:** the Alpha 15 heading (Kolorado vs FEDAR, and `ALPHA15` prints without a space);
+   whether Fab Pro 1I / 3I share the 2i page and P8D shares Sub Pro II+; and the seven machines with no
+   page at all. Full write-up in OCPI.md.
+
+### OCPI-37 · Does our OC match the OC Bushra actually sends? An input↔output audit against the real papers  `[x]`
+*Raised 2026-09-02 · Asked for by Ritesh Bhai · **ground truth:** `Misc/Bushra Reports/OCPI/2025.26 OC&PI`
+and `2026.27 OC&PI` — **25 real order confirmations as PDF***
+
+**The ask, in his words.** *"Whatever format we are generating for OC right now, is that format matching
+the actual OC format? Are all the fields that are getting captured?"* Two directions, one audit:
+
+> **INPUT** — does the form capture everything the final OC needs?
+> **OUTPUT** — does the OC print everything the real one prints?
+
+#### ⚠ This is NOT a repeat of OCPI-12, and the difference is the whole point
+
+| | OCPI-12 (done) | **OCPI-37 (this)** |
+|---|---|---|
+| Compared | the **form** against **our own PDFs** | **our PDF** against **Bushra's real OC** |
+| Answered | "does what I typed reach the paper?" | **"is the paper the right paper?"** |
+| Could not find | a clause nobody ever transcribed | exactly that |
+| Coverage | K64 only | **10 machines that have a real OC on file** |
+
+OCPI-12 proved the plumbing. It could never have found a section missing from the template, because it
+only ever compared the module to itself. **This one has an external answer key.**
+
+#### 🔴 The audit has already found one, before it was even written
+
+**`HOMER K32 CONSUMABLES PARTS LIST WHICH NOT COVER UNDER WARRANTY` — in 4 real OCs, in ZERO templates.**
+Verified against every `fms_ocpi_machine_sections` row: no section carries this title, and no body
+contains `consumable…parts list`, `not cover under warranty` or `PIPE WILL NOT BE COVERED`.
+
+It is a **warranty-limiting** clause — eleven named parts plus two notes:
+
+```
+HOMER K32 CONSUMABLES PARTS LIST WHICH NOT COVER UNDER WARRANTY
+ 1. SPONGE ROLL COVER          7. DEGASSING
+ 2. WASHING BRUSH              8. SPONGE ROLL BEARING
+ 3. SQUEZEE RUBBER             9. INK MAIL CONNECTOR
+ 4. HEAD WIPER                10. INK FEMALE CONNECTOR
+ 5. WASHING BRUSH BEARING     11. INK PIPE
+ 6. INK FILTER
+Notes:
+ 1) PHYSICALLY DAMAGED PARTS ARE NOT COVER UNDER WARRANTY PERIOD.
+ 2) ANY AIR PRESSURE-RELATED PART DAMAGED DUE TO THE WATER ENTERING THE AIR PIPE
+    WILL NOT BE COVERED UNDER WARRANTY PERIOD.
+```
+
+🔴 **A K32 contract issued from the module today gives away eleven consumables the real contract
+excludes.** That is the exact class of defect this task exists to find, and finding one inside ten
+minutes is the argument for running the whole thing properly.
+
+#### 🟢 The good news, so the scope is honest
+
+Homer K24 was compared end to end against folder 123's real OC. **It matches — structurally, section for
+section:**
+
+| Real OC | Our template |
+|---|---|
+| header: Attn · Date · Address · GST | `header_fields = [attn, date, address]` ✅ |
+| spec table, 13 rows | `spec_rows`, 13 rows, same labels ✅ |
+| `THE MACHINE IS COMPOSED AS FOLLOWS` | `composition` ✅ |
+| supply line + money block | `supply_description` + derived ✅ |
+| 9 body sections, in order | 9 sections, same titles, same order ✅ |
+| `Dryer：AC380V…` only when a dryer is sold | `[[if dryer]]` — **OCPI-31's fix, already in** ✅ |
+
+So the transcription work of OCPI-3 / OCPI-4 was largely right. **This audit is looking for the
+exceptions, not rebuilding the templates.**
+
+#### 🔴 Two divergences that are DELIBERATE — the audit must not "fix" them
+
+An audit that flags these as defects will get them reverted by the next person.
+
+1. **`Shipment Terms: 30 Days after Order Confirmation` → `Tentative Machine Delivery Date: …`**
+   OCPI-18, on the client's instruction. **Every real OC still shows the old wording.** Expected
+   difference. Do not restore `delivery_days`.
+2. **`After 18 months New Print Head price will be @ INR 2,35,000 plus GST` → the sentence was rewritten
+   to need no figure.** Stage J.1 retired `{{post_warranty_head_price}}` because an unfilled placeholder
+   printed a ruled blank on four machines. **Our OC states no head price. The real one does.** That was a
+   decision; confirm it still is, and record it either way.
+
+⚠ **Every difference the audit finds must be classified into one of three buckets, never left as a raw
+diff:** **(a) a gap to fix · (b) a deliberate divergence with the reason quoted · (c) wording drift too
+small to matter.** A list of 400 undifferentiated differences is not a finding, it is a second problem.
+
+#### What can and cannot be compared
+
+**10 machines have a real OC PDF on file** — Homer K24 · Homer K32 · K64 · P8S · Fab Pro 1I · Fab Pro 2I ·
+Kolorado Alpha 15 · KoloRado Alpha II (1.8 and 1.9) · KoloRado Alpha III · Pengda 800.
+
+⚠ **11 of the 21 templated machines have NO real OC to check against** — MP5000, JPK, Rocket, Position
+Printer, P8D, Fab Pro 3I, Alpha 16, Alpha II 2.2, Alpha 3 12h, Alpha 3.2 8h/24h. **Say so in the report.**
+An audit that silently covers half the estate and reports "no issues" is worse than one that reports its
+own blind spot. Some of these transcribe from a `.pptx` deck with no OC ever issued — note which.
+⚠ One real OC is **filed in the wrong folder**: `21-Parmatma Industries - Fabpro 1I - OC…pdf` sits inside
+`2025.26 OC&PI/83-MONALISSA…/81-Swati…/`. Find files by content, not by folder name.
+
+#### Method
+
+- [x] 1.1 **Render every real OC with pdf.js.** 🔴 **Never parse the `.pptx`/`.docx`, and never
+      string-search jsPDF output.** Four of the source decks fuse words in OOXML — the whole template
+      effort renders rather than parses for this reason. `pdfjs-dist` is already in
+      `frontend/node_modules`.
+- [x] 1.2 **Render OUR OC for the same machine**, driving `buildOcPdf` headlessly with deal facts copied
+      from the real paper — same head count, same dryer choice, same currency. ⚠ A dryer/no-dryer
+      mismatch will read as a template gap when it is only a different deal.
+- [x] 1.3 **Diff structurally, not as free text**: section titles and their order · spec-row labels and
+      order · the composition list · the supply line · the money block · the sign-off block.
+- [x] 2.1 **The INPUT direction.** For every value the real OC states that varies by deal, name the field
+      that supplies it — or record that **nothing does**. Reuse `OCPI-FIELD-MAP.md`
+      (`cd frontend && npm run field-map`), which OCPI-12 built and which re-reads the code each run.
+- [x] 2.2 ⚠ **A hardcoded value is an input finding too.** `spec_rows` carries plenty of literal numbers
+      that are correct for every deal (`Max. Printing width: 1900 mm`) — right. But a value that SHOULD
+      vary and is baked in is a defect wearing the same clothes. Judge each, do not pattern-match.
+
+#### The deliverable
+
+- [x] 3.1 One report — **`OCPI-OC-AUDIT.md`, or a workbook in the shape of OCPI-5's**, which already
+      solved the "one tab per machine, colour the differences" problem. Reuse it rather than inventing a
+      second format.
+- [x] 3.2 Per machine: **matches · in the real OC only · in ours only · worded differently**, each row
+      tagged (a) / (b) / (c) per the bucket rule above.
+- [x] 3.3 A front page listing, in order of seriousness, **only the (a) rows** — the things to fix.
+      Every one that changes a signed contract gets 🔴.
+- [x] 3.4 ⚠ Anything found becomes its **own WORKLIST entry**. This one is the audit; it must not quietly
+      turn into an unbounded template-repair job halfway through.
+
+#### Verify the audit itself
+
+- [x] 4.1 Re-run it on **Homer K24** and confirm it reports **no (a) findings** — the manual comparison
+      above says it matches. An audit that flags a clean machine is miscalibrated and everything else it
+      says is untrustworthy.
+- [x] 4.2 Confirm it **does** find the K32 consumables section. That is the known-positive control.
+- [x] 4.3 Confirm it reports the two deliberate divergences as **(b)**, with the reason quoted, not as
+      defects.
+
+#### ✅ DONE 03-09-2026 — the harness, the report and the one fix
+
+`cd frontend && npm run oc-audit` → **`OCPI-OC-AUDIT.md`** at the repo root, generated and never
+hand-edited. Working files (the parse of each real contract, our rendered PDFs, the facts each was
+driven with, the deck renders) in `Misc/Bushra Reports/OCPI/oc-audit/`, with a README saying what each
+proves.
+
+**Seven specimens — five from `2026.27`, which is the answer key, plus a K32 from `2025.26` and the
+untemplated Pengda 800.** 35 gaps, grouped into **9 fix batches**. No deal raised and no number burned:
+the module's own `buildOcPdf` is driven against live masters, so the run costs nothing and is undone by
+doing nothing.
+
+🔴 **Four premises in this entry were wrong, and each would have put a false statement in the report:**
+
+| It said | The papers say |
+|---|---|
+| "10 machines have a real OC … **K64** …" | **K64 has no order confirmation anywhere.** Every PDF *and* every Word/PowerPoint file in both years was swept: K64 appears in folders 109 and 120 only, and both are Performa Invoices with no contract body. Our best seller has never been checked against a signed contract |
+| the misfiled Parmatma Fab Pro 1I paper | is headed **`OFFER QUOTE`**, not ORDER CONFIRMATION, and reads "Colorix Fabpro 1i" — a different selling entity. A detector keyed on "ORDER CONFIRMATION" drops the very file this entry says to go and find |
+| K32's clause goes between 70 and 80 | the rendered page puts it **after CANCELLATION, immediately before the sign-off** — `sort_order` **100**, confirmed identical on all three K32 contracts (78, 82, 83) |
+| "Only the **Homer** machines carry a head price" | **P8S carries one too** — folder 126 states INR 2,25,000 from the 19th month. The B-02 exemption is deliberately scoped to the three Homers, so the Sub Pro sentence is reported rather than excused. Ritesh Bhai's decision covered the Homer sentence; this one has not been put to him |
+
+**Q1 is applied.** Migration `20261106130000_fms_ocpi_k32_consumables_not_covered` — one additive,
+idempotent INSERT, `sort_order` 100. Verified three ways: read back off a **rendered** K32 OC with
+pdf.js (page 4, all 11 parts, both notes, immediately before the sign-off); rendered again **in the
+running app** through the console route, which reports 10 sections with the clause last, 0 unresolved
+tokens and 0 ruled blanks; and the frozen revision proved untouched — QT-M0031's payload md5 is
+byte-identical and still carries 9 sections.
+⚠ **QT-M0037 (AARNAV FASHIONS, real, at `quotation_approval`, not yet frozen) WILL gain the clause**
+when its OC is generated. That is correct, and Ritesh Bhai is told rather than left to find out.
+
+**The check proves it can still see a gap.** The K32 clause was the known-positive control, and fixing
+it consumed the control. It is replaced by a permanent **self-test**: a clause is deleted from our side
+of a live comparison and the comparator must report it. The run **throws rather than reporting a
+partial result** — specimen counts must reconcile, every finding must carry a bucket, every exemption a
+quoted reason, and the self-test must catch its own planted gap.
+
+**Homer K24 — the clean control — shows 0 structural gaps**, which is what the hand check actually
+proved: same header fields, same 13 specification labels in the same order, same composition, same 9
+clauses under the same titles in the same order. ⚠ It never compared clause **bodies**, and two real
+differences inside them turned up on K24 anyway.
+
+#### The 9 fix batches — nothing applied, each is its own job
+
+Full detail and the exact contract wording for every one is in `OCPI-OC-AUDIT.md`.
+
+- ✅ **F-01a · the included-ink note — DONE 03-09-2026 (OCPI-38).** Ritesh Bhai, on reading the
+  audit: *"the number is already being captured, it never reaches the paper, so why is it not reaching
+  the paper? Go ahead and print that on the paper."* **Why it did not:** the figure printed on the
+  SUMMARY sheet only, and no `{{token}}` for it existed, so no template could have printed it on the
+  contract. Now drawn by `ocPdf.ts` between the priced line and the money, exactly where the real
+  contracts put it, on all 21 machines at once with no template edited. ⚠ A token was refused
+  deliberately — an unanswered one rules a blank, which would print *"Note: ________ included in above
+  value"* on every contract WITHOUT ink. ✅ A bare number is completed to **Kgs** (Ritesh Bhai, 03-09) — ink is
+  always sold by weight, and every real deal that states a unit says Kgs; the 14 `litres` values were all
+  test seeds. A value that names its own unit is printed untouched.
+- ✅ **F-01b · the model number and the HSN code — DONE 03-09-2026 (OCPI-39).** Ritesh Bhai: *"I believe
+  we already have a model number in the machine master, so you can pick up the model number from there.
+  If it is blank, then we will add the model number, or if you have the model number from the actual
+  contract, then you can just go ahead and add that to the master."* Both now come off
+  `fms_ocpi_machines` — `machine_model_no` and `hsn_code`, the same two columns the PI already prints —
+  drawn by `machineDetailLine` in `ocPdf.ts` under the priced line, with a **fold-and-contains guard** so
+  the five decks that already carry the text (K24, P8D via the token; K64, Rocket as literals; MP5000
+  inline) do not print it twice. Migration `20261107130000_fms_ocpi_model_numbers_and_hsn` fills K32
+  `HM1800B-TK32-B1` and P8S `HM1800R-P8S-A1` off their own signed contracts, plus Pengda 800
+  `PD-1700XD-800`.
+  🔴 **AND IT UNCOVERED A LIVE DEFECT THE AUDIT'S SWEEP COULD NOT SEE.** `{{machine_model_no}}` resolved
+  from the **deal**, whose model box is free text nothing prefills — **blank on all 30 live deals** — so
+  Homer K24 and P8D contracts were printing *"(Model No: ________)"* on the line the customer signs
+  under. `docContext` now falls back to the master; the deal still wins where it has an answer, so a
+  frozen revision is unaffected. The audit missed it because its own sweep supplied the master value.
+  ⚠ **The audit's comparator had to be extended too** — `machine_detail_line` added to the supply
+  comparison, and the model/HSN matched **folded** rather than word-diffed, or a line stating the same
+  two facts read as four missing words.
+- 🔴 **F-02 · `head_policy` drops two sentences** — K24, K32, P8S, and K64 by inheritance. The real
+  contracts say *"New print head bought post 18 months shall carry warranty 12 months from the date of
+  installation"* and *"…in case of any Physical damage, new print head to be purchase from Orange O
+  Tec"*. Ours says neither. **This is warranty duration and a purchase obligation.**
+- 🔴 **F-03 · the Alpha `warranty` clause drops AMC and the chargeable technician** — all three Alphas.
+  *"AMC charges will be applicable as per real time terms and conditions of the company"* and
+  *"…technician cost will also be chargeable and invoice will be generated for same."*
+- 🔴 **F-04 · a non-refundable cancellation term our document never prints** — Alpha II ×2 and P8S.
+  *"Once order is placed it will not be cancelled. In unavoidable situation… any kind of payment made
+  will not be refundable or adjustable."*
+- 🔴 **F-05 · Insurance is a literal that varies contract to contract** — ours always says *"Product
+  Insurance borne by Customer"*; the real ones say *"is at our care till Port"* (K32, a high-seas sale)
+  and *"is at Customer care"* (Alpha 15). A literal that disagrees with the deal is worse than a blank.
+  Needs a field or an `[[if usd]]` pair, and Ritesh Bhai picks the house position.
+- 🔴 **F-06 · Alpha 15 is missing a whole PC-specification clause.**
+- ✅ **F-07 · the customer's GST number — DONE 03-09-2026 (OCPI-39).** Ritesh Bhai: *"if we already have
+  the GST, then why are we not printing it? The system already holds it, so go ahead and fix this and
+  print this. It's quite simple."* It is now a header line drawn by `ocPdf.ts` directly under the
+  address, which is where all six real contracts put it (*"GST:24AASCA8419N1Z0"*). ⚠ **Not added to
+  `header_fields`** — all 28 machines already declare `address`, so drawing it beside that lands it on
+  every contract with no row updated and no template edited. Nothing prints when the deal has no GSTIN
+  (a high seas sale, an unregistered buyer), which is the whole reason it is drawn rather than
+  tokenised. Frozen onto the payload as `customer_gstin`. Closed all 6 specimen findings — the audit
+  went 31 → 25 gaps.
+- 🟠 **F-08 · specification rows differ** — 4 machines.  🟠 **F-09 · a composition bullet** — P8S.
+
+#### The two decks added 02-09-2026 — read, reported, NOT built
+
+- **`PENGDA 1000XD 800.pptx` is `Pengda PD-1700XD-800`**, identified from the slide and not from the
+  file name — the name would have sent it to the 1000, which is the one Pengda that IS templated and
+  has never been sold. The 800 has **three real contracts** (87, 89, 94) and no template.
+  🔴 The deck carries a **live price** — `INR 17,00,000.00 / 3,06,000.00 / 20,06,000.00` — which must be
+  stripped before anything is built from it. The `FABPRO 1I.pptx` trap exactly.
+- **`S  MINI LARIO 1-OC.pptx` is `Mini Lario`** — 16 slides, no real contract on file, headed
+  **`OFFER QUOTE`**, which can never print because `docHeading` derives the title from the OC number
+  (OCPI-12 finding 5 / OCPI-34).
+  🔴 It carries **`MARKEM-IMAJE`** — another manufacturer — inside its limited-warranty,
+  limitation-of-liability, indemnity, data-privacy and governing-law clauses. Transcribed as they
+  stand, an Orange contract would offer a third party's terms and bind the customer to their dispute
+  resolution. **A person decides which of those Orange intends to offer** before any of it becomes a
+  template.
+- ⚠ **`Pengda PD-1800XD-800` still has no deck at all.**
+
+#### Coverage, stated rather than implied
+
+7 machines checked against a real contract · K64 by inheritance + deck + PIs · the other 13 templated
+machines by an estate-wide sweep that renders each and asserts **0 unresolved `{{tokens}}` and 0 ruled
+blanks** — all 21 pass. **7 active machines carry no template at all** and print no order confirmation:
+Mini Lario, KoloRado Alpha 3.2 — 16 heads, both Pengda 800s, Foil Machine, Label Printer, Book Printer.
+
+⚠ **Two real OCs are image-only scans** with no text layer (`MK FASHIONS SCAN & SIGNED OC`,
+`VAAHO … SCAN & SIGNED .OC`). Each duplicates a text OC in the same folder, so coverage does not
+suffer — but a scan cannot be audited, and that is worth knowing before anyone relies on one.
+
+#### Questions for Ritesh Bhai — neither blocks the audit
+
+- [x] **Q1 · ✅ SETTLED 02-09-2026 — PUT THE K32 CONSUMABLES CLAUSE BACK.** Ritesh Bhai: *"Yes, add it."*
+      It limits what Orange O Tec must replace under warranty, so its absence costs money on every K32
+      sold. **This is a template fix — a new `fms_ocpi_machine_sections` row on Homer K32 — not code.**
+      ⚠ Transcribe it from a **rendered** page (folder 78, 82 or 83), never from the `.pptx`.
+      ⚠ **Where does it sit?** In the real OC it follows the warranty sections and precedes the sign-off.
+      Give it a `sort_order` between `PRINT HEAD POLICY PROGRAM` (70) and
+      `WORKS AT CUSTOMER'S CARE AND EXCLUSIONS` (80) — check against a rendered real OC before choosing.
+      ⚠ **Frozen revisions do not change.** Any K32 already issued keeps the contract it printed. If a
+      live K32 deal is mid-flight, tell Ritesh Bhai rather than assuming a re-render fixes it.
+      🔴 **STILL OPEN, and it is a Bushra ask, not his:** do the OTHER machines need an equivalent list?
+      K32 may simply be the only one where somebody wrote it down — in which case every K24, K64, P8S and
+      Alpha contract has the same hole. Added to *Waiting for*.
+
+- [x] **Q2 · ✅ SETTLED 02-09-2026 — LEAVE THE PRINT-HEAD PRICE OUT.** Ritesh Bhai chose this **after**
+      being shown that the figure is typed per deal and disagrees with itself:
+
+      | Contract | Machine | Price |
+      |---|---|---|
+      | 91 · B.K Fashion | Homer K24 | **₹2,25,000** |
+      | 123 · Amarasha | Homer K24 | **₹2,35,000** |
+      | 93 · Cromatex · 95 · Microjet | Homer K24 | **₹2,50,000** |
+      | 78 · Jay Chemical · 82, 83 · Monalissa | Homer K32 | ₹2,50,000 |
+
+      **Three different prices on the same machine**, written by different people at different times.
+      🟢 **So stage J.1 was right and stays.** `{{post_warranty_head_price}}` remains retired, the field
+      stays off the form, and the sentence keeps its no-figure wording.
+      ⚠ **The audit must report this as a (b) deliberate divergence, quoting this decision.** Eight real
+      OCs state a price and ours will not — that difference is now on record as intended, so nobody
+      "restores" it.
+      ⚠ Only the **Homer** machines carry this clause at all; the Alpha and Sub Pro decks have a plain
+      *WARRANTY* section with no head price. Do not go looking for the sentence on machines that never
+      had it.
+
+### OCPI-40 · Typing the real deals in — 13 findings the document audit could not see  `[~]`
+*🔵 **IN PROGRESS in a separate session** (confirmed 03-09-2026) — driving the real deals into the
+quotation form with Playwright and comparing the generated Performa Invoices against the client’s
+real PDFs. Not to be picked up here.*
+
+
+Ritesh Bhai, 03-Sep-2026, after OCPI-37 reported on documents only:
+*"Now I also want you to spin up playwright and try to insert these actual records via the interface
+and let's see what issues we have there."*
+
+**Three real 2026-27 deals entered through the live form, click by click** — 123 Amarasha (Homer K24),
+124 Clothera (KoloRado Alpha 3, the two-machine deal with 30 separately-priced heads) and 126 Prabal
+(P8S with 300 Kgs ink). All three went in; **nothing crashed**. Produced `QT-M0055`, `QT-M0056`,
+`QT-M0057`. Plain-language write-up: artifact `e793d6ed`.
+
+⚠ **OCPI email was OFF before anything was typed** (`email_module_settings.ocpi.enabled = false`).
+Check it again before the next UI run — the switch is per-module and someone else may arm it.
+
+#### 🔴 The five that matter
+
+- **U-01 · Generating a QUOTATION also mints an ORDER-CONFIRMATION number.** The three test
+  quotations consumed `OTPL/OC/10`, `/11` and `/12` of 26-27 while still `status = draft` and never
+  approved; with the parallel PI session's two, **10–14 are all gaps**.
+  🟢 **NOT A DEFECT — THIS IS RITESH BHAI'S OWN DECISION OF 02-09**, recorded at item **0b** above:
+  the mint moved from approval to Generate deliberately, on the reasoning that a paper folder which
+  never closes already consumes its number. I reported it as a finding before reading 0b; it is not
+  one, and it is corrected here rather than left standing.
+  ⚠ **What the observation is still worth** is the size of the consequence, which 0b anticipated and
+  nobody had measured: five serials in one afternoon of testing, none recoverable, because
+  `fms_ocpi_delete_draft` does not give the number back (U-01a). That is the argument for doing the
+  0b jump BEFORE any further UI testing, not after — every test run between now and then widens the
+  discard.
+  🟢 **CLOSED 03-09-2026, and RE-VERIFIED against live data before closing.** Ritesh Bhai asked
+  whether the number is re-minted on every save. It is not, and the guard is proven three ways:
+  `fms_ocpi_generate_quotation` reads `oc_no` into `v_oc` and mints only `if v_oc is null`;
+  `fms_ocpi_decide_quotation` keeps its mint only as the pre-OCPI-36 fallback, on the same null
+  test; and **QT-M0054 carries `quotation_version_no = 2` against ONE number**,
+  `OTPL/OC/9/26-27`. A draft that is merely SAVED mints nothing at all. **Dropped from the
+  OCPI-40 artifact at his instruction** — "that is not the big issue for me right now". U-02 dropped
+  with it; the counter still has to be set, and that is item 0b, not a finding.
+- 🔴 **U-02 · The OC counter is 115 behind the real register.** `fms_ocpi_counters.oc:2627` = 12; the
+  real 2026-27 folders run to **127**. The next contract issued carries a number a customer already
+  holds. The New Quotation screen warns about exactly this in an orange banner — this is that warning,
+  measured. **Settings → Order confirmation numbering, before the first real contract.** One minute.
+- **U-03 · The finished contract downloads before anyone approves it.** On a deal at stage 1, status
+  Draft, the Revision-history row offers Summary / PI / **OC**; the OC link returns a complete 4-page
+  order confirmation carrying the OC number, the customer's GSTIN, the price and every clause. It
+  heads itself *ORDER QUOTATION* rather than *ORDER CONFIRMATION*, which is the only thing separating
+  it from the real document. **A salesperson can send a customer a contract with no approval at all.**
+  ✅ **FIXED 03-09-2026, AND THE DOWNLOAD ITSELF STAYS.** Ritesh Bhai: *"before the approval the
+  finished contract can be downloaded, but it should not show as order confirmation. It should just
+  show as order quotation, and the number should also be of the quotation only … it should mention
+  the quotation number till it is not approved."* The heading was already right; the NUMBER was not —
+  ORDER QUOTATION printed over `OTPL/OC/10/26-27`, which is what made it read as a contract.
+  New `paperNo(deal)` in `lib/format.ts`, paired with `docHeading` on the same `oc_at` test:
+  `QT-M####` before the approval, `OTPL/OC/…` after. Applied to the contract title bar
+  (`ocPdf.ts`) and to the summary sheet's title bar AND its header cell, whose label now switches
+  `Quotation No.` → `Confirmation No.` with it (`quotationPdf.ts`). Frozen as `paper_no` on the
+  revision payload.
+  ⚠ **THE PI IS DELIBERATELY UNTOUCHED.** `piPdf.ts` prints `Performa No. <ocNo>` at every stage,
+  which is exactly what all 27 real folders do — folder 127 is headed `Performa No.
+  OTPL/OC/127/26-27` months before any contract exists.
+  ⚠ **NO APPROVED DOCUMENT CHANGES.** `oc_at` is set at approval and never cleared, so every paper
+  ever headed ORDER CONFIRMATION keeps its number, frozen revisions included.
+  **Proved with `scripts/oc-audit/verifyPaperNo.mjs`** — 22 checks, both papers × both states,
+  rendered and read back with pdf.js. Each asserts the wrong number is absent from the WHOLE
+  document, not merely that the right one is present: a check that only looks for what it expects
+  passes on a paper carrying both.
+- 🔴 **U-04 · A separately-priced item is excluded from the contract total.** Clothera's real paper:
+  machine ₹46,50,000 + 30 print heads ₹21,00,000 + 18% GST = **₹79,65,000**. Ours stored
+  **₹54,87,000** — the heads are not in it. **Understated by ₹24,78,000.** There is one deal-value
+  box, and the Shipment & invoice section states in its own words that its figures are "not added to
+  the deal value or its total". **There is no way to enter this deal correctly**, and 124 is a real
+  signed contract, not a hypothetical.
+  🔎 **ROOT CAUSE, traced 03-09-2026 at Ritesh Bhai's asking.** The price boxes are gated on the
+  wrong answer: `branching.ts:299` reads `headInvoiceQty: (d) => d.headSeparateInvoice === true`, and
+  the cell itself says *"Asked only when this item is billed on its own invoice."* So a price can be
+  typed **only** for an item leaving on a DIFFERENT invoice — and that money is then correctly kept
+  out of this contract's total. An item that is priced separately but billed on **this** contract, as
+  Clothera's 30 heads are, has no box to go in at all. The exclusion is right; the gate is wrong.
+  💡 **THE FIX IS ONE ANSWER WIDER, NOT A NEW TABLE.** Ask qty and rate whenever the item is part of
+  the deal, then let the Yes/No already on the row decide where the money lands:
+  **Separate invoice = No → the line prints in the priced block and ADDS to `total_inr`**;
+  **Yes → exactly today's behaviour**, printed and excluded. Touches `branching.ts` (five gates),
+  `fms_ocpi_write_oc` (the same five, plus the two totals), and the priced block in `ocPdf.ts`.
+  ⚠ The three column comments in `20261026120000` and the `ink_offer_subtotal` ones in
+  `20261024120000/130000` all state "MUST NEVER BE ADDED" as an unconditional rule; each has to be
+  re-worded to the conditional it is about to become, or the next reader will "fix" this back.
+  ⚠ **The ink/head OFFER rate is a different thing and stays excluded** — it is asked only when the
+  consumable is NOT part of the deal, settled with the client 31-Aug-2026.
+  🩹 **Until then, the stop-gap works and costs nothing:** type the combined figure in the deal-value
+  box (₹46,50,000 + ₹21,00,000 = ₹67,50,000) and the GST and total come out right at ₹79,65,000. The
+  contract then prints one lump sum instead of itemising the heads, which is the only thing lost.
+- 🔴 **U-05 · "Amount" is a unit rate, and nothing on screen says so.** Entering the real paper's own
+  figures — qty `30`, amount `21,00,000` — produced a sub-total of **₹6,30,00,000**.
+  `lineSubtotal = qty × amount` (`QuotationForm.tsx:258`) is right; the labels are not. The column
+  header reads **Amount**, the input's `aria-label` reads **"invoice amount, excluding tax"**, and the
+  section blurb says "Amounts exclude tax". The only place the word *rate* appears is the stacked
+  layout's `hint="quantity × rate"`, which the table layout never shows. **Rename the column to
+  "Rate each" and the aria-label with it.**
+  ✅ **FIXED 03-09-2026** — Ritesh Bhai: *"this is an easy fix that you can do at your own end only."*
+  Column heading `Amount` → **`Rate each`**; the input's aria-label → *"rate for one, excluding tax"*;
+  and the section blurb now leads with **"Rate is the price of one"**, before tax, and says the
+  sub-total multiplies it by the quantity. Words only — `lineSubtotal` and the SQL that derives the
+  stored figure are untouched, because the arithmetic was never wrong.
+
+#### 🟠 Questions the form asks that it should not
+
+- **U-06 · It asks how the ink ships on a deal with no ink.** The Shipment table promises "only the
+  parts this deal actually carries are listed". After answering **No** to ink, spare parts and
+  centering device, all three stayed — and then counted as missing answers that would print blank
+  lines. 🔴 **`branching.ts` gates `dryerShipMode` on the deal's own answer (OCPI-8, 01-Sep) and gives
+  `headShipMode`, `inkShipMode` and `sparesShipMode` NO RULE AT ALL**; `centeringShipMode` follows
+  `f.showsCentering`, the machine's capability, not `inclCentering`. The comment describing the dryer
+  fix describes this bug exactly — it was never applied to the other four rows. **Fix: the same
+  predicate shape, one line each, plus their twins in `fms_ocpi_write_oc`.**
+- **U-07 · "Pre-filled from the machine's template" — it is not.** *Manufacturer's model no.* stayed
+  empty after picking Homer K24, whose master holds `HM1800B-TK24`. The printing half is fixed
+  (OCPI-39 falls back to the master), so this is now only a false promise on the form — but it is the
+  promise that hid the ruled blank for months. **Either prefill it or change the hint.**
+- **U-08 · The same salesperson is offered twice.** Searching "Nakul" returns **Nakuleshwar Sharma**
+  (roster) and **Nakul Sir** (free-typed on an older deal, under *NOT A PORTAL USER*). Both pickable;
+  whichever is chosen, that person's deals split across two identities in every report. The
+  off-roster group is deliberate (OCPI, `salespersonOptions`) and correct in general — this is one
+  stale value to retire, not a design fault.
+
+#### 🟠 Findable-afterwards problems
+
+- **U-09 · A generated quotation does not appear in "My deals".** `MyDeals.tsx:29` filters
+  `d.status !== "draft"`, and generating leaves the status at `draft` until it is sent for approval.
+  All three new quotations were absent; they are only under **Drafts**.
+- **U-10 · The Drafts screen contradicts itself.** Its subtitle reads *"No quotation number is issued
+  until one is finalised"* while every row has one, and the **Reference** column shows the
+  **contract** number (`OTPL/OC/12/26-27`), not `QT-M0057` — so the quotation number appears nowhere
+  on its own row. ⚠ The other session has since corrected the delete-draft dialog's version of the
+  same stale claim; this subtitle is the remaining one.
+- **U-01a · Deleting a draft orphans its PDFs.** `fms_ocpi_delete_draft` is a bare delete: versions
+  cascade, **storage objects do not** (3 PDFs per deal — Summary, PI, OC), `fms_ocpi_activity` has no
+  FK to deals at all, and the OC serial is never returned. Found by the parallel PI session; measured
+  here at 9 stored PDFs across the three test deals.
+  🔴 **AND THE SERIAL IS THE PART RITESH BHAI CARES ABOUT — see U-14, his answer to it.**
+
+#### 🆕 Asked for on 03-09-2026 — not built
+
+- 🔴 **U-14 · A deal should be CANCELLED, never erased.** Ritesh Bhai, 03-09-2026, on being shown
+  that a deleted draft takes its contract number with it: *"whenever we delete this, ideally we want
+  to add this feature so that it should not be permanently deleted. There should just be an option
+  for the user so that the number can be cancelled. That's it."*
+  **Measured, so the leak is not theoretical:** `fms_ocpi_counters.oc:2627` stands at **14** while
+  the highest surviving `oc_no` is **12** — two drafts were generated and deleted, and 13 and 14
+  went with them. The quotation series shows the same shape: counter 59, highest `QT-M0057`.
+  **The shape of the fix** — replace the hard delete with a cancellation: the deal row stays, marked
+  cancelled, keeping `quotation_no` and `oc_no`, so the register can print `OTPL/OC/13/26-27 —
+  CANCELLED` and a gap in the series always has a reason beside it. This also disposes of U-01a for
+  free: nothing is deleted, so no storage object is orphaned and no activity row is left dangling.
+  ⚠ **Do NOT rewind the counter instead.** Returning the serial is only safe when it was the last
+  one issued; anything else re-issues a number in the middle of a live series, which is the one
+  failure `fms_ocpi_set_oc_series`'s forward-only rule exists to prevent.
+  ⚠ `status` already has a `cancelled` value in use (QT-M0034 sits there), so this is a route
+  into an existing state from the draft stage, not a new state — check `fms_ocpi_delete_draft`'s
+  callers and the Drafts screen's delete dialog together.
+
+#### 🟡 Smaller
+
+- **U-11 · The selling entity reads like a data error** — `ORANGE O TEC PRIVATE LIMITED
+  (01-04-25TO31-03-27)`, Tally's company name with its financial year attached. What PRINTS is
+  correct (`M/s ORANGE O TEC PVT LTD.`, from `own.legalName`) and the sublabel already says so, but
+  the label is what a salesperson reads. Cosmetic, and one `label:` away.
+- **U-12 · Trade-term wording differs from the papers** — ours `Ex Factory Surat`, the real 123 says
+  `Ex-Work Surat (Transportation cost bear by customer)`. **Same root cause as the PI session's
+  `composeTradeTerm` finding**; one decision from Ritesh Bhai closes it on both documents. See 0c.
+- **U-13 · `KoloRado Alpha 3 — 12 heads` has no billing name** — the only machine in the picker with
+  no "Bills as" line under it, and it is the row a **16**-head contract (124) must use. Head count is
+  a deal field so the row is correct; the NAME is what misleads.
+
+#### ✅ What worked, and is worth not breaking
+
+The Tally picker returned Amarasha with the right GSTIN. The "still needed" panel names exactly what
+is missing and jumps to it. Questions appear only when they apply — the dryer block appeared on
+choosing a Homer. Typing an unknown machine offers **"Ask for …"** (a master request) rather than
+silently creating one. And the *"the detailed sheet will print N blank lines"* warning, with the list,
+is better than most systems manage.
+
+**Both OCPI-39 fixes were re-proved on a contract produced through the real screen**, not headlessly:
+`GST: 24AASCA8419N1Z0` under the address, and `(Model No: HM1800B-TK24)` where a ruled blank used to be.
+
+### OCPI-41 · The re-audit — one finding withdrawn, two understated, and the fix he asked for was already built  `[x]` — 03-Sep-2026
+
+Ritesh Bhai, after reading the OCPI-40 list: *"I wanted to re-audit so that there are no loose ends
+and then accordingly give you the finalized action plan."*
+
+Three read-only sweeps — every read of the contract number, every screen keyed on draft status, and
+the 25 shipment fields against their SQL twins — plus a live-data pass. **The re-audit changed the
+answer.**
+
+#### 🔴 Corrections to OCPI-40 itself
+
+- **C-1 · U-06 IS WITHDRAWN. It is your decision, not a defect.** I reported that `branching.ts`
+  "gives head / ink / spares NO RULE AT ALL" and that the dryer fix "was never applied to the other
+  four rows". The file says the opposite, as RULE 8 (`branching.ts:254-297`): **OCPI-14, 01-Sep-2026,
+  deliberately severed** them from `inclHead`/`inclInk`/`inclSpares` — *"⚠ HEAD, INK AND SPARES HAVE
+  NO ENTRY BELOW, and that absence IS the change."* The live `fms_ocpi_write_oc` was read back with
+  `pg_get_functiondef`: **frontend and SQL agree on all 25 fields.** No drift exists.
+  🔴 **Second time in this audit I reported a deliberate decision as a defect** — U-01 was the first.
+  ⚠ **And my proposed fix would have destroyed live data:** gating centering on `inclCentering === true`
+  would hide-and-null the row on the **19 deals where `incl_centering IS NULL`**, 3 of which hold
+  centering answers. Head / ink / spares would have nulled 1 + 1 + 2 more.
+  ✅ **What was real is narrower and is now fixed** — see N-5.
+- **C-2 · U-13 — six machines, not one.** I found "the only machine with no billing name" by querying
+  `name ilike '%alpha%'` — a sweep keyed on the answer I expected, which is the trap OCPI-36 wrote
+  down. Unfiltered: **`Fab Pro 2I` · `Fab Pro 3I` · `JPK` · `KoloRado Alpha 3 — 12 heads` ·
+  `Mini Lario` · `MP5000`.** Only Alpha 3 had a sibling pattern to copy; the other five are a
+  Waiting-for.
+- **C-3 · U-08 — 18 deals to re-attribute, not 3, plus 9 the audit missed entirely.**
+  `Afrin Saiyed` **13** · `Nakul Sir` 3 · `KARAN SIR` 1 · `UMESH BHAI` 1 match no roster row at all.
+  Separately, `Yash Agarwal` (7) and `Khurshid Alam` (2) carried a correct roster name and **no
+  `salesperson_user_id`**, so they never matched the id route in My deals.
+
+#### 🔴 What the sweeps found that the audit missed
+
+- 🔴 **N-1 · "Cancel instead of delete" ALREADY EXISTED — two obsolete guards switched it off.**
+  `fms_ocpi_cancel` keeps the row, keeps both numbers, demands a written reason, announces it. It
+  refused a draft, above this comment: *"A draft is deleted, not cancelled: it burned no number and
+  nobody has seen it."* **Both halves were overturned by OCPI-36 on 02-09.** The same `!isDraft` test
+  hid Cancel and Hold in `LifecyclePanel`. So a quotation whose customer went quiet could only be left
+  in Drafts or DELETED — the deletion that loses the serial and orphans the PDFs (U-01a).
+- 🔴 **N-1b · AND THE GUARD CHANGE ALONE DID NOT DELIVER IT — found by TESTING, not reading.** The
+  first run against QT-M0057 failed on `fms_ocpi_complete_when_submitted`: the CHECK exempts only
+  `status = 'draft'`, so cancelling drops an incomplete row into the full 20-field completeness test.
+  **Demanding a deal be COMPLETED before it can be ABANDONED is backwards** — and it is exactly the
+  unfinished deal somebody needs to write off.
+- 🔴 **N-1c · AND THE BUTTON WOULD HAVE BEEN UNREACHABLE.** `LifecyclePanel` renders only on
+  `DealDetail`, and `DealsTable:60` routes every draft to `/edit` instead. The FIX-4 trap in reverse:
+  a control built and never routed to.
+- 🔴 **N-2 · The U-03 fix covered the papers and stopped.** `dealRef` (`lib/queues.ts:41`) was
+  `ocNo ?? quotationNo` — ungated, feeding **9 screens**, including the **Quotation approval queue**,
+  whose whole point is that the deal is not approved yet.
+- 🔴 **N-4 · The approval-request EMAIL called a quotation by its contract number.**
+  `fms_ocpi_email_payload` never consulted `oc_at`: subject *"Approval needed - quotation
+  OTPL/OC/13/26-27"*, a fact row labelled *Order confirmation* on an unapproved deal, and rejections
+  named the same way. 🟢 Latent — OCPI email is off — so it was fixed before go-live, not after.
+- **N-3 · Pre-approval downloads are NAMED after the contract**, and so are the storage keys
+  (`paperFileBase` → `ocpiWrites.ts:120`). ⚠ **Deliberately left** — the bucket uses `upsert: true`
+  with the name as identity, so gating the stem RENAMES a deal's papers at approval and orphans the
+  pre-approval objects. A storage decision, documented in place. **Held.**
+- **N-6 · Six user-visible strings still described the pre-OCPI-36 world**, two outright false:
+  `ApprovalPanel` told the approver *"no order-confirmation number is used up"*, and `SetupWarnings`
+  said approving *mints* it — in the file whose own comment 80 lines above explains that it does not.
+- **N-7 · A generated quotation was invisible almost everywhere** — All deals, My deals, the Dashboard
+  tiles, every queue and every SLA surface. ⚠ The queue half needs a new bucket (`steps.ts:106` marks
+  the quotation step `noQueue`), so it is **held and raised separately**.
+- **N-8 · `{{oc_no}}` bypasses `paperNo` into any template body.** 🟢 Swept the live database: no
+  section, intro, supply description or spec row uses it. Latent.
+- **N-9 · The model-number fix holds** — `ocPdf.ts:273` spreads `tokensFor` then overrides at `:303`,
+  verified — but `tokens.ts:156` has no fallback and `Machines.tsx:222` misdescribes the token.
+
+#### ✅ Built, and how each was proved
+
+| Stage | What | Proof |
+|---|---|---|
+| **A** | `dealRef` follows `oc_at`; `DealDetail` labels an unapproved serial *"Reserved for the contract"*; `fms_ocpi_email_payload` gated; 6 strings + 6 stale comments corrected | `fms_ocpi_email_payload` called on a live unapproved, a pre-OCPI-36 and an approved deal: `Approval needed - quotation QT-M0057` / `Reserved for the contract` / `Order confirmation` |
+| **B** | Cancel + Hold turn on `quotation_no`, not `status`; the completeness CHECK exempts `cancelled`; `LifecyclePanel` mounted on the editor so a draft can reach it | Live RPC test in a **rolled-back** transaction: a generated draft cancels and **keeps both numbers**; a never-generated one is still refused; hold likewise. QT-M0057 confirmed unchanged afterwards |
+| **C** | Alpha 3 billing name; 9 `salesperson_user_id` backfilled; selling-entity label; Drafts / My deals / All deals copy and filters; the model-number hint | Re-queried: Alpha 3 filled; **9 linked, the 18 ambiguous untouched** |
+| **D** | The blank-lines warning fires only when the row will actually print; `shipmentLines`' false guarantee corrected | `npm run build` green; `verifyPaperNo` 22/22 and `verifyHeaderAndModel` 18/18 |
+
+⚠ **Three migrations transform the LIVE function bodies** via `pg_get_functiondef` with anchor
+assertions, then re-read and prove the result — the files on disk diverge from what runs.
+⚠ **The completeness CHECK was WIDENED, never narrowed**, so no existing row could be invalidated.
+
+#### Held — not mine to decide
+
+The five machines with no billing name · the 18 salesperson re-attributions · **N-3** (the file-name /
+storage decision) · **N-7's queue bucket** · and the PI still carrying `OTPL/OC/…` pre-approval, which
+all 27 real folders do and which is worth re-confirming now that the contract no longer does.
+
+---
+
+### OCPI-45 · A dollar deal is never taxed, and the invoice names what ships  `[x]` — 04-Sep-2026
+
+Ritesh Bhai on the OCPI-44 findings: *"a dollar deal should never be taxed. If it is getting taxed in
+our scenario, that is wrong. The dollar deal should just be the amount multiplied by the conversion
+rate. Can you please fix this?"* and, on the second, *"if you think you can fix this, then fix this if
+that's a small fix."* The third (the EPCG wording) he moved to the discussion list — **not built**.
+
+#### ✅ N-15 · A DOLLAR DEAL CARRIES NO GST
+
+**One line, and it is a widening.** `fms_ocpi_write_oc` derived the rate as
+`case when v_transport = 'high_seas' then null else …`; it now reads
+`case when v_transport = 'high_seas' or v_currency = 'USD' then null else …`. A High Seas deal is
+always USD, so the new disjunct is a superset and **nothing about High Seas changes**. What changes is
+the "Others" deal quoted in dollars.
+
+Its twin is **RULE 5** in `branching.ts`, now `d.transportTerms !== "high_seas" && !isUsdDeal(d)` — so
+the GST question is hidden, `clearHidden` blanks it, and the payload never carries a rate. The form's
+*"GST at 18% is added on the papers"* caption disappears with it, since it was already gated on
+`show("gstRate")`.
+
+**PROVED on the paper, regenerated through the live screen:**
+
+| | Real folder 121 | Ours, after |
+|---|---|---|
+| Machine Value | `USD 11,50,000.00` | `USD 11,50,000.00` |
+| Rate | `@96 (Fluctuate Rate)` | `@ 96 (Fluctuated Rate)` |
+| Total | `INR 11,04,00,000.00` | **`INR 11,04,00,000.00`** |
+
+The rupee deal is untouched: `QT-M0067` still prints `+ 18% GST Value INR 34,20,000.00` and
+`Total Value INR 2,24,20,000.00`, matching folder 119 to the rupee.
+
+⚠ **NO DATA WAS MIGRATED**, and one live deal is affected. **`QT-M0040` (AADESH DIGITAL PRINTS,
+$1,00,000 @95, `awaiting_quotation_approval`)** still holds `gst_rate 18`, `gst_amount_inr 17,10,000`
+and `total_inr 1,12,10,000`. It sheds them the moment anyone saves it — **it needs one re-save before
+approval**, and that is a commercial figure on a live quotation, so it was reported rather than
+rewritten. Frozen revisions keep whatever they printed either way.
+
+#### ✅ N-16 · THE INVOICE'S PRICED LINE NAMES THE DRYER AND THE CENTRING DEVICE
+
+`billing_name` is now rendered through **the same token and condition engine** the contract's
+`supply_description` already uses, so it may carry `[[if dryer]]`, `[[if centering]]` and
+`{{head_count}}`. 🟢 **A billing name with no markers renders byte-identically** — 18 of the 23 carry
+none and their invoices do not change by one character.
+
+**Five machines gained the condition**, and every fragment is **lifted verbatim from that machine's own
+`supply_description`** — already-approved contract text that already prints on its order confirmation:
+
+| Machine | Appended |
+|---|---|
+| Fab Pro 1I | `[[if dryer]] & WITH DRYER[[/if]]` |
+| Homer K24 | `[[if dryer]] AND CHINES DRYER[[/if]]` |
+| Homer K32 | `[[if dryer]] WITH DRYER[[/if]][[if centering]] WITH CENTRING DEVICE[[/if]]` |
+| K64 | `[[if centering]] AND CENTERING SYSTEM[[/if]][[if dryer]] & DRYER[[/if]]` |
+| Rocket | `[[if dryer]] WITH DRYER[[/if]]` |
+
+🔴 **DO NOT TIDY THOSE INTO ONE HOUSE STYLE.** "AND CHINES DRYER" on K24, "& DRYER" on K64,
+"WITH DRYER" on K32 — they are transcriptions of five different decks, not five spellings of one
+phrase.
+
+**PROVED on the paper:**
+
+> `LARGE FORMAT INKJET PRINTER WITH 32 HEADS WITH STD. ACCESSORIES WITH DRYER WITH CENTRING DEVICE`
+> — `QT-M0067`, against folder 119's *"…WITH 32 PRINTHEAD WITH DRYER WITH CENTRING DEVICE"*
+>
+> `STANDARD DIGITAL DIRECT TO FABRIC TEXTILE PRINTING MACHINE WITH STD. ACC WITH 224 PRINTHEADS WITH DRYER`
+> — `QT-M0066`, against folder 121's *"…KYOCERA EX600 RC PRINTHEAD WITH DRYER"*
+
+⚠ **`PiDocInput.facts` IS REQUIRED, NOT OPTIONAL, AND THAT IS DELIBERATE.** `NO_DEAL_FACTS` is the
+*open* default — every flag true — so a caller that forgot it would print "WITH DRYER" on a machine
+that has none, silently, on an invoice. Making it required meant `tsc` named all four call sites
+(`ApprovalPanel` ×2, `ApprovedOcPreview`, `useQuotationDraft`) instead of one of them being missed.
+Each already computed `factsForDeal(...)` for the contract a few lines away.
+
+🔴 **DEPLOY ORDER: THE FRONTEND MUST GO FIRST OR TOGETHER.** The markers are inert until `piPdf.ts`
+renders them; a database-ahead deploy prints the literal `[[if dryer]]` on a customer's invoice. The
+migration says so in its own header.
+
+#### 🔴 AND THE BILLING-NAME HALF WAS ROLLED BACK THE SAME HOUR
+
+**I applied a migration whose own header said "the frontend must go first or together", and then did
+not deploy.** The markers went into a column that the ORDER CONFIRMATION prints through a line that
+does not render:
+
+```
+ocPdf.ts   if (machine.billingName) header.push(["Product:", machine.billingName]);
+```
+
+Read back off a freshly generated contract with pdf.js:
+
+> `Product: STANDARD DIGITAL DIRECT TO FABRIC TEXTILE PRINTING MACHINE WITH STD. ACC WITH 224 PRINTHEADS[[if`
+
+🟢 **No customer document was touched** — every paper generated in the 35-minute window was one of the
+three test deals (`QT-M0065`–`67`), checked in SQL by `generated_at`.
+
+**Rolled back** by `fms_ocpi_the_billing_markers_can_come_back_later` — all five billing names are plain
+text again and the assertion proves no marker survives anywhere.
+
+**Two code fixes went in so it cannot recur:**
+
+- `ocPdf.ts`'s **Product header now renders** the billing name through the same tokens and conditions.
+- `resolvedOcDocument` freezes the **rendered** name, not the raw one — otherwise the frozen record
+  would claim `[[if dryer]]` was the document's own wording.
+
+🔴 **TO RE-APPLY, AND ONLY WITH THE DEPLOY.** The five fragments are recorded in
+`fms_ocpi_the_billing_name_can_say_what_ships`; re-run it **in the same release** that ships piPdf.ts
+and the ocPdf header. Until then the invoices keep omitting the dryer and the centring device, which
+is the state every issued paper has always been in.
+
+⚠ **THE LESSON, AND IT IS NOT "RENDER HARDER".** Two places print one column. Teaching one of them to
+render is not adding a capability to `billing_name`; it is leaving a trap in the other. Before putting
+a marker into any master string, grep EVERY read of that column and prove each one renders.
+
+#### Held — N-17, his decision
+
+The EPCG / High Seas Agreement tail (`(Under EPCG License)`, `(UNDER HIGH SEAS SALES AGREEMENT)`) is
+**not built**. Ritesh Bhai, 04-09: *"that third point also, I am not able to understand. You can just
+add this to the points to discuss with Ritesh bhai."* It is the whole of standing item **0c** and
+question 8 on the artifact.
+
+#### Files
+
+`lib/branching.ts` (RULE 5) · `lib/piPdf.ts` (`PiDocInput.facts`, `itemRows` renders the billing name) ·
+`components/ApprovalPanel.tsx` · `components/ApprovedOcPreview.tsx` · `pages/deals/useQuotationDraft.ts`.
+Migrations `fms_ocpi_a_dollar_deal_is_never_taxed` (live-body transform, anchor-asserted) and
+`fms_ocpi_the_billing_name_can_say_what_ships` (guarded, idempotent, 5 rows). `npm run build` passes.
+
+---
+
+### OCPI-44 · The three deal shapes the first eight never covered  `[ ]` — 04-Sep-2026
+
+Ritesh Bhai: *"let's try on these deals one by one. Do the high seas one that we have in the current
+financial year, and do the [dollar] deals … and let's see what we come up with."*
+
+The eight deals entered on 03-09 and 04-09 were **all the same shape** — local delivery, rupees, one
+printer, stopped at draft. Every folder in both years was re-read to find what that missed. Three
+shapes had never been entered once, and all three were driven through the live form:
+
+| | Folder | Shape | Ours |
+|---|---|---|---|
+| High Seas | **106** Noor Dyeing, Position Printer | CIF Nhava Sheva under High Seas Sales Agreement + EPCG · USD 1,70,000 @95 | `QT-M0065` |
+| Dollar, not High Seas | **121** Modi Dyeing, Rocket | CIF Nhava Sheva Port under EPCG · USD 11,50,000 @96 · ₹11.04 cr | `QT-M0066` |
+| Dryer + centring device | **119** Modi Dyeing, Homer K32 | Ex-Work Surat · ₹1,90,00,000 + 18% GST | `QT-M0067` |
+
+⚠ OCPI email re-verified OFF first. Three more OC serials consumed (20–22), still below the 128 jump.
+
+#### 🔴 N-14 · MY OWN OCPI-43 CHANGE WAS WRONG ON A CIF DEAL — found by folder 121, and fixed
+
+Folder 121 is an **Others** deal delivered **CIF Nhava Sheva Port**. The transport-bearer parenthetical
+added yesterday appended itself to it:
+
+> `CIF NHAVA SHEVA PORT (Transportation bear by Customer)` — ours, before the fix
+> `CIF NHAVA SHEVA PORT (Under EPCG License)` — the real contract
+
+🔴 **EVERY ONE of the counted parentheticals sits after `Ex-Work Surat`, and not one after a CIF or FOB
+term** — because CIF already states who pays freight and insurance to the port, so naming a bearer
+beside it *contradicts* the incoterm rather than completing it. The question itself says so: it is
+titled **"LOCAL delivery cost borne by"**.
+
+**Fixed:** the bearer is appended only to a term beginning `Ex-Work`. The test is on the COMPOSED TERM,
+not on `deliveryVia`, so it also covers a legacy deal hydrated with the retired literal `Ex-Work Surat`
+without a second condition to keep in step. Re-proved on the paper: 121 now reads `CIF NHAVA SHEVA
+PORT`, 119 reads `Ex-Work Surat (Transportation bear by Customer)`.
+
+⚠ **This is exactly why a shape has to be ENTERED, not reasoned about.** Yesterday's change was
+verified on two local deals and a unit check, and both were the shape it happened to be right for.
+
+#### 🔴 N-15 · A DOLLAR DEAL IS TAXED 18%, AND THE PERFORMA INVOICE THEN DOES NOT ADD UP
+
+Folder 121, real paper: `Machine Value USD 11,50,000.00 · @96 (Fluctuate Rate) · Total Value INR
+11,04,00,000.00`. **11,50,000 × 96 = 11,04,00,000 exactly — no tax line, and none needed.**
+
+Ours prints the same first two lines and then **`Total Value INR 13,02,72,000.00`**, a difference of
+**₹1,98,72,000**, with **no line on the page accounting for it**.
+
+Two independent decisions collide:
+
+1. **GST is decided by deal type alone** — `high_seas` ⇒ null, `local` ⇒ 18%. An "Others" deal quoted
+   in dollars is `local`, so it is taxed. Written before any dollar "Others" deal existed; there is
+   exactly **one** on record.
+2. **The PI's dollar layout carries no tax line at all**, deliberately — `piPdf.ts` says so and names
+   folder 120 as the specimen.
+
+Each is defensible alone. Together they print a page whose own figures do not reconcile.
+
+🟢 **THE EVIDENCE IS SIX PAPERS, ALL EXACT, NONE TAXED:** 105 (1,80,000 × 96 = 1,72,80,000) · 106
+(1,70,000 × 95 = 1,61,50,000) · 107 · 109 (6,250 × 96 = 6,00,000) · 120 (94,063 × 96 = 90,30,048) ·
+121 (11,50,000 × 96 = 11,04,00,000).
+
+⚠ **NOT CHANGED.** Whether a dollar import bears GST is a tax classification, not a layout choice —
+the same reasoning that left the HSN code alone. **Needed from accounts / Ritesh Bhai:** does a deal
+quoted in dollars ever carry GST on the Performa Invoice? If no, the rule is currency-driven, not
+deal-type-driven, and it is one line. 🟢 The **summary sheet** shows the full breakdown correctly
+(`₹11,04,00,000 · GST @ 18% ₹1,98,72,000 · Total ₹13,02,72,000`), so the two papers already disagree.
+
+#### 🔴 N-16 · THE PERFORMA INVOICE'S PRICED LINE OMITS THE DRYER AND THE CENTRING DEVICE
+
+Folder 119 is sold **with both**, and its priced line says so:
+
+> `LARGE FORMAT INKJET PRINTER WITH STANDARD ACCESSORIES WITH 32 PRINTHEAD WITH DRYER WITH CENTRING
+> DEVICE MODEL (HM1800B- TK32-B1) (HSN CODE 84433910)`
+
+Ours: `LARGE FORMAT INKJET PRINTER WITH 32 HEADS WITH STD. ACCESSORIES` — **the dryer and the centring
+device are absent from the line the customer signs under**, though the deal records both
+(`incl_centering = true`, dryer answered).
+
+🟢 **THE CONTRACT GETS IT RIGHT** — read back with pdf.js, `QT-M0067`'s OC supply line reads
+`STANDARD ACCESSORIES WITH 32 PRINTHEADS WITH DRYER WITH CENTRING DEVICE.` **So this is PI-only**, and
+the cause is that the PI draws its description from `fms_ocpi_machines.billing_name`, a fixed master
+string that cannot vary by deal.
+
+⚠ **SAME ROOT CAUSE AS N-10, FROM THE OTHER SIDE.** N-10 prints heads that are NOT sold; this omits a
+dryer and a centring device that ARE. One static line, two opposite errors.
+
+#### 🔴 N-17 · THE EPCG / HIGH SEAS AGREEMENT TAIL CANNOT BE EXPRESSED — now proven on two papers
+
+| Folder | Real paper | Ours |
+|---|---|---|
+| 106 | `CIF, NHAVA SHEVA (UNDER HIGH SEAS SALES AGREEMENT) (UNDER EPCG License)` | `CIF NHAVA SHEVA, from Indian port to customer premises` |
+| 121 | `CIF NHAVA SHEVA PORT (Under EPCG License)` | `CIF NHAVA SHEVA PORT` |
+
+This is the remainder of standing item **0c** — no longer an inference from folder 106's text, but two
+papers generated side by side. Also on 120 (`CIF Hazira Port (Under EPCG License)`). The recommendation
+in 0c stands: a typed field defaulted to the composed value.
+
+#### 🔴 N-18 · OUR INSURANCE CLAUSE CONTRADICTS ALL THREE CURRENT-YEAR PAPERS
+
+| | Wording |
+|---|---|
+| 106, 119 (and 121 omits it) | `Insurance : Insurance will Borne by Customer.` |
+| Ours | `Insurance coverage up to the point of loading will be the responsibility of the company, while any coverage required during unloading will be the responsibility of the customer.` |
+
+We take on a liability the real papers place wholly on the customer. ⚠ This is standing question 4,
+raised from the 2025-26 K32 contract (folder 78, *"at our care till Port"*) — **now confirmed on
+current-year papers and on two more machines**, so it is not a one-contract quirk. Three different
+wordings across the estate; one of them is what Orange means.
+
+#### 🟠 N-19 · "Shipment Terms" is replaced by a date — a third confirmation
+
+106 `Shipment Terms : 30 to 45 Days from Order confirmation.` · 119 `Shipment Terms : 30 Days after
+Order Confirmation.` · 121 `Delivery Terms : 30 Days After Order confirmation`. All three print DAYS;
+ours prints `Delivery : Tentative delivery 24 Sept 2026`. Standing question 6.
+
+#### 🟠 N-20 · The Special remarks field invites double numbering
+
+Its placeholder demonstrates numbered lines — *"1. Installation within 15 days of dispatch"* — and the
+PI renderer then prefixes its own. Typing the hint verbatim produced
+
+> `1) 1. 500 Kgs Ink Included in Above value`
+
+on `QT-M0065`. The summary sheet does not number, so the same text is right there and wrong on the PI.
+Either the placeholder drops its numbers or the renderer stops adding them.
+
+#### 🟡 N-21 · Two questions on one form both labelled "Agreed with the customer"
+
+One under **Special remarks · section D** (the dollar-exchange clause) and one under **Document
+details** (the insurance clause). ⚠ **CHECKED BEFORE REPORTING — they are two different fields**
+(`dollarClauseAgreed`, `insuranceClauseAgreed`), not a block rendered twice. But the labels are
+identical, the sections are far apart, and the missing-answers panel would name both the same way.
+The dollar one appears **only on a USD deal**, which is why eight rupee deals never showed it.
+
+#### 🟡 N-22 · The customer on folder 106 is not in the Tally master
+
+Searching `NOOR` returns only `NOOR HAND DYEING`, with no GST number. The real contract is for
+`NOOR DYEING`, GST `24DFPPA9070F1ZF`. Entered as a new lead, which is the normal path — noted because
+it is the second Tally-master gap this week (see N-12).
+
+#### 🟡 N-23 · Rocket's print-head list splits a name the real paper writes as one
+
+The master offers **`EX600`** and **`RC`** as two choices; folder 121 writes
+`KYOCERA EX600 RC PRINTHEAD`, and folder 120's spec row reads `KYOCERA RC MODEL EX600RC`. Either these
+are two heads and the paper names one of them loosely, or it is a single model split in two. `EX600`
+was picked and the contract prints correctly either way — but the master should say which.
+
+#### ✅ What these three PROVED
+
+- **Money matched exactly on 106 and 119** — `USD 1,70,000 @95 → ₹1,61,50,000` and
+  `₹1,90,00,000 + 18% GST ₹34,20,000 = ₹2,24,20,000`, to the rupee. 121 differs only by N-15's GST.
+- **High Seas renders end to end** — no GST row anywhere, deal type, dollar value, rate and the
+  customer's delivery leg all on both papers. Never once exercised before today.
+- **The dollar-exchange clause appears and is answerable** — it had never been seen on screen.
+- All three contracts: headed `ORDER QUOTATION QT-M00xx`, **no contract number**, **zero ruled blanks**.
+- `verifyPaperNo.mjs` 22/22 after the N-14 fix.
+
+#### Still never tested
+
+**The approval half.** All eleven deals stop at a generated draft. Nothing has gone approval →
+contract issued → customer signature → management signature. ⚠ It cannot be done from one account —
+the module refuses self-approval in both the panel and the SQL. **Needs a second login.**
+
+---
+
+### OCPI-43 · Who bears the transport reaches the paper, and the Tally picker names the GST  `[x]` — 04-Sep-2026
+
+Ritesh Bhai, on the OCPI-42 findings: *"who pays the transport? Ask store printed nowhere, so I think
+you can go ahead and fix this point. You can just print this at the right place in the order
+confirmation based on the order confirmation output files that we already have"* and *"for the two
+identical customers in Tally, one without GST, what you can do is, when we search for any customer,
+you, along with the customer name, can also show the GST number there."*
+
+**N-10 (printheads) was NOT touched** — on his instruction it stays in the artifact and moves into the
+list of points to settle with him, because the replacement sentence is contract text on ten templates.
+
+#### ✅ N-11 · The local transport bearer now composes into the printed delivery term
+
+`composeTradeTerm` (`lib/fieldSpec.ts`) gains `localCostBy` and a `sellerName`, and appends the
+bearer to the term on a **local** deal — exactly as the customer's delivery leg is already appended on
+a High Seas one, and for the same reason: **a new token prints nowhere until all 21 decks are
+rewritten**. Appending reaches the contract's SALE CONDITIONS clause, the PI's `Trade Terms :` line
+and the summary sheet with no template change.
+
+🔴 **THE WORDING IS THE PAPERS' OWN, COUNTED, NOT CHOSEN.** Every parenthetical in the parsed real
+contracts:
+
+| wording | occurrences |
+|---|---|
+| `(Transportation bear by customer)` | 4 |
+| `(Transportation bear by Customer)` | 3 |
+| `( Transportation Bear by Customer)` | 2 |
+| `( Transportation Bear by Orange O Tec Pvt / Ltd)` | 1 |
+| `(Transportation cost bear by customer)` | 1 |
+
+Hand-typed, so it drifts in case and spacing. `Transportation bear by` is the form the majority carry
+and is what was settled on. ⚠ **"bear by" is not a typo to correct** — it is how every one of these
+contracts words it.
+
+⚠ **THE COMPANY IS NAMED, NOT CALLED "COMPANY"** — the real paper writes
+`( Transportation Bear by Orange O Tec Pvt / Ltd)`. The name comes from the selling entity's
+**profile legal name**, never Tally's company name, which carries the financial year in the string
+(`ORANGE O TEC PRIVATE LIMITED (01-04-25TO31-03-27)`) — that is the U-11 defect, and this would have
+put it inside a contract clause rather than on a dropdown. The generic word survives only as a floor
+so the term can never read `bear by )`.
+
+🔴 **TWO CONTROLS HAD TO START RECOMPOSING, NOT ONE.** `patchDelivery` was documented as excluding the
+local bearer because it "feeds nothing the term prints" — true, and that WAS the defect. **The selling
+entity had to join it too**: a Company-borne term names the entity, so changing the entity after
+answering the bearer would leave the wrong party's name on a contract, invisible until the PDF.
+Seven controls now recompose.
+
+⚠ **THE SUMMARY SHEET STOPPED SAYING IT TWICE.** That sheet has always printed its own
+`cost by Customer` segment; beside the new parenthetical it would read *"Local Delivery · Ex Factory
+Surat (Transportation bear by Customer) · cost by Customer"*. `quotationPdf.ts` now suppresses its own
+segment when the stored term already carries the mark — **tested on the STRING, not on a date**, so
+every deal raised before today keeps its segment and a frozen revision re-rendered years from now
+behaves the same way.
+
+⚠ **NO MIGRATION, AND NONE POSSIBLE.** `trade_term` is composed in TypeScript only — the RPCs write
+`p->>'trade_term'` straight through, and `draftFromDeal` never recomposes. So the 17 deals holding
+`Ex-Work Surat` and the one holding `CIF Jebel Ali` are untouched unless somebody edits them.
+
+**PROVED END TO END, on papers produced through the real screen and read back with pdf.js:**
+
+| Deal | Entered | Contract now prints |
+|---|---|---|
+| `QT-M0063` · 122 Vijay Laxmi | borne by **Customer** | `Delivery Terms: Ex Factory Surat (Transportation bear by Customer)` |
+| `QT-M0064` · 101 Yashasvi | borne by **Company** | `Delivery Terms: Ex Factory Surat (Transportation bear by M/s ORANGE O TEC PVT LTD.)` |
+| `QT-M0062` · 108 MK Fashion | untouched since OCPI-42 | summary keeps `· cost by Customer`, term unchanged — the legacy path |
+
+Both headings still read `ORDER QUOTATION QT-M00xx`, the contract number is on neither, zero ruled
+blanks. `verifyPaperNo.mjs` re-run: **all 22 checks pass.**
+
+⚠ Only the FIRST half of the term is still open: we print `Ex Factory Surat`, folders 101, 122 and 127
+all write `Ex-Work Surat`. That is the remainder of item **0c**, narrowed.
+
+#### ✅ N-12 · The customer picker names the GST, and says when there is none
+
+`CustomerPicker.tsx` passed the bare GSTIN as a sublabel, so the two `AKLAVYA INDUSTRIES PVT.LTD.`
+rows differed by *a number under one of them and blank space under the other* — which reads as one row
+that happens to be taller, not as a difference. Now:
+
+```
+AKLAVYA INDUSTRIES PVT.LTD.  |  no GST number in Tally
+AKLAVYA INDUSTRIES PVT.LTD.  |  GST 24AAGCS6274F1ZA
+```
+
+⚠ **AND IT SURVIVES THE PICK.** `Combobox` renders a sublabel in the open list and **nowhere else** —
+the trigger shows the label alone — so the fact that told the two apart vanished the moment one was
+chosen. The GSTIN is repeated under the field, and a ledger with none says so in amber.
+
+Verified in the live UI on `QT-M0060`, both rows read back out of the open menu.
+
+#### ✅ And the term itself now reads `Ex-Work Surat` — his reversal, same day
+
+Ritesh Bhai, later on 04-09: *"you can fix the trade term wording. Instead of X factory surat, you can
+do X work surat."* 🔴 **This REVERSES his own decision of 02-09-2026**, which set `Ex Factory Surat` in
+title case — recorded as such in `composeTradeTerm`'s header, and now recorded as a reversal rather
+than quietly overwritten.
+
+`composeTradeTerm` composes `Ex-Work <city>`; **the BUTTON still reads `EX Factory`**, because that
+exact string is what `high_seas_via`'s CHECK allows and what the mirror writes. The answer and the
+printed term are deliberately different strings, and the strip's "Prints on the contract as …" line is
+what keeps that from reading as a bug.
+
+🟢 **IT NOW AGREES WITH THE 17 LEGACY DEALS INSTEAD OF DIVERGING FROM THEM.** Those hold a free-text
+`Ex-Work Surat` from before OCPI-35; a new deal composes the same words. **No migration, and none
+wanted** — nothing stored was touched.
+
+Migration `fms_ocpi_the_printed_term_reads_ex_work` is **comments only**: `delivery_factory_city`'s
+comment stated the old format, and `trade_term` had none at all and now records the whole composition
+rule including OCPI-43's bearer.
+
+Read back off the regenerated PDFs: `Delivery Terms: Ex-Work Surat (Transportation bear by Customer)`
+and `… (Transportation bear by M/s ORANGE O TEC PVT LTD.)`. `verifyPaperNo.mjs`: 22 of 22 pass.
+
+#### Files
+
+`lib/fieldSpec.ts` (`composeTradeTerm`, new `TRANSPORT_BEARER_MARK`, `Ex-Work`) · `lib/tokens.ts` ·
+`lib/exportRegister.ts` · `components/QuotationForm.tsx`
+(`patchDelivery`, new `sellerNameFor`, the local-bearer and selling-entity controls) ·
+`lib/quotationPdf.ts` (summary de-duplication) · `components/CustomerPicker.tsx`.
+`npm run build` passes. **No SQL, no migration, no template change.**
+
+---
+
+### OCPI-42 · Five more real contracts typed in — two defects the first three could not show  `[ ]` — 04-Sep-2026
+
+Ritesh Bhai: *"I believe you just tried the front-end testing with just two of the documents, so I want
+you to try five more from the 26-27 folder … automatically opening up a playwright."*
+
+**Five more real 2026-27 contracts driven through the live form**, click by click, covering four
+machines the first run did not: **117 Aklavya** (Kolorado Alpha 15) · **111 VPS Textile** (Alpha II
+1.8) · **108 MK Fashion** (Alpha II 1.9, sold WITHOUT printheads) · **122 Vijay Laxmi** (P8S) ·
+**101 Yashasvi** (P8S, and the one real paper carrying NO GST number). Produced `QT-M0060`–`QT-M0064`.
+
+⚠ **OCPI email re-verified OFF before anything was typed.** ⚠ Five more OC serials consumed (15–19);
+the counter now stands at **19**, still below the 128 jump, so they are discarded by it.
+
+#### ✅ Every total matched the real paper to the rupee
+
+| Contract | Machine | Real paper | Ours |
+|---|---|---|---|
+| 117 Aklavya | Alpha 15 | ₹27,73,000 | **₹27,73,000** |
+| 111 VPS | Alpha II 1.8 | ₹15,34,000 | **₹15,34,000** |
+| 108 MK Fashion | Alpha II 1.9 | ₹7,90,600 | **₹7,90,600** |
+| 122 Vijay Laxmi | P8S | ₹35,40,000 | **₹35,40,000** |
+| 101 Yashasvi | P8S | ₹44,26,180 | **₹44,26,180** |
+
+#### 🔴 N-10 · A machine sold WITHOUT printheads still prints "With 8 printheads"
+
+**108 MK Fashion is a real signed contract for a machine supplied without heads** — its own
+composition reads `WITH STANDARD ACCESSORIES (Without printheads)`. Entered exactly that way:
+*Deal includes head → No*. The row stored it correctly (`incl_head = false`).
+
+**The contract prints the opposite**, read back off the stored PDF with pdf.js:
+
+> `WITH STANDARD ACCESSORIES (With 8 printheads)`
+
+🔴 **ROOT CAUSE — THE PRINT HEAD IS THE ONE INCLUSION A TEMPLATE CANNOT BRANCH ON.** Ten of the
+twenty-one templates assert it unconditionally as `WITH {{head_count}} PRINTHEADS`, while the dryer
+and the centring device beside it ARE guarded — `[[if dryer]]`, `[[if centering]]`. There is no
+`[[if head]]` to write: `conditions.ts` exposes only `dryer`, `centering` and `usd`, so the guard does
+not exist even for an author who wanted it.
+
+**Affected:** Fab Pro 1I / 2I / 3I · Homer K32 · K64 · all three KoloRado Alpha IIs · P8S · Rocket.
+
+**The fix is two halves, and only the first is mine.** Adding a `head` condition
+(`deal.inclHead === true`) to `conditions.ts` and its SQL twin is additive and safe. **Re-wording ten
+templates is contract text and is NOT ours to invent** — the real paper's own phrasing
+(`(Without printheads)`) is the obvious candidate, but it goes to Bushra.
+
+⚠ `head_count` is the machine's CAPACITY, not what is being sold; `heads_included` is what is sold and
+was correctly `null` here. The template reads the wrong one of the two.
+
+#### 🔴 N-11 · The transport-cost answer is captured and printed nowhere — now measured on two deals that differ
+
+Deliberately entered as opposites, from the real papers:
+
+| | Entered | Real paper says | Ours prints |
+|---|---|---|---|
+| 122 Vijay Laxmi | borne by **Customer** | `Ex-Work Surat ( Transportation Bear by Customer)` | `Ex Factory Surat` |
+| 101 Yashasvi | borne by **Company** | `Ex-Work Surat ( Transportation Bear by Orange O Tec Pvt Ltd)` | `Ex Factory Surat` |
+
+**Two contracts with opposite commercial terms print the identical line.** The answer is asked, stored
+(`local_cost_by` = `customer` / `company`) and reaches no document. This is the standing item **0c**
+question 7, no longer an inference — it is two deals.
+
+#### 🟠 N-12 · Two identical customers in the Tally picker, one with no GST
+
+Searching `AKLAVYA` returns **two** rows both reading `AKLAVYA INDUSTRIES PVT.LTD.` — one carrying
+`24AAGCS6274F1ZA`, one carrying nothing. Nothing on screen distinguishes them beyond the GST line.
+Pick the wrong one and the contract goes out with no GST number, which the OCPI-39 fix made visible on
+the paper. Not our data — it is the Tally master — but the picker could show only the GST-bearing row,
+or mark the other.
+
+#### 🟡 N-13 · The frozen record says the paper carried no number, when it carried one
+
+`oc_document_payload.paper_no` and `trade_term` are **null on all five**, while the PDFs correctly
+print `QT-M0060` and `Ex Factory Surat`.
+
+**Because `resolvedOcDocument` is called one line too early.** `useQuotationDraft.ts:286` freezes from
+`saved`; `generateWrite` then mints the numbers and composes the trade term in SQL; only afterwards is
+the row re-read into `rendered`, which is what the PDFs are drawn from — and the re-read's own comment
+says it "carries the quotation number the RPC just minted, which the form state does not."
+
+So **every server-derived value is missing from the frozen record**: both numbers, the trade term, the
+GST and totals. The document is right; the record of it is not — and `revisionDiff` reads that record.
+
+#### ✅ What this run PROVED, on papers produced through the real screen
+
+- **U-03** — all four contracts read back with pdf.js are headed `ORDER QUOTATION QT-M00xx`, carry the
+  quotation number, and **the contract number appears nowhere on any of them**. Zero ruled blanks.
+- **Stage B** — *Put on hold* and *Cancel the deal* now appear on a generated draft, with the new
+  wording. Unreachable before 03-09.
+- **Stage D** — answering No to ink and spares no longer lists them as blank lines that will print.
+- **U-05 / U-07 / U-11** — the column reads *Rate each*, the model-number hint tells the truth, and the
+  selling entity reads `M/s ORANGE O TEC PVT LTD.` with Tally's name beneath it.
+- ⚠ The stored file name is still `OTPL-OC-17-26-27 - M K Fashions - OC.pdf` on a draft — **N-3**,
+  deliberately left, and now seen on five more files.
+
+**Harness:** `node scripts/oc-audit/readIssuedPapers.mjs QT-M0060 …` downloads each stored paper and
+reads it with pdf.js — heading, which number is on the page, the supply line, the trade term and any
+ruled blank. Use it after every UI run; the PDF is the ground truth, not the payload and not the row.
+
+---
+
+#### Housekeeping — awaiting a word from Ritesh Bhai
+
+- **The three test deals still exist** — `QT-M0055` (Amarasha), `QT-M0056` (Clothera), `QT-M0057`
+  (Prabal), holding `OTPL/OC/10`, `/11`, `/12` of 26-27 and 9 stored PDFs. Not deleted: deleting does
+  not return the serials, so the counter reset (U-02) is the part that matters either way.
+- 🔴 **A live access/refresh token was found being served at the web root** —
+  `frontend/public/__tmp_session.json`, left from earlier browser testing, and Vite serves `public/`
+  publicly. **Deleted 03-Sep-2026.** If that trick is used again, delete the file in the same step
+  that reads it.
+
 
 ---
 
@@ -2819,8 +7036,37 @@ live initiatives, or progress and outcomes against the aim.
 
 *(cross-ref: **PF-13** — Recruitment's HOD / probation / `hr_head_approval` / `final_decision` and Exit's `hr_head_approval` / `fnf_approve` all rest on one person; **PF-14** — Travel Desk's director, advance and finance steps have nobody configured at all)*
 
-### KB-1 · HR knowledge base — a second brain over the HR documents  `[ ]`
-*Raised 2026-08-20*
+### EX-1 · 🟢 HR Exit module — built and deployed, never launched. Do we launch it?  `[ ]`
+*Raised 2026-09-03 · 🟢 **Low priority** · **Status: NOT LAUNCHED** — this is a decision, not a build*
+
+**The module is finished and live on the server, and nobody has ever used it.** Measured 03-09-2026:
+
+| Checked | Found |
+|---|---|
+| Code | `hrExitApp` is registered on `master`; the manifest reads `status: "live"` |
+| Who can see it | **5 `hr-exit` grants** exist in `app_access` — so it is not hidden, people have it |
+| Ever used | **0 exit cases.** Not one has been raised since it shipped |
+
+So unlike Travel Desk (**TR-1**, deliberately on hold with zero grants), this one was handed to
+people and simply never picked up. **The question is whether it is wanted at all.**
+
+**To decide:**
+- [ ] **Launch it, drop it, or leave it dormant?** If it is wanted, it needs an owner and a walkthrough
+      with HR — five grants and no cases usually means nobody was told what it was for.
+- [ ] If it IS launched, two things come with it: `email_module_enabled('hr-exit')` is **false**, so
+      nothing it sends will actually go out until that is flipped; and **PF-14**’s step-owner gap does
+      NOT affect it (Exit has owners configured) — but **PF-13**, the reassign port, was dropped, so
+      an approval that lands on the wrong person cannot be handed on.
+
+⚠ **Do not confuse this with the exit data itself.** Zero cases means the module is unused, not that
+nobody has left the company — those exits were handled outside the portal, so there is no history in
+here to migrate or report on.
+
+### KB-1 · 🟢 HR knowledge base — a second brain over the HR documents  `[~]`
+*Raised 2026-08-20 · **🟢 Low priority, IN PROGRESS (03-09-2026).** A demo has already been built and
+shown; what remains is turning it into something live. ⚠ The permissions question below must be
+settled BEFORE anything is indexed — retro-fitting who-may-read-what after the fact means
+re-indexing the whole corpus.*
 
 There are a lot of HR documents. Build a **second-brain** over them so people can search and get
 answers out of them — a **vector database with a RAG** system behind it.
@@ -2846,7 +7092,17 @@ the same shape.
 - [ ] pgvector inside the identity project, or a separate store?
 - [ ] How re-indexing is triggered when a document changes.
 
-### TR-1 · Travel reimbursement module  `[x]`
+### TR-1 · 🟢 Travel reimbursement module (Travel Desk) — built, ON HOLD  `[!]`
+*🟢 **Low priority · ON HOLD at Karan Bhai’s request** (recorded 03-09-2026). The module is
+**substantially built and deployed** — all ten phases done, `travelDeskApp` is on `master`, and the
+database holds **22 trips** from the build. It is being held back deliberately, not because anything
+is broken.*
+
+⚠ **Two things to know when it comes off hold:** `app_access` holds **ZERO `travel-desk` grants**, so
+today nobody but an admin can open it; and go-live still waits on **H1**, the band → travel-category
+contradiction in the policy (§2 has two tables that disagree, affecting 23 of 59 employees). Neither
+is new work — both are recorded in detail below and in [TRAVEL-DESK.md](TRAVEL-DESK.md).
+
 *Raised 2026-08-20 · Unblocked 2026-08-20 · **Built 23–24 Aug 2026.** Ten phases, each verified
 against the live database and the running app before the next started. Live log:
 [TRAVEL-DESK.md](TRAVEL-DESK.md).*
@@ -2912,6 +7168,963 @@ The live recruitment FMS — [frontend/src/apps/hr-recruitment/](frontend/src/ap
 id `hr-recruitment`, tables `fms_hr_*`, shown in the portal as **New Recruitment**. The two entries
 under **HR** above are separate *new* modules and do not belong here.
 
+### The HR change list  *(opened 2026-09-02)*
+
+A running list of the changes wanted on this module, in the order they were raised. Each gets its
+own **NR-n** entry below; this table is the index, so the list can be read without scrolling.
+
+| # | Raised | What | Entry | Status |
+|---|---|---|---|---|
+| 1 | 2026-09-02 | A management pipeline dashboard — every position's pipeline on one screen, with the candidate's own detail readable from it | **NR-2** | `[ ]` |
+| 2 | 2026-09-02 | Map one or more HODs to a position so they own it exactly as if they had raised the MRF — today the picker cannot even show them. **Part B:** a Setup → Department HODs master that pre-fills it | **NR-3** | `[ ]` |
+| 3 | 2026-09-02 | HR must have full pipeline control — today they cannot action the seven HOD steps on a position a head raised, and **Settings cannot grant it** | **NR-4** | `[ ]` |
+| 4 | 2026-09-03 | Edit, delete and re-upload the videos and documents HR attaches — today every one is write-once, and the RPCs structurally cannot clear a value | **NR-5** | `[ ]` |
+| 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[ ]` |
+| 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
+| 7 | 2026-09-03 | The Positions grid's **Close** button actually **cancels** — five real vacancies were cancelled through it. Filed as a **fault**, so it sits in [Fixes](#fixes) | **FIX-6** | `[x]` |
+
+*More points are expected on this list, and **nothing is being built until they are all in** — the
+client wants them gathered first so they can be sequenced together. Add each here as it comes in,
+then write its entry.*
+
+🔴 **ALL FIVE OPEN POINTS ARE HIGH PRIORITY** *(client, 03-09-2026)* — NR-2, NR-3, NR-4, NR-5 and
+FIX-5. This is now the highest-priority block of work on the whole list.
+
+⚠ **Build order is NOT list order, and getting it wrong makes things worse:**
+
+1. **NR-4 first** (or with NR-3). NR-3 hands 17 positions to real HODs, and on today’s rules that
+   TAKES the seven HOD steps away from HR on every one of them. NR-4 is what keeps HR able to work
+   them. NR-3 alone is a regression.
+2. **NR-3 next** — its Part B (Setup → Department HODs) also unblocks RC-style per-user scoping and
+   fixes NR-1’s thin Round-2 interviewer picker at source.
+3. **NR-2, NR-5, FIX-5** are independent of each other and of the above.
+
+⚠ **Points 5 and 7 are FIXES, not NRs.** They were faults somebody hit rather than changes somebody
+asked for, so by this file's own rule they live in [Fixes](#fixes) as **FIX-5** and **FIX-6**. They are
+indexed here anyway, because the list must show everything that was raised — otherwise seven points
+look like five.
+
+⚠ **Points 6 and 7 were built immediately, OUT of the parked batch.** The rest of this list is
+deliberately waiting so it can be sequenced together; these two were asked for directly on
+2026-09-03 and shipped the same day. Nothing else moved.
+
+### NR-6 · A stopped requisition says why, who and when  `[x]` — built and applied 2026-09-03
+
+*Raised 2026-09-03 by Ritesh Bhai, alongside **FIX-6** — "whenever we close or cancel anything we ask
+for the reason; I want to show the reason somewhere, the date and time, and who". Audited against the
+live database, not the migration files. Migration applied to `icutjkrqkbzwvmnfbzpr`; frontend green.*
+
+**The ask.** Cancelling asks for a reason. Show it — plus when, and by whom.
+
+#### What made it worth doing today
+
+`cancel_reason` has been written since the module shipped and was **rendered on no screen anywhere in
+the application**. Five live vacancies were carrying it:
+
+| MRF | Reason | When | By |
+|---|---|---|---|
+| MRF-2627-0010 | Its Sales Co-ordinator not Service Co-ordinator | 11-Aug-2026 | Riya Kumari |
+| MRF-2627-0011 | Please Upload the JD and Location | 13-Aug-2026 | Riya Kumari |
+| MRF-2627-0014 | not the right position | 21-Aug-2026 | Riya Kumari |
+| MRF-2627-0016 | Upload JD properly | 25-Aug-2026 | Riya Kumari |
+| MRF-2627-0018 | Rejected | 03-Sep-2026 | Karan Toshniwal |
+
+🔴 **Read them: they are instructions to the requester.** "Please Upload the JD and Location" is not a
+record, it is a message — and the raiser sees only a grey CANCELLED pill on their own dashboard
+(`myRequisitions` is unfiltered by status). **Cancel was being used where Send back was meant**,
+because the reason never reached anybody. That is the cost, and it is why this was not cosmetic.
+
+#### What was already there, and what was missing
+
+| State | Reason | When | Who |
+|---|---|---|---|
+| Cancelled | `cancel_reason` ✅ | `closed_at` ✅ | `decided_by` ✅ — **but never mapped into the frontend** |
+| Rejected | `reject_reason` ✅ | `rejected_at` ✅ | `decided_by` ✅ |
+| Sent back | `sent_back_reason` ✅ | `sent_back_at` ✅ | `decided_by` ✅ |
+| On hold | `hold_reason` ✅ | `hold_at` ✅ | **nothing — no actor column at all** |
+| Closed | *"all N seats filled"* | `closed_at` ✅ | the system |
+
+So three of the four needed **no migration** — only a mapper line. Hold needed a column.
+
+#### ⚠ Two traps that shaped it
+
+**`decided_by` is one shared slot, not a per-event actor.** Reject, send-back and cancel all write it.
+It is trustworthy *only* read against the CURRENT status, because each write coincides with the status
+it explains. **Reading it for a hold would name whoever last sent the requisition back** — so hold got
+its own `held_by`.
+
+**`fms_hr_announce` with no recipient array writes the activity row and nothing else.** `p_user_ids`
+defaults to `'{}'` so the bell loop never runs, and its email arm is scoped to `master_request` /
+`candidate.interview_*`, so a `requisition` row cannot reach `email_outbox` even with the switch on.
+That is what let the trail be added without the notification change `20260713120000` explicitly
+refused ("quietly starting to would be a behaviour change nobody asked for").
+
+#### Built
+
+- **Migration `20261107160000_fms_hr_hold_and_cancel_are_recorded.sql`** — adds `held_by`; re-issues
+  `fms_hr_hold_requisition` (stamps and clears `held_by`, announces `held` / `resumed`) and
+  `fms_hr_cancel_requisition` (announces `cancelled`, accepted-hire guard preserved verbatim); backfills
+  one activity row per existing cancellation. Signatures unchanged, so `create or replace` kept the
+  execute grants — dropping would have revoked them.
+- **`components/StateNote.tsx`** — one banner for all five end-states, replacing three hand-rolled
+  copies in MrfDetail that had no fourth for `cancelled`. Exports `stateNoteText()` so the tooltips
+  cannot drift from the banner.
+- **Tooltips** on the state badge in Positions, Requisitions, the Control Center's held chips, and —
+  the one that matters — the raiser's own **Dashboard** list.
+- **`personName` replaces `profileById`** in MrfDetail. The directory is RLS-scoped to the reader's
+  department, so the canceller, the approvers and the raiser all rendered as **"Unknown"** to anyone
+  outside it. Five renders, including the History card this migration just started populating.
+- MrfStepper's bare red "CANCELLED" chip removed — the banner sits 8px below it and says the same word
+  plus the reason.
+- Two raw-enum leaks fixed: `PositionPipeline` ("This position is cancelled") and `reqTerminalBar`.
+
+#### 🔴 The backfill's `created_at` was load-bearing
+
+`master_report_snapshot` runs an **unfiltered** `max(created_at)` and a 7-day
+`count(distinct actor_id)` over the whole of `fms_hr_activity`. Had the five backfilled rows taken the
+default `now()`, the next Master Report would have reported New Recruitment's last activity as the
+migration timestamp and inflated its active-user count for a week. They are stamped from `closed_at`.
+There is no unique index on that table, so the `not exists` predicate *is* the idempotency.
+
+#### Follow-up the same day — the Completed tabs named a department and never the position
+
+*Raised 2026-09-03 by Ritesh Bhai, from the same screen: "in the MRF approvals we just see the
+department, we don't see the position." Built the same day.*
+
+The screen has two tabs and **only one had the gap**:
+
+| Tab | Columns | Position? |
+|---|---|---|
+| Pending — "waiting on your decision" | MRF · Department · **Position** (+ seats) · Raised by · Salary · Waiting on · Due | ✅ already there |
+| Completed — "decisions you have made" | MRF · **Department** · Step · Done on · By · Edited | ❌ **no job title at all** |
+
+⚠ **Why Pending looked broken too, and is not.** Its tab is **empty**: all 23 requisitions are past
+both gates — 18 `sourcing`, 5 `cancelled`, **nothing at `hr_review` or `mgmt_review`**. There is no row
+to see the column on. Do not "fix" Pending; it would render Position twice.
+
+⚠ **`columnPicker` was ruled out as a cause** — `QueueTable` can hide columns and remember it in
+`localStorage`, but *"no menu ⇒ nothing may be hidden"* (`QueueTable.tsx:310`) and **neither table opts
+in**. Nothing on this screen can be hidden by anyone. Recorded so nobody re-investigates it.
+
+**The fix: one column in [components/CompletedTable.tsx](frontend/src/apps/hr-recruitment/components/CompletedTable.tsx),
+which backs FIVE queue screens** — MRF Approvals, Job Posting, Interviews, Onboarding, Probation.
+
+**The three candidate-side queues gained more than the one that prompted it.** A completed interview
+read `Purvi Upadhyay · Sales` and never said which vacancy she was seen for.
+
+No plumbing was needed. Every one of the six `StageEntry` builders (`store.tsx:1070-1161`) already
+carries a real `requisitionId`, and `departmentId` is likewise carried as an **id** that the table
+resolves to a name — so Position takes the identical shape, and because `deptOfReq` derives the
+department from that same requisition, the two columns cannot disagree. `filter: select`, matching
+Department / Step / By in the same table.
+
+**Checked and clear:** the Decide dialog already names the position (via `MrfRecap`); notifications read
+*"Requisition raised: {jobTitle}"* — they name the position and omit the department, the opposite gap,
+and they **do** fire (22 `submitted` + 66 `approve` rows live — the store writes them, not SQL, so a
+migrations-only search wrongly concludes nothing fires); Control Center, MrfList and MrfDetail all name
+it; there is no MRF email and no requisition PDF.
+
+**Offered and NOT built — one line, whenever it is wanted.** **My Work Today** shows an approver
+`MRF-2627-0012` and nothing else — no department, no position. `WorkItem.detail`
+(`core/workspace/mywork/types.ts:39`) is the second line that **travel-desk, order-to-dispatch and
+asset-maintenance all populate and the HR provider never sets** (`mywork/items/hr.ts:101-114`). It is
+the screen an approver starts their day on, so it arguably matters more than the Completed tab.
+
+#### Noted, not fixed
+
+- **The Master Report counts a held vacancy as OPEN** (`closed_statuses` = `{closed,cancelled,rejected}`
+  in `20260830120000:176`) while the module's own `isOpenRequisition` counts it as closed. Pre-existing
+  disagreement; nobody has complained; left alone deliberately.
+- **Six other FMS modules hand-roll the same reason banner** — `hr-exit`, `asset-maintenance`,
+  `sampling`, `travel-desk`, `order-to-dispatch`, `import` — and none of them shows a person or a date
+  either. A shared `shared/components/ui/` primitive would fix all six. Not done here; the ask was New
+  Recruitment.
+- **A Reason column** on the Positions grid (sortable, filterable, in the Excel export) was offered and
+  not taken, so the reason is screen-only — an export of cancelled positions still reads just
+  "Cancelled". One column whenever it is wanted.
+
+---
+
+### NR-2 · 🔴 A management pipeline dashboard — every pipeline on one screen  `[ ]`
+*Raised 2026-09-02 · Audited the same day against the live database and the running code · Scoped,
+decided and **parked on purpose** — the client wants the rest of the HR points gathered before any
+of them is built, so they can be sequenced together. Nothing is blocking it.*
+
+**The ask.** Management should not have to open each position in turn to see who is in its pipeline.
+Give them **one screen** carrying every pipeline, and let them open **the candidate's detail — the
+one already built — from that same screen.**
+
+**The friction is real and it is measurable** (live database, 02-Sep-2026):
+
+| Measured | Found |
+|---|---|
+| Live positions (`status = 'sourcing'`) | **19** — so "look at the pipeline" is 19 page-opens today |
+| Candidates on them | **119**, of which **96 are still in play** |
+| Sitting at Interview R3 — Director, i.e. management's own round | **12**, spread across several positions with no one screen that lists them |
+| Sitting at R2 — HOD | **20** |
+| Positions carrying 10+ candidates | **6** (ASM 18, Design Engineer 17, Finance Manager 16, Marketing Executive 11, Service Engineer 10, Spare Parts 10) |
+| Offers out | **1** |
+
+#### What already exists — and precisely where it stops
+
+Three screens each answer part of this, and none answers it whole:
+
+- **[Positions](frontend/src/apps/hr-recruitment/pages/positions/PositionsList.tsx)** — 19 rows,
+  with a candidate count and a seats-filled meter per row. It says *how many*; it never says
+  **where they are**. Reading a stage breakdown means opening the position.
+- **[PositionPipeline](frontend/src/apps/hr-recruitment/pages/positions/PositionPipeline.tsx)** —
+  the ten-column board, **one vacancy at a time**, deliberately: `PipelineSummary`'s own header
+  records that a summary spanning every vacancy was built once and cut, because *"17 people are
+  interviewing" across unrelated jobs answers nothing anyone asks*. That reasoning holds for a
+  **summed strip** and does not hold for a **matrix** — the shape proposed below keeps every row
+  attached to its own position, so nothing is summed across jobs that have nothing to do with
+  each other.
+- **[CandidatesList](frontend/src/apps/hr-recruitment/pages/candidates/CandidatesList.tsx)** — the
+  closest thing that exists: every candidate across every vacancy, sortable and filterable on
+  Position, Stage, AI fit, Source, Due. **It is already one screen.** What it is not is a
+  *pipeline* — a flat table cannot be read as "this position is top-heavy and that one is at
+  offer" — and clicking a candidate **navigates away** to a full page.
+
+So the gap is two specific things, not a whole new app: **(a)** no position × stage view anywhere,
+and **(b)** the candidate detail costs a page transition.
+
+#### What to build
+
+**One route — `/hr-recruitment/pipeline`, "Pipeline" in the sidebar — master/detail, three bands:**
+
+1. **The numbers, once.** Open positions · seats unfilled · in play · at offer · overdue. Reuse
+   the shared `Kpi`; every figure comes from `lib/analytics.ts` and `store.queueEntries`, never a
+   second calculation (the dashboard's own header states this rule).
+2. **The matrix — the actual answer to the ask.** One row per position, one column per board
+   stage (the ten in `BOARD_COLUMNS`), each cell a count. Nineteen rows by ten columns replaces
+   nineteen page-opens, and top-heavy vs about-to-close reads straight down the columns. Cells
+   carry the one-hue `PHASE_FILL` ramp already used by the board, the strip and the fit bar — so
+   the encoding is learned once and no legend is needed. **Clicking a cell narrows the list
+   below to that position + stage.**
+3. **The list, then the detail.** Under the matrix, the candidate rows. Selecting one opens the
+   **existing candidate detail in place** — right-hand pane on a wide screen, full-width below on
+   a narrow one — with ‹ › walking **the rows currently on screen**.
+
+**The detail panel is an extraction, not a rebuild.** Checked: all six panels
+(`ResumeViewer`, `CandidateDocuments`, `CandidateTimeline`, `CandidateMeetings`, `CandidateFit`,
+`CandidateDetailsCard`) take a `candidate` prop and use **no router hooks at all**. So the body of
+`CandidatePage` lifts cleanly into `<CandidateDetail candidate={c} />`, and both the route and the
+new panel render the same component.
+
+#### The traps — every one of these is live today
+
+- 🔴 **"Management" is not a predicate in this module, and the two people who would use this are
+  admins — so a broken gate will look like it works.** Live: `mgmt_approval` is owned by **Aayush
+  Rathi, Karan Toshniwal, Riya Kumari**; `interview_3` (Director) by **Aayush Rathi, Karan
+  Toshniwal, Nakuleshwar Sharma**. Aayush and Karan are portal **admins**, so they see every screen
+  by the admin bypass and *not* by any management rule. **Test as a non-admin or the gate is
+  untested.**
+- 🔴 **`canSeeBoard` refuses a management approver.**
+  [lib/access.ts](frontend/src/apps/hr-recruitment/lib/access.ts) admits the sourcing, interview,
+  decision and onboarding step owners, the coordinator, and anyone with their own requisitions —
+  **`mgmt_approval`, `hr_head_approval` and `job_posting` are all absent.** The server disagrees:
+  `fms_hr_is_recruitment_staff()` grants candidate read to the owner of **any step except `mrf`**,
+  so a management approver passes RLS and is then refused by the frontend. It bites nobody today
+  only because all three approvers happen to own another step. Add the arm in the same change, or
+  the dashboard is invisible to precisely the person it is for.
+- 🔴 **Nakuleshwar Sharma owns R3 and cannot open the module** — `role = hod`, **no
+  `hr-recruitment` row in `app_access` at all**. He is booked on Director rounds and has no way in.
+  One edit in the admin User form, no code. (Same shape as the four heads already listed under
+  NR-1.)
+- 🟡 **Offered CTC is NOT on this screen — decided 02-09-2026.** Leave it out for now. Worth
+  knowing why it would not have worked anyway: `canViewSalary` is admin, or a named person, or an
+  allowed department, and the `salary_viewers` config row **has never existed in the live table**
+  (only `min_cvs_to_share`, `probation_sla`, `process_coordinators` do) — so every non-admin would
+  have seen a dash. If it is ever wanted, it is a Setup entry rather than code. Keep the existing
+  property that the column is *not built at all* without the right, so it cannot leak through the
+  column picker or the Excel export.
+- 🟡 **The ‹ › pager cannot be copied across.** `CandidatePage`'s siblings are *the same board
+  column of the same requisition*, oldest CV first. On a cross-position screen that set is wrong —
+  it would page to a candidate not on screen. The pager must walk the dashboard's own filtered rows.
+- 🟡 **`useRailWhileMounted()`** folds the sidebar for `CandidatePage`'s three columns. A master/
+  detail screen needs the same width; decide once whether the new route folds the rail, rather than
+  inheriting it by accident from the extracted component.
+- 🟡 **Extraction must MOVE, not copy.** If `CandidateDetail` is lifted out, `CandidatePage` renders
+  it — it does not keep its own copy of the three-column grid. Two renderers of the same fields is
+  how a field gets fixed in one place and stays broken in the other.
+- 🟡 **Grid conventions apply to the list band** — sort and a searchable multi-select filter on
+  every column, cascading options, flat (no `groupBy`), and an empty *result* keeps the table and
+  its filters standing. `QueueTable` does all of this already; the matrix is not a grid and is
+  exempt.
+- 🟡 **`QueueTable` has no row expansion** (checked — no `renderDetail` / `expand` of any kind), so
+  the master/detail split is a layout around the table, not a feature added to it.
+- 🟡 **PII.** Names, phones, CVs and expected salary. This screen must widen *layout*, never the
+  read gate — RLS stays the authority, and the rows it hands over scope themselves, exactly as the
+  dashboard's header notes.
+
+#### Phase-wise checklist
+
+- [ ] **P0a · SQL first.** New `fms_hr_config` key (`pipeline_viewers`: `person_ids`), and
+      `fms_hr_is_pipeline_viewer(uuid)` OR'd into `fms_hr_can_read_requisition()`. Additive only.
+      **Applied before the frontend ships**, or the first person added meets an empty screen.
+      Rehearse the rollback rather than reading it.
+- [ ] **P0b · Setup section.** "Pipeline dashboard access" beside Salary Visibility and
+      Coordinators, which it copies. Seed it with the Directors. Word it as a **PII grant** — the
+      people on it can read every candidate's name, phone, CV and expected salary.
+- [ ] **P0c · The frontend gate.** `canSeePipeline = isAdmin || isPipelineViewer || canSeeBoard(s)`,
+      enforced on the route and used for the sidebar link so the two agree. While here, add the
+      missing `mgmt_approval` / `hr_head_approval` / `job_posting` arm to `canSeeBoard` — RLS
+      already allows those owners and the frontend refuses them.
+- [ ] **P0d · One live grant, no code.** Give `hr-recruitment` to **Nakuleshwar Sharma** (owns R3,
+      cannot open the app). No `salary_viewers` row — CTC is deliberately off this screen.
+- [ ] **P1 · Extract `<CandidateDetail candidate={c} />`** from `CandidatePage`'s body; the route
+      re-renders it, with its own header, back-target and pager kept in the page. `npm run build`
+      green, and the existing candidate route walked once by hand — it is the module's busiest page.
+- [ ] **P2 · The matrix.** One row per position × **five phase columns** (`PHASE_OF` / `PHASE_FILL`,
+      already in lib/board.ts — no new vocabulary). Cell click narrows the list to that position +
+      phase; the list's Stage filter drills the rest of the way. Closed positions off by default
+      with a toggle, matching the Positions list's own treatment.
+- [ ] **P3 · List, then detail** — **two modes on one route**: the matrix and KPIs hold their
+      place while the list area swaps to the full-width detail, breadcrumb back to the same list.
+      ‹ › walks **the dashboard's filtered rows**, and the selection is held in the URL so a link
+      to "this candidate, in this view" survives a paste.
+- [ ] **P4 · The actions.** Reuse the existing gated components — `MoveModal`,
+      `InterviewResultModal`, `HodDecisionModal`, `ScheduleInterviewModal` — so nothing new is
+      permitted and no second authority test is written. Buttons gated, rows not.
+- [ ] **P5 · Sidebar + route** on the P0c predicate.
+- [ ] **P6 · Walk it in the browser** as a **non-admin on the Setup list who owns no step** (the
+      case that proves the SQL arm), then as a Director. Confirm every cell matches the position
+      board it came from.
+
+#### Settled — 02-09-2026, the same day it was raised
+
+| Asked | Answered |
+|---|---|
+| Who counts as "management" | **Nobody, by name, in code.** Build the report, and make the permission a **list in Setup** — an admin adds whichever users should have it. Seed it with the Directors. |
+| Matrix width | **Five phases** — Screening · Interviewing · Offer · Hired · Dropped. Fits one screen with no sideways scroll; a cell click still drills to the exact stage. |
+| Read-only or actionable | **Actionable, gated exactly as everywhere else.** Record an R3 result, make an offer, disqualify — the buttons appear only where the rules already allow. Nothing new is permitted; it saves the trip. |
+| Where the candidate detail opens | **Two modes on one route.** The matrix stays put; the list area below it swaps to the detail at full width, with a breadcrumb back to the exact list you had. A permanent side-by-side split was ruled out — the detail is already three columns and folds the sidebar to fit them. |
+
+#### ⚠ A Setup list does NOT grant the read — this is the trap that will waste a day
+
+Making the permission a config list is the right call and it follows two precedents already in this
+module (`process_coordinators`, `salary_viewers` — both `fms_hr_config` rows edited from Setup). But
+a frontend list decides **which screen renders**, not **which rows arrive**. Candidate read is gated
+in SQL by `fms_hr_can_read_requisition()`, whose arms are: admin · `fms_hr_is_coordinator()` ·
+`fms_hr_is_recruitment_staff()` (owns any step **except** `mrf`) · or being that requisition's own
+requester / hiring manager / reporting-to.
+
+**So a person added to a Setup-only list who owns no recruitment step sees the new screen, and it is
+empty.** Not an error — nineteen positions, zero candidates, no explanation. The same shape as
+PC-1's "view, not edit" trap, and it will read as a broken build rather than a missing grant.
+
+The fix is one additive migration alongside the config row: `fms_hr_is_pipeline_viewer(uuid)`
+reading that key, OR'd into `fms_hr_can_read_requisition()`. Two things follow from it and both
+should be said out loud before it ships:
+
+- **It widens candidate PII** — names, phones, CVs, expected salary — to whoever is on the list.
+  That is the intent, but the list is then a PII grant and should be described as one in Setup, not
+  as a display toggle.
+- **Deploy ordering.** The migration goes in **before** the frontend, per the repo rule; otherwise
+  the first person added gets the empty screen described above.
+
+**Offered CTC is not on this screen** (decided 02-09-2026). It stays on its own separate gate
+(`salary_viewers`) — being able to read the pipeline is not being able to read what we offered —
+and that config row has never existed, so it would have shown a dash to every non-admin regardless.
+
+#### The layout — decided: two modes on one route
+
+The candidate detail is **already a three-column layout that folds the sidebar to buy width**:
+`CandidatePage` calls `useRailWhileMounted()` and then lays out CV viewer · discussion/meetings/fit ·
+facts card. There is no spare width to put a candidate list beside it. A rail narrow enough to fit
+would squeeze out the facts column, which is the half management actually reads.
+
+**Chosen: two modes on one route.** The matrix and the KPI strip stay where they are; the candidate
+list swaps to the detail at full width, and a breadcrumb returns you to the exact list you had. It
+reads as one screen because the pipeline is still above you while you read the person. The overlay
+is the runner-up and the fallback if the page turns out too tall in practice. Both are genuinely
+"one screen" in the sense that matters — **you never lose your place, your filters, or your
+position in the list:**
+
+- **Two modes on one route.** Matrix + list is the default. Picking a person swaps the list area for
+  the detail **at full width**, with a breadcrumb back and ‹ › walking the rows you had filtered.
+  One URL, no page transition, no cramming.
+- **Full-width overlay.** The detail comes up over the dashboard, closes back to it untouched.
+  Nearly the same experience; it covers the matrix while open, which costs nothing since you are
+  reading a person at that moment.
+
+Either way ‹ › walks **the dashboard's filtered rows**, never `CandidatePage`'s board-column
+siblings — that set would page to somebody not on screen.
+
+#### To settle
+
+- [ ] Does this screen replace Positions for management, or sit beside it? Positions is also where a
+      vacancy is held or closed.
+- [ ] Should closed and cancelled positions appear in the matrix? Four are cancelled today.
+
+### NR-3 · 🔴 Map one or more HODs to a position, and let them own it as if they had raised it  `[ ]`
+*Raised 2026-09-02 · Audited the same day against the live database and the running code · Parked
+with the rest of the HR list*
+
+⚠ **Do not ship this without NR-4.** Today HR is the accidental hiring manager on 17 of 19 live
+positions, which is the only reason they can still work those pipelines. This task hands all 17 to
+real heads — and on the module's current rules that **takes the seven HOD steps away from HR on every
+one of them.** NR-4 is what keeps HR able to work them. Sequence NR-4 first, or ship the two together.
+
+**The ask.** When HR raises a position on a department's behalf, the department's HOD gets nothing —
+they cannot see the vacancy, the CVs or the pipeline, because they did not raise the MRF. Let a
+position **name one or more HODs**, at creation or by editing it later, and give those HODs
+**exactly the authority they would have had if they had raised the MRF themselves.** *Raised by*
+still shows who actually raised it.
+
+#### The good news: this permission model already exists and already works
+
+Nothing new has to be invented. `hiring_manager_ids` on the requisition is **already** the "acts as
+the HOD" field, and it is already wired through every layer:
+
+| Layer | Where | What it already does |
+|---|---|---|
+| Server authority | `fms_hr_is_natural_step_owner()` | The seven HOD steps — HOD shortlist, Interview R2, probation M1/M2/M3, the probation decision and the extension — resolve to `hiring_manager_ids`, not to the requester |
+| Server read gate | `fms_hr_can_read_requisition()` | `p_uid = any(r.hiring_manager_ids)` grants the whole requisition: candidates, CVs, interviews, scores, onboardings, probations |
+| Client mirror | [store.tsx:810](frontend/src/apps/hr-recruitment/store.tsx#L810) `canActOn` | Same rule, same seven steps |
+| Board access | `ownsRequisition` → `myRequisitions` → `canSeeBoard` | Puts Positions and Candidates in their sidebar |
+| Queues | [store.tsx:1012](frontend/src/apps/hr-recruitment/store.tsx#L1012) | HOD-step queue entries are owned by the hiring managers |
+| Notifications | `fms_hr_notify_hod_pending()`, the transition fan-out | Already loops `hiring_manager_ids` |
+| Handover | `reassignCandidates` | A mapped HOD can hand their step on, and pull it back |
+| R2 interviewer picker | `lib/interviewers.ts` | Reads `hiring_manager_ids ∪ reporting_to_ids` — which is exactly **NR-1**'s complaint, fixed at its source |
+
+So this task is **not a new permission model. It is making an existing one settable.**
+
+#### Why it is not happening today — three causes, all measured (02-Sep-2026)
+
+**1. 🔴 The picker cannot show the HODs. This is the real root cause.**
+The field exists on the MRF form — *"Who will manage this hire?"*, [MrfForm.tsx:843-852](frontend/src/apps/hr-recruitment/components/MrfForm.tsx#L843-L852) — and its options come from `s.profiles`, the **RLS-scoped** directory. The `profiles_select` policy is `id = auth.uid() OR is_admin OR is_hod_of OR same_department`.
+
+> **Saloni Rathod sees 5 of 64 people** — the whole of Human Resources and nobody else. Every HOD she would need to map **is not in the dropdown at all.**
+
+She is not skipping the field. She cannot fill it.
+
+**2. 🔴 So it silently defaults to the raiser, and it has, nearly every time.**
+`fms_hr_submit_mrf` does accept `hiring_manager_ids`; when the array is empty it writes `array[v_uid]`.
+
+| Measured across all 23 requisitions | Found |
+|---|---|
+| Live positions whose hiring manager **defaulted to the raiser** | **17 of 19** |
+| Live positions where **Saloni Rathod is the sole hiring manager** | **14** — she personally owns HOD shortlist, Interview R2 and all four probation steps on every one |
+| Live positions naming anyone else | **2** — MRF-0012 (Gorakh Pawar + Murlidhar panda) and MRF-0019, the `ZZ TEST` row |
+| Requisitions with **no** *reporting to* at all | **15 of 23** |
+
+That is 96 in-play candidates whose HOD shortlist and Round 2 sit with HR by accident.
+
+**3. 🔴 And it can never be corrected — there is no edit path, for anyone.**
+- `fms_hr_resubmit_mrf` **does not write `hiring_manager_ids` at all**, and only runs on a
+  `sent_back` requisition, by the requester. Every live position is `sourcing`.
+- **No other RPC writes the column.** Checked all 63 `fms_hr_*` functions: `fms_hr_submit_mrf`'s
+  INSERT is the only write in the database.
+- The table's only non-SELECT policy is `fms_hr_requisitions_write_admin` (`is_admin`), so a direct
+  PostgREST patch is refused for everyone else — and no screen offers one anyway.
+
+**The one edit button that exists** — *Edit & resubmit* on [MrfDetail.tsx:224](frontend/src/apps/hr-recruitment/pages/requisitions/MrfDetail.tsx#L224) — is `status === "sent_back"` and requester-only, and would not write the field even if it were reachable. **On all 19 live positions the hiring manager is frozen forever, including for an admin, short of hand-written SQL.**
+
+#### What to build
+
+**One new RPC, one picker fix, two places to call it from.**
+
+1. **`fms_hr_set_hiring_managers(p_req uuid, p_ids uuid[], p_note text)`** — SECURITY DEFINER,
+   additive. Authorised to admins, process coordinators, the requester, and the current hiring
+   managers (so a head can hand their own vacancy to the right person). Refuses a cancelled
+   requisition, refuses an **empty array** (see the traps), writes an `fms_hr_activity` row naming
+   who changed it and from whom to whom, and pings the people added and removed.
+2. **Fix the picker at its source** — `list_org_people()` instead of the RLS-scoped directory, the
+   same one-line swap [orgPeople.ts](frontend/src/core/platform/orgPeople.ts) already exists for and
+   that **NR-1** flagged for the R1/R3 interviewer lists. Do all of them together.
+3. **On the MRF form** — keep the field where it is, but stop calling it optional-with-a-shrug.
+   Re-label it as what it decides (*"Which HOD owns this vacancy?"*), and say plainly what the
+   mapping grants. It is the difference between the right person getting the work and HR holding it.
+4. **On the position, after the fact** — a *Hiring team* / *Change HOD* control on
+   `PositionPipeline`'s header and on the `MrfDetail` page, both calling the one RPC. The user asked
+   for it on the position; the requisition page is where the field is already displayed, so both
+   should reach it and **neither may write the column directly.**
+
+*Raised by* needs no work — [MrfDetail.tsx:397](frontend/src/apps/hr-recruitment/pages/requisitions/MrfDetail.tsx#L397), `MrfRecap.tsx:117` and the MRF list column already show the requester, and the requester never changes.
+
+#### The traps
+
+- 🔴 **An empty `hiring_manager_ids` orphans seven steps.** `fms_hr_is_natural_step_owner` returns
+  `p_uid = any(v_managers)` with **no fall-through** to the global step-owner table — so clearing
+  the array leaves HOD shortlist, Round 2 and all four probation steps owned by **nobody** except
+  admins and coordinators, on a vacancy that is otherwise running normally. The RPC must refuse an
+  empty array outright. (This no-fall-through is the same shape as the `fms_hr_can_act` defect
+  cross-referenced from **PF-13**.)
+- 🔴 **Removing a HOD revokes their candidate read.** The read gate is the same array, so dropping
+  someone mid-review takes away the CVs and the pipeline they were looking at, with no warning.
+  Show what is being taken away before the write, not after.
+- 🔴 **Mapping is a PII grant.** Names, phones, CVs, expected salary. Whoever is named can read
+  every candidate on that vacancy. That is the intent — say so on the control, the way **NR-2**'s
+  Setup list must.
+- 🔴 **A mapped HOD without the module grant gets nothing.** Live: **13 of 14 HODs** hold
+  `hr-recruitment`, but only **1 of 11 sub-HODs** and **2 of 35 employees**. Nakuleshwar Sharma is
+  the one HOD without it. The RPC should not refuse them — the mapping is still correct — but the
+  picker should warn, and the grant is one edit in the admin User form.
+- 🟡 **A per-step handover beats the mapping, and does so silently.** `fms_hr_can_act__ungated`
+  checks `fms_hr_step_assignees` **first**, and a holder is exclusive — *"deliberately NOT an OR
+  with the natural owner"*. So if a step has been handed to someone on that requisition, adding a
+  hiring manager does **not** give them that step. Zero handovers exist today, so nothing is
+  affected yet; decide the rule now rather than discovering it later.
+- 🟡 **`reassign_pool` has no config row**, so `fms_hr_can_receive_reassignment` is always false and
+  a step can only be handed to a natural step owner. Unrelated to this build, but it means the
+  handover escape hatch is narrower than it looks.
+- 🟡 **Two call sites, one write.** The MRF page and the position page must both go through the RPC.
+  Two writers of one column is how they drift.
+- 🟡 **The notification is a bell only.** `email_module_enabled('hr-recruitment')` is **false**
+  (confirmed in `email_module_settings`), so "you have been made the HOD for this vacancy" enqueues
+  and does not send. Fine, but do not promise HR an email.
+- 🟡 **`hiring_manager_ids` is `uuid[]` with no FK.** A deleted user leaves a dangling id that
+  renders blank. Existing condition, worth not making worse — validate ids in the RPC.
+
+#### Part B · Setup → Department HODs — so HR never hands anyone a list  *(added 02-09-2026)*
+
+**Decided 02-09-2026.** Do not ask HR which head owns which of the 19 positions. **Give them a
+Setup screen and let them state it once per department**, then have every position inherit it.
+
+**Setup → Department HODs.** One row per department, one or more people on each. It does two jobs:
+
+1. **It is the default, and it fills BOTH people boxes** *(decided 02-09-2026)*. Raising a
+   requisition for *Supply Chain* pre-fills **both** *Who will manage this hire?* (the authority
+   field) **and** *Who will they report to?* with Supply Chain's heads. HR no longer has to know,
+   remember, or find them in a dropdown — which is the whole failure this task exists to fix.
+   Both stay editable before saving: the two are the same person in most cases, not all.
+   ⚠ Filling the second box is not cosmetic — *reporting to* is empty on **15 of 23** requisitions
+   today, and `lib/interviewers.ts` builds the **Round 2 interviewer list** from
+   `hiring_manager_ids` ∪ `reporting_to_ids`. Leaving it blank is half of why that picker offers
+   almost nobody (**NR-1**).
+2. **It is the backfill.** Once the master is filled, the 19 live positions can be set from it in
+   one pass instead of nineteen conversations.
+
+The per-position override from Part A stays exactly as it is. The master answers *"who normally
+owns this department's hiring"*; the position answers *"who owns THIS vacancy"*, and a vacancy that
+is genuinely someone else's still says so.
+
+#### ⚠ There is no department → HOD anywhere in this portal, and `user_hods` is not it
+
+Worth being explicit, because it looks as though the data already exists and it does not:
+
+- **`departments` has no `hod_id` column.** Confirmed. `lib/steps.ts` says as much in prose — *"'the
+  HOD' is not a portal concept — there is no departments.hod_id"* — and that absence is the whole
+  reason this module routes HOD steps through `hiring_manager_ids` in the first place.
+- **`user_hods` is a REPORTING LINE, not a department head**, and it cannot be aggregated into one.
+  Measured 02-09-2026:
+
+  | Department | Staff | Distinct people named as their HOD |
+  |---|---|---|
+  | Accounting & Finance | 17 | **5** — Aayush Rathi, Dimple, Karan Toshniwal, Ritesh Tulsyan, Vivek Boid |
+  | Supply Chain | 7 | **4** |
+  | Sales | 13 | **3** |
+  | After Sales service | 5 | 2 |
+  | Ink Manufacturing | 4 | 2 |
+  | **13 of 23 departments** | — | **0 — nobody named at all** |
+
+  Deriving "the department's HOD" from that would pick one of five arbitrarily, or nothing. It has
+  to be stated, which is what the Setup screen is for.
+
+#### Where it lives — HR-local, not the shared master
+
+⚠ **`fms_hr_requisitions.department_id` points at `public.departments`, the SHARED org master**
+(confirmed FK), which several modules and the org-masters operation read. Adding `hod_id` to it is a
+platform-wide change with a blast radius well beyond recruitment, and it forces one answer for every
+module that might later want a different one.
+
+**So: a new HR-scoped table, `fms_hr_department_hods` (`department_id`, `hod_ids uuid[]`)** —
+additive, module-local, and it leaves the shared master alone. If another module ever needs the same
+idea, promoting it later is a smaller change than un-picking a shared column.
+
+The Setup section sits beside Step Owners, Coordinators and Salary Visibility, which it copies —
+admin-only, same shape, same writes. Its people picker needs the **same `list_org_people()` swap as
+Part A**, or Setup reproduces the exact bug it exists to fix.
+
+#### Extra traps this part brings
+
+- 🔴 **A default is not a lock.** Pre-fill the hiring managers from the master, then let the raiser
+  change them on that requisition. If the master overwrote the field, a genuinely-someone-else's
+  vacancy could never be recorded.
+- 🔴 **Changing the master must NOT retro-write live positions.** A department changing head next
+  March must not silently move HOD shortlist and Round 2 on eleven vacancies that are mid-pipeline.
+  The master is the default for NEW requisitions; moving an existing one is Part A's explicit,
+  audited, notifying write. Offer it as a prompt — *"3 open positions still name the old head —
+  move them too?"* — never as a side effect.
+- 🟡 **A department with no row falls back to today's behaviour** (defaults to the raiser). That is
+  correct, and the Setup screen should show which departments are unset rather than looking complete.
+  Thirteen are unset on the org side today.
+- 🟡 **Seed it from the live requisitions where they disagree with nothing** — MRF-0012 names Gorakh
+  Pawar + Murlidhar panda for Supply Chain, MRF-0013 HARIOMSHARAN DAVE for Sales. Worth offering as
+  a starting point for HR to correct, not as truth.
+
+#### What this changes in the checklist
+
+- [ ] **P0 · The master.** `fms_hr_department_hods` + its RPC, and **Setup → Department HODs**.
+      Admin-only, `list_org_people()` picker, shows unset departments plainly. SQL before frontend.
+- [ ] **P3a · Default from the master** when a requisition's department is chosen — pre-filled and
+      editable, never locked.
+- [ ] **P6 · The backfill** now runs off the master rather than off a list from HR: fill Setup, then
+      apply to the 19 open positions in one reviewed pass.
+
+#### Then there is a backfill, and it is not small
+
+The feature does not fix the 19 live positions; somebody has to sit down and set them. **17 need a
+hiring manager, 14 of them currently sitting with Saloni**, across 96 in-play candidates. Until that
+is done every HOD shortlist and every Round 2 is still HR's. Two ways to do it, and the choice
+should be deliberate:
+
+- **Through the new screen, one position at a time**, once the RPC is live — auditable, notifies
+  each HOD, and is the same path used from then on.
+- **A one-off SQL backfill**, if the mapping is already known — faster, but it writes no activity
+  row and pings nobody unless the script does it explicitly.
+
+⚠ Either way somebody has to say **which HOD owns which of the 19**. **Part B is how they say it:**
+HR fills Setup → Department HODs once, and the backfill reads the master instead of a list mailed
+over. Nothing here is answered by the data — `user_hods` names five different heads for Accounting &
+Finance alone — but it is now answered by a screen rather than by a conversation.
+
+#### Phase-wise checklist
+
+- [ ] **P1 · The RPC.** `fms_hr_set_hiring_managers` — authorisation, empty-array refusal, id
+      validation, activity row, add/remove pings. Applied **before** any frontend that calls it.
+      Rollback rehearsed on live data, not read.
+- [ ] **P2 · The picker.** Swap the people source to `list_org_people()` on the MRF form, and do
+      the R1/R3 interviewer lists in the same pass (**NR-1**'s open item). Prove it as **Saloni** —
+      she is the person the bug is about, and she currently sees 5 of 64.
+- [ ] **P3 · The MRF form.** Re-label the field, state what the mapping grants, keep the
+      default-to-raiser behaviour for a head raising their own vacancy.
+- [ ] **P4 · Change it later.** The control on `PositionPipeline` and `MrfDetail`, both through the
+      RPC. Show who gains and who loses access before writing.
+- [ ] **P5 · Walk it in the browser.** Raise as HR naming a HOD from another department; sign in as
+      that HOD and confirm they get the board, the CVs, the HOD-shortlist queue entry, Round 2 and
+      the probation reviews — and that the requester still reads as HR.
+- [ ] **P6 · The backfill**, once HR supplies the position→HOD list.
+
+#### To settle
+
+- [x] ~~Which HOD owns each of the 19 live positions?~~ **Answered 02-09-2026: not our question to
+      ask.** HR states it once per department in Setup → Department HODs (Part B), and the backfill
+      reads that master.
+- [x] ~~Should mapping a HOD also set *reporting to*?~~ **Answered 02-09-2026: yes, fill BOTH.**
+      The department's HOD pre-fills *who will manage this hire* AND *who will they report to*, both
+      editable before saving. They are the same person in most cases, and *reporting to* is empty on
+      **15 of 23** requisitions today — which is also why the Round 2 interviewer picker is thin,
+      since it reads both arrays.
+- [ ] **Who may change the mapping after the fact** — coordinator and admin only, or the requester
+      and the current HODs too? Letting a head hand their own vacancy on is convenient and is also
+      how a vacancy quietly leaves the right person's queue.
+- [ ] **What happens to an existing per-step handover when the HOD changes** — cleared, or left
+      standing? Zero exist today, so this is free to decide now.
+
+### NR-4 · 🔴 HR cannot work seven pipeline steps on a position a HOD raised  `[ ]`
+*Raised 2026-09-02 · Audited the same day against the live database and the running code · Parked
+with the rest of the HR list*
+
+**The ask.** HR should have **full pipeline control**. Today, when a HOD raises a position, HR
+cannot action several of its stages. That should not happen.
+
+#### The answer to "can Settings do this, or does it need code?" — checked properly
+
+**Settings cannot do it the right way. One Settings lever does work, and it is the wrong instrument.**
+
+There are exactly two levers, and here is what each actually does:
+
+**1. Setup → Step Owners — CANNOT reach these steps. Double-locked.**
+
+The seven HOD steps (HOD shortlist, Interview R2, probation M1/M2/M3, the probation decision, the
+extension) are locked in **two independent places**, so neither a UI change nor a hand-written config
+row would be enough on its own:
+
+- **The screen refuses.** [StepOwnersSection.tsx](frontend/src/apps/hr-recruitment/pages/settings/StepOwnersSection.tsx)
+  renders those rows greyed with the word **"Automatic"** and **no Edit button** — by design, and the
+  file says so.
+- **The database would ignore it anyway.** `fms_hr_is_natural_step_owner()` handles the seven HOD
+  steps in an `if` block that **`return`s before ever reaching `fms_hr_is_step_owner()`**. So even a
+  row inserted straight into `fms_hr_step_owners` for `hod_shortlist` would be **completely inert** —
+  no error, no effect. (Confirmed: no such rows exist today, so nobody has hit this yet.)
+
+**2. Setup → Process Coordinators — WORKS today, no code. And it over-grants badly.**
+
+`fms_hr_can_act__ungated()` opens with `if is_admin(p_uid) or fms_hr_is_coordinator(p_uid) then
+return true`. So adding HR to Setup → Coordinators gives them every step on every requisition
+immediately. It also gives them things nobody asked for:
+
+> 🔴 **It hands the same person BOTH approval gates.** `fms_hr_decide_mrf` authorises through
+> `fms_hr_can_act`, and it contains **no self-approval check** — nothing compares `auth.uid()` to
+> `requester_id`. **Saloni Rathod raised 16 of the 23 requisitions on record.** As a coordinator she
+> could approve her own MRF at the HR Head stage *and* again at the Management stage. Two signatures
+> collapse into one person. (Contrast OCPI, which explicitly refuses to let you approve your own
+> deal.)
+
+It is also not a small switch: `isProcessCoordinator` is `return true` as the **first arm** of ~15
+predicates across this module — the same pattern **PC-1** documents and warns about.
+
+**So: this needs a code change, and it is a small one.** Full pipeline control is the right outcome;
+"make HR a coordinator" is the wrong way to buy it.
+
+#### What is actually blocked, measured (02-Sep-2026)
+
+Saloni Rathod is `employee`, not an admin, and **not** a process coordinator (Riya Kumari is the only
+one). She owns `mrf`, `resume_upload`, `hr_shortlist`, `telephonic_screening`, `interview_1`,
+`job_posting` and `onboarding` — so on a position she is not the hiring manager of, she is locked out
+of exactly the seven HOD steps.
+
+| Position | Raised by | Its HOD | Candidates stuck at HOD shortlist, which HR cannot action |
+|---|---|---|---|
+| MRF-2627-0012 · Spare Parts Executive | Gorakh Pawar | Gorakh Pawar, Murlidhar panda | **6** |
+| MRF-2627-0017 · Electrical & Panel Technician | Rajneesh Kumar | Rajneesh Kumar | **4** |
+| MRF-2627-0018 · Executive Assistant (E.A.) | Karan Toshniwal | Karan Toshniwal | **2** |
+| MRF-2627-0019 · `ZZ TEST` — HR Executive | Saloni Rathod | Riya Kumari | **1** |
+| | | | **13 candidates, right now** |
+
+⚠ **This gets much bigger the moment NR-3 lands.** Today only 2 of 19 live positions name a real
+HOD, because the picker cannot show one — so HR is accidentally the hiring manager on the other 17
+and the problem is largely hidden. **NR-3 fixes that, and in doing so hands every one of those 17
+positions to a real HOD — at which point HR loses the HOD steps on all of them.** These two tasks
+must ship together, or NR-3 makes NR-4 dramatically worse.
+
+#### The fix — one line of authority, then the plumbing around it
+
+**Make the HOD-step rule additive: `hiring manager OR configured step owner`, instead of `hiring
+manager` only.** Nobody loses a step; HR gains one.
+
+1. **SQL.** In `fms_hr_is_natural_step_owner()`, replace the early `return` with
+   `return (p_uid = any(v_managers)) or public.fms_hr_is_step_owner(p_step_key, p_uid);`
+   That single change reaches **every** blocked action at once, because everything routes through it:
+   `fms_hr_move_candidate` (every transition), `fms_hr_hod_decide`,
+   `fms_hr_record_probation_review`, `fms_hr_decide_probation`, `fms_hr_decide_extension` and
+   `fms_hr_reassign_step` all authorise via `fms_hr_can_act`.
+2. **The client mirror**, in lockstep — [store.tsx:810](frontend/src/apps/hr-recruitment/store.tsx#L810)
+   `canActOn` and `isNaturalStepOwner` just below it. `lib/steps.ts` already carries the standing
+   warning for this pair: *"Change one list, change the other."*
+3. **Unlock the seven rows in Setup → Step Owners** so HR can be named on them, and rewrite the
+   "Automatic" copy to say what it now means: *the hiring manager always owns these, plus anyone
+   named here.*
+
+**There is already a precedent for exactly this override in the codebase**, which is a good sign the
+shape is right: `fms_hr_move_candidate` carries a special branch letting HR disqualify a card sitting
+at `hr_shortlisted` even though the pending step is the HOD's — *"HR must keep the ability to drop a
+CV they themselves just shortlisted in error."* NR-4 generalises that instinct instead of bolting on
+a ninth exception.
+
+#### The authority/workload split — decided: OVERRIDE, not co-ownership
+
+Being **allowed** to act and being **given the work** are different things, and the module models
+them separately (authority = `fms_hr_can_act`; workload = `queueOwnerIds` and the notification
+fan-out, which both read `isHodStep(step) ? r.hiringManagerIds : ownerIdsOf(step)`).
+
+**Chosen 02-09-2026: OVERRIDE.** HR gets the button on every position; the queue entry, the bell and
+the daily digest **stay with the HOD**. HR steps in when a head stalls, and accountability stays
+where it belongs. HR finds the stuck cards through Positions and the **NR-2** pipeline dashboard,
+both of which already show every card whether or not it is owed to you.
+
+The rejected alternative, and why: **co-ownership** would also put the work in HR's queue and
+notifications. Truer to the words "full control", but on today's data it drops **96 in-play
+candidates' worth of other people's work** into HR's *"On you right now"* — burying the handful
+of things that genuinely are theirs, and making the dashboard useless for the person it was built
+for.
+
+**What that means in code:** change `canActOn` / `isNaturalStepOwner` (authority) and **leave the
+four workload sites exactly as they are** — `store.tsx` **1012** (`queueOwnerIds`), **855**
+(`reassignCandidates`), **1489** and **1674** (notification fan-out), which all carry the same
+`isHodStep ? hiringManagerIds : …` shape. Authority and workload deliberately diverge here, so say
+so in a comment on both sides — the next reader will read it as a bug and "fix" it.
+
+#### The traps
+
+- 🔴 **This deliberately overrides a documented design decision.** `StepOwnersSection`'s own comment
+  says naming people on HOD steps globally *"would send every department's candidates to one person,
+  which is exactly the bug this design avoids."* That is a fair objection to **replacing** the
+  hiring manager. It is not an objection to **adding** to them, which is why the rule must be `OR`
+  and never a swap. Write the reasoning into the code, or someone reverts this in six months.
+- 🔴 **Naming anyone on a HOD step makes them recruitment staff — i.e. every candidate's PII.**
+  `fms_hr_is_recruitment_staff()` is "owns any step except `mrf`", and it is the read gate for
+  candidates, CVs, interviews, scores, onboardings and probations. For Saloni this changes nothing
+  (she already owns `hr_shortlist`). For anyone else added it is a full PII grant, and the Setup
+  screen should say so.
+- 🟡 **A per-step handover still beats both.** `fms_hr_can_act__ungated` checks
+  `fms_hr_step_assignees` **first** and a holder is exclusive — *"deliberately NOT an OR with the
+  natural owner"*. Zero handovers exist today; the rule is unchanged by this task, but do not be
+  surprised by it later.
+- 🟡 **Do not fix this by making HR a coordinator "just for now".** It is one dropdown in Setup and
+  it silently grants both approval signatures. If it is ever done as a stopgap, write down that it
+  was, because nothing on screen will show it.
+- 🟡 **`final_decision` is a separate question.** Making the offer is owned by Riya Kumari alone
+  today — that one IS configurable in Setup and needs no code, so if HR should also make offers it
+  is a settings edit, not part of this task.
+
+#### Phase-wise checklist
+
+- [ ] **P1 · SQL.** The `OR` in `fms_hr_is_natural_step_owner`, applied **before** the frontend.
+      Additive; the rollback is the old function body, and it must be rehearsed on live data.
+- [ ] **P2 · The client mirror** — `canActOn` and `isNaturalStepOwner` **only**. Do NOT touch
+      `queueOwnerIds`, `reassignCandidates` or the two fan-out sites: the override decision is that
+      the work stays in the HOD's queue. Comment both sides so the divergence reads as deliberate.
+- [ ] **P3 · Setup → Step Owners** — unlock the seven rows, rewrite the "Automatic" copy, and state
+      the PII consequence on the screen.
+- [ ] **P4 · Walk it in the browser as Saloni** on **MRF-2627-0012** (Gorakh Pawar's, 6 CVs waiting
+      at HOD shortlist): shortlist one, book Round 2, record a probation review. Then confirm Gorakh
+      Pawar has lost nothing.
+- [ ] **P5 · Ship with NR-3**, or sequence NR-4 first. NR-3 alone makes this worse on 17 positions.
+
+#### To settle
+
+- [x] ~~Override or co-owner?~~ **Answered 02-09-2026: override.** HR can act on any position; the
+      work stays in the HOD's queue and the HOD keeps the reminders.
+- [ ] **Should HR also own *Make the Offer* (`final_decision`)?** Riya Kumari alone owns it today.
+      Pure settings, no code, but worth deciding in the same conversation.
+- [ ] **Does "full pipeline control" stop at the pipeline, or include the two approval gates?**
+      It should stop — HR raises most requisitions, and there is no self-approval check anywhere in
+      `fms_hr_decide_mrf`.
+
+### NR-5 · 🔴 Nothing HR uploads can ever be edited, replaced or deleted  `[ ]`
+*Raised 2026-09-03 · Audited the same day against the live database, the live storage bucket and the
+running code · Parked with the rest of the HR list*
+
+**The ask.** Videos and every other resource HR uploads are write-once. Give them **edit, delete and
+re-upload**.
+
+#### It is worse than "no delete button" — the RPCs structurally cannot clear a value
+
+Every attachment in this module is written with `coalesce(new, old)`. **That expression can replace a
+value and can never null one**, so a "remove" is not merely missing from the UI: passing an empty
+value to any of these today is a **silent no-op**. Verified in the live function bodies:
+
+| Resource | Written by | Clause | Replace | Remove |
+|---|---|---|---|---|
+| Resume / CV | `fms_hr_update_candidate` | `resume_path = coalesce(nullif(p->>'resume_path',''), resume_path)` | yes | **impossible** |
+| Interview **video link** | `fms_hr_record_interview_result` | `video_url = coalesce(nullif(trim(p_video_url),''), video_url)` | yes | **impossible** |
+| Interview feedback form | `fms_hr_record_interview_result` | `document_path = coalesce(p_doc_path, document_path)` | yes | **impossible** |
+| Onboarding document / link | `fms_hr_toggle_onboarding_check` | `v_file := coalesce(nullif(p_file_path,''), v_file)` | yes | **impossible** |
+| Probation review form | `fms_hr_record_probation_review` | `file_path = coalesce(excluded.file_path, …)` | yes | **impossible** |
+| Job description | `fms_hr_set_requisition_jd` | `jd_path = nullif(trim(p_path),'')` | yes | **yes — the only one** |
+
+**And no file is ever removed from storage.** There is not one `storage.remove()` call in
+hr-recruitment. The whole portal has exactly one, in receivables-hub
+([customerWrites.ts:382](frontend/src/apps/receivables-hub/data/customerOnboarding/customerWrites.ts#L382))
+— a working pattern to copy rather than invent.
+
+#### 🔴 The one path that CAN replace a CV is not called by any screen
+
+`updateCandidate` is imported into the store ([store.tsx:35](frontend/src/apps/hr-recruitment/store.tsx#L35)),
+typed on the interface (`:445`), implemented (`:1334`) and wired to a live RPC — and **grepping every
+`.tsx` in the codebase finds zero callers.** It is a complete, working, unreachable feature: exactly
+the orphan shape **FIX-4** in [CLAUDE.md](CLAUDE.md) warns about, and invisible because
+`noUnusedLocals` is `false`, so it never fails the build.
+
+So today a wrong CV cannot be replaced — not because the capability is missing, but because nothing
+renders a button for it.
+
+#### 🔴 An interview attachment cannot be fixed once the candidate moves on
+
+`fms_hr_record_interview_result` opens with `if v_stage <> v_want then raise exception 'This
+candidate is not at % (they are at %)'`. The moment a "selected" result advances someone to the next
+round, **their previous round is sealed** — a wrong video link or a missing feedback form on Round 1
+can never be corrected while they sit at Round 3.
+
+⚠ **And the only workaround is destructive.** Dragging the card back clears the stage timestamps and
+runs `delete from fms_hr_interviews where round > …`, so recovering a Round-1 link would **destroy
+the Round-2 and Round-3 records**. `InterviewResultModal` also opens with `videoUrl` as `""` — it
+never pre-fills the existing value, so even a permitted re-record silently blanks nothing and
+re-types everything.
+
+#### Where the module stands, measured (03-Sep-2026)
+
+| | |
+|---|---|
+| Files in `fms-hr-docs` | **133** — 119 resumes (28 MB) + 14 JDs (933 kB) |
+| Orphaned files (in the bucket, referenced by nothing) | **0** |
+| Interview **video links** live | **18** — none correctable, none removable |
+| Interview feedback forms | 0 uploaded so far |
+
+⚠ **Zero orphans is not good hygiene — it is proof the replace paths have never once been used.**
+The storage leak begins the day "replace" ships without "remove".
+
+✅ **One thing is already in place: the storage DELETE policy exists.** `"fms hr docs delete"` on
+`storage.objects` admits `fms_hr_is_coordinator(auth.uid()) OR fms_hr_is_any_step_owner(auth.uid())`.
+**No storage migration is needed** — the bucket has been ready the whole time and nothing calls it.
+
+#### What to build
+
+1. **Teach the five RPCs to clear.** `coalesce` cannot express "set to null", so each needs an
+   explicit signal — a `p_clear boolean`, or a reserved sentinel — rather than relying on an empty
+   string, which today means "leave it alone". **This is the crux of the task**; everything else is
+   UI.
+2. **One attachment service, not six.** A single client-side helper that: writes the new row →
+   removes the superseded object from storage → records an activity line. Every screen calls it;
+   nothing calls `supabase.storage.remove` directly.
+3. **Put the controls where the files already are.** [CandidateDocuments.tsx](frontend/src/apps/hr-recruitment/components/kanban/CandidateDocuments.tsx)
+   already gathers every file and recording for one person into one list, grouped Application /
+   Interviews / Onboarding / Probation. It is read-only today — every row is an "open" button. Give
+   each row **Replace** and **Remove**, gated per row, and this task is largely done in one place.
+   The JD gets the same treatment on the requisition page.
+4. **Decouple "fix the attachment" from "re-record the result".** A small
+   `fms_hr_set_interview_media(p_candidate, p_round, …)` that changes only the video link and the
+   feedback form, with no stage test — so Round 1 stays fixable at Round 3 without dragging a card
+   backwards and destroying two rounds.
+5. **Resolve the orphan**: wire `updateCandidate` to a real Edit-candidate control, or delete it.
+   Leaving a reachable-looking write with no trigger is what FIX-4 is about.
+
+#### The traps
+
+- 🔴 **`coalesce` cannot clear — and it fails SILENTLY.** If Remove is built by passing `""` or
+  `null` to the existing RPCs, every button will appear to work and change nothing. Anyone testing
+  by clicking will report success. Test by re-reading the row.
+- 🔴 **Delete order matters.** Clear the database reference **first**, then remove the storage object
+  best-effort. The reverse leaves a dangling path — a visible, broken link the UI will keep
+  rendering — whereas a leftover object is invisible and harmless, and the operation stays safe to
+  retry.
+- 🔴 **Removing evidence from a completed onboarding must be refused, not reversed.** A ticked item
+  with `requires_file` may already have driven `fms_hr_try_complete_onboarding` — which fills a seat,
+  can close the vacancy and opens a probation. Silently untying that from a Remove button is far
+  worse than saying no. Same for a probation review once `outcome` is set: those already refuse
+  re-recording, and removing the form underneath a decision rewrites the basis of a decision.
+- 🔴 **A delete on personal data needs a trail.** These are CVs, phone numbers, interview
+  recordings. Deletion is arguably right (erasure requests) and it is also unrecoverable — the
+  bucket has no versioning. Every remove writes an `fms_hr_activity` row: who, what, when.
+- 🟡 **The storage policy is broader than the workflow.** `"fms hr docs delete"` admits **any step
+  owner** — so a telephonic screener passes the bucket check for a probation review form. Storage
+  policies cannot see the requisition, so the RPC must be the real gate: authorise a remove with the
+  same `fms_hr_can_act` rule as the step that produced the file, plus HR and coordinators. Do not
+  let the storage policy be the only test.
+- 🟡 **One delete path, not five.** The same file is rendered on `CandidateDocuments`, `PriorRounds`,
+  `CandidateMeetings` and `ResumeViewer`. If Remove is added to more than one of them, every one
+  must route through the single service — or the next fix lands in one place and not the others.
+- 🟡 **Ship with NR-4, or HR still cannot use it on a HOD's position.** `fms_hr_set_requisition_jd`
+  is **admin-or-requester only** — not HR, not a coordinator, not even the hiring manager — so HR
+  cannot replace the JD on a position a head raised. The probation and interview attachments sit
+  behind `fms_hr_can_act` on HOD steps, which is exactly what **NR-4** unlocks.
+
+#### Phase-wise checklist
+
+- [ ] **P1 · SQL.** Add explicit clear semantics to the five RPCs, plus `fms_hr_set_interview_media`.
+      Additive; no storage migration needed. Applied before the frontend, rollback rehearsed.
+      ⚠ Verify each clear by re-reading the row — a `coalesce` left in place fails silently.
+- [ ] **P2 · The attachment service** — one helper: write, then remove the superseded object, then
+      record the activity line. Copy receivables-hub's `storage.remove` pattern.
+- [ ] **P3 · The Documents tab** gains per-row **Replace** and **Remove**, gated per row, with a
+      confirm that names the file. The JD gets the same on the requisition page.
+- [ ] **P4 · Resolve the `updateCandidate` orphan** — give it a control or remove it.
+- [ ] **P5 · Guards** — refuse removal on a completed onboarding and on a decided probation; require
+      admin/coordinator for anything already decided.
+- [ ] **P6 · Walk it in the browser.** Replace a CV and confirm the **old object is gone from the
+      bucket**, not merely unreferenced. Fix a Round-1 video link while the candidate sits at Round 3.
+      Re-run the orphan count — it should still be 0.
+
+#### Settled — 03-09-2026, the same day it was raised
+
+| Asked | Answered |
+|---|---|
+| Does "videos" mean uploaded video FILES, or the links we store today? | **The LINKS.** All 18 live videos are URLs typed into a box on the interview result form. Editing and clearing `video_url` is in scope. **Video-file upload is explicitly OUT** — nothing in the module accepts video, and nothing needs to. If it is ever wanted it needs its own entry: size limits, a MIME allow-list, a player, and storage cost (one 30-minute recording can outweigh all 119 resumes put together). |
+| Should a CV be deletable, or only replaceable? | **Both.** Replace is the everyday action; Delete exists for an erasure request. |
+
+⚠ **Deleting a CV orphans its AI fit score, and the screen must say so.** `CandidateFit` disables its
+Run button on `!c.resumePath`, so once the CV is gone the score cannot be recomputed. Keep the score
+— it is a real historical reading — but state plainly that the document behind it has been removed.
+The confirm dialog should say it before the delete, not after.
+
+#### To settle
+
+- [ ] **Who may remove** — the step's own owner, or HR and coordinators only? The storage policy is
+      already broader than either.
+
 ### NR-1 · Round 2 offers every head set up to raise an MRF, and can be handed over  `[x]`
 *Raised 2026-08-25 · **Live 2026-08-26, 08:17 IST** on `master` at `adea51c` · SQL applied to
 `icutjkrqkbzwvmnfbzpr` (`20261020130000`, `20261020130100`) BEFORE the frontend, and the rollback
@@ -2974,9 +8187,10 @@ switch.
 
 ## Asset Maintenance  *(service & maintenance)*
 
-### AM-1 · Walk the module with Bushra and list the changes  `[~]`
-*Raised 2026-08-20 · **In progress, live in week 35** — the module itself is built. Every entry is
-being cross-checked, what that throws up gets fixed, and then it goes live.*
+### AM-1 · Walk the module with Bushra and list the changes  `[x]`
+*Raised 2026-08-20 · **CLOSED 04-09-2026 — the module has been checked and nothing further came out
+of it.** The walkthrough proper now happens against the real register rather than seeded rows, once
+Ritesh Bhai's sheet is in and punched — carried into **AM-4**.*
 
 The service and maintenance module is already built and live. Go through it **together with
 Bushra**, note down every change it needs, and then make them.
@@ -2998,8 +8212,9 @@ Reports, Masters, Master Requests, Settings, System.
 - **PC-1** — the coordinator's single approval queue. This module has its own Master Requests and
   its own per-FMS `process_coordinators` list.
 
-### AM-2 · Load the real asset register from the field  `[~]`
-*Raised 2026-08-29 · **Template built and sent, waiting on Finance to fill it.***
+### AM-2 · Load the real asset register from the field  `[x]`
+*Raised 2026-08-29 · **CLOSED 04-09-2026 — everything on our side is built, verified and sent.**
+What is left is not work, it is the filled sheet. That wait is tracked on its own as **AM-4**.*
 
 The register holds 10 rows, 9 of them seeded `[TEST DATA]`. Until the real assets are in, the
 module reminds nobody about anything. Ritesh Bhai asked for a sheet to fill in, so the collection
@@ -3022,8 +8237,35 @@ template is the deliverable and the bulk importer is how it comes back.
   masters gives **3 assets, 7 tracks, 0 rejected**, unchanged with 200 blank rows appended.
   Nothing was committed to the register.
 
-**Round one is vehicles, IT equipment and air conditioners only.** The other four categories are a
-re-send of the same 27 columns, not a redesign.
+**Round one is vehicles, IT equipment and air conditioners only** — Vehicle, Computer & IT, Air
+Conditioner. Sheet sent to Ritesh Bhai on 2026-08-29.
+
+### AM-3 · Round two: the remaining four asset categories  `[x]`
+*Raised 2026-08-29 · **CLOSED 04-09-2026 — folded into AM-4.** Nothing here ever needed building:
+the workbook, the 27 columns and the importer already cover all seven categories, so round two is a
+covering note rather than a task. The two half-hour edits it recommended are carried into **AM-4**
+so they are not lost.*
+
+Machinery, Electrical, Furniture and Safety Equipment. Deliberately held back so the first ask
+stays small: a short sheet gets filled and returned, and we find out whether the format survives
+contact with a field team before anyone is asked to list everything the company owns.
+
+**Nothing new to build.** Same workbook, same 27 columns, same importer. The Picklists tab already
+carries all seven categories, so a machine filled in today would load perfectly well — the only
+thing scoping round one to three categories is the covering note and which examples the Sample tab
+happens to show.
+
+**The one change worth making first:** swap two Sample rows to a machine instead of the laptop.
+Machinery meters in **Hours** rather than KM and carries **Calibration** and **Statutory
+Inspection** tracks, none of which round one's examples demonstrate. That is an edit to `SAMPLE` in
+[build-asset-template.mjs](frontend/scripts/build-asset-template.mjs) and to `sampleRows()` in
+[importTemplate.ts](frontend/src/apps/asset-maintenance/lib/importTemplate.ts), then
+`npm run asset-template`. Half an hour, not a rebuild.
+
+**Do this before sending round two, not after:** re-run the masters query in the generator's header
+comment and refresh the `PICKLISTS` snapshot. Round one will have added makes, locations and
+vendors through the "Values we do not have yet" box, and a stale snapshot would send the teams a
+dropdown that is missing values we have only just created.
 
 **Two traps the Read Me warns about, because neither gives a usable error:**
 - A serial number identifies one physical unit. Give two different assets the same one and the
@@ -3044,34 +8286,99 @@ Note the preview undercounts tracks: the auto-created Warranty Expiry ones never
 
 ---
 
+### AM-4 · Waiting on Ritesh Bhai for the asset details  `[!]`
+*Raised 2026-09-04 · **The module's only open item.** Everything buildable is built; AM-1, AM-2 and
+AM-3 all close into this one. Blocked on **Ritesh Bhai** since 2026-08-29.*
+
+**Where it stands.** The module is built and has been checked. The collection template is built,
+verified and was sent to Ritesh Bhai on **2026-08-29**. **Nothing further gets built until the
+filled sheet comes back** — the register holds 10 rows of which **9 are seeded `[TEST DATA]`**
+(only `ASSET-0001`, a laptop, is real), so until then the module reminds nobody about anything.
+
+**What happens when it arrives, in this order:**
+1. Add any new **makes, locations and vendors** as masters **first**. The importer resolves masters
+   by name and rejects a row naming one it does not already hold.
+2. **Punch the assets in** through the bulk importer.
+3. **Then walk the module**, against real rows rather than seeded ones. Screens to cover so nothing
+   is skipped: Dashboard, Calendar, Assets, Jobs, Queues, Monitoring, Reports, Masters, Master
+   Requests, Settings, System.
+
+**Two decisions to take before the first real load** — neither is mine:
+- 🔴 **The 9 `[TEST DATA]` assets and their 20 tracks.** Removal is destructive and constrained by
+  `on delete restrict` from schedules and jobs, so it needs a decision rather than a delete.
+- 🔴 **PF-14** — `fms_asset_step_owners` still holds **0 rows**, so a loaded register would remind
+  people about work **nobody but an admin can action**. Only **2 accounts** have
+  `asset-maintenance` access today.
+
+**Carried over from AM-3, for whenever round two is sent** (Machinery, Electrical, Furniture,
+Safety Equipment — same workbook, same 27 columns, same importer, no new build):
+- Swap two Sample rows to a **machine** rather than the laptop. Machinery meters in **Hours** not
+  KM and carries **Calibration** and **Statutory Inspection** tracks, none of which round one's
+  examples demonstrate. Edit `SAMPLE` in
+  [build-asset-template.mjs](frontend/scripts/build-asset-template.mjs) and `sampleRows()` in
+  [importTemplate.ts](frontend/src/apps/asset-maintenance/lib/importTemplate.ts), then
+  `npm run asset-template`. Half an hour.
+- **Refresh the `PICKLISTS` snapshot before sending.** Round one will have added makes, locations
+  and vendors through the "Values we do not have yet" box, and a stale snapshot would hand the
+  field team a dropdown missing values we had only just created.
+
+**The two traps that give no usable error**, worth re-reading on the day of the load:
+- **A serial number identifies one physical unit.** Give two different assets the same one and the
+  second is absorbed as a *track* on the first, its details discarded silently.
+- **`Warranty months` + a purchase date auto-creates the Warranty Expiry track**
+  (`fms_asset_submit_asset`). Adding a Warranty Expiry row as well breaks the
+  `unique (asset_id, schedule_type_id)` key, and the importer swallows that in a bare `catch`. The
+  preview also **undercounts tracks**, because those auto-created ones never appear in it.
+
+---
+
 ## Admin / Masters
 
 *(cross-ref: **PC-1** above — master approvals need to reach a non-admin coordinator)*
 
 ---
 
-### MS-2 · Credit terms in the masters are half-filled, and the ₹1 flag is stale  `[ ]`
-*Raised 2026-08-29 · the data half of **RC-8**, which builds the report that surfaces this*
+### MS-2 · Credit terms in the masters are half-filled, and the ₹1 flag is stale  `[x]`
+*Raised 2026-08-29 · **CLOSED 04-09-2026 — handed to Accounts, closed on our side.** The report that
+shows them where to look is **RC-8**, live since 29-08. Filling the values in Tally is Accounts'
+work, not a build, and it is not tracked here any more.*
 
-**RC-8** gives Finance the list. This is the cleanup it will point at, and it is Accounts' call, not
-a build.
+⚠ **Closed as HANDED OVER, not as clean.** Re-measured on `mst_parties` the day it was closed, so
+nobody later reads this as "the data was checked and is fine":
 
-`mst_parties` carries one row per ledger per Tally company — 7,886 rows, 6,424 names, 5 companies —
-and **1,043 names live in more than one company** (424 customers). Credit **days** are set in some
-books and blank in others for **117** names, credit **limit** for **130**; where set in every book
-the values still disagree for **28** (days) and **136** (limit). **180 of the 424** multi-company
-customers have at least one gap.
+| Measured 04-09-2026 (7,913 rows, last sync 06:00 UTC) | |
+|---|---|
+| Carry a real credit limit | **755** |
+| Carry the ₹1 *blocked* flag | **182** — 175 stored as **−1**, 7 as **+1** |
+| Nothing at all | **6,976** |
+| Credit days set | **918** · blank **6,995** |
 
-**To discuss with Accounts:**
-- [ ] **Is blank always wrong?** A book that never sells to a party needs no limit. VAIBHAV
-      ENTERPRISES argues for weighting by activity: the book holding ₹16 lakh overdue matters, the
-      one holding −₹92 does not.
-- [ ] **136 names carry different limits in different books** — deliberate per-company exposure, or
-      drift nobody has looked at?
-- [ ] **The 184 rows still flagged ₹1 in Tally** — only 12 are on the Red Mark master. Clean them up
-      so ₹1 means something again, or leave them and teach every reader to ignore ₹1?
-- [ ] **Who fixes it** — Accounts correct it in Tally and the next sync carries it across, or may the
-      portal hold a credit term of its own? Today the field is read-only by design.
+🔴 **Tally stores a debtor's credit limit as a NEGATIVE (Cr) amount, and it catches every reader.**
+A `credit_limit > 0` test finds 116 rows and calls 814 real limits blank; a `= 1` test finds 7 of the
+182 flags. This trap was already written down in **RC-8**'s trap 2 and was walked into again on the
+day of closure. **Test on `abs(credit_limit)`, always.**
+
+🟡 **Two more things found on the way out, neither of which blocks anything:**
+- **Credit period is free text, and it is spelled 31 different ways.** `30 Days` (252) but also bare
+  `30` (20); `60 Days` (239) and `60` (43); `45 Days` (173) and `45` (7). **87 rows are bare
+  numbers**, 2 are neither shape, and 17 read `1 Days`. Anything that groups or compares these
+  treats `60` and `60 Days` as two different terms.
+- **Nothing in the portal enforces a credit limit.** `mst_parties.credit_limit` and `credit_period`
+  are read by exactly one screen — Admin → Masters → Parties
+  ([liveMasters.ts:384](frontend/src/core/platform/liveMasters.ts#L384)) — where credit period is
+  `readOnly: true` ([Masters.tsx:727](frontend/src/core/admin/Masters.tsx#L727)) and **credit limit
+  is not shown at all**. No FMS checks either. The receivables Credit Terms report reads
+  **ConnectWave's own copy**, a separate sync of the same Tally data, so the two mirrors can drift
+  apart and no screen would show it.
+
+**If it is ever picked up again**, these were the questions for Accounts:
+- **Is blank always wrong?** A book that never sells to a party needs no limit. VAIBHAV ENTERPRISES
+  argues for weighting by activity: the book holding ₹16 lakh overdue matters, the one holding −₹92
+  does not.
+- **Do different limits in different books mean deliberate per-company exposure, or drift?**
+- **The 182 rows flagged ₹1** — only 12 overlap the Red Mark master. Clean them so ₹1 means
+  something again, or leave them and teach every reader to ignore ₹1?
+- **May the portal ever hold a credit term of its own**, or is Tally always the only source?
 
 ---
 
@@ -3079,8 +8386,9 @@ customers have at least one gap.
 
 *(cross-ref: **PC-1** above — decide whether this stays alongside the new dashboard)*
 
-### CC-1 · Ranking on the master control center  `[ ]`
-*Raised 2026-08-20*
+### CC-1 · Ranking on the master control center  🟢  `[ ]`
+*Raised 2026-08-20 · **Low priority, confirmed 04-09-2026.** Nothing depends on it and it is a real
+build — a person dimension threaded through all nine adapters, not a widget. Park it.*
 
 Add a gamification layer to the master control center: **a user sees their ranking** and
 understands where they stand against everyone else using the Orange One hub.
@@ -3115,11 +8423,17 @@ not throughput.
 
 ## Order to Dispatch
 
-**OD-7's Step 0 is finished**: every item now carries the type the sheet gave it — **MS-1**, shipped
-2026-08-21, see [Done](#done). The screen work is no longer blocked on it. (**OD-6**, the slow save,
-is fixed — also in Done.)
+**Four open: OD-12, OD-1, OD-5 and OD-7.**
+🔴 **OD-12 is the priority** (raised 04-09) — the LOT number should come **live from Tally** instead of
+being typed by hand at Check Material Status. ⚠ It cannot start yet: **no Tally view we consume
+carries a batch**, so ConnectWave has to expose batch-wise stock first — see [Waiting for](#waiting-for).
+**OD-2 and OD-10 are CLOSED**, both verified live on master 04-09-2026. Customer and item can no
+longer be requested from Dispatch at all, which shrinks **OD-5** to a cleanup of **11 historic rows**.
+**OD-1** still wants a word with Bushra. **OD-7** (sale type *stored on* the order) is a decision to
+take, not a blockage — its Step 0 is done (**MS-1**), and its intake-filter half shipped as **OD-10**.
+(**OD-3 · OD-4 · OD-6 · OD-8 · OD-9 · OD-11** are done — see [Done](#done).)
 
-*(cross-ref: **PF-1** — Save Draft lands here second, after Production · **PF-6** — this module is the pilot for opening view-only access, and **PF-7** ships with it · **PF-13** — the credit check gets a reassign, and the empty all-locations fallback row is the cheap fix that needs no code)*
+*(cross-ref: **PF-1** — Save Draft lands here second, after Production · **PF-6** — this module is the pilot for opening view-only access, and **PF-7** ships with it · **PF-13** was dropped on 03-09; see the [tombstone](#dropped--pf-12-and-pf-13-03-09-2026-clients-call))*
 
 ### OD-1 · Internal transfer / Others on a dispatch  `[ ]`
 *Raised 2026-08-20 · **Unblocked 2026-08-22** — the scope is settled and this is queued for build. The
@@ -3160,8 +8474,27 @@ than two more values on that one; worth confirming rather than assuming.
       only who appears in the picker?
 - [ ] What happens to orders already raised for internal movement under the current options.
 
-### OD-2 · Stop creating customer and item masters inside Orange One  `[~]`
-*Raised 2026-08-20 · **Half answered 2026-08-21** — the removal is decided; the tagging half is still open*
+### OD-2 · Stop creating customer and item masters inside Orange One  `[x]`
+*Raised 2026-08-20 · Answered 2026-08-21 · **LIVE — verified on master 04-09-2026.**
+`REQUESTABLE_DISPATCH_MASTER_TYPES` is now filtered to `customer_item` and `company_location` only
+([types/index.ts:232](frontend/src/apps/order-to-dispatch/types/index.ts#L232)), so **customer and
+item can no longer be requested from Order to Dispatch at all.** They come from Tally, and nowhere
+else. Shipped alongside **OD-9**.*
+
+**What a user gets instead of a dead end.** The item they could not find is nearly always merely
+*unmapped*, and **OD-9** lets them map it themselves on the spot. Only an item that exists nowhere in
+Tally now stops them, and the modal says so.
+
+**The requests already raised, for the record** (measured 04-09-2026): 7 customers and 6 items were
+approved through the old route, 3 and 15 rejected. **None is pending** — the queue is empty, so
+closing the route stranded nothing.
+
+⚠ **One thing was dropped rather than done, deliberately:** how loudly a portal-created master is
+flagged *inside* Dispatch. The plumbing exists — every central master row carries `source`
+(`"tally" | "portal"`) plus `tally_guid` / `tally_synced_at`, and the **admin** Masters grid already
+has an "In Tally" column — but Dispatch does not surface it. With the route closed, no new
+portal-made master can appear, so this is now about **11 historic rows** (see **OD-5**), not an
+ongoing leak. Reopen it if those rows cause trouble.
 
 **✅ ANSWERED: remove them.** "Request a new customer" and "request a new item" come out of Order to
 Dispatch entirely — they come from Tally only. That is built as part of
@@ -3428,9 +8761,17 @@ what the Step 0 sheet is.
 
 ---
 
-### OD-10 · Item type on the sales order, and the item list follows it  `[~]`
-*Raised 2026-08-21 · **Built 2026-08-21, on localhost only** — awaiting the user's test before it goes
-to `master`. This is **OD-7's intake-filter half only**; see the boundary below.*
+### OD-10 · Item type on the sales order, and the item list follows it  `[x]`
+*Raised 2026-08-21 · **LIVE 2026-08-21** — `e919da9` *"The sales order asks what kind of item, and the
+list follows it"*, on master, Vercel green · **CLOSED 04-09-2026**, verified on master.*
+
+⚠ **This entry said "on localhost only, not pushed" for two weeks after it had in fact shipped.** It
+went to master the same day it was written and the note was never updated. Checked on the branch:
+the Item type field is live in
+[SalesOrderFields.tsx:265](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx#L265)
+and the mapping modal's filter in
+[MapCustomerItemModal.tsx:124](frontend/src/apps/order-to-dispatch/components/MapCustomerItemModal.tsx#L124).
+**This is OD-7's intake-filter half only**; see the boundary below.
 
 **Where it stands.** Written, `npm run build` passes, **not pushed**. No migration and no database
 change — this is entirely frontend, so there is nothing to apply ahead of the deploy.
@@ -3518,6 +8859,96 @@ Every mapped item carries a type — **zero untyped** — so nothing falls throu
 
 ---
 
+### OD-12 · The LOT number should come live from Tally, not be typed by hand  🔴  `[ ]`
+*Raised 2026-09-04 · asked with a screenshot of **Check Material Status** on SO-2627-0828 ·
+**High priority** · audited the same day against the code and the live data*
+
+**The ask.** At **Check Material Status** the storekeeper types the LOT no. into a free text box, one
+per item line. It should instead **offer the real lot numbers, read live from Tally**, and the user
+picks.
+
+#### What is there today
+
+A plain text input, placeholder *"as marked on the stock"*
+([ShipLinesGrid.tsx:122](frontend/src/apps/order-to-dispatch/components/ShipLinesGrid.tsx#L122)),
+saved to `fms_dispatch_round_items.lot_no` (`text`). **Nothing validates it and nothing requires
+it** — a round saves fine with the box empty. The value then travels: the round panel
+([OrderRefPanel.tsx:255](frontend/src/apps/order-to-dispatch/components/OrderRefPanel.tsx#L255)),
+the order detail, and the **Order Register export**, where a line's lots are joined with commas.
+
+#### What hand-typing has actually produced
+
+| Measured 04-09-2026 on `fms_dispatch_round_items` | |
+|---|---|
+| Shipped lines | **3,475** |
+| Distinct lot values typed | **653** |
+| Lines with **no lot at all** | **71** |
+| Lines whose box holds **more than one lot** (`,` `/` `&`) | **82** |
+| Junk in the lot box | **25 lines / 8 values** — `NA` · `na` · `NIL` · `NILL` · `Nill` · `nill` · **`10 DISCOUNT`** · **`10% DISCOUNT`** |
+| One physical lot, several spellings | 6 groups — e.g. **`Hm25111264co` / `HM25111264co` / `HM25111264CO`**, and `F 22604302903` / `F22604302903` |
+
+⚠ **`10% DISCOUNT` in the LOT column is the whole argument.** A free box gets used for whatever the
+person needs to say, and nothing downstream can tell that apart from a real lot.
+
+#### 🔴 The blocker: Tally's batch data is NOT in the mirror
+
+Everything the portal reads from Tally comes through the **ConnectWave** mirror. The complete list of
+what we consume today: `v_company` · `v_ledger_detail` · `v_master_stock_item` ·
+`v_clevel_stock_item` · `v_clevel_stock_group_summary` · `v_voucher_type_nature` · `v_fs_line` ·
+`v_fs_company` · `v_non_bill_ref` · `rpt_sales_register` · `rpt_purchase_item`. **Not one of them
+carries a batch or a lot.** `v_master_stock_item` gives `guid · item · stock_group · base_unit`;
+`v_clevel_stock_item` gives closing qty and value **per item**, not per batch.
+
+**So there is nothing to read yet, and that is the first action** — ask ConnectWave whether they can
+expose **batch-wise closing stock**: company × item × godown × **batch** × quantity, ideally with the
+batch's manufacturing/expiry dates.
+
+⚠ **Read off our code, not off their database.** This lists what we *consume*; ConnectWave may
+already hold more. It could not be checked directly — the ConnectWave MCP needs an authorisation
+this session did not have.
+
+#### 🟡 We already mint lot numbers ourselves, and they overlap
+
+Production Entry stamps a finished-goods lot on a production request: `fms_production_requests.fg_lot_no`,
+**40 filled** of 163 — `LANYU-26062514`, `LANYU-26062481`, and some parenthesised as
+`(LANYU-26062441)`, itself a sign of hand-entry. (`lot_no` and `batch_card_no` on that table are
+empty on every row.)
+
+🔴 **And the two sources already meet.** `100770526` appears as a production `fg_lot_no` **and** as a
+typed dispatch `lot_no` on **54 lines**. So before any picker is built, decide **which is the
+authority** — Tally's batch, or our own production lot. Building against the wrong one means doing it
+twice.
+
+#### What to build, once a source exists
+
+- [ ] Replace the text box with a **searchable picker** (`Combobox`, as every form field here uses),
+      scoped to **that item line** and the round's **dispatch location**, showing **available qty per
+      lot** so the storekeeper picks the right one rather than recalling it.
+- [ ] ⚠ **Keep a way to type it anyway.** The first lot that is real on the floor but missing from
+      the mirror must not stop a dispatch. Recommendation: picker first, free text behind a
+      deliberate click, and mark those rows so the gap is visible instead of silent.
+- [ ] 🔴 **One line can ship from more than one lot — 82 lines already do.** A single text column
+      cannot hold that honestly. Either model it properly (lot + qty per line, a child table) or
+      accept concatenation and say so on the screen. This is the one decision that is expensive to
+      change later.
+- [ ] **Warn, do not block**, when the quantity shipped exceeds what the chosen lot holds. The mirror
+      lags the floor; a hard stop would strand real dispatches.
+- [ ] Decide whether the lot becomes **required** once picking is easy. 71 lines say it is skippable
+      today.
+
+#### To settle
+
+- [ ] **Which is the authority — Tally's batch, or Production Entry's `fg_lot_no`?**
+- [ ] **Can ConnectWave expose batch-wise stock at all?** Nothing is buildable until this is answered.
+      *(Waiting-for row added 04-09-2026.)*
+- [ ] **How fresh must it be?** "Live from Tally" through a mirror means as fresh as the last sync,
+      not to the second. Say so on the screen or someone will read a stale list as wrong.
+- [ ] **Multiple lots on one line** — modelled properly, or one per line?
+- [ ] **The 653 values already typed** — leave them as history (recommended), or normalise the six
+      spelling groups and the 25 junk rows?
+
+---
+
 ## Production Entry
 
 *(cross-ref: **PF-1** — Save Draft lands here FIRST)*
@@ -3543,7 +8974,7 @@ raise a queue item the way other FMS steps do.
 
 ### PE-2 · Lot-wise and stage-wise production cycle-time report  `[~]`
 *Raised 2026-08-20 · From the factory visit · **Unblocked 2026-08-25**, scope agreed ·
-in build*
+built 2026-08-25, first-read fixes 2026-08-26 · **awaiting a look on screen before it ships***
 
 Two screens under Production Entry → Reports, both gated on `canMonitor` (the same flag that
 already opens the Control Center):
@@ -3585,6 +9016,33 @@ worth raising separately from this build.
 loops back through Additional Issue Slip keeps its *first* handover timestamps, because every step
 stamps `coalesce(x_at, now())`; and a hold has `hold_at` but no resume stamp, so a held lot's
 current stage silently includes the hold. Both are surfaced as columns, not hidden.
+
+**Changed after the first read, 2026-08-26.** Two things came back on Lot Cycle Time:
+
+- **Every stage column now shows.** Six of the eleven step columns had been put behind the
+  Columns menu (RM Transfer, Add'l Issue Slip, M/C Testing, PM Transfer, Ready to Dispatch, FG
+  Transfer), so the table opened on five and read as though the chain stopped there. A report
+  whose subject is time-per-stage must not hide stages. ⚠ The picker's storage key had to be
+  bumped as well (`production-lot-cycle-v2`): `QueueTable` seeds visibility as `stored ??
+  defaults`, and a remembered choice beats the default permanently — so for anyone who had
+  opened that menu once, dropping the flag alone would have changed nothing.
+- **A graphical lot view.** `components/LotStageChart.tsx` — one horizontal bar per lot, split
+  into the five stages, in days, twenty slowest first with the cut stated on screen. A stage the
+  lot is still sitting in is drawn paler, because every lot in the book has one and a bar that
+  mixed measured with in-progress time would overstate what has actually been measured. Colour
+  is fixed **per stage, never by rank**, so filtering never repaints the survivors; the five hues
+  come from the palette hr-exit and hr-recruitment already share and were run through a
+  colour-vision validator rather than eyeballed.
+
+Two limits worth knowing before anyone asks: the chart stays at **five stages even when the
+table is toggled to eleven steps** (eight fixed hues in the palette; eleven segments cannot be
+told apart), and it follows the **filter card, not the per-column filters inside the table** —
+`QueueTable` filters its own rows internally and does not report that back out. Both are said on
+the screen itself.
+
+**Still to do before this moves to Done:** open both screens and look at them. Everything so far
+is verified by `npm run build` (green) and by running the real `cycleTime` module against real
+job cards, but nobody has yet seen the chart render.
 
 **To discuss with Bushra:** which steps are missing and where they sit in the existing chain
 (Handover & QC → Log Book & Production → M/C Testing → Packing → Dispatch) — the report widens to
@@ -3677,26 +9135,30 @@ vs 9 internal; the server refuses a future issue date, an unapproved lot and a r
 independently of the client; back-dating accepted; the standard freeze holds; PDF and Excel both
 carry `µ` and `³`; the Setup setting removes the Excel button rather than greying it.
 
-⚠ **THREE SAMPLE COAs ARE SITTING IN THE LIVE DATABASE** *(seeded 01-Sep-2026, for the client to look
-at the screens before the frontend ships)* — lots **2608-1344**, **2608-1342** and **2608-1339**. They
-hang off REAL approved lots and **every observed value is invented**; the lot numbers and product
-names are stamped off the job card and could not be faked, so the only thing marking them is the
-conclusion, which reads `[ZZ TEST DATA - DO NOT SEND] Pass / Qualified` and prints on **both** copies.
+✅ **THE THREE SAMPLE COAs ARE GONE, 02-Sep-2026** — lots **2608-1344**, **2608-1342** and
+**2608-1339**, seeded 01-Sep-2026 so the client could look at the screens before the frontend
+shipped. They hung off REAL approved lots with **every observed value invented**, marked only by the
+conclusion (`[ZZ TEST DATA - DO NOT SEND] Pass / Qualified`, which printed on **both** copies).
+Deleted on the client's instruction once the frontend went live, keyed on that marker so a genuine
+certificate could not be caught by the statement.
 
-⚠ **THEY STAY FOR NOW — do not delete them.** *(Client's instruction, 01-Sep-2026.)* The production
-team has to audit the COA against how they actually work before anything else is decided, and the
-three samples are what they will be looking at. Remove them only when that audit says so.
-
-When that time comes it is one statement, safe to re-run, and it cannot touch a genuine certificate
-because it keys on the marker:
+**They are recoverable.** The rows were copied first into `public._coa_test_backup_20260902` — same
+column list, RLS enabled with no policies, so PostgREST cannot read it:
 
 ```sql
-delete from public.fms_production_coas where conclusion like '[ZZ TEST DATA%';
+insert into public.fms_production_coas select * from public._coa_test_backup_20260902;
+-- and when nobody wants them back:  drop table public._coa_test_backup_20260902;
 ```
 
-They were inserted directly rather than through `fms_production_save_coa`, so no activity rows were
-written and there is nothing else to clean. The nine parameters and six test equipments are **not**
-test data — they came with the migration and stay.
+They had been inserted directly rather than through `fms_production_save_coa`, so no activity rows
+were written and there was nothing else to clean; the master standards were confirmed still blank
+and the storage bucket confirmed empty of COA files before deleting. The nine parameters and six
+test equipments are **not** test data — they came with the migration and stay.
+
+⚠ **ONE CERTIFICATE REMAINS AND IT IS REAL.** Lot **2608-1333** (EPN Sublimation Ink Black), issued
+02-Sep-2026 16:56 IST by Vivek.Boid@orangeotec.com on a live card still sitting at quality check —
+with **0 of 9 readings filled in**. It is what prompted the client to ask about the samples at all.
+See **PE-7**: the form lets a certificate save with every reading blank.
 
 **Still to confirm with the factory / Bushra** — none of it blocks use:
 
@@ -4025,7 +9487,7 @@ Every cost listed above was paid:
   by its **column list, not by a guessed name**: it was created implicitly by `request_id ... unique`,
   so its name was a Postgres convention rather than something this repo chose.
 - **All three existing certificates were back-filled to round 1** — the samples on lots 2608-1344 /
-  2608-1342 / 2608-1339, which stay. ⚠ **`qc_result` was back-filled too**, from each card's own
+  2608-1342 / 2608-1339 (since deleted, 02-Sep-2026). ⚠ **`qc_result` was back-filled too**, from each card's own
   round record and *not* from `qc_status`; left null they would print `NOT VERIFIED`, and they are
   exactly what the production team is about to audit.
 - **`coaForRequest()` is gone**, replaced by `coasForRequest()` (a list, oldest test first) and
@@ -4169,10 +9631,11 @@ to open Masters at all — the first COA of the day can populate it. And the she
 standards are internal-only with *"no relation with software"* still stands unresolved against the
 02-Sep ask; that is a question for QC, not a data-entry task.
 
-**⚠ Unchanged by this entry:** the three sample COAs on lots **2608-1344**, **2608-1342** and
-**2608-1339** stay in the live database until the production team's audit says otherwise (PE-3,
-client's instruction 01-Sep-2026). Verified at the end of this build: their `lines` are
-byte-identical to what they were before it, and no master standard was left set.
+**✅ Removed after this entry, 02-Sep-2026:** the three sample COAs on lots **2608-1344**,
+**2608-1342** and **2608-1339** were deleted on the client's instruction once the frontend was live
+(backup: `public._coa_test_backup_20260902` — see PE-3). Verified at the end of this build, while
+they still existed: their `lines` were byte-identical to what they had been before it, and no master
+standard was left set.
 
 **To discuss with the client / Bushra:**
 
@@ -4411,6 +9874,47 @@ half that sends mail, and it should not go live until the queues it describes ar
 
 ---
 
+### PE-7 · A certificate can be saved — and printed — with every reading blank  `[ ]`
+
+**Found in the wild, 02-Sep-2026, the day the COA went live.** Lot **2608-1333** (EPN Sublimation
+Ink Black) carries a Certificate of Analysis issued at 16:56 IST by Vivek.Boid@orangeotec.com with
+**0 of 9 observed values**. The card is still sitting at quality check. Nothing was wrong with what
+he did — he opened the new form and saved it — and nothing stopped him.
+
+What that produces is a document headed *Certificate of Analysis*, with the letterhead, the lot
+number, the nine parameter names, the standards, the test equipment, the conclusion **Pass /
+Qualified**, and the Observed column empty top to bottom. All four outputs render it: the PDF, the
+Excel, the browser print and the on-screen block. It can be handed to a customer exactly as it is.
+
+⚠ **The fix is NOT simply "refuse to save until all nine are filled".** A part-filled certificate is
+a legitimate working state — readings arrive as the tests finish, and PE-3 deliberately built the
+register's **Observed n/9** column so a half-done certificate is visible as half-done. One of the
+three sample COAs was seeded at 6/9 for exactly that reason. Blocking the save turns a normal
+morning into a wall.
+
+**The gate belongs on issuing, not on saving.** Three parts, and they are separable:
+
+1. **Nothing prints while a reading is missing.** `CoaExports`' six buttons (Customer / Internal ×
+   PDF / Excel / Print) go disabled while `observed` is blank on any line that `appears_on` that
+   copy — note the audience: a customer copy that omits four internal-only rows should not be held
+   hostage by them. The strip says why: *"3 readings still to enter."*
+2. **The conclusion should not read Pass on an empty certificate.** It defaults to *Pass /
+   Qualified* today regardless. Either default it blank until every reading is in, or leave it and
+   let (1) do the work — but the current combination, a confident conclusion over an empty grid, is
+   the part that would actually mislead somebody.
+3. **The save stays open**, with a count on the form and in the register, so the working state is
+   still a working state.
+
+**Do not put this in the RPC alone.** `fms_production_save_coa` must keep accepting a part-filled
+certificate — that is the working state. If a server-side refusal is wanted it belongs on a separate
+"issue" action, which does not exist today; the certificate has no issued/draft distinction, and
+adding one is a bigger change than this entry needs.
+
+**Vivek's row stays** — it is real data, and deleting a real user's save to tidy a screen is how
+history goes missing. He can fill it in or the QC team can decide what to do with it.
+
+---
+
 ## Purchase RM Domestic
 
 *(nothing yet — **PD-1** shipped 2026-08-27, see [Done](#done))*
@@ -4438,142 +9942,544 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
-### RC-8 · Credit days and credit limit are not set for most customers, and differ book to book  `[ ]`
-*Raised 2026-08-29 · off a check on VAIBHAV ENTERPRISES · cross-ref **MS-2** (the masters half of this)*
+### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[ ]`
+*Raised 2026-09-03 · Audited the same day against the code and the supplied sheet ·
+Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **DISPUTE***
 
-**VAIBHAV ENTERPRISES** was checked: credit days and credit limit filled in for one company, blank
-for the others. It is one ledger in four books, and only the smallest carries a term.
+⚠ **Sibling of RC-12, and it should be built with it.** Clear/uncleared, the three-way toggle, the
+default view, editable remarks and who-may-clear are the *same* decisions, already taken there.
+Building them twice is how the two screens end up behaving differently.
 
-| Company | Credit limit | Credit days | Outstanding |
-|---|---|---|---|
-| O-tec — Noida | ₹40,000 | **15 Days** | ₹28,792 |
-| Enterprise — Noida | ₹16,51,000 | — | **₹16,01,201, all overdue** |
-| Enterprise — Surat | ₹1 *(a flag, not a limit)* | — | ₹0 |
-| O-tec — Surat | ₹1 *(flag)* | — | −₹92 |
-| O-tec — Surat · `VAIBHAV ENTERPRISES MACHINE` | ₹1 *(flag)* | — | ₹4,00,000 |
+**The ask.** Hold the disputed **bills** in a list of their own — customer, date, invoice amount,
+pending amount, what has been received or credit-noted against it, type, the invoice reference, and
+remarks. Then: **clear an entry** when it is settled (default view shows only uncleared), **edit the
+remarks**, and **add a bill** by picking a customer, seeing their overdue invoices, ticking one and
+writing a remark.
 
-The book holding **₹16 lakh, all of it overdue**, has no credit days at all — so no rule can call
-anything there late.
+#### Master or report? It is both, and the module already has the pattern
 
-**It is not one party.** Measured on the source the report reads — `collection_customer_snapshot`,
-all 1,854 customer rows, one per ledger per book, resolved to companies through `ext_company_map`:
+Red Mark is exactly this shape and answers the question: a hand-kept **master** (`ext_redmark`) that
+stores *only* what a human types, plus a **report page** (`RedMarkCustomersReport`) that joins it to
+live Tally figures at read time. Nothing about a customer's money is copied into the master.
 
-| Company — Location | Rows | Neither set | Days missing | Limit missing | Set on the bills | Complete |
-|---|---|---|---|---|---|---|
-| O-tec — Surat | 1,189 | **604** | 68 | 144 | 93 | 280 |
-| Enterprise — Surat | 303 | 53 | 2 | 41 | 20 | 187 |
-| O-tec — Noida | 176 | 36 | 10 | 26 | 7 | 97 |
-| Enterprise — Noida | 105 | 15 | 1 | 31 | 8 | 50 |
-| Colorix — Surat | 81 | 23 | 10 | 16 | 14 | 18 |
-| **Total** | **1,854** | **731** | **91** | **258** | **142** | **632** |
+**Do the same here.** The master stores the dispute; the numbers stay live. Concretely:
 
-**The genuinely uncontrolled money is ₹1.42 Cr**, not the ₹24 Cr a ledger-only reading gives — see
-the bill-wise trap below, which is the single most important thing on this entry. And the Vaibhav
-pattern: 391 customer names appear in more than one book, and **206 records** are missing a term the
-same customer already holds in another book — ₹5.33 Cr outstanding, ₹2.10 Cr of it overdue. Those
-are demonstrably an oversight rather than a deliberate no-credit book, and they are one filter click.
+| Field | Where it comes from |
+|---|---|
+| Customer name | **live** — `Customer.name` |
+| Date | **live** — `Invoice.date` |
+| **Invoice amount** | **live** — `Invoice.amount` ✅ *(the sheet does not even have this column)* |
+| Pending amount | **live** — `Invoice.pending` |
+| **Received / credit note** | **live** — `Invoice.receiptAdj`, `creditNoteAdj` (see the trap below) |
+| Sale type | **live** — `Invoice.voucherType` |
+| Invoice reference | the key — `Invoice.billRefName` |
+| **Remarks** | **typed, stored** |
+| **Cleared / cleared when / by / why** | **typed, stored** |
 
-**It is Tally's data, not our sync** — confirmed row-for-row against the mirror's `v_ledger_detail`.
-Fixing the data is **MS-2**; this entry is the report that shows Finance where to look.
+✅ **Everything on the left except remarks and the clear status is already loaded in the browser.**
+`CustomerDetail.invoices` is fetched by `useAppData` today and carries all of it, which is also what
+makes the "pick a customer → show their overdue invoices" add-flow essentially free.
 
-**What we are building.** *Credit Terms Not Set* — Outstanding Dashboard → Reports → Receivables, at
-`reports/credit-terms`. Two panels: a **company-wise** summary (one row per company + location, with
-the counts above and the money owed with nothing set) and the **customer-wise** list beneath it,
-every column sorting and filtering, filters cascading, 25 a page, Excel out in two sheets.
-**Filters by sale type** — Ink / Paper / Spare Parts / Machine / Head / Other, a customer matching on
-open outstanding or sales, with the mix shown per row: Spare Parts alone is 355 customer records, 80%
-of them fully set up. A **Has outstanding** toggle drops the 1,131 ledgers sitting at exactly
-zero — 1,080 rows become 140, which is the list somebody can actually work through — and a **Last
-activity** column (newest receipt or bill; dormant ledgers read "—") says whether a gap is worth
-chasing at all. **Every figure in the company panel is a drill-down**: click a count and the
-list below becomes exactly those customers (604 -> 604 rows), click it again to come back. Clicking
-the money column also switches the balance filter to *owes money*, because that column sums positive
-balances only — without that the ₹82.47 L cell landed on a list whose own total read −₹3.42 Cr,
-having dragged back in the credit balances the figure deliberately excludes. A zero count is inert:
-it could only ever land on an empty table. The five status columns are mutually exclusive and add up to Customers; the panel
-says so, and each Customers cell carries the sum as a tooltip so a future change cannot break it
-quietly. Default view is the gaps, sorted by outstanding, so the largest exposure with
-no terms is the first line; one
-click on the filter chip widens it to the full customer list. Reads `useAppData().allCustomers` — no
-new fetcher, no migration, no schema change.
+The closest existing precedent for the table itself is **`ext_other_payments`** — the one muster that
+is **per-transaction rather than per-ledger**, with its own `id` plus a `ledger_id` saying whose money
+it is, and add / edit / delete in the Muster Editor. A disputed *bill* is the same shape.
 
-**⚠ Four traps, all of which bite a naive reading of this data.**
-1. **🔴 CREDIT DAYS LIVE IN TWO PLACES, AND THE LEDGER IS ONLY ONE OF THEM.** A bill carries its own
-   `BILLCREDITPERIOD` — "45 Days", or an explicit date like "5-May-26" — typed at invoice entry;
-   61,410 such values are stored. **142 ledgers here hold no master credit period while their open
-   bills each carry a due date.** Reading the ledger alone called every one of them "Days missing".
-   BISHEN DYEING (MACHINE) — 44 open bills, ₹4.62 Cr, a machine instalment schedule due 15-Apr,
-   15-May, 15-Jun — was the report's number-one offender and is perfectly controlled. Correcting
-   this took "owed with nothing set" from **₹24.32 Cr to ₹1.42 Cr**: the ledger-only reading
-   overstated the problem by seventeen times. They now carry their own status, **Set on the bills**,
-   which is visible but deliberately outside the default gap view. *(Caught in review on 29-08-2026, after the
-   report had already been built and verified — the ledger-only reading looked entirely plausible.)*
-2. **Tally stores a debtor's credit limit as a NEGATIVE (Cr) amount.** 817 of `mst_parties`' rows are
-   negative against 123 positive. A `credit_limit > 0` test calls 817 real limits "blank".
-3. **A limit of ₹1 is a flag, not a limit** — 184 rows. Tally reads 0/blank as *no credit control at
-   all*, so Accounts used ₹1, the smallest figure that any sale breaches, to mean "blocked". It once
-   drove the Red Mark badge; `ext_redmark` replaced it and now holds 54 ledgers, **only 12 of which
-   overlap the 184**. So on Live a ₹1 row is NOT a Red Mark customer and must never be labelled one.
-   The report treats `creditLimit <= 1` as not set and shows a "₹1 flag (Tally)" chip, never a rupee.
-4. **Money owed must sum POSITIVE balances only.** Netting credit balances in flips a whole company:
-   Colorix reads +₹0.83 Cr owed against a net of −₹4.03 Cr. An advance is not negative exposure.
+#### 🔴 The invoice number is NOT unique, and the sheet proves it
 
-**⚠ A new report reaches nobody until an admin grants it.** `profiles.receivables_allowed_reports` is
-an allow-list — the opposite polarity to the menu deny-list, deliberately: *a new menu reaches
-everyone until it is hidden, a new report reaches no one until it is granted*
-([reportAccess.ts](frontend/src/apps/receivables-hub/lib/reportAccess.ts)). After deploy, tick
-**Credit Terms Not Set** for each finance user in Admin → User form. Admins see it at once.
+`Ref. No.` **`SPARE/26-27/110`** appears **twice** in the 38 rows — once on **SWASTIK DIGITAL**
+(₹34,152) and once on **PANORAMMA PRINT** (₹6,55,490). Two different customers, two different
+amounts, one reference.
 
-**To discuss:**
-- [ ] Who on the finance team gets the grant.
-- [ ] Should this go out on a schedule, like the Collection report? Not wired — `emailable` is only
-      set in the same commit that wires an Email action and someone has actually read the output.
+**So the key is `(ledger_id, bill_ref)`**, never the reference alone — which is exactly how
+`collection_invoice_snapshot` is keyed (`tenant_id, ledger_id, bill_ref`). Keying on the number would
+have merged those two bills, and the ₹6.55 L one is the second largest on the list.
+
+#### The sheet — 38 rows, and it is already trying to do this by hand
+
+Columns: `Sales Person · Party's Name · Date · Ref. No. · Pending · type · Remarks`.
+
+| Measured 03-09-2026 | |
+|---|---|
+| Rows | **38** across **4 salespeople** (NAKUL JI 25, AAYUSH SIR 8, MANMOHAN JI 3, UMESH 2) |
+| Customers | 20 · **Pending total ₹35.6 L** |
+| `type` filled | **19 of 38** — and it holds an **item description**, not a sale type (see below) |
+| `Remarks` filled | 17 of 38 |
+| Rows whose remark is being used as a **status** | **at least 3** — `"CLEAR"`, `"NO DISPUTE"`, `"Dispute resolved…"` |
+
+⚠ **That last row is the whole argument for the Clear field.** People are already writing the status
+into the free-text column because there is nowhere else to put it — so it cannot be filtered, counted
+or defaulted away. `PANORAMMA PRINT` (₹6.55 L) says `CLEAR` and still sits on the list.
+
+#### 🔴 `type` in the sheet is an item description, and we do not hold it
+
+The sheet's `type` reads *"TX027-BYHX HEAD DRIVE BOARD"*, *"KYOCERA 300 DPI - STANDARD"*,
+*"SMPS 27V/DC POWER SUPPLY FOR K32"* — the **stock item**, i.e. what is actually being disputed.
+
+**The receivables data has no item detail per bill.** `collection_invoice_snapshot` carries
+`bill_ref, bill_date, amount, pending, due_date, overdue_days, sale_type` and nothing item-level. The
+only item data in the hub (`stockAnalysis`, `stockSummary`) is stock reporting and is not joined to a
+bill reference.
+
+Three options, and it needs a decision: **(a)** carry `Invoice.voucherType` instead (Ink / Spare /
+Head / Machine — available, but coarser than what the sheet records); **(b)** keep the item
+description as a **typed** field beside remarks, since it is only filled on half the rows anyway; or
+**(c)** investigate joining the sales voucher lines by voucher number — a real piece of work, not a
+column.
+
+#### What to build
+
+**Part A — the master**
+- [ ] `ext_dispute` in ConnectWave: own `id`, plus `ledger_id` + `bill_ref` (the bill it is about),
+      `remarks`, `cleared` / `cleared_at` / `cleared_by` / `clear_note`, and the usual
+      `checked · match_status · source · updated_at · updated_by`. Modelled on `ext_other_payments`.
+- [ ] ⚠ Store **no amounts, no dates, no customer name** except a `tally_name` display fallback. They
+      are live figures; copying them is how a report starts disagreeing with the dashboard.
+
+**Part B — the screen**
+- [ ] A Disputed Bills page: the eight columns above, **default filtered to Uncleared**, with
+      All / Cleared / Uncleared beside it — identical to RC-12, and ideally the same component.
+- [ ] **Edit remarks inline.** It is the field that changes weekly.
+- [ ] **Clear / Reopen**, with the note, on the same rules RC-12 settled: always allowed, note
+      required, collection team on their own customers plus admins.
+- [ ] **Add a bill:** pick a customer → list their open bills (overdue first, `CustomerDetail.invoices`
+      is already in memory) → tick one or more → type a remark → save. No typing of amounts or dates.
+- [ ] Export to Excel, with the same as-on date the other reports carry.
+
+**Part C — seed it**
+- [ ] Load the 38 rows. ⚠ Same problem as **RC-11**: the sheet has **no Ledger ID**, and bill_ref
+      alone is ambiguous. Match on `(customer name → ledger_id) + bill_ref`, report every row that
+      does not match rather than guessing, and hand the unmatched back for correction.
+
+#### The traps
+
+- 🔴 **A settled bill DISAPPEARS from the snapshot.** When Tally knocks the bill off, its row leaves
+  `collection_invoice_snapshot` — and the dispute row is then pointing at nothing. It must not vanish
+  silently: show it, mark it *bill no longer open*, and prompt to clear it. The Muster Editor already
+  has this concept for Red Mark (`isOrphan = !snapByGuid.has(ledger_id)`); reuse the treatment.
+  **This is also the most likely way a dispute gets resolved**, so it is the normal path, not an edge
+  case.
+- 🔴 **"Received or credit note" is not two numbers, it is five.** `Invoice` carries `receiptAdj`,
+  `creditNoteAdj`, `debitNoteAdj`, `journalAdj` **and** `otherPaymentAdj`. Show only the first two and
+  `amount − pending` will not reconcile, and someone will report the report as broken. Either show one
+  **Settled** figure with the breakdown on hover, or show all five.
+- 🟡 **Bill-wise totals do not tie to the dashboard, and never will.** `customerCategory.ts` records
+  the measurement: bill-wise overdue reads **~7.8% above** the dashboard's ledger-column overdue
+  (₹38.00 cr vs ₹35.26 cr). This screen is bill-wise. Put the note on the page rather than letting
+  someone discover it.
+- 🟡 **Scope it like everything else** — salesperson today, Collection Team once **RC-11** lands. A
+  collector should see the disputes on their own customers.
+- 🟡 **Do not let a bill be added twice.** `(ledger_id, bill_ref)` unique, and the add-dialog should
+  grey out bills already on the list rather than failing on save.
+- 🟡 **The remark is the most valuable column and the easiest to lose.** 17 of 38 are filled and
+  several are genuinely load-bearing (*"This is a rate difference matter"*, *"Nakul ji will clear
+  dispute within this weekend"*). Preserve them exactly on the seed load.
+
+#### Assumed, so the plan is not blocked — challenge either of these
+
+- **"Fetch against this invoice" = the invoice REFERENCE NUMBER** (`Ref. No.`). *Assumed 03-09-2026.*
+  Every other field in the client's list maps onto a sheet column; `Ref. No.` is the only one left
+  unmapped, and it is also the identifying key, so a list without it could not address a row. The
+  rival reading — *what has been recovered against it* — is already covered by the
+  received-or-credit-note column. **Build with the reference number in; if the intent was something
+  else it is an added column, not a rework.**
+- **`type` shows the SALE TYPE we already hold** (Ink / Spare / Head / Machine / Paper / Other).
+  *Assumed 03-09-2026.* The sheet's `type` is a stock-item description and **we do not have item
+  detail per bill** — see above. Sale type is live, needs no typing and can be filtered. ⚠ It is
+  genuinely coarser than what the sheet records: *"TX027-BYHX HEAD DRIVE BOARD"* becomes *"Spare"*.
+  If the item description is what makes the row actionable, it becomes a typed field beside remarks
+  (option **b**) — cheap to add later, and honest about being hand-kept.
+
+#### To settle
+
+- [ ] **Where does the screen live** — its own report page under Reports, a tab in the Muster Editor,
+      or both (master tab for bulk edits, report page for daily work, as Red Mark does)?
+- [ ] **Should a dispute carry an owner or a target date?** Almost every remark names a person and a
+      deadline (*"Nakul Sir … by this week"*). Those are two columns that could be filtered and chased
+      instead of read.
+
+### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[ ]`
+*Raised 2026-09-03 · Audited the same day against the code, the live musters and the supplied sheet ·
+Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **REDMARK***
+
+⚠ **Sequence RC-11 first.** Letting the collection team clear their own customers (decided below)
+needs collection_team loaded and the per-user tags set — otherwise the server cannot tell whose
+customer a ledger is. Everything else in RC-12 is independent.
+
+**The ask, in two halves.**
+1. The Red Mark master gains a **Clear** status — mark a customer cleared when the money comes in.
+   **Default view shows only UNCLEARED**; the user can switch to All / Cleared / Uncleared. Clearing
+   must also be possible through the export/import.
+2. A **Red Mark report** carrying salesperson · customer · company · **total outstanding as on the
+   day it is run** · **receipts for the last three months** · and **sales this month, flagged when it is not
+   zero** — a red-marked customer should not be being supplied at all.
+
+#### What exists today
+
+`ext_redmark` in ConnectWave, keyed by Tally GUID, one row per red-marked ledger — and **the row's
+presence IS the flag** ([musterApi.ts:81](frontend/src/apps/receivables-hub/lib/musterApi.ts#L81)).
+Columns: `tally_name · company · location · salesperson · reason · checked · match_status · source ·
+updated_at · updated_by`.
+
+| Surface | State |
+|---|---|
+| **Muster Editor → Red Mark tab** | Add, edit and **delete** all work (`AddRedMarkDialog`, `saveRedMark`, `deleteRedMark`) |
+| **Excel export / import** | Works, but **cannot add or remove a red mark** — its own note says so. Editable columns: **Salesperson, Reason, Checked** |
+| **The `blocked` flag** | `connectwaveFetcher:328` builds a set of every `ext_redmark` ledger and sets `customer.blocked` from membership |
+| **A Red Mark report** | **Already exists** — `RedMarkCustomersReport.tsx`, with customer, salesperson, category, company, location, outstanding, overdue, max overdue days and reason |
+
+So half 2 is an **extension of an existing report**, not a new one, and half 1 is one new field plus
+the places that read it.
+
+#### 🔴 Do NOT reuse `checked` for this
+
+`checked` already means something, and it is not "paid". Every muster is *"seeded from the finance
+Google Sheets and topped up on every sync with unchecked **stub** rows for brand-new customers …
+this screen is where a steward corrects those and ticks them off"* — it is a **data-stewardship**
+flag meaning *a human has verified this row*. Overloading it with *the customer has paid* breaks
+both meanings at once and cannot be untangled afterwards. **Clear is a new field.**
+
+Suggested shape, additive: `cleared boolean default false`, `cleared_at`, `cleared_by`,
+`clear_note` (how it was settled — full payment, part payment plus write-off, legal settlement).
+
+#### 🔴 Clear and Delete are different, and both must stay
+
+Today the **only** way off the red-mark list is `deleteRedMark`, which throws the record away.
+
+- **Delete** = *this should never have been red-marked* — a mistake, correcting the list.
+- **Clear** = *they paid; the case is closed* — and the record is exactly what you want to keep.
+  Who was red-marked, why, for how long, and how it ended is the history this whole master exists
+  to build. Deleting on payment destroys it.
+
+#### 🔴 The consequence nobody would expect: `blocked` moves on 6 screens
+
+`customer.blocked` is derived from **row presence**, so a cleared customer keeps showing as Red Mark
+everywhere unless the fetcher is changed to ignore cleared rows. That one line moves:
+
+| Reads `blocked` | Effect once Clear ships |
+|---|---|
+| `connectwaveFetcher:331` | the source of all of the below |
+| **Dashboard** KPI tile + its Risk Register link (`?redmark=1`) | count drops to uncleared |
+| **Customer Risk Register** `redmark` filter | same |
+| **Credit Terms Report** — the Red Mark column and badge | same |
+| **`ZCFilters.blockedOnly`** ("Red Mark only") — **on the screen AND in the scheduled Collection email** | same, including a live send |
+| **Red Mark Customers Report** itself | same |
+
+**DECIDED 03-09-2026: cleared removes the Red Mark EVERYWHERE.** All six surfaces above. The record
+stays in the master marked Cleared — who, when and why — but the customer stops counting as
+red-marked across the app.
+
+⚠ **That includes the scheduled Collection email**, which mails itself weekly and carries a
+`blockedOnly` option. Its numbers will move the first time anything is cleared. Ship this knowing
+that, and tell whoever reads that mail — a count dropping on its own looks like a fault.
+
+#### The sheet — 56 rows, and what it says the report should be
+
+Tab **REDMARK**, columns: `Main (salesperson) · Particulars (customer) · Company · Total outstanding ·
+DUE AS ON · Total Received · Percentage · received JUN · received JULY · received Aug ·` and an
+unheaded final column carrying a free-text remark.
+
+| Measured 03-09-2026 | |
+|---|---|
+| Rows | **56** (`ext_redmark` holds ~54 ledgers — close, worth a reconcile) |
+| Grain | **customer × company** — e.g. GOPAL HOME FURNISHING appears 4× (Ent Noida, Ent Surat, Otec Noida, Otec Surat). ✅ **Same grain as `ext_redmark`**, which is per-ledger |
+| `Total Received` column | **empty on every single row** — only the month columns are filled |
+| `Percentage` | filled (0, 0.10, 0.14, 0.44, 0.59, 1.00 …) but its basis is not derivable from the other columns |
+| Free-text remarks | ~20 rows, and genuinely useful — *"Legal"*, *"9l cheque received"*, *"customer will pay 2.5l this month"*. This is the `reason` field |
+
+**The month columns are hand-typed and hand-added** (JUN, JULY, Aug — one new column per month).
+In the app this must be **computed**, not typed: `MonthFacts.receipts` already gives receipts per
+customer per month and is what the Collection reports read, so "Received this month" is a derived
+column that can never go stale or be forgotten.
+
+#### What to build
+
+**Part A — the master**
+- [ ] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
+- [ ] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
+      Uncleared** with All / Cleared / Uncleared beside it.
+- [ ] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
+      correction.
+
+**Part B — export / import**
+- [ ] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
+      batch can be cleared from Excel the way Salesperson/Reason/Checked already are.
+- [ ] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
+      *Cleared* column does not change it, and clearing-by-import is exactly the safe middle
+      ground: it settles a case without letting a spreadsheet flag or unflag customers wholesale.
+
+**Part C — the report**
+- [ ] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
+      the **as-on date**, stated on the page and carried into the export — an outstanding figure with
+      no date on it is unreadable a week later.
+- [ ] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
+      it, from `MonthFacts.receipts`. The columns roll forward on their own; nobody hand-adds a month
+      the way the sheet does with its JUN / JULY / Aug. One number cannot tell a first miss from a
+      long silence, which is the whole question on a red-marked customer.
+- [ ] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
+      A red-marked customer should not be being supplied. If we billed them anything this month the
+      row must shout — that is a control, not a statistic.
+      ✅ The data is already there and the codebase already says why: `MonthFacts.sales` is documented
+      as *"Billed in the month — the 'are we still supplying a non-payer' signal"*. It has been sitting
+      unused for exactly this.
+      Worth a KPI tile too: **N red-marked customers were billed this month**. That is the number
+      management will act on, and nothing in the app can answer it today.
+- [ ] **Percentage = received ÷ due**, computed. Never imported — see To settle.
+- [ ] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
+- [ ] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
+      (`outstanding` and `overdue`).
+
+#### The traps
+
+- 🟡 **"Total outstanding as on that day" is the live snapshot, not a historical balance.** The hub
+  reads the current ConnectWave snapshot — there is no as-of-date replay. So the report is always
+  "as on today", and it must **print the date** rather than implying it can be back-dated. If
+  management wants a true as-on-date figure, that is a different and much larger build.
+- 🟡 **Received-this-month is GROSS.** `MonthFacts.receipts` is *"receipt vouchers + manual Other
+  Payments … GROSS — see trap 1"*, and cheque returns are tracked separately. A red-mark customer
+  whose only payment bounced would read as having paid. Show cheque returns beside it, or net them
+  and say so.
+- 🟡 **Consolidated vs ledger grain.** The sheet and `ext_redmark` are both per-ledger, but the
+  dashboard's customer lists are *consolidated* across companies. One consolidated customer can hold
+  a cleared ledger and an uncleared one. Decide what the consolidated row shows — recommendation:
+  uncleared wins, since any open case keeps the customer red-marked.
+- 🟡 **The report is salesperson-scoped already** (`allCustomers` comes from `useAppData`), so it
+  will also be Collection-Team-scoped once **RC-11** lands. Worth confirming that is wanted — a
+  collector should probably see red marks for their own customers only.
+- 🟡 **The free-text remarks are the most valuable column in the sheet and the easiest to lose.**
+  They map to `reason`, which the export already carries. Make sure the load preserves them rather
+  than overwriting with a generic note.
+
+#### To settle
+
+- [x] ~~What does `Percentage` mean in the sheet?~~ **Answered 03-09-2026: received versus due.**
+      A **derived** column: received ÷ due. **Compute it, never import it.**
+      **Denominator assumed: DUE AS ON** — the client said "received versus *due*", and `DUE AS ON`
+      is the sheet’s own column of that name. ⚠ It is NOT the same as Total outstanding: the two
+      differ on 6 of the 56 rows (KALAHANSH reads ₹9.90 L outstanding against ₹8.04 L due), so the
+      report must **label which one it divided by**. An unlabelled percentage is the thing nobody
+      can check a month later.
+      ⚠ **Do not try to reconcile against the sheet’s own values** — they do not tie, because
+      `Total Received` was never filled in. Checked 03-09-2026: LOTUS CREATION reads 1.00 and does
+      tie (₹2,00,000 of ₹2,00,000), but CLOTHIFY reads 0.44 where received ÷ due is 0.15, and
+      CROSSA CREATION reads 0.59 where it is 0.84. The typed figures are stale, not a different
+      formula.
+- [x] ~~Does *cleared* remove the Red Mark everywhere, or only close it on this report?~~
+      **Answered 03-09-2026: EVERYWHERE.** Dashboard KPI, risk register, credit terms, the report,
+      and the "Red Mark only" filter in the scheduled Collection email.
+- [x] ~~Should a partly-paid case be clearable?~~ **Answered 03-09-2026: YES, always allowed.**
+      No balance check of any kind — a settlement or a write-off must be closeable. The clear note
+      carries the why ("settled at 9L"). ⚠ Then the note is not optional: without it a cleared row
+      with money still owed against it is unexplainable a month later. Require it.
+- [x] ~~Who may clear?~~ **Answered 03-09-2026: the collection team, on their OWN customers** —
+      plus admins on anyone. Jayshree views all, so she can clear all.
+      🔴 **This is the one part of RC-12 that is not a small change.** Every muster write goes through
+      the `muster-write` Edge Function, which today re-verifies the caller is an **Orange One admin**
+      and then writes to ConnectWave with its service key — that admin check is the only thing standing
+      between the browser and another project's data. Clearing needs a **second, narrower path**: a
+      caller who is on the collection team may set ONLY the `cleared` fields, and ONLY on a ledger whose
+      `collection_team` matches their own tag. Not a widening of the existing admin check — a new
+      action beside it, with its own rule.
+      ⚠ **It therefore depends on RC-11**: collection_team has to be loaded and the per-user tags
+      set before the server can tell whose customer a ledger is. Sequence RC-11 first.
+- [x] ~~Last 3 months' receipts, or only the running month?~~ **Answered 03-09-2026: LAST THREE
+      MONTHS**, rolling automatically.
+- [x] ~~Should SALES also show three months, or only the current one?~~ **Assumed 03-09-2026:
+      THREE**, matching receipts. The same `MonthFacts` rows are already in memory, so it costs
+      nothing, and one month cannot tell a final delivery from a supply relationship that never
+      stopped — which is the actual question on a red-marked customer. ⚠ The FLAG stays keyed on the
+      **current** month, as asked: three columns to read, one column that shouts.
 
 ---
 
----
+⚠ **The DISPUTE tab of the same workbook is specced separately, as [RC-13](#rc-13--disputed-bills--a-master-of-the-bills-in-dispute-and-the-screen-that-works-it--).**
+It is a different shape — **bill-level, 38 rows**, one row per disputed invoice rather than per
+customer. **Build the two together**: Clear/uncleared, the default view, the three-way toggle and
+who-may-clear are the same decisions, and implementing them twice is how the two screens end up
+behaving differently.
 
-### RC-11 · One storage blip cost half the send, and nothing said so  🔴  `[x]`
-*Raised and fixed 2026-08-29, off a failure seen in this session's own testing · **live** ·
-`entry.ts` + migration `20261022130000`*
 
-**What happened.** A run threw `could not upload …: <none>` — an error carrying **no message**, the
-storage API answering with nothing rather than refusing. The identical run seconds later succeeded
-untouched. A blip, not a fault.
+### RC-11 · Collection Team — fill it, filter on it, and scope each collector to their own customers  `[ ]`
+*Raised 2026-09-03 · Audited the same day against the code, the muster masters and the supplied
+sheet · Source file: [Misc/Jayshree/UPDATED MASTER SHEET.xlsx](Misc/Jayshree/UPDATED%20MASTER%20SHEET.xlsx)*
 
-**What the blip cost is the point.** That throw escapes the per-recipient try/catch and kills the
-run, so every salesperson still queued gets nothing — while the ones already mailed keep their copy,
-and the `finally` claims the slot because `queued > 0` (it must, or a retry would double-send to
-them). The result is a **half-delivered report recorded as sent**, which will never be retried.
-On a real Saturday that is ~30 of 63 people served and 33 silently missing.
+**The ask, in two halves.**
+1. Load the **Collection Team** against each customer from Jayshree's sheet, and let the dashboard
+   **filter** by it.
+2. Add Collection Team to the **user setup**, so a collector signing in sees **only their own
+   customers** — exactly the way the salesperson scope already works. **Jayshree sees everything;
+   Mohta ji, Nitesh and Vijay see only theirs.**
 
-**And the watchdog could not see it.** It speaks when a slot goes **unserved**; here the slot has a
-row, so it stayed quiet. **Half looked exactly like success** — the same silent-failure shape the
-watchdog exists for, one level in.
+#### ✅ Most of half 1 already exists. The column is built, editable, and then thrown away.
 
-**Two changes, because either alone leaves the hole open:**
-- `upload()` **retries three times** with a widening pause. A repeat that comes back *already
-  exists* counts as **success**: on a retry that is our own earlier attempt landing after its
-  response was lost, not the two-runs-racing case `upsert: false` guards — that guard is about the
-  per-run id in the prefix, which is ours alone. Anything still failing after three tries throws.
-- the watchdog now **reads the send log's note**. `collections_report_mark_sent` has always written
-  `… 3 FAILED: …` into it, so the evidence was being recorded and never read. A row whose note
-  carries `FAILED` now raises an alert saying it went out **partly** and **will not retry**.
+This was the surprise. `collection_team` is **already a real column** on `ext_ledger_group` in
+ConnectWave, and the whole editing surface is already shipped:
 
-The partial alert's wording lives in `reason` rather than in the mailer, so this needed **no
-redeploy of `send-email`** — which currently also carries another session's unmerged work. The
-consequence is that the alert's body headline still reads "was not sent"; the subject line and the
-facts list are accurate. Worth tightening the next time that function is deployed for its own
-reasons.
+| Already built | Where |
+|---|---|
+| The column, keyed by Tally GUID | `ext_ledger_group.collection_team` |
+| Read into the app | [musterApi.ts:140](frontend/src/apps/receivables-hub/lib/musterApi.ts#L140) |
+| **Editable by hand**, with a datalist of existing teams | [MusterEditor.tsx:546](frontend/src/apps/receivables-hub/pages/MusterEditor.tsx#L546) |
+| **Excel export AND import**, with a "Collection Team" column | [musterIo.ts:150](frontend/src/apps/receivables-hub/lib/musterIo.ts#L150), `buildPlan` at `:165` |
+| Searchable in the muster | `MusterEditor.tsx:454` |
 
-**Verified.** The partial branch end to end — subject *"Collection report only PARTLY sent - 29
-Aug"*, `partial=true`, `queued=30`, delivered — simulated inside **one transaction** that put the
-send log back, so the 29-Aug slot stayed unclaimed. Then a live sample from `master` (07:45 IST,
-book + NAKUL JI, both `sent`) proving ordinary uploads still pass through the retry.
-⚠ The retry's *failure* branch is not directly exercised — forcing a storage outage is not
-something to do on the live bucket.
+🔴 **And then it stops dead.** [connectwaveFetcher.ts:300](frontend/src/apps/receivables-hub/lib/connectwaveFetcher.ts#L300)
+selects `ledger_id, tally_name, group_name` from `ext_ledger_group` — **`collection_team` is not in
+the select list.** So the value is captured, stored, exported and re-imported, and **never once
+reaches the dashboard.** Nothing reads it: not `types`, not any filter, not any report, not scoping.
+Confirmed by grep — every reference in the codebase is inside the muster editor and its import/export.
 
----
+**So half 1 is: add one column to a select, carry it through the model, and put a filter on it.**
+
+#### The sheet — 722 rows, clean, and missing the one column that matters
+
+`Misc/Jayshree/UPDATED MASTER SHEET.xlsx`, sheet **Collection**, columns A–H:
+`Level · Salesperson · Customer Category · Customer Group · Customer · Company · Location · Collection Team`
+
+| Measured 03-09-2026 | |
+|---|---|
+| Data rows | **722** (row 724 is a `Grand Total` footer — must be dropped on import) |
+| Distinct customers | **481** · distinct groups **407** · salespeople **12** |
+| Blank Collection Team | **0** — the column is fully filled |
+| Customers assigned to **conflicting** teams | **0** — every customer maps to exactly one team |
+
+**The teams, and the counts:**
+
+| Team | Rows |
+|---|---|
+| Mohta ji | 228 |
+| Jayshree | 224 |
+| Nitesh | 156 |
+| **Vijay** | **114** — but stored as `Vijay` (102) **and** `vijay` (12) |
+
+⚠ **`Vijay` and `vijay` are two different strings, and this app does not normalise case.**
+`scopeParties.ts` states the rule explicitly: *"Matching is exact and case-sensitive … 'OTHERS' and
+'Others' are two different scopes."* Left as-is, Vijay would be scoped to 102 of his 114 customers
+and 12 would be invisible to everyone. **Fix the casing in the sheet before loading it**, not in code
+— lower-casing in code would silently merge genuinely distinct tags elsewhere.
+
+🔴 **The sheet cannot be imported as it stands: it has no Ledger ID column.** The muster importer
+keys every row on `Ledger ID` (the Tally GUID) and its own note says *"Import updates existing rows
+only. Rows whose key is blank or unrecognised are skipped, not added."* Importing this file directly
+would skip **all 722 rows** and report them as unmatched.
+
+✅ **There is already a workflow that avoids the problem entirely** — and it needs no code:
+**Muster Editor → export the Customer Groups master** (it exports `Ledger ID · Customer · Company ·
+Location · Group · Collection Team · Outstanding · Checked`) → paste the team into the exported
+file → **import it back**. The GUIDs are already in the file, so nothing has to be name-matched.
+
+⚠ Name-matching Jayshree's sheet instead would be fragile for a reason the codebase has already been
+bitten by: the same customer name repeats across companies and FY-split books (`connectwaveFetcher`
+notes *"387 names repeat across companies"*, and the reconciliation notes record *"89 customers
+becoming 206 rows"*). The sheet's own grain is **Customer × Company × Location** — 722 rows for 481
+customers — which is why 481 names cannot key 722 rows. Use the GUID export.
+
+#### Half 2 — the per-user scope. There is a template to copy, and it is a good one.
+
+The salesperson scope is already built end to end, and Collection Team should be its twin, not a
+new invention:
+
+| Salesperson scope (exists) | Collection Team (to build) |
+|---|---|
+| `profiles.receivables_salespersons` (identity project) | `profiles.receivables_collection_teams` — new nullable column, additive |
+| Tagged in **Admin → User form** ([UserForm.tsx:724](frontend/src/core/admin/UserForm.tsx#L724)), chips sourced from `fetchSalespersonNames()` | Same block, chips sourced from the distinct teams on `ext_ledger_group` |
+| `lib/scope.tsx` → `restrictToSalespersons` | `restrictToCollectionTeams`, same file |
+| `lib/scopeParties.ts` → GUID-joined party list, with the empty-list trap solved | The same module, second scope — **reuse it, do not fork it** |
+| `useAppData` filters `allCustomers` + `customerDetail` + `alerts` | The same chokepoint |
+
+**⚠ Read `scopeParties.ts` before writing a line of this.** It documents three traps that were paid
+for once already and would otherwise be re-hit: an empty scope must mean *nothing*, never
+*everything* (hence the tagged union, not `string[]`); the scope must **fail closed while loading**
+or the whole book paints before the scope arrives; and the join is **by GUID, not by name**.
+
+**How the two scopes combine is a decision, not a detail.** A user could carry both tags. The safe
+reading is **intersection** — both filters narrow, neither widens — which is what
+`composePartyFilter` already does for a user-chosen filter against a scope. Anything else lets one
+tag reveal customers the other was meant to hide.
+
+**Jayshree "sees all" is just an empty tag list** on a non-admin, the way an untagged salesperson
+user works today — **except that today an empty list means *nothing*, not *everything***. So her
+grant is either the portal admin role, or an explicit "all teams" state. ⚠ Do not express it as
+"leave it blank": on the existing convention that shows her an empty dashboard.
+
+#### Where the filter has to appear
+
+**15 pages carry a salesperson filter** — Dashboard, Aging, Overdue Aging, DSO, Credit Terms,
+Customer Category, Risk Register, Top Exposure, Red Mark, Other Payments, Collection Performance,
+Salesperson Analysis, Salesperson Collection Report, Alerts, and the share dialog. A Collection Team
+filter belongs beside it on the collection-facing ones at least. **Decide the list deliberately** —
+adding it to all 15 is a bigger job than half 1, and some of those reports are sales-facing, where
+a collections split means nothing.
+
+Also: `ZCFilters` in [collectionScope.ts](frontend/src/apps/receivables-hub/lib/collectionScope.ts)
+is the Collection report's filter shape, and it is read by **both the screen and the scheduled
+email**. Adding a team filter there means the **scheduled send can be split by collector** — which
+is very likely wanted, and is worth confirming rather than discovering later.
+
+#### The traps
+
+- 🔴 **`collection_team` lives on `ext_ledger_group`, but the group master's grain is the LEDGER,
+  not the group.** One row per ledger GUID. A "customer" in the dashboard is a *consolidated*
+  customer spanning several ledgers across companies — so a consolidated customer can inherit two
+  different teams. The sheet says that never happens today (0 conflicts), but nothing enforces it.
+  Decide now what the UI shows when it does: the dominant team, all of them, or a flagged conflict.
+  `ConsolidatedCustomer` already carries `categories: string[]` (plural) for exactly this reason —
+  follow that precedent, not the singular `category`.
+- 🔴 **Case sensitivity, again.** `Vijay`/`vijay` today. Whatever loads the sheet must normalise, or
+  the muster must be cleaned first. Both scopes match exactly.
+- 🔴 **This is UI-level scoping only.** `scope.tsx` says so plainly: the raw data still reaches the
+  browser and a technical user can read other rows in DevTools. A collections split is arguably
+  more sensitive than a sales one. It does not block this task, but do not describe it to the
+  client as data isolation.
+- 🟡 **New customers arrive untagged.** The muster tops up with stub rows on every sync. An untagged
+  customer belongs to no team, so under an intersecting scope **nobody sees them** — including the
+  collector who should be chasing them. The muster needs an "untagged" view and the dashboard an
+  explicit "Not assigned" filter value, the way `platformEffectiveness` carries "Not recorded"
+  rather than dropping rows.
+- 🟡 **The four team names are people, but they are strings.** Same shape as the salesperson tags:
+  no foreign key to `profiles`, so "Mohta ji" in ConnectWave and the user's portal account are
+  linked only by an admin typing the tag correctly. Live consequence measured on the HR side of the
+  portal already; here it means a typo silently empties someone's dashboard.
+- 🟡 **`ext_ledger_group` writes go through the `muster-write` Edge Function on the identity
+  project**, which re-verifies the caller is an Orange One **admin**. So bulk-loading the teams is
+  an admin action, and a collector cannot re-assign their own customers. That is probably right —
+  confirm it is intended.
+
+#### Phase-wise checklist
+
+- [ ] **P1 · Clean and load the data.** Fix `vijay` → `Vijay`, drop the `Grand Total` row, then
+      **export the Customer Groups master, paste the team column in against the GUIDs, import it
+      back.** No code. Report how many of the 722 rows matched and what was left untagged.
+- [ ] **P2 · Carry the value into the app.** Add `collection_team` to the `ext_ledger_group` select
+      in `connectwaveFetcher`, onto `Customer`, and as `collectionTeams: string[]` on
+      `ConsolidatedCustomer` (following `categories`).
+- [ ] **P3 · The filter**, on the agreed pages, with an explicit "Not assigned" value.
+- [ ] **P4 · The scope.** `profiles.receivables_collection_teams` (migration **before** the
+      frontend), the chips in the Admin user form, `scope.tsx`, and a second scope through
+      `scopeParties.ts` — reused, not forked. Intersect with the salesperson scope.
+- [ ] **P5 · Walk it in the browser** as Nitesh (should see only his), then as Jayshree (all), then
+      as a user carrying **both** a salesperson tag and a team tag — the intersection is the case
+      most likely to be wrong.
+- [ ] **P6 · The scheduled Collection email** — decide whether it splits by team, and if so add the
+      field to `ZCFilters` so the screen and the send cannot diverge.
+
+#### To settle
+
+- [ ] **Which pages get the Collection Team filter?** All 15 that carry a salesperson filter, or
+      only the collection-facing ones?
+- [ ] 🔴 **What happens to the salesperson tags already set on these three?** *(for **Jayshree** and
+      Ritesh Bhai — written up in [To discuss](#to-discuss-with-ritesh-bhai))* Salesperson and team
+      are separate ideas but they are **not separate settings** — both limit the same account.
+      Measured 03-09-2026: **Jayshree 13 tags, Nitesh 8, Vijay just 1 (NAKUL JI)**. If Vijay keeps
+      it and gains team Vijay, he sees only the **overlap** — likely a handful, not his **114**.
+- [ ] **How is "Jayshree sees all" expressed** — portal admin, or an explicit "all teams" tag?
+      ⚠ It cannot be an empty list; that currently means "sees nothing". Note she **already** sees
+      everything: the sheet holds 11 salespeople and her 13 tags cover all 11.
+- [ ] **Should the scheduled Collection report split by collector**, the way it can by salesperson?
+- [ ] **Are the four names the final list?** All four have logins. ⚠ **BENI MADHAV MOHTA has NO
+      Outstanding Dashboard access at all** — one edit in Admin → Module Access, but confirm he is
+      meant to have it.
+- [ ] **Who may edit the team assignment** — admins only (as today, via `muster-write`), or should a
+      collections lead be able to re-assign?
 
 ### RC-9 · The Saturday send was missed — GitHub's clock stopped  🔴  `[x]`
 *Raised and fixed 2026-08-29 · **Live 2026-08-29, 11:00 IST** · migration
@@ -4611,40 +10517,15 @@ else. Watchdog alert requeued → `sent`. Gate simulated at 05-Sep 07:59 / 08:00
 had ever queued a mail. Done on the user's explicit go-ahead; the mailer had been two commits behind
 `master` since 22-Aug.
 
-**The 29-Aug slot went unserved all day and is being caught up at 18:30 IST** — see the two one-off
-cron jobs described under RC-10. It was held deliberately (the send log still ended at 22-Aug) while
-the group-wise rework was proved, then released on the user's instruction. Serving it late needs
-`grace_minutes` widened, because the gate reads `missed` and `entry.ts` returns on `due:false` — a
-plain re-run refuses.
-
----
-
-**⚠ The 29-Aug slot is being served LATE, at 18:30 IST, by two ONE-OFF cron jobs.** On the user's
-explicit instruction (29-Aug). They remove themselves; if you are reading this after 29-Aug-2026 and
-they still exist, something went wrong.
-
-| job | when | what |
-|---|---|---|
-| `collections-report-catchup-open` | `55 12 29 8 *` (18:25 IST) | `grace_minutes` 120 → **660**, so the 08:00 slot may be served until 19:00 IST |
-| `collections-report-catchup-close` | `30 14 29 8 *` (20:00 IST) | grace back to **120**, then unschedules both |
-
-**The schedule itself is NOT touched** — it stays weekly Saturday 08:00. Widening the grace is the
-honest lever here: it means exactly "this missed slot may still be served", which is the situation.
-Changing `hour_ist` would have left next Saturday at 18:30 if the restore ever failed.
-
-**Opened five minutes early on purpose.** The regular `*/15` kick fires at 18:30 IST on the dot; had
-the widening run in the same second it could have read the old grace and skipped the slot for
-another quarter hour.
-
-Checked before arming: slot 08:00, window closes 19:00, kick fires 18:30 (inside), slot unclaimed,
-last kick 11:00 IST so the 20-minute `min_gap_minutes` guard cannot block it. Everything else the
-gate wants — armed, both switches, a Saturday, 63 recipients — was already confirmed.
+**⚠ Still open: the 29-Aug slot was never served.** It is deliberately **not** claimed — the send log
+still ends at 22-Aug — because other fixes are pending first. Sending it later needs
+`grace_minutes` widened, since the gate reads `missed` and `entry.ts` returns on `due:false`.
 
 ---
 
 ### RC-10 · The reports are Customer-wise; the dashboard is Customer Group-wise  🔴  `[x]`
-*Raised 2026-08-29 · called critical · **LIVE on `master` 2026-08-29**, Vercel deploy green ·
-`collectionsExport.ts`, `exportCollectionsPdf.ts`, `pdfBrand.ts`*
+*Raised 2026-08-29 · called critical · **built and verified against live data 2026-08-29** · in the
+working tree, not yet merged to `master`*
 
 **Proved by running the real builder locally in `MODE=dry-run` — 0 mails queued.** Not a mock: the
 same `entry.ts` the runner executes, against live ConnectWave, writing the actual PDF and workbook.
@@ -4765,6 +10646,112 @@ per-rep file, so prove it with `collections_report_dispatch('sample','e.techie4@
 mails one address and does **not** claim the slot.
 
 Frontend-only: no migration, no Edge Function redeploy; Vercel picks it up on merge to `master`.
+
+---
+
+### RC-8 · Credit days and credit limit are not set for most customers, and differ book to book  `[x]`
+*Raised 2026-08-29 · **LIVE 2026-08-29** — `40ebc05` on master, Vercel green ·
+**CLOSED 04-09-2026**, verified on master the day it was closed · off a check on VAIBHAV ENTERPRISES ·
+cross-ref **MS-2** (the data half — handed to Accounts and closed with it)*
+
+**Where it is.** Outstanding Dashboard → **Reports** → **Credit Terms Not Set**, at
+`reports/credit-terms` ([CreditTermsReport.tsx](frontend/src/apps/receivables-hub/pages/CreditTermsReport.tsx),
+routed at [ReceivablesHubApp.tsx:223](frontend/src/apps/receivables-hub/ReceivablesHubApp.tsx#L223)).
+
+🔴 **Closed as BUILT, and it currently reaches NOBODY.** `profiles.receivables_allowed_reports` is an
+allow-list, so a new report is invisible until an admin ticks it. Checked live 04-09-2026: **one
+account in the whole directory holds any report grant at all** (Bushra, and it is `zero-collections`,
+a different report). So today only admins can open Credit Terms Not Set. **One tick per finance user
+in Admin → User form is all it needs** — the report itself is finished and deployed. The two
+questions at the foot of this entry are what is left, and neither is code.
+
+**VAIBHAV ENTERPRISES** was checked: credit days and credit limit filled in for one company, blank
+for the others. It is one ledger in four books, and only the smallest carries a term.
+
+| Company | Credit limit | Credit days | Outstanding |
+|---|---|---|---|
+| O-tec — Noida | ₹40,000 | **15 Days** | ₹28,792 |
+| Enterprise — Noida | ₹16,51,000 | — | **₹16,01,201, all overdue** |
+| Enterprise — Surat | ₹1 *(a flag, not a limit)* | — | ₹0 |
+| O-tec — Surat | ₹1 *(flag)* | — | −₹92 |
+| O-tec — Surat · `VAIBHAV ENTERPRISES MACHINE` | ₹1 *(flag)* | — | ₹4,00,000 |
+
+The book holding **₹16 lakh, all of it overdue**, has no credit days at all — so no rule can call
+anything there late.
+
+**It is not one party.** Measured on the source the report reads — `collection_customer_snapshot`,
+all 1,854 customer rows, one per ledger per book, resolved to companies through `ext_company_map`:
+
+| Company — Location | Rows | Neither set | Days missing | Limit missing | Set on the bills | Complete |
+|---|---|---|---|---|---|---|
+| O-tec — Surat | 1,189 | **604** | 68 | 144 | 93 | 280 |
+| Enterprise — Surat | 303 | 53 | 2 | 41 | 20 | 187 |
+| O-tec — Noida | 176 | 36 | 10 | 26 | 7 | 97 |
+| Enterprise — Noida | 105 | 15 | 1 | 31 | 8 | 50 |
+| Colorix — Surat | 81 | 23 | 10 | 16 | 14 | 18 |
+| **Total** | **1,854** | **731** | **91** | **258** | **142** | **632** |
+
+**The genuinely uncontrolled money is ₹1.42 Cr**, not the ₹24 Cr a ledger-only reading gives — see
+the bill-wise trap below, which is the single most important thing on this entry. And the Vaibhav
+pattern: 391 customer names appear in more than one book, and **206 records** are missing a term the
+same customer already holds in another book — ₹5.33 Cr outstanding, ₹2.10 Cr of it overdue. Those
+are demonstrably an oversight rather than a deliberate no-credit book, and they are one filter click.
+
+**It is Tally's data, not our sync** — confirmed row-for-row against the mirror's `v_ledger_detail`.
+Fixing the data is **MS-2**; this entry is the report that shows Finance where to look.
+
+**What we are building.** *Credit Terms Not Set* — Outstanding Dashboard → Reports → Receivables, at
+`reports/credit-terms`. Two panels: a **company-wise** summary (one row per company + location, with
+the counts above and the money owed with nothing set) and the **customer-wise** list beneath it,
+every column sorting and filtering, filters cascading, 25 a page, Excel out in two sheets.
+**Filters by sale type** — Ink / Paper / Spare Parts / Machine / Head / Other, a customer matching on
+open outstanding or sales, with the mix shown per row: Spare Parts alone is 355 customer records, 80%
+of them fully set up. A **Has outstanding** toggle drops the 1,131 ledgers sitting at exactly
+zero — 1,080 rows become 140, which is the list somebody can actually work through — and a **Last
+activity** column (newest receipt or bill; dormant ledgers read "—") says whether a gap is worth
+chasing at all. **Every figure in the company panel is a drill-down**: click a count and the
+list below becomes exactly those customers (604 -> 604 rows), click it again to come back. Clicking
+the money column also switches the balance filter to *owes money*, because that column sums positive
+balances only — without that the ₹82.47 L cell landed on a list whose own total read −₹3.42 Cr,
+having dragged back in the credit balances the figure deliberately excludes. A zero count is inert:
+it could only ever land on an empty table. The five status columns are mutually exclusive and add up to Customers; the panel
+says so, and each Customers cell carries the sum as a tooltip so a future change cannot break it
+quietly. Default view is the gaps, sorted by outstanding, so the largest exposure with
+no terms is the first line; one
+click on the filter chip widens it to the full customer list. Reads `useAppData().allCustomers` — no
+new fetcher, no migration, no schema change.
+
+**⚠ Four traps, all of which bite a naive reading of this data.**
+1. **🔴 CREDIT DAYS LIVE IN TWO PLACES, AND THE LEDGER IS ONLY ONE OF THEM.** A bill carries its own
+   `BILLCREDITPERIOD` — "45 Days", or an explicit date like "5-May-26" — typed at invoice entry;
+   61,410 such values are stored. **142 ledgers here hold no master credit period while their open
+   bills each carry a due date.** Reading the ledger alone called every one of them "Days missing".
+   BISHEN DYEING (MACHINE) — 44 open bills, ₹4.62 Cr, a machine instalment schedule due 15-Apr,
+   15-May, 15-Jun — was the report's number-one offender and is perfectly controlled. Correcting
+   this took "owed with nothing set" from **₹24.32 Cr to ₹1.42 Cr**: the ledger-only reading
+   overstated the problem by seventeen times. They now carry their own status, **Set on the bills**,
+   which is visible but deliberately outside the default gap view. *(Caught in review on 29-08-2026, after the
+   report had already been built and verified — the ledger-only reading looked entirely plausible.)*
+2. **Tally stores a debtor's credit limit as a NEGATIVE (Cr) amount.** 817 of `mst_parties`' rows are
+   negative against 123 positive. A `credit_limit > 0` test calls 817 real limits "blank".
+3. **A limit of ₹1 is a flag, not a limit** — 184 rows. Tally reads 0/blank as *no credit control at
+   all*, so Accounts used ₹1, the smallest figure that any sale breaches, to mean "blocked". It once
+   drove the Red Mark badge; `ext_redmark` replaced it and now holds 54 ledgers, **only 12 of which
+   overlap the 184**. So on Live a ₹1 row is NOT a Red Mark customer and must never be labelled one.
+   The report treats `creditLimit <= 1` as not set and shows a "₹1 flag (Tally)" chip, never a rupee.
+4. **Money owed must sum POSITIVE balances only.** Netting credit balances in flips a whole company:
+   Colorix reads +₹0.83 Cr owed against a net of −₹4.03 Cr. An advance is not negative exposure.
+
+**⚠ A new report reaches nobody until an admin grants it.** `profiles.receivables_allowed_reports` is
+an allow-list — the opposite polarity to the menu deny-list, deliberately: *a new menu reaches
+everyone until it is hidden, a new report reaches no one until it is granted*
+([reportAccess.ts](frontend/src/apps/receivables-hub/lib/reportAccess.ts)). After deploy, tick
+**Credit Terms Not Set** for each finance user in Admin → User form. Admins see it at once.
+
+**To discuss:**
+- [ ] Who on the finance team gets the grant.
+- [ ] Should this go out on a schedule, like the Collection report? Not wired — `emailable` is only
+      set in the same commit that wires an Email action and someone has actually read the output.
 
 ---
 
@@ -5271,6 +11258,146 @@ Three rules:
 - **Say what else was at risk.** A fault is rarely alone — if the same mistake sits in other code,
   write down where, so the next reader does not have to find it twice.
 
+### FIX-6 · The button said "Close" and cancelled the vacancy  `[x]`
+*New Recruitment · Found 2026-09-03, raised by Ritesh Bhai asking what the difference between hold,
+close, open and cancel actually is · **Fixed the same day**, with **NR-6***
+
+**What was seen.** The Positions grid offers `Pipeline · Hold · Close`. Filter the State column to
+Cancelled and five positions come back. Nobody remembers cancelling five positions.
+
+**They pressed "Close".** [PositionsList.tsx:331](frontend/src/apps/hr-recruitment/pages/positions/PositionsList.tsx#L331)
+rendered the label `Close` but passed `mode: "cancel"` → `fms_hr_cancel_requisition` →
+`status = 'cancelled'`. The same action on the requisition page was, correctly, labelled **Cancel**.
+
+**And the label named a state no human can reach.** `closed` is written *only* by
+`fms_hr_sync_requisition_fill` when the last seat is filled — a success, which un-sets itself if a hire
+falls through. There is no RPC anywhere that lets a person close a requisition. Live counts at the time
+of the fix: **23 requisitions · 5 cancelled · 0 ever closed · 0 ever held.** Every cancellation in the
+system's history came through a button that said Close.
+
+The difference the three words actually carry:
+
+| | Set by | Reversible | Means |
+|---|---|---|---|
+| **On hold** | a person, with a reason | **yes** — Reopen | paused where it stands; resumes at the same step |
+| **Cancelled** | a person, with a reason | **no** | abandoned; it will not be filled |
+| **Closed** | the **system**, automatically | yes, automatically | every seat filled — a success |
+
+**The fix.** `Close` → `Cancel`.
+
+🔴 **And a second one the rename created.** The confirm dialog is titled *"Cancel this requisition"* and
+its dismiss button was itself labelled **`Cancel`**, beside `Confirm`. Once the grid button also said
+Cancel, the button a user reaches for to go through with it is the one that backs out. Relabelled
+**"Go back"** ([MrfModals.tsx:346](frontend/src/apps/hr-recruitment/components/MrfModals.tsx#L346)).
+
+**What else was at risk.**
+
+- **The same page printed raw enum values.** `PositionPipeline` read *"This position is cancelled"* only
+  because that token happens to be a word; `sent_back` would have shown as `sent_back`. Same leak in
+  `reqTerminalBar`, which surfaces as a lock reason on the Completed tab. Both now use
+  `REQ_STATUS_LABEL`.
+- **`on_hold` and `cancelled` share an identical grey** in `REQ_STATUS_CLASS`, and the Positions grid
+  greyed `closed` with them — so a vacancy that filled every seat looked exactly like an abandoned one.
+  Closed now keeps its green there. This is most of why the three words were confusable in the first
+  place.
+- **The reason was never shown**, which is what let a mislabelled button go unnoticed for months and is
+  fixed under **NR-6**.
+
+### FIX-5 · 🔴 The same candidate can be added to a vacancy twice, and the pipeline counts them twice  `[ ]`
+*New Recruitment · Found 2026-09-03, raised by Ritesh Bhai from the Executive Assistant board · **Not
+yet fixed.** No data has been touched — the cleanup is waiting on Saloni's answer (see below)*
+
+**What was seen.** The Executive Assistant position reads **"4 · 2 in play"** on the Positions list.
+Only **two people** have ever applied for it, and both were rejected.
+
+**The count is right. The data is wrong.** There really are four candidate rows, because both people
+were entered **twice**:
+
+| Candidate no | Name | Stage | Added (IST) | CV file |
+|---|---|---|---|---|
+| CAN-2627-0065 | Purvi Upadhyay | disqualified | 31-Aug 11:45 | `Purvi Upadhyay - EA.pdf` |
+| CAN-2627-0066 | Manali Desai | disqualified | 31-Aug 11:45 | `Manali Desai_CV.pdf` |
+| CAN-2627-0098 | Purvi Upadhyay   EA | **Shortlisted by HR** | **02-Sep 11:06** | `Purvi Upadhyay - EA.pdf` |
+| CAN-2627-0097 | Manali Desai | **Shortlisted by HR** | **02-Sep 11:06** | `Manali Desai_CV.pdf` |
+
+Both were disqualified on 31-Aug with the same note — *"As discussed out of budget and not so
+active."* The **same two CVs were uploaded again on 02-Sep at 11:06** by Saloni Rathod, creating two
+fresh records that started over at Shortlisted by HR. Those two are the "2 in play".
+
+Same people, provably: identical CV filenames on both pairs, and Manali's **email and phone match
+exactly** across her two rows. (The newer Purvi row is named `Purvi Upadhyay   EA` because the parser
+took the name from the filename.)
+
+#### Why the duplicate warning did not stop it — it half-fired, and half could not
+
+The module *does* warn. `duplicatesOf` in [store.tsx:1205](frontend/src/apps/hr-recruitment/store.tsx#L1205)
+matches **on phone or email only**, and `AddCandidatesModal` shows the result as an advisory line:
+
+- **Manali Desai** has both an email and a phone, so the warning **did** appear. It is a warning and
+  not a block, so it can be clicked straight past.
+- **Purvi Upadhyay** has **no email and no phone on either row** — her CV never yielded contact
+  details — so `duplicatesOf` returns `[]` on its first line (`if (!ph && !em) return []`).
+  **No warning was possible.** The one signal that would have caught her — the identical CV filename
+  — is not compared at all.
+
+⚠ **And nothing stops it server-side.** `fms_hr_add_candidates` has **no duplicate check of any
+kind**, and `fms_hr_candidates` carries **no unique constraint** on (requisition, email) or
+(requisition, phone) — the `email` and `phone` indexes exist but are **non-unique**, built for
+lookup. The RPC inserts whatever it is handed.
+
+#### It is not only the EA board — 3 positions, 5 extra rows
+
+| Position | Shows | Actually | Duplicate |
+|---|---|---|---|
+| MRF-2627-0018 · Executive Assistant | 4 · 2 in play | **2 people** | Purvi ×2, Manali ×2 |
+| MRF-2627-0006 · Marketing Executive | 11 · 10 in play | 10 people · 9 in play | Harsha Jain ×2 |
+| **MRF-2627-0015 · Finance manager** | 16 · 13 in play | 14 people · 12 in play | **Kajal Bhalerao ×3** |
+
+🔴 **Kajal Bhalerao is the one that can cause real harm.** She exists three times on the Finance
+manager vacancy at once — **CAN-2627-0051 at Interview R3, CAN-2627-0054 at Telephonic, and
+CAN-2627-0057 disqualified.** Two different people could book her for two different rounds without
+either seeing the other, and she inflates that pipeline by two.
+
+#### What this quietly distorts
+
+Every count that walks candidate rows is affected, because none of them can know two rows are one
+person: the Positions list's candidate column and "in play", `PipelineSummary`, the Candidates list
+KPIs, and — worst — the **pipeline funnel and platform effectiveness** reports on the dashboard,
+where one person counted twice at CV stage and once at interview reads as a conversion rate that
+never happened.
+
+#### The fix
+
+- [ ] **Compare more than phone and email.** Add the **CV filename** (and ideally a normalised name)
+      to `duplicatesOf`, so a CV with no parsed contact details is still caught. That alone would
+      have caught Purvi.
+- [ ] **Make an exact match within the same vacancy a BLOCK, not a warning.** Same requisition +
+      identical email or phone is not a judgement call. Across *different* vacancies it must stay a
+      warning — applying for two jobs is legitimate, and `CandidateDetailsCard` already shows that
+      as useful context.
+- [ ] **Guard it server-side too.** The RPC accepts anything today. A client-only check is one
+      refreshed tab away from being bypassed.
+- [ ] **Decide on a unique constraint.** `(requisition_id, lower(email))` where email is not null
+      would make it structurally impossible — but it would also reject a legitimate re-application
+      after a rejection, which is exactly what may have happened here. Probably the RPC guard with
+      an explicit "add anyway" is the right shape, not a hard constraint.
+
+#### The cleanup — 5 extra rows, and it is BLOCKED on a question
+
+**Nothing has been deleted or changed.** Which row is the truth depends on intent, and only HR knows:
+
+- **If the 02-Sep re-uploads were a mistake** — the two new EA rows should go, leaving 2 candidates,
+  both disqualified, and the board reads "2 · 0 in play" as expected.
+- **If they were deliberate** (reconsidering both after the "out of budget" call) — the new rows are
+  correct and the *old* disqualified rows are the noise. The EA position genuinely has 2 people back
+  in play, and the board is already right.
+
+⚠ Note there is currently **no way to delete a candidate row at all** — see **NR-5**. Whichever
+answer comes back, the cleanup needs either that capability or a one-off SQL statement.
+
+**Waiting on:** Saloni Rathod — were the 02-Sep EA re-uploads deliberate? Then the same question for
+Harsha Jain (Marketing Executive) and Kajal Bhalerao (Finance manager).
+
 ### FIX-4 · A requisition could not be cancelled once sourcing had begun  `[x]`
 *Purchase RM Domestic · RM Import · **Fixed 2026-08-25, 13:35 IST** · Live on `master` at `3c71504`*
 
@@ -5445,201 +11572,6 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
-
-### PF-13 · Reassign an approval — every module now has one  `[x]`
-*Platform · **Live 2026-08-27** · closes the sweep that began with **IM-1** and **PD-1***
-
-**What happens now, everywhere.** Each module's Setup carries **who may receive a handover**, and the
-work awaiting a decision carries **Reassign**. It **moves**: it leaves the usual owner's queue, appears
-in the receiver's, and only they or an admin may act. The usual owner can pull it back. The shared
-controls are `shared/components/approvals/ReassignModal.tsx` and `ReassignPoolSection.tsx`.
-
-| Module | What it hands over | Shape |
-|---|---|---|
-| **Purchase RM Import** (IM-1) | one requisition | `assigned_approver_id` column |
-| **Purchase RM Domestic** (PD-1) | one requisition | column · amount-banded |
-| **Office Supplies** (PF-13a) | one request's first approval | column · HOD-routed |
-| **HR Recruitment** (PF-13b) | one **step** of one requisition | `(requisition, step)` table |
-| **HR Exit** (PF-13c) | one **step** of one case | `(case, step)` table |
-| **Travel Desk** (PF-13d) | one **step** of one trip | `(trip, step)` table · migration only, see below |
-| **Order to Dispatch** (PF-13e) | one **step** of one order | `(order, step)` table · location-scoped |
-
-**The shape split is the finding.** The first three modules carry **one** approval in flight per
-entity, so a single column says everything. The last four do not — an HR requisition walks nineteen
-steps across three scopes with several open at once — so the holder has to be keyed on
-`(entity, step)`. And that key is right because it is already how those modules authorise: every one
-of HR's eighteen RPCs calls `fms_hr_can_act(step_key, requisition_id, uid)`, so the rule landed inside
-the gate they already go through with **no signature or call-site change**.
-
-**Three rules that held in every module:**
-
-1. **The holder REPLACES the natural owner, never ORs with it.** An OR is a *share* — the item stays
-   in the original owner's queue and nothing has moved.
-2. **Visibility is separate from authority.** The queue follows the holder **even for an admin or a
-   coordinator**; `canAct*` keeps its admin arm. This mattered most in HR, where `hr_head_approval`'s
-   sole owner is also the sole process coordinator.
-3. **The read gate had to be widened in four modules**, for a counterintuitive reason: the module arm
-   is `module_is_viewer`, which is `module_level(...) = 'view'` **exactly** — so a receiver holding an
-   *edit* grant matches nothing and cannot open what was just handed to them.
-
-**⚠ Two failures that only the browser caught, both at the RLS / PostgREST layer:**
-
-- **Travel Desk went dark.** The new assignee table's policy read `fms_travel_trips`, whose policy now
-  reads the assignee table — Postgres refused both with *"infinite recursion detected in policy"* and
-  the whole module showed "could not be loaded". Fixed within minutes; the assignee policy no longer
-  consults the trips table.
-- **Every Order to Dispatch queue emptied.** That module's `fetchAll` adds a secondary sort on `id`
-  for stable paging, and the new table had a composite primary key and no `id`. PostgREST answered
-  400, the store's `Promise.all` rejected, and `orders` was empty. The table now carries an `id`.
-
-**Neither was visible to `tsc`, to the build, or to the SQL suites** — those connect as `postgres`,
-for whom **RLS is not enforced at all**. Every table added in this sweep is now read back with
-`set local role authenticated`, as an admin and as a non-admin, which is the check that would have
-caught both.
-
-**⚠ Travel Desk shipped its MIGRATION ONLY.** The Travel Desk app is another session's in-flight work
-— 88 files, untracked here and on master, never committed anywhere — so its frontend half (store,
-fetch, writes, Setup section, modal, queue trigger, My Work item) is left in the working tree for that
-session to commit with the rest of the module. The migration is additive and inert until then.
-
-**Verification, per module:** authorisation cases on live data inside rolled-back transactions (15,
-17, 22, 22, 19, 14), a rollback rehearsed the same way each time (8/8, 9/9, 8/8, 8/8, 7/7), and a
-browser walkthrough (12, 10, 7, 3, 3, 6). **No email was sent by any run** — the four HR/Travel/
-Dispatch switches are off, and Import's and Purchase's were turned off for their runs and back on
-after, with the outbox confirming zero rows each time.
-
-**Two configuration gaps this surfaced, both needing the business rather than code — see PF-14:**
-seven of HR Exit's fifteen step owners **cannot act on the steps they own** (no module access,
-including `fnf_approve`), and Travel Desk has **no step owners at all** plus **nobody with edit
-access**.
-
-### PF-13b · HR Recruitment — a step owner can hand a step to someone else  `[x]`
-*HR Recruitment · **Live 2026-08-27, 19:20 IST** · the fourth module after **IM-1**, **PD-1** and
-**PF-13a**, and the first that needed a different **shape***
-
-**What happens now.** Setup gains a **Reassignment** tab naming who may receive a step. The MRF
-approvals queue gains **Reassign** on each row. The handover **moves** that one step: it leaves the
-usual owner's queue, appears in the receiver's, and only they or an admin may act. The usual owner
-can pull it back. The rest of the requisition is untouched.
-
-**⚠ Why this is a table and not a column.** The other three modules carry **one** approval in flight
-per entity, so a single `assigned_approver_id` column says everything. HR does not: a requisition
-walks **nineteen steps across three scopes** — requisition, candidate and hire — and several are open
-at once. It can be at `job_posting` while one of its candidates is at `final_decision` and last
-month's hire is at `probation_m2`. So the holder is `fms_hr_step_assignees`, keyed on
-**(requisition, step)**.
-
-**And that key is right because it is already how the module authorises.** Every one of the
-**eighteen** HR RPCs calls `fms_hr_can_act(step_key, requisition_id, uid)` — even the hire-scoped
-ones, which resolve `probations.requisition_id` first and pass that. So the new rule lands inside the
-gate they all already go through: **no signature change and no call-site change anywhere**.
-
-**The hard stop this fixes.** `fms_hr_can_act__ungated`'s hiring-manager branch **`return`s with no
-fall-through**, so for `hod_shortlist`, `interview_2` and the five probation steps the hiring managers
-are the only non-admins who can *ever* act — and there is no step-owner list an admin could add a
-second name to. **15 of the 17 live requisitions name exactly one hiring manager.** Putting the holder
-check *before* that branch is what makes those steps movable at all.
-
-**⚠ A finding worth carrying forward.** `hr_head_approval` and `final_decision` are both owned by
-**Riya Kumari, who is also the sole process coordinator** — and the coordinator arm returns true
-before the holder check. So for *her* a handover **adds** the receiver without removing her, by
-design: a coordinator oversees the whole flow. That is correct, but it means the **queue** must follow
-the holder even for a coordinator, or the feature looks inert to the one person most likely to use it.
-`store.stepIsMine` does that, kept separate from `canActOn`; the browser check confirms it — the gate
-left the queue while signed in as an admin.
-
-**The read gate needed widening**, for the same counterintuitive reason as Office Supplies:
-`fms_hr_requisitions`' RLS select is `fms_hr_can_read_requisition OR module_is_viewer`, and
-`module_is_viewer` is `= 'view'` **exactly** — so an edit-level receiver matched nothing and the
-requisition would not even load.
-
-**One rule, two readers.** The pre-existing ownership test was lifted out verbatim into
-`fms_hr_is_natural_step_owner`: the gate asks it **after** the holder check (*who owns it now*), the
-reassign RPC asks it directly (*who owned it before*), so the original owner can still take it back.
-
-**Not the same thing as `fms_hr_reassign_interview`, which stays.** That moves one **interview** to
-different interviewers; this moves a **step**. Both can be in play on one requisition at once — and in
-`mywork/items/hr.ts` the two rules sit three lines apart and mean opposite things: the holder
-**replaces** every other rule, while the Round-2 panel arm is deliberately **additive**.
-
-**Verified:** 22 authorisation cases on live data in a rolled-back transaction — including the hard
-stop before and after, the read gate before and after, and proof that it is per-**step** (handing over
-`interview_2` left the same manager owning `probation_m1` on the same requisition); the reversal
-rehearsed the same way (8/8), which **confirmed its unusual ordering** — dropping
-`fms_hr_is_natural_step_owner` first breaks the *whole gate*, not just reassign, so the bodies go back
-**first** here, unlike the other three modules; and 7 browser checks. **No email sent** —
-hr-recruitment's switch is off and the outbox confirms zero rows. MRF-2627-0017 was restored to its
-exact prior status.
-
-**Still to come under PF-13:** HR Exit, Travel Desk, Order to Dispatch.
-
-### PF-13a · Office Supplies — the first approver can hand a request to someone else  `[x]`
-*Office Supplies · **Live 2026-08-27, 18:35 IST** · the third module to get the handover, after
-**IM-1** and **PD-1**, and the first where the exclusivity was structural rather than a config gap*
-
-**What happens now.** Setup → Raising & Routing carries **Who can be handed an approval**. A request
-awaiting FIRST approval shows **Reassign**, on the queue and on the request. It **moves**: it leaves
-the department head's queue, appears in the receiver's, and only they or an admin may decide it. The
-HOD can pull it back. Only first approval — second approval and handover already have two step owners
-each, so neither was ever blocked on one person.
-
-**Why this module needed it most.** In Purchase every band held one person, but the schema allowed a
-list, so the business could have fixed it in Setup. Not here. First approval routes to
-`fms_supplies_departments.hod_user_id` — **one uuid column**, compared with a bare `= p_uid` — and the
-`first_approval` row in `fms_supplies_step_owners` was **deliberately emptied** by `20260720100000`
-so that list could not be mistaken for the routing rule. There was no second name to add anywhere. A
-department whose head was away had no way to move its requests at all. (MIS currently has **no HOD at
-all**, so its requests are admin-only until one is set — worth raising separately.)
-
-**One authz site, not four.** Both `fms_supplies_decide_first_approval` and
-`fms_supplies_update_first_approval` delegate to `fms_supplies_can_act`, so the holder rule went in
-**one** function and both RPCs picked it up untouched. Purchase needed the same rule written into four
-hand-written bodies. That is a real advantage of this module's design.
-
-**⚠ The read gate had to be widened, for a counterintuitive reason.**
-`fms_supplies_can_read_request` admits admin / coordinator / fulfilment staff / module **viewer** /
-raiser / requested-for / department HOD. It looks as though anyone with module access can read a
-request — but **`module_is_viewer` is `module_level(...) = 'view'` EXACTLY**. A receiver holding an
-*edit* grant is therefore not a viewer and matched no arm at all: the handover would have put the
-request in their queue and then refused to let them open it. Proved rather than argued — the SQL run
-checked `can_read_request(req, receiver)` **before** the handover (false) and **after** (true).
-
-**Three real bugs the browser caught that `tsc` and the build both passed:**
-
-1. **`ref` is a reserved React prop.** The extracted shared modal took a prop called `ref`; React
-   strips it before the component sees it, so the title rendered `undefined` and the console threw
-   *"Function components cannot have string refs"*. It is now `docRef`. ⚠ This had also silently
-   broken **Purchase's** modal via the retro-fit — which is why Purchase was re-run afterwards.
-2. **`useState(saved…)` never re-syncs.** The shared Setup section read its saved values once, so a
-   section that mounts before the store's query resolves kept the empty arrays it was born with and a
-   reload looked like the save was lost. Import and Purchase never hit it — their Setup tab is opened
-   by a *click*, always after the data lands. Office Supplies puts it on the **default** tab.
-3. **The queue did not follow the holder for an admin.** `myQueue` used `canActOn`, which opens with
-   an admin arm, so a handed-over request never left an admin's queue — the one thing the feature
-   promises, invisible to exactly the people testing it. Visibility is now `stepIsMine`, separate
-   from authority. The same lesson as Import; it had to be learned again here because this module
-   splits the two differently.
-
-**The shared components were extracted at the third instance, not the second** —
-`shared/components/approvals/ReassignModal.tsx` and `ReassignPoolSection.tsx`, with Import and
-Purchase retro-fitted onto them. ⚠ They live under `approvals/`, **not `fms/`**: the root
-`.gitignore` carries `FMS/` with no leading slash, and Windows matches it case-insensitively, so a
-folder named `fms/` would have been silently left out of every commit and the build would have failed
-on master with no local sign of why.
-
-**The email card is built in SQL here, which is the opposite of Import and Purchase**, so the fix
-belonged in a different place: `fms_supplies_email_payload` gained a `reassigned` branch
-(`20260827140100`). Its existing `else` arm would have rendered a complete card anyway — it would just
-have said *"updated a request"*, which is a poor way to tell somebody an approval has landed on them.
-
-**Verified:** 17 authorisation cases on live data in a rolled-back transaction (17/17), including the
-holder approving end to end through the real RPC and then revising her own decision; the reversal
-recipe rehearsed the same way with a handover in flight (9/9); 10 browser checks (10/10) after the
-three fixes; and Purchase re-run afterwards (12/12) because the retro-fit had touched it.
-**No email was sent** — office-supplies' switch is off, procurement's was turned off for its re-run
-and back on after, and the outbox confirms zero rows for both.
-
-**Still to come under PF-13:** HR Recruitment, HR Exit, Travel Desk, Order to Dispatch.
 
 ### PD-1 · An approver can hand a requisition to someone else  `[x]`
 *Purchase RM Domestic · **Live 2026-08-27, 18:05 IST** — `25d27aa` on master, deployed by Vercel ·

@@ -103,6 +103,15 @@ export function buildOcpiNav(opts: {
     nav.push(
       { label: "Masters", to: `${B}/masters`, icon: ic.masters, section: "Administration" },
       { label: "Machines", to: `${B}/machines`, icon: ic.machines },
+      /*
+        ⚠ A SIBLING OF MACHINES, NOT A CHILD OF IT. The sidebar marks a row
+          active on a PREFIX match, so a destination at `${B}/machines/…` would
+          light Machines and this at the same time — the collision this file's
+          header note describes for My Deals and Drafts. `/ocpi/sales-pages` also
+          keeps it clear of the `machines/:id` wildcard, which would otherwise
+          swallow it.
+      */
+      { label: "PI Sales Pages", to: `${B}/sales-pages`, icon: ic.machines },
     );
   }
 

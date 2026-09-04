@@ -595,6 +595,26 @@ export const isUsdDeal = (d: QuotationDraft): boolean =>
   d.dealValueCurrency === "USD" || d.transportTerms === "high_seas";
 
 /**
+ * The same question, asked of a SAVED ROW rather than a draft.
+ *
+ * ⚠ IT DELIBERATELY DROPS THE HIGH-SEAS DISJUNCT, and the reason is written
+ *   above: that term exists to bridge the window BETWEEN choosing High Seas and
+ *   saving, because `fms_ocpi_write_quotation` only forces the currency on save.
+ *   A row has already been through that writer, so on this side the disjunct is
+ *   redundant — verified live on 02-Sep-2026: five high-seas deals, none of them
+ *   anything but USD.
+ *
+ * 🔴 IT EXISTS SO THE CLAUSE AND THE MONEY CANNOT DISAGREE ON ONE PAGE. Three
+ *    places test the stored currency — the order confirmation's money rows, the
+ *    summary sheet's dollar clause, and (since OCPI-33) the `usd` template
+ *    condition. If those drifted, one contract could print "Machine Value USD"
+ *    with no forex clause, or a rupee-only money block carrying one. Four copies
+ *    of a tax rate is how `DEFAULT_GST_RATE` came to exist; this is the same
+ *    lesson applied before it is learned again.
+ */
+export const isUsdDealRow = (d: OcpiDeal): boolean => d.dealValueCurrency === "USD";
+
+/**
  * Everything a branch rule needs that is NOT on the draft.
  *
  * ⚠ THE MACHINE STOPPED DECIDING THIS (OCPI-14). Until then there were two
@@ -680,6 +700,43 @@ export function dealFacts(
 }
 
 /**
+ * The same facts, for a SAVED ROW that is about to be printed — with the
+ * machine's own category as the fallback.
+ *
+ * 🔴 THE SQL COALESCES AND THE FORM DOES NOT, AND UNTIL OCPI-31 THAT DID NOT
+ *    MATTER. `fms_ocpi_write_oc` reads the category as
+ *    `coalesce(d.machine_category_id, m.category_id)`; every `dealFacts` caller
+ *    passes the deal's column alone, and an id nobody matches yields
+ *    `showsDryer: false`. That was harmless while these flags only decided which
+ *    QUESTIONS a form asked. It stops being harmless the moment they decide
+ *    which WORDS a contract prints: a row carrying a machine but no category
+ *    would drop the dryer from the paper for a machine that has one.
+ *
+ * ⚠ IT IS A NO-OP ON TODAY'S DATA, and that is exactly when to add it. Counted
+ *   02-Sep-2026: zero deals with a machine and no category, zero active machines
+ *   with no category. `chooseMachine` snaps the two together on every pick, so
+ *   the hole is currently unreachable — the guard is here so that a row written
+ *   by anything other than this form cannot quietly rewrite a contract.
+ *
+ * ⚠ THE FORM SIDE IS DELIBERATELY LEFT ALONE. `clearHidden` on such a row would
+ *   blank every dryer, centering and extras answer the server would have kept —
+ *   a real defect, pre-existing, and not this change's to fix. Raised separately.
+ */
+export function factsForDeal(
+  dryerTypes: { name: string; meansNoDryer: boolean }[],
+  categories: { id: string; showsDryer: boolean | null; showsCentering: boolean | null; showsExtras: boolean | null }[],
+  deal: OcpiDeal,
+  machine?: OcpiMachine,
+): DealFacts {
+  return dealFacts(
+    dryerTypes,
+    deal.dryerType ?? "",
+    categories,
+    deal.machineCategoryId ?? machine?.categoryId ?? "",
+  );
+}
+
+/**
  * Can the machine carry this extra at all?
  *
  * `"optional"` and `"yes"` both mean ASK — "yes" is standard equipment, and the
@@ -742,12 +799,23 @@ export const PLATTER_OPTIONS = ["With Platter", "Without Platter"] as const;
  *   so the list had no caller left. `Ex-Work Surat` left the vocabulary with it
  *   -- see `DELIVERY_VIA` for what happens to the deals that still hold it.
  *
- * 🔴 CASING IS DELIBERATE AND MUST NOT BECOME A MIX. It reads `Ex Factory
- *    Surat`, title case, settled with Ritesh Bhai on 02-09-2026. The BUTTON
- *    still says `EX Factory` because that exact string is what `high_seas_via`'s
- *    CHECK allows and what the mirror writes; only the printed term is
- *    title-cased. The form shows the composed value under the strip so the two
- *    cannot be confused for each other.
+ * 🔴 THE PRINTED TERM READS `Ex-Work Surat`, AND THAT IS A REVERSAL.
+ *    Settled with Ritesh Bhai on 02-09-2026 as `Ex Factory Surat`, title case;
+ *    REVERSED by him on 04-09-2026 after the OC audit put ours beside the real
+ *    contracts -- folders 101, 122 and 127 all write `Ex-Work Surat`, and so do
+ *    the 17 deals already on file. His words: "instead of X factory surat, you
+ *    can do X work surat."
+ *
+ *    ⚠ THE BUTTON STILL SAYS `EX Factory`, and that is not an oversight. That
+ *      exact string is what `high_seas_via`'s CHECK allows and what the mirror
+ *      writes, so the ANSWER and the PRINTED TERM are deliberately different
+ *      strings. The form shows the composed value under the strip so the two
+ *      cannot be confused for each other -- which is the whole reason that
+ *      display exists.
+ *
+ *    ⚠ IT NOW AGREES WITH THE 17 LEGACY DEALS rather than diverging from them.
+ *      Those hold `Ex-Work Surat` as free text from before OCPI-35; a new deal
+ *      composes the same words. Nothing was migrated to achieve that.
  *
  * 🔴 CALLED ON CHANGE, NEVER ON LOAD. `draftFromDeal` does not run this. A deal
  *    nobody touches must save its stored `trade_term` byte-identically -- 17
@@ -755,14 +823,45 @@ export const PLATTER_OPTIONS = ["With Platter", "Without Platter"] as const;
  *    signed or issued paper, and none of them would survive a recompose from a
  *    vocabulary that no longer contains their answer.
  */
-export function composeTradeTerm(d: {
-  deliveryVia: string;
-  deliveryPort: string;
-  deliveryFactoryCity: string;
-  deliveryLeg: string;
-  transportTerms: string;
-  highSeasCostBy: string;
-}): string {
+/**
+ * The phrase that introduces the transport bearer inside a composed trade term.
+ *
+ * ⚠ EXPORTED SO THE SUMMARY SHEET CAN AVOID SAYING IT TWICE. That sheet has
+ *   always printed "cost by Customer" as its own segment; a deal whose stored
+ *   term now carries the parenthetical would otherwise read
+ *   "Local Delivery / Ex-Work Surat (Transportation bear by Customer) /
+ *   cost by Customer". Deals raised before OCPI-42 hold a term without it and
+ *   must keep their own segment, so the test is on the STRING, not on a date.
+ */
+export const TRANSPORT_BEARER_MARK = "Transportation bear by";
+
+/**
+ * What an ex-works delivery term starts with, in both spellings this module can
+ * produce: the composed `Ex-Work <city>` and the retired free-text
+ * `Ex-Work Surat` that 17 older deals still hold. The transport bearer is
+ * appended only to a term beginning this way -- see composeTradeTerm.
+ */
+export const EX_WORKS_PREFIX = "Ex-Work";
+
+export function composeTradeTerm(
+  d: {
+    deliveryVia: string;
+    deliveryPort: string;
+    deliveryFactoryCity: string;
+    deliveryLeg: string;
+    transportTerms: string;
+    highSeasCostBy: string;
+    localCostBy: string;
+  },
+  /**
+   * What the SELLING ENTITY is called on this deal's papers -- its profile's
+   * legal name. Only read when the COMPANY bears the local transport, because
+   * that is the one case where the term has to name a party other than the
+   * customer. Passed in rather than looked up here: this module is pure and
+   * knows nothing about company profiles, and the one caller already holds them.
+   */
+  sellerName = "",
+): string {
   const via = d.deliveryVia.trim();
   if (!via) return "";
 
@@ -773,7 +872,7 @@ export function composeTradeTerm(d: {
   } else if (via === "EX Factory") {
     const city = d.deliveryFactoryCity.trim();
     // Title case here and nowhere else -- see the casing note above.
-    term = city ? `Ex Factory ${city}` : "Ex Factory";
+    term = city ? `Ex-Work ${city}` : "Ex-Work";
   } else {
     // FOB, and any retired value an older deal still carries, verbatim.
     term = via;
@@ -809,6 +908,72 @@ export function composeTradeTerm(d: {
     */
     if (leg) term = `${term}, ${leg.label.charAt(0).toLowerCase()}${leg.label.slice(1)}`;
   }
+
+  /*
+    OCPI-42 · WHO BEARS THE LOCAL TRANSPORT, ON THE PAPER AT LAST.
+
+    🔴 THE ANSWER WAS ASKED, STORED AND PRINTED NOWHERE. Proved on 04-09-2026 by
+       entering two real contracts as deliberate opposites -- 122 Vijay Laxmi
+       borne by the customer, 101 Yashasvi borne by Orange O Tec -- and getting
+       the IDENTICAL line (`Ex Factory Surat`, as it then read) on both.
+       `local_cost_by` reached
+       the summary sheet's "Term of Delivery" row and no contract clause.
+
+    🔴 THE WORDING IS THE PAPERS' OWN, NOT MINE. Counted across every real 26-27
+       contract the audit parsed, the parenthetical reads:
+
+         (Transportation bear by customer)          x4
+         (Transportation bear by Customer)          x3
+         ( Transportation Bear by Customer)         x2
+         ( Transportation Bear by Orange O Tec Pvt / Ltd)
+         (Transportation cost bear by customer)
+
+       Hand-typed, so it drifts in case and spacing; `Transportation bear by`
+       is the form the majority carry and is what is settled on here. "bear by"
+       is not a typo to correct -- it is how every one of these contracts words
+       it, and this string is contract text.
+
+    ⚠ IT JOINS THE TERM, IT DOES NOT GET A LINE OF ITS OWN -- exactly like the
+      customer's delivery leg above, and for the same reason: a new token prints
+      nowhere until all 21 decks are rewritten. Appending reaches the contract's
+      SALE CONDITIONS clause, the Performa Invoice's "Trade Terms :" line and
+      the summary sheet with no template change at all.
+
+    ⚠ GUARDED ON `local`, matching the branch rule in branching.ts and the RPC,
+      which nulls the column on a High Seas deal. A blank bearer appends
+      nothing rather than an empty bracket.
+
+    🔴 AND GUARDED ON AN EX-WORKS TERM, WHICH THE FIRST VERSION WAS NOT.
+       Caught 04-09-2026 by typing real folder 121 (Modi Rocket) into the form:
+       an "Others" deal delivered CIF NHAVA SHEVA PORT came out as
+
+         CIF NHAVA SHEVA PORT (Transportation bear by Customer)
+
+       and the real contract reads `CIF NHAVA SHEVA PORT (Under EPCG License)`.
+       EVERY ONE of the counted parentheticals above sits after `Ex-Work Surat`
+       and not one sits after a CIF or FOB term — because CIF already states who
+       pays freight and insurance to the port, so naming a bearer beside it
+       contradicts the incoterm rather than completing it. The question itself
+       says so: it is titled "LOCAL delivery cost borne by".
+
+       ⚠ The test is on the COMPOSED TERM, not on `deliveryVia`, so it also
+         covers a legacy deal hydrated with the retired literal `Ex-Work Surat`
+         -- which is an ex-works term and should carry the bearer if anyone
+         edits it -- without a second condition to keep in step.
+  */
+  if (d.transportTerms === "local" && d.localCostBy.trim() && term.startsWith(EX_WORKS_PREFIX)) {
+    const bearer =
+      d.localCostBy === "customer"
+        ? (COST_BEARERS.find((c) => c.value === "customer")?.label ?? "Customer")
+        : // The company is NAMED, because that is what the real paper does --
+          // "( Transportation Bear by Orange O Tec Pvt / Ltd)". The generic word
+          // is only a floor for the case where no selling entity resolves at
+          // all, so the term can never read "bear by )".
+          sellerName.trim() ||
+          (COST_BEARERS.find((c) => c.value === "company")?.label ?? "Company");
+    term = `${term} (${TRANSPORT_BEARER_MARK} ${bearer})`;
+  }
+
   return term;
 }
 

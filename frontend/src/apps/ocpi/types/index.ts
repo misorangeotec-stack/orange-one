@@ -442,6 +442,15 @@ export interface OcpiDeal {
    */
   ocSummaryPdfPath: string | null;
 
+  /**
+   * The approved PERFORMA INVOICE — the third of the set (OCPI-36).
+   *
+   * ⚠ NULL ON EVERY DEAL APPROVED BEFORE OCPI-36, and that is the honest answer
+   *   rather than a gap to fill. Those contracts never had a PI; the panel says
+   *   so in words instead of rebuilding a document that was never issued.
+   */
+  piPdfPath: string | null;
+
   /** Written ONLY by the update_* RPCs — never by the workflow's own writes. */
   editedAt: string | null;
   editedBy: string | null;
@@ -469,6 +478,13 @@ export interface QuotationVersion {
   pdfPath: string | null;
   /** The detailed sheet's own file. Null when the machine carries no template. */
   ocPdfPath: string | null;
+  /**
+   * The Performa Invoice frozen with this revision (OCPI-36).
+   *
+   * ⚠ NULL ON EVERY REVISION ISSUED BEFORE OCPI-36. Unlike the other two this
+   *   one is never rebuilt from the template on a miss — see IssuedPapers.
+   */
+  piPdfPath: string | null;
   /**
    * What this revision was priced at, and in what.
    *
@@ -560,6 +576,31 @@ export interface OcpiMachine {
   docTitle: "ORDER CONFIRMATION" | "OFFER QUOTE";
   introText: string | null;
   machineModelNo: string | null;
+
+  /**
+   * The three the PERFORMA INVOICE prints, and the only three in this module
+   * where blank means OMIT rather than "somebody must fill this in" (OCPI-36).
+   *
+   * 🔴 DO NOT MAKE THESE "CONSISTENT" WITH THE REST OF THE MODULE. Every other
+   *    unanswered value here rules an underscore run on the paper, deliberately,
+   *    because the gap is a question nobody answered. These are different: a
+   *    Surat-built Homer K24 has no country of origin, so a blank would be
+   *    inventing a question. Of 34 real PI files, 4 carry an HSN, 2 a country and
+   *    1 a manufacturer — all of them imported machines.
+   */
+  hsnCode: string | null;
+  manufacturer: string | null;
+  countryOfOrigin: string | null;
+
+  /**
+   * Which sales page this machine prints as page 2 of its PI.
+   *
+   * ⚠ SHARED ACROSS A FAMILY — one `Alpha II` page serves the 1.8 m, 1.9 m and
+   *   2.2 m models. Null is a normal state, not a fault: the PI then renders its
+   *   2-page form, which folder 107's ink and dryer PIs prove is correct.
+   */
+  salesPageId: string | null;
+
   supplyDescription: string | null;
   specRows: { label: string; value: string }[];
   composition: string[];
@@ -567,6 +608,43 @@ export interface OcpiMachine {
   signoffStyle: "approved_by" | "checked_by";
   /** False ⇒ quotable, and issued on the summary sheet alone — nothing is blocked. */
   hasTemplate: boolean;
+  active: boolean;
+  sortOrder: number;
+}
+
+/**
+ * One block of a sales page, in the order it prints.
+ *
+ * ⚠ AN ORDERED LIST RATHER THAN FIXED FIELDS, BECAUSE THE REAL PAGES DIFFER.
+ *   Folder 127's Alpha II page runs tagline → paragraph → "Advantages" →
+ *   bullets; folder 120's K64 page interleaves two prose paragraphs between
+ *   bullet groups. A {tagline, intro, bullets[]} record would have forced the
+ *   K64 copy to be rewritten to fit the shape — and these pages are lifted
+ *   verbatim from papers customers have already been sent, never re-authored.
+ */
+export type SalesPageBlock = {
+  kind: "tagline" | "para" | "subhead" | "bullet";
+  text: string;
+};
+
+/**
+ * Page 2 of a machine's Performa Invoice — the marketing page.
+ *
+ * ⚠ PER FAMILY, NOT PER MACHINE. `fms_ocpi_machines.sales_page_id` points here,
+ *   and several machines share one row.
+ *
+ * ⚠ THE HEADING IS STORED, NOT DERIVED. Eight of the twelve real pages read
+ *   "Key Benefits of …" and four read "Advantages of …", so there is no rule
+ *   that generates it — and assuming one is what made the first sweep of this
+ *   work miss four pages entirely.
+ */
+export interface OcpiSalesPage {
+  id: string;
+  /** The family label, for the picker: "Alpha II", "Homer K24". */
+  name: string;
+  /** Exactly as the paper prints it. */
+  heading: string;
+  blocks: SalesPageBlock[];
   active: boolean;
   sortOrder: number;
 }

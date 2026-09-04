@@ -134,12 +134,41 @@ export default function PaperSet({
   }
 
   /*
-    ⚠ THE SECOND FILE IS DELAYED. Chrome cancels a second programmatic download
-      fired in the same tick as the first, so "Download both" would silently
-      hand over one paper — exactly the failure this button exists to prevent.
+    ── "Download all", and which papers are ticked ───────────────────────────
+
+    ⚠ EVERY AVAILABLE PAPER STARTS TICKED, and an unticked one is remembered by
+      KEY rather than by index. A set keyed on position would silently re-point
+      at a different document the moment a blob arrives and `available` grows —
+      which it does, since the three fetches resolve independently.
+  */
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  const picked = available.filter((p) => !unticked.has(p.key));
+
+  function toggle(key: string) {
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /*
+    🔴 THE STAGGER IS LOAD-BEARING, AND IT GETS MORE SO WITH THREE PAPERS.
+       Chrome cancels a second programmatic download fired in the same tick as
+       the first, so a naive loop hands over ONE file and reports success — the
+       exact failure this button exists to prevent, and the reason this comment
+       has survived since "Download both".
+
+    ⚠ THE DELAY INDEXES OFF THE PICKED LIST, NOT THE FULL ONE. Ticking the first
+      and third papers must still space the two downloads 400 ms apart; indexing
+      off `available` would leave a gap where the skipped paper was and fire the
+      third at 800 ms, which works but is slower for no reason — and indexing off
+      the wrong list is how a two-of-three selection ends up firing two files in
+      the same tick if the skipped one is in the middle.
   */
   function downloadAll() {
-    available.forEach((p, i) => {
+    picked.forEach((p, i) => {
       if (i === 0) downloadOne(p);
       else setTimeout(() => downloadOne(p), 400 * i);
     });
@@ -163,10 +192,39 @@ export default function PaperSet({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {actions}
+          {/*
+            ⚠ HIDDEN BELOW TWO PAPERS, because "Download all" beside a single
+              Download button offers the same act twice under two names.
+
+            ⚠ ONLY PAPERS THAT ACTUALLY EXIST ARE TICKABLE. A tick against a
+              paper with no blob would download nothing and look like a failure;
+              the tab already says why that one is absent.
+          */}
           {available.length > 1 && (
-            <Button size="sm" variant="ghost" onClick={downloadAll}>
-              Download both
-            </Button>
+            <div className="flex items-center gap-2 rounded-lg border border-line px-2 py-1">
+              {available.map((p) => (
+                <label
+                  key={p.key}
+                  className="flex cursor-pointer items-center gap-1 text-[12.5px] text-grey"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!unticked.has(p.key)}
+                    onChange={() => toggle(p.key)}
+                    className="h-3.5 w-3.5 accent-orange"
+                  />
+                  {p.label}
+                </label>
+              ))}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={downloadAll}
+                disabled={picked.length === 0}
+              >
+                Download all
+              </Button>
+            </div>
           )}
           <Button size="sm" variant="ghost" onClick={print} disabled={!activeUrl}>
             Print

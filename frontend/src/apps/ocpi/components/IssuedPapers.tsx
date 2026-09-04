@@ -3,6 +3,7 @@ import PaperSet, { type Paper } from "./PaperSet";
 import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
 import { quotationDetailFileName, quotationFileName } from "../lib/quotationPdf";
+import { piFileName } from "../lib/piPdf";
 import { dmy } from "../lib/format";
 import type { OcpiDeal, QuotationVersion } from "../types";
 
@@ -39,7 +40,7 @@ export default function IssuedPapers({
   deal: OcpiDeal;
   versions: QuotationVersion[];
   /** The pair just rendered in this browser, when Generate has only just run. */
-  fresh?: { summary: Blob; detail: Blob | null } | null;
+  fresh?: { summary: Blob; detail: Blob | null; pi: Blob | null } | null;
 }) {
   const s = useOcpiStore();
   const machine = s.machineById(deal.machineId);
@@ -56,42 +57,59 @@ export default function IssuedPapers({
 
   const [summary, setSummary] = useState<Blob | null>(null);
   const [detail, setDetail] = useState<Blob | null>(null);
+  const [pi, setPi] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (fresh) {
       setSummary(fresh.summary);
       setDetail(fresh.detail);
+      setPi(fresh.pi);
       setBusy(false);
       return;
     }
     if (!current) {
       setSummary(null);
       setDetail(null);
+      setPi(null);
       return;
     }
     let cancelled = false;
     setBusy(true);
     void (async () => {
-      const [a, b] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         fetchStoredPdf(current.pdfPath),
         fetchStoredPdf(current.ocPdfPath),
+        fetchStoredPdf(current.piPdfPath),
       ]);
       if (cancelled) return;
       setSummary(a);
       setDetail(b);
+      setPi(c);
       setBusy(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [fresh, current?.versionNo, current?.pdfPath, current?.ocPdfPath]);
+  }, [fresh, current?.versionNo, current?.pdfPath, current?.ocPdfPath, current?.piPdfPath]);
 
   if (!current) return null;
 
   const versionNo = current.versionNo;
   const noTemplate = !!machine && !machine.hasTemplate;
 
+  /*
+    ⚠ THE ORDER IS Summary · PI · OC, AND IT IS NOT COSMETIC. `PaperSet` lands on
+      the first paper that has content, so this decides what a reader sees first.
+      Asked for by Ritesh Bhai (OCPI-36).
+
+    ⚠ THE PI MUST NOT INHERIT THE OC's EXCUSE. The detailed sheet is missing on 7
+      of 28 machines because those machines carry no template — a real, permanent
+      state that the tab explains. The PI has no such dependency: it renders for
+      every machine, in a shorter form when there is no sales page. So when it is
+      absent the reason is a different one, and saying "no template yet" here
+      would send somebody to build a template that would change nothing.
+  */
   const papers: Paper[] = [
     {
       key: "summary",
@@ -102,12 +120,20 @@ export default function IssuedPapers({
         "The summary for this version is not in storage. Generate a revision to issue it again.",
     },
     {
+      key: "pi",
+      label: "PI",
+      blob: pi,
+      fileName: piFileName(deal, versionNo),
+      missingNote:
+        "This revision was issued before the Performa Invoice was added to the module, so none was stored. Generate a revision to issue one.",
+    },
+    {
       key: "detail",
-      label: "Detailed sheet",
+      label: "OC",
       blob: detail,
       fileName: quotationDetailFileName(deal, versionNo),
       missingNote: noTemplate
-        ? `${machine!.name} has no detailed template yet, so this issue is the summary alone. The sheet appears once somebody builds the template under Machines.`
+        ? `${machine!.name} has no detailed template yet, so this issue is the summary and the PI alone. The sheet appears once somebody builds the template under Machines.`
         : "No detailed sheet was stored for this version.",
     },
   ];

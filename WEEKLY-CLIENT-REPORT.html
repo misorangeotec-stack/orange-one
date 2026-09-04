@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orange One Hub Weekly Update</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm 12mm 10mm 12mm; }
+
+  :root {
+    --navy:   #10243f;
+    --navy-2: #1d3557;
+    --orange: #f26722;
+    --ink:    #1f2937;
+    --muted:  #64748b;
+    --line:   #dfe4ea;
+    --wash:   #f7f9fb;
+    --band:   #eaeff5;
+    --green:  #15803d;
+    --amber:  #b45309;
+    --slate:  #475569;
+    --amber-wash:  #fff8f1;
+    --amber-wash2: #fff1e3;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Calibri", Arial, sans-serif;
+    font-size: 8.5pt;
+    line-height: 1.3;
+    color: var(--ink);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* On screen the BODY is the scroll container, not the window. Embedded preview
+     panes (VS Code, an iframe) often refuse to scroll the window, which clipped
+     this page; scrolling inside the document works in both places. */
+  @media screen {
+    html { height: 100%; overflow: hidden; }
+    body {
+      height: 100%;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background: #eef1f5;
+    }
+    .sheet {
+      width: 703px;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 18px 14px 30px;
+      background: #fff;
+      box-shadow: 0 1px 10px rgba(16,36,63,.12);
+    }
+  }
+  /* the sheet is a screen-only frame; print keeps the @page margins */
+  @media print {
+    .sheet { width: auto; margin: 0; padding: 0; background: none; box-shadow: none; }
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    background: var(--navy);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-left: 5px solid var(--orange);
+  }
+  .masthead h1 { margin: 0; font-size: 14pt; font-weight: 650; letter-spacing: .2px; }
+  .masthead h1 span { color: var(--orange); }
+  .masthead .week { text-align: right; line-height: 1.3; }
+  .masthead .wk-no { font-size: 11pt; font-weight: 700; color: #fff; display: block; letter-spacing: .3px; }
+  .masthead .wk-date { font-size: 8pt; color: #b9c7d6; font-weight: 600; }
+  .subline {
+    margin: 4px 1px 7px;
+    font-size: 7.6pt;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ---------- sections, each fenced off from the next ---------- */
+  section { margin-bottom: 6px; break-inside: avoid; }
+  section + section { border-top: 1px solid var(--line); padding-top: 6px; }
+
+  h2 {
+    font-size: 9.6pt;
+    margin: 0 0 4px;
+    color: var(--navy);
+    font-weight: 680;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--band);
+    border-left: 3px solid var(--orange);
+    border-radius: 0 3px 3px 0;
+    padding: 2.5px 8px 2.5px 7px;
+  }
+  h2 .num {
+    background: var(--orange);
+    color: #fff;
+    font-size: 7.5pt;
+    font-weight: 700;
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    flex: none;
+  }
+  /* status chip: says plainly whether the section is done, running or waiting */
+  h2 .status {
+    margin-left: auto;
+    font-size: 7.2pt;
+    font-weight: 700;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    padding: 1px 7px;
+    border-radius: 9px;
+    white-space: nowrap;
+  }
+  .st-done  { background: #dcfce7; color: var(--green); border: 1px solid #a7d9b9; }
+  .st-going { background: #fef3c7; color: var(--amber); border: 1px solid #f2d18a; }
+  .st-queue { background: #e7ecf2; color: var(--slate); border: 1px solid #cbd5e1; }
+  .st-block { background: #ffe8d6; color: #c2410c;      border: 1px solid #f7c39b; }
+
+  /* ---------- every section reads the same way: whose it is, then the remark ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 2.3px 6px; vertical-align: top; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  td.mod {
+    width: 30mm;
+    color: var(--navy-2);
+    font-weight: 640;
+    font-size: 8.2pt;
+  }
+  b { font-weight: 660; color: var(--navy); }
+  .striped tr:nth-child(odd) td { background: var(--wash); }
+
+  /* the waiting block keeps its amber ground, striping and all */
+  .await { background: var(--amber-wash); border: 1px solid #fbd9b8; border-radius: 4px; }
+  .await td { border-bottom: 1px solid #fae0c6; }
+  .await tr:nth-child(odd) td { background: var(--amber-wash2); }
+  .await td.mod { color: #9a3412; }
+
+  footer {
+    margin-top: 9px;
+    padding-top: 5px;
+    border-top: 2px solid var(--navy);
+    font-size: 7.4pt;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<div class="masthead">
+  <h1>Orange <span>One</span> Hub &nbsp;Weekly Update</h1>
+  <div class="week">
+    <span class="wk-no">Week 34</span>
+    <span class="wk-date">Monday 17 to Saturday 22 August 2026</span>
+  </div>
+</div>
+<div class="subline">
+  <span>Internal business portal · Order to Dispatch, Production, Receivables, HR, Admin &amp; Masters</span>
+  <span>Prepared for the weekly review</span>
+</div>
+
+<section>
+  <h2><span class="num">1</span> Delivered this week · new capability <span class="status st-done">Done, live · 9</span></h2>
+  <table class="striped">
+    <tr><td class="mod">Order to Dispatch</td><td><b>The whole module is fast again, and this was the week's biggest piece of work.</b> Every save waited about 6 seconds for the module to reload behind it, and all 23 save paths did it. A save now closes at once, the reload behind it went from 6.1 seconds to 1.4, and the data pulled per save fell from about 5,000 kB to 126 kB.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>A missing item is mapped on the spot.</b> No request, no approval and no wait. The order continues in the same screen.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>Customers and items now come from Tally only.</b> The "request a new master" route is retired.</td></tr>
+    <tr><td class="mod">Production Entry</td><td><b>Repackaging has its own tab, and the team is already using it.</b> A repacked lot is raised, slipped and tracked as its own kind of card, apart from a production job. 14 cards raised since 19 August.</td></tr>
+    <tr><td class="mod">Customer Onboarding</td><td><b>New Customer Onboarding is ready for the team.</b> The whole journey in one module: Sales raise the customer from their GST number, Accounts verify and recommend a credit limit, the Sales Head grades the account, the Director approves, and the Tally ledger is recorded. It gets a final check and test, then goes to the team to start using.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>The Collection report sends itself, on a schedule.</b> The full book to the office list, each salesperson's own extract to their people, PDF and Excel attached.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>An advance we paid out no longer counts as an overdue bill.</b> It was showing as a past-due invoice.</td></tr>
+    <tr><td class="mod">Admin / Masters</td><td><b>Organisation masters.</b> Department, Sub-department, Designation and Band. Four clean lists in place of one drifted one.</td></tr>
+    <tr><td class="mod">Platform</td><td><b>View-only access, working end to end.</b> A user can be given an app to read without the power to raise, approve or edit. Ten modules now open fully for such a user.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">2</span> Delivered this week · fixes and small refinements <span class="status st-done">Done, live · 11</span></h2>
+  <table class="striped">
+    <tr><td class="mod">Order to Dispatch</td><td><b>The gate outward number</b> is now the gate pass number itself, read-only, instead of being copied by hand. Noida also runs its own number series now.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>A new customer or item request now carries the company</b> chosen at the top of the order. It used to be raised blank.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>A long customer name was being cut off</b> on the sales order screen. Fixed.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>A customer's item was missing from the sales order dropdown</b>, a paging fault affecting about 300 items on any load. Fixed.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>Item type on the sales order.</b> The order asks what kind of item, and the item list narrows to it. A picker that opened at 8,340 items now opens at 1,119.</td></tr>
+    <tr><td class="mod">Admin / Masters</td><td><b>Every item now carries its Type, Category and Ink type.</b> 11,431 items taken from the business's own sheet, replacing a guess made by the system.</td></tr>
+    <tr><td class="mod">Production Entry</td><td><b>FG Item Lot Number</b> on the repackaging slip. Mandatory at entry, then carried through every step, queue and print.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>Bill-wise details grouped by sale type.</b> Ink, Spare, Machine, Head and Other, each with its own subtotal, in the PDF and the Excel.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>Spare and Head bills were reading as "Other"</b> on the salesperson report. Four rules added, 728 bills re-typed correctly.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>Collection report polish.</b> Data freshness on the header, the largest bills marked, and "Still Buying" given its own list.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>An admin can be tagged with a salesperson</b>, so their own extract reaches them too.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">3</span> In progress <span class="status st-going">Being built · 4</span></h2>
+  <table class="striped">
+    <tr><td class="mod">OCPI</td><td><b>The OCPI module, a large build of its own.</b> A complete module end to end, quotations through to the final OCPI reports. The scope is being written down now and the build starts against it. This is the bulk of the week ahead.</td></tr>
+    <tr><td class="mod">Asset Maintenance</td><td><b>Live in Week 35.</b> The module itself is built. Every entry is being cross-checked, what it throws up gets fixed, and then it goes live.</td></tr>
+    <tr><td class="mod">HR</td><td><b>HR knowledge base.</b> Search and answers across the HR documents. <b>The demo is ready</b>; it goes to the HR team this week, and live the week after.</td></tr>
+    <tr><td class="mod">Platform</td><td><b>Screens that update on their own.</b> When one person finishes their step, the next person's screen keeps showing the old list until they reload the page, so work sits with them unnoticed. It will refresh itself the moment something reaches them. The cause is found and the fix is being built.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">4</span> Next in the pipeline <span class="status st-queue">Next up · 10</span></h2>
+  <table class="striped">
+    <tr><td class="mod">Reports</td><td><b>The reports Ritesh Bhai actually wants, built into the hub.</b> A session with him first to settle what management needs to see and how often, then those reports get built. This is a main one for next week.</td></tr>
+    <tr><td class="mod">Order to Dispatch</td><td><b>Internal transfer and Others on a dispatch.</b> The order gains the choice, and an internal transfer offers only our own companies. Four of them are already carried in the masters.</td></tr>
+    <tr><td class="mod">HR</td><td><b>Travel reimbursement module.</b> HR shared the approved details and amounts on Thursday, so the build starts.</td></tr>
+    <tr><td class="mod">Process Coordinator</td><td><b>A dashboard of their own.</b> Every master approval in one queue, plus which process is running late, where, and whom to call.</td></tr>
+    <tr><td class="mod">Platform</td><td><b>Save Draft on every entry form.</b> Production Entry first, then Order to Dispatch.</td></tr>
+    <tr><td class="mod">Platform</td><td><b>Browser notifications</b>, on top of the in-app bell and the emails.</td></tr>
+    <tr><td class="mod">Platform</td><td><b>Speed sweep across the remaining modules</b>, the same fix Dispatch just had, plus a background job that rebuilds itself every 15 minutes for no reason.</td></tr>
+    <tr><td class="mod">FMS Control Center</td><td><b>Ranking and gamification.</b> A person sees where they stand against everyone else on the portal.</td></tr>
+    <tr><td class="mod">Training</td><td><b>Training videos, and a place in the hub to watch them.</b> A video for each module, recorded jointly with Bushra, and a screen in the portal where the team finds the one they need.</td></tr>
+    <tr><td class="mod">Outstanding</td><td><b>Retire the dead legacy data connection</b>, so there is one source of figures.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">5</span> Waiting on inputs <span class="status st-block">Blocked · 6</span></h2>
+  <table class="await">
+    <tr><td class="mod">WhatsApp team</td><td><b>WhatsApp integration.</b> In discussion with them for a while now, and still no clearance.</td></tr>
+    <tr><td class="mod">Bushra</td><td><b>Dept, sub-dept and employee code</b> for 10 people who joined after the 27-05-2026 sheet.</td></tr>
+    <tr><td class="mod">Factory</td><td>The <b>R&amp;D flow and form</b>.</td></tr>
+    <tr><td class="mod">Factory / QC</td><td>The <b>calibration sheets</b>, the Excel QC keeps today.</td></tr>
+    <tr><td class="mod">Factory, then Bushra</td><td>The <b>final list of production steps</b>, before the step duration report.</td></tr>
+    <tr><td class="mod">Factory</td><td>The <b>COA sample PDF</b> plus the raw Excel sheet.</td></tr>
+  </table>
+</section>
+
+<footer>
+  <span>Orange O Tec · Orange One Hub</span>
+  <span>Week 34 · 17 to 22 August 2026</span>
+</footer>
+
+</div><!-- /.sheet -->
+</body>
+</html>

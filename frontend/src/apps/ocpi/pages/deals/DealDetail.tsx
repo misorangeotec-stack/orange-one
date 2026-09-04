@@ -67,7 +67,17 @@ export default function DealDetail() {
   const facts: { label: string; value: string }[] = [
     { label: "Status", value: STATUS_LABEL[deal.status] },
     { label: "Quotation no.", value: deal.quotationNo ?? "not issued yet" },
-    { label: "Order confirmation no.", value: deal.ocNo ?? "—" },
+    /*
+      ⚠ THE LABEL IS CONDITIONAL, AND THAT IS THE POINT (OCPI-40 re-audit).
+        Since OCPI-36 the serial is minted at Generate, so an unapproved draft
+        carries `ocNo` — and this row used to announce it as the "Order
+        confirmation no." of a contract nobody had approved. Until `oc_at` is
+        stamped the number is only RESERVED, and the row says so; after it, it is
+        the contract number and reads exactly as before.
+    */
+    deal.ocAt
+      ? { label: "Order confirmation no.", value: deal.ocNo ?? "—" }
+      : { label: "Reserved for the contract", value: deal.ocNo ?? "—" },
     { label: "Deal value", value: fmtDealValue(deal.dealValueAmount, deal.dealValueCurrency) || "—" },
     { label: "Raised", value: dmy(deal.createdAt) },
     { label: "Revisions", value: String(deal.quotationVersionNo) },

@@ -187,11 +187,52 @@ const optsKV = (xs: readonly { value: string; label: string }[]) =>
  * The exception route is Special remarks, exactly as it was when the warranty
  * was a fixed setting.
  */
-function WarrantyReadout({ value, hasMachine }: { value: string; hasMachine: boolean }) {
+function WarrantyReadout({
+  value,
+  master,
+  hasMachine,
+}: {
+  value: string;
+  /** What this MODEL's master row says — the answer to "none, or lost?". */
+  master: string | null;
+  hasMachine: boolean;
+}) {
+  /*
+    🔴 THREE STATES, NOT TWO (OCPI-32). "Not applicable" was rendered for any
+       empty value, which is RIGHT on the fifteen models that offer no print-head
+       warranty and was FALSE on a K64 that had simply lost its dryer warranty on
+       the way through `clearHidden`. The same four words said "this model offers
+       none" and "we dropped it" — an assertion where there should have been a
+       gap. The master row is the only thing that can tell them apart, so it is
+       passed in.
+
+    ⚠ THIS IS `NotAsked`'S RULE, applied where it was missing: "not asked" and
+      "not answered" must not look alike. It is also what the Machines master
+      promises the admin who fills it in — "Blank means not applicable" — and
+      that promise was being broken on the deal.
+
+    ⚠ THE THIRD STATE IS NOT SELF-HEALING, on purpose. It names the master value
+      rather than quietly adopting it: an older deal saved before the fix keeps
+      whatever it was quoted under, and a person decides. Re-picking the machine
+      is still the way to take the master's answer, exactly as it always was.
+  */
+  /*
+    ⚠ THE THIRD STATE IS `text-orange`, NOT AN AMBER. There is no amber in this
+      palette — `ryg` is red / yellow / green — so `text-ryg-amber` emits no rule
+      at all and the warning would have rendered in the surrounding navy, reading
+      as an ordinary answer. (Two other apps carry that same typo and are not
+      this change's to fix.) Orange is the module's own emphasis colour and is
+      legible on the page background, which ryg.yellow is not.
+  */
+  const lost = !value.trim() && hasMachine && !!master?.trim();
   return (
     <div className="flex min-h-9 items-center rounded-lg border border-line bg-page px-3 py-2 text-[13px] text-navy">
       {value.trim() ? (
         value
+      ) : lost ? (
+        <span className="text-orange" title={`This model's warranty is ${master}. Re-pick the machine to take it.`}>
+          Not on this deal — the model says {master}
+        </span>
       ) : (
         <span className="text-grey-2">{hasMachine ? "Not applicable" : "Choose a machine first"}</span>
       )}
@@ -395,7 +436,10 @@ function ShipmentRow({
             value={amount}
             onChange={(e) => onAmount(e.target.value.replace(/[^\d.]/g, ""))}
             disabled={disabled}
-            aria-label={`${title} — invoice amount, excluding tax`}
+            /* ⚠ SAME WORDS AS THE COLUMN HEADING, and for the same reason — a
+                 screen reader hearing "invoice amount" was told to type the
+                 total for all of them. See the note on the <th>. */
+            aria-label={`${title} — rate for one, excluding tax`}
           />
         ) : (
           <NotAsked reason="Asked only when this item is billed on its own invoice." />
@@ -778,8 +822,11 @@ export default function QuotationForm({
    *   merely opened it — silently restating what a customer was quoted. See the
    *   Print heads field for the rest of the reasoning.
    *
-   * ⚠ THE MODEL NUMBER IS NOT TOUCHED. It is pre-filled from the template
-   *   elsewhere and a salesperson may have corrected it by hand.
+   * ⚠ THE MODEL NUMBER IS NOT TOUCHED, AND THERE IS NO "ELSEWHERE". This note
+   *   used to say it was "pre-filled from the template elsewhere"; nothing
+   *   anywhere pre-fills it — the OCPI-40 re-audit traced every write path. It is
+   *   left alone because a salesperson may have typed a correction, and because
+   *   empty means "use the machine master", which is what the contract does.
    */
   const chooseMachine = (id: string) => {
     const m = s.machineById(id || null);
@@ -864,11 +911,26 @@ export default function QuotationForm({
       if (!own) continue;
       opts.push({
         value: c.id,
-        label: c.name,
+        /*
+          ⚠ THE PROFILE'S LEGAL NAME, NOT TALLY'S COMPANY NAME (OCPI-40, U-11).
+            `c.name` is the Tally company, which carries its financial year in the
+            string — `ORANGE O TEC PRIVATE LIMITED (01-04-25TO31-03-27)` — and
+            reads to a salesperson as a data error. What PRINTS has always been
+            `own.legalName`, so the label now shows the same thing the contract
+            will. Tally's own name moves to the sublabel rather than being
+            dropped: it is how this row is reconciled back to Tally, and
+            `Combobox` searches the sublabel too, so anyone typing the old string
+            still finds it.
+        */
+        label: own.legalName || c.name,
         // Say what this choice will actually print, since that is the whole
         // consequence of the field and it is otherwise invisible until the PDF.
         sublabel:
-          [own.legalName, own.bankName, own.exWorksCity && `Ex-Works ${own.exWorksCity}`]
+          [
+            own.legalName ? c.name : null,
+            own.bankName,
+            own.exWorksCity && `Ex-Works ${own.exWorksCity}`,
+          ]
             .filter(Boolean)
             .join(" · ") || undefined,
       });
@@ -888,6 +950,27 @@ export default function QuotationForm({
     const d = s.companyProfiles.find((p) => p.isDefault && p.active);
     return d?.legalName ?? null;
   }, [s.companyProfiles]);
+
+  /**
+   * What the selling entity is CALLED on this deal's papers (OCPI-42).
+   *
+   * Read only when the company bears the local transport, where the delivery
+   * term has to name it — the real contracts write
+   * "( Transportation Bear by Orange O Tec Pvt / Ltd)".
+   *
+   * 🔴 THE PROFILE'S LEGAL NAME, NEVER TALLY'S COMPANY NAME. Tally's carries the
+   *    financial year in the string — `ORANGE O TEC PRIVATE LIMITED
+   *    (01-04-25TO31-03-27)` — which is the U-11 defect, and this one would put
+   *    it inside a contract clause rather than merely on a dropdown. When the
+   *    chosen entity has no legal name the DEFAULT entity's is used, which is
+   *    what this form already promises below and what the contract prints.
+   */
+  const sellerNameFor = (companyId: string) => {
+    const own = companyId
+      ? s.companyProfiles.find((p) => p.companyId === companyId && p.active)
+      : null;
+    return (own?.legalName?.trim() || defaultEntityName?.trim() || "");
+  };
 
   /**
    * Who may own this deal: the Sales roster, then anything already typed.
@@ -1042,16 +1125,29 @@ export default function QuotationForm({
    *    reading "CIF Jebel Ali", all of them on issued or signed paper.
    *
    * ⚠ IT IS ALSO WHY EVERY CONTROL THAT FEEDS THE TERM MUST CALL THIS ONE AND
-   *   NOT `patch`. Five do: the deal type, the strip, the port, the ex-factory
-   *   city and the HIGH SEAS cost bearer. The LOCAL cost bearer deliberately
-   *   does not — it feeds nothing the term prints.
+   *   NOT `patch`. SEVEN do: the deal type, the strip, the port, the ex-factory
+   *   city, the high seas cost bearer, and — since OCPI-42 — the LOCAL cost
+   *   bearer and the SELLING ENTITY.
+   *
+   *   🔴 THE LOCAL BEARER USED TO BE THE DOCUMENTED EXCEPTION, on the reasoning
+   *      that it "feeds nothing the term prints". That was true and it was the
+   *      defect: two real contracts entered as opposites printed the identical
+   *      line. It now composes into the term, so it must recompose like the rest.
+   *
+   *   🔴 AND SO MUST THE SELLING ENTITY, because a Company-borne term NAMES it.
+   *      Change the entity after answering the bearer and the term would
+   *      otherwise keep the old company's name — a wrong party on a contract,
+   *      invisible until the PDF.
    *
    * ⚠ It reads the MERGED draft, not `draft`, because React state has not
    *   updated yet at this point; composing from `draft` would use the answer
-   *   before the one just given.
+   *   before the one just given. The seller's name is resolved from the merged
+   *   `companyId` for exactly the same reason.
    */
-  const patchDelivery = (next: Partial<QuotationDraft>) =>
-    patch({ ...next, tradeTerm: composeTradeTerm({ ...draft, ...next }) });
+  const patchDelivery = (next: Partial<QuotationDraft>) => {
+    const merged = { ...draft, ...next };
+    return patch({ ...next, tradeTerm: composeTradeTerm(merged, sellerNameFor(merged.companyId)) });
+  };
 
 
   /**
@@ -1132,7 +1228,10 @@ export default function QuotationForm({
             <FieldLabel label="Selling entity" hint="whose bank account this prints">
               <Combobox
                 value={draft.companyId}
-                onChange={(v) => patch({ companyId: v })}
+                /* ⚠ RECOMPOSES THE DELIVERY TERM (OCPI-42) — a Company-borne
+                   local deal names this entity inside the printed term, so
+                   changing it here has to reach the term as well. */
+                onChange={(v) => patchDelivery({ companyId: v })}
                 options={companyOptions}
                 placeholder="Which of our companies is selling"
                 searchable
@@ -1633,8 +1732,55 @@ export default function QuotationForm({
             <FieldLabel label="Dryer category">
               <ChoiceButtons
                 value={draft.dryerType}
-                // Changing the category orphans the model inside the old one.
-                onChange={(v) => patch({ dryerType: v, dryerName: "" })}
+                /*
+                  🔴 THE DRYER WARRANTY IS PUT BACK HERE, AND IT HAS TO BE
+                     (OCPI-32). Fill the form in the natural order — machine
+                     first, dryer category second — and the warranty
+                     `chooseMachine` prefilled was gone for good. At the moment
+                     the machine is picked no dryer category is set, so
+                     `hasDryerDetails` is false, so `clearHidden` blanks it on the
+                     first save and `fms_ocpi_write_oc` nulls the column. Picking
+                     the category then revealed the read-out again and nothing
+                     re-filled it: the box asserted "Not applicable" on a K64
+                     whose master says 12 Months, and the summary sheet's Dryer
+                     Warranty row simply vanished. Only re-picking the same
+                     machine restored it, and nothing told anybody that.
+
+                     THE FIX BELONGS HERE, NOT IN `clearHidden`. "A hidden
+                     question stores no answer" is this module's defining
+                     invariant and has a twin in `fms_ocpi_write_oc`, which nulls
+                     the column on `not v_has_dryer` whatever the browser sends.
+                     So the answer has to be re-supplied at the moment the
+                     question becomes askable — which is this click.
+
+                  ⚠ ONLY WHEN THE BOX IS EMPTY, which is `carry`'s rule and its
+                    safety: it survives a reload with no extra state remembering
+                    what was auto-filled, and it never overwrites a value a
+                    person put there.
+
+                  ⚠ THE FIELD AND THE ANSWER THAT REVEALS IT MOVE IN ONE PATCH.
+                    That is the shape `CustomerPicker` already uses for `gstNo`
+                    and `gstAvailable`, and it is what makes this safe:
+                    `clearHidden` reads the draft AFTER this patch, sees a dryer
+                    category, and keeps the warranty it would otherwise blank.
+
+                  ⚠ AND IT IS A PATCH, NOT A DISPLAY FALLBACK. Defaulting the
+                    read-out's `value` would show the right number while the
+                    draft held "" and the row held null — the screen saying one
+                    thing and the paper another, which is the failure the Print
+                    heads read-out above records on six live deals.
+
+                  Changing the category also orphans the model inside the old one.
+                */
+                onChange={(v) =>
+                  patch({
+                    dryerType: v,
+                    dryerName: "",
+                    ...(draft.dryerWarranty.trim() === "" && chosenMachine?.dryerWarranty
+                      ? { dryerWarranty: chosenMachine.dryerWarranty }
+                      : {}),
+                  })
+                }
                 options={masterOpts(s.dryerTypes, draft.dryerType)}
                 clearable
                 disabled={disabled}
@@ -1751,18 +1897,26 @@ export default function QuotationForm({
           />
           {show("inkQtyIncluded") && (
             /*
-              ⚠ THE HINT ASKS FOR THE UNIT, IT DOES NOT STATE ONE. A numeric
-                "subsidized quantity (litres)" sits one block below this
+              ⚠ THE HINT NAMES THE DEFAULT RATHER THAN JUST ASKING FOR A UNIT. A
+                numeric "subsidized quantity (litres)" sits one block below this
                 free-text box, measuring the same substance on the opposite
-                branch, so this one has to say what kind of value it holds. But
-                it cannot claim litres: of the 17 deals on record 15 say litres
-                and two say "25 Kgs" and "3000kg". Printing "litres" beside
-                those would put a unit on a customer's paper that the deal never
-                agreed to. Free text stays free; it is only asked to be explicit.
+                branch, so this one has to say what kind of value it holds.
+
+              🔴 AN EARLIER VERSION OF THIS COMMENT REASONED FROM TEST DATA. It
+                 said "of the 17 deals on record 15 say litres" and concluded the
+                 field could not name a unit. Those 15 were `ZZ TEST` seed rows
+                 written by an audit. Counting only deals a salesperson actually
+                 raised, EVERY ONE that states a unit says Kgs (6 of 6) — which
+                 is what ink is sold by. Ritesh Bhai confirmed it 03-Sep-2026.
+
+                 So the contract now completes a bare number to Kgs
+                 (`includedInkNote` in ocPdf.ts) and this hint says so, because a
+                 default nobody is told about is a trap. Typing any unit still
+                 wins; the default only fills one that is absent.
             */
             <FieldLabel
               label="Quantity of ink included"
-              hint="state the unit"
+              hint="Kgs unless you say otherwise"
               required={req.has("inkQtyIncluded")}
               anchor={FIELD_ANCHOR("inkQtyIncluded")}
             >
@@ -2052,8 +2206,9 @@ export default function QuotationForm({
             <h2 className="text-[15px] font-bold text-navy">Shipment &amp; invoice</h2>
             <p className="mt-0.5 text-[12.5px] text-grey">
               How each part of the deal travels, and whether it is billed on its own. Only the parts
-              this deal actually carries are listed. Amounts exclude tax, and no figure here is added
-              to the deal value or its total.
+              this deal actually carries are listed. <strong>Rate is the price of one</strong>, before
+              tax — the sub-total multiplies it by the quantity. No figure here is added to the deal
+              value or its total.
             </p>
           </div>
 
@@ -2090,7 +2245,18 @@ export default function QuotationForm({
                   <th scope="col" className="w-[148px] px-1.5 pb-2 font-semibold">Ship via</th>
                   <th scope="col" className="w-[164px] px-1.5 pb-2 font-semibold">Separate invoice</th>
                   <th scope="col" className="w-[74px] px-1.5 pb-2 font-semibold">Qty</th>
-                  <th scope="col" className="w-[104px] px-1.5 pb-2 font-semibold">Amount</th>
+                  {/*
+                    🔴 "Rate each", NOT "Amount". This column is a PER-UNIT price
+                       and always has been — `lineSubtotal` is qty × amount, and
+                       the sub-total beside it says `quantity × rate` in its own
+                       hint. Under the old heading, copying a real contract's own
+                       figures (qty 30, ₹21,00,000 for all thirty heads) produced
+                       a sub-total of ₹6,30,00,000 — thirty times the truth, with
+                       nothing on screen to say the box wanted the price of one.
+                       Found by typing contract 124 in, 03-09-2026. The
+                       arithmetic was right; only these words were wrong.
+                  */}
+                  <th scope="col" className="w-[104px] px-1.5 pb-2 font-semibold">Rate each</th>
                   <th scope="col" className="w-[104px] px-1.5 pb-2 text-right font-semibold">Sub-total</th>
                 </tr>
               </thead>
@@ -2179,9 +2345,14 @@ export default function QuotationForm({
             ⚠ THIS IS NOT THE "External centering system" TICK in Options
               included. The client asked for the two to stay separate: that tick
               records whether the deal INCLUDES one, this row records how it
-              SHIPS and how it is BILLED. Both read the machine's
-              `opt_external_centering` capability, so a machine mapped "no" shows
-              neither — 5 of the 28 machines can take one.
+              SHIPS and how it is BILLED.
+
+              ⚠ BOTH READ THE CATEGORY'S `shows_centering`, NOT THE MACHINE'S
+                `opt_external_centering`. This note said the machine's, and named
+                a count off it — untrue since OCPI-14 moved the branches onto the
+                category. `opt_external_centering` still exists and is still
+                edited on the machine master, but nothing branches on it, in TS or
+                in SQL. Corrected by the OCPI-40 re-audit.
           */}
           <ShipmentRow
             title="Centering device"
@@ -2309,8 +2480,10 @@ export default function QuotationForm({
               ⚠ THE COMPOSED TERM IS SHOWN BECAUSE THE BUTTON AND THE PAPER
                 DISAGREE ON PURPOSE. The button must read "EX Factory" — that
                 exact string is what `high_seas_via`'s CHECK allows and what the
-                mirror writes — while the contract prints "Ex Factory Surat",
-                title case, settled with Ritesh Bhai. Showing the result is what
+                mirror writes — while the contract prints "Ex-Work Surat",
+                which is what folders 101, 122 and 127 write and what the 17
+                deals already on file hold (Ritesh Bhai, 04-09-2026, reversing
+                the "Ex Factory Surat" of 02-09). Showing the result is what
                 stops that looking like a bug, and it means nobody has to save a
                 deal to find out what the clause will say.
 
@@ -2391,9 +2564,16 @@ export default function QuotationForm({
               required={req.has("localCostBy")}
               anchor={FIELD_ANCHOR("localCostBy")}
             >
+              {/*
+                ⚠ RECOMPOSES THE TERM (OCPI-42). This answer now joins the
+                  printed delivery term as "(Transportation bear by …)", which
+                  is where every real contract puts it. Before this it reached
+                  the summary sheet alone, so two deals with opposite commercial
+                  terms printed the same contract clause.
+              */}
               <ChoiceButtons
                 value={draft.localCostBy}
-                onChange={(v) => patch({ localCostBy: v })}
+                onChange={(v) => patchDelivery({ localCostBy: v })}
                 options={optsKV(COST_BEARERS)}
                 clearable
                 disabled={disabled}
@@ -2801,7 +2981,7 @@ export default function QuotationForm({
         */}
         <FieldLabel
           label="Special remarks"
-          hint="prints on the summary sheet — anything else ABOUT the deal; for what is included IN it, use Other inclusions in section B"
+          hint="prints on the summary sheet, and as the numbered Note: on the Performa Invoice — one point per line. Anything else ABOUT the deal; for what is included IN it, use Other inclusions in section B"
         >
           <TextArea
             rows={5}
@@ -2928,15 +3108,36 @@ export default function QuotationForm({
               its own, so Settings → Warranty periods is not orphaned.
           */}
           <div className="grid gap-3 sm:grid-cols-3">
+            {/*
+              ⚠ ALL THREE GET THE MASTER VALUE, THOUGH ONLY THE DRYER CAN LOSE
+                ITS OWN TODAY. `printerWarranty` and `headWarranty` have no rule
+                in `PART_A_VISIBILITY`, so `clearHidden` never reaches them and
+                `fms_ocpi_write_oc` writes them unconditionally — checked rather
+                than assumed, as OCPI-32 asked. Passing the master to all three
+                costs nothing and means a future rule cannot reintroduce the same
+                silent assertion here.
+            */}
             <FieldLabel label="Machine warranty" hint="from the machine master">
-              <WarrantyReadout value={draft.printerWarranty} hasMachine={!!chosenMachine} />
+              <WarrantyReadout
+                value={draft.printerWarranty}
+                master={chosenMachine?.machineWarranty ?? null}
+                hasMachine={!!chosenMachine}
+              />
             </FieldLabel>
             <FieldLabel label="Print-head warranty" hint="from the machine master">
-              <WarrantyReadout value={draft.headWarranty} hasMachine={!!chosenMachine} />
+              <WarrantyReadout
+                value={draft.headWarranty}
+                master={chosenMachine?.headWarranty ?? null}
+                hasMachine={!!chosenMachine}
+              />
             </FieldLabel>
             {show("dryerWarranty") && (
               <FieldLabel label="Dryer warranty" hint="from the machine master">
-                <WarrantyReadout value={draft.dryerWarranty} hasMachine={!!chosenMachine} />
+                <WarrantyReadout
+                  value={draft.dryerWarranty}
+                  master={chosenMachine?.dryerWarranty ?? null}
+                  hasMachine={!!chosenMachine}
+                />
               </FieldLabel>
             )}
           </div>
@@ -3070,7 +3271,30 @@ export default function QuotationForm({
                 disabled={disabled}
               />
             </FieldLabel>
-            <FieldLabel label="Manufacturer's model no." hint="pre-filled from the machine's template">
+            <FieldLabel
+              label="Manufacturer's model no."
+              /*
+                🔴 THE HINT USED TO READ "pre-filled from the machine's template",
+                   AND NOTHING HAS EVER PRE-FILLED IT. Every write path was traced
+                   in the OCPI-40 re-audit — the blank draft, `draftFromDeal`,
+                   `chooseMachine`, `useQuotationDraft`'s seeding block and
+                   `fms_ocpi_write_oc` — and the box is blank on every new deal
+                   until somebody types in it.
+
+                   That false promise is what hid a ruled `Model No: ________` on
+                   the K24 and P8D contracts for months: the field looked as though
+                   the system had answered it, so nobody did.
+
+                ⚠ THE FIX WAS TO MAKE THE HINT TRUE, NOT TO PRE-FILL. Since
+                  OCPI-39 the contract falls back to the machine master when this
+                  is empty (`docContext` in ocPdf.ts), so BLANK IS THE CORRECT
+                  NORMAL STATE. Pre-filling would copy the master's value onto the
+                  deal row and freeze it into the revision, so a later correction
+                  to the master would never reach new deals — and a deliberate
+                  blank would become indistinguishable from an unanswered one.
+              */
+              hint="leave blank to use the machine master's model number"
+            >
               <TextInput
                 value={draft.machineModelNo}
                 onChange={(e) => patch({ machineModelNo: e.target.value })}

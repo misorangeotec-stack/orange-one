@@ -6,6 +6,7 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { useOcpiStore } from "../../store";
 import { replaceSections, updateMachine } from "../../data/ocpiMachineWrites";
 import { TOKEN_HELP, tokensUsedIn } from "../../lib/tokens";
+import { CONDITION_HELP, conditionsUsedIn, hasUnbalancedMarkers } from "../../lib/conditions";
 import type { OcpiMachineSection } from "../../types";
 
 /**
@@ -48,18 +49,58 @@ export default function MachineTemplate() {
     setSeeded(true);
   }, [machine, s, seeded]);
 
+  /*
+    Every piece of text the renderer resolves, in one list.
+
+    ⚠ THE COMPOSITION AND THE OPENING LINE WERE MISSING FROM THIS SCAN, and both
+      are resolved by `ocPdf.ts`. So an unknown placeholder in either printed a
+      ruled blank on a contract with nothing on this screen to warn about it.
+      The opening line is edited on the Machines master rather than here, which
+      is why it was overlooked — but it is this machine's template text and this
+      is the page that reports on it.
+  */
+  const templateText = useMemo(
+    () => [
+      supply,
+      machine?.introText ?? "",
+      ...specs.map((sp) => sp.value),
+      ...composition,
+      ...sections.map((sec) => sec.body),
+    ],
+    [supply, machine, specs, composition, sections],
+  );
+
   const usedTokens = useMemo(() => {
     const all = new Set<string>();
-    for (const t of tokensUsedIn(supply)) all.add(t);
-    for (const sp of specs) for (const t of tokensUsedIn(sp.value)) all.add(t);
-    for (const sec of sections) for (const t of tokensUsedIn(sec.body)) all.add(t);
+    for (const t of templateText) for (const x of tokensUsedIn(t)) all.add(x);
     return [...all].sort();
-  }, [supply, specs, sections]);
+  }, [templateText]);
 
   const unknownTokens = useMemo(
     () => usedTokens.filter((t) => !TOKEN_HELP.some((h) => h.token === t)),
     [usedTokens],
   );
+
+  const usedConditions = useMemo(() => {
+    const all = new Set<string>();
+    for (const t of templateText) for (const x of conditionsUsedIn(t)) all.add(x);
+    return [...all].sort();
+  }, [templateText]);
+
+  const unknownConditions = useMemo(
+    () => usedConditions.filter((c) => !CONDITION_HELP.some((h) => h.name === c)),
+    [usedConditions],
+  );
+
+  /*
+    ⚠ REPORTED SEPARATELY FROM AN UNKNOWN NAME, because they are different
+      mistakes with opposite consequences. A misspelt condition prints today's
+      wording on every deal — wrong, but harmless-looking. An unclosed marker is
+      an instruction nobody can read, so the words inside it print on every deal
+      whether they belong there or not. One message for both would tell a reader
+      neither.
+  */
+  const brokenMarkers = useMemo(() => templateText.some(hasUnbalancedMarkers), [templateText]);
 
   if (!machine) {
     return (
@@ -151,6 +192,30 @@ export default function MachineTemplate() {
           <p className="mt-1 text-[13px] text-grey">
             {unknownTokens.map((t) => `{{${t}}}`).join(", ")} — these will print as a blank line on
             every document. Check the spelling against the list at the bottom of this page.
+          </p>
+        </Card>
+      )}
+
+      {unknownConditions.length > 0 && (
+        <Card className="border-ryg-red/40 p-4">
+          <p className="text-[13px] font-medium text-navy">
+            {unknownConditions.length === 1 ? "One condition is not recognised" : "Some conditions are not recognised"}
+          </p>
+          <p className="mt-1 text-[13px] text-grey">
+            {unknownConditions.map((c) => `[[if ${c}]]`).join(", ")} — the words inside will print on
+            every deal, as they do today. Check the spelling against the list at the bottom of this
+            page.
+          </p>
+        </Card>
+      )}
+
+      {brokenMarkers && (
+        <Card className="border-ryg-red/40 p-4">
+          <p className="text-[13px] font-medium text-navy">A condition is not closed properly</p>
+          <p className="mt-1 text-[13px] text-grey">
+            Every <code>[[if …]]</code> needs a <code>[[/if]]</code> after it, on the same line, and
+            one cannot sit inside another. Until this is fixed the words inside will print on every
+            deal, whether they belong there or not.
           </p>
         </Card>
       )}
@@ -336,6 +401,29 @@ export default function MachineTemplate() {
                 {`{{${t.token}}}`}
               </dt>
               <dd className="text-grey-2">{t.means}</dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+
+      {/* ── Condition reference ─────────────────────────────────────────── */}
+      <Card className="p-5">
+        <h2 className="text-[15px] font-bold text-navy">Wording that depends on the deal</h2>
+        <p className="mt-0.5 text-[13px] text-grey-2">
+          Wrap words in <code>[[if dryer]]…[[/if]]</code> and they print only on a deal that carries
+          one. Use <code>[[if !dryer]]</code> for the opposite. Keep it on ONE line, and put the
+          space or comma <em>inside</em> the wrapper — write{" "}
+          <code>PRINTHEADS[[if dryer]] &amp; DRYER[[/if]]</code>, not{" "}
+          <code>PRINTHEADS [[if dryer]]&amp; DRYER[[/if]]</code>, or a deal without a dryer prints a
+          stray space. A line left with nothing on it disappears, and so does a specification row.
+        </p>
+        <dl className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+          {CONDITION_HELP.map((c) => (
+            <div key={c.name} className="flex gap-2 text-[12.5px]">
+              <dt className={usedConditions.includes(c.name) ? "font-semibold text-orange" : "font-medium text-navy"}>
+                {`[[if ${c.name}]]`}
+              </dt>
+              <dd className="text-grey-2">{c.means}</dd>
             </div>
           ))}
         </dl>

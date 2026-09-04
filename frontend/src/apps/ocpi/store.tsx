@@ -16,7 +16,7 @@ import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection, OcpiNotification,
   OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiMasterType, OcpiNamedMaster,
-  OcpiDryer, OcpiMachineHead,
+  OcpiDryer, OcpiMachineHead, OcpiSalesPage,
 } from "./types";
 
 /**
@@ -79,6 +79,7 @@ interface OcpiStoreValue {
   companyProfiles: OcpiCompanyProfile[];
   machines: OcpiMachine[];
   machineSections: OcpiMachineSection[];
+  salesPages: OcpiSalesPage[];
   deals: OcpiDeal[];
   versions: QuotationVersion[];
   notifications: OcpiNotification[];
@@ -120,6 +121,8 @@ interface OcpiStoreValue {
   ownersOf: (step: StepKey) => string[];
   machineById: (id: string | null) => OcpiMachine | undefined;
   sectionsFor: (machineId: string) => OcpiMachineSection[];
+  /** Page 2 of a machine PI. Undefined is NORMAL - the PI then renders 2 pages. */
+  salesPageFor: (machineId: string | null) => OcpiSalesPage | undefined;
   /** Every print head a machine can be built with — a machine may have several. */
   headsFor: (machineId: string | null) => OcpiNamedMaster[];
   /** Dryer models within one dryer category, active first. */
@@ -197,6 +200,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
     const deals = data?.deals ?? [];
     const machines = data?.machines ?? [];
     const machineSections = data?.machineSections ?? [];
+    const salesPages = data?.salesPages ?? [];
     const companyProfiles = data?.companyProfiles ?? [];
 
     const isAdmin = session.isAdmin;
@@ -262,6 +266,23 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
 
     const machineById = (id: string | null) =>
       id ? machines.find((m) => m.id === id) : undefined;
+
+    /*
+      The sales page a machine prints as page 2 of its Performa Invoice.
+
+      ⚠ UNDEFINED IS A NORMAL ANSWER, NOT A FAULT. Seven machines have no page
+        and no answer from Bushra yet, and folder 107 proves the shorter PI is a
+        correct form. The renderer skips page 2; it must never draw a blank one.
+
+      ⚠ AN INACTIVE PAGE IS TREATED AS ABSENT, the same way `sectionsFor` drops an
+        inactive section. Deactivating one is how a page is withdrawn without
+        breaking the machines that point at it.
+    */
+    const salesPageFor = (machineId: string | null) => {
+      const m = machineById(machineId);
+      if (!m?.salesPageId) return undefined;
+      return salesPages.find((p) => p.id === m.salesPageId && p.active);
+    };
 
     const sectionsFor = (machineId: string) =>
       machineSections
@@ -346,6 +367,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       companyProfiles,
       machines,
       machineSections,
+      salesPages,
       deals,
       versions: data?.versions ?? [],
       notifications: data?.notifications ?? [],
@@ -371,6 +393,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       ownersOf,
       machineById,
       sectionsFor,
+      salesPageFor,
       headsFor,
       dryersFor,
       profileFor,

@@ -461,11 +461,34 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   // RULE 4 — a dollar term, asked only of dollar deals.
   dollarClauseAgreed: isUsdDeal,
 
-  // RULE 5 — HIGH SEAS ATTRACTS NO GST, so there is no rate to ask for. The
-  // server sets gst_rate NULL rather than 0 on such a deal, and the papers omit
-  // the tax rows entirely: a zero-tax line on a high-seas contract is a
-  // different claim from no line, and only one of them is true.
-  gstRate: (d) => d.transportTerms !== "high_seas",
+  /*
+    RULE 5 — NO GST ON A HIGH SEAS SALE, AND NONE ON A DOLLAR DEAL EITHER.
+
+    The server sets gst_rate NULL rather than 0 on such a deal, and the papers
+    omit the tax rows entirely: a zero-tax line on a contract is a different
+    claim from no line, and only one of them is true.
+
+    🔴 THE DOLLAR HALF IS OCPI-45, AND IT IS RITESH BHAI'S DECISION, 04-09-2026:
+       "a dollar deal should never be taxed … it should just be the amount
+       multiplied by the conversion rate."
+
+       Found by typing real folder 121 (Modi Rocket) into the form. Its own
+       paper reads `USD 11,50,000 @96 → Total INR 11,04,00,000` — exactly
+       amount × rate. Ours added 18% and printed ₹13,02,72,000, while the PI's
+       dollar layout deliberately carries no tax line at all, so **the page's own
+       figures did not reconcile** and nothing on it explained ₹1,98,72,000.
+
+       ⚠ SIX REAL DOLLAR PAPERS WERE CHECKED AND EVERY ONE IS EXACT: folders
+         105, 106, 107, 109, 120 and 121. Not one carries tax.
+
+    ⚠ `isUsdDeal`, NOT `dealValueCurrency === "USD"`. High Seas counts as a
+      dollar deal from the moment the type is picked rather than from the moment
+      a save comes back with the currency corrected — so the first disjunct is
+      strictly redundant now and is KEPT anyway: it is the rule the papers and
+      the RPC state, and deleting it would leave High Seas depending on a
+      currency that the writer, not the form, sets.
+  */
+  gstRate: (d) => d.transportTerms !== "high_seas" && !isUsdDeal(d),
 
   // RULE 6 — the FX position only exists for a dollar deal. See `isUsdDeal`:
   // High Seas qualifies from the moment the deal type is picked, not from the

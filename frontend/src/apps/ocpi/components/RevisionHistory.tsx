@@ -29,7 +29,16 @@ export default function RevisionHistory({ versions }: { versions: QuotationVersi
   // One round trip signs every paper in the strip; the bucket is private, so an
   // unsigned path is not a link.
   const docPaths = useMemo(
-    () => revisions.flatMap((r) => [r.pdfPath, r.ocPdfPath].filter((p): p is string => !!p)),
+    /*
+      ⚠ ALL THREE PAPERS, NOT TWO (OCPI-36). This list is what gets signed, and a
+        path missing from it renders no link at all — so a revision would quietly
+        offer two of its three documents, with nothing on screen to say the third
+        existed. The archive is the one place nobody looks until they need it.
+    */
+    () =>
+      revisions.flatMap((r) =>
+        [r.pdfPath, r.piPdfPath, r.ocPdfPath].filter((p): p is string => !!p),
+      ),
     [revisions],
   );
   const urls = useOcpiDocUrls(docPaths);
@@ -69,7 +78,7 @@ export default function RevisionHistory({ versions }: { versions: QuotationVersi
                 </span>
               </div>
 
-              {(r.dealValueAmount !== null || r.pdfPath || r.ocPdfPath) && (
+              {(r.dealValueAmount !== null || r.pdfPath || r.piPdfPath || r.ocPdfPath) && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
                   {r.dealValueAmount !== null && (
                     <span className="font-semibold text-navy">
@@ -89,6 +98,16 @@ export default function RevisionHistory({ versions }: { versions: QuotationVersi
                       Summary
                     </a>
                   )}
+                  {r.piPdfPath && urls[r.piPdfPath] && (
+                    <a
+                      className="font-semibold text-orange hover:underline"
+                      href={urls[r.piPdfPath]}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PI
+                    </a>
+                  )}
                   {r.ocPdfPath && urls[r.ocPdfPath] && (
                     <a
                       className="font-semibold text-orange hover:underline"
@@ -96,7 +115,7 @@ export default function RevisionHistory({ versions }: { versions: QuotationVersi
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Detailed sheet
+                      OC
                     </a>
                   )}
                 </div>

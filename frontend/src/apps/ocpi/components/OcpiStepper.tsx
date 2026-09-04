@@ -62,8 +62,11 @@ const RETIRED_STAGES: Stage[] = STEPS.filter((st) => st.retired).map(stageOf);
  * Did this deal travel the OLD chain?
  *
  * ⚠ NOT ANSWERED FROM `oc_at`, which would be wrong now. Since stage E the order
- *   confirmation is issued at the Directors' approval, so `oc_at` is stamped on
- *   every new deal and would report all of them as historical. `oca_at` is only
+ *   confirmation is ISSUED at the Directors' approval — that is where `oc_at` is
+ *   stamped, and it is stamped on every new deal, so it would report all of them
+ *   as historical. (The NUMBER is a separate thing and is minted earlier, at
+ *   Generate, from OCPI-36; `oc_at` remains the approval stamp and the only test
+ *   of whether a paper is a contract.) `oca_at` is only
  *   ever written by fms_ocpi_decide_oc, the retired gate, so it is the honest
  *   marker — together with a deal actually parked at, held from, or bounced back
  *   from one of the retired steps.

@@ -82,8 +82,16 @@ export default function OcNumberingSection() {
       <div>
         <h3 className="text-[15px] font-bold text-navy">Order confirmation numbering</h3>
         <p className="mt-1 text-[12.5px] text-grey">
-          A <b>separate series from the quotation</b>, issued when the Directors approve and the
-          quotation becomes the contract. It carries the financial year and{" "}
+          {/*
+            ⚠ THIS COPY FOLLOWED THE MINT (OCPI-36). It said the series was
+              "issued when the Directors approve and the quotation becomes the
+              contract", which stopped being true when the number moved to
+              Generate — and a settings screen describing the wrong moment is how
+              an admin concludes there is still time to check the register.
+          */}
+          A <b>separate series from the quotation</b>, taken the moment a quotation is{" "}
+          <b>generated</b> &mdash; one number serves the Performa Invoice and the Order
+          Confirmation, so all three papers carry it. It carries the financial year and{" "}
           <b>starts again each April</b>, so this sets the year now running &mdash;{" "}
           <span className="font-semibold text-navy">{fy}</span>.
         </p>
@@ -121,8 +129,8 @@ export default function OcNumberingSection() {
       ) : (
         <p className="text-[12.5px] text-ryg-red">
           Not confirmed for {fy}. Nobody has checked this against the order-confirmation register, so
-          the next approval may re-issue a number a customer already holds &mdash; on a contract, not
-          an offer. Check it before the first quotation is approved.
+          the next quotation generated may take a number a customer already holds &mdash; and it ends
+          up on a contract, not just an offer. Check it before the next quotation is generated.
         </p>
       )}
 

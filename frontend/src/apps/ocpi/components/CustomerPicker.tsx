@@ -56,9 +56,24 @@ export default function CustomerPicker({
       parties.map((p) => ({
         value: p.id,
         label: p.name,
-        // The GSTIN is the one extra fact Tally reliably holds, and it is what
-        // tells two similarly-named ledgers apart.
-        sublabel: p.gstin ?? undefined,
+        /*
+          The GSTIN is the one extra fact Tally reliably holds, and it is what
+          tells two similarly-named ledgers apart.
+
+          🔴 IT IS LABELLED, AND ITS ABSENCE IS SPELLED OUT (OCPI-42). Searching
+             `AKLAVYA` returns TWO rows both reading `AKLAVYA INDUSTRIES
+             PVT.LTD.` — one carrying `24AAGCS6274F1ZA`, one carrying nothing.
+             A bare number under one of them and blank space under the other
+             does not read as a difference; it reads as one row that happens to
+             be taller. Naming it, and saying "no GST number in Tally" on the
+             other, is what makes the pair distinguishable — and the wrong pick
+             puts a contract out with no GST number on it, which OCPI-39 made
+             visible on the paper.
+
+          ⚠ `Combobox` searches the sublabel too, so a GSTIN typed into the box
+            still finds its customer.
+        */
+        sublabel: p.gstin ? `GST ${p.gstin}` : "no GST number in Tally",
       })),
     [parties],
   );
@@ -158,6 +173,26 @@ export default function CustomerPicker({
           searchable
           clearable
         />
+        {/*
+          ⚠ THE TRIGGER SHOWS THE LABEL ALONE. `Combobox` renders the sublabel in
+            the open list and nowhere else, so the GSTIN that told two identical
+            ledgers apart disappears the moment one is chosen — leaving no way to
+            check the pick without reopening the list. It is repeated here.
+        */}
+        {picked && !busy && (
+          <p className="mt-1 text-[12px]">
+            {picked.gstin ? (
+              <span className="text-grey-2">
+                GST <span className="font-medium text-navy">{picked.gstin}</span>
+              </span>
+            ) : (
+              <span className="text-amber-700">
+                This Tally ledger carries no GST number — check it is the right one, and
+                enter the GST below if the customer has one.
+              </span>
+            )}
+          </p>
+        )}
         <p className="mt-1 text-[12px] text-grey-2">
           {picked
             ? busy

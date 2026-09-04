@@ -118,8 +118,9 @@ export default function QuotationApprovalQueue() {
       <div>
         <h1 className="text-[20px] font-bold text-navy">Approve quotations</h1>
         <p className="mt-0.5 text-[13.5px] text-grey-2">
-          Quotations the salesperson has marked final. Approving moves the deal on to its order
-          confirmation.
+          Quotations the salesperson has marked final. Approving turns the papers this deal
+          already carries into the order confirmation, and sends it for the customer&rsquo;s
+          signature.
         </p>
       </div>
 

@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "backup": "node scripts/backup-db.mjs",
-    "asset-template": "node scripts/build-asset-template.mjs"
+    "asset-template": "node scripts/build-asset-template.mjs",
+    "field-map": "node scripts/ocpi-field-map.mjs",
+    "oc-audit": "node scripts/oc-audit/index.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

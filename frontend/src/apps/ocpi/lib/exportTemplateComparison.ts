@@ -171,6 +171,10 @@ function footerRows(t: TabDiff): SheetRow[] {
     },
     {
       kind: "note",
+      text: "[[if dryer]]…[[/if]] wording is compared as written too. A machine that makes a clause conditional genuinely prints something different from one that carries it unconditionally, so that IS a difference rather than noise to hide.",
+    },
+    {
+      kind: "note",
       text: `Rows are capped at about ${MAX_LINES} lines tall. A longer clause is complete in the cell — click it and read it in the formula bar, or widen the row.`,
     },
   );
@@ -324,6 +328,7 @@ export function buildComparisonSheets({ categories, machines, sections }: Compar
     "Machines with no template imported are excluded and named under each grid. An untemplated machine is not a machine that disagrees — as an all-blank column it would drown every real finding in false red. Inactive machines are excluded too, and named separately.",
     "Two wordings count as the same after ignoring case, leading and trailing spaces, repeated spaces, blank lines, trailing full stops and commas, and curly quotes and dashes. Only the comparison is normalised — every cell shows the ORIGINAL text.",
     "{{tokens}} are compared as written, never resolved to what a deal would print. Two machines both saying {{head_count}} are identical, even though every deal prints a different number there. Resolving first would make every machine differ from every other and the whole sheet would be amber.",
+    "[[if dryer]]…[[/if]] wording is compared as written too, for the same reason. Those wrappers decide whether a clause prints on a given deal — a dryer, a centering device, a dollar term — so a machine that carries one prints something genuinely different from a machine that does not, and that is a finding rather than noise.",
     "Sections are matched on their stored key, not on their heading — two machines may title the same clause differently. Where they do, an extra '↳ its heading' row shows each machine's wording, because that difference is itself a finding rather than a reason to split one clause into two rows.",
     "Specification rows are matched on the row label; a label only one machine uses becomes a line of its own.",
     "The Agreed wording column is deliberately empty. It is where the single settled wording for each differing line gets written. Applying those answers back into the templates is a separate job.",

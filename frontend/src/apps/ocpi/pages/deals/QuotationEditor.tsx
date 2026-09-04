@@ -4,8 +4,11 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import QuotationForm from "../../components/QuotationForm";
 import IssuedPapers from "../../components/IssuedPapers";
+import LifecyclePanel from "../../components/LifecyclePanel";
 import RevisionHistory from "../../components/RevisionHistory";
-import { CompanyProfileWarning, QuotationSeriesWarning } from "../../components/SetupWarnings";
+import {
+  CompanyProfileWarning, OcSeriesWarning, QuotationSeriesWarning,
+} from "../../components/SetupWarnings";
 import { useOcpiStore } from "../../store";
 import { submitQuotation } from "../../data/ocpiWrites";
 import { useQuotationDraft, type GeneratedPapers } from "./useQuotationDraft";
@@ -304,6 +307,20 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
           notice would just be noise on every revision.
       */}
       {!alreadyIssued && <QuotationSeriesWarning />}
+      {/*
+        🔴 THE ORDER-CONFIRMATION SERIES IS NOW A GENERATE-TIME RISK (OCPI-36).
+           This warning used to appear on the approval gate alone, because that
+           was where `oc_no` was minted. The mint moved here, so by the time an
+           approver sees the deal the serial has already been taken off a counter
+           nobody checked — and unlike a quotation number, that one ends up on a
+           signed contract.
+
+           ⚠ SAME `alreadyIssued` GUARD AS THE QUOTATION WARNING, AND FOR THE SAME
+             REASON. Both numbers are allocated once, on the first Generate, and
+             regenerating keeps them — so on every revision after the first this
+             would be a warning about something that can no longer happen.
+      */}
+      {!alreadyIssued && <OcSeriesWarning />}
       <CompanyProfileWarning companyId={q.draft.companyId || null} />
 
       {/*
@@ -442,9 +459,31 @@ export default function QuotationEditor({ dealId }: { dealId?: string }) {
         <IssuedPapers
           deal={deal}
           versions={versions}
-          fresh={papers ? { summary: papers.summary, detail: papers.detail } : null}
+          fresh={papers ? { summary: papers.summary, detail: papers.detail, pi: papers.pi } : null}
         />
       )}
+
+      {/*
+        🔴 PARK IT OR WRITE IT OFF, FROM THE SCREEN THE DEAL IS ACTUALLY ON.
+           `LifecyclePanel` renders Hold and Cancel, and OCPI-40 opened both to a
+           GENERATED draft — the deal whose customer went quiet after being sent
+           papers, which until then could only be DELETED, losing its contract
+           serial and orphaning its stored PDFs.
+
+           But the panel lives on `DealDetail`, and `DealsTable` routes every
+           draft to THIS editor instead (`/deals/:id/edit`), so on its own that
+           fix would have been unreachable — a control built and never routed to,
+           the FIX-4 trap in reverse. Mounting it here is what makes it real.
+
+        ⚠ IT RENDERS NOTHING UNTIL THERE IS A NUMBER. The panel's own guard is
+          `!deal.quotationNo` → no buttons, and it returns null when the reader
+          may not act. So an ungenerated draft shows exactly what it showed
+          before, and is still deleted rather than cancelled.
+
+        ⚠ BELOW THE FORM, DELIBERATELY. Writing a deal off is not what somebody
+          came to this screen to do; it must be findable, not offered first.
+      */}
+      {deal && <LifecyclePanel deal={deal} />}
 
       <QuotationForm draft={q.draft} patch={q.patch} />
 

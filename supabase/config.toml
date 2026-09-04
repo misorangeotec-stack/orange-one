@@ -70,3 +70,9 @@ verify_jwt = true
 #   send would start failing 401. Deploy with --no-verify-jwt if in any doubt.
 [functions.send-email]
 verify_jwt = false
+
+# Travel Desk ticket / bill extraction. verify_jwt = true, unlike extract-card:
+# every caller here is a signed-in portal user filling a form, not the mobile app
+# calling with the anon key. Same reasoning as parse-resume.
+[functions.extract-travel-doc]
+verify_jwt = true

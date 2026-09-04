@@ -6,9 +6,9 @@ import {
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import {
   COST_BEARERS, DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
-  SUBSIDIZED_RATE_NOTE, type DealFacts,
+  SUBSIDIZED_RATE_NOTE, TRANSPORT_BEARER_MARK, isUsdDealRow, type DealFacts,
 } from "./fieldSpec";
-import { docHeading, fmtDealValue, paperDate } from "./format";
+import { docHeading, fmtDealValue, paperDate, paperFileBase, paperNo } from "./format";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
 /**
@@ -136,7 +136,9 @@ function sectionRows(
   warrantyNote?: string,
 ): { title: string; rows: Row[] }[] {
   const isHighSeas = d.transportTerms === "high_seas";
-  const isUsd = d.dealValueCurrency === "USD";
+  // One predicate, shared with the order confirmation's money rows and with the
+  // `usd` template condition — see `isUsdDealRow`.
+  const isUsd = isUsdDealRow(d);
 
   /*
     ── "Term of Delivery" · THE ONE DELIVERY SENTENCE (OCPI-35) ───────────────
@@ -175,10 +177,28 @@ function sectionRows(
     return m ? `cost by ${m.label}` : null;
   };
 
+  /*
+    ⚠ AND SINCE OCPI-42 THE TERM ITSELF MAY ALREADY SAY IT. The local bearer now
+      composes into `trade_term` as "(Transportation bear by …)", which is where
+      every real contract carries it — so printing this row's own "cost by
+      Customer" segment beside it would read
+
+        Local Delivery · Ex-Work Surat (Transportation bear by Customer) ·
+        cost by Customer
+
+      🔴 THE TEST IS ON THE STRING, NOT ON A DATE. Every deal raised before
+         OCPI-42 holds a term WITHOUT the parenthetical and must keep its own
+         segment, or its sheet would stop saying who pays. A frozen revision
+         re-rendered years from now has to behave the same way.
+  */
+  const termNamesTheBearer = (d.tradeTerm ?? "").includes(TRANSPORT_BEARER_MARK);
+
   const transport = isHighSeas
     ? ["High Seas", deliveryTerm, costBy(d.highSeasCostBy)].filter(Boolean).join(" · ")
     : d.transportTerms === "local"
-      ? ["Local Delivery", deliveryTerm, costBy(d.localCostBy)].filter(Boolean).join(" · ")
+      ? ["Local Delivery", deliveryTerm, termNamesTheBearer ? null : costBy(d.localCostBy)]
+          .filter(Boolean)
+          .join(" · ")
       : "";
 
   /*
@@ -591,13 +611,15 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
   text(pdf, docHeading(deal), left + cw / 2, y + 17.5, {
     size: 13, bold: true, color: BRAND.white, align: "center",
   });
-  // ⚠ ONCE IT IS AN ORDER CONFIRMATION IT MUST CARRY THE NUMBER. The summary's
-  //   header block names the QUOTATION number, which stays — it is how the pair
-  //   is traced back to the negotiation — but a paper headed ORDER CONFIRMATION
-  //   with no OC number on it is not a contract anybody can file against. The
-  //   detailed sheet has always shown it in the same place.
-  if (deal.ocNo) {
-    text(pdf, deal.ocNo, left + cw - 10, y + 17.5, {
+  // ⚠ ONCE IT IS AN ORDER CONFIRMATION IT MUST CARRY THE NUMBER — and until it
+  //   is one, it must carry the QUOTATION number instead. A paper headed ORDER
+  //   CONFIRMATION with no OC number on it is not a contract anybody can file
+  //   against; a paper headed ORDER QUOTATION over an OC number invites the
+  //   customer to quote back a contract number that was never issued. `paperNo`
+  //   is the one test, shared with `docHeading` and with the detailed sheet.
+  const headNo = paperNo(deal);
+  if (headNo) {
+    text(pdf, headNo, left + cw - 10, y + 17.5, {
       size: 9.5, bold: true, color: BRAND.white, align: "right",
     });
   }
@@ -608,9 +630,47 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
 
   // ── Salesperson · Quotation No. · Date ───────────────────────────────────
   const genIso = input.generatedAt ?? new Date().toISOString();
+  /*
+    ⚠ THE CUSTOMER-FACING NUMBER IS `OTPL/OC/…`, AND IT IS THE ONLY ONE (OCPI-36).
+      This row printed `Quotation No. : QT-M0009`. All three papers now carry the
+      order-confirmation number and nothing else, because that is the number
+      Bushra's register is filed under and the one a customer quotes back — every
+      folder in `2026.27 OC&PI` is headed `OTPL/OC/<n>/26-27`. `QT-M####` survives
+      as an INTERNAL reference: the deal screen, the register export, search.
+
+    ⚠ THE NUMBER EXISTS FROM GENERATE, so this is not blank on a quotation. It is
+      minted in `fms_ocpi_generate_quotation` beside the quotation number, and one
+      serial serves the PI and the OC exactly as folder 127 does.
+
+    ⚠ THE `DRAFT` FALLBACK STILL MATTERS, AND IS NOW LOAD-BEARING FOR DRAFTS
+      ALONE. A draft has no serial — an abandoned one must not burn a number — so
+      without this the sheet would print `OTPL/OC//26-27`, which is not a number
+      and reads as a broken one rather than an unissued one.
+
+    ⚠ THE LABEL IS "Confirmation No.", NOT "Order Confirmation No.", AND THAT IS A
+      MEASUREMENT RATHER THAN A PREFERENCE. These three cells are fixed thirds of
+      the content width — 527pt / 3 = 176pt each — and nothing here wraps or
+      clips. "Order Confirmation No. :" at 8.5pt bold plus `OTPL/OC/127/26-27` at
+      8.5pt comes to roughly 192pt, which would print straight over the "Date :"
+      column beside it. The old label fitted because `QT-M0009` is half as wide.
+  */
+  /*
+    ⚠ THE LABEL MOVES WITH THE NUMBER (Ritesh Bhai, 03-09-2026). Before the
+      approval this cell reads `Quotation No. : QT-M0055`; after it, the
+      `Confirmation No. : OTPL/OC/…` the note above describes. Printing
+      "Confirmation No." on a paper headed ORDER QUOTATION named the deal after a
+      contract that did not exist yet.
+
+    ⚠ THE WIDTH NOTE ABOVE STILL BINDS, and the new label is comfortably inside
+      it: "Quotation No. :" plus `QT-M0055` is about half the width of the
+      confirmation pair that was measured against the 176pt column.
+  */
+  const approved = !!deal.ocAt;
   const head: [string, string][] = [
     ["Salesperson :", deal.salespersonName ?? ""],
-    ["Quotation No. :", deal.quotationNo ?? "DRAFT — not yet issued"],
+    approved
+      ? ["Confirmation No. :", deal.ocNo ?? "DRAFT — not yet issued"]
+      : ["Quotation No. :", deal.quotationNo ?? "DRAFT — not yet issued"],
     ["Date :", dmy(genIso)],
   ];
   const colW = cw / 3;
@@ -857,29 +917,34 @@ export async function quotationPdfBlob(input: QuotationDocInput): Promise<Blob> 
   return pdf.output("blob");
 }
 
-const fileBase = (deal: OcpiDeal, versionNo: number): string => {
-  const base = (deal.quotationNo ?? `DRAFT-${deal.customerName ?? "quotation"}`).replace(/[\\/:*?"<>|]/g, "-");
-  return versionNo > 1 ? `${base} Rev ${versionNo - 1}` : base;
-};
-
-/** A stable, human file name for the SUMMARY sheet. */
+/**
+ * A stable, human file name for the SUMMARY sheet.
+ *
+ * ⚠ THE STEM MOVED TO `paperFileBase` IN format.ts (OCPI-36), and with it the
+ *   number these are named after. It was the QUOTATION number, and the reason
+ *   recorded here was sound at the time: "both sheets are issued together, long
+ *   before `OTPL/OC/…` is minted at the Directors' approval, so the quotation
+ *   number is the only identifier the pair can share." The OC number is now
+ *   minted at Generate, so that is no longer true — and the real filing names
+ *   every paper after it.
+ */
 export function quotationFileName(deal: OcpiDeal, versionNo: number): string {
-  return `${fileBase(deal, versionNo)}.pdf`;
+  return `${paperFileBase(deal, versionNo)} - Summary.pdf`;
 }
 
 /**
  * The DETAILED sheet's file name — the summary's sibling.
  *
  * ⚠ IT MUST DIFFER FROM `quotationFileName`, and that is the whole reason this
- *   exists rather than a caller passing one name twice. Both papers of a
- *   revision are uploaded to the same folder with `upsert: true`, so a shared
+ *   exists rather than a caller passing one name twice. Every paper of a
+ *   revision is uploaded to the same folder with `upsert: true`, so a shared
  *   name means the second write silently replaces the first and the revision
- *   ends up holding one document where it should hold two.
+ *   ends up holding one document where it should hold three.
  *
- * ⚠ NAMED OFF THE QUOTATION NUMBER, NOT THE OC NUMBER. Both sheets are issued
- *   together, long before `OTPL/OC/…` is minted at the Directors' approval, so
- *   the quotation number is the only identifier the pair can share.
+ * ⚠ IT IS CALLED `- OC`, NOT `- Detailed`, because that is what the paper is and
+ *   what the source folders call it. The screen still says "Detailed sheet"; the
+ *   tab is a description, the file name is a filing reference.
  */
 export function quotationDetailFileName(deal: OcpiDeal, versionNo: number): string {
-  return `${fileBase(deal, versionNo)} Detailed.pdf`;
+  return `${paperFileBase(deal, versionNo)} - OC.pdf`;
 }

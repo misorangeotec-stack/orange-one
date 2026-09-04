@@ -219,7 +219,7 @@ export function exportDealRegister(
         contract templates through `{{trade_term}}`.
 
       ⚠ IT IS NOW A COMPOSED VALUE (OCPI-35), not one picked from a list — "CIF
-        Jebel Ali", "Ex Factory Surat" — so this column carries more than it used
+        Jebel Ali", "Ex-Work Surat" — so this column carries more than it used
         to. The parts it is built from have their own columns on the deal and are
         deliberately NOT added here: the composed term is what prints, and
         splitting it across four columns would invite a reader to reconcile them.

@@ -31,14 +31,35 @@ export interface QueueEntry extends QueueEntryBase<QueueStep> {
 }
 
 /**
- * The human reference for a deal.
+ * The human reference for a deal — the SCREEN's twin of `paperNo`.
  *
- * A draft has no number at all — an abandoned draft must not burn one from a
- * series customers already hold — so it falls back to the customer's name rather
- * than rendering an empty cell that reads as a bug.
+ * 🔴 THE APPROVAL STAMP DECIDES, NOT WHETHER A NUMBER EXISTS. Before the
+ *    Directors approve, a deal is named by its QUOTATION number; after, by its
+ *    contract number. Same rule as `paperNo`/`docHeading` in lib/format.ts, and
+ *    for the same reason — see those.
+ *
+ * ⚠ THIS COMMENT USED TO READ "a draft has no number at all", AND THE FUNCTION
+ *   WAS `d.ocNo ?? d.quotationNo`. Both were true until OCPI-36 moved the mint to
+ *   Generate. After it, every generated deal carries `ocNo` from the moment it is
+ *   made, so this returned the CONTRACT number on nine screens — including the
+ *   Quotation approval queue, whose entire point is that the deal is not approved
+ *   yet, and the delete dialog. Found by the OCPI-40 re-audit.
+ *
+ * ⚠ THE TRAILING `?? d.ocNo` IS LOAD-BEARING, not belt-and-braces. Eight deals
+ *   raised before OCPI-36 carry an `oc_no` minted at approval; a few older rows
+ *   have no `quotation_no`. Without it those would fall through to the customer
+ *   name and lose the number they were actually issued under.
+ *
+ * ⚠ POST-APPROVAL SCREENS ARE UNAFFECTED. Every queue past the approval holds
+ *   deals with `oc_at` set, so they read exactly as before.
  */
 export function dealRef(d: OcpiDeal): string {
-  return d.ocNo ?? d.quotationNo ?? (d.customerName || "Untitled deal");
+  return (
+    (d.ocAt ? d.ocNo : null) ??
+    d.quotationNo ??
+    d.ocNo ??
+    (d.customerName || "Untitled deal")
+  );
 }
 
 /**

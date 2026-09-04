@@ -179,10 +179,42 @@ export default function DealsTable({
           </div>
         }
       >
+        {/*
+          ⚠ THIS USED TO SAY "a draft carries no quotation number", AND SINCE
+            OCPI-36 THAT IS FALSE — it contradicted the very name printed one
+            clause earlier in the same sentence. Generating now mints BOTH the
+            quotation number and the order-confirmation serial, so a draft
+            routinely carries both; only approval is still outstanding. Caught
+            reading the dialog while deleting a deal titled "OTPL/OC/13/26-27"
+            that the next words insisted had no number.
+
+          ⚠ AND THE SERIAL IS NOT GIVEN BACK. `fms_ocpi_delete_draft` deletes
+            the row; `fms_ocpi_counters` is never rewound, so the number stays
+            spent and leaves a gap in the series. Someone deleting a draft
+            should know that before they press it, not discover it later.
+        */}
+        {/*
+          ⚠ AND SINCE OCPI-40 THERE IS AN ALTERNATIVE, so the dialog has to offer
+            it. A GENERATED draft can now be CANCELLED instead — the row and both
+            numbers stay, with a written reason beside them, which is what Ritesh
+            Bhai asked for on 03-09-2026. Deleting is still right for a draft
+            nobody ever generated. The two cases read differently here because
+            they genuinely are different, and the reader is the one choosing.
+        */}
         <p className="text-[13.5px] text-grey">
           {confirm ? `“${dealRef(confirm)}” will be removed. ` : ""}
-          Nothing was issued to the customer — a draft carries no quotation number — so there is
-          nothing to withdraw. This cannot be undone.
+          Nothing was sent for approval, so there is nothing to withdraw.{" "}
+          {confirm?.quotationNo ? (
+            <>
+              But this quotation <b className="text-navy">was generated</b> — its papers exist and its
+              contract number stays used, because the series never gives one back. If the customer
+              simply went quiet, <b className="text-navy">cancel it instead</b>, at the foot of the
+              deal: the record and the number are kept, with your reason against them.
+            </>
+          ) : (
+            <>It was never generated, so no number was ever issued.</>
+          )}{" "}
+          This cannot be undone.
         </p>
         {error && <p className="mt-2 text-[13px] text-ryg-red">{error}</p>}
       </Modal>
