@@ -16,6 +16,8 @@ interface SessionValue {
   user: Profile;
   role: AppRole;
   isAdmin: boolean;
+  /** True when this login is a customer, not staff. See Profile.isExternal. */
+  isExternal: boolean;
   isHod: boolean; // hod or sub_hod (team-level access)
   isEmployee: boolean;
   moduleAccess: string[];
@@ -68,12 +70,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const user = profiles.find((p) => p.id === authId) ?? null;
     const role: AppRole = user?.role ?? "employee";
     const isAdmin = role === "admin";
+    // Fails closed: no resolved profile yet means we do not YET know this is staff.
+    const isExternal = user?.isExternal ?? false;
     return {
       // Non-null wherever it's read: every consumer is behind RequireAuth and the
       // directory has finished loading, so a matching profile exists.
       user: user as Profile,
       role,
       isAdmin,
+      isExternal,
       isHod: role === "hod" || role === "sub_hod",
       isEmployee: role === "employee",
       moduleAccess: user?.moduleAccess ?? [],
