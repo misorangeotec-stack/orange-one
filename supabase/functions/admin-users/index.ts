@@ -82,20 +82,39 @@ Deno.serve(async (req) => {
   }
 
   // ---- set-password ----
-  // Re-pin a user's login password (the admin user form calls this on save to
-  // keep the password equal to the current mobile number).
+  // Set a user's login password. For STAFF this is the re-pin the admin user form
+  // performs on save, keeping the password equal to the current mobile number.
+  //
+  // ⚠ IT NO LONGER WRITES THE PASSWORD INTO `user_metadata`. It used to store
+  //   `{ phone: password }` there for every account, which is a second, permanent
+  //   copy of a live credential in a field the client SDK hands back on every
+  //   `getUser()` — including to the user themselves. For staff the value happened
+  //   to equal their own mobile number, so it looked harmless; the moment a
+  //   password stops being a phone number it is simply a stored password. The auth
+  //   record already holds the (hashed) password, so this copy bought nothing.
+  //
+  // ⚠ AND THE `profiles.phone` MIRROR IS NOW STAFF-ONLY. That line exists because
+  //   for staff the phone IS the password, so the Users screen showing the number
+  //   is showing both. On an EXTERNAL (customer) account the two are unrelated:
+  //   mirroring would write their real password, in plain text, into a profiles
+  //   column — one readable by every admin, exported by the user export, and
+  //   printed on screen next to their name.
   if (body.action === "set-password") {
     const userId = String(body.userId ?? "");
     const password = String(body.password ?? "").trim();
     if (!userId) return json(400, { error: "userId required" });
     if (password.length < 6) return json(400, { error: "password must be at least 6 characters" });
-    const { error } = await admin.auth.admin.updateUserById(userId, {
-      password,
-      user_metadata: { phone: password },
-    });
+
+    const { data: target } = await admin
+      .from("profiles").select("is_external").eq("id", userId).maybeSingle();
+    const targetIsExternal = target?.is_external === true;
+
+    const { error } = await admin.auth.admin.updateUserById(userId, { password });
     if (error) return json(400, { error: error.message });
-    // Keep the profiles read-model in sync so the Users screen shows the number.
-    await admin.from("profiles").update({ phone: password }).eq("id", userId);
+    if (!targetIsExternal) {
+      // Keep the profiles read-model in sync so the Users screen shows the number.
+      await admin.from("profiles").update({ phone: password }).eq("id", userId);
+    }
     return json(200, { ok: true });
   }
 

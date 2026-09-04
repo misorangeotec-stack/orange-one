@@ -7,11 +7,26 @@ import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
  * "Share login details" — generates a ready-to-send onboarding message for a
  * user (login link + email username + password) that an admin can copy and send.
  *
- * The password is the user's mobile number (the workspace policy: the mobile
- * doubles as the initial login password — see `phone-as-password`). It is NEVER
- * stored, so we can't read it back from the directory; the admin confirms/enters
- * it here and it's used only to fill the message text. `defaultPassword` pre-fills
- * it from the mobile we just saved on the create/edit form for convenience.
+ * For STAFF the password is the user's mobile number (the workspace policy: the
+ * mobile doubles as the initial login password — see `phone-as-password`). It is
+ * NEVER stored, so we can't read it back from the directory; the admin
+ * confirms/enters it here and it's used only to fill the message text.
+ * `defaultPassword` pre-fills it from the mobile we just saved on the create/edit
+ * form for convenience.
+ *
+ * ⚠ AN EXTERNAL (CUSTOMER) ACCOUNT NEEDS DIFFERENT WORDS, and getting them wrong
+ *   here is worse than anywhere else on this screen — this text is COPIED AND SENT,
+ *   so a wrong sentence is delivered to another company over our name. Three of them
+ *   were wrong for a customer:
+ *
+ *     - "change your password from My Account → Change password" — `/account` is the
+ *       staff screen, and an external login is redirected off it. Their password
+ *       screen is the Password tab in the Order Desk.
+ *     - "usually their mobile number" / the tel-shaped placeholder — a customer's
+ *       password is a real password and their mobile is usually not on file at all.
+ *     - "use Reset password (re-save the user) to re-pin it to their mobile number"
+ *       — that re-pin is now refused for external accounts, so following the
+ *       instruction does nothing at all and leaves the admin with no idea why.
  */
 export default function ShareLoginModal({
   open,
@@ -19,12 +34,15 @@ export default function ShareLoginModal({
   name,
   email,
   defaultPassword,
+  isExternal = false,
 }: {
   open: boolean;
   onClose: () => void;
   name: string;
   email: string;
   defaultPassword: string;
+  /** A customer, not staff — changes every sentence below that names a screen. */
+  isExternal?: boolean;
 }) {
   const [password, setPassword] = useState(defaultPassword);
   const [copied, setCopied] = useState(false);
@@ -67,7 +85,11 @@ export default function ShareLoginModal({
       open={open}
       onClose={onClose}
       title="Share login details"
-      subtitle={`Enter ${name || "the user"}'s current password (usually their mobile number) to generate a ready-to-send message.`}
+      subtitle={
+        isExternal
+          ? `Enter the password you set for ${name || "this customer"} to generate a ready-to-send message.`
+          : `Enter ${name || "the user"}'s current password (usually their mobile number) to generate a ready-to-send message.`
+      }
       size="md"
       footer={
         <>
@@ -93,14 +115,16 @@ export default function ShareLoginModal({
           <TextInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="e.g. 9876543210"
-            inputMode="tel"
+            placeholder={isExternal ? "the password you set for them" : "e.g. 9876543210"}
+            inputMode={isExternal ? "text" : "tel"}
             autoFocus
             onFocus={(e) => e.target.select()}
           />
         </FieldLabel>
         <p className="text-[11.5px] text-grey-2 -mt-2">
-          If you don't know it, use “Reset password” (re-save the user) to re-pin it to their mobile number.
+          {isExternal
+            ? "If you don’t know it, edit this customer and set a new password — saving their record does NOT reset it."
+            : "If you don’t know it, use “Reset password” (re-save the user) to re-pin it to their mobile number."}
         </p>
 
         <FieldLabel label="Message">

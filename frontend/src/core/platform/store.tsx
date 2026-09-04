@@ -77,7 +77,18 @@ export interface DirectoryValue {
   addBand: (input: { bandNo: number; name: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<string>;
   updateBand: (id: string, patch: { bandNo?: number; name?: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<void>;
 
-  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[] }) => Promise<string>;
+  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; isExternal?: boolean; password?: string }) => Promise<string>;
+  /**
+   * Set one user's login password outright.
+   *
+   * ⚠ THE ONLY WAY TO GIVE AN EXTERNAL ACCOUNT A PASSWORD, because the staff route
+   *   is `updateUser({ phone })` and that re-pin is now refused for them (rightly —
+   *   see the guard in `updateUser`). Without this, an admin faced with a customer
+   *   who has forgotten their password has no path at all: the form's mobile field
+   *   does nothing for them, and the customer's own change-password screen needs
+   *   the password they have lost.
+   */
+  setUserPassword: (id: string, password: string) => Promise<void>;
   /**
    * ⚠ `moduleLevels` is the whole grant — the ids in it ARE the granted apps.
    *   `moduleAccess` is deliberately NOT accepted here: two ways to say the same
@@ -298,9 +309,22 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           receivablesHiddenMenus: input.receivablesHiddenMenus ?? [],
           receivablesAdminMenus: input.receivablesAdminMenus ?? [],
           receivablesAllowedReports: input.receivablesAllowedReports ?? [],
+          // Not staff. The Edge Function takes `password` instead of pinning the
+          // mobile, leaves `user_metadata.phone` unwritten, and stamps
+          // `profiles.is_external` — which is what `public.is_staff(uid)` reads, and
+          // therefore what every table policy, storage policy and guarded RPC in the
+          // database now turns on.
+          isExternal: input.isExternal === true,
+          password: input.password,
         });
         await refresh();
         return id;
+      },
+      setUserPassword: async (id, password) => {
+        await setUserPasswordViaFunction(id, password);
+        // No `refresh()`: nothing in the directory read-model changes. For staff the
+        // Edge Function mirrors the number into `profiles.phone`, but that call comes
+        // through `updateUser`, which refreshes on its own.
       },
       updateUser: async (id, patch) => {
         // The login email lives in auth.users; `profiles.email` is only the copy the
@@ -334,13 +358,29 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           receivablesAllowedReports: patch.receivablesAllowedReports,
           receivablesAllowPipeline: patch.receivablesAllowPipeline,
         });
-        if (patch.role !== undefined) await setUserRoleWrite(id, patch.role);
+        // Only when it actually CHANGED. The user form sends `role` on every save,
+        // so an unchanged role was rewriting the row on every edit of a phone number —
+        // a write that can only fail, never help. (See `setUserRole`, where doing that
+        // on your own record used to strand the account with no role at all.)
+        const roleBefore = profiles.find((p) => p.id === id)?.role;
+        if (patch.role !== undefined && patch.role !== roleBefore) await setUserRoleWrite(id, patch.role);
         if (patch.hodIds !== undefined) await setUserHodsWrite(id, patch.hodIds);
         if (patch.moduleLevels !== undefined) await setUserModulesWrite(id, patch.moduleLevels);
         // Per workspace policy, saving the user form re-pins the login password to
         // the current mobile number. Only fires when a phone is supplied (the admin
         // user form always does; self-profile saves don't, so they never reset it).
-        if (patch.phone) await setUserPasswordViaFunction(id, patch.phone);
+        //
+        // ⚠ NEVER ON AN EXTERNAL (CUSTOMER) ACCOUNT. "Your password is your mobile
+        //   number" is a reasonable convention inside the company and an unusable one
+        //   for another firm: their password is a real password we agreed with them,
+        //   and their `phone` is either blank or genuinely just a phone number. Without
+        //   this guard, ANY later admin save of that customer's record — a corrected
+        //   spelling of their name — silently resets the password they are using, with
+        //   nothing on screen saying so and no way for them to find out but failing to
+        //   sign in. The Edge Function refuses to mirror it into `profiles.phone` too,
+        //   so neither half of the convention can reach a customer.
+        const target = profiles.find((p) => p.id === id);
+        if (patch.phone && !target?.isExternal) await setUserPasswordViaFunction(id, patch.phone);
         await refresh();
       },
       deleteUser: async (id) => {

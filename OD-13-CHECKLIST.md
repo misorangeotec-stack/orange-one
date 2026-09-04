@@ -352,7 +352,100 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
       Bushra was holding a notification about it. The customer's screen now reads "Cancelled",
       which verified that mapping on the way out.
 
-## P6 — Passwords and the staff-assumption fixes
+## P6 — Passwords and the staff-assumption fixes  ·  DONE
+
+- [x] **The password re-pin is refused for external accounts** (`store.tsx`). Without it, ANY later
+      admin save of a customer's record — a corrected spelling of their name — silently reset the
+      password they were using, with nothing on screen saying so. Proved by saving ZZ TEST
+      Kalahansh's record **twice** through the form and signing in afterwards with the unchanged
+      password.
+- [x] **`set-password` no longer writes the password into `user_metadata`** (Edge Function v14).
+      It stored `{ phone: password }` for EVERY account — a second, permanent copy of a live
+      credential in a field the client SDK hands back on every `getUser()`. For staff the value
+      happened to equal their own mobile so it read as harmless; the moment a password stops being
+      a phone number it is simply a stored password. Nothing in the codebase reads `user_metadata`
+      (grepped), so dropping the write is inert.
+- [x] 🔴 **And `set-password` no longer mirrors into `profiles.phone` for an external account.**
+      That line is right for staff — the phone IS the password, so showing the number shows both —
+      and on a customer it would have written their real password, in plain text, into a column
+      every admin can read, the user export includes, and the Users list prints beside their name.
+      Verified after two saves: `phone` is still **null**.
+- [x] **`UserForm` gains an External toggle**, settable only when CREATING; on an existing account
+      it is a read-only badge. Flipping it later is far-reaching in both directions (on → the
+      account leaves `list_org_people` and `is_staff` starts refusing it across ~200 policies;
+      off → a customer is handed the staff portal), and not something an admin correcting a
+      spelling should do by accident.
+- [x] Ticking it **clears the module grants**. A new user is seeded `{ task-management: edit }` —
+      right for a colleague, and on a customer a grant to an internal app that nobody chose and
+      everybody forgets. It cannot be fixed in the `useState` initialiser: the form always opens as
+      staff, so the seed is already in state by the time the box is ticked.
+- [x] It also **drops the mobile-required rule**, which was the only hard blocker besides the name.
+      Requiring it would make a customer literally unsaveable, and the way past it is to invent a
+      number — which then becomes their password.
+- [x] Org fields hidden, not merely optional: employee code, gender, DOB, department,
+      sub-department, designation, band, role, reporting HODs. All already nullable, so nothing had
+      to be relaxed — but leaving them on screen invites an admin to fill them in, and a customer
+      filed under somebody's HOD is worse than a shorter form.
+- [x] `Hierarchy.tsx` — every customer carried `role: "employee"` and no HOD, so each one landed in
+      the amber **"Unmapped employees — assign a HOD"** card PERMANENTLY: an action item that can
+      never be actioned, growing by one per customer, in the card whose whole job is to say
+      somebody still has to do something.
+- [x] `Users.tsx` — an **External** badge (a customer read as "Employee" with an unfinished
+      record), a Staff/Customers filter, an "N external" count, and a subtitle that says
+      "Customer login · ✉ …" instead of "— · No dept".
+- [x] `ModuleAccess.tsx` — the same badge, in the one screen where ticking a box by mistake hands
+      an outside firm an internal app.
+- [x] `exportUsers.ts` — a **Staff / External** column before Role, and Role reads "—" for a
+      customer. The sheet is what somebody opens to audit access; five blank org columns and the
+      word "Employee" made a customer indistinguishable from a new joiner.
+- [x] `list_org_people` / `_detail` and the Master Report access matrix already excluded externals
+      — shipped in P0c (`od13_p0c1`, `od13_p0c4`).
+
+#### 🔴 One more defect found in the browser, and one PRE-EXISTING bug tripped over
+
+- [x] **`ShareLoginModal` has TWO call sites and I wired only one.** The Users list passed
+      `isExternal`; the User form's own post-save panel did not — so the panel that opens
+      *immediately after saving*, when the admin is actually about to send the message, still
+      offered a customer the staff script: "usually their mobile number", "use Reset password to
+      re-pin it to their mobile number" (an instruction that now does nothing at all), and "change
+      your password from **My Account → Change password**" — a screen external logins are
+      redirected away from. This text is COPIED AND SENT, so a wrong sentence is delivered to
+      another company over our name. Same shape as the `[[if …]]` marker that printed raw on a live
+      contract: one reader updated, the other not.
+- [x] 🔴 **PRE-EXISTING, NOT OD-13, AND SERIOUS: an admin who saved their own user record
+      permanently demoted themselves.** Hit it by accident on the live workspace while testing that
+      staff behaviour was unchanged, and restored the row by hand.
+
+      `directoryWrites.setUserRole` DELETED then INSERTED, as two separate PostgREST requests, and
+      `user_roles_admin_write` checks `is_admin(auth.uid())` — which reads `user_roles`. So the
+      delete COMMITS, and the insert is then evaluated against a workspace where the caller is no
+      longer an admin:
+
+          DELETE → allowed (still an admin)   → their only role row is gone
+          INSERT → REFUSED (no longer admin)  → the account is left with NO role at all
+
+      `useSession` then reads them as an ordinary employee and `RequireRole` bounces them out of
+      `/admin` — the only screen that could put the row back. **In a workspace whose last admin
+      does this, nobody reaches /admin again without going into the database.**
+
+      Fixed by inverting the order: insert first (evaluated while the old row still exists, so the
+      caller is still an admin), then delete the others (evaluated with both rows present, so it
+      passes too). A genuine self-demotion still works and still ends with exactly one row. ⚠ Not
+      an `upsert` on its own — the unique constraint is `(user_id, role)`, not `user_id`, so an
+      upsert would leave the old role sitting beside the new one. Plus `store.tsx` now skips the
+      role write entirely when the role has not changed, which is the case that caused this.
+      **Re-ran the exact sequence afterwards: saved, one role row, still admin.**
+
+- [x] **Staff behaviour proved unmoved**, not assumed: saving a staff record still re-pins, the
+      `profiles.phone` mirror is still written, sign-in with the mobile still works, and the panel
+      still says "their login password is their mobile number".
+- [ ] ⚠ **Residue, flagged not fixed:** every staff account saved before v14 still carries a copy
+      of its password in `auth.users.user_metadata.phone`. For staff that value equals their mobile,
+      which is already in `profiles.phone`, so it discloses nothing new — and nothing reads it. It
+      simply stops being updated from now on. Clearing the 64 existing copies is a decision, not a
+      side effect of this task.
+
+## P6 — original checklist
 
 - [ ] `store.tsx:343` — skip the re-pin for external accounts
 - [ ] `admin-users/index.ts:94` — drop `user_metadata.phone = password`

@@ -4,7 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import Combobox from "@/shared/components/ui/Combobox";
-import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput, PasswordInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
 import { grantableModules, levelsForModule, NO_VIEW_ONLY_APP_IDS } from "@/apps/registry";
@@ -86,7 +86,7 @@ const ROLES: { value: AppRole; label: string; hint: string }[] = [
 export default function UserForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { profiles, departments, designations, bands, subDepartmentsFor, subDepartmentById, profileById, addUser, updateUser, addDepartment, canEditUser, canAddUser } = useDirectory();
+  const { profiles, departments, designations, bands, subDepartmentsFor, subDepartmentById, profileById, addUser, updateUser, setUserPassword, addDepartment, canEditUser, canAddUser } = useDirectory();
   const editing = id ? profileById(id) : undefined;
   const canSave = editing ? canEditUser : canAddUser;
   const [busy, setBusy] = useState(false);
@@ -110,6 +110,68 @@ export default function UserForm() {
   // an id is granted iff it has a key here. Two collections (a granted list plus
   // a level map) is how the two drift apart, and a save built from a disagreeing
   // pair is unrecoverable from the UI.
+  /**
+   * Is this person one of OUR people, or a customer of ours?
+   *
+   * ⚠ SETTABLE ONLY WHEN CREATING; on an existing account it renders as a read-only
+   *   badge. Flipping it either way is a silent, far-reaching change and not one an
+   *   admin editing a spelling should be able to make by mistake: on → the account
+   *   drops out of `list_org_people` and every @mention, step-owner, interviewer and
+   *   coordinator picker fed by it, and `public.is_staff` starts refusing it across
+   *   ~200 table policies, 21 storage policies and the guarded RPCs. off → a customer
+   *   is handed the staff portal.
+   *
+   * ⚠ THIS IS NOT THE PLACE TO ONBOARD A CUSTOMER. Order to Dispatch → Setup →
+   *   Customer logins does the whole job in one action — the account, the flag, the
+   *   single grant AND the org + ledger rows that make ordering actually work. An
+   *   account created here would be external and grant-less, i.e. able to sign in and
+   *   see a screen telling it there is nothing to order. The toggle exists so that an
+   *   external account can be READ and REPAIRED here without being broken.
+   */
+  const [isExternal, setIsExternal] = useState(editing?.isExternal ?? false);
+  /**
+   * A real password, for an external account only.
+   *
+   * Blank on an existing account means "leave it alone" — this box is not a display
+   * of the current password (there isn't one to display), it is a reset.
+   */
+  const [extPassword, setExtPassword] = useState("");
+
+  /**
+   * Ticking External CLEARS the module grants, and that is the point of doing it
+   * here rather than in the initial state.
+   *
+   * ⚠ A NEW USER IS SEEDED WITH `{ task-management: edit }`, AND A CUSTOMER MUST NOT
+   *   BE. The seed is right for a colleague — everybody gets the task list — and on
+   *   an external account it is a grant to an internal app that nobody chose, nobody
+   *   looks at again, and everybody forgets. Exactly the "hidden grant" this module
+   *   was audited for, arriving by DEFAULT rather than by mistake. It cannot be fixed
+   *   in the `useState` initialiser because the form always opens as staff: the
+   *   admin ticks the box afterwards, by which time the seed is already in state.
+   *
+   * Unticking does NOT put the seed back. Whatever is ticked at that moment was
+   * chosen deliberately, and silently re-adding an app on the way past is the same
+   * class of bug in the other direction.
+   */
+  const setExternal = (on: boolean) => {
+    setIsExternal(on);
+    setError("");
+    if (on) {
+      setModuleLevels({});
+      // Every one of these is an ORG fact, and a customer is not in the org. Clearing
+      // them as the box is ticked means the save cannot carry a half-filled staff
+      // record that the hidden fields no longer show anybody.
+      setRole("employee");
+      setDepartmentId("");
+      setSubDepartmentId("");
+      setDesignationId("");
+      setBandId("");
+      setEmployeeCode("");
+      setGender("");
+      setDateOfBirth("");
+      setHodIds([]);
+    }
+  };
   const [moduleLevels, setModuleLevels] = useState<Record<string, ModuleLevel>>(
     editing?.moduleLevels ?? { "task-management": "edit" },
   );
@@ -129,7 +191,7 @@ export default function UserForm() {
   // After a successful save we land on a confirmation panel offering to share the
   // login details (instead of jumping straight back to the list). Holds the saved
   // identity + the mobile we pinned as the password so we can pre-fill the message.
-  const [saved, setSaved] = useState<null | { name: string; email: string; password: string }>(null);
+  const [saved, setSaved] = useState<null | { name: string; email: string; password: string; isExternal: boolean }>(null);
   const [shareOpen, setShareOpen] = useState(false);
 
   /**
@@ -310,8 +372,24 @@ export default function UserForm() {
     // is predictable (a number entered as "90333 01207" must log in as "9033301207",
     // not with the literal space).
     const mobileNorm = mobile.replace(/\s+/g, "");
-    if (!mobileNorm) return setError("Please enter a mobile number — it's the user's initial password.");
-    if (mobileNorm.length < 6) return setError("Mobile number must be at least 6 digits (it's used as the password).");
+    /*
+      ⚠ THE MOBILE RULE IS A STAFF RULE, AND IT WAS THE ONLY HARD BLOCKER BESIDES THE
+        NAME. An external account has no mobile with us and must never be pinned to
+        one, so requiring it here would make a customer literally unsaveable — and the
+        way past it is to invent a number, which then silently becomes their password.
+    */
+    if (isExternal) {
+      // Blank on an existing account means "leave the password alone".
+      if (!editing && extPassword.length < 6) {
+        return setError("Please set a password of at least 6 characters for this customer.");
+      }
+      if (editing && extPassword && extPassword.length < 6) {
+        return setError("A new password must be at least 6 characters. Leave it blank to keep the current one.");
+      }
+    } else {
+      if (!mobileNorm) return setError("Please enter a mobile number — it's the user's initial password.");
+      if (mobileNorm.length < 6) return setError("Mobile number must be at least 6 digits (it's used as the password).");
+    }
     if (busy) return;
     // `designation` (text) is the mirror list_org_people() returns for @mention
     // pickers, so it travels with designation_id on every save. With nothing
@@ -342,12 +420,32 @@ export default function UserForm() {
     setBusy(true);
     setError("");
     try {
-      // Saving always re-pins the password to the mobile number (workspace policy).
-      if (editing) await updateUser(editing.id, { ...base, phone: mobileNorm });
-      else await addUser({ ...base, mobile: mobileNorm });
-      // Show the confirmation panel (with the "Share login details" action) rather
-      // than bouncing back to the list — the mobile we just pinned is the password.
-      setSaved({ name: base.name, email: base.email ?? "", password: mobileNorm });
+      if (isExternal) {
+        /*
+          ⚠ NO `phone` IN THE PATCH, EVER. `updateUser` re-pins the login password to
+            whatever phone it is handed, so passing one here would reset a customer's
+            password on every save of their record — a corrected spelling of their name
+            would lock them out, with nothing on screen saying so. (The store refuses it
+            for an external account as well; this is the near half of the same rule, so
+            the intent is visible at the call site and not only in the guard.)
+
+          The password travels its own way, and only when one was typed.
+        */
+        if (editing) {
+          await updateUser(editing.id, base);
+          if (extPassword) await setUserPassword(editing.id, extPassword);
+        } else {
+          await addUser({ ...base, mobile: "", isExternal: true, password: extPassword });
+        }
+        setSaved({ name: base.name, email: base.email ?? "", password: extPassword, isExternal: true });
+      } else {
+        // Saving always re-pins the password to the mobile number (workspace policy).
+        if (editing) await updateUser(editing.id, { ...base, phone: mobileNorm });
+        else await addUser({ ...base, mobile: mobileNorm });
+        // Show the confirmation panel (with the "Share login details" action) rather
+        // than bouncing back to the list — the mobile we just pinned is the password.
+        setSaved({ name: base.name, email: base.email ?? "", password: mobileNorm, isExternal: false });
+      }
       setBusy(false);
     } catch (err) {
       setError((err as Error).message);
@@ -367,8 +465,23 @@ export default function UserForm() {
             </span>
             <div className="min-w-0">
               <p className="text-[15px] font-semibold text-navy">{saved.name} is all set.</p>
+              {/*
+                ⚠ THE SENTENCE HAS TO MATCH THE ACCOUNT. "Their password is their mobile
+                  number" is true of staff and flatly false of a customer, who has a real
+                  password and often no mobile on file at all — and an admin who reads it
+                  will hand a customer a number that does not sign in.
+
+                On an external EDIT with the password box left blank, nothing changed, so
+                the panel must not imply a new credential to pass on either.
+              */}
               <p className="text-[13px] text-grey mt-1 leading-relaxed">
-                Their login password is their mobile number{saved.email ? <> and their username is <span className="font-medium text-navy">{saved.email}</span></> : ""}. Share the login details so they can sign in.
+                {saved.isExternal ? (
+                  saved.password
+                    ? <>Their password is the one you just set{saved.email ? <> and their username is <span className="font-medium text-navy">{saved.email}</span></> : ""}. Share the login details so they can sign in.</>
+                    : <>Their password is unchanged{saved.email ? <> — they sign in with <span className="font-medium text-navy">{saved.email}</span></> : ""}.</>
+                ) : (
+                  <>Their login password is their mobile number{saved.email ? <> and their username is <span className="font-medium text-navy">{saved.email}</span></> : ""}. Share the login details so they can sign in.</>
+                )}
               </p>
             </div>
           </div>
@@ -381,12 +494,21 @@ export default function UserForm() {
           </div>
         </Card>
 
+        {/*
+          ⚠ THERE ARE TWO CALL SITES FOR THIS MODAL — here and the Users list — and
+            they must BOTH pass `isExternal`. Adding the prop to the modal and wiring
+            only one of them left this one still offering a customer the staff script
+            ("usually their mobile number", "re-pin it to their mobile number"), which
+            is the more damaging of the two because this is the panel that opens
+            straight after saving, when the admin is actually about to send it.
+        */}
         <ShareLoginModal
           open={shareOpen}
           onClose={() => setShareOpen(false)}
           name={saved.name}
           email={saved.email}
           defaultPassword={saved.password}
+          isExternal={saved.isExternal}
         />
       </div>
     );
@@ -416,14 +538,100 @@ export default function UserForm() {
               )}
             </FieldLabel>
           </div>
+          {/*
+            Staff or customer. On an existing account this is a BADGE, not a switch —
+            see the note on the `isExternal` state for why flipping it later is not
+            something an admin correcting a spelling should be able to do by accident.
+          */}
+          {editing ? (
+            isExternal ? (
+              <div className="rounded-xl border border-orange/40 bg-orange/5 px-4 py-3">
+                <div className="text-[13px] font-semibold text-navy">External account — a customer, not staff</div>
+                <p className="text-[12px] text-grey-2 mt-0.5">
+                  They can open only what is ticked below, and nothing else in the portal. Their
+                  ordering setup — ledgers, items, who we tell — lives in{" "}
+                  <span className="font-medium text-navy">Order to Dispatch → Setup → Customer logins</span>.
+                </p>
+              </div>
+            ) : null
+          ) : (
+            <label className="flex items-start gap-2.5 rounded-xl border border-line px-4 py-3 cursor-pointer hover:border-orange/40 transition">
+              <input
+                type="checkbox"
+                checked={isExternal}
+                onChange={(e) => setExternal(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-[13px] font-semibold text-navy">
+                  This is an external account — a customer, not one of our people
+                </span>
+                <span className="block text-[12px] text-grey-2 mt-0.5">
+                  They get a real password instead of a mobile number, no department or reporting
+                  line, and no app until you tick one. To set a customer up for ordering, use{" "}
+                  <span className="font-medium text-navy">Order to Dispatch → Setup → Customer logins</span>{" "}
+                  instead — it does the ledgers and the notifications too.
+                </span>
+              </span>
+            </label>
+          )}
+
           <div className="grid sm:grid-cols-2 gap-4">
-            <FieldLabel label="Mobile number" required hint={editing ? "saving resets the login password to this" : "the user's initial password"}>
-              <TextInput value={mobile} onChange={(e) => { setMobile(e.target.value); setError(""); }} placeholder="e.g. 9876543210" inputMode="tel" />
-            </FieldLabel>
-            <FieldLabel label="Employee code" hint="optional">
-              <TextInput value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. OTPL-S-10092" />
-            </FieldLabel>
+            {isExternal ? (
+              /*
+                ⚠ A REAL PASSWORD, NOT A MOBILE NUMBER. "Your password is your phone
+                  number" is a workable convention inside the company and an
+                  indefensible one to hand another firm. The mobile field is gone
+                  entirely rather than merely optional, so nothing on this screen
+                  suggests typing a number would set anything.
+
+                On an EXISTING account, blank means "leave it alone" — this is a reset,
+                not a display. There is no current password to show.
+              */
+              <FieldLabel
+                label={editing ? "Set a new password" : "Password"}
+                required={!editing}
+                hint={editing ? "leave blank to keep the current one" : "at least 6 characters"}
+              >
+                <PasswordInput
+                  value={extPassword}
+                  onChange={(e) => { setExtPassword(e.target.value); setError(""); }}
+                  autoComplete="new-password"
+                  name="admin-external-password"
+                  placeholder={editing ? "•••••••• (unchanged)" : ""}
+                />
+              </FieldLabel>
+            ) : (
+              <FieldLabel label="Mobile number" required hint={editing ? "saving resets the login password to this" : "the user's initial password"}>
+                <TextInput value={mobile} onChange={(e) => { setMobile(e.target.value); setError(""); }} placeholder="e.g. 9876543210" inputMode="tel" />
+              </FieldLabel>
+            )}
+            {!isExternal && (
+              <FieldLabel label="Employee code" hint="optional">
+                <TextInput value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. OTPL-S-10092" />
+              </FieldLabel>
+            )}
           </div>
+          {/*
+            EVERYTHING FROM HERE TO THE MODULE GRANTS IS AN ORG FACT, AND A CUSTOMER
+            IS NOT IN THE ORG.
+
+            Gender and date of birth are for booking OUR people travel. Department,
+            sub-department, designation and band decide entitlement inside the company.
+            Role is one of four internal words — a customer is not an "Employee" of
+            Orange O Tec, and printing that under their name is how `roleLabel` gets
+            used for a question it has no answer to. Reporting HODs are our line
+            management.
+
+            Hidden rather than merely optional: every one of them is already nullable
+            in the schema, so nothing has to be RELAXED — but leaving them on screen
+            invites an admin to fill them in, and a customer sitting in the Hierarchy
+            under somebody's HOD is a worse outcome than a shorter form. `setExternal`
+            clears them all as the box is ticked, so a form that was half-filled as
+            staff cannot save org facts the screen has stopped showing.
+          */}
+          {!isExternal && (
+          <>
           {/*
             Gender and date of birth are what an airline or a rail operator needs
             to issue a ticket, and the portal held neither. Unlike department,
@@ -561,8 +769,17 @@ export default function UserForm() {
               )}
             </FieldLabel>
           )}
+          </>
+          )}
 
-          <FieldLabel label="Module access" hint={role === "admin" ? "admins can open every app" : "which apps this user can open, and how much of each"}>
+          <FieldLabel
+            label="Module access"
+            hint={
+              isExternal ? "a customer should hold the Order Desk and nothing else"
+                : role === "admin" ? "admins can open every app"
+                : "which apps this user can open, and how much of each"
+            }
+          >
             {role === "admin" ? (
               <p className="text-[12.5px] text-grey-2">Admins have full access to all current and future apps.</p>
             ) : (

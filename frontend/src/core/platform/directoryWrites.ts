@@ -161,11 +161,48 @@ export async function updateUserProfile(
 }
 
 /** Set a user's single role: clear existing role rows, insert the new one. */
+/**
+ * Replace a user's role. INSERT FIRST, THEN DELETE THE OTHERS — the order is the
+ * whole point.
+ *
+ * 🔴 IT USED TO DELETE FIRST, AND THAT LET AN ADMIN PERMANENTLY DEMOTE THEMSELVES
+ *    BY SAVING THEIR OWN USER RECORD.
+ *
+ *    `user_roles` is written under `user_roles_admin_write`, whose check is
+ *    `is_admin(auth.uid())` — and `is_admin` reads `user_roles`. These are two
+ *    SEPARATE PostgREST requests, so the delete COMMITS before the insert is even
+ *    sent. For an admin editing anyone else that is invisible; for an admin editing
+ *    THEMSELVES the sequence is:
+ *
+ *      DELETE  → allowed (they are still an admin)  → their only role row is gone
+ *      INSERT  → REFUSED (they are no longer an admin)
+ *
+ *    leaving the account with no role row at all. `useSession` then reads them as an
+ *    ordinary employee, `RequireRole` bounces them out of /admin, and the only screen
+ *    that could put the row back is the one they can no longer open. In a workspace
+ *    whose last admin does this, nobody can reach /admin again without going into the
+ *    database. Reproduced accidentally on the live workspace on 05-09-2026 and
+ *    restored by hand.
+ *
+ * Insert-then-delete inverts every step of that. The INSERT is evaluated while the
+ * old row is still there, so the caller is still an admin and it passes; the DELETE
+ * that follows is evaluated with BOTH rows present, so it passes too. A genuine
+ * self-demotion still works and still ends with exactly one row — it simply stops
+ * being able to strand the account between the two statements.
+ *
+ * ⚠ NOT `upsert`. The unique constraint is `(user_id, role)`, not `user_id`, so an
+ *   upsert would happily leave the old role row sitting beside the new one — and the
+ *   app treats role as single-valued, so it would then depend on row order which one
+ *   the user got.
+ */
 export async function setUserRole(userId: string, role: AppRole): Promise<void> {
-  const { error: delErr } = await supabase.from("user_roles").delete().eq("user_id", userId);
-  if (delErr) throw new Error(delErr.message);
-  const { error: insErr } = await supabase.from("user_roles").insert({ user_id: userId, role });
+  const { error: insErr } = await supabase
+    .from("user_roles")
+    .upsert({ user_id: userId, role }, { onConflict: "user_id,role", ignoreDuplicates: true });
   if (insErr) throw new Error(insErr.message);
+  const { error: delErr } = await supabase
+    .from("user_roles").delete().eq("user_id", userId).neq("role", role);
+  if (delErr) throw new Error(delErr.message);
 }
 
 /** Replace a user's reporting HODs with the given set. */

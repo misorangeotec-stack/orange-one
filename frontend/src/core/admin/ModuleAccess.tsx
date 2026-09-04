@@ -148,8 +148,25 @@ export default function ModuleAccess() {
                     <div className="flex items-center gap-2.5 min-w-[180px]">
                       <Avatar name={u.name} color={u.avatarColor} size={32} />
                       <div className="min-w-0">
-                        <div className="text-[13px] font-medium text-navy truncate">{u.name}</div>
-                        <div className="text-[11px] text-grey-2 truncate">{departmentById(u.departmentId)?.name ?? "No dept"}</div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[13px] font-medium text-navy truncate">{u.name}</span>
+                          {/*
+                            ⚠ THIS MATRIX IS WHERE SOMEBODY DECIDES WHO MAY OPEN WHAT,
+                              and a row for another company’s staff has to say so. An
+                              external account carries `role: "employee"` and no
+                              department, so it read as an ordinary colleague with an
+                              unfinished record — in the one screen where ticking a box
+                              by mistake hands an outside firm an internal app.
+                          */}
+                          {u.isExternal && (
+                            <span className="shrink-0 text-[9.5px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-orange-soft text-orange border border-orange/30">
+                              External
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-grey-2 truncate">
+                          {u.isExternal ? "Customer login" : departmentById(u.departmentId)?.name ?? "No dept"}
+                        </div>
                       </div>
                     </div>
                   </td>

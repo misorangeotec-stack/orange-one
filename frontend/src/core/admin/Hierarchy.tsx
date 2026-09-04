@@ -9,9 +9,25 @@ import type { Profile } from "@/core/platform/types";
 export default function Hierarchy() {
   const { profiles, profileById, directReportIds, departmentById } = useDirectory();
 
-  const admins = profiles.filter((p) => p.role === "admin");
-  const managers = profiles.filter((p) => p.role === "hod" || p.role === "sub_hod");
-  const unmapped = profiles.filter((p) => p.role === "employee" && p.hodIds.length === 0);
+  /**
+   * ⚠ THIS SCREEN IS THE ORG CHART, AND A CUSTOMER IS NOT IN THE ORG.
+   *
+   * Every external account carries `role: "employee"` — the role column is a closed
+   * four-value union and `is_external` is a flag beside it, not a fifth role — and no
+   * HOD, because it has no reporting line and never will. So each one landed in the
+   * amber "Unmapped employees — assign a HOD" card and stayed there PERMANENTLY: an
+   * action item that can never be actioned, growing by one every time a customer is
+   * onboarded, sitting in the card whose whole job is to say "somebody still has to
+   * do something about these people".
+   *
+   * Filtered at the top rather than in that one card, because the same reasoning
+   * applies to all three lists — a customer is not leadership and manages nobody.
+   */
+  const staff = profiles.filter((p) => !p.isExternal);
+
+  const admins = staff.filter((p) => p.role === "admin");
+  const managers = staff.filter((p) => p.role === "hod" || p.role === "sub_hod");
+  const unmapped = staff.filter((p) => p.role === "employee" && p.hodIds.length === 0);
 
   return (
     <div className="space-y-5">

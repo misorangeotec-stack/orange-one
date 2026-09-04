@@ -86,7 +86,17 @@ export function exportUsersToXlsx(opts: {
   const columns: ExportColumn<Profile>[] = [
     { header: "Employee Code", width: 16, value: (u) => u.employeeCode ?? "" },
     { header: "Name", width: 24, value: (u) => u.name },
-    { header: "Role", width: 12, value: (u) => ROLE_LABEL[u.role] },
+    /*
+      ⚠ A CUSTOMER EXPORTED AS "Employee" WITH FIVE BLANK ORG COLUMNS IS
+        INDISTINGUISHABLE FROM A NEW JOINER NOBODY HAS FINISHED SETTING UP — and
+        this sheet is what somebody opens to audit who has access to what. The
+        `role` column cannot carry the answer: it is a closed four-value union and
+        `is_external` is a flag beside it, not a fifth role. So it gets its own
+        column, placed before Role, because "are they ours?" is the question that
+        decides how to read every column after it.
+    */
+    { header: "Staff / External", width: 15, value: (u) => (u.isExternal ? "External" : "Staff") },
+    { header: "Role", width: 12, value: (u) => (u.isExternal ? "—" : ROLE_LABEL[u.role]) },
     { header: "Department", width: 20, value: (u) => deptName(u.departmentId) },
     { header: "Sub-department", width: 24, value: (u) => subDeptName(u.subDepartmentId) },
     { header: "Designation", width: 22, value: (u) => u.designation ?? "" },

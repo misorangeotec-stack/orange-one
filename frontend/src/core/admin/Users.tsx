@@ -35,6 +35,17 @@ export default function Users() {
   const [subDept, setSubDept] = useState("all");
   const [desig, setDesig] = useState("all");
   const [band, setBand] = useState("all");
+  /**
+   * Staff, customers, or both.
+   *
+   * ⚠ THE LIST HAD NO WAY TO TELL THEM APART AT ALL. An external account carries
+   *   `role: "employee"` (the role column is a closed four-value union; `is_external`
+   *   is a flag beside it, not a fifth role), no department and no designation — so
+   *   in a list of 64 colleagues a customer read as a new joiner nobody had finished
+   *   setting up. The default stays "all" so nothing is hidden by surprise; the badge
+   *   below is what actually does the telling apart, and this narrows.
+   */
+  const [kind, setKind] = useState<"all" | "staff" | "external">("all");
   const [confirmDel, setConfirmDel] = useState<Profile | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [delErr, setDelErr] = useState("");
@@ -43,6 +54,8 @@ export default function Users() {
   const filtered = useMemo(
     () =>
       profiles.filter((p) => {
+        if (kind === "staff" && p.isExternal) return false;
+        if (kind === "external" && !p.isExternal) return false;
         if (role !== "all" && p.role !== role) return false;
         if (dept !== "all" && p.departmentId !== dept) return false;
         if (subDept !== "all" && p.subDepartmentId !== subDept) return false;
@@ -51,12 +64,21 @@ export default function Users() {
         if (q.trim() && !matchesSearch(q, p.name, p.email, p.phone, p.employeeCode)) return false;
         return true;
       }),
-    [profiles, role, dept, subDept, desig, band, q]
+    [profiles, kind, role, dept, subDept, desig, band, q]
   );
 
-  const pg = usePagination(filtered, { resetKey: `${q}|${role}|${dept}|${subDept}|${desig}|${band}` });
+  const pg = usePagination(filtered, { resetKey: `${q}|${kind}|${role}|${dept}|${subDept}|${desig}|${band}` });
+
+  const externalCount = profiles.filter((p) => p.isExternal).length;
 
   const activeFilters: ActiveFilter[] = [];
+  if (kind !== "all") {
+    activeFilters.push({
+      key: "kind",
+      label: kind === "staff" ? "Staff only" : "Customers only",
+      onClear: () => setKind("all"),
+    });
+  }
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   if (role !== "all")
     activeFilters.push({ key: "role", label: `Role: ${ROLE_LABEL[role]}`, onClear: () => setRole("all") });
@@ -108,7 +130,20 @@ export default function Users() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[13px] text-grey">{profiles.length} users</p>
+        <p className="text-[13px] text-grey">
+          {profiles.length} users
+          {externalCount > 0 && (
+            <>
+              {" · "}
+              <button
+                onClick={() => setKind(kind === "external" ? "all" : "external")}
+                className="text-orange hover:underline font-medium"
+              >
+                {externalCount} external
+              </button>
+            </>
+          )}
+        </p>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={handleExport} disabled={filtered.length === 0} title={filtered.length === 0 ? "No users to export" : "Export users and their app access to Excel"}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
@@ -127,6 +162,18 @@ export default function Users() {
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, email or phone…" className="pl-9 py-2 text-[13px]" />
           </div>
+          {externalCount > 0 && (
+            <Combobox
+              value={kind}
+              onChange={(v) => setKind(v as "all" | "staff" | "external")}
+              className="w-full sm:w-auto sm:min-w-[150px]"
+              options={[
+                { value: "all", label: "Staff and customers" },
+                { value: "staff", label: "Staff only" },
+                { value: "external", label: "Customers only" },
+              ]}
+            />
+          )}
           <Combobox value={role} onChange={(v) => setRole(v as AppRole | "all")} className="w-full sm:w-auto sm:min-w-[150px]" options={[{ value: "all", label: "All roles" }, ...(Object.keys(ROLE_LABEL) as AppRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} />
           {/* Switched-off masters stay listed HERE, unlike on the user form: users
               still sitting on a retired department must remain findable, and this
@@ -155,16 +202,44 @@ export default function Users() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-medium text-navy truncate">{u.name}</span>
-                    <span className={cn("text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5", ROLE_BADGE[u.role])}>{ROLE_LABEL[u.role]}</span>
+                    {/*
+                      An external account's ROLE is meaningless — it is "employee"
+                      only because the column has four values and none of them mean
+                      "not ours". Printing "Employee" beside a customer's name is the
+                      same mistake `roleLabel` makes in the staff shell, which is why
+                      the Order Desk does not reuse that shell. Show what is true.
+                    */}
+                    {u.isExternal ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-orange-soft text-orange border border-orange/30">External</span>
+                    ) : (
+                      <span className={cn("text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5", ROLE_BADGE[u.role])}>{ROLE_LABEL[u.role]}</span>
+                    )}
                   </div>
+                  {/*
+                    ⚠ THE SUBTITLE IS A LINE OF ORG FACTS, AND A CUSTOMER HAS NONE.
+                      Rendered for one, it read "— · No dept · ✉ them@theirfirm.com":
+                      three quarters of it saying nothing, and the quarter that says
+                      something ("No dept") being an accusation of an incomplete
+                      record rather than a description. A customer gets the one fact
+                      that is true and useful — how they sign in.
+                  */}
                   <div className="text-[11.5px] text-grey-2 truncate">
-                    {u.designation || "—"} · {departmentById(u.departmentId)?.name ?? "No dept"}
-                    {u.subDepartmentId && ` › ${subDepartmentById(u.subDepartmentId)?.name ?? ""}`}
-                    {u.bandId && bandById(u.bandId) && ` · Band ${bandById(u.bandId)!.bandNo}`}
-                    {u.employeeCode && ` · ${u.employeeCode}`}
-                    {u.phone && ` · 📱 ${u.phone}`}
-                    {u.email && ` · ✉️ ${u.email}`}
-                    {u.hodIds.length > 0 && ` · reports to ${u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", ")}`}
+                    {u.isExternal ? (
+                      <>
+                        Customer login
+                        {u.email && ` · ✉️ ${u.email}`}
+                      </>
+                    ) : (
+                      <>
+                        {u.designation || "—"} · {departmentById(u.departmentId)?.name ?? "No dept"}
+                        {u.subDepartmentId && ` › ${subDepartmentById(u.subDepartmentId)?.name ?? ""}`}
+                        {u.bandId && bandById(u.bandId) && ` · Band ${bandById(u.bandId)!.bandNo}`}
+                        {u.employeeCode && ` · ${u.employeeCode}`}
+                        {u.phone && ` · 📱 ${u.phone}`}
+                        {u.email && ` · ✉️ ${u.email}`}
+                        {u.hodIds.length > 0 && ` · reports to ${u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", ")}`}
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="hidden sm:block text-right shrink-0">
@@ -226,6 +301,7 @@ export default function Users() {
         name={shareFor?.name ?? ""}
         email={shareFor?.email ?? ""}
         defaultPassword={shareFor?.phone ?? ""}
+        isExternal={shareFor?.isExternal ?? false}
       />
     </div>
   );
