@@ -45,6 +45,20 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
   const managersByReq = new Map(data.requisitions.map((r) => [r.id, r.hiringManagerIds]));
 
   /**
+   * Requisition → the job title, for the row's second line.
+   *
+   * Without it an approval row on My Work reads `MRF-2627-0021` and nothing else, and a
+   * candidate row reads a person's name without saying which vacancy they are for — you
+   * cannot tell what you are being asked to decide without opening it. Every other module
+   * that has a second fact to give already fills `detail` in.
+   *
+   * The DEPARTMENT is deliberately not here: `HrData` carries no departments (they are a
+   * core master, not part of `fetchHrData`), so the only thing in reach is a raw uuid.
+   * The job title is the fact that was actually missing.
+   */
+  const titleByReq = new Map(data.requisitions.map((r) => [r.id, r.jobTitle]));
+
+  /**
    * Candidate → the panel booked for `interview_2`, if anyone is on it.
    *
    * Round 2 can now be handed to any head set up to raise an MRF, and that head is not
@@ -103,6 +117,7 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
       source: "hr",
       sourceLabel: appName("hr-recruitment"),
       ref: e.ref,
+      detail: titleByReq.get(e.requisitionId ?? "") || undefined,
       stage: stepByKey(e.stepKey)?.short,
       dueIso: e.dueIso,
       // A candidate row has no page of its own — it opens its requisition.
