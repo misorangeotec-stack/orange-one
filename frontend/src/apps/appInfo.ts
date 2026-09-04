@@ -106,6 +106,28 @@ export const APPS: Record<string, AppInfo> = {
     category: "sales",
   },
   /**
+   * The customer's own ordering screen (OD-13).
+   *
+   * ⚠ THE ONLY NAME IN THIS FILE THAT A CUSTOMER READS. Every other entry names
+   *   an internal module to internal readers, and can be renamed when the business
+   *   changes its mind. This one is on the browser tab and at the head of every
+   *   screen of an app used by another company, so it was agreed with the client
+   *   rather than chosen: "Orange Order Desk".
+   *
+   * ⚠ AND THE BASE PATH IS DELIBERATELY NOT `/customer-orders`. It is a URL the
+   *   customer sees, types and bookmarks; "customer-orders" is how WE describe
+   *   them, from our side of the transaction. The id stays `customer-orders`
+   *   because ids are frozen — renaming one revokes everybody's access.
+   *
+   * Categorised under Sales so the admin permission screens file it beside Order
+   * to Dispatch, which is the module its orders land in.
+   */
+  "customer-orders": {
+    name: "Orange Order Desk",
+    basePath: "/order-desk",
+    category: "sales",
+  },
+  /**
    * Promoted OUT of the Outstanding Dashboard to the main menu (29-07-2026).
    *
    * ⚠ ITS CODE STILL LIVES UNDER apps/receivables-hub/, and deliberately so. The

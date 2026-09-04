@@ -9031,6 +9031,54 @@ carry `and public.is_staff(auth.uid())` inside their `WHERE`. A guard in a `WHER
 invisible to a regex looking for one after `BEGIN` — that classifier has now produced four false
 positives, so read the body before believing it.
 
+#### ✅ P1–P5 SHIPPED 04-09-2026 — the app exists and a customer has driven it end to end
+
+**The Orange Order Desk is built and works.** A real external login placed **SO-2627-1132** through
+the screen, changed it, watched our team complete it at credit check, and was correctly refused once
+the window shut. Build green; 13 migrations applied. Full log in
+[OD-13-CHECKLIST.md](OD-13-CHECKLIST.md).
+
+| | What shipped |
+|---|---|
+| **P1** | Two tables (`customer_orgs` / `customer_logins`) + one Setup screen. **Adding a customer is now a ten-minute admin job** — proved by adding a third through the screen alone, no SQL and no deploy |
+| **P2** | The customer raises without joining step owners; the named recipient can see AND action the order |
+| **P3** | `intake_source`, the edit/cancel window, and four customer-facing write RPCs |
+| **P4** | Credit check completes the order: three pickers above the credit fields, and the item lines re-point to the chosen book |
+| **P5** | `apps/customer-orders/` — its own shell, four screens, and a single labels module |
+
+**The customer reads no table.** Their entire screen is three `SECURITY DEFINER` RPCs. That is what
+let P0 be a clean "staff only" sweep with no exceptions to reason about, and it is how "the customer
+never sees the ticked ledger list" is honoured — by never sending it.
+
+🔴 **Three defects were found only by sitting in the browser, and two were serious:**
+
+- **"Change this order" was destructive.** `my_orders` returned the item NAME and not the ID —
+  everything needed to *display* an order and nothing needed to *re-open* one. The edit form would
+  have opened with every quantity filled and every item blank, and `replace_customer_lines` deletes
+  before it inserts, so saving would have emptied the order rather than failing. ⚠ The tempting fix
+  is to match the line back by name; `scopeParties.ts` already says join by id, never by name, and
+  it would have worked until the first item renamed in Tally.
+- **The closed-window sentence contradicted the status eight lines above it** — *"we are checking it
+  now"* over *"this order is now being prepared"*. The window shuts on any credit decision, and a
+  HOLD is one, so the two disagreed on every held order and the second was simply false. Both the
+  screen and the server's two refusals now say "gone past the point where it can be changed", which
+  makes no claim about our state.
+- An item **on** an order can leave the customer's list; a picker handed a value with no option
+  renders blank, so the customer would have saved an order one line shorter without noticing.
+
+**Two audited risks stopped being assertions and became measurements.** The named recipient reads
+`see=true, act=true` on a real null-location order (Corrections 3 and 6 are two different bugs and
+both are closed). And on a credit hold with a deliberately internal reason, **all four notifications
+went to our person and none to the customer** — who can read 0 notification rows and 0 activity rows.
+
+**Still to do: P6** (the password re-pin exemption and the admin screens' External signal), **P7**
+(the part-delivered case, and the staff walk-through of every module P0 touched), **P8** (the two
+real logins, on explicit go-ahead, then cherry-pick to `oo-master`).
+
+⚠ **`ZZ TEST Kalahansh` is a REAL, ACTIVE customer login** (`zz-test-orderdesk@example.com`), kept
+deliberately so P6–P7 have something to test against. Delete on request. Its one order was cancelled
+after testing.
+
 ---
 
 **The ask.** Today only our team raises a sales order. Open that to customers. Give **two customers**

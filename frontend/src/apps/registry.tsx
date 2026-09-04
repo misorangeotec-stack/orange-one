@@ -11,6 +11,7 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
+import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
@@ -62,6 +63,18 @@ export const apps: AppManifest[] = [
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
   orderToDispatchApp,
+  // Orange Order Desk -- the CUSTOMER's own screen, and the only app here whose
+  // users are not our staff. Two customers punch their own sales orders instead
+  // of ringing us to have them typed in; what they place lands in the same
+  // fms_dispatch_orders table, and everything after it is the module above,
+  // untouched.
+  //
+  // Registered like any other module even though nobody internal will open it:
+  // that is what puts it in the Module Access matrix and the User form, which is
+  // the only way an admin can SEE who holds a customer login. An unregistered id
+  // would still work as an app_access grant -- it would just be a grant nobody
+  // could find.
+  customerOrdersApp,
   // Asset Maintenance FMS — own fms_asset_* tables, granted per user. The only
   // module whose entity is PERMANENT: assets and their dated tracks live for
   // years, and a service JOB is raised off a track when it falls due, then closed
