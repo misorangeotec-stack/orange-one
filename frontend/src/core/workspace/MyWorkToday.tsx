@@ -699,6 +699,14 @@ function ApprovalStrip({ items, mine }: { items: WorkItem[]; mine: boolean }) {
             <span className="text-[13px] font-semibold text-navy group-hover:text-orange transition-colors">
               {item.ref}
             </span>
+            {/* WHAT you are being asked to approve. A chip carrying only a reference
+                number — "MRF-2627-0021" — cannot be judged without opening it. Truncated
+                so a long one widens the chip a little rather than breaking the row. */}
+            {item.detail && (
+              <span className="max-w-[22ch] truncate text-[11.5px] text-grey" title={item.detail}>
+                {item.detail}
+              </span>
+            )}
             <span className="text-[11px] text-grey-2">{item.sourceLabel}</span>
             <span className="text-[11px]">
               <DueCell dueIso={item.dueIso} />
