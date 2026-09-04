@@ -67,6 +67,7 @@ import { fetchSamplingData, type SamplingData } from "@/apps/sampling/data/sampl
 import { fetchProductionData, type ProductionData } from "@/apps/production-entry/data/productionFetch";
 import { fetchDispatchData, type DispatchData } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { fetchAssetData, type AssetData } from "@/apps/asset-maintenance/data/assetFetch";
+import { fetchTravelData, type TravelData } from "@/apps/travel-desk/data/travelFetch";
 
 // THE RULES THEMSELVES — the same files My Work Today renders from. Not copies.
 import { taskWorkItems } from "@/core/workspace/mywork/items/tasks";
@@ -79,6 +80,7 @@ import { samplingWorkItems } from "@/core/workspace/mywork/items/sampling";
 import { productionWorkItems } from "@/core/workspace/mywork/items/productionEntry";
 import { dispatchWorkItems } from "@/core/workspace/mywork/items/orderToDispatch";
 import { assetWorkItems } from "@/core/workspace/mywork/items/assetMaintenance";
+import { travelDeskWorkItems } from "@/core/workspace/mywork/items/travel-desk";
 
 // ── What a caller gets back ───────────────────────────────────────────────────
 
@@ -130,6 +132,7 @@ export interface Datasets {
   prod?: ProductionData;
   disp?: DispatchData;
   asset?: AssetData;
+  travel?: TravelData;
 }
 
 /**
@@ -150,6 +153,7 @@ export const COVERED_APP_IDS = [
   "production-entry",
   "order-to-dispatch",
   "asset-maintenance",
+  "travel-desk",
 ] as const;
 export type CoveredAppId = (typeof COVERED_APP_IDS)[number];
 
@@ -243,6 +247,7 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     want.has("production-entry") ? fetchProductionData().then((d) => void (out.prod = d)) : null,
     want.has("order-to-dispatch") ? fetchDispatchData().then((d) => void (out.disp = d)) : null,
     want.has("asset-maintenance") ? fetchAssetData().then((d) => void (out.asset = d)) : null,
+    want.has("travel-desk") ? fetchTravelData().then((d) => void (out.travel = d)) : null,
   ]);
   assertCutoffHandled([
     out.hr?.config?.stepSla as never,
@@ -270,6 +275,7 @@ const SOURCE_APP: Record<string, string> = {
   "production-entry": "production-entry",
   "order-to-dispatch": "order-to-dispatch",
   "asset-maintenance": "asset-maintenance",
+  "travel-desk": "travel-desk",
 };
 
 /** Provider display order, matching core/workspace/mywork/registry.ts:34-46. */
@@ -284,6 +290,7 @@ const SOURCE_ORDER = [
   "production-entry",
   "order-to-dispatch",
   "asset-maintenance",
+  "travel-desk",
 ];
 
 /**
@@ -314,6 +321,7 @@ export function computeSnapshot(
   if (data.prod && has.has("production-entry")) all = all.concat(productionWorkItems(data.prod, userId, isAdmin));
   if (data.disp && has.has("order-to-dispatch")) all = all.concat(dispatchWorkItems(data.disp, userId, isAdmin));
   if (data.asset && has.has("asset-maintenance")) all = all.concat(assetWorkItems(data.asset, userId, isAdmin));
+  if (data.travel && has.has("travel-desk")) all = all.concat(travelDeskWorkItems(data.travel, userId, isAdmin));
 
   const scoped = isAdmin ? all.filter((i) => i.assignment === "direct") : all;
 

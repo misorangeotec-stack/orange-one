@@ -11,7 +11,7 @@ import type {
   OcpiCompanyProfile, OcpiDeal, OcpiDoc, OcpiMachine, OcpiMachineSection,
   OcpiNotification, OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiNamedMaster,
-  OcpiDryer, OcpiMachineHead,
+  OcpiDryer, OcpiMachineHead, OcpiSalesPage,
 } from "../types";
 import type { StepSla } from "../lib/sla";
 // ⚠ A VALUE IMPORT, and safe: `fieldSpec` imports only from `../types`, so this
@@ -50,6 +50,7 @@ type Tbl =
   | "fms_ocpi_company_profiles"
   | "fms_ocpi_machines"
   | "fms_ocpi_machine_sections"
+  | "fms_ocpi_sales_pages"
   | "fms_ocpi_deals"
   | "fms_ocpi_quotation_versions"
   | "fms_ocpi_notifications"
@@ -163,6 +164,8 @@ export interface OcpiData {
   companyProfiles: OcpiCompanyProfile[];
   machines: OcpiMachine[];
   machineSections: OcpiMachineSection[];
+  /** Page 2 of a machine PI, per FAMILY. Empty until Stage 3 seeds them. */
+  salesPages: OcpiSalesPage[];
   deals: OcpiDeal[];
   versions: QuotationVersion[];
   notifications: OcpiNotification[];
@@ -219,12 +222,39 @@ const mapMachine = (r: any): OcpiMachine => ({
   docTitle: r.doc_title,
   introText: r.intro_text ?? null,
   machineModelNo: r.machine_model_no ?? null,
+  // OCPI-36 · the three the Performa Invoice prints only when they are filled.
+  hsnCode: r.hsn_code ?? null,
+  manufacturer: r.manufacturer ?? null,
+  countryOfOrigin: r.country_of_origin ?? null,
+  salesPageId: r.sales_page_id ?? null,
   supplyDescription: r.supply_description ?? null,
   specRows: Array.isArray(r.spec_rows) ? r.spec_rows : [],
   composition: Array.isArray(r.composition) ? r.composition : [],
   headerFields: Array.isArray(r.header_fields) ? r.header_fields : [],
   signoffStyle: r.signoff_style,
   hasTemplate: !!r.has_template,
+  active: r.active !== false,
+  sortOrder: r.sort_order ?? 0,
+});
+
+/**
+ * A sales page row.
+ *
+ * ⚠ `blocks` IS DEFENSIVE ABOUT ITS SHAPE. It is jsonb, so a hand-edited row
+ *   can hold anything; a malformed entry drops out here rather than reaching the
+ *   renderer and printing `[object Object]` on a customer's invoice.
+ */
+const mapSalesPage = (r: any): OcpiSalesPage => ({
+  id: r.id,
+  name: r.name,
+  heading: r.heading,
+  blocks: Array.isArray(r.blocks)
+    ? r.blocks.filter(
+        (b: any) =>
+          b && typeof b.text === "string" &&
+          ["tagline", "para", "subhead", "bullet"].includes(b.kind),
+      )
+    : [],
   active: r.active !== false,
   sortOrder: r.sort_order ?? 0,
 });
@@ -480,6 +510,7 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   ocDocumentPayload: r.oc_document_payload ?? null,
   ocPdfPath: r.oc_pdf_path ?? null,
+  piPdfPath: r.pi_pdf_path ?? null,
   ocSummaryPdfPath: r.oc_summary_pdf_path ?? null,
 
   editedAt: r.edited_at ?? null,
@@ -498,6 +529,7 @@ const mapVersion = (r: any): QuotationVersion => ({
   ocDocumentPayload: r.oc_document_payload ?? {},
   pdfPath: r.pdf_path ?? null,
   ocPdfPath: r.oc_pdf_path ?? null,
+  piPdfPath: r.pi_pdf_path ?? null,
   dealValueAmount: num(r.deal_value_amount),
   dealValueCurrency: r.deal_value_currency ?? null,
   fxRate: num(r.fx_rate),
@@ -521,7 +553,7 @@ const mapNotification = (r: any): OcpiNotification => ({
 export async function fetchOcpiData(): Promise<OcpiData> {
   const [ownerRows, configRows, profileRows, machineRows, sectionRows, dealRows, versionRows, notifRows,
          headRows, inkRows, dryerRows, managerRows, masterReqRows,
-         categoryRows, dryerModelRows, machineHeadRows] =
+         categoryRows, dryerModelRows, machineHeadRows, salesPageRows] =
     await Promise.all([
       fetchAll("fms_ocpi_step_owners"),
       fetchAll("fms_ocpi_config", "key"),
@@ -539,6 +571,7 @@ export async function fetchOcpiData(): Promise<OcpiData> {
       fetchAll("fms_ocpi_machine_categories", "sort_order"),
       fetchAll("fms_ocpi_dryers", "sort_order"),
       fetchAll("fms_ocpi_machine_head_types", "sort_order"),
+      fetchAll("fms_ocpi_sales_pages", "sort_order"),
     ]);
 
   const cfg = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -593,6 +626,7 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     companyProfiles: profileRows.map(mapCompanyProfile),
     machines: machineRows.map(mapMachine),
     machineSections: sectionRows.map(mapSection),
+    salesPages: salesPageRows.map(mapSalesPage),
     deals: dealRows.map(mapDeal),
     versions: versionRows.map(mapVersion),
     notifications: notifRows.map(mapNotification),

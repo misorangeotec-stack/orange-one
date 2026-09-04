@@ -35,6 +35,16 @@ export interface MachineInput {
   docTitle: string;
   introText: string | null;
   machineModelNo: string | null;
+  /*
+    OCPI-36 · the three the Performa Invoice prints, and the sales page it shows.
+    ⚠ BLANK IS STORED AS NULL AND MEANS OMIT ON THE PAPER — the opposite of the
+      rest of this module, where an unanswered value rules a blank. A Surat-built
+      machine has no country of origin to state.
+  */
+  hsnCode: string | null;
+  manufacturer: string | null;
+  countryOfOrigin: string | null;
+  salesPageId: string | null;
   supplyDescription: string | null;
   specRows: { label: string; value: string }[];
   composition: string[];
@@ -62,6 +72,10 @@ const toRow = (m: MachineInput) => ({
   doc_title: m.docTitle,
   intro_text: m.introText?.trim() || null,
   machine_model_no: m.machineModelNo?.trim() || null,
+  hsn_code: m.hsnCode?.trim() || null,
+  manufacturer: m.manufacturer?.trim() || null,
+  country_of_origin: m.countryOfOrigin?.trim() || null,
+  sales_page_id: m.salesPageId || null,
   supply_description: m.supplyDescription?.trim() || null,
   spec_rows: m.specRows,
   composition: m.composition,
@@ -97,6 +111,10 @@ export async function updateMachine(id: string, input: Partial<MachineInput>): P
   if (input.docTitle !== undefined) row.doc_title = full.docTitle;
   if (input.introText !== undefined) row.intro_text = full.introText?.trim() || null;
   if (input.machineModelNo !== undefined) row.machine_model_no = full.machineModelNo?.trim() || null;
+  if (input.hsnCode !== undefined) row.hsn_code = full.hsnCode?.trim() || null;
+  if (input.manufacturer !== undefined) row.manufacturer = full.manufacturer?.trim() || null;
+  if (input.countryOfOrigin !== undefined) row.country_of_origin = full.countryOfOrigin?.trim() || null;
+  if (input.salesPageId !== undefined) row.sales_page_id = full.salesPageId || null;
   if (input.supplyDescription !== undefined) row.supply_description = full.supplyDescription?.trim() || null;
   if (input.specRows !== undefined) row.spec_rows = full.specRows;
   if (input.composition !== undefined) row.composition = full.composition;

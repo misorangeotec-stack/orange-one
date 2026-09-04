@@ -224,7 +224,16 @@ export default function PoStageRail({
                         <span className="text-grey-2/70">+{extraPeople} more</span>
                       )}
                     </span>
-                  ) : (
+                  ) : isSkipped ? null : (
+                    /*
+                      ⚠ A SKIPPED STAGE IS NOT UNASSIGNED, IT IS UNNEEDED, and
+                        printing "Unassigned" under "Not required" says both at
+                        once. "Unassigned" is a PROBLEM — a stage the record will
+                        reach with nobody to action it — and a bypassed stage is
+                        the opposite of that. This branch only fires for a node
+                        that set `skipped`, so every rail that does not use the
+                        prop renders exactly as before.
+                    */
                     <span className="text-[10px] italic text-grey-2/50">Unassigned</span>
                   )}
                 </>

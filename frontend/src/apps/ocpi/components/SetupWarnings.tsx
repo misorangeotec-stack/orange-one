@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { fyCode, ocNoFor } from "../lib/format";
+import { fyCode, ocNoPreview } from "../lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -68,15 +68,22 @@ export function QuotationSeriesWarning() {
 /**
  * The order-confirmation series has not been checked for the year now running.
  *
- * ⚠ IT SITS ON THE APPROVAL GATE, NOT THE EDITOR, because that is where the
- *   number is minted. The quotation warning belongs on the editor for the same
- *   reason. An approver is the last person who can stop a contract going out
- *   carrying a number some customer already has on file.
+ * 🔴 IT MOVED TO THE EDITOR WHEN THE MINT DID (OCPI-36). It used to sit on the
+ *    approval gate alone, and the comment here said that was because "that is
+ *    where the number is minted". It no longer is: the serial is allocated at
+ *    Generate, so the last person who can stop a number going out over the top
+ *    of the paper register is the salesperson pressing Generate — by which time
+ *    the approver sees it, it has already been taken.
+ *
+ *    It is rendered in BOTH places rather than moved outright, because a deal
+ *    generated before OCPI-36 still mints at approval through the fallback
+ *    branch in `fms_ocpi_decide_quotation`. The wording therefore names the
+ *    consequence rather than the gate.
  *
  * ⚠ AND IT COMES BACK EVERY APRIL. The series restarts with the financial year,
  *   so confirmation is recorded per year and this reads the current one. A
  *   module confirmed once in 2026 and never again would quietly issue
- *   OTPL/OC/2728/0001 over the top of a paper series that had kept counting.
+ *   OTPL/OC/1/27-28 over the top of a paper series that had kept counting.
  */
 export function OcSeriesWarning() {
   const s = useOcpiStore();
@@ -85,9 +92,16 @@ export function OcSeriesWarning() {
 
   return (
     <Warning title={`The order-confirmation series has not been confirmed for ${fy}`}>
-      Approving mints <b>{ocNoFor(1, fy).replace(/\d+$/, "nnnn")}</b> from a counter nobody has
-      checked against the paper register. If the real series is ahead of it, this contract goes out
-      under a number a customer already holds &mdash; and unlike a quotation, that number is on
+      {/*
+        ⚠ THE PLACEHOLDER COMES FROM `ocNoPreview`, NOT FROM A REGEX. This read
+          `ocNoFor(1, fy).replace(/\d+$/, "nnnn")`, which assumed the number ENDS
+          in its serial. Since OCPI-36 it ends in the financial year, so the regex
+          blanked the year instead and showed `OTPL/OC/1/26-nnnn` — an invented
+          number, inside the one warning whose job is to show what is coming.
+      */}
+      This deal takes <b>{ocNoPreview(fy)}</b> from a counter nobody has checked against the
+      paper register. If the real series is ahead of it, the order confirmation goes out under a
+      number a customer already holds &mdash; and unlike a quotation, that number ends up on
       something signed.{" "}
       {s.isAdmin ? (
         <>
@@ -98,7 +112,7 @@ export function OcSeriesWarning() {
           .
         </>
       ) : (
-        <>Ask an administrator to confirm it in Settings before approving.</>
+        <>Ask an administrator to confirm it in Settings before generating a quotation.</>
       )}
     </Warning>
   );
@@ -121,10 +135,15 @@ export function OcSeriesWarning() {
  *   That works, which is exactly why nobody would notice it — a queue that anybody
  *   senior can clear looks the same as one with the right person on it.
  *
- * ⚠ IT MATTERS MOST ON THE DIRECTORS' GATE. Approving a quotation is what mints
- *   the order-confirmation number and issues the contract, and the client asked
- *   for that to be the Directors' decision. Until somebody is named, it is not
+ * ⚠ IT MATTERS MOST ON THE DIRECTORS' GATE. Approving a quotation is what turns
+ *   both papers into the contract the customer signs, and the client asked for
+ *   that to be the Directors' decision. Until somebody is named, it is not
  *   anybody's in particular.
+ *
+ * ⚠ IT DOES NOT MINT THE NUMBER, and this comment used to say it did. OCPI-36
+ *   moved the mint to Generate — `OcSeriesWarning` eighty lines above explains
+ *   exactly that, and this warning was never brought into line with it.
+ *   Corrected by the OCPI-40 re-audit.
  *
  * ⚠ IT BLOCKS NOTHING, like the other two. Naming owners is an administrator's
  *   job and nothing here can do it for them.
@@ -146,7 +165,8 @@ export function StepOwnersWarning({ step }: { step: StepKey }) {
     >
       {isDirectorsGate ? (
         <>
-          Approving here mints the order-confirmation number and issues the contract, and the
+          Approving here issues the contract &mdash; it re-heads both papers as the ORDER
+          CONFIRMATION under the number the deal already holds &mdash; and the
           client asked for that to be the Directors&rsquo; decision. Nobody is named, so it falls
           to <b>whoever is an administrator or a process coordinator</b> &mdash; and a person who
           raised the deal still cannot approve it themselves.{" "}

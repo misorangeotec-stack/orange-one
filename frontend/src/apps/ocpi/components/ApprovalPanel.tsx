@@ -5,7 +5,7 @@ import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import PaperSet from "./PaperSet";
 import { CompanyProfileWarning, OcSeriesWarning, StepOwnersWarning } from "./SetupWarnings";
 import { useOcpiStore } from "../store";
-import { decideQuotation, freezeOc, uploadOcPdf } from "../data/ocpiWrites";
+import { decideQuotation, freezeOc, setDealPiPdf, uploadOcPdf } from "../data/ocpiWrites";
 import { fetchDealById } from "../data/ocpiFetch";
 import { fetchStoredPdf } from "../lib/docUrls";
 import { factsForDeal } from "../lib/fieldSpec";
@@ -13,6 +13,7 @@ import {
   quotationDetailFileName, quotationFileName, quotationPdfBlob,
 } from "../lib/quotationPdf";
 import { ocFileName, ocPdfBlob, ocSummaryFileName, resolvedOcDocument } from "../lib/ocPdf";
+import { piFileName, piPdfBlob } from "../lib/piPdf";
 import type { OcpiDeal } from "../types";
 
 /**
@@ -26,12 +27,20 @@ import type { OcpiDeal } from "../types";
  *   sent, not a fresh render from a machine template somebody may have reworded
  *   since. A rebuild is a labelled fallback, never a silent substitution.
  *
- * ⚠ APPROVING MINTS THE NUMBER AND RE-ISSUES THE PAIR, in one action. The two
- *   cannot be split: minting earlier burns a number from a live series on a
- *   quotation that may be rejected, and rendering earlier prints a contract with
- *   no number on it. So `fms_ocpi_decide_quotation` mints, this browser
- *   immediately re-renders both papers with the number and the ORDER
- *   CONFIRMATION heading, uploads them, and freezes them onto the deal.
+ * ⚠ APPROVING STAMPS `oc_at` AND RE-ISSUES THE PAIR. It does NOT mint the number
+ *   — OCPI-36 moved that to Generate (Ritesh Bhai, 02-09-2026), so the serial is
+ *   already on the deal before an approver ever opens it. What the approval adds
+ *   is the stamp, and the stamp is what re-heads both papers as the ORDER
+ *   CONFIRMATION and puts the contract number on them (`paperNo`/`docHeading` in
+ *   lib/format.ts). This browser then re-renders the pair, uploads them, and
+ *   freezes them onto the deal.
+ *
+ * ⚠ THIS COMMENT USED TO SAY "APPROVING MINTS THE NUMBER", and reasoned that
+ *   minting earlier "burns a number from a live series on a quotation that may be
+ *   rejected". That reasoning was overturned deliberately — a paper folder that
+ *   never closes already consumes its number — and the copy below was written
+ *   from it. Corrected by the OCPI-40 re-audit; `fms_ocpi_decide_quotation` keeps
+ *   a mint only as the fallback for deals generated BEFORE the move.
  *
  * ⚠ A FAILED UPLOAD DOES NOT UNWIND THE APPROVAL. The number is minted and the
  *   decision recorded; what is missing is a file that can be produced again.
@@ -69,6 +78,7 @@ export default function ApprovalPanel({
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Blob | null>(null);
   const [detail, setDetail] = useState<Blob | null>(null);
+  const [pi, setPi] = useState<Blob | null>(null);
   const [rebuilt, setRebuilt] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -93,11 +103,37 @@ export default function ApprovalPanel({
     setRebuilt(false);
     void (async () => {
       try {
-        const [storedSummary, storedDetail] = await Promise.all([
+        const [storedSummary, storedDetail, storedPi] = await Promise.all([
           fetchStoredPdf(latest?.pdfPath ?? null),
           fetchStoredPdf(latest?.ocPdfPath ?? null),
+          fetchStoredPdf(latest?.piPdfPath ?? null),
         ]);
         if (cancelled) return;
+
+        /*
+          The PI rebuilds on a miss, like the other two — and unlike them it has
+          no template condition to check first. Every machine issues one.
+        */
+        setPi(
+          storedPi ??
+            (await piPdfBlob({
+              deal,
+              machine,
+              profile: s.profileFor(deal.companyId),
+              salesPage: s.salesPageFor(deal.machineId),
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, deal, machine),
+            })),
+        );
+        /*
+          ⚠ A MISSING PI DOES NOT RAISE THE "REBUILT" BANNER, AND MUST NOT.
+            That banner reads "the approved file could not be found, so check it
+            before printing" — a statement about a document that went missing.
+            Every deal issued before OCPI-36 has no stored PI because none was
+            ever issued, not because one was lost, and raising the banner there
+            would cast doubt on the summary and the OC as well, which ARE the
+            approved bytes. The PI is still rebuilt, because it is deterministic
+            from the deal and a salesperson asking for one should get one.
+        */
 
         if (storedSummary) {
           setSummary(storedSummary);
@@ -171,6 +207,23 @@ export default function ApprovalPanel({
     });
     const summaryPath = await uploadOcPdf(fresh.id, approvedSummary, ocSummaryFileName(fresh));
 
+    /*
+      The Performa Invoice, re-issued under the approved heading with the rest.
+
+      ⚠ NO `hasTemplate` GATE, deliberately. That condition belongs to the
+        detailed sheet alone — 7 of 28 machines carry no OC template and every
+        one of them still issues a PI, which is the whole finding behind OCPI-36:
+        25 of 27 real folders hold a PI and only 12 hold an OC.
+    */
+    const approvedPi = await piPdfBlob({
+      deal: fresh,
+      machine: m,
+      profile,
+      salesPage: s.salesPageFor(fresh.machineId),
+      facts: factsForDeal(s.dryerTypes, s.machineCategories, fresh, m),
+    });
+    const piPath = await uploadOcPdf(fresh.id, approvedPi, piFileName(fresh));
+
     let detailPath: string | undefined;
     let document: Record<string, unknown> = {};
     if (m?.hasTemplate) {
@@ -189,6 +242,8 @@ export default function ApprovalPanel({
     }
 
     await freezeOc(fresh.id, document, detailPath, summaryPath);
+    // Its own write door — see the note on `setDealPiPdf`, and the migration's.
+    await setDealPiPdf(fresh.id, piPath);
   }
 
   async function decide(decision: "approve" | "reject" | "rework") {
@@ -201,7 +256,7 @@ export default function ApprovalPanel({
           await issueApprovedPapers();
         } catch (e) {
           setError(
-            `Approved, and the order-confirmation number is issued — but storing the signed copies ` +
+            `Approved, and both papers are now the order confirmation — but storing the signed copies ` +
               `failed: ${e instanceof Error ? e.message : String(e)}. The documents will be rebuilt ` +
               `from the template when they are printed, and the screen will say so.`,
           );
@@ -238,8 +293,9 @@ export default function ApprovalPanel({
         note={
           rebuilt
             ? rebuiltNote
-            : "Read both papers before deciding — approving issues them as the contract."
+            : "Read every paper before deciding — approving issues them as the contract."
         }
+        /* Summary · PI · OC — PaperSet lands on the first, so the order matters. */
         papers={[
           {
             key: "summary",
@@ -249,12 +305,19 @@ export default function ApprovalPanel({
             missingNote: "The issued summary could not be loaded.",
           },
           {
+            key: "pi",
+            label: "PI",
+            blob: pi,
+            fileName: piFileName(deal, deal.quotationVersionNo || 1),
+            missingNote: "The Performa Invoice could not be loaded or rebuilt.",
+          },
+          {
             key: "detail",
-            label: "Detailed sheet",
+            label: "OC",
             blob: detail,
             fileName: quotationDetailFileName(deal, deal.quotationVersionNo || 1),
             missingNote: machine
-              ? `${machine.name} has no detailed template yet, so the summary is the whole of it. Approving is not blocked.`
+              ? `${machine.name} has no detailed template yet, so the summary and the PI are the whole of it. Approving is not blocked.`
               : "There is no detailed sheet on this deal. Approving is not blocked.",
           },
         ]}
@@ -267,7 +330,7 @@ export default function ApprovalPanel({
             <p className="mt-0.5 text-[13.5px] text-grey-2">
               {blockedBySelf
                 ? "You raised this quotation, so somebody else has to approve it."
-                : "Approving issues the order-confirmation number and re-heads both papers as the ORDER CONFIRMATION the customer signs. Sending it back returns it to the salesperson to edit and regenerate — the quotation number and every earlier version are kept, and no order-confirmation number is used up."}
+                : "Approving re-heads both papers as the ORDER CONFIRMATION the customer signs, under the contract number this deal already holds. Sending it back returns it to the salesperson to edit and regenerate — the numbers and every earlier version are kept. The contract number was taken when the quotation was generated, so neither decision frees it."}
             </p>
           </div>
 

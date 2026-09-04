@@ -6,6 +6,7 @@ import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useOcpiStore } from "../store";
 import { cancelDeal, holdDeal, resumeDeal } from "../data/ocpiWrites";
 import { dmy } from "../lib/format";
+import { dealRef } from "../lib/queues";
 import type { OcpiDeal } from "../types";
 
 /**
@@ -38,14 +39,45 @@ export default function LifecyclePanel({ deal }: { deal: OcpiDeal }) {
 
   const held = deal.status === "on_hold";
   const terminal = deal.status === "closed" || deal.status === "cancelled";
-  const isDraft = deal.status === "draft";
+
+  /*
+    🔴 "NOTHING HAS BEEN ISSUED" IS `quotationNo == null`, NOT `status ===
+       "draft"`. This read `isDraft = deal.status === "draft"`, and both buttons
+       were hidden on it. That was right until OCPI-36 (02-09-2026) moved the
+       mint to Generate: a deal now KEEPS the draft status after it has been
+       given both numbers, had its Summary, PI and OC rendered and — very often —
+       had them sent to the customer.
+
+       So the one state where writing a deal off actually matters was the one
+       state that could not do it. A quotation whose customer went quiet had two
+       options: sit in Drafts for ever, or be DELETED — which loses the contract
+       serial for good and orphans its stored PDFs. Cancel exists precisely to
+       answer "the customer went quiet" (see the note at the top of this file),
+       and it was unreachable there.
+
+       Found by the OCPI-40 re-audit; Ritesh Bhai had asked for exactly this on
+       03-09-2026 — *"it should not be permanently deleted. There should just be
+       an option so that the number can be cancelled."* The feature already
+       existed; this guard was switching it off.
+
+    ⚠ AN UNGENERATED DRAFT STILL OFFERS NEITHER, and still gets Delete. It has
+      burned no number and nobody outside has seen it, so there is nothing to
+      write off — which is what the old comment in `fms_ocpi_cancel` said, and
+      it is still true of THIS case.
+
+    ⚠ ITS TWIN IS THE `v_status = 'draft'` GUARD IN `fms_ocpi_cancel` AND
+      `fms_ocpi_hold`, moved to the same test in the same commit. This panel
+      mirrors the RPC exactly — see the note at the top — so the two must not be
+      allowed to diverge.
+  */
+  const nothingIssued = !deal.quotationNo;
 
   // Once the customer has signed, writing the deal off stops being the
   // salesperson's call. Same rule the RPC enforces.
   const customerSigned = !!deal.csDocPath;
   const mayCancel =
-    !terminal && !isDraft && (s.isProcessCoordinator || (isRaiser && !customerSigned));
-  const mayHold = !terminal && !isDraft && !held && mayAct;
+    !terminal && !nothingIssued && (s.isProcessCoordinator || (isRaiser && !customerSigned));
+  const mayHold = !terminal && !nothingIssued && !held && mayAct;
 
   if (!mayAct && !held) return null;
 
@@ -96,7 +128,9 @@ export default function LifecyclePanel({ deal }: { deal: OcpiDeal }) {
       {(mayHold || mayCancel) && (
         <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="text-[13px] text-grey">
-            If this deal has stalled, say so here rather than leaving it in somebody&rsquo;s queue.
+            If this deal has stalled, say so here rather than leaving it in a queue &mdash; or, on a
+            quotation that was generated and never went anywhere, rather than deleting it and losing
+            its number.
           </p>
           <div className="flex flex-wrap gap-2">
             {mayHold && (
@@ -122,7 +156,7 @@ export default function LifecyclePanel({ deal }: { deal: OcpiDeal }) {
           <p className="text-[13.5px] text-grey">
             {ask === "cancel" ? (
               <>
-                <b className="text-navy">{deal.ocNo ?? deal.quotationNo ?? deal.customerName}</b> will
+                <b className="text-navy">{dealRef(deal)}</b> will
                 be written off and will leave every queue.{" "}
                 <b className="text-navy">This cannot be undone</b> — the number stays used, and the
                 quotation and any documents are kept as the record of what happened.

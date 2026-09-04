@@ -12,6 +12,7 @@ import {
   quotationDetailFileName, quotationFileName, quotationPdfBlob,
 } from "../../lib/quotationPdf";
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
+import { piPdfBlob, piFileName } from "../../lib/piPdf";
 import { docHeading } from "../../lib/format";
 import {
   EMPTY_DRAFT, dealFacts, draftFromDeal, factsForDeal, payloadFromDraft,
@@ -54,6 +55,14 @@ import { missingForGenerate, missingForSubmit } from "../../lib/completeness";
 export interface GeneratedPapers {
   summary: Blob;
   detail: Blob | null;
+  /**
+   * The Performa Invoice (OCPI-36).
+   *
+   * ⚠ NEVER NULL IN PRACTICE, unlike `detail`. The PI does not depend on a
+   *   machine template — it renders for every machine, in a shorter form when
+   *   there is no sales page — so a null here means the render itself failed.
+   */
+  pi: Blob | null;
   /** The machine's name when it has no detailed template, so the screen can say which. */
   machineWithoutTemplate: string | null;
 }
@@ -318,6 +327,22 @@ export function useQuotationDraft(dealId?: string) {
             })
           : null;
 
+      /*
+        The Performa Invoice — the paper that always goes out (OCPI-36).
+
+        ⚠ IT IS RENDERED FOR EVERY MACHINE, with no `hasTemplate` condition. That
+          gate belongs to the detailed sheet alone: 7 of 28 machines carry no OC
+          template, and every one of them still issues a PI. A machine with no
+          SALES page simply renders the shorter form.
+      */
+      const pi = await piPdfBlob({
+        deal: rendered,
+        machine,
+        profile,
+        salesPage: s.salesPageFor(rendered.machineId),
+        facts: factsForDeal(s.dryerTypes, s.machineCategories, rendered, machine),
+      });
+
       // A failed upload does not unwind the revision: it is already frozen, and
       // the PDFs are deterministic, so they can be produced again at any time.
       //
@@ -333,6 +358,9 @@ export function useQuotationDraft(dealId?: string) {
             id, versionNo, detail, quotationDetailFileName(rendered, versionNo), "detail",
           );
         }
+        await uploadQuotationPdf(
+          id, versionNo, pi, piFileName(rendered, versionNo), "pi",
+        );
       } catch (e) {
         setError(
           `The quotation was generated, but storing a copy failed: ${
@@ -348,6 +376,7 @@ export function useQuotationDraft(dealId?: string) {
       return {
         summary,
         detail,
+        pi,
         machineWithoutTemplate: machine && !machine.hasTemplate ? machine.name : null,
       };
     } catch (e) {

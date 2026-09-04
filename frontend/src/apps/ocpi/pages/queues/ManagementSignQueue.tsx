@@ -6,8 +6,12 @@ import { useOcpiStore } from "../../store";
 import DueCell from "@/shared/components/ui/DueCell";
 import { dealRef, dueIsoFor } from "../../lib/queues";
 import { signedPages } from "../../lib/signatures";
+import { stepByKey } from "../../lib/steps";
 import { dmy, fmtDealValue } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
+
+/** One source for the step's name and its one-liner — see CustomerSignQueue. */
+const STEP = stepByKey("management_signoff");
 
 /**
  * Signed by the customer, waiting to be countersigned.
@@ -116,10 +120,8 @@ export default function ManagementSignQueue() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-[20px] font-bold text-navy">Countersign order confirmations</h1>
-        <p className="mt-0.5 text-[13.5px] text-grey-2">
-          Signed by the customer and waiting on management. Countersigning completes the deal.
-        </p>
+        <h1 className="text-[20px] font-bold text-navy">{STEP?.title}</h1>
+        {STEP?.blurb && <p className="mt-0.5 text-[13.5px] text-grey-2">{STEP.blurb}</p>}
       </div>
 
       <QueueTable

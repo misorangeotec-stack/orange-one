@@ -373,13 +373,47 @@ const DETAIL_SHEET_FIELDS: readonly (keyof QuotationDraft)[] = [
   "dryerChambers",
 ];
 
+/**
+ * The four shipment rows, and the answer that decides whether each PRINTS.
+ *
+ * 🔴 WITHOUT THIS THE WARNING NAMES ROWS THE CONTRACT WILL NOT CONTAIN. Head,
+ *    ink, spares and centering have no visibility predicate in `branching.ts` —
+ *    deliberately, RULE 8, the client's decision of 01-Sep-2026 — so
+ *    `isVisible` returns true for all four on every deal. The filter below then
+ *    reported "Ink — how it ships" as a blank that would print, on a deal with
+ *    no ink at all.
+ *
+ *    But `shipmentLines` in ocPdf.ts prints a row only when its mode is
+ *    non-empty OR its separate-invoice answer is non-null. Both blank ⇒ NO ROW,
+ *    so there is no blank line and nothing to warn about. The warning was
+ *    measuring the wrong thing.
+ *
+ * ⚠ THE ROW STILL WARNS WHEN IT REALLY WILL BE BLANK — separate-invoice
+ *   answered, ship mode not — because then the row DOES print, with an empty
+ *   cell where the mode belongs. That is the case this list exists to catch.
+ *
+ * ⚠ THE FIX IS TO THE WARNING, NOT TO THE FORM. Adding visibility predicates
+ *   here would have hidden and then NULLED live answers: 19 deals carry
+ *   `incl_centering IS NULL`, three of them with centering answers stored.
+ *   Measured during the OCPI-40 re-audit, which is how the reversal was caught.
+ */
+const PRINTS_ONLY_WITH: Partial<Record<keyof QuotationDraft, keyof QuotationDraft>> = {
+  headShipMode: "headSeparateInvoice",
+  inkShipMode: "inkSeparateInvoice",
+  sparesShipMode: "sparesSeparateInvoice",
+  centeringShipMode: "centeringSeparateInvoice",
+};
+
 export function missingForDetailSheet(
   d: QuotationDraft,
   deal: DealFacts = NO_DEAL_FACTS,
 ): string[] {
-  return DETAIL_SHEET_FIELDS.filter(
-    (k) => isVisible(k, d, deal) && !isAnswered(d, k),
-  ).map((k) => FIELD_LABEL[k]);
+  return DETAIL_SHEET_FIELDS.filter((k) => {
+    if (!isVisible(k, d, deal) || isAnswered(d, k)) return false;
+    const partner = PRINTS_ONLY_WITH[k];
+    // Not a shipment row, or the row will print anyway: warn as before.
+    return partner === undefined ? true : d[partner] !== null;
+  }).map((k) => FIELD_LABEL[k]);
 }
 
 /* ── Finding the field on the page ────────────────────────────────────────── */

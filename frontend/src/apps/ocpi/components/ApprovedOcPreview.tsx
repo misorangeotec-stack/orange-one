@@ -4,6 +4,7 @@ import PaperSet from "./PaperSet";
 import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
 import { ocFileName, ocPdfBlob, ocSummaryFileName } from "../lib/ocPdf";
+import { piFileName, piPdfBlob } from "../lib/piPdf";
 import { quotationPdfBlob } from "../lib/quotationPdf";
 import { factsForDeal } from "../lib/fieldSpec";
 import type { OcpiDeal } from "../types";
@@ -42,6 +43,7 @@ export default function ApprovedOcPreview({
 
   const [summary, setSummary] = useState<Blob | null>(null);
   const [detail, setDetail] = useState<Blob | null>(null);
+  const [pi, setPi] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(true);
   const [rebuilt, setRebuilt] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,11 +55,35 @@ export default function ApprovedOcPreview({
     setRebuilt(false);
     void (async () => {
       try {
-        const [storedSummary, storedDetail] = await Promise.all([
+        const [storedSummary, storedDetail, storedPi] = await Promise.all([
           fetchStoredPdf(deal.ocSummaryPdfPath),
           fetchStoredPdf(deal.ocPdfPath),
+          fetchStoredPdf(deal.piPdfPath),
         ]);
         if (cancelled) return;
+
+        // Rebuilt on a miss like the others, and with no template condition —
+        // every machine issues a Performa Invoice.
+        setPi(
+          storedPi ??
+            (await piPdfBlob({
+              deal,
+              machine,
+              profile: s.profileFor(deal.companyId),
+              salesPage: s.salesPageFor(deal.machineId),
+              facts: factsForDeal(s.dryerTypes, s.machineCategories, deal, machine),
+            })),
+        );
+        /*
+          ⚠ A MISSING PI DOES NOT RAISE THE "REBUILT" BANNER, AND MUST NOT.
+            That banner reads "the approved file could not be found, so check it
+            before printing" — a statement about a document that went missing.
+            Every deal issued before OCPI-36 has no stored PI because none was
+            ever issued, not because one was lost, and raising the banner there
+            would cast doubt on the summary and the OC as well, which ARE the
+            approved bytes. The PI is still rebuilt, because it is deterministic
+            from the deal and a salesperson asking for one should get one.
+        */
 
         if (storedSummary) {
           setSummary(storedSummary);
@@ -102,7 +128,7 @@ export default function ApprovedOcPreview({
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deal.id, deal.ocPdfPath, deal.ocSummaryPdfPath, deal.updatedAt, machine?.id]);
+  }, [deal.id, deal.ocPdfPath, deal.ocSummaryPdfPath, deal.piPdfPath, deal.updatedAt, machine?.id]);
 
   const rebuiltNote =
     "Rebuilt from the template — the approved file could not be found, so check it before printing.";
@@ -113,6 +139,7 @@ export default function ApprovedOcPreview({
         busy={busy}
         title={deal.ocNo ?? "Order confirmation"}
         note={rebuilt ? rebuiltNote : note}
+        /* Summary · PI · OC — PaperSet lands on the first, so the order matters. */
         papers={[
           {
             key: "summary",
@@ -122,12 +149,20 @@ export default function ApprovedOcPreview({
             missingNote: "The approved summary could not be loaded.",
           },
           {
+            key: "pi",
+            label: "PI",
+            blob: pi,
+            fileName: piFileName(deal),
+            missingNote:
+              "This deal was approved before the Performa Invoice was added to the module, so none was filed against it.",
+          },
+          {
             key: "detail",
-            label: "Detailed sheet",
+            label: "OC",
             blob: detail,
             fileName: ocFileName(deal),
             missingNote: machine
-              ? `${machine.name} has no detailed template, so the summary is the whole of this contract.`
+              ? `${machine.name} has no detailed template, so the summary and the PI are the whole of this contract.`
               : "There is no detailed sheet on this deal.",
           },
         ]}

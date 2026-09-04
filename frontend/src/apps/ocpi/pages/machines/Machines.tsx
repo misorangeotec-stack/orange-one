@@ -219,7 +219,43 @@ export default function Machines() {
       ],
       hint: "P8D's deck is headed OFFER QUOTE — check before changing." },
     { key: "machineModelNo", label: "Manufacturer's model no.", type: "text",
-      hint: "e.g. HM1800B-TK24. Available in templates as {{machine_model_no}}." },
+      hint: "e.g. HM1800B-TK24. Available in templates as {{machine_model_no}}. It also opens the Performa Invoice's subject line — “Model No: …” — which is omitted entirely when this is blank rather than printing a gap." },
+    /*
+      🔴 THE THREE PERFORMA-INVOICE FIELDS, AND THE ONE PLACE IN THIS MODULE WHERE
+         BLANK MEANS *OMIT* (OCPI-36). Everywhere else an unanswered value rules an
+         underscore run on the paper, on purpose, because the gap is a question
+         somebody must answer. These are not that: a Surat-built Homer K24 has no
+         country of origin to state, and a blank would invent a question.
+
+         The live papers settle it. Of 34 real PI files, 4 carry an HSN code, 2 a
+         country of origin, 1 a manufacturer, and 30 carry none of the three —
+         every one that does is an IMPORTED machine. Leave them empty on a
+         domestic model; that is the correct answer, not an unfinished one.
+    */
+    { key: "hsnCode", label: "HSN code", type: "text",
+      hint: "Prints on the Performa Invoice beside the model, e.g. “HSN CODE: 84433910”. Leave blank on a domestic machine — the line is then left off the invoice entirely, not printed empty." },
+    { key: "manufacturer", label: "Manufacturer (OEM)", type: "text",
+      hint: "Prints as “MFG: HAN GLORY (HONG KONG) LIMITED” on the Performa Invoice. Blank leaves the line off. Only imported machines carry one." },
+    { key: "countryOfOrigin", label: "Country of origin", type: "text",
+      hint: "Prints on the Performa Invoice and in its Terms, e.g. “HONG KONG , CHINA”. Blank leaves both off — a Surat-built machine has none to state." },
+    {
+      /*
+        ⚠ THE PAGE IS SHARED ACROSS A FAMILY, WHICH IS WHY THIS IS A PICKER AND
+          NOT A BODY OF TEXT ON THE MACHINE. One "Key Benefits of Alpha II" page
+          serves the 1.8 m, 1.9 m and 2.2 m models; one "KoloRado ALPHA III" page
+          serves the 8-, 16- and 24-head Alpha 3.2s. Copying the copy onto each
+          machine would mean three places to correct, which will not stay in step.
+
+        ⚠ NONE IS A REAL ANSWER. Seven machines have no page and none is being
+          invented for them; their PI simply prints the 2-page form, which folder
+          107's ink and dryer invoices prove is correct.
+      */
+      key: "salesPageId", label: "Performa Invoice sales page", type: "select",
+      options: s.salesPages
+        .filter((p) => p.active)
+        .map((p) => ({ value: p.id, label: `${p.name} — ${p.heading}` })),
+      hint: "Page 2 of this machine's Performa Invoice. Shared across a family — several models point at one page. Leave it unset and the invoice prints without a sales page, which is a correct, shorter form and not a failure.",
+    },
     { key: "signoffStyle", label: "Sign-off wording", type: "choice",
       options: [
         { value: "approved_by", label: "Prepared By / Approved By" },
@@ -272,6 +308,10 @@ export default function Machines() {
           optChillingSystem: "",
           docTitle: "ORDER CONFIRMATION",
           machineModelNo: "",
+          hsnCode: "",
+          manufacturer: "",
+          countryOfOrigin: "",
+          salesPageId: "",
           signoffStyle: "approved_by",
           introText: "",
           sortOrder: "500",
@@ -293,6 +333,10 @@ export default function Machines() {
           optChillingSystem: m.optChillingSystem ?? "",
           docTitle: m.docTitle,
           machineModelNo: m.machineModelNo ?? "",
+          hsnCode: m.hsnCode ?? "",
+          manufacturer: m.manufacturer ?? "",
+          countryOfOrigin: m.countryOfOrigin ?? "",
+          salesPageId: m.salesPageId ?? "",
           signoffStyle: m.signoffStyle,
           introText: m.introText ?? "",
           sortOrder: String(m.sortOrder),
@@ -313,6 +357,11 @@ export default function Machines() {
             optChillingSystem: values.optChillingSystem || null,
             docTitle: values.docTitle,
             machineModelNo: values.machineModelNo || null,
+            // "" is stored as null, and null PRINTS NOTHING on the invoice.
+            hsnCode: values.hsnCode || null,
+            manufacturer: values.manufacturer || null,
+            countryOfOrigin: values.countryOfOrigin || null,
+            salesPageId: values.salesPageId || null,
             signoffStyle: values.signoffStyle,
             introText: values.introText || null,
             sortOrder: Number(values.sortOrder) || 500,

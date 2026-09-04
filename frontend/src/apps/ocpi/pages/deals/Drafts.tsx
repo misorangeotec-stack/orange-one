@@ -24,7 +24,8 @@ export default function Drafts() {
         <div>
           <h1 className="text-[20px] font-bold text-navy">Drafts</h1>
           <p className="mt-0.5 text-[13.5px] text-grey-2">
-            Only you can see these. No quotation number is issued until one is finalised.
+            Only you can see these. Both numbers are issued the moment you press Generate, and
+            they are not given back.
           </p>
         </div>
         {s.canRaise && <Button onClick={() => nav("/ocpi/new")}>New quotation</Button>}

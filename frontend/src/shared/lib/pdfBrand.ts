@@ -130,6 +130,21 @@ const GLYPH_FALLBACK: Record<string, string> = {
   "：": ": ",                                              // U+FF1A fullwidth colon
   "，": ", ",                                              // U+FF0C fullwidth comma
   "（": " (", "）": ") ",                                  // U+FF08 / U+FF09
+  /**
+   * SQUARE BULLETS, which is what Word gives a second-level list — and the
+   * OCPI Performa Invoice's bank block is exactly that: four indented lines
+   * under "Bank Details :".
+   *
+   * ⚠ THIS ONE DELETED A MARKER RATHER THAN A LETTER, so nothing looked
+   *   misspelled and nothing looked missing — the four bank lines simply sat
+   *   there unmarked, and the page still read as finished. Caught by punching
+   *   folder 127 in and extracting the rendered PI: Bushra's paper has an item
+   *   at the bullet gutter on all four rows, ours had NO text item at that x
+   *   at all. Poppins carries • (U+2022) but neither square, so the round
+   *   bullet is what they become; at 8pt in grey it still reads as subordinate
+   *   to the 9pt • above it.
+   */
+  "▪": "•", "▫": "•",                                      // U+25AA / U+25AB
 };
 const GLYPH_RE = new RegExp(`[${Object.keys(GLYPH_FALLBACK).join("")}]`, "g");
 

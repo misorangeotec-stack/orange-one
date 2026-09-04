@@ -30,9 +30,17 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
 /**
  * Create or update a draft quotation. Returns the deal id.
  *
- * ⚠ NO NUMBER IS MINTED. `quotation_no` stays null for the whole of a draft's
- *   life — an abandoned draft must not burn a number from a series customers
- *   already hold. The submit RPC allocates one (phase 4).
+ * ⚠ NO NUMBER IS MINTED **BY SAVING**. Saving a draft allocates nothing; both
+ *   serials are taken by `fms_ocpi_generate_quotation`, and from OCPI-36 that
+ *   includes the ORDER-CONFIRMATION number as well as the quotation one. This
+ *   note used to end "the submit RPC allocates one (phase 4)", which has been
+ *   wrong since the mint moved to Generate — corrected by the OCPI-40 re-audit.
+ *
+ * ⚠ SO A SAVED-BUT-UNGENERATED DRAFT HAS NO NUMBER AT ALL, and that is still the
+ *   test several screens use for "nothing has been issued yet" — Drafts, My
+ *   deals, All deals, and (from the OCPI-40 re-audit) whether a deal is deleted
+ *   or cancelled. `quotation_no is null` is the honest form of that question;
+ *   `status = 'draft'` stopped being it when the mint moved.
  */
 export async function saveDraft(
   payload: Record<string, unknown>,
@@ -115,7 +123,7 @@ export async function uploadQuotationPdf(
   versionNo: number,
   blob: Blob,
   fileName: string,
-  slot: "summary" | "detail" = "summary",
+  slot: "summary" | "detail" | "pi" = "summary",
 ): Promise<string> {
   const path = `${dealId}/quotation/v${versionNo}-${fileName}`;
   const up = await supabase.storage
@@ -244,6 +252,22 @@ export async function freezeOc(
     p_document: document,
     p_path: path ?? null,
     p_summary_path: summaryPath ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * File the approved Performa Invoice on the deal (OCPI-36).
+ *
+ * ⚠ ITS OWN RPC RATHER THAN A FIFTH ARGUMENT TO `freezeOc`. Adding a parameter
+ *   there would either overload the function — leaving PostgREST two candidates
+ *   for one call — or need the live 4-argument version dropped while the
+ *   deployed frontend is still calling it. The migration says the same at length.
+ */
+export async function setDealPiPdf(dealId: string, path: string): Promise<void> {
+  const { error } = await db.rpc("fms_ocpi_set_deal_pi_pdf", {
+    p_deal: dealId,
+    p_path: path,
   });
   if (error) throw new Error(error.message);
 }

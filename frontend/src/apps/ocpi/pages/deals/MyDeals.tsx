@@ -24,9 +24,20 @@ export default function MyDeals() {
   const s = useOcpiStore();
   const rows = useMemo(() => {
     const tags = new Set(s.salespersonTags);
+    /*
+      🔴 "HAS A NUMBER", NOT "IS NOT A DRAFT". This read `d.status !== "draft"`,
+         and since OCPI-36 a deal keeps that status until it is SENT for approval
+         — so a salesperson's own generated quotations, numbered and PDF'd and
+         possibly already with the customer, were missing from their own list. A
+         rep with three live quotations read "Nothing of yours yet". Found by the
+         OCPI-40 re-audit, on the three deals typed in that day.
+
+      ⚠ A NEVER-GENERATED DRAFT STILL STAYS OUT, and belongs only on Drafts —
+        that is what `quotationNo` being null means and why it is the test.
+    */
     return s.deals.filter(
       (d) =>
-        d.status !== "draft" &&
+        (d.status !== "draft" || !!d.quotationNo) &&
         (d.raisedBy === s.userId ||
           (d.salespersonUserId ? d.salespersonUserId === s.userId : false) ||
           (d.salespersonName ? tags.has(d.salespersonName) : false)),
@@ -38,13 +49,14 @@ export default function MyDeals() {
       <div>
         <h1 className="text-[20px] font-bold text-navy">My deals</h1>
         <p className="mt-0.5 text-[13.5px] text-grey-2">
-          Quotations you raised, plus any carrying your salesperson name.
+          Quotations you raised, plus any carrying your salesperson name — from the moment they
+          are generated.
         </p>
       </div>
       <DealsTable
         rows={rows}
         emptyTitle="Nothing of yours yet"
-        emptyMessage="Quotations you raise — or that carry your salesperson name — appear here once finalised."
+        emptyMessage="Quotations you raise — or that carry your salesperson name — appear here once generated."
       />
     </div>
   );

@@ -128,3 +128,35 @@
 .hub-root h6 {
   font-family: var(--font-sans);
 }
+
+/* ---- OCPI · the field a missing-answers panel just jumped to ----
+   Written as real CSS rather than Tailwind ring classes toggled from a .ts
+   file: those would have to survive the JIT content scan as literal strings in
+   a module it does not read as markup, and a class that silently fails to
+   compile is a flash nobody ever sees.
+
+   ⚠ THE RING IS NOT DECORATION. Several of the fields this lands on are Yes/No
+     pairs or choice buttons, and moving the caret into one button among a dozen
+     is not a visible event — without it the page appears to have scrolled
+     somewhere for no reason. Driven by `focusField` in
+     apps/ocpi/lib/completeness.ts; the 1.6s here and FLASH_MS there are the
+     same number. */
+@keyframes ocpi-field-flash {
+  0%,
+  70% {
+    box-shadow: 0 0 0 3px rgb(255 106 31 / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgb(255 106 31 / 0);
+  }
+}
+.ocpi-field-flash {
+  border-radius: 0.75rem;
+  animation: ocpi-field-flash 1.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ocpi-field-flash {
+    animation-duration: 1ms;
+    box-shadow: 0 0 0 3px rgb(255 106 31 / 0.55);
+  }
+}

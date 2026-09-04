@@ -16,11 +16,27 @@ import { advanceFocus } from "@/shared/lib/advanceFocus";
  *   wraps; PillToggle is `whitespace-nowrap` and would overflow a form column on
  *   "With the machine / Separate shipment". Do not merge them.
  *
- * ⚠ ONLY FOR A FIXED VOCABULARY DECLARED IN CODE — never a master list, however
- *   few rows it holds today. There are three companies and the OCPI dryer master
- *   went from zero rows to six in one evening; a strip sized to today's data
- *   breaks the first time somebody adds a row, and nobody connects the broken
- *   layout to the master they edited.
+ * ⚠ FOR A SHORT VOCABULARY — a list declared in code, or a MASTER whose growth is
+ *   an admin decision rather than something a user invents mid-form.
+ *
+ *   This ⚠ used to read "never a master list, however few rows it holds today",
+ *   on the reasoning that a strip sized to today's data breaks the first time
+ *   somebody adds a row. That premise is no longer true: the radiogroup below is
+ *   `flex-wrap`, so option N+1 wraps onto a second line instead of overflowing
+ *   the column. Four call sites had already made the exception deliberately —
+ *   dryer category (OCPI-8), print head (OCPI-14), selling entity (OCPI-25) and
+ *   type of ink (OCPI-26) — and a rule that four callers correctly break is a
+ *   rule stated wrongly, not four mistakes.
+ *
+ * 🔴 THE REAL BOUNDARY IS SEARCHABILITY, and it still rules out most lists. A
+ *    strip cannot be searched or scrolled, so anything that can run to dozens of
+ *    rows — customers, machines, people, item groups — is a `Combobox`, however
+ *    few rows it holds on the day you look. Ask what the list becomes after two
+ *    years of use, not what it holds now.
+ *
+ * ⚠ A MASTER-DRIVEN STRIP MUST FEED THE CURRENT VALUE BACK IN as an option (see
+ *   `masterOpts` in QuotationForm). This component renders a value it cannot
+ *   match as NOTHING SELECTED, and from there a single ↓ overwrites it.
  */
 
 export interface Choice {

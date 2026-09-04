@@ -42,6 +42,7 @@ export interface Revision {
   /** The pair of papers frozen at this revision. Detail is null with no template. */
   pdfPath: string | null;
   ocPdfPath: string | null;
+  piPdfPath: string | null;
 }
 
 /** snake_case payload key → the label the form and the PDF use. */
@@ -129,6 +130,7 @@ export function revisionsOf(versions: QuotationVersion[]): Revision[] {
     fxRate: v.fxRate,
     pdfPath: v.pdfPath,
     ocPdfPath: v.ocPdfPath,
+    piPdfPath: v.piPdfPath,
   }));
 }
 

@@ -73,13 +73,52 @@ export type StepKey =
 /** One scope — a deal is one entity from first draft to Finance receipt. */
 export type StepScope = "deal";
 
-export type StepDef = StepDefBase<StepKey, StepScope>;
+/**
+ * OCPI's own extension of the shared step shape: the one-liner (OCPI-16).
+ *
+ * ⚠ IT IS DECLARED HERE, NOT ON `StepDefBase`. That interface documents itself as
+ *   the contract the cross-FMS Control Center reads, and the Control Center has no
+ *   use for this — it counts work, it does not brief anybody. Adding a field there
+ *   would put it in front of nine other FMS modules that did not ask for it.
+ *
+ * ⚠ OPTIONAL, AND MOST STEPS HAVE NONE. "Approve Quotation" and "Finance Receipt"
+ *   already say what they are; a line under them would be filler. Every renderer
+ *   must therefore show NOTHING AT ALL when it is absent — not an empty paragraph
+ *   that leaves a gap under four of the six headings.
+ */
+export type StepDef = StepDefBase<StepKey, StepScope> & {
+  /** One line saying what the person who opens this step actually does. */
+  blurb?: string;
+};
 
+/**
+ * ⚠ THE NAME LIVES HERE AND NOWHERE ELSE (OCPI-16). Until 02-09 the two signature
+ *   steps were named in three places that had already drifted apart — `title` here,
+ *   a second hardcoded list in `OcpiStepper.tsx`, and a third, differently-worded
+ *   `<h1>` on each queue page. The stepper now reads this array and the two queue
+ *   headings read `title`, so a rename is one edit again.
+ *
+ * ⚠ `short` IS WIDTH-CONSTRAINED. It captions a stage-rail circle and a Dashboard
+ *   KPI tile, both of which truncate to one line. "Cust Copy" / "Mgmt Copy" are
+ *   sized to the "Cust Sign" / "Mgmt Sign" they replaced; do not lengthen them.
+ */
 export const STEPS: StepDef[] = [
   { key: "quotation",          index: 1, title: "Quotation",                 short: "Quotation", scope: "deal", noQueue: true },
   { key: "quotation_approval", index: 2, title: "Approve Quotation",         short: "Qtn Appr",  scope: "deal" },
-  { key: "customer_signoff",   index: 3, title: "Customer Signature",        short: "Cust Sign", scope: "deal" },
-  { key: "management_signoff", index: 4, title: "Management Signature",      short: "Mgmt Sign", scope: "deal" },
+  /*
+    Named after the ACTION, not after a person signing: by the time a deal reaches
+    either of these steps the signature already exists on paper, and the work is
+    getting the scan onto the record.
+
+    ⚠ THE MANAGEMENT LINE STOPS AT THE UPLOAD. Step 5 is "Hand Over to Finance",
+      immediately after it — describing that handover here would leave a reader
+      asking why the process has both. Settled with Ritesh Bhai on 01-09-2026,
+      knowing step 5 exists.
+  */
+  { key: "customer_signoff",   index: 3, title: "Upload Customer Signed Copy",   short: "Cust Copy", scope: "deal",
+    blurb: "Upload the scanned copy the customer has signed." },
+  { key: "management_signoff", index: 4, title: "Upload Management Signed Copy", short: "Mgmt Copy", scope: "deal",
+    blurb: "Upload the copy signed by management." },
   { key: "finance_handover",   index: 5, title: "Hand Over to Finance",      short: "To Finance", scope: "deal" },
   { key: "finance_receipt",    index: 6, title: "Finance Receipt",           short: "Fin Recd",  scope: "deal" },
   // ── Retired at the stage-F cutover. Nothing new arrives here. ─────────────

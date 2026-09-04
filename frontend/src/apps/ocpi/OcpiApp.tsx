@@ -15,6 +15,8 @@ import EditDraft from "./pages/deals/EditDraft";
 import DealDetail from "./pages/deals/DealDetail";
 import Machines from "./pages/machines/Machines";
 import MachineTemplate from "./pages/machines/MachineTemplate";
+import SalesPages from "./pages/machines/SalesPages";
+import SalesPageEditor from "./pages/machines/SalesPageEditor";
 import QuotationApprovalQueue from "./pages/queues/QuotationApprovalQueue";
 import CustomerSignQueue from "./pages/queues/CustomerSignQueue";
 import ManagementSignQueue from "./pages/queues/ManagementSignQueue";
@@ -145,6 +147,18 @@ export default function OcpiApp() {
           */}
           <Route path="machines" element={<Loaded><RequireMasterOwner type="machine"><Machines /></RequireMasterOwner></Loaded>} />
           <Route path="machines/:id" element={<Loaded><RequireMasterOwner type="machine"><MachineTemplate /></RequireMasterOwner></Loaded>} />
+
+          {/*
+            The Performa Invoice's page 2, governed by whoever governs machines.
+
+            🔴 DELIBERATELY NOT UNDER `machines/…`. `machines/:id` above is a
+               wildcard segment, so a sibling `machines/sales-pages` would be
+               swallowed by it and render the machine template for a machine whose
+               id is the literal string "sales-pages" — a blank screen with no
+               error, which is the hardest kind of routing fault to see.
+          */}
+          <Route path="sales-pages" element={<Loaded><RequireMasterOwner type="machine"><SalesPages /></RequireMasterOwner></Loaded>} />
+          <Route path="sales-pages/:id" element={<Loaded><RequireMasterOwner type="machine"><SalesPageEditor /></RequireMasterOwner></Loaded>} />
 
           <Route path="*" element={<NotFound />} />
         </Route>
