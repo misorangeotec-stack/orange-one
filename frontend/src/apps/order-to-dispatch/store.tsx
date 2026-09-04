@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
+import { CUSTOMER_ACTORS_QK, fetchCustomerOrderActors } from "./data/customerOrgs";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import {
   DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
@@ -443,6 +444,23 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   // directory itself is RLS-scoped, which is why this is a separate read).
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
+  /**
+   * Which logins belong to a CUSTOMER, and who we named to act on their orders.
+   *
+   * ⚠ ITS OWN QUERY, not a member of fetchDispatchData's Promise.all — that call
+   *   destructures BY POSITION and says so in capitals; adding a line there shifts
+   *   every binding after it, silently, because every row is `any`.
+   *
+   * Two rows today, and none until Setup → Customer Logins is used, so `staleTime`
+   * is long: this is configuration, not traffic.
+   */
+  const { data: customerActors } = useQuery({
+    queryKey: CUSTOMER_ACTORS_QK,
+    queryFn: fetchCustomerOrderActors,
+    enabled: !!session.user,
+    staleTime: 5 * 60_000,
+  });
+
   const stepOwners = data?.stepOwners ?? [];
   const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
@@ -657,8 +675,41 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const assigneeOfStep = (orderId: string | null, stepKey: string): string | null =>
       orderId ? assigneeByKey.get(orderId + '|' + stepKey) ?? null : null;
 
+    /**
+     * Was this order raised by a CUSTOMER whose named recipients include me?
+     *
+     * Mirrors `public.fms_dispatch_is_customer_recipient`. Returns false for every
+     * staff-raised order — the map is empty until a customer login exists — so this
+     * is a pure widening and changes nothing about how the module behaves today.
+     */
+    const customerRecipientsByRaiser = new Map<string, string[]>();
+    for (const a of customerActors ?? []) customerRecipientsByRaiser.set(a.profileId, a.notifyUserIds);
+    const isCustomerRecipientOf = (raisedBy: string | null): boolean =>
+      !!raisedBy && (customerRecipientsByRaiser.get(raisedBy)?.includes(uid) ?? false);
+
     const canActOn = (stepKey: OwnerStepKey, o: DispatchOrder): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
+      /**
+       * NAMED AGAINST THIS CUSTOMER — the client half of OD-13's recipient rule.
+       *
+       * ⚠ THE PLACEMENT IS THE POINT, and it mirrors the server line for line.
+       *   Before the assignee check, because `fms_dispatch_step_assignees` is
+       *   `unique (order_id, step_key)`: once one person is assigned, the branch
+       *   below returns early and every OTHER named recipient is refused — which
+       *   quietly re-creates the single-point-of-failure that a LIST of recipients
+       *   (decision Q8) exists to avoid.
+       *
+       * ⚠ AND IT IS HERE RATHER THAN IN `isStepOwner`, deliberately. `isStepOwner`
+       *   also answers "do I own this step ANYWHERE" for the nav and the My Work
+       *   feed; widening it would give a recipient a nav entry for every step of a
+       *   module they own no step in. The authority is over THIS ORDER, so it
+       *   belongs on the function that takes one.
+       *
+       *   Without this, the RLS lets the clerk read the order and the client still
+       *   drops it out of their queue — the same symptom from two different bugs,
+       *   and this one throws no error to find it by.
+       */
+      if (isCustomerRecipientOf(o.raisedBy)) return true;
       // A REASSIGNMENT MOVES THE WORK. While an assignee is set they are the only
       // non-admin who may act - deliberately NOT an OR with the location's owners,
       // or the step would stay in their queue too. Mirrors fms_dispatch_can_act.

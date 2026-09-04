@@ -128,11 +128,31 @@ Deno.serve(async (req) => {
     const name = String(body.name ?? "").trim();
     const email = String(body.email ?? "").trim();
     const phone = String(body.phone ?? "").trim();
+    // ---- EXTERNAL (customer) ACCOUNTS — OD-13 -------------------------------
+    // A customer login is not one of our people. Two rules differ, and both matter:
+    //
+    //   * IT GETS A REAL PASSWORD, typed by the admin, never derived from a mobile
+    //     number. "Your password is your phone number" is a reasonable convention
+    //     inside the company and an indefensible one for an outside firm — and it
+    //     would be re-pinned to the phone on every later admin save (store.tsx:343,
+    //     exempted in the same change).
+    //   * THE MOBILE NUMBER IS OPTIONAL, because it is no longer load-bearing.
+    //
+    // Everything below this block is byte-identical for staff. `isExternal` absent
+    // or false takes exactly the path it always took.
+    const isExternal = body.isExternal === true;
+    const password = String(body.password ?? "").trim();
     if (!name) return json(400, { error: "name required" });
     if (!email) return json(400, { error: "email required" });
-    // The mobile number is the user's initial password, so it must satisfy the
-    // auth minimum length.
-    if (phone.length < 6) return json(400, { error: "phone (mobile) required, min 6 characters — it is the initial password" });
+    if (isExternal) {
+      if (password.length < 6) {
+        return json(400, { error: "an external (customer) login needs a password of at least 6 characters" });
+      }
+    } else {
+      // The mobile number is the user's initial password, so it must satisfy the
+      // auth minimum length.
+      if (phone.length < 6) return json(400, { error: "phone (mobile) required, min 6 characters — it is the initial password" });
+    }
     const role = (body.role as AppRole) ?? "employee";
     const departmentId = (body.departmentId as string | null) ?? null;
     // The four organisation fields. `designation` (text) is the legacy mirror
@@ -174,11 +194,14 @@ Deno.serve(async (req) => {
     // Create the auth user with the mobile number as the initial password (email
     // pre-confirmed). The on_auth_user_created trigger inserts the profile + an
     // 'employee' role row. The user can change their password after first login.
+    // ⚠ `user_metadata.phone` is only written for staff. On an external account the
+    //   password is NOT the phone, so copying it there would be meaningless; on the
+    //   staff path it is the existing behaviour and is left exactly as it was.
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email,
-      password: phone,
+      password: isExternal ? password : phone,
       email_confirm: true,
-      user_metadata: { name, phone },
+      user_metadata: isExternal ? { name } : { name, phone },
     });
     if (createErr || !created.user) return json(400, { error: createErr?.message ?? "could not create user" });
     const id = created.user.id;
@@ -194,7 +217,12 @@ Deno.serve(async (req) => {
         sub_department_id: subDepartmentId,
         band_id: bandId,
         employee_code: employeeCode,
-        phone,
+        phone: isExternal ? (phone || null) : phone,
+        // The flag every RLS policy in the database now reads (OD-13 P0). It is set
+        // HERE, in the same write that creates the profile, rather than by a second
+        // call afterwards: a profile that exists for even a moment without it is a
+        // profile that is_staff() answers `true` for.
+        is_external: isExternal,
         receivables_salespersons: receivablesSalespersons,
         receivables_hidden_menus: receivablesHiddenMenus,
         receivables_admin_menus: receivablesAdminMenus,

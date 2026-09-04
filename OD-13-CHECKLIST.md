@@ -97,28 +97,60 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
 
 ---
 
-## P1 — The identity, built for N customers
+## P1 — The identity, built for N customers  ·  DB + screen done
 
-- [ ] Migration: `fms_dispatch_customer_orgs` (display_name, party_ids, primary_party_id, customer_location,
-      notify_user_ids, default_location_id, default_dispatch_type, active)
-- [ ] Migration: `fms_dispatch_customer_logins` (profile_id PK, org_id, active)
-- [ ] `fms_dispatch_customer_org_of(uid)` helper
-- [ ] `fms_dispatch_save_customer_org(p jsonb)` — validates: ≥1 ledger, all `is_customer`,
-      `primary_party_id ∈ party_ids`, **≥1 notify user**, and every notify user can *see* the order
-- [ ] RLS on both tables: admins + dispatch coordinators only
-- [ ] Setup → **Customer Logins** section: grid (sort + filter every column), add/edit
-- [ ] **"Add a customer"** single action: create auth user → `is_external` → grant `customer-orders` only → org + login rows
-- [ ] Readiness check: refuses to activate with no ledgers / no recipient / **no mapped items**
-- [ ] Verify: add a third, fictional customer end-to-end through the screen alone — no SQL, no deploy
+- [x] Migration: `fms_dispatch_customer_orgs` (display_name, party_ids, primary_party_id, customer_location,
+      notify_user_ids, default_location_id, default_dispatch_type, active) — `active` defaults **false**
+- [x] Migration: `fms_dispatch_customer_logins` (profile_id PK, org_id, active)
+- [x] `fms_dispatch_customer_org_of(uid)` helper — requires the login **and** the org to be active
+- [x] `fms_dispatch_save_customer_org(p jsonb)` — validates: ≥1 ledger, all `is_customer` + active,
+      `primary_party_id ∈ party_ids`, **≥1 notify user** with edit access, and readiness before activating
+- [x] ⚠ **AND ONE NOBODY WOULD THINK TO ADD**: at most **one ticked ledger per billing company**.
+      Two make "which Bishen?" ambiguous at credit check and P4's re-point a coin toss. A ledger with
+      **no** company is refused too — it could never be chosen, so ticking it is a trap
+- [x] RLS on both tables: admins + dispatch coordinators only
+- [x] Setup → **Customer Logins** section: grid (sort + filter every column), add/edit
+- [x] **"Add a customer"** single action: org → auth user (`is_external`, real password) →
+      grant `customer-orders` **only** → login row. Org first, so a failure never orphans an auth account
+- [x] Readiness check: refuses to activate with no ledgers / no main ledger / no recipient / **no mapped items**,
+      and **names** what is missing rather than counting it
+- [x] `admin-users` Edge Function: `isExternal` + explicit `password` on create — staff path byte-identical.
+      Deployed (v13). ⚠ First deploy used `--no-verify-jwt` and flipped `verify_jwt` off against
+      `config.toml`; caught and redeployed. **Deploy without the flag — the CLI reads config.toml.**
+- [x] Verify: 10 refusals proved in a rolled-back transaction; readiness `item_count = 62` for Bishen's
+      five ledgers, matching the audit's predicted distinct-item count exactly
+- [ ] 🔴 Verify: add a third, fictional customer end-to-end through the screen alone
+      — **needs the user's go-ahead: it creates a real auth account** (ground rule)
 
-## P2 — Raise without joining step owners
+## P2 — Raise without joining step owners  ·  DONE
 
-- [ ] `fms_dispatch_can_raise` branches on `customer_org_of`
-- [ ] `fms_dispatch_orders_select` + `fms_dispatch_can_see_order`: recipient arm **and** same-org arm
-- [ ] `fms_dispatch_can_act__ungated`: recipient arm, **before** the assignee check
-- [ ] Client `isStepOwner` (`store.tsx:599`): matching recipient arm — Correction 6
-- [ ] `fms_dispatch_announce`: drop the customer from internal announcement types — Correction 4
-- [ ] Verify: staff permissions provably unchanged (spot-check each arm against a staff uid)
+- [x] `fms_dispatch_can_raise` branches on `customer_org_of`
+- [x] `fms_dispatch_orders_select` + `fms_dispatch_can_see_order`: recipient arm **and** same-org arm
+- [x] ⚠ The policy spells the arm out as an `EXISTS` instead of calling the helper: the helper takes
+      `raised_by`, which varies per row, so it cannot be an InitPlan and would run two nested
+      SECURITY DEFINER calls per order across ~4,000 rows — the 472 ms lesson in `20260730130000`
+- [x] `fms_dispatch_can_act__ungated`: recipient arm, **before** the assignee check
+- [x] Client recipient arm — **in `canActOn`, not `isStepOwner`** (Correction 6). `isStepOwner` also
+      answers "do I own this step anywhere" for the nav; widening it would give a recipient a nav entry
+      for every step of a module they own no step in. Fed by `fms_dispatch_customer_order_actors()`,
+      which returns two columns and keeps the ticked-ledger list on the server
+- [x] `fms_dispatch_announce`: external recipients dropped from every type not on a **customer-safe
+      allowlist**, which is `{}` for release 1 — so turning the module's email switch on can never
+      post an internal step alert to a customer's inbox
+- [x] Verify: `can_raise` agrees with the ORIGINAL expression for all 64 profiles (0 disagreements);
+      the new read arm is false for every (profile × existing raiser) pair, so P2 is provably a no-op today
+- [x] Verify with a **non-admin, non-coordinator, non-step-owner** recipient (Bushra), so the `true`s
+      can only come from the new arm: Correction 3 reproduced (`false` before) then fixed (`true` after);
+      Jayshree, not named, still `false`; the customer can act on **nothing**; the credit-hold reason
+      produced **0** notification rows for the customer and **1** for the recipient
+
+> ⚠ **Found while testing, NOT introduced, and deliberately not changed.**
+> `fms_dispatch_is_step_owner__ungated` reads `p_location is null or o.location_id is null or …`, so a
+> null location means **any** location — while `fms_dispatch_can_see_order` treats the same null as
+> "the fallback grant only". The comment on `fms_dispatch_is_natural_step_owner` says "covered by the
+> fallback grant only", which its own callee contradicts. Effect on a customer order: every credit-check
+> owner at every site may *act* on it but cannot *see* it, so it is inert today — visibility is the
+> binding constraint. Changing it would move the staff flow, which this task must not do.
 
 ## P3 — The order shape
 
@@ -155,7 +187,12 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
 - [ ] `admin-users` create — explicit password for external, never derived from phone
 - [ ] `UserForm.tsx` — External toggle; hide staff fields; drop the mobile-as-password rule;
       **start `moduleLevels` empty** (Correction 9)
-- [ ] 🔴 `work-snapshot` sender — skip `is_external` (Correction 8) · **outward-facing, before P8**
+- [x] 🔴 `work-snapshot` sender — skips `is_external` (Correction 8). **Done early, before any account
+      exists, because it fires on account CREATION rather than on anything the customer does.**
+      Filtered inside `loadPeople()`, the one function that answers "who exists", so the eleventh
+      customer is safe for the same reason the first is — no exclusion list to maintain.
+      Proved on the live deployment: `wouldSend = 64`, unchanged, so it narrows nothing for staff.
+      Confirmed the risk was real: **all 64 profiles received today's digest** at 09:00 IST
 - [ ] `Hierarchy.tsx:14`, `Users.tsx`, `ModuleAccess.tsx`, `exportUsers.ts` — External signal
 
 ## P7 — Verify the whole thing
