@@ -178,6 +178,25 @@ export default function CoaModal({
   const observedCount = rows.filter((r) => r.observed.trim() !== "").length;
 
   /**
+   * PE-7 - the readings this certificate is still missing.
+   *
+   * WHY THIS EXISTS: two certificates went out with blank readings in the COA's
+   * first two days. Lot 2608-1333 was issued with 0 of 9 observed values
+   * (02-09-2026) and 2608-1314 with 3 of 9 (03-09-2026). Nothing stopped
+   * either. The count beside the table reported the gap perfectly well and the
+   * save ignored it, which is the whole of the fault: a certificate is a claim
+   * that the tests were run, and a blank one makes that claim without evidence.
+   *
+   * Applies to a REJECTED round too, deliberately. Those readings are the
+   * evidence FOR the rejection, so a failed lot needs them more, not less.
+   *
+   * A test genuinely not run is TYPED - "N/A", "Not tested" - not left empty.
+   * The box is free text, so the certificate can say what happened instead of
+   * saying nothing at all. Blocking blank is not the same as demanding a number.
+   */
+  const missingObserved = rows.filter((r) => r.observed.trim() === "");
+
+  /**
    * C — the standards on this form that differ from what the master holds.
    *
    * ⚠ Compared against the MASTER, not against what the certificate was seeded
@@ -209,6 +228,24 @@ export default function CoaModal({
     // the picker, this stops a typed date, and the RPC stops everything else.
     if (issueDate && issueDate > todayLocalIso()) {
       setErr("The issue date cannot be in the future.");
+      return;
+    }
+    // PE-7. Mirrors the server guard rather than replacing it - fms_production_save_coa
+    // refuses the same save - but says it here, naming the rows, so the fix is
+    // one click away instead of a round trip.
+    if (rows.length === 0) {
+      setErr(
+        "A certificate cannot be issued with no test results on it. Add the parameters under Masters -> COA Parameters first.",
+      );
+      return;
+    }
+    if (missingObserved.length > 0) {
+      setErr(
+        `Every reading has to be filled in before this certificate can be issued. ` +
+          `${missingObserved.length} of ${rows.length} ${missingObserved.length === 1 ? "is" : "are"} still blank: ` +
+          `${missingObserved.map((r) => r.name).join(", ")}. ` +
+          `If a test was not run, type that in the box - "N/A" or "Not tested" - rather than leaving it empty.`,
+      );
       return;
     }
     setBusy(true);
@@ -381,7 +418,15 @@ export default function CoaModal({
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between gap-3">
             <span className="block text-[13px] font-medium text-navy">Test results</span>
-            <span className="text-[11.5px] text-grey-2 tabular-nums">
+            {/* Red while incomplete: the count was already right before PE-7,
+                it simply had no weight. Now it is also the thing that blocks. */}
+            <span
+              className={`text-[11.5px] tabular-nums ${
+                !readOnly && missingObserved.length > 0
+                  ? "text-ryg-red font-semibold"
+                  : "text-grey-2"
+              }`}
+            >
               {observedCount} of {rows.length} observed
             </span>
           </div>
