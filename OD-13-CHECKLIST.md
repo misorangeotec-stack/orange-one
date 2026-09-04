@@ -460,14 +460,80 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
       Confirmed the risk was real: **all 64 profiles received today's digest** at 09:00 IST
 - [ ] `Hierarchy.tsx:14`, `Users.tsx`, `ModuleAccess.tsx`, `exportUsers.ts` — External signal
 
-## P7 — Verify the whole thing
+## P7 — Verify the whole thing  ·  DONE
 
-- [ ] `npm run build` green
-- [ ] Full flow on a real login (place → notify → complete → status → edit refusal → cancel)
-- [ ] **Part-delivered case**: partial credit → ship → confirm → reads *Partly dispatched*, edit+cancel refused by the server
-- [ ] **Credit-hold case**: our reason is absent from the customer's notification rows
-- [ ] Staff flow unmoved, in every module P0 touched
-- [ ] A third customer added through Setup alone
+- [x] `npm run build` green
+- [x] Full flow on a real login (place → notify → complete → status → edit refusal → cancel) — P5
+- [x] **Credit-hold case**: our reason is absent from the customer's notification rows — P5
+- [x] A third customer added through Setup alone — P1
+
+#### 🔴 The part-delivered case, walked end to end on a real order
+
+**SO-2627-1133** — 100 KGS placed by the customer, **40 approved**, shipped, invoiced, gate-passed
+and confirmed delivered. Every step through the real screens, with a real (test) invoice PDF and
+receiver copy uploaded to storage.
+
+- [x] **Both answers side by side, on live data, at the moment it matters:**
+
+      status = awaiting_credit_check · cc_status = NULL · cc_decided_at = NULL · rounds = 1
+
+      the OBVIOUS rule (status + cc_decided_at) says   window OPEN   ← would have reopened
+      ours (+ the rounds clause)          says         window SHUT
+
+      `record_dispatch_confirm` sends an exhausted order back to credit and deliberately wipes
+      `cc_status`, `cc_at` and `cc_decided_at`. So without the rounds clause the customer could
+      have cancelled an order that had already shipped and been invoiced — straight into Sales
+      Return, the precise outcome Q10 says must be prevented on the server.
+- [x] The customer's screen reads **"Partly dispatched · Part of this order has been sent. The rest
+      is still with us."** — NOT "Placed", which is what the step alone would have said. This is
+      why the status mapping tests rounds BEFORE step, and it is the only way that state is
+      reachable at all.
+- [x] Change and Cancel are **both gone**, and both **refused by the server** when called directly —
+      not merely hidden.
+- [x] Credit check offered exactly the three ticked companies again, and the partial-approval panel
+      capped the release at 40 of 100 with "The stock check will not be able to send more than this."
+
+#### ✅ Staff flow proved unmoved — measured, not assumed
+
+- [x] **Positive control, re-run after everything**, as an ordinary NON-ADMIN staff member (Bushra,
+      role employee, 10 grants) with the JWT set exactly as PostgREST sets it: **297 tables, 0
+      errors.** Every module she is granted returns rows — purchase 58, import 30, supplies 3,
+      sampling 31, production 163, COAs 24, dispatch 5, tasks 770, `mst_items` **14,383**,
+      `mst_parties` **7,915**. The zeros are all explained: HR / Travel / OCPI are modules she has
+      no grant for, and `fms_customer_requests` is step-owner scoped by a policy P0 never touched.
+- [x] **Storage: all five buckets P0b narrowed read FULLY for staff** — purchase 89/89, import
+      29/29, production 107/107, sampling 10/10, asset 0/0. The already-gated buckets still scope
+      as before (dispatch 8 of 2,282, HR 0 of 133).
+      ⚠ The first run of this reported "staff sees nothing" — because `storage.buckets` is itself
+      RLS-protected, so enumerating it as a staff user returned no rows and the loop body never ran.
+      A test that silently does nothing looks exactly like a catastrophic finding.
+- [x] **Nine modules loaded in the browser** — Procurement, Import, HR, Travel, Production,
+      Sampling, OCPI, Task Management, Asset Maintenance — all render with real content and **zero
+      console errors**. (Task Management first read as empty; it is simply the heaviest and had not
+      finished mounting inside the sweep's 2.2s. Fine on a full load.)
+- [x] 🔴 **The one schema change that could have leaked into the staff path was tested directly.**
+      P3 dropped `dispatch_type NOT NULL` so a customer order can arrive without one — if the column
+      constraint had been the only thing enforcing it, staff could now raise an order with no
+      dispatch type. `fms_dispatch_submit_order` still answers **"Dispatch type must be Local or
+      Transport"**. The RPC's own validation was doing the work all along.
+- [x] **A staff order raised through the normal form**: `useSalesOrderForm` changed in P3, so this
+      is not a formality. Local still pre-selected, the same cascade (company → site → customer →
+      item), the same validation order — **SO-2627-1134** raised and landed on its detail page.
+      Cancelled immediately afterwards.
+- [x] The whole downstream chain was exercised for real on 1133: material status → sales bill (with
+      a Tally invoice no. and an uploaded PDF) → gate outward (**OTEC-2609-082**) → delivery
+      confirmation with a receiver copy. Identical machinery for staff and customer orders.
+
+#### Test data left behind, deliberately
+
+| Order | State | Why |
+|---|---|---|
+| **SO-2627-1132** | cancelled | The P5 end-to-end. Cancelled after testing. |
+| **SO-2627-1133** | **on hold** | The part-delivery proof. ⚠ **Held, NOT cancelled** — cancelling a part-delivered order is what drops it into Sales Return, so the tidy-up must not do the very thing the test exists to prevent. The hold reason says so on the record. |
+| **SO-2627-1134** | cancelled | The staff-form proof. |
+
+The hold on 1133 announced to six of our people and **zero to the customer** — the raiser-drop holds
+on the `held` announcement type too, not only on `credit_on_hold`.
 
 ## P8 — Issue the two logins  ·  only on explicit go-ahead
 
