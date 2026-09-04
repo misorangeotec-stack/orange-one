@@ -147,6 +147,11 @@ export interface DispatchStoreValue {
    */
   stepOwnerCovering: (stepKey: OwnerStepKey, locationId: string | null) => StepOwner | undefined;
   ownerNamesFor: (stepKey: OwnerStepKey, locationId?: string | null) => string[];
+  /**
+   * The staff we named against the CUSTOMER who raised this order, or [] for a
+   * staff-raised one. Mirrors `fms_dispatch_is_customer_recipient`'s notify list.
+   */
+  customerRecipientIdsOf: (raisedBy: string | null) => string[];
   personName: (id: string | null) => string;
   /**
    * May this person cancel the order? The RAISER may, at any open stage — that is
@@ -686,6 +691,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     for (const a of customerActors ?? []) customerRecipientsByRaiser.set(a.profileId, a.notifyUserIds);
     const isCustomerRecipientOf = (raisedBy: string | null): boolean =>
       !!raisedBy && (customerRecipientsByRaiser.get(raisedBy)?.includes(uid) ?? false);
+    /** Empty for every staff-raised order. Used to name who really owns a customer order. */
+    const customerRecipientIdsOf = (raisedBy: string | null): string[] =>
+      (raisedBy ? customerRecipientsByRaiser.get(raisedBy) : undefined) ?? [];
 
     const canActOn = (stepKey: OwnerStepKey, o: DispatchOrder): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
@@ -1127,6 +1135,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       stepOwnerFor,
       stepOwnerCovering,
       ownerNamesFor,
+      customerRecipientIdsOf,
       personName,
 
       profiles: dir.profiles,

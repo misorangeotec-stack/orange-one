@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { filterValueOf } from "@/shared/lib/blankFilter";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useDispatchStore } from "../store";
 import { stepByKey } from "../lib/steps";
@@ -85,7 +86,13 @@ export default function OrdersTable({
       header: "Company",
       cell: (o) => <span className="text-grey">{s.masterName("company", o.companyId)}</span>,
       sortValue: (o) => s.masterName("company", o.companyId),
-      filter: { kind: "select", get: (o) => s.masterName("company", o.companyId) },
+      // ⚠ filterValueOf, NOT the rendered text. `masterName` turns a null id into a
+      //   literal "—", so passing its output straight to the filter offers an option
+      //   spelled "—" that sorts alphabetically among the company names, while every
+      //   other grid in the portal spells the same idea "(Blank)" and sorts it last.
+      //   Since OD-13 this column is blank on every customer order until credit check
+      //   fills it in, so it stopped being a rarity.
+      filter: { kind: "select", get: (o) => filterValueOf(o.companyId && s.masterName("company", o.companyId)) },
       tdClassName: "whitespace-nowrap",
     },
     {
@@ -95,7 +102,7 @@ export default function OrdersTable({
         <span className="text-grey">{s.masterName("company_location", o.locationId)}</span>
       ),
       sortValue: (o) => s.masterName("company_location", o.locationId),
-      filter: { kind: "select", get: (o) => s.masterName("company_location", o.locationId) },
+      filter: { kind: "select", get: (o) => filterValueOf(o.locationId && s.masterName("company_location", o.locationId)) },
       tdClassName: "whitespace-nowrap",
     },
     {

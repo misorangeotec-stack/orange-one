@@ -15,6 +15,9 @@ import { isBillHeld } from "../lib/format";
 import { creditHeadroomOf, currentRoundView, type RoundView } from "../lib/rounds";
 import OrderRefPanel, { OrderRefDocs } from "./OrderRefPanel";
 import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
+import CustomerIntakePanel, { emptyIntakeDraft, intakeDraftError,
+  type CustomerIntakeDraft } from "./CustomerIntakePanel";
+import { completeCustomerIntake } from "../data/customerOrgs";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
 import StepDocLink from "./StepDocLink";
 import GatePassButton from "./GatePassButton";
@@ -93,6 +96,13 @@ export default function StepModal({
   /** The partial credit release. Its own state because it is a pair of linked
    *  inputs, not a single descriptor-driven field — see CreditApprovalPanel. */
   const [approvedQty, setApprovedQty] = useState("");
+  /**
+   * The three fields a CUSTOMER-raised order arrives without. Held here rather
+   * than in `values` because they are not step FIELDS: they are saved by their
+   * own RPC, BEFORE the credit verdict, and the verdict RPC refuses outright
+   * while they are missing.
+   */
+  const [intake, setIntake] = useState<CustomerIntakeDraft>(emptyIntakeDraft);
   /** The file chosen for each attachment slot, keyed by its `pathKey`. */
   const [files, setFiles] = useState<Record<string, File | null>>({});
   /**
@@ -185,10 +195,25 @@ export default function StepModal({
    * `save()` re-checks all of this. This is the courtesy layer; the RPC is the
    * gate.
    */
+  /**
+   * A customer punched this order and nobody has filled in the three fields they
+   * never see. Only ever true on `credit_check`, and only until it is completed —
+   * which is a one-way stamp, so re-opening a finished order never shows the panel.
+   */
+  const needsCustomerIntake =
+    cfg.stepKey === "credit_check" &&
+    !!order &&
+    order.intakeSource === "customer" &&
+    !order.intakeCompletedAt &&
+    !view?.isArchived;
+
+  const intakeSites = s.locationsForCompany(intake.companyId || null).length;
+
   const blocked: string | null =
     cfg.lines === "ship" && shipTotal <= 0 ? "nothing entered"
     : cfg.lines === "ship" && overCredit ? "over the credit ceiling"
     : showApprovedQty && order && approvedQtyError(order, approvedQty) ? "approved quantity"
+    : needsCustomerIntake && intakeDraftError(intake, intakeSites) ? "order details"
     : null;
 
   /**
@@ -323,6 +348,12 @@ export default function StepModal({
       const bad = approvedQtyError(order, approvedQty);
       if (bad) { setError(bad); return; }
     }
+    // The three fields a customer order arrives without. Checked here so the
+    // person is told which one is missing, in place, rather than by round-trip.
+    if (needsCustomerIntake) {
+      const bad = intakeDraftError(intake, intakeSites);
+      if (bad) { setError(bad); return; }
+    }
     // The credit ceiling, enforced at the point of typing as well as in the RPC —
     // the store keeper should see the limit while filling the grid, not after.
     if (cfg.lines === "ship" && overCredit) {
@@ -334,6 +365,24 @@ export default function StepModal({
     setBusy(true);
     setError(null);
     try {
+      /**
+       * BEFORE the verdict, and as its own call.
+       *
+       * ⚠ NOT folded into the step payload. `fms_dispatch_record_credit_check`
+       *   REFUSES while the intake is incomplete, so the order of these two is
+       *   load-bearing rather than stylistic. Doing it first also means that if
+       *   the verdict then fails for its own reasons — a missing remark on a hold,
+       *   say — the details are already saved and the clerk re-opens a completed
+       *   order rather than re-typing three fields.
+       */
+      if (needsCustomerIntake && order) {
+        await completeCustomerIntake(order.id, {
+          companyId: intake.companyId,
+          locationId: intake.locationId || null,
+          dispatchType: intake.dispatchType as "local" | "transport",
+        });
+      }
+
       const payload: Record<string, unknown> = {};
       // `readOnly` keys are OMITTED, not sent-and-ignored. The RPC derives them
       // and refuses whatever arrives, so putting one on the wire would be a
@@ -600,6 +649,20 @@ export default function StepModal({
             showOrderLines={cfg.context.showOrderLines}
             showInvoice={cfg.context.showInvoice}
             showOutward={cfg.context.showOutward}
+          />
+        )}
+
+        {/*
+          FIRST, ABOVE THE DECISION. The credit judgement is made against a company
+          and a site, so being asked for them afterwards would be back to front —
+          and the verdict RPC refuses while they are missing anyway.
+        */}
+        {needsCustomerIntake && order && (
+          <CustomerIntakePanel
+            order={order}
+            draft={intake}
+            onChange={(next) => { setIntake(next); setError(null); }}
+            disabled={locked || busy}
           />
         )}
 

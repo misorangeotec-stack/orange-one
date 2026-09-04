@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ReassignStepModal from "./ReassignStepModal";
 import { Link } from "react-router-dom";
+import { filterValueOf } from "@/shared/lib/blankFilter";
 import Button from "@/shared/components/ui/Button";
 import PillToggle from "@/shared/components/ui/PillToggle";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
@@ -137,7 +138,13 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       header: "Company",
       cell: (r) => <span className="text-grey">{s.masterName("company", r.order.companyId)}</span>,
       sortValue: (r) => s.masterName("company", r.order.companyId),
-      filter: { kind: "select", get: (r) => s.masterName("company", r.order.companyId) },
+      // ⚠ filterValueOf, NOT the rendered text. `masterName` turns a null id into a
+      //   literal "—", so passing its output straight to the filter offers an option
+      //   spelled "—" that sorts alphabetically among the company names, while every
+      //   other grid in the portal spells the same idea "(Blank)" and sorts it last.
+      //   Since OD-13 this column is blank on every customer order until credit check
+      //   fills it in, so it stopped being a rarity.
+      filter: { kind: "select", get: (r) => filterValueOf(r.order.companyId && s.masterName("company", r.order.companyId)) },
     },
     {
       key: "dispatchLocation",
@@ -146,7 +153,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         <span className="text-grey">{s.masterName("company_location", r.order.locationId)}</span>
       ),
       sortValue: (r) => s.masterName("company_location", r.order.locationId),
-      filter: { kind: "select", get: (r) => s.masterName("company_location", r.order.locationId) },
+      filter: { kind: "select", get: (r) => filterValueOf(r.order.locationId && s.masterName("company_location", r.order.locationId)) },
     },
     {
       key: "poNo",
