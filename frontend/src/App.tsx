@@ -55,6 +55,31 @@ function RequireModule({ appId, children }: { appId: string; children: ReactNode
   return <>{children}</>;
 }
 
+/**
+ * `/account` is the STAFF account screen. A customer gets their own.
+ *
+ * ⚠ `RequireModule` does not cover this route, and cannot: `/account` is portal
+ *   furniture rather than an app, so nothing gates it by grant. Left open, a
+ *   customer following an old link or simply typing the path lands on a page
+ *   headed "My Account" carrying a department, a designation and a "Home" link
+ *   into the staff launcher — the whole of what the Order Desk's own shell exists
+ *   to keep away from them.
+ *
+ *   The password half of that page IS legitimately theirs, so they are sent to
+ *   their own version of it rather than bounced to a screen they did not ask for.
+ *
+ * A wrapper rather than an early return inside `Account.tsx`: that component
+ * opens a dozen `useState` calls off the directory, and a return placed before
+ * them would change the hook count between renders once the directory arrives.
+ */
+function StaffOnly({ children }: { children: ReactNode }) {
+  const { isExternal, isAdmin } = useSession();
+  if (isExternal && !isAdmin) {
+    return <Navigate to={`${appBasePath("customer-orders")}/password`} replace />;
+  }
+  return <>{children}</>;
+}
+
 /** Where General Purchase lived until 29-07-2026. Kept only for the redirect below. */
 const LEGACY_SUPPLIES_BASE = "/office-supplies";
 
@@ -95,7 +120,7 @@ export default function App() {
       <Route path="/home" element={<RequireAuth><HomeLayout /></RequireAuth>}>
         <Route index element={<MyWorkToday />} />
       </Route>
-      <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
+      <Route path="/account" element={<RequireAuth><StaffOnly><Account /></StaffOnly></RequireAuth>} />
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}

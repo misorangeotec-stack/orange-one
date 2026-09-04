@@ -258,15 +258,99 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
 > and creating the missing rows is a silent write to a governed central master. An ordinary clerk never
 > reaches this path at all, because `canEditOrder` requires raiser/admin/coordinator.
 
-## P5 — The Orange Order Desk
+## P5 — The Orange Order Desk  ·  DONE, and walked end to end in the browser
 
-- [ ] `apps/customer-orders/` + `appInfo.ts` entry + `registry.tsx` registration
-- [ ] Own minimal shell (company name, sign out) — **not** `AppShell`, **not** `UserMenu`
-- [ ] Place an order · My orders · One order · Change password
-- [ ] `lib/customerLabels.ts` — the single status map (rounds tested first) **and** the item-type labels
-- [ ] Item picker de-duplicates by name across books
-- [ ] `HomeLayout.tsx:22` redirect for external accounts (not `Login.tsx` — session not loaded there)
-- [ ] Wording sweep: no "Order to Dispatch", "FMS", "Orange One Hub", "dispatch", "credit check", no step names
+- [x] `apps/customer-orders/` + `appInfo.ts` entry + `registry.tsx` registration. Registered like
+      any other module ON PURPOSE even though no member of staff will use it: registering is what
+      puts it in the Module Access matrix and the User form, which is the only way an admin can
+      SEE who holds a customer login. An unregistered id still works as an `app_access` grant —
+      it is simply a grant nobody can find, which is the failure this module was audited for.
+- [x] Own minimal shell (`OrderDeskShell`) — **not** `AppShell`, **not** `UserMenu`. No sidebar,
+      no breadcrumb, no bell, no Home link, and the logo does NOT link (every other logo in the
+      portal points at `/`, the marketing landing page — a dead end with a "Sign in" button on
+      it for somebody already signed in).
+- [x] Place an order · My orders · One order · Change password
+- [x] `lib/customerLabels.ts` — every sentence that is not the customer's own data. The status
+      map only RENDERS: `fms_dispatch_my_orders` collapses the state server-side, so the browser
+      never holds a step name to re-derive one from.
+- [x] Item picker de-duplicates by name across books. **Proved on screen: 80 options, 80
+      distinct, zero duplicates**, grouped "Heads / Ink / Spare Parts" — not `spare_parts`.
+- [x] `HomeLayout` redirect for external accounts (not `Login.tsx` — the directory carrying
+      `isExternal` has not loaded when it navigates). Placed AFTER the hooks, or the hook count
+      changes between renders when the directory arrives.
+- [x] `/account` too — `RequireModule` cannot cover it, because it is portal furniture rather
+      than an app. A customer typing the path would land on "My Account" with a department, a
+      designation and a Home link into the staff launcher. Sent to their own password screen.
+- [x] Wording sweep. Nowhere in the app: "Order to Dispatch", "FMS", "Orange One Hub",
+      "dispatch", "credit check", or any step name.
+- [x] The browser TAB. Nothing else in the portal sets `document.title`, so the customer's tab,
+      history and bookmark all read "Orange One — One Platform. Every Workflow." — our internal
+      name and our marketing line. Set to "Orange Order Desk", and RESTORED on unmount so an
+      admin who looks and leaves does not keep it over the Control Center.
+
+#### 🔴 Three defects found while building and testing, none visible in review
+
+- [x] **`fms_dispatch_my_orders` returned the item NAME and not the item ID, which made
+      "Change this order" DESTRUCTIVE.** Everything needed to display an order; nothing needed
+      to re-open one. The edit form pre-selects each line in a picker keyed on the id, so it
+      would have opened with every quantity filled and every item blank — and
+      `replace_customer_lines` DELETES before it inserts, so saving would have emptied the
+      order rather than failing loudly. On a one-line order it happens to raise "Add at least
+      one item"; on a two-line order where one item resolved, the save succeeds and the order
+      silently loses a line. ⚠ The tempting fix — match the line back by NAME — is a trap this
+      codebase has already written down (`scopeParties.ts`: join by id, never by name), and it
+      would have appeared to work until the first item renamed in Tally.
+      Migration `20261110140000`.
+- [x] **The closed-window sentence contradicted the status eight lines above it.** On screen,
+      in one glance: *"Placed · We have your order and are checking it now"* over *"This order
+      is now being PREPARED and can no longer be changed."* The window shuts on ANY recorded
+      credit decision and a HOLD is one — `cc_decided_at` stamped, buttons gone, status
+      deliberately still "Placed" because Q6 forbids saying a hold happened. So the two were
+      guaranteed to disagree on every held order, and the sentence asserted something FALSE:
+      a held order is sitting still, not being prepared. Now: "This order has gone past the
+      point where it can be changed." It makes no claim about our state, so it contradicts no
+      pill. **The server's two refusals changed with it** (migration `20261110150000`) — they
+      are near-identical on purpose, so a stale tab racing a decision shows the customer the
+      same sentence twice rather than two different explanations.
+- [x] **An item ON an order can have left the customer's list since**, and a `Combobox` handed
+      a value with no matching option renders EMPTY — the customer would have seen a quantity
+      against a blank item, assumed it was still loading, and saved an order one line shorter.
+      Now it keeps its name in a "No longer on your list" group and says what is wrong.
+
+#### ✅ Walked end to end on the live database, as the real customer login
+
+- [x] Placed **SO-2627-1132** through the screen: `intake_source='customer'`, company, site and
+      dispatch type all NULL, provisional ledger KALAHANSH FASHIONS LLP, requester the display
+      name. The duplicate-item guard fired and disabled the button before it went.
+- [x] 🔴 **Corrections 3 and 6 proved on a real null-location order**: the named recipient
+      Bushra reads `see=true`, `act=true`, and was the only person told. Not a simulation.
+- [x] Changed it (25 → 40 KGS) — item and note preserved, which is the `item_id` fix working.
+- [x] **The server refuses, not just the buttons.** On a REAL staff order (a nil UUID never
+      reaches the ownership check and proves nothing): read → `[]`, customer update/cancel →
+      "That is not your order", and even the staff cancel RPC → "Only the person who raised
+      this order, a coordinator or an admin can cancel it".
+- [x] **P4's completion panel, in a browser for the first time.** The company picker offered
+      exactly the three ticked companies — not all thirty. Choosing one turned Dispatch
+      location from optional into required and filled it with O-tec's two real sites.
+- [x] **`record_credit_check` refuses an incomplete intake even for an ADMIN calling it
+      directly**: "Fill in the billing company, dispatch location and dispatch type for this
+      customer order first."
+- [x] 🔴 **Correction 4 proved on live data, not asserted.** Credit hold recorded with a
+      deliberately internal reason. All four notifications went to Bushra; `is_the_customer`
+      is FALSE on every one. As the customer: notification rows readable **0**, activity rows
+      readable **0**, the word "INTERNAL" nowhere on their screen.
+- [x] Window shut on `cc_decided_at`: buttons gone, and the RPCs refuse a hand-made call with
+      the same wording the screen shows.
+- [x] Change password: both validations, a real change, and a change back — then signed in
+      again to prove it. `user_metadata` holds only `email_verified` and `name` — **no phone,
+      no password**. The self-service path never touches the admin re-pin machinery.
+- [x] Routing, as the customer: `/home` → `/order-desk`, `/account` → `/order-desk/password`,
+      `/order-to-dispatch` → `RequireModule` → `/home` → `/order-desk`. The two guards compose;
+      nobody is trapped in a loop.
+- [x] As an ADMIN: the app explains itself instead of failing, and points at Setup.
+- [x] Test order **cancelled and cleaned up** — the fake hold reason named a real colleague and
+      Bushra was holding a notification about it. The customer's screen now reads "Cancelled",
+      which verified that mapping on the way out.
 
 ## P6 — Passwords and the staff-assumption fixes
 
