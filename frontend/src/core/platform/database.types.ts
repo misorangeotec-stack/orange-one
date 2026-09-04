@@ -6723,6 +6723,7 @@ export type Database = {
           gender: string | null
           id: string
           last_active_at: string | null
+          is_external: boolean
           name: string
           phone: string | null
           sub_department_id: string | null
@@ -6747,6 +6748,7 @@ export type Database = {
           gender?: string | null
           id: string
           last_active_at?: string | null
+          is_external?: boolean
           name?: string
           phone?: string | null
           sub_department_id?: string | null
@@ -6771,6 +6773,7 @@ export type Database = {
           gender?: string | null
           id?: string
           last_active_at?: string | null
+          is_external?: boolean
           name?: string
           phone?: string | null
           sub_department_id?: string | null

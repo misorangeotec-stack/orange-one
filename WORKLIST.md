@@ -8949,6 +8949,652 @@ twice.
 
 ---
 
+### OD-13 · Let the CUSTOMER punch their own order — a separate, much smaller ordering app  🔴  `[ ]`
+*Raised 2026-09-04 · from the client · **High priority** · audited the same day against the code, the
+RLS policies, the live RPCs and the two named customers' real data · **nothing executed**, by
+instruction*
+
+#### ✅ P0 SHIPPED 04-09-2026 — the security gate is closed (frontend build green, migrations applied)
+
+Finding 3 said "three tables are readable by any signed-in user". Measured against the live
+database, that was one of **five** holes, and three of the others were worse:
+
+| | Found | Closed by |
+|---|---|---|
+| **207** tables with `USING (true)`, 2 of them readable by `anon` with **no login at all** | `20261109120000` |
+| **21 storage policies** across 5 buckets gated on the bucket name alone — read, overwrite **and DELETE** | `20261109130000` |
+| **~205** `SECURITY DEFINER` functions with no permission check; 46 guarded, 4 rewritten | `20261109140000` |
+| 1 table with **RLS switched off**, `anon` holding `TRUNCATE` | `20261109130000` |
+| The org-wide people directory listed, and answered to, anybody | `od13_p0c1` |
+
+**How it works.** One column, `profiles.is_external`, and one predicate, `public.is_staff(uid)`.
+Every existing row defaults to `false`, so every rule is provably a no-op for our own team —
+asserted inside the migration, which aborts if a single staff profile would lose access.
+
+**Three traps that would each have broken something, found before they did:**
+- **pg_cron runs six of the guarded functions as `postgres` with no JWT.** The obvious guard
+  (`not is_staff(...)`) would have silently killed every nightly job. It reads
+  `auth.uid() is not null and not is_staff(...)` instead.
+- **`revoke ... from anon` did nothing.** Functions carry `EXECUTE` to `PUBLIC` by default, so
+  anon inherited it — and since an anon call has no `sub`, `auth.uid()` is NULL and the new guard
+  *waved it through*. Only `revoke ... from public` actually closed it.
+- **46 functions are called inside RLS policies.** A `raise` there hard-errors the query instead
+  of returning false, so guarding them would have broken reads for the very accounts it restricts.
+  The sweep re-checks `pg_policies` per function rather than trusting a list.
+
+**Rollback rehearsed, not just written** (`20261109120001`): applied → rolled back → counts matched
+the baseline exactly (207 open, 13 anon-role) → re-applied. Pre-state is in
+`public._rls_baseline_20260904`; the set altered is in `public._od13_p0_touched`.
+
+##### Then we sat in the customer's chair, and found four more (`20261109150000`)
+
+The four migrations above each verified themselves **with their own predicate**. P0a's check was
+"0 policies still read `USING (true)`" — which proves the sweep swept what the sweep looked for,
+and nothing else. So a real customer-shaped login was put in the chair instead: a live `profiles`
+row temporarily shaped like one (`is_external`, role employee, no department, no HOD, no app grant,
+tasks and notifications removed) with `request.jwt.claims` and `role` set exactly as PostgREST sets
+them, inside a transaction forced to roll back. It enumerates **all 295 tables**, not a sample.
+
+| Still open after P0a–P0d | Why the sweep missed it |
+|---|---|
+| `app_lead_masters_global_select` | `auth.uid() IS NOT NULL`, not `true` — and granted to `{public}` |
+| `fms_travel_step_assignees_select` | the **twin** of the policy P0a narrowed *by hand* in dispatch |
+| `task_remark_mentions` INSERT `WITH CHECK (true)` | P0a only ever looked at `cmd = 'SELECT'` |
+| 7 × `*_master_requests_insert` | any signed-in account could file a master request in seven modules |
+
+🔴 The travel one is the sharpest. P0a narrowed `fms_dispatch_step_assignees_select` away from this
+exact predicate, in a section written specifically about it — and left the identical policy in Travel
+Desk standing, because it was never in the generated set and nobody looked for siblings. **One
+narrowing by hand is a narrowing of one table.**
+
+**Result, before → after:** 10 of 295 tables → **2 of 295** (`profiles` and `user_roles`, both
+own-row). Storage **0 of 3,124** objects. Every guarded RPC refuses. **Positive control on the same
+row as ordinary staff: 195 of 295 tables and 235 storage objects — unchanged.**
+
+⚠ **`is_external` says "not staff". It does not take a role away.** The first run of this sweep
+reported *219 of 295 open* and looked catastrophic. That was the test being wrong: it borrowed the
+founding **admin's** row, and every `*_write` policy is `FOR ALL` (so it covers SELECT) and
+permissive (so `is_admin` ORs straight past `is_staff`). Model the account, don't just flip the flag.
+
+🔴 **STILL OPEN, AND BIGGER THAN OD-13 — needs its own decision.** **611 other `SECURITY DEFINER`
+functions in `public` remain executable by `anon`** through the same default `PUBLIC` grant, and
+they bypass RLS by definition. That is the whole RPC surface, reachable with the anon key that
+ships in the frontend bundle, with no login. It is **not** a blocker for the customer logins (a
+customer is `authenticated`, and the functions that matter now refuse them), but it is a live hole
+today. Closing it means deciding which RPCs the signed-out landing page legitimately needs, which
+has to be tested rather than assumed.
+
+⚠ **Four** functions this entry earlier called unguarded are **not**: `pc_step_owner_contacts()`
+raises unless `pc_is_coordinator()`, `leads_dashboard_salespeople()` filters on
+`leads_dashboard_can_read()`, and `fms_ocpi_last_contact_for()` / `fms_hr_module_user_ids()` each
+carry `and public.is_staff(auth.uid())` inside their `WHERE`. A guard in a `WHERE` clause is
+invisible to a regex looking for one after `BEGIN` — that classifier has now produced four false
+positives, so read the body before believing it.
+
+---
+
+**The ask.** Today only our team raises a sales order. Open that to customers. Give **two customers**
+logins to start — **Bishen Dyeing** and **Ganga Fashions** — and show them **nothing but ordering**.
+Not "Order to Dispatch": an **ordering app**, in their language. Everything after the order is
+placed stays exactly as it is.
+
+**What the customer fills in, and what they never see:**
+
+| Field | Today | For the customer |
+|---|---|---|
+| Dispatch type | picked | **not shown** |
+| Order date | picked | **today, automatic** |
+| Billing company | picked | **not shown** — derived, ours to know |
+| Dispatch location (our site) | picked | **not shown** — derived |
+| Customer | picked | **themselves, automatic** |
+| Customer location | picked | **mapped in advance** |
+| Item type | picked | **kept** |
+| Items | picked | **kept** — only items mapped to them |
+| Remarks | typed | **kept** |
+
+Then: raise it, see it, edit it. **No "request a new item"** — if it is not on their list, there is
+no request path at all.
+
+
+#### ✅ Decided with the client, 04-09-2026
+
+**Q1 · The billing company — OPTION C. Locked.** The customer never sees it and never picks it. The
+order arrives with **no billing company**, and **our team fills it in at the credit check step**,
+which is where somebody already looks at every order.
+
+⚠ **This is a change to the order's shape, not just to a form.** Today
+`fms_dispatch_submit_order` **hard-refuses** a missing company — *"Choose the company that bills this
+order"* — and `fms_dispatch_orders.company_id` is asked for at intake precisely because the person
+raising it is the one who knows. Option C means:
+- a customer-raised order is **legitimately incomplete** on arrival, and every screen and query that
+  assumes a company must tolerate a null one until credit check;
+- `fms_dispatch_assert_customer_of_company` cannot run at intake — it has no company to check
+  against — so it moves to the moment the company is chosen;
+- **credit check becomes a two-part step** for these orders: pick the billing company, *then* decide
+  the credit. It is also the natural place for the dispatch location and dispatch type (Q2).
+
+✅ **It is the right call for the reason the data gives:** both named customers are split roughly
+50/50 across two books *right now*, so any rule that guesses would be wrong about half the time —
+and a wrong guess here is refused by the server, which would simply stop the customer ordering.
+
+**Q2 · Dispatch location and dispatch type — SAME AS Q1. Locked.** The customer sees neither. Both
+are filled by our team **at credit check**, alongside the billing company.
+
+⚠ **All three are server-enforced today**, so all three refusals move: `fms_dispatch_submit_order`
+demands `dispatch_type in ('local','transport')`, demands `company_id` against an active master, and
+demands `location_id` whenever the chosen company has any active site. A customer-raised order
+satisfies **none** of them at intake.
+
+✅ **So credit check is now the completion step, and that is the cleanest reading of it.** One person,
+one screen, four decisions in order: **billing company → dispatch location → dispatch type → credit
+verdict**. The first three are facts our team already knows and the customer never did.
+
+⚠ **Two things follow that are easy to miss:**
+- **The order needs a state before credit check that means *incomplete*, not *awaiting credit***.
+  Today `fms_dispatch_submit_order` stamps `awaiting_credit_check` / `credit_check` directly. A
+  customer order landing there looks identical to a staff order that is genuinely ready, and the
+  credit owner would open it to find three empty fields with nothing saying why.
+- **`fms_dispatch_announce` routes the new order to `fms_dispatch_step_owner_ids('credit_check')`,
+  and those owner-sets are PER LOCATION** — NOIDA 1, SURAT-HOJIWALA 1, SURAT-SACHIN 1. With no
+  location on the order there is **no location-specific owner to notify**, and the null-location
+  fallback row holds **0 people**. 🔴 **A customer order would therefore be announced to nobody and
+  sit unseen.** Whoever builds this must decide who gets told about an order that has no site yet.
+
+**Q3 · One login per CUSTOMER, not per person — OPTION A. Locked, for now.** Everyone at Bishen
+shares one account; everyone at Ganga shares another. Two accounts to issue.
+
+✅ **This makes Finding 2's read problem disappear for now.** `fms_dispatch_orders_select` already
+grants `raised_by = auth.uid()`, and with one shared login **every order that customer placed was
+raised by that same uid** — so "my orders" is already exactly "my company's orders", with no new
+predicate and no new column read at query time. **Do not build the per-customer predicate yet.**
+
+⚠ **But it is a "for now", and the thing that breaks it is the obvious next request.** The moment a
+second person at Bishen wants their own login, `raised_by` splits the history in two and each sees
+half. Build the identity column (Finding 4) **anyway** — it is what makes the switch to per-person
+logins a settings change rather than a rebuild — but the *query* can lean on `raised_by` until then.
+
+⚠ **A shared login has three costs, and they should be accepted knowingly rather than discovered:**
+- **No accountability.** `raised_by` and `requester_name` will read *"Bishen Dyeing"* on every order,
+  so who at Bishen placed it is unrecorded and unrecoverable. If that ever matters commercially,
+  it matters retrospectively, and the data will not be there.
+- **The password is shared, so it does not really get revoked.** ⚠ In this portal a user's
+  **mobile number doubles as their initial login password** (`CLAUDE.md`, `adminUserApi.ts`) — that
+  convention is fine for staff and is **not** fine for an external shared account. **These two
+  accounts need a real password set deliberately**, not a phone number.
+- **Password reset and "who do I call" both point at a company, not a person.** Decide which of our
+  people owns each customer account before it is issued.
+
+⚠ **And it settles "which Bishen?" more neatly than expected.** Because Q1 defers the billing company
+to credit check, the login does **not** need to resolve to one of the five Bishen party rows at order
+time — it maps to the customer, and **our team picks the book afterwards**. The remaining question is
+narrower: does the login also cover the `-OLD MACHINE` and `(MACHINE)` ledgers, or only the main one?
+
+**Q4 · The customer SEES RATES. Locked — and it is the largest piece of work in this task.**
+The client's reason: *"we have finalized the rates for each customer, so they should see these
+prices."*
+
+🔴 **CORRECTION, AND IT CHANGES THE SIZE OF THIS.** An earlier draft of this entry said *"the order
+lines carry rates, and the order register and detail screens print them."* **That was wrong and was
+not checked before it was written.** Read off `information_schema` on 04-09-2026:
+
+| Table | Columns | Rate? |
+|---|---|---|
+| `fms_dispatch_order_items` | `id · order_id · line_no · item_id · quantity · line_remark · dispatched_qty · ship_qty · lot_no · unit · bill_qty` | **none** |
+| `fms_dispatch_customer_items` | `id · customer_id · item_id · active · sort_order · created_by · created_at · updated_at` | **none** |
+
+**A sweep of every `mst_*` and `fms_dispatch_*` table for a `rate` / `price` / `amount` / `value`
+column returns nothing but `fms_dispatch_config.value` and `fms_dispatch_counters.last_value`,
+neither of which is money.**
+
+✅ **So Order to Dispatch is, by design, a QUANTITY document.** The price first exists when the sales
+bill is raised in Tally, two steps later. That is a coherent design, not an oversight — the module
+tracks what moves, and Tally prices it.
+
+🔴 **Which means showing a rate to the customer is not a display toggle. It is a new capability:**
+1. **The finalised per-customer rates have to live somewhere.** They exist commercially — the client
+   says so — but they do **not** exist in this system. Either a new per-customer rate master is
+   built and maintained by hand, or they are read from Tally's own price lists / price levels.
+   ⚠ **Whether the ConnectWave mirror exposes a price list at all is UNKNOWN and must be checked** —
+   the same gap OD-12 hit with batches, and it could not be checked here because the ConnectWave MCP
+   needed an authorisation this session did not have.
+2. **A rate the customer can see is a rate we are quoting them.** A stale or wrong number on that
+   screen is a commercial statement, not a cosmetic bug. It needs an owner, a change trail, and a
+   rule for what happens when it is missing for an item.
+3. **It has to survive the order.** If the customer sees ₹X on the order and the Tally invoice says
+   ₹Y, that is a dispute. Decide whether the rate is **frozen onto the order line** at raise time
+   (recommended — it is what the customer agreed to) or re-read live each time the order is opened.
+4. **Then it must be reconciled against the sales bill**, or nobody finds out they diverged.
+
+⚠ **This is comfortably bigger than the ordering screen itself.** It should be **phased separately**
+and, if it is not ready, the first release can ship **quantities only** — the customer still places
+orders, and the price conversation stays where it is today. **That is a decision for the client, and
+it is worth putting to them plainly rather than letting the release slip to wait for a rate master.**
+
+**Q5 · Release 1 ships WITHOUT rates — OPTION B. Locked.** Bishen and Ganga get logins and start
+ordering on **item · quantity · remarks**. No price is shown, because none exists to show.
+
+✅ **Nothing is hidden from the customer that our own team can see.** The intake grid today is
+**Item · Qty · Unit · Remark** and the word *"Rate"* appears **nowhere in the Order to Dispatch app**
+— not the form, not the order detail, not the register export, not the database. So release 1 gives
+the customer the same document our staff raise, minus the fields Q1/Q2 moved to credit check. There
+is no second-class view to explain.
+
+**Rates become their own task when it is wanted** (Q4 records what it costs). It is not a follow-up
+detail on this entry — it is a rate master, a freeze-onto-the-order rule, and a reconciliation
+against the Tally bill. ⚠ **Do not let it be smuggled in as "just add a column"** at the end of the
+customer-portal build.
+
+**Q6 · The customer sees SIMPLE STAGES in plain words — OPTION B. Locked.** Never an internal step
+name, and never *"credit check"*.
+
+**The six internal steps ([steps.ts:43-48](frontend/src/apps/order-to-dispatch/lib/steps.ts#L43)) and
+what the customer is shown instead** — a proposal to confirm, not a decision taken:
+
+| Internal step | Internal title | Customer sees |
+|---|---|---|
+| `sales_order` | Sales Order | **Placed** |
+| `credit_check` | Confirm Credit Limit | **Placed** — deliberately indistinguishable |
+| `material_status` | Check Material Status | **Being prepared** |
+| `sales_bill` | Generate Sales Bill | **Being prepared** |
+| `gate_out` | Gate Outward Entry | **Dispatched** |
+| `dispatch_confirm` | Confirmation on Dispatch | **Delivered** |
+
+⚠ **Collapsing `credit_check` into "Placed" is the whole point of the mapping, and it has a
+consequence: an order parked on a credit hold looks identical to one moving normally.** That is
+intended — a customer must not learn their credit is the hold-up from a status chip — but it means
+**somebody has to tell them by phone when an order is genuinely stuck.** A silent "Placed" for two
+weeks is worse than a call. Decide who owns that.
+
+⚠ **Three states are NOT steps and still need customer wording**, or they will leak an internal one:
+- **On hold** — `fms_dispatch_hold_order` parks an order outside the step flow.
+- **Cancelled** — `fms_dispatch_cancel_order`.
+- **Partly dispatched** — an order ships in **rounds** and comes back for the balance. The customer
+  will see "Dispatched" while half the order is still here unless the wording covers it. This is the
+  most likely one to be missed, because it is the normal case rather than an edge.
+
+⚠ **The mapping must live in ONE place** — a single lookup in the customer app — not spread across
+the screens. Add a step later and a scattered mapping shows the internal name at exactly the moment
+nobody is looking.
+
+**Q7 · The customer may edit only until our team touches the order — OPTION A. Locked.** While the
+order still reads **Placed** to them it is theirs to change. The moment credit check is actioned it
+locks, and a change becomes a phone call.
+
+⚠ **"Until our team touches it" is not the same as "while it says Placed", and the difference is the
+bug waiting to happen.** Q6 deliberately maps **both** `sales_order` and `credit_check` to *Placed*,
+so the customer's own status chip **cannot** tell them when the window shut. The lock must be driven
+by the **real** step and stated on the screen in words — *"This order is now being prepared and can
+no longer be changed"* — not inferred from the label. Otherwise the customer sees *Placed*, presses
+Edit, and is refused with no explanation.
+
+⚠ **The window is genuinely short, and that is the trade accepted here.** A customer order lands at
+`awaiting_credit_check` the instant it is submitted, and under **Q1/Q2** credit check is now also
+where our team fills in the billing company, dispatch location and dispatch type — so it is a step
+somebody attends to quickly. In practice the customer may have minutes, not hours. **Worth telling
+Bishen and Ganga that plainly when the logins are handed over**, rather than letting them discover it.
+
+
+**Q8 · Who is told when a customer places an order — a NAMED person, SET IN SETUP, per customer.
+Locked.** *"When we set up this configuration of the customer, we can set who will get this
+notification in the settings. Option B, but we will have to set this up. We don't have to hardcode
+this."*
+
+**Why it is needed at all.** `fms_dispatch_submit_order` announces a new order to
+`fms_dispatch_step_owner_ids('credit_check')`, and those owner-sets are **per location** — NOIDA 1,
+SURAT-HOJIWALA 1, SURAT-SACHIN 1, with **0** in the null-location fallback row. Under **Q1/Q2** a
+customer order carries **no location**, so 🔴 **it would be announced to nobody and sit unseen.**
+
+**The shape:** a **per-customer recipient**, chosen in **Setup** beside the rest of that customer's
+configuration — the same screen that maps the login to the customer, the customer location and the
+item list. ⚠ **A person, picked from a list. Never a constant in the code**, and never inferred from
+the location, because there is no location yet.
+
+⚠ **Three things this must get right, all of which are how a routing setting normally fails:**
+- **It cannot be optional.** An unset recipient reproduces exactly the bug it exists to fix — silence.
+  Either refuse to issue the customer's login until it is set, or fall back to **every** credit-check
+  owner across all three sites and say on screen that it is doing so. **Do not fall back to nobody.**
+- **The named person must still be able to SEE the order.** `fms_dispatch_announce` filters its
+  recipient list through `fms_dispatch_can_see_order(uid, location, raiser)` before writing a single
+  notification — so naming somebody who is not a credit-check owner, a coordinator or an admin sends
+  them **nothing**, silently, with no error anywhere. Validate the choice at the moment it is saved,
+  not at the moment an order arrives.
+- **One person is a single point of failure.** Leave, illness, or a resignation and customer orders
+  stop being seen. Allow more than one name per customer, even if only one is used today.
+
+⚠ **This is the second per-customer setting to appear** (after the login mapping itself), which
+confirms the shape: **customer setup is its own Setup screen**, not a column bolted onto an existing
+master.
+
+
+**Q9 · Customer logins get a REAL password, not their mobile number — OPTION A. Locked.**
+
+**The convention it breaks with, deliberately.** In this portal a user's **mobile number IS their
+initial login password** — set on create and **re-pinned on save**
+([store.tsx:343](frontend/src/core/platform/store.tsx#L343): `if (patch.phone) await
+setUserPasswordViaFunction(id, patch.phone)`). For staff that is a convenience. For an account
+outside the company it means **anyone who knows Bishen's phone number can sign in as Bishen**.
+
+✅ **A real password is already possible** — the `set-password` action on the `admin-users` Edge
+Function takes any string of **6 characters or more** and does not care that it matches a phone
+number. **No new plumbing is needed to SET one.**
+
+🔴 **The problem is that it does not STAY set.** The re-pin at `store.tsx:343` fires on any save
+carrying a phone value, so an admin who later opens that customer's record to change a name, a
+department, anything — and saves — **silently resets the password back to the mobile number**. Nobody
+is told. The customer's login keeps working, and the account quietly becomes guessable again.
+
+⚠ **So Option A is two pieces of work, not one**, and the second is the one that will be forgotten:
+1. Set a real password on each of the two accounts.
+2. **Make the account exempt from the re-pin.** The external-account flag from Finding 4 is the
+   natural switch: if the account is external, skip the phone→password re-pin entirely.
+   ⚠ Also drop `user_metadata.phone = password`, which the Edge Function writes alongside
+   ([admin-users/index.ts:94](supabase/functions/admin-users/index.ts#L94)) and which would otherwise
+   record the new password in the user's metadata.
+
+⚠ **Two smaller things worth settling when the logins are handed over:**
+- **How the password reaches Bishen and Ganga.** Not in the same email as the link, and not in the
+  work list. The client shares it directly.
+- **Can they change it themselves?** `/account` exists in the portal shell — but **Q-shell** (see
+  Finding 5) asks whether a customer should see that shell at all. If they get no account screen,
+  every password change becomes a call to us.
+
+**Q10 · The customer MAY cancel their own order — same window as editing (while it still reads
+*Placed*). Locked.**
+
+✅ **The server already allows it, and needs no change to permit it.** `fms_dispatch_cancel_order`
+reads:
+
+```
+if not (fms_dispatch_is_coordinator(v_uid) or v_raiser = v_uid) then
+  raise exception 'Only the person who raised this order, a coordinator or an admin can cancel it';
+```
+
+**The raiser may cancel** — deliberately, and the comment says so. With **Q3**'s one-login-per-customer,
+the customer *is* the raiser on every one of their orders. So this is a screen and a rule, not a
+permission fight.
+
+🔴 **But the server's window is FAR wider than the one we just agreed, and that gap is the whole
+risk.** The RPC allows a cancel right up to **gate-out** (`go_at`) — so as written a customer could
+cancel an order **after the sales bill has been raised**, which drops it into the **Sales Return**
+step: real accounting work, an invoice to unwind, our people picking up the pieces. It refuses only
+once the vehicle has left.
+
+⚠ **Hiding the button is NOT a limit.** The customer holds a real session; the RPC is a callable
+endpoint. A UI-only narrowing is a suggestion, not a rule — the same lesson as Finding 3. **The
+window has to be enforced on the server**, e.g. an external account may cancel only while
+`current_step = 'credit_check'` and the step is unactioned. Client-side too, for the message.
+
+⚠ **A cancel reason is required by the RPC.** Decide what a customer types, or whether the app sends
+a fixed one (*"Cancelled by customer"*). ⚠ It lands in the activity trail and is read by our team —
+so a free-text box from a customer is a message to staff, not just a field.
+
+⚠ **And somebody must be told.** Same problem as **Q8**: a cancel by a customer with no location on
+the order announces to the same empty owner-set. The per-customer recipient from Q8 covers it —
+**use the same setting, do not invent a second one.**
+
+**Q11 · One login per customer, mapped to a TICK LIST of ledgers in Setup. Locked.**
+
+**The shape.** The customer's Setup record carries a **list** of `mst_parties` ids — the ledgers this
+login may be billed under — not one. For Bishen that is the **five** rows named
+`BISHEN DYEING PRINTING & WEAVING MILLS`, one in each company book; `(MACHINE)` and `-OLD MACHINE`
+are **left unticked**, being machine sales rather than consumable buying.
+
+⚠ **The customer NEVER picks a ledger, and never sees the list.** That was the confusion worth
+settling: five ledgers are not five choices, they are **one customer sitting in five of our books**,
+all carrying the identical name. The customer sees *"Bishen Dyeing"* and one order form. **Our team
+picks the billing company at credit check (Q1), and the ledger follows from it.**
+
+✅ **So the tick list is a limit on US, not a question for them.** It is what makes the credit-check
+choice safe: it says which books this customer may legitimately be billed from, so
+`fms_dispatch_assert_customer_of_company` can only ever be satisfied, never surprised.
+
+⚠ **Why NOT one login per ledger** — the option first proposed and set aside: Bishen's main name alone
+exists in **five** books, so ledger-per-login means five accounts, five passwords and five order
+histories for one customer, and "my orders" fragments across them. One login with a tick list gives
+the same control and none of that.
+
+🔴 **The consequence that needs a decision: the ITEM LIST is keyed to ONE ledger, not to the tick
+list.** `fms_dispatch_customer_items.customer_id` is a single party id, and **all 36 of Bishen's
+mapped items and all 28 of Ganga's sit under exactly one book** — ORANGE O TEC ENTERPRISES — while
+their orders split roughly 50/50 across two. So:
+- read the item list from the ticked ledger that happens to hold the mapping and the customer sees
+  their items whichever book bills them — **but which ledger holds it is an accident today**; or
+- **union the mappings across every ticked ledger** — recommended, since it is the same company
+  buying the same ink, and it survives somebody mapping an item under the other book later.
+⚠ Either way, **do not read the mapping off the billing company**, because at order time there is no
+billing company yet (Q1). The item list must come from the *customer*, not the book.
+
+**Q12 · The customer NEVER sees the portal shell — OPTION A. Locked.** Sign in and land **straight on
+the ordering screen**. No launcher, no workspace, no Orange One chrome, no card to click through.
+
+**What that touches** — the shell is not one component, it is the whole signed-in frame:
+- **`App.tsx` routing.** `/home` is the landing today. An external account must be redirected to the
+  ordering app's `basePath` at sign-in, and **bounced back if it ever reaches `/home`** — not merely
+  shown an empty launcher. ⚠ `visibleApps` would already render exactly one card
+  ([homeNav.tsx:55](frontend/src/core/workspace/homeNav.tsx#L55)), so the launcher is *harmless*, and
+  that is precisely why it would get left in.
+- **`AppShell` / `Topbar` / `UserMenu`** (`core/shared/components/layout/`) — shared across every app
+  and reused by instruction. The customer app needs its **own minimal frame**: their company name,
+  a sign-out, and nothing else. ⚠ Reusing the portal shell here is the default and the wrong default.
+- **`/account`.** A real route today, outside any app. Decide: either give the customer a **cut-down**
+  account page — **password change and nothing else** — or block the route and accept that every
+  password reset is a phone call to us. ⚠ Q9 already flagged this; it is now the deciding factor.
+- **The bell and notifications.** Built for staff and carrying staff wording. An external account
+  should get **nothing** until somebody designs what a customer is told.
+
+⚠ **The name on the page matters and is part of the deliverable.** The client asked for wording twice.
+**Nowhere may it read "Order to Dispatch", "FMS", "Orange One Hub", or any internal step name.**
+It is *their* ordering app, in their words.
+
+⚠ **A separate `AppManifest` is what makes all of this simple** rather than a pile of conditionals —
+its own `basePath`, its own name, its own shell. **The one catch stays as Finding 5 records it:**
+`fms_dispatch_can_raise` hard-codes `module_can_edit(uid,'order-to-dispatch')`, so that function must
+learn the new app id, or the customer ends up holding a hidden grant to a module they must never see.
+---
+
+#### 🔴 FINDING 1 — "the billing company comes automatically from the customer" cannot work as stated
+
+This is the biggest thing in the task, and it is not a detail.
+
+**A customer is not one row.** `mst_parties` holds **one row per ledger per Tally book**.
+**BISHEN DYEING PRINTING & WEAVING MILLS exists as five separate party rows across five companies**
+(plus two machine variants); **GANGA FASHION PVT LTD as two** (plus one). So "the company of the
+logged-in customer" has **five possible answers** for Bishen.
+
+**And both customers are actively billed under TWO companies right now** — measured on their real
+orders, 11-08-2026 to 03-09-2026:
+
+| Customer | ORANGE O TEC ENTERPRISES PVT LTD | ORANGE O TEC PRIVATE LIMITED | |
+|---|---:|---:|---|
+| **BISHEN DYEING** | **6 orders** | **5 orders** | ~50/50 |
+| **GANGA FASHION** | **7 orders** | **6 orders** | ~50/50 |
+
+Somebody internal is choosing the billing company **per order**, and that choice is real and current.
+A single derived value would silently send roughly **half** of these orders to the wrong book — and
+`fms_dispatch_submit_order` then calls `fms_dispatch_assert_customer_of_company`, which refuses the
+pair outright, so the customer would simply be unable to order at all half the time.
+
+⚠ **The same applies to the dispatch location.** The RPC **requires** `location_id` whenever the
+company has any active site: *"Choose the location this order dispatches from"*. It is **our** site,
+not theirs, and today it is chosen by the person raising the order.
+
+⚠ **And to dispatch type.** The RPC hard-refuses anything but `local` / `transport`. A customer order
+must carry one, so something has to decide it.
+
+**So three fields the client wants "automatic" are, today, three real decisions.** They are not
+lookups. Whoever builds this needs a stated rule for each — and the honest options are:
+
+- **Ask the customer anyway**, in their own words (*"deliver to"*, *"how should this come?"*).
+- **Pre-map it** — a per-customer default set in Setup, editable by us. ⚠ Then somebody internal must
+  correct half of Bishen's orders after the fact.
+- **Let our team fill it at credit check**, so the customer order arrives deliberately incomplete and
+  is completed by us. **Recommended** — it matches what actually happens today, and it is the only
+  option that does not guess.
+
+---
+
+#### 🔴 FINDING 2 — the only way to let a customer raise an order also lets them read every order at that site
+
+`fms_dispatch_submit_order` calls `fms_dispatch_can_raise(uid)`, which is
+`module_can_edit(uid,'order-to-dispatch') AND fms_dispatch_can_raise__ungated(uid)` — and the second
+half means **named in `fms_dispatch_step_owners` for `sales_order`** (owners ARE configured today:
+NOIDA 1, SURAT-HOJIWALA 3, SURAT-SACHIN 3, so the "unconfigured, therefore open" arm does not apply).
+
+**But `fms_dispatch_step_owners` is also a READ grant.** From `fms_dispatch_orders_select`:
+
+```
+OR EXISTS (select 1 from fms_dispatch_step_owners o
+            where auth.uid() = ANY (o.employee_ids)
+              and (o.location_id is null or o.location_id = fms_dispatch_orders.location_id))
+```
+
+🔴 **So adding a customer to `sales_order` owners — the only way to let them raise anything — would
+let them read EVERY order at that location.** Bishen would see Ganga's orders, and everybody else's:
+quantities, rates, PO numbers, remarks. **This is the single hardest problem in the task** and it
+must be solved before a login is issued, not after.
+
+✅ **The good news:** an `edit` grant on its own does **not** open the module. `fms_dispatch_orders_select`
+grants blanket read to `module_is_viewer` — level **`view` exactly**, not `edit`. So a customer at
+`edit` who owns no step sees only `raised_by = auth.uid()`. The read path is nearly right already;
+it is the **raise** path that drags the leak in.
+
+⚠ **`raised_by = auth.uid()` is PER-LOGIN, not per-customer.** Two people at Bishen would not see
+each other's orders — and the client asked that the customer can "view the order that was raised".
+A new predicate is needed: *this order's customer is my customer*.
+
+---
+
+#### 🔴 FINDING 3 — three tables are readable by ANY signed-in user, and today that is fine only because everyone is staff
+
+Read straight off `pg_policies`:
+
+| Table | SELECT policy | What a customer login would see |
+|---|---|---|
+| `mst_parties` | **`true`** | **all 7,913 party rows** — every customer's name, GSTIN, credit limit, phone, email, address |
+| `mst_items` | **`true`** | every item in the group |
+| `fms_dispatch_customer_items` | **`true`** | **the entire who-buys-what map**, for every customer |
+
+🔴 **That third one is competitive intelligence about our whole book**, and it is one `fetch` away in
+DevTools. The app filtering the picker down to "only this customer's items" is **presentation**, not
+protection — the same warning `scope.tsx` already carries for receivables: *"UI-level scoping only;
+the raw data still reaches the browser."* With staff-only logins that is a tolerable position. **The
+day a customer signs in, it is a disclosure.**
+
+**This is the gate on the whole task.** Nothing else here is dangerous; this is.
+
+---
+
+#### FINDING 4 — nothing today says "this login IS this customer"
+
+`profiles` carries no customer, party, ledger or external-user column — checked. And the role
+vocabulary is `admin | hod | sub_hod | employee`
+([types.ts:12](frontend/src/core/platform/types.ts#L12)): **there is no "external" or "customer"
+role.** An `employee` who is really a customer would fall into every place that assumes staff —
+@mention pickers, the org directory, `list_org_people()`, Master Report's user pages, HR screens.
+
+**So the first thing to build is an identity, and it needs to answer two questions, not one:**
+1. **Which customer is this?** — and, given Finding 1, that is a set of party rows, not one row.
+2. **Is this person staff at all?** — because a dozen screens quietly assume yes.
+
+Additive, per the repo's Supabase rule: a new nullable column (e.g. `profiles.customer_party_ids uuid[]`)
+plus a flag that marks the account external. ⚠ **Model it on `receivables_salespersons`, and read
+[scopeParties.ts](frontend/src/apps/receivables-hub/lib/scopeParties.ts) before writing a line** —
+it documents three traps already paid for once: an empty scope must mean *nothing*, never
+*everything*; the scope must **fail closed while loading**; and the join is by id, never by name.
+
+---
+
+#### FINDING 5 — the launcher is already safe; the shell around it is not
+
+`visibleApps` filters `status === "live" && hasModule(a.id)`
+([homeNav.tsx:55](frontend/src/core/workspace/homeNav.tsx#L55)), so a customer granted **one** app
+sees **one** card. ✅ Nothing extra leaks onto the launcher.
+
+⚠ But they still land on `/home` inside the Orange One portal shell — the topbar, the user menu, the
+"workspace" framing, `/account`. **That is our internal product, shown to a customer.** Decide
+deliberately whether they get the shell at all, or land straight on the ordering screen.
+
+⚠ **A separate app is the right shape, and it has one specific catch.** Giving the customer a new
+manifest (say `customer-orders`, its own `basePath`, its own name and wording) and granting **only**
+that keeps them out of `/order-to-dispatch` entirely via `RequireModule`. **But
+`fms_dispatch_can_raise` hard-codes `module_can_edit(uid,'order-to-dispatch')`** — so either that
+function learns the second app id, or the customer must hold an `order-to-dispatch` grant they are
+never shown. **The first is much safer**; the second is a grant nobody can see and everybody forgets.
+
+---
+
+#### FINDING 6 — emails are OFF today, and that is load-bearing
+
+`email_module_settings` says `order-to-dispatch` → **`enabled = false`**. So `fms_dispatch_announce`
+writes bell notifications and sends no mail.
+
+⚠ **The moment someone switches that on, a customer who is a `sales_order` step owner starts
+receiving our internal step emails** — credit-check chasers, gate-pass notices, whatever the payload
+carries. `fms_dispatch_announce` narrows recipients with `fms_dispatch_can_see_order`, which is the
+same predicate as the leak in Finding 2. **Whoever flips that switch must know a customer is on the
+list.** Related: [fms-module-email-is-live] — other modules are already sending.
+
+---
+
+#### What the screen itself needs
+
+- [ ] **A new app module** — folder, `AppManifest`, registered in `apps/registry.tsx`. Wording is
+      part of the deliverable, not decoration: **no "dispatch", no "FMS", no internal step names**.
+      Something like **"Place an Order"** / **"My Orders"**, and an app name a customer would say out
+      loud. ⚠ The client asked for this explicitly — do not ship "Order to Dispatch" with fields hidden.
+- [ ] **The order screen: five controls, not twelve.** Item type · items · quantity · remarks ·
+      submit. Their own name and location shown as **text, not a picker**, so they can see it is
+      right without being able to change it.
+- [ ] **The item picker offers only their mapped items.** Bishen has **36** mapped, Ganga **28**
+      (`fms_dispatch_customer_items`, measured 04-09). ⚠ Both mappings sit under **one** company —
+      ORANGE O TEC ENTERPRISES — while their orders split across two, so the mapping and the billing
+      book do not line up today. Worth resolving with Finding 1, not separately.
+- [ ] **No master-request path at all.** ✅ Half of this is already true — **OD-2** removed customer
+      and item from `REQUESTABLE_DISPATCH_MASTER_TYPES`. What remains is hiding
+      `MapCustomerItemModal` (which writes a mapping immediately, with no approval) and the Master
+      Requests nav item.
+- [ ] **My Orders** — their own orders, plain status wording (Q6). ✅ **No new predicate needed for
+      release 1:** with one shared login per customer (Q3) every order they placed carries the same
+      `raised_by`, which `fms_dispatch_orders_select` already grants. ⚠ The day a second person at
+      Bishen gets their own login, that breaks — see Q3.
+- [x] **Edit — SETTLED (Q7):** editable until credit check is actioned, then read-only with a note.
+      ⚠ Drive the lock off the REAL step, not the customer-facing label — Q6 maps two steps to
+      *Placed*, so the label cannot tell them the window shut.
+
+#### Phase plan
+
+- [ ] **P0 · Close Finding 3 first.** Tighten the three `true` policies before any customer login
+      exists. This is the only item that is unsafe to defer, and it is independent of everything else.
+- [ ] **P1 · The identity.** The nullable columns, the Admin user-form controls, and the
+      external-account flag.
+- [x] **P2 · SETTLED 04-09-2026 (Q1, Q2).** All three — billing company, dispatch location, dispatch
+      type — are filled by our team **at credit check**. The customer sees none of them. Credit check
+      becomes the completion step: company → location → type → credit verdict.
+- [ ] **P3 · Solve the raise-vs-read collision** (Finding 2) — a customer must be able to raise
+      without joining `sales_order` step owners. Likely a dedicated predicate in
+      `fms_dispatch_can_raise__ungated` plus a customer arm on `fms_dispatch_orders_select`.
+- [ ] **P4 · The app** — manifest, wording, the five-control screen, My Orders, edit.
+- [ ] **P5 · Walk it as a customer** on a real login. ⚠ **Sign in as the customer account itself** and
+      open DevTools: the test is not "does the screen look right", it is **"what can this account
+      read"**. Check `mst_parties`, `mst_items` and `fms_dispatch_customer_items` by hand.
+- [ ] **P6 · Then issue the two logins.**
+
+#### To settle with the client
+
+- [x] ~~**Billing company, dispatch location, dispatch type**~~ **ANSWERED 04-09 — Q1 and Q2.**
+- [x] ~~**Which Bishen?**~~ **ANSWERED 04-09** — one login, a tick list of ledgers in Setup, machine
+      ledgers left out. See Q11.
+- [x] ~~**One login per customer, or one per person?**~~ **ANSWERED 04-09 — Q3: one per customer.**
+- [x] ~~**Does the customer see prices?**~~ **ANSWERED 04-09: yes** — see Q4 above. ⚠ The reasoning
+      first written here (*"the order lines carry rates"*) was **wrong**: there is no rate column
+      anywhere in this module. Showing one is a new capability, not a toggle.
+- [x] ~~**What does the customer see after they order?**~~ **ANSWERED 04-09: simple stages** — see Q6.
+- [x] ~~**Can they cancel?**~~ **ANSWERED 04-09: yes**, same window as editing — see Q10. ⚠ The
+      earlier note here called cancelling *"staff-only"*; it is not — the RPC already lets the
+      **raiser** cancel. The work is NARROWING its window, on the server, not opening it.
+
+---
+
 ## Production Entry
 
 *(cross-ref: **PF-1** — Save Draft lands here FIRST)*

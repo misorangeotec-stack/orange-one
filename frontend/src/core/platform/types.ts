@@ -210,4 +210,19 @@ export interface Profile {
    * feature shipped. Shown to admins (Users/Hierarchy) and HODs (their team).
    */
   lastActiveAt: string | null;
+  /**
+   * TRUE for a login that is NOT one of our people — today, a customer placing their own
+   * orders through the Orange Order Desk (OD-13).
+   *
+   * ⚠ This is a flag, not a fifth `AppRole`, and deliberately so: `AppRole` is a closed
+   *   union consumed by nine exhaustive `Record<AppRole, …>` maps (ROLE_RANK, ROLE_BADGE,
+   *   ROLE_LABEL, the two task-management exports, DepartmentReport, UserLayout, ALL_ROLES,
+   *   UserForm's ROLES tiles). Widening it would have forced a decision in all nine for a
+   *   distinction none of them actually cares about. An external account keeps role
+   *   "employee"; this says whether that employee is ours.
+   *
+   * The server half is `profiles.is_external` and `public.is_staff(uid)`, which gates every
+   * table read, every storage bucket and the org-wide people directory.
+   */
+  isExternal: boolean;
 }
