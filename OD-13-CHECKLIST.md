@@ -119,8 +119,52 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
       `config.toml`; caught and redeployed. **Deploy without the flag — the CLI reads config.toml.**
 - [x] Verify: 10 refusals proved in a rolled-back transaction; readiness `item_count = 62` for Bishen's
       five ledgers, matching the audit's predicted distinct-item count exactly
-- [ ] 🔴 Verify: add a third, fictional customer end-to-end through the screen alone
-      — **needs the user's go-ahead: it creates a real auth account** (ground rule)
+- [x] ✅ **Verify: a third customer added end-to-end through the Setup screen alone** — done in the
+      browser on 04-09-2026 with the user's go-ahead, as **ZZ TEST Kalahansh** (3 ticked ledgers,
+      80 items, Bushra as recipient). No SQL, no migration, no deploy. The account is REAL and kept
+      on purpose: P5 needs something to build the Order Desk against. Delete on request.
+- [x] The picker told the three Kalahansh ledgers apart by book (`· Colorix — Surat`, `· Enterprise`,
+      `· O-tec`) and listed the two `-MACHINE` ledgers separately, so they were visibly not ticked
+- [x] The main-ledger picker offered **only the three ticked**, and the recipient list only people
+      with edit access to Order to Dispatch
+- [x] The created account: `is_external true`, `is_staff FALSE`, **exactly one grant**
+      (`customer-orders:edit` — no `task-management` default, Correction 9 avoided), `phone null`,
+      linked to its org, `can_raise true` via the customer branch. **The login works.**
+
+#### 🔴 Two defects the browser found that review had not
+
+- [x] **Chrome autofilled the ADMIN'S OWN email and password into the new-customer login fields.**
+      The password manager sees an email box beside a password box, decides it is a sign-in form, and
+      fills in the signed-in admin's credentials — in plain text once the eye is clicked, in a field
+      about to be handed to an outside firm. Worst case the admin changes only the email and gives a
+      customer a login whose password is the admin's own. Fixed with `autoComplete="new-password"` on
+      all three login fields; `"off"` is NOT enough, Chrome ignores it on inputs it has decided are a
+      login. **Verified gone: the fields came back empty on the next load.**
+- [x] **The dialog was too narrow** (`lg`). Now `3xl` with a genuine two-column layout — widening
+      alone would only have added whitespace beside the same single file of fields. ⚠ The first
+      attempt put three controls in a row and `FieldLabel` lays its hint on the SAME LINE as the
+      label: at a third of the dialog the hint wrapped to five lines and pushed its input a row below
+      the other two. Two columns, short hints, and the long explanation moved to a sentence beneath.
+      **Both are invisible in the markup and only appear on screen.**
+- [x] `reload()` is now **awaited before the dialog closes**, on both save paths. I saw a stale
+      "0 customers" once right after creating and could NOT reproduce it — the identical reload
+      demonstrably refreshes on the edit path, so it was most likely my screenshot racing the
+      refetch. Awaiting it costs nothing and removes the question; on the FIRST customer that
+      window would read "0 customers" under a full empty state, and the obvious response to that
+      is to press Add again and make a second account for the same firm.
+
+#### ✅ P0-7 re-run properly — a LIVE external account, over HTTP, not a SQL simulation
+
+- [x] 22 tables read through PostgREST as the customer: every master and every FMS table **0 rows**;
+      `profiles` and `app_access` **1 row each** (their own); `fms_dispatch_customer_orgs` /
+      `_logins` **0** — the ticked-ledger list never reaches them (Q11 honoured by never sending it)
+- [x] All **11 storage buckets: 0 objects**; a delete against `fms-purchase-docs` removed nothing
+- [x] `mst_refresh_party_companies`, `generate_recurring_tasks` → **Not authorized**;
+      `list_org_people` / `_detail` → 0 rows; the two admin RPCs → 0 rows
+- [x] And the three that ARE theirs work: profile **1**, items **80**, orders **0**
+- [x] 🔴 **Correction 8 proved, not asserted.** With **65 profiles — 64 staff + 1 real external
+      account** — the work-snapshot dry run returns **`wouldSend: 64`**. Before the fix it would have
+      been 65, and the customer would have received our internal work digest at 09:00 IST.
 
 ## P2 — Raise without joining step owners  ·  DONE
 
