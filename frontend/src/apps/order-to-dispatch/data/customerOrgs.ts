@@ -241,3 +241,66 @@ export async function fetchCustomerOrderActors(): Promise<CustomerOrderActor[]> 
       notifyUserIds: r.notify_user_ids ?? [],
     }));
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Credit check completing a customer order                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the credit-check clerk may choose on ONE customer order.
+ *
+ * Only the COMPANIES of the ticked ledgers come back — never the ledgers. Staff
+ * already see every company master, so this discloses nothing new; what it buys
+ * is that the picker offers exactly what the server will accept, instead of
+ * thirty companies of which five are allowed.
+ */
+export interface CustomerIntakeOptions {
+  companies: { id: string; name: string }[];
+  /** Pre-fills only. Always changeable — decisions Q1/Q2 stand. */
+  defaultLocationId: string | null;
+  defaultDispatchType: "local" | "transport" | null;
+}
+
+export const intakeOptionsQueryKey = (orderId: string) =>
+  ["dispatch", "customer-intake-options", orderId] as const;
+
+export async function fetchCustomerIntakeOptions(orderId: string): Promise<CustomerIntakeOptions> {
+  const { data, error } = await db.rpc("fms_dispatch_customer_intake_options", { p_order: orderId });
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as {
+    company_id: string; company_name: string;
+    default_location_id: string | null; default_dispatch_type: string | null;
+  }[];
+  return {
+    companies: rows.map((r) => ({ id: r.company_id, name: r.company_name })),
+    defaultLocationId: rows[0]?.default_location_id ?? null,
+    defaultDispatchType:
+      rows[0]?.default_dispatch_type === "local" || rows[0]?.default_dispatch_type === "transport"
+        ? rows[0].default_dispatch_type
+        : null,
+  };
+}
+
+/**
+ * Fill in the three fields the customer never sees, and re-point the order to the
+ * ticked ledger of the chosen book.
+ *
+ * ⚠ CALLED BEFORE THE CREDIT VERDICT, not instead of it. The RPC that records the
+ *   verdict refuses an unfinished customer intake outright — an approved order
+ *   would otherwise walk into the material step with nothing to bill it against
+ *   and no site to leave from.
+ */
+export async function completeCustomerIntake(
+  orderId: string,
+  input: { companyId: string; locationId: string | null; dispatchType: "local" | "transport" },
+): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_complete_customer_intake", {
+    p_order: orderId,
+    p: {
+      company_id: input.companyId,
+      location_id: input.locationId,
+      dispatch_type: input.dispatchType,
+    },
+  });
+  if (error) throw new Error(error.message);
+}

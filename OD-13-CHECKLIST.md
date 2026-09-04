@@ -181,14 +181,38 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
 - [x] Verify: an item mapped only to a NON-primary book is accepted (`NOVACRON YELLOW XKS HD 1000`)
 - [x] `npm run build` green; SO counter unchanged (1131) — the counter is a table, so tests roll back
 
-## P4 — Credit check completes the order
+## P4 — Credit check completes the order  ·  DONE
 
-- [ ] `fms_dispatch_complete_customer_intake` — company → location → type, ledger-limited,
+- [x] `fms_dispatch_complete_customer_intake` — company → location → type, ledger-limited,
       re-points `customer_id`, **re-points item lines to the billing book**, stamps completion
-- [ ] `fms_dispatch_record_credit_check` refuses while incomplete
-- [ ] `StepModal` completion section (only for incomplete customer intakes), pre-filled from org defaults
-- [ ] `DispatchStepper` orphan fallback names the real recipients — Correction 6
-- [ ] "Not yet decided" wording; blank-filter fix on company/location columns
+- [x] `fms_dispatch_record_credit_check` refuses while incomplete — patched by substitution
+      (Mechanic A), anchored on the `can_act` line, aborting rather than writing an unanchored body
+- [x] `fms_dispatch_customer_intake_options(order)` — the picker offers only what the server accepts
+- [x] `StepModal` completion section (only for an incomplete customer intake, only on `credit_check`),
+      seeded from the org defaults. Saved **before** the verdict, as its own call: the verdict RPC
+      refuses while incomplete, so the order of the two is load-bearing, and a verdict that then fails
+      for its own reasons leaves the details already saved rather than three fields to re-type
+- [x] `DispatchStepper` orphan fallback names the real recipients — Correction 6.
+      ⚠ **Scoped to the orphan case only.** My first version named the recipients on *every* step of a
+      customer order; once credit check fills in the site, the ordinary per-site owners are right again
+      for every step after it. The recipients own the order's ARRIVAL, not the whole flow
+- [x] "Not yet decided" wording (delivered in P3); company/location filters routed through
+      `blankFilter.ts` so they read "(Blank)" like every other grid instead of an em-dash that sorts
+      among the company names — blank on **every** customer order until credit check, so no longer rare
+- [x] Verify: 7 checks in a rolled-back transaction — verdict refused while incomplete, off-list company
+      refused, completion re-points the ledger and stamps, lines 1-of-3 → 2-of-3 in the billing book,
+      verdict then accepted, second completion refused, customer window shut
+
+> ⚠ **A known edge, measured and deliberately NOT fixed.** After completion, an ADMIN saving the order
+> through the ordinary staff Edit form hits `fms_dispatch_replace_lines`, which needs an
+> `mst_party_items` row for the pair — present for only **36 of 62** possible lines on the primary
+> company and **0 of 62** on two of the books. It is pre-existing (true today of any staff order whose
+> lines cross books; 219 of 4,009 live lines already do) and OD-13 makes it likelier, not new. The
+> alternatives are worse: restricting the picker to items in every book cuts Bishen from 62 items to a
+> handful; re-pointing only where the mapping exists drops the primary case from 59 lines to 36, trading
+> invoice-book correctness — which is what decision 3 asks for — for an admin-only editing convenience;
+> and creating the missing rows is a silent write to a governed central master. An ordinary clerk never
+> reaches this path at all, because `canEditOrder` requires raiser/admin/coordinator.
 
 ## P5 — The Orange Order Desk
 

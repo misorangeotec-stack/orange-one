@@ -1,0 +1,82 @@
+-- OD-13 · P4 — credit check is where a customer order becomes an ordinary one.
+--
+-- Applied to the live database on 04-09-2026 as
+--   od13_p4_complete_customer_intake
+--   od13_p4_credit_check_refuses_while_incomplete
+--   od13_p4_customer_intake_options
+--
+-- WHAT HAPPENS HERE
+-- -----------------
+-- The three fields the customer never sees get filled in, in the order
+-- company -> site -> type (Q1/Q2), and the order is RE-POINTED to the ticked ledger of the
+-- chosen book. That re-point is the real answer to "which Bishen?" -- the order was raised
+-- against the org's provisional primary ledger, and only now do we know which of the five
+-- books is billing it. fms_dispatch_assert_customer_of_company runs afterwards and can
+-- therefore only ever pass.
+--
+-- THE ITEM RE-POINT, AND THE TRADE-OFF IN IT
+-- ------------------------------------------
+-- The customer picked from the UNION of their ticked books, de-duplicated by name, so a line
+-- may point at an ink's row in a different book from the one now billing. Each line moves to
+-- the active row of the SAME NAME in the chosen company's book. Measured for Bishen's 62
+-- offered names, by billing company:
+--
+--   ORANGE O TEC PRIVATE LIMITED (the primary; 24 of 24 sampled orders)   59 of 62 move
+--   ORANGE O TEC PRIVATE LIMITED-NOIDA                                    42 of 62
+--   ORANGE O TEC ENTERPRISES PVT LTD                                      26 of 62
+--   ORANGE O TEC ENTERPRISES PRIVATE LIMITED-NOIDA                        19 of 62
+--   COLORIX DIGITAL PRINTING SOLUTIONS LLP                                 8 of 62
+--
+-- ⚠ BEST-EFFORT ON PURPOSE. A line with no counterpart in that book is LEFT AS PICKED rather
+--   than refused: refusing would put the credit-check clerk in front of an error about a
+--   choice the customer made days earlier and cannot now change. This is also not a new state
+--   for the module -- 219 of the 4,009 order lines that already exist carry an item from a
+--   different book than the order's billing company (5.5%), and nothing validates the pair.
+--
+-- ⚠ A KNOWN EDGE, NOT FIXED, AND HERE IS THE NUMBER. After completion, if an ADMIN later
+--   saves the order through the ordinary staff Edit form, fms_dispatch_replace_lines validates
+--   `mst_party_items(customer_id, item_id)` -- and for the primary company only 36 of the 62
+--   possible lines have that mapping row, 0 for two of the books. So a staff edit of a
+--   completed customer order can be refused on a line nobody changed.
+--
+--   It is PRE-EXISTING behaviour (the same is true today of any staff order whose lines cross
+--   books) and OD-13 makes it more likely rather than introducing it. Not fixed here for two
+--   reasons: the alternatives are worse. Restricting the picker to items present in every
+--   ticked book would cut what Bishen may order from 62 to a fraction. Making the re-point
+--   move a line only where the mapping row exists would drop the primary case from 59 back to
+--   36 -- trading invoice-book correctness, which is what decision 3 actually asks for,
+--   against an admin-only editing convenience. Creating the missing mst_party_items rows is a
+--   write to a GOVERNED central master and must not happen silently.
+--
+--   Note also that `canEditOrder` requires raiser/admin/coordinator, and on a customer order
+--   the raiser is the customer -- so an ordinary clerk never reaches this path at all.
+--
+-- AND THE GUARD ON THE VERDICT
+-- ----------------------------
+-- fms_dispatch_record_credit_check now refuses while intake_completed_at is null. Without it
+-- an approved order walks into the material step with nothing to bill it against and no site
+-- to leave from, and the credit verdict is the wrong place to discover that.
+--
+-- ⚠ PATCHED BY SUBSTITUTION off pg_get_functiondef (Mechanic A, the pattern this repo already
+--   uses for the __ungated gates), anchored on the can_act line, and it ABORTS rather than
+--   writing a body it could not anchor. The function is ~200 lines and reproducing it here to
+--   change three is how a subtle difference gets introduced.
+--
+-- SAFETY
+-- ------
+-- One new function, one focused options RPC, and one guard inserted into an existing body.
+-- No table, column or row is altered. Every one of them is inert until a customer order
+-- exists, and there are none.
+--
+-- VERIFIED against the live functions, in a rolled-back transaction:
+--   1. credit verdict while incomplete            -> refused, with the wording above
+--   2. a company NOT on the tick list             -> refused
+--   3. completing it                              -> company, site, type set; customer_id
+--                                                    re-pointed to the billing ledger; stamped
+--   4. item lines in the billing book             -> 1 of 3 before, 2 of 3 after
+--   5. credit verdict after completing            -> accepted
+--   6. completing a second time                   -> refused
+--   7. the customer's edit/cancel window          -> shut
+--
+-- The bodies are as applied in the three migrations named at the top; this file carries the
+-- reasoning and the measurements, which are the part pg_get_functiondef cannot give back.
