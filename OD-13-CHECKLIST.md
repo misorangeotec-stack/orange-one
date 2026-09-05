@@ -376,6 +376,94 @@ until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 2
 - [ ] Staff flow unmoved, in every module P0 touched
 - [ ] A third customer added through Setup alone
 
+## P7b — The dry run for the two real customers, and what it turned up  ·  05-09-2026
+
+Run because the two real logins were the only thing left waiting on the client, and none of it
+needed them: a test login can be pointed at a real customer's ledgers, and a predicate can be
+judged against real people, without an account existing or anybody being told anything.
+
+#### ✅ Bishen's and Ganga's item pickers, through the real RPC on the real ledgers
+
+`fms_dispatch_my_items()` called as the live `ZZ TEST` customer login, with the test org's
+`party_ids` temporarily repointed at each firm's actual mapped ledgers, in a **rolled-back**
+transaction — so this is the shipped function over the shipped data, and the test org came back
+byte-identical.
+
+| Customer | Ticked books | Mapping rows | **Items the picker offers** | Missing a unit | Types |
+|---|---|---|---|---|---|
+| BISHEN DYEING | 3 (OOT PL · OOT Ent · OOT Ent NOIDA) | 36 + 36 + 11 = 83 | **62** | 0 | ink, head, spare_parts |
+| GANGA FASHION | 2 (OOT PL · OOT Ent) | 51 + 28 = 79 | **63** | 0 | ink, head, spare_parts |
+
+83 → 62 and 79 → 63 is Correction 2's de-duplication doing its job on live data: the same ink
+exists once per Tally book, and `distinct on (i.name)` folds them. Neither picker is empty and
+neither has an item without a unit, which is what the P1 readiness check exists to catch.
+
+Their other ledgers (`…-OLD MACHINE`, `…(MACHINE)`, the two dormant NOIDA/COLORIX books) carry
+**zero** mappings, so ticking them would add nothing and is not needed.
+
+#### 🔴 The recipient could not see the order. Correction 3, again, one level down.
+
+Found by asking the last question the client's two names would have answered anyway: *can the
+people we would actually name see the order?* Measured on the real credit-check owners.
+
+`fms_dispatch_can_see_order(Jayshree, null, <customer>)` → **true**.
+`fms_dispatch_can_act('credit_check', <order>, Jayshree)` → **true**.
+The actual RLS `select` from `fms_dispatch_orders`, as Jayshree → **the order is not in the 936
+rows she sees.**
+
+The policy's customer arm reads `fms_dispatch_customer_logins` and `fms_dispatch_customer_orgs`
+inline, and a **policy is evaluated as the caller** — so those two reads meet their own RLS. Both
+tables are `USING (fms_dispatch_is_coordinator(…))`. Neither credit-check owner is a coordinator:
+
+```
+select count(*) from fms_dispatch_customer_logins  (as Jayshree) -> 0
+select count(*) from fms_dispatch_customer_orgs    (as Jayshree) -> 0
+```
+
+So the `exists` was false for exactly the people the arm was written for. The first real customer
+order would have been announced to someone who then could not open it — the precise symptom
+Correction 3 exists to prevent, reintroduced by the fix for it.
+
+⚠ **No test through `fms_dispatch_can_see_order` could ever have found this.** That function is
+`SECURITY DEFINER`, so it reads those tables as the definer and never meets the policy. Every P7
+check went through it and passed. The client was already safe by accident of good judgement —
+`customerOrgs.ts` reads a `SECURITY DEFINER` RPC and its header says the table is coordinator-only.
+The policy was the one reader that went at the tables directly.
+
+**Fixed** in `20261112120000_od13_p7b_the_recipient_arm_could_not_read_its_own_tables.sql`: the arm
+moves behind `fms_dispatch_customer_raisers_for(uuid)`, a `STABLE SECURITY DEFINER` helper, in the
+same hoisted shape as the four arms above it (`raised_by = any(coalesce((select …), '{}'))`).
+
+- [x] **Blast radius established before writing anything** — `pg_policies` searched for every policy
+      whose `qual` or `with_check` names either table: **one**, `fms_dispatch_orders_select`. Every
+      related function (`can_see_order`, `can_act`, `can_act__ungated`, `customer_org_of`,
+      `customer_order_actors`, `announce`, `my_orders`) is already `SECURITY DEFINER` and unaffected.
+- [x] **Equivalence asserted as the definer, before the lock** — old arm vs new arm over every
+      (profile, order) pair, **0 disagreements**. It is the same rule; only who may evaluate it moved.
+- [x] **Proved under RLS, which is the only place the change is visible** — Jayshree 936 → **937**,
+      and the order she could not see is the one that arrived.
+- [x] **Negative control**: Gorakh Pawar (staff, not named, not a coordinator) — still **0 / 936**.
+      Nothing widened for anybody who was not named.
+- [x] **The customer is still boxed in**: the `ZZ TEST` login sees **2** orders, **0** of them
+      raised by anyone else. The new helper leaks nothing.
+- [x] **She can read the whole order, not just its header** — line items 1, activity 5, rounds 0,
+      each matching the true count exactly. Checked rather than inferred, since "it follows from the
+      orders policy" is the reasoning that produced this bug.
+- [x] **Cost unchanged** — `EXPLAIN ANALYZE` shows every arm as an InitPlan with `loops=1`,
+      including the new one; **7.08 ms** for 937 rows. The hoisting won back in `20261111120000`
+      is intact, and the new arm is cheaper than the correlated `EXISTS` it replaces.
+- [x] **Rollback rehearsed on live data, not read** — applied, confirmed the defect genuinely
+      returns (Jayshree back to **0 / 936**), then rolled forward and re-confirmed **1 / 937**.
+- [x] Every probe ran inside a **rolled-back** transaction. `SO-2627-1132` and `1133` and the test
+      org are byte-identical afterwards, and **nobody was notified of anything**.
+
+#### The one thing still genuinely outstanding, and it is not testable
+
+Who at Orange O Tec is named on each customer. It is a decision, not a check — but it is now a pick
+from a list rather than a blank: **13 staff** hold edit on `order-to-dispatch`, of whom **2** own the
+credit-check step — **Jayshree Patil** (collection@) and **LALIT SHARMA** (delhioffice@). Naming
+both is what stops Q8's single point of failure.
+
 ## P8 — Issue the two logins  ·  only on explicit go-ahead
 
 - [ ] Confirm with the user before creating real accounts
