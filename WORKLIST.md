@@ -48,7 +48,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | The nine COA parameter **standard values**, to type into Masters → COA Parameters. ⚠ **They are NOT in the QC sheet and never were** — its *Standard Specs.* tab holds one cell reading *"We will enter manually afterwards for our internal reference (No relsation with software)"*, and the COA tab leaves the Standard column blank. Nothing is owed as a file; QC has to state the values | Factory / QC team, via Bushra | **PE-5 · B** | 2026-09-02 |
 | Who owns Production vs Repackaging on the four tail steps (PM Transfer, Packing Entry, Ready to Dispatch, FG Transfer) — the split ships inert until the names are set, so nothing is testable end to end without them | Bushra / factory | **PE-6 go-live** | 2026-09-02 |
 | The PI's **page-2 sales page** for the seven machines that have never had one: **MP5000 · JPK · Mini Lario · Kolorado Alpha 16 · Foil Machine · Label Printer · Book Printer** — plus two confirmations: does **Fab Pro 1I / 3I** share the Fab Pro 2i page, and does **P8D** share Sub Pro II+? 🟢 **The twelve existing pages are BUILT and seeded** (OCPI-36, 02-09) — 18 of 28 machines now print one. Each missing page needs a heading, a tagline, one paragraph and the bullets; likely already in the machine brochure. A machine without one issues its PI one page shorter, which is a correct form | Bushra | **OCPI-36** page 2 — delays those 10 machines only | 2026-09-02 |
-| Were the duplicate CV re-uploads deliberate? Re-counted 05-Sep: **7 extra rows, not 5**. **Purvi Upadhyay + Manali Desai** re-added to the EA vacancy on 02-Sep after both were rejected on 31-Aug; **Harsha Jain** twice on Marketing Executive; **Kajal Bhalerao THREE times**, **Sunil Sharma** twice, and 🔴 **CA Vandit Mehta twice with BOTH rows at Interview R3** on Finance manager. If deliberate the new rows are right and the old ones are noise; if accidental it is the reverse. **No data has been touched** | Saloni Rathod, via Bushra | **FIX-5** cleanup only — the guard itself shipped 05-Sep | 2026-09-03 |
+| Were the duplicate CV re-uploads deliberate? Re-counted 05-Sep: **7 extra rows, not 5**. **Purvi Upadhyay + Manali Desai** re-added to the EA vacancy on 02-Sep after both were rejected on 31-Aug; **Harsha Jain** twice on Marketing Executive; **Kajal Bhalerao THREE times**, **Sunil Sharma** twice, and 🔴 **CA Vandit Mehta twice with BOTH rows at Interview R3** on Finance manager. If deliberate the new rows are right and the old ones are noise; if accidental it is the reverse. **No data has been touched.** 🟢 **All seven rows are now written up row by row** — candidate numbers, stages, interview counts, what contact details each carries and which one looks real — in [To discuss with Ritesh Bhai → New Recruitment, item 4](#new-recruitment), ready to put in front of her | Saloni Rathod, via Bushra | **FIX-5** cleanup only — the guard itself shipped 05-Sep | 2026-09-03 |
 | **Two wording confirmations on the Alpha 15 sales page**, now that it is seeded. 🟢 The old question — *which of the two pages is current* — is **ANSWERED and no longer blocking:** `Advantages of KOLORADO ALPHA 15` and `Advantages of FEDAR 15` were both rendered and compared and are **identical word for word**; only the heading differs, so it was seeded under the Kolorado one. What is still open is cosmetic: (a) Kolorado or FEDAR as the printed heading, and (b) both 2026-27 papers print **`ALPHA15` with no space** — is that intended? Either is a one-word edit on the master | Bushra | Nothing — the page is live either way | 2026-09-02 |
 | 🔴 **`machine_model_no` is still blank on 13 of 28 machines — and every templated one of them is a KoloRado Alpha.** Re-checked 03-09-2026 after OCPI-39's fills. **7 templated, all Alphas:** `Kolorado Alpha 15` · `Kolorado Alpha 16` · `KoloRado Alpha 3 — 12 heads` · `KoloRado Alpha 3.2 — 8 heads` · `KoloRado Alpha 3.2 — 24 heads` · `KoloRado Alpha II — 1.8 m` · `KoloRado Alpha II — 2.2 m`. **6 untemplated:** `Book Printer` · `Foil Machine` · `KoloRado Alpha 3.2 — 16 heads` · `Label Printer` · `Mini Lario` · `Pengda PD-1800XD-800`. ⚠ **This may be a fact about the Alphas rather than a hole in the master** — the only Alpha with a code is the II 1.9 m (`OT-1908A`), taken off its own contract's spec row, and real contract 125 prints the label *"Model No:"* **with nothing after it**. So either the Alphas genuinely have no manufacturer code and the answer is "leave them blank", or the codes exist and nobody has written them down. 🟢 **Two candidates already on file** if the answer is the latter: `Mini Lario` → **`MS-MINI LARIO-1.8 MTR`** and `Pengda PD-1800XD-800` → **`PD-1800XD-800`**, both stated on the decks supplied 02-09. 🟢 **Three were filled from real contracts on 03-09 (OCPI-39):** K32 `HM1800B-TK32-B1`, P8S `HM1800R-P8S-A1`, Pengda 800 `PD-1700XD-800` — 15 of 28 now filled. **Nothing is broken meanwhile:** both the PI and the OC omit the phrase entirely rather than printing a gap | Ritesh Bhai, with Bushra | **OCPI-36 / OCPI-39** — cosmetic, blocks nothing | 2026-09-03 |
 | 🔴 **Five machines have NO billing name, and it is the line that prints on the contract.** `Fab Pro 2I` · `Fab Pro 3I` · `JPK` · `Mini Lario` · `MP5000` all carry a null `billing_name`, so a contract for any of them names the machine and then says nothing about what is being sold. `KoloRado Alpha 3 — 12 heads` was the sixth and **is now filled** — its siblings all read `LARGE FORMAT INKJET PRINTER WITH <n> HEADS WITH STD. ACCESSORIES`, so 12 went in the slot, copied not composed. The other five have **no sibling pattern and no real paper stating one**, and a billing description on a signed contract is not something to infer. **Needed: one line each, in Bushra's own wording.** ⚠ The OCPI-40 audit reported this as ONE machine because the sweep was keyed `name ilike '%alpha%'` — the unfiltered count is six | Bushra / Ritesh Bhai | **OCPI-41 C-2** | 2026-09-03 |
@@ -489,6 +489,80 @@ this hire* and *who will they report to* — both editable before saving. The se
 leaving it blank is half of why that picker offers almost nobody (**NR-1**).
 
 Nothing on NR-3 is open. It is specified and parked with the rest of the HR list.
+
+**4. `[open]` 🔴 The seven duplicate candidate rows — which of each pair is the real person?**
+*(05-Sep-2026 · for **Saloni Rathod**, who added all of them · the guard that stops new ones shipped
+the same day: **FIX-5**)*
+
+**Six people, fourteen rows, seven of them extra.** Re-derived from the live database 05-Sep. Every
+row was added by Saloni. Nothing has been deleted or changed — which row is the truth depends on
+what was intended, and only she knows.
+
+**MRF-2627-0006 · Marketing Executive** *(sourcing)*
+
+| Row | Stored name | Added | Stage now | Interviews | Contact on file |
+|---|---|---|---|---|---|
+| CAN-2627-0006 | Harsha Jain | 10-Aug 12:25 | **Telephonic** | 1 | email + phone |
+| CAN-2627-0039 | Harsha Jain | 20-Aug 18:17 | Shortlisted by HR | 0 | same email + phone |
+
+*The older row is the one that has moved. The newer sits behind it doing nothing.*
+
+**MRF-2627-0015 · Finance manager** *(sourcing)*
+
+| Row | Stored name | Added | Stage now | Interviews | Contact on file |
+|---|---|---|---|---|---|
+| CAN-2627-0118 | CA Vandit Mehta | 02-Sep 16:01 | 🔴 **Interview R3** | **4** | email + phone |
+| CAN-2627-0119 | `CV   CA Vandit Mehta` | 02-Sep 18:08 | 🔴 **Interview R3** | **3** | **none** |
+| CAN-2627-0051 | Kajal Bhalerao | 27-Aug 15:36 | **Interview R3** | 3 | email + phone |
+| CAN-2627-0054 | Kajal Bhalerao | 29-Aug 11:12 | Telephonic | 1 | same |
+| CAN-2627-0057 | Kajal Bhalerao | 31-Aug 11:28 | Disqualified — *"Added twice"* | 0 | same |
+| CAN-2627-0049 | `Sunil Sharma CV` | 27-Aug 15:21 | Disqualified — *"Candidate withdrew"* | 0 | **none** |
+| CAN-2627-0050 | `Sunil Sharma CV` | 27-Aug 15:22 | Disqualified — *"Not selected at interview_3"* | 3 | email + phone |
+
+🔴 **Vandit is the one to settle first.** Both rows are sitting at Round 3 **right now**, two hours
+apart, carrying **4 and 3 interview records between them** — so two people can book a director for
+the same candidate without either seeing the other. The second row has no email and no phone, which
+is why nothing warned anyone.
+
+✅ **Kajal is already half-answered** — the 31-Aug row was disqualified with the reason *"Added
+twice"*, so HR spotted that one and used disqualify because **there is no way to delete a candidate
+row** (NR-5). Still leaves two live rows at different stages.
+
+✅ **Sunil looks self-evident but should still be confirmed** — the two rows are **one minute apart**
+(15:21 and 15:22), and only the second carries the real pipeline: 3 interviews and a *"Not selected
+at interview_3"* outcome. The first has no contact details and no interviews.
+
+**MRF-2627-0018 · Executive Assistant** *(⚠ **cancelled**)*
+
+| Row | Stored name | Added | Stage now | Interviews | Contact on file |
+|---|---|---|---|---|---|
+| CAN-2627-0066 | Manali Desai | 31-Aug 11:45 | Disqualified — *"out of budget and not so active"* | 0 | email + phone |
+| CAN-2627-0097 | Manali Desai | 02-Sep 11:06 | Shortlisted by HR | 0 | same |
+| CAN-2627-0065 | Purvi Upadhyay | 31-Aug 11:45 | Disqualified — *same reason* | 0 | **none** |
+| CAN-2627-0098 | `Purvi Upadhyay   EA` | 02-Sep 11:06 | Shortlisted by HR | 0 | **none** |
+
+This is the pair Ritesh Bhai originally reported — the board reading *"4 · 2 in play"* for two people.
+Both were rejected on 31-Aug and re-uploaded on 02-Sep. ⚠ **Purvi's two rows do not even share a
+name** (`Purvi Upadhyay` vs `Purvi Upadhyay   EA` — the filename's " - EA" became part of the name),
+and **neither row has an email or a phone**. They were caught only because both CVs are the same
+file, `Purvi Upadhyay - EA.pdf`. That single pair is why the new check needed five signals.
+
+> **The question, per person:** was the second upload **deliberate** — reconsidering someone after
+> the earlier rejection — or an **accident**?
+>
+> - **Deliberate** → the new row is right and the old disqualified one is noise.
+> - **Accident** → the reverse: keep the row that carries the history and remove the new one.
+>
+> Vandit first, then Kajal, Sunil, Harsha, Manali, Purvi.
+
+⚠ **Two things worth saying when the question is asked.** The new guard **does not touch these
+seven** — it stops the next one being created and cannot decide which existing row is the real
+person. And whichever answer comes back, the cleanup needs either **NR-5** (no candidate row can be
+deleted today) or a one-off SQL statement.
+
+⚠ **"Reconsider this person" will not work on the EA pair.** MRF-2627-0018 is `cancelled`, and a
+cancelled vacancy is frozen — nobody can be brought back into play on it. Reopening it is a
+**FIX-6** decision, not part of this.
 
 ---
 
@@ -11584,6 +11658,16 @@ Ask about him first; he is the one that can waste a director's time.
 
 ⚠ **The guard does not touch these seven.** It stops the next one being created; it cannot decide
 which of two existing rows is the real person. That is still a judgement only HR can make.
+
+- [x] **Write the seven rows up so the question can actually be asked** *(05-09-2026)* — done, in
+      **[To discuss with Ritesh Bhai → New Recruitment, item 4](#new-recruitment)**, in the same
+      form as every other question held for a person. Re-derived from the live database rather than
+      from this file: six people, fourteen rows, seven extra, each one listed with its candidate
+      number, when it was added, the stage it is at now, how many interview records hang off it, and
+      whether it carries an email or phone at all. Per-group notes say which row looks like the real
+      one and why, so the conversation is a confirmation rather than an investigation.
+      **Everything on our side of FIX-5 is now finished** — only her answer is outstanding, and the
+      cleanup itself still needs NR-5 or a one-off statement.
 
 ### FIX-4 · A requisition could not be cancelled once sourcing had begun  `[x]`
 *Purchase RM Domestic · RM Import · **Fixed 2026-08-25, 13:35 IST** · Live on `master` at `3c71504`*
