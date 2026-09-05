@@ -274,3 +274,41 @@ export function paperFileBase(deal: OcpiDeal, versionNo?: number): string {
   // No customer segment rather than an empty one — " -  - PI.pdf" reads as a bug.
   return who && deal.ocNo ? `${number}${rev} - ${who}` : `${number}${rev}`;
 }
+
+/**
+ * The company's name as it appears in PROSE — "Orange O Tec Pvt Ltd".
+ *
+ * 🔴 THE STORED `legal_name` IS "M/s ORANGE O TEC PVT LTD.", WHICH IS AN ADDRESS
+ *    FORM. "M/s" is used ABOUT a firm, never BY one, so it is right on the bank
+ *    line (the company addressing itself to a payer) and wrong everywhere the
+ *    company is a party in a sentence.
+ *
+ * 🔴 THIS EXISTS BECAUSE THE SAME LEAK APPEARED TWICE. OCPI-36 fixed it in the
+ *    Performa Invoice's cover letter ("We are M/s ORANGE O TEC PVT LTD."), and
+ *    the OCPI-42 audit then found it again inside the composed trade term, on
+ *    folder 101's re-entry:
+ *
+ *      ours    ( Transportation bear by M/s ORANGE O TEC PVT LTD.)
+ *      theirs  ( Transportation Bear by Orange O Tec Pvt Ltd)
+ *
+ *    Two copies of one rule is how a third site gets written wrong. Both callers
+ *    now read this; a new one must too.
+ *
+ * ⚠ ONLY SHOUTING WORDS ARE CALMED. Counted across all 56 real Performa
+ *   Invoices in both years: 48 read "Orange O Tec Pvt Ltd", 2 read "Orange O Tec
+ *   PVT LTD", 2 name a different entity. A word already carrying a lower-case
+ *   letter is left exactly as stored, so "Colorix InkJet" survives intact and
+ *   only genuine ALL-CAPS is brought down. One-letter words (the "O") are safe
+ *   either way.
+ *
+ * ⚠ THE BANK LINE MUST NOT USE THIS. It keeps the stored form, "M/s" and all.
+ */
+export function proseCompanyName(legalName: string | null | undefined): string {
+  const legal = legalName?.trim() || "";
+  if (!legal) return "";
+  const bare = legal.replace(/^m\/s\.?\s+/i, "").trim() || legal;
+  return bare
+    .split(/(\s+)/)
+    .map((w) => (/[a-z]/.test(w) || !/[A-Z]/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()))
+    .join("");
+}

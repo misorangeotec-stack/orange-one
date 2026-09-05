@@ -7,7 +7,7 @@ import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAs
 import { DELIVERY_DATE_REMARK, INSURANCE_CLAUSE, type DealFacts } from "./fieldSpec";
 import { conditionsFor, render, type Conditions } from "./conditions";
 import { tokensFor } from "./tokens";
-import { paperDate, paperFileBase } from "./format";
+import { paperDate, paperFileBase, proseCompanyName } from "./format";
 import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiSalesPage, SalesPageBlock,
 } from "../types";
@@ -295,7 +295,7 @@ function moneyLines(d: OcpiDeal): MoneyLine[] {
     out.push({ label: "Machine Value INR", value: money(d.machineValueInr) });
   }
   if (d.gstRate !== null && d.gstAmountInr !== null) {
-    out.push({ label: `+ ${d.gstRate}% GST Value INR`, value: money(d.gstAmountInr) });
+    out.push({ label: `+${d.gstRate}% GST Value INR`, value: money(d.gstAmountInr) });
   }
 
   const dryerCharged = d.dryerValueInr !== null && d.dryerValueInr > 0;
@@ -663,24 +663,14 @@ export async function buildPiPdf(input: PiDocInput): Promise<jsPDF> {
  *   case here would invent a house style this function has no business setting.
  */
 function letterName(profile?: OcpiCompanyProfile): string {
-  const legal = profile?.legalName?.trim() || "Orange O Tec Pvt Ltd";
-  const bare = legal.replace(/^m\/s\.?\s+/i, "").trim() || legal;
   /*
-    ⚠ AND THE CASE COMES DOWN TOO, BUT ONLY ON WORDS THAT ARE SHOUTING.
-      Counted across all 56 real Performa Invoices in both years: 48 read
-      "Orange O Tec Pvt Ltd", 2 read "Orange O Tec PVT LTD", 2 name a different
-      entity — so the house form is title case and NOT the stored
-      "M/s ORANGE O TEC PVT LTD.", which appears in prose on none of them.
-
-      Only ALL-CAPS words are touched. A word already carrying lower-case letters
-      is left exactly as stored, so a name like "Colorix InkJet" survives intact
-      and only genuine shouting is calmed. One-letter words (the "O") are safe
-      either way. The BANK line keeps the stored form untouched — see bankLines.
+    ⚠ THE RULE MOVED TO `proseCompanyName` IN format.ts, AND THE BODY IS NOT
+      DUPLICATED HERE. The OCPI-42 audit found the identical "M/s" leak a second
+      time, inside the composed trade term, which this private copy could never
+      have reached. One rule, two callers. The BANK line still keeps the stored
+      form untouched — see bankLines.
   */
-  return bare
-    .split(/(\s+)/)
-    .map((w) => (/[a-z]/.test(w) || !/[A-Z]/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()))
-    .join("");
+  return proseCompanyName(profile?.legalName) || "Orange O Tec Pvt Ltd";
 }
 
 /**

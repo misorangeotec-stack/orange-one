@@ -12,7 +12,7 @@ import GstinField from "./GstinField";
 import RequestMasterModal from "./RequestMasterModal";
 import { isVisible } from "../lib/branching";
 import { useSalespeople } from "../lib/useSalespeople";
-import { fmtDealValue } from "../lib/format";
+import { fmtDealValue, proseCompanyName } from "../lib/format";
 import {
   COST_BEARERS, CURRENCIES, DELIVERY_DATE_REMARK, DELIVERY_FACTORY_CITIES, DELIVERY_LEGS,
   DELIVERY_VIA, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA, INSURANCE_CLAUSE,
@@ -964,12 +964,31 @@ export default function QuotationForm({
    *    it inside a contract clause rather than merely on a dropdown. When the
    *    chosen entity has no legal name the DEFAULT entity's is used, which is
    *    what this form already promises below and what the contract prints.
+   *
+   * 🔴 AND IT IS THE PROSE SPELLING, NOT THE STORED ONE. `legal_name` reads
+   *    "M/s ORANGE O TEC PVT LTD.", so the composed term came out as
+   *
+   *      ours    ( Transportation bear by M/s ORANGE O TEC PVT LTD.)
+   *      theirs  ( Transportation Bear by Orange O Tec Pvt Ltd)
+   *
+   *    on folder 101's re-entry — caught by the OCPI-42 PI audit, which read the
+   *    eleven generated invoices back against Bushra's own. "M/s" is an address
+   *    form used ABOUT a firm, never BY one, and this clause names the company as
+   *    a party in a sentence. Same rule as the invoice's cover letter, and it is
+   *    the SAME FUNCTION now — see `proseCompanyName` in lib/format.ts.
+   *
+   * ⚠ THE TRAILING FULL STOP COMES OFF HERE AND NOT INSIDE `proseCompanyName`.
+   *   The stored name ends "…PVT LTD.", which is right in the invoice's cover
+   *   letter ("We are Orange O Tec Pvt Ltd.") because it ends a sentence — and
+   *   wrong here, where the name sits mid-clause inside brackets and the real
+   *   contract closes "…Orange O Tec Pvt Ltd)". Stripping it in the shared
+   *   helper would take the stop off the letter too.
    */
   const sellerNameFor = (companyId: string) => {
     const own = companyId
       ? s.companyProfiles.find((p) => p.companyId === companyId && p.active)
       : null;
-    return (own?.legalName?.trim() || defaultEntityName?.trim() || "");
+    return proseCompanyName(own?.legalName || defaultEntityName).replace(/\.\s*$/, "");
   };
 
   /**
