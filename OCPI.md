@@ -4934,3 +4934,175 @@ dialog now says so, because that is the part somebody would want to know *before
 
 The storage half is worth fixing properly: every deleted draft since the module shipped has left its
 PDFs in the bucket. Not done here — it is a change to a live RPC and belongs in its own entry.
+
+---
+
+# OCPI-46 · The eleven re-entered contracts, read back as INVOICES
+
+**04-09-2026.** OCPI-42 typed eleven of Bushra's own signed papers back into the form and compared
+the **order confirmation** and the money. It never opened the Performa Invoice — the words
+"Performa", "Invoice" and "PI" appear nowhere in its report. Every one of those eleven deals *did*
+generate a PI (`pi_pdf_path` is filled on all 11, 23 files counting revisions), so the papers were
+sitting in the bucket unexamined.
+
+This reads all eleven back and compares them line by line with the real invoice in each folder.
+
+🔴 **NOTHING WAS RE-PUNCHED AND NOTHING WAS BURNED.** The stored PDF is the ground truth: it is what
+the UI wrote at Generate time, so the vintage question ("was this made before or after the OCPI-36
+fixes?") is answered by *reading the paper*, not by trusting a timestamp. Harness in
+`scratchpad/pi-audit/` — `pull.mjs` downloads and extracts, `refs.mjs` extracts Bushra's,
+`diff.mjs` aligns the commercial block, `prove.mjs` re-renders one from current code without saving.
+
+| Ours | Folder | Machine | Generated |
+|---|---|---|---|
+| OTPL/OC/10 | 123 Amarasha | Homer K24 | 03-Sep 02:06 |
+| OTPL/OC/11 | 124 Clothera | KoloRado Alpha 3 | 03-Sep 02:10 |
+| OTPL/OC/12 | 126 Prabal | P8S | 03-Sep 02:11 |
+| OTPL/OC/15 | 117 Aklavya | Kolorado Alpha 15 | 04-Sep 10:36 |
+| OTPL/OC/16 | 111 VPS | Alpha II 1.8 m | 04-Sep 10:38 |
+| OTPL/OC/17 | 108 M K Fashions | Alpha II 1.9 m | 04-Sep 10:40 |
+| OTPL/OC/18 | 122 Vijaylaxmi | P8S | 04-Sep 11:33 |
+| OTPL/OC/19 | 101 Yashasvi | P8S | 04-Sep 11:34 |
+| OTPL/OC/20 | 106 Noor | Position Printer | 04-Sep 12:05 |
+| OTPL/OC/21 | 121 Modi | Rocket | 04-Sep 12:30 |
+| OTPL/OC/22 | 119 Modi | Homer K32 | 04-Sep 12:30 |
+
+**Nine distinct machines, rupee and dollar, local and High Seas.** The three from 03-Sep predate the
+OCPI-36 fixes and still read `Date - 03 Sept 2026` / `We are M/s ORANGE O TEC PVT LTD.`; the eight
+from 04-Sep carry them. That split is itself the proof the fixes landed.
+
+## What the eleven confirmed
+
+- **All 11 render 3 pages** with the right sales page on page 2.
+- **The square bank bullets draw**, and at the right depth: x=62 against the top-level x=42, so they
+  read as the second-level list the source has. Before OCPI-36 there was *no text item at x=62 at
+  all* — the four bank lines sat unmarked and the page still looked finished.
+- **Country of origin prints once** (OC/21), in the bullet, not twice.
+- **Every money figure matches to the rupee on 10 of 11.** The eleventh is Clothera, below.
+
+## 🔴 Two defects found and fixed
+
+### N-1 · `M/s ORANGE O TEC PVT LTD.` leaked into the TRADE TERM
+
+The same defect OCPI-36 fixed in the cover letter, in a second place the private helper could never
+have reached. Folder 101 is the one deal in the year where **the company** bears the local
+transport, so it is the only paper that names the seller inside a clause:
+
+```
+ours    Ex-Work Surat (Transportation bear by M/s ORANGE O TEC PVT LTD.)
+theirs  Ex-Work Surat ( Transportation Bear by Orange O Tec Pvt Ltd)
+```
+
+`composeTradeTerm`'s own comment already quotes the real paper as "Orange O Tec Pvt Ltd" — the
+intent was right and the value passed in was the raw `legal_name`.
+
+**Fixed by making it one rule instead of two.** `proseCompanyName` now lives in
+[format.ts](frontend/src/apps/ocpi/lib/format.ts); `letterName` in `piPdf.ts` and `sellerNameFor` in
+`QuotationForm.tsx` both read it. Two copies of one rule is how a third site gets written wrong.
+
+⚠ **The trailing full stop comes off at the trade-term call site, NOT in the shared helper.** The
+stored name ends `...PVT LTD.`, which is right in the letter ("We are Orange O Tec Pvt Ltd.")
+because it ends a sentence, and wrong mid-clause inside brackets.
+
+⚠ **`trade_term` is a STORED column**, composed when the delivery card is edited. The eleven papers
+keep the string they were generated with; the fix reaches a deal the next time someone touches its
+delivery, and every new deal from now.
+
+### N-2 · `+ 18% GST Value` — the space is ours alone
+
+Swept every real PI in both years by content: **29 write `+18%`, 8 write `+ 18%`.** We wrote the
+minority on all 11. Now `+18%`, proved on a re-rendered folder 101:
+
+```
+Machine Value      INR 37,51,000.00
++18% GST Value     INR 6,75,180.00     <- byte-identical to the real invoice
+Total Value        INR 44,26,180.00
+```
+
+## What still differs, and who owns it
+
+### 🔴 D-1 · The SUBJECT line is wrong on 11 of 11 — *Bushra*
+
+Hers names the machine the customer recognises, with its head count. Ours prints the factory code.
+
+| Folder | Theirs | Ours |
+|---|---|---|
+| 123 | `SUBJECT: HOMER K24` | `Subject: Model No: HM1800B-TK24` |
+| 126 | `Subject: Model No: Sub Pro II+ (With 8 Heads)` | `Subject: Model No: HM1800R-P8S-A1` |
+| 108 | `Subject: Model No: ALPHA II (WITHOUT PRINTHEADS)` | `Subject: Model No: OT-1908A` |
+| 119 | `Subject: Model No: Homer K32 (with 32 Print heads)` | `Subject: Model No: HM1800B-TK32-B1` |
+| 121 | `Subject: Model No: ROCKET MACHINE` | `Subject: Model No: HMSINGLEPASS 1800-ROCKET-K` |
+| 124 | `Subject: Model No: KoloRado Alpha III (with 16 heads)` | `Subject: KoloRado Alpha 3 - 12 heads` |
+
+**Zero match.** The customer-facing name has no home in the machine master, so the paper falls back
+to the engineering code. Note 124: with no model number stored, the renderer prints the machine's
+**internal name** — em dash and all — on a customer's invoice.
+
+### 🔴 D-2 · Folder 108: our invoice says the machine HAS eight print heads. It was sold WITHOUT them.
+
+```
+theirs  LARGE FORMAT INKJET PRINTER (1.9 Meter) WITH STANDARD ACCESSORIES (WITHOUT PRINTHEADS)
+ours    LARGE FORMAT INKJET PRINTER WITH 8 HEADS WITH STD. ACCESSORIES
+```
+
+The description is `fms_ocpi_machines.billing_name`, one fixed string per machine, so it cannot say
+"without printheads" for one deal and "with 8 heads" for another. **This is the sharpest finding in
+the set** — not a formatting difference but a factual contradiction on a paper the customer signs.
+
+🟢 **The mechanism to fix it now exists.** OCPI-45 (04-09) made billing names render through the same
+conditional engine as the contract's supply line, so `[[if dryer]]` and `{{head_count}}` already
+work there. It needs a heads condition and the master edited — not a renderer change.
+
+The same shape, less dangerously, on three more: 123 drops `WITH DRYER`, 117 drops `with 15 heads`,
+121 says `WITH 224 PRINTHEADS` where the real paper says `KYOCERA EX600 RC PRINTHEAD`.
+
+### 🔴 D-3 · Delivery — 0 of 11 match — *Ritesh Bhai*
+
+**All eleven promise a number of days. All eleven of ours promise a date.** This is the standing
+question, now carried by eleven more papers. The label is theirs to settle too — across these eleven
+alone it is written three ways:
+
+`Delivery Terms` x6 · `Shipment Terms` x4 · `Delivery Days` x1
+
+⚠ And folder 117 labels the **trade** term `Transport Terms`, which is a fourth use of the same
+vocabulary for a different thing.
+
+### 🟠 D-4 · Insurance — 0 of 3 match where we print it — *Ritesh Bhai*
+
+Ours splits responsibility at the point of loading; hers puts it wholly on the customer (`Insurance
+will Borne by Customer.` / `Product Insurance is at Customer Care.`). Different **commitments**, not
+different wording.
+
+### 🟠 D-5 · Trade term — the parentheticals still have nowhere to live — *Ritesh Bhai*
+
+With N-1 fixed, the composer now reaches the papers' wording. What it still cannot say:
+
+- `(Under EPCG License)` — folders 121 and 106
+- `(UNDER HIGH SEAS SALES AGREEMENT)` — folder 106
+
+Both are licence facts about the shipment, and neither has a field. Recommend a typed field; the
+same gap is on the order confirmation, so **one answer closes both papers**.
+
+### 🟡 D-6 · Manufacturer sits in the wrong block
+
+Folder 106 prints `Manufacture :` as a Terms & Conditions bullet; ours prints `MFG:` inside the
+description cell.
+
+## Two things that look like defects and are not
+
+- **The Note block is absent on 8 of 11.** Those eight deals were punched with `remarks` NULL, so
+  there was nothing to print. Where it was filled (106, 121, 119) it renders correctly. Same for the
+  Insurance bullet: `insurance_clause_agreed` is NULL on the same eight.
+  ⚠ But folder 106's remark was typed as `1. 500 Kgs Ink Included...` into a list the renderer
+  already numbers, giving **`1) 1. 500 Kgs Ink Included...`**. The field hint should say the
+  numbering is automatic.
+- **Folder 124's internal machine name on the invoice** is a stale-master artifact, not a live bug:
+  that master got its `billing_name` at 03-Sep 16:49, six hours *after* OC/11 was generated. It
+  would render correctly today.
+
+## Still open, unchanged
+
+**Clothera (124) — print heads priced as their own row.** Theirs: machine 46,50,000 + heads
+21,00,000 = 79,65,000. Ours: 54,87,000. The stored totals exclude separately-invoiced items by
+design, and a total the browser adds up itself is the one thing this module has refused to do.
+Ritesh Bhai's call, carried over from OCPI-42.

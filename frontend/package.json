@@ -10,7 +10,8 @@
     "backup": "node scripts/backup-db.mjs",
     "asset-template": "node scripts/build-asset-template.mjs",
     "field-map": "node scripts/ocpi-field-map.mjs",
-    "oc-audit": "node scripts/oc-audit/index.mjs"
+    "oc-audit": "node scripts/oc-audit/index.mjs",
+    "pi-audit": "node scripts/pi-audit/pull.mjs && node scripts/pi-audit/refs.mjs && node scripts/pi-audit/diff.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
