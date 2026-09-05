@@ -9071,9 +9071,47 @@ never sees the ticked ledger list" is honoured — by never sending it.
 both are closed). And on a credit hold with a deliberately internal reason, **all four notifications
 went to our person and none to the customer** — who can read 0 notification rows and 0 activity rows.
 
-**Still to do: P6** (the password re-pin exemption and the admin screens' External signal), **P7**
-(the part-delivered case, and the staff walk-through of every module P0 touched), **P8** (the two
-real logins, on explicit go-ahead, then cherry-pick to `oo-master`).
+#### ✅ P6–P7 SHIPPED 04-09-2026 · P7b 05-09-2026 — everything but the two real logins
+
+**P6** (`5245913`) — the password re-pin exemption, the Edge Function no longer copying a password
+into `user_metadata`, and the External signal in the five places that assumed every `profiles` row is
+staff. 🔴 It also uncovered a **PRE-EXISTING** bug with nothing to do with OD-13: an admin
+saving their own record **permanently demoted themselves**, because `setUserRole` deleted their
+`user_roles` row before inserting the new one, under a policy that reads that very table. Hit live;
+the row was restored by hand, nobody else was affected, and the write now inserts first.
+
+**P7** (`dca5321`) — the part-delivered case walked end to end on **SO-2627-1133** (100 KGS placed,
+40 approved, shipped, invoiced, gate-passed, delivered). At the moment it matters the obvious rule
+said *window OPEN* and ours said *window SHUT* — without the rounds clause the customer could have
+cancelled an order that had already shipped, straight into Sales Return. Staff flow proved unmoved:
+**297 tables / 0 errors** as an ordinary non-admin, five storage buckets reading fully, nine modules
+rendering with zero console errors.
+
+**P7b** (05-09) — the dry run for Bishen and Ganga, done on a **test** login so it needed nothing
+from the client. Their real ledgers produce working pickers: **62** items for Bishen (83 mapping rows
+across 3 books) and **63** for Ganga (79 across 2), none missing a unit — Correction 2's
+de-duplication working on live data. Their other ledgers carry zero mappings, so ticking them would
+add nothing.
+
+🔴 **And it found the last defect, which is Correction 3 one level down.** The orders policy's
+customer arm reads `fms_dispatch_customer_logins` and `_orgs` **inline**, and a policy is evaluated
+**as the caller** — so those reads meet their own RLS, and both tables are coordinator-only. Neither
+credit-check owner is a coordinator, so `fms_dispatch_can_see_order` said **true** while the actual
+`select` returned **nothing**: the first real customer order would have been announced to somebody who
+then could not open it. ⚠ No test through `can_see_order` could have found it — that function is
+`SECURITY DEFINER` and never meets the policy, which is why every P7 check passed. Fixed in
+`20261112120000` by moving the arm behind a `SECURITY DEFINER` helper: Jayshree **936 → 937**,
+non-recipients unchanged at **0 / 936**, the customer still sees only their own 2, line items /
+activity / rounds all reading their true counts, cost unchanged at **7 ms** with every arm an
+InitPlan, and the rollback rehearsed on live data rather than read.
+
+**Still to do: P8 only** — the two real logins on explicit go-ahead, then cherry-pick to
+`oo-master`. ⚠ The login email is a **username, not an address**: `order-to-dispatch` email is off,
+`work-snapshot` skips `is_external`, and `announce` drops the customer from internal notifications, so
+nothing is ever sent to it — the two firms' real addresses are not needed to create the accounts.
+What IS needed is a decision: **who is named on each customer**. 13 staff hold edit on
+`order-to-dispatch`; **2** own the credit-check step — Jayshree Patil (collection@) and LALIT SHARMA
+(delhioffice@). Naming both is what avoids Q8's single point of failure.
 
 ⚠ **`ZZ TEST Kalahansh` is a REAL, ACTIVE customer login** (`zz-test-orderdesk@example.com`), kept
 deliberately so P6–P7 have something to test against. Delete on request. Its one order was cancelled
