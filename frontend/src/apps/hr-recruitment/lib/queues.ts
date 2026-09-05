@@ -134,6 +134,33 @@ export const STAGE_PENDING_STEP: Record<CandidateStage, StepKey | null> = {
   disqualified: null,
 };
 
+/**
+ * Where a dropped candidate lands if they are brought back into play.
+ *
+ * Mirrors the `v_to` CASE in `fms_hr_reconsider_candidate` exactly — the client
+ * needs it to decide whether to OFFER the control, because the authorisation is
+ * about the destination stage (whoever could have disqualified them from stage X
+ * may bring them back to X). If that CASE changes, change this with it.
+ *
+ * ⚠ `interviewN_at` is stamped when a round is **held**, not when the card moves
+ * into it, so someone booked for Round 2 but dropped before it happened has every
+ * timestamp null. The interview rows are the other half of the answer; reading the
+ * timestamps alone sent such a person back to the HR shortlist.
+ */
+export function reconsiderTargetStage(c: Candidate, interviews: Interview[]): CandidateStage {
+  let maxRound: number | null = null;
+  for (const iv of interviews) {
+    if (maxRound === null || iv.round > maxRound) maxRound = iv.round;
+  }
+  if (c.finalDecisionAt) return "final_decision";
+  if (c.interview3At || maxRound === 3) return "interview_3";
+  if (c.interview2At || maxRound === 2) return "interview_2";
+  if (c.interview1At || maxRound === 1) return "interview_1";
+  if (c.telephonicAt || maxRound === 0) return "telephonic";
+  if (c.hrShortlistedAt) return "hr_shortlisted";
+  return "resume_uploaded";
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Step-completion timestamps — the ANCHORS every due date is measured from.  */
 /*                                                                            */

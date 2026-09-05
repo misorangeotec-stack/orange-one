@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import Button from "@/shared/components/ui/Button";
 import { FieldRow, SectionHeading } from "@/shared/components/ui/Readout";
+import { TextInput } from "@/shared/components/ui/Form";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL } from "../../lib/board";
+import { reconsiderTargetStage } from "../../lib/queues";
+import { describeSignals, matchedRequisitionIds } from "../../lib/duplicates";
 import { inr } from "../../lib/format";
 import type { Candidate } from "../../types";
 
@@ -32,7 +36,21 @@ export default function CandidateDetailsCard({
   const onb = offered ? s.onboardingForCandidate(c.id) : undefined;
   const checks = onb ? s.checksFor(onb.id) : [];
   const ticked = checks.filter((k) => k.done).length;
-  const dupes = s.duplicatesOf(c.phone, c.email, c.id);
+  const dupes = s.duplicatesOf(
+    {
+      name: c.name,
+      phone: c.phone,
+      email: c.email,
+      resumeName: c.resumeName,
+      sha256: c.resumeSha256,
+      excludeId: c.id,
+    },
+    c.requisitionId,
+  );
+  // Split them: another vacancy is context, THIS vacancy is a duplicate row that
+  // should not exist. Before FIX-5 both rendered as the same bland "also applied".
+  const alsoApplied = dupes.filter((d) => !d.sameRequisition);
+  const sameVacancy = dupes.filter((d) => d.sameRequisition);
   const platform = s.jobPlatforms.find((p) => p.id === c.sourcePlatformId)?.name ?? null;
 
   /* ------------------------------- quick note ------------------------------- */
@@ -130,13 +148,57 @@ export default function CandidateDetailsCard({
           </div>
         )}
 
-        {dupes.length > 0 && (
-          <p className="mt-2.5 rounded-xl border border-yellow/40 bg-[#FFF7E6] px-3 py-2 text-[12px] text-navy">
+        {alsoApplied.length > 0 && (
+          <p className="mt-2.5 rounded-xl border border-line bg-page px-3 py-2 text-[12px] text-grey-2">
             Also applied to{" "}
-            {dupes.map((d) => s.requisitionById(d.requisitionId)?.mrfNo ?? "another vacancy").join(", ")}.
+            {matchedRequisitionIds(alsoApplied)
+              .map((id) => s.requisitionById(id)?.mrfNo ?? "another vacancy")
+              .join(", ")}
+            .
           </p>
         )}
+
+        {/* Same vacancy, twice. This is the FIX-5 defect showing itself on the page —
+            seven such rows were live when it was found, and nothing anywhere said so. */}
+        {sameVacancy.length > 0 && (
+          <div className="mt-2.5 rounded-xl border border-ryg-red/40 bg-[#FDECEC] px-3 py-2.5">
+            <p className="text-[12.5px] font-semibold text-navy">
+              {sameVacancy.length === 1
+                ? "Another record on this same vacancy looks like the same person"
+                : `${sameVacancy.length} other records on this same vacancy look like the same person`}
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {sameVacancy.map((d) => (
+                <li key={d.candidate.id} className="text-[12px] text-navy">
+                  <Link
+                    to={`/hr-recruitment/candidates/${d.candidate.id}`}
+                    className="font-semibold text-orange hover:underline"
+                  >
+                    {d.candidate.candidateNo}
+                  </Link>{" "}
+                  — {STAGE_LABEL[d.candidate.stage]} · matched on{" "}
+                  {describeSignals(d.signals)}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[11.5px] text-grey">
+              Every pipeline count treats these as separate people. Ask HR which one is the real
+              record.
+            </p>
+          </div>
+        )}
       </div>
+
+      {/*
+        Dropped — and the way back.
+
+        This is FIX-5's actual remedy. Twice in three weeks HR wanted to look at a
+        rejected candidate again, and the only route they could see was to upload the
+        CV a second time — which started the person over at stage one, lost their
+        history, and left the vacancy counting one person as two. The capability to
+        reopen a card already existed on the board; nobody could find it from here.
+      */}
+      {c.stage === "disqualified" && <ReconsiderSection candidate={c} />}
 
       {/* The offer and its onboarding — the same fact the board shows, with the way through. */}
       {offered && (
@@ -240,6 +302,105 @@ export default function CandidateDetailsCard({
         />
         {tagErr && <p className="mt-1 text-[11.5px] text-ryg-red">{tagErr}</p>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Bring a dropped candidate back into play.
+ *
+ * ⚠ This calls `fms_hr_reconsider_candidate`, NOT `moveCandidate`. Dragging a card
+ * back out of Disqualified also works and is what a person would reach for — but
+ * that path's backward branch runs `delete from fms_hr_interviews where round > …`,
+ * so reopening someone who was dropped at Round 3 would destroy all three of their
+ * interview records on the way. The dedicated RPC deletes nothing, and writes the
+ * original rejection reason into the activity trail before clearing it.
+ */
+function ReconsiderSection({ candidate: c }: { candidate: Candidate }) {
+  const s = useHrStore();
+  const r = s.requisitionById(c.requisitionId);
+  const reason =
+    c.disqualificationNote ??
+    s.disqualificationReasons.find((x) => x.id === c.disqualificationReasonId)?.name ??
+    null;
+
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // The RPC enforces all of this too — this only decides whether to offer the
+  // button, so nobody is shown a control that will refuse them.
+  const offered = !!s.onboardingForCandidate(c.id);
+  const sourcing = r?.status === "sourcing";
+  const allowed = s.canReconsiderCandidate(c) && sourcing && !offered;
+
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await s.reconsiderCandidate(c.id, note.trim() || null);
+      setOpen(false);
+      setNote("");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <SectionHeading>Dropped</SectionHeading>
+      <div className="mt-2 space-y-1.5">
+        <FieldRow labelClassName="w-[92px]" label="Dropped on" value={formatDateDMY(c.disqualifiedAt)} />
+        <FieldRow labelClassName="w-[92px]" label="Reason" value={reason ?? "—"} />
+      </div>
+
+      {allowed && !open && (
+        <div className="mt-2.5">
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            Reconsider this person
+          </Button>
+          <p className="mt-1.5 text-[11.5px] text-grey">
+            Puts them back where they had reached, keeping every interview and note. Use this
+            instead of uploading their CV again — a second upload counts them twice.
+          </p>
+        </div>
+      )}
+
+      {allowed && open && (
+        <div className="mt-2.5 rounded-xl border border-line bg-page px-3 py-3">
+          <TextInput
+            value={note}
+            placeholder="Why are they being reconsidered? (optional)"
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <p className="mt-1.5 text-[11.5px] text-grey">
+            The original reason — {reason ? `“${reason}”` : "none recorded"} — is kept in their
+            timeline.
+          </p>
+          {err && <p className="mt-1.5 text-[11.5px] text-ryg-red">{err}</p>}
+          <div className="mt-2.5 flex gap-2">
+            <Button size="sm" onClick={run} disabled={busy}>
+              {busy ? "Bringing them back…" : "Bring back into play"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
+              Go back
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!allowed && (
+        <p className="mt-2 text-[11.5px] text-grey-2">
+          {offered
+            ? "An offer was already made to this person — re-offer them from the board rather than reconsidering."
+            : !sourcing
+              ? `This vacancy is ${r?.status ?? "not sourcing"}, so nobody can be brought back into play on it.`
+              : `Bringing them back puts them at ${STAGE_LABEL[reconsiderTargetStage(c, s.interviewsFor(c.id))]}, and that stage is not yours to decide — ask whoever owns it.`}
+        </p>
+      )}
     </div>
   );
 }

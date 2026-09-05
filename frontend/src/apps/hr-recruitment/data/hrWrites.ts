@@ -445,6 +445,17 @@ export interface CandidateInput {
   sourcePlatformId: string | null;
   resumePath: string | null;
   resumeName: string | null;
+  /** SHA-256 of the CV's bytes; null when the browser could not compute one. */
+  resumeSha256: string | null;
+  /**
+   * Set ONLY when the person adding this CV has been shown a duplicate and has
+   * deliberately chosen to add it anyway — the text is their reason.
+   *
+   * `fms_hr_add_candidates` refuses a certain-tier duplicate without it, and
+   * records an activity row when it is present. Never populate it automatically;
+   * the whole point is that a human decided.
+   */
+  duplicateAck: string | null;
   /** How the details got here — kept so extraction quality stays auditable. */
   parseStatus: "ok" | "failed" | "manual";
   parsedJson: Record<string, unknown>;
@@ -461,6 +472,8 @@ const candidatePayload = (c: CandidateInput): Record<string, unknown> => ({
   source_platform_id: c.sourcePlatformId ?? "",
   resume_path: c.resumePath ?? "",
   resume_name: c.resumeName ?? "",
+  resume_sha256: c.resumeSha256 ?? "",
+  duplicate_ack: c.duplicateAck ?? "",
   parse_status: c.parseStatus,
   parsed_json: c.parsedJson,
 });
@@ -479,6 +492,23 @@ export async function updateCandidate(id: string, input: CandidateInput): Promis
   const { error } = await supabase.rpc("fms_hr_update_candidate", {
     p_id: id,
     p: candidatePayload(input) as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Bring a dropped candidate back into play — instead of uploading their CV a
+ * second time, which is what created seven duplicate rows across three vacancies.
+ *
+ * Returns them to the stage they had actually reached, keeps every interview row,
+ * and records the original rejection reason in the activity trail before clearing
+ * it. Deliberately NOT `moveCandidate(id, "hr_shortlisted")`: that path's backward
+ * branch deletes the candidate's interviews.
+ */
+export async function reconsiderCandidate(id: string, note: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_reconsider_candidate", {
+    p_id: id,
+    p_note: note ?? "",
   });
   if (error) throw new Error(error.message);
 }
