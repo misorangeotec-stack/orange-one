@@ -52,6 +52,13 @@ import {
   setRequisitionJd as setRequisitionJdWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
+  uploadResume,
+  uploadInterviewDoc,
+  uploadOnboardingDoc,
+  uploadProbationDoc,
+  removeHrDoc,
+  setCandidateResume as setCandidateResumeWrite,
+  setInterviewMedia as setInterviewMediaWrite,
   toggleOnboardingCheck as toggleOnboardingCheckWrite,
   updateMaster as updateMasterWrite,
   updateOnboardingItem as updateOnboardingItemWrite,
@@ -102,7 +109,7 @@ import {
   type CompletedRow,
 } from "./lib/queues";
 import { roundOf } from "./lib/board";
-import { matchesOf, type DupMatch, type DupProbe } from "./lib/duplicates";
+import { fileSha256, matchesOf, type DupMatch, type DupProbe } from "./lib/duplicates";
 import type {
   Candidate,
   CandidateFit,
@@ -131,7 +138,9 @@ import type {
   Requisition,
   RequisitionPlatform,
   StepOwner,
+  AttachmentRef,
 } from "./types";
+import { attachmentPath, isLinkAttachment } from "./types";
 
 /** Prefix key for invalidation; the full key adds the real session user id. */
 const QK = HR_QK;
@@ -274,6 +283,16 @@ interface HrStoreValue {
   candidateDueIso: (candidate: Candidate) => string | null;
   /** May this person act on the card where it sits? Mirrors fms_hr_can_act. */
   canActOnCandidate: (candidate: Candidate) => boolean;
+  /**
+   * May this person change ONE PARTICULAR ROUND, wherever the card is standing now?
+   *
+   * Deliberately NOT `canActOnCandidate`, which resolves the step from the card's
+   * CURRENT stage — so for somebody at Round 3 it answers "may you act on Round 3".
+   * Fixing their Round 1 recording is a different question, and the whole point of
+   * NR-5 is that it can now be asked. Mirrors fms_hr_set_interview_media: the
+   * round's own step, plus the panel that was booked for it.
+   */
+  canActOnInterviewRound: (candidate: Candidate, round: number) => boolean;
   /**
    * May this person bring a DROPPED candidate back into play?
    *
@@ -467,6 +486,19 @@ interface HrStoreValue {
   // candidate writes
   addCandidates: (requisitionId: string, candidates: CandidateInput[]) => Promise<string[]>;
   updateCandidate: (id: string, input: CandidateInput) => Promise<void>;
+
+  /* ----------------------------- attachments -----------------------------
+   * ONE path for every attached file and link in the module. See AttachmentRef.
+   * Nothing else in this app may call supabase.storage.remove().
+   */
+  /** May this person replace or remove this particular attachment? */
+  canChangeAttachment: (ref: AttachmentRef) => boolean;
+  /** Upload the new file, point the row at it, then drop the superseded object. */
+  replaceAttachment: (ref: AttachmentRef, file: File) => Promise<void>;
+  /** Clear the row's reference, then drop the object. Unrecoverable. */
+  removeAttachment: (ref: AttachmentRef) => Promise<void>;
+  /** Set or clear a typed-in URL (a round's recording, an onboarding link). */
+  setAttachmentLink: (ref: AttachmentRef, url: string) => Promise<void>;
   /**
    * Say something about a candidate, tagging colleagues in. Lands in the activity
    * trail as a `comment`, so the page shows process and conversation as one timeline.
@@ -937,6 +969,31 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     };
 
     /**
+     * May this person change ONE ROUND, wherever the card is standing now?
+     *
+     * The mirror of fms_hr_set_interview_media, and deliberately separate from
+     * canActOnCandidate: that one resolves the step from c.stage, so asked about
+     * somebody at Round 3 it answers "may you act on Round 3". A wrong Round-1
+     * recording is a different question, and until NR-5 nobody could ask it.
+     *
+     * ⚠ lib/steps.ts carries the standing warning for this pair — change this
+     *   list and change the SQL, or the screen and the server disagree.
+     */
+    const canActOnInterviewRound = (c: Candidate, round: number): boolean => {
+      const r = reqById.get(c.requisitionId);
+      if (!r) return false;
+      const step = (round === 0 ? "telephonic_screening" : `interview_${round}`) as StepKey;
+      if (
+        (ivsByCan.get(c.id) ?? []).some(
+          (iv) => iv.round === round && iv.interviewerIds.includes(user.id),
+        )
+      ) {
+        return true;
+      }
+      return canActOn(step, r);
+    };
+
+    /**
      * Reconsider is authorised by DESTINATION, not by the card's current column.
      *
      * A disqualified card has no pending step, so canActOnCandidate falls through
@@ -1004,6 +1061,62 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       // Decided: nobody owes anything, but an admin / coordinator can still look.
       if (!step) return isAdmin || isProcessCoordinator;
       return canActOn(step, r);
+    };
+
+    /* ------------------------------ attachments ---------------------------- */
+
+    const checkById = new Map(onboardingChecks.map((k) => [k.id, k]));
+
+    /**
+     * May this person replace or remove ONE attachment?
+     *
+     * Each arm mirrors the guard on the RPC that would run — not one blanket
+     * check — because the questions genuinely differ: the CV belongs to whoever
+     * owns resume_upload, a round belongs to that round, and the job description
+     * has its own rule that does not go through fms_hr_can_act at all.
+     *
+     * Two arms refuse where the SERVER refuses but the ownership predicate alone
+     * would have said yes. Both would otherwise render a button that always
+     * errors, which is worse than no button:
+     *   • a COMPLETE onboarding — the tick may already have filled a seat, closed
+     *     the vacancy and opened a probation, and there is no undo path;
+     *   • a DECIDED probation — canActOnProbation falls through to admin-or-
+     *     coordinator once nothing is pending, but the RPC refuses everybody.
+     */
+    const canChangeAttachment = (ref: AttachmentRef): boolean => {
+      if (!canEdit) return false;
+      switch (ref.kind) {
+        case "resume": {
+          const c = canById.get(ref.candidateId);
+          const r = c ? reqById.get(c.requisitionId) : undefined;
+          return r ? canActOn("resume_upload", r) : false;
+        }
+        case "interviewDoc":
+        case "interviewVideo": {
+          const c = canById.get(ref.candidateId);
+          return c ? canActOnInterviewRound(c, ref.round) : false;
+        }
+        case "onboardingFile":
+        case "onboardingLink": {
+          const k = checkById.get(ref.checkId);
+          const o = k ? onbById.get(k.onboardingId) : undefined;
+          if (!o || o.completedAt) return false;
+          return canActOnOnboarding(o);
+        }
+        case "probationFile": {
+          const pr = probById.get(ref.probationId);
+          if (!pr || pr.outcome || pr.finalStatus) return false;
+          return canActOnProbation(pr);
+        }
+        case "jd": {
+          const r = reqById.get(ref.requisitionId);
+          if (!r) return false;
+          // Mirrors the widened fms_hr_set_requisition_jd. NOT fms_hr_can_act
+          // alone — that RPC has never routed through it, which is why NR-4 does
+          // not reach the job description and NR-5 had to widen it directly.
+          return isAdmin || isProcessCoordinator || r.requesterId === user.id || canActOn("mrf", r);
+        }
+      }
     };
 
     // Built through the SAME function the cross-FMS scoreboard uses — see hrSnapshotFrom.
@@ -1249,6 +1362,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       daysInStage,
       candidateDueIso: (c) => candidateDueIso(snapshot, c, reqById),
       canActOnCandidate,
+      canActOnInterviewRound,
       canReconsiderCandidate,
       duplicatesOf: (probe, requisitionId) => matchesOf(probe, candidates, requisitionId),
 
@@ -1372,6 +1486,122 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       updateCandidate: async (id, input) => {
         await updateCandidateWrite(id, input);
+        await invalidate();
+      },
+
+      /* --------------------------- attachments ----------------------------
+       * The single path. Every Replace and every Remove in this module lands
+       * here, and this file holds the module's only call to removeHrDoc.
+       *
+       * ⚠ ORDER, in both directions: the DATABASE reference moves first, the
+       *   storage object second. Reversed, a failed RPC leaves a path pointing
+       *   at a file that is gone — a broken link the UI keeps drawing. This way
+       *   the worst case is an object nobody references, which is invisible and
+       *   safe to retry. (receivables-hub's removeCustomerDocs does the
+       *   opposite, correctly, because there the whole row is being deleted.)
+       *
+       * The activity trail is written INSIDE each RPC, not through safeAnnounce
+       * here: these are CVs and interview recordings, the bucket has no
+       * versioning and the tables have no history, so the trail must not be the
+       * one part of a delete that is allowed to fail quietly.
+       */
+      canChangeAttachment,
+
+      replaceAttachment: async (ref, file) => {
+        if (isLinkAttachment(ref)) throw new Error("That is a link, not a file — set the URL instead");
+        const old = attachmentPath(ref);
+        switch (ref.kind) {
+          case "resume": {
+            const c = canById.get(ref.candidateId);
+            if (!c) throw new Error("Candidate not found");
+            const up = await uploadResume(c.requisitionId, file);
+            const sha = await fileSha256(file);
+            await setCandidateResumeWrite(c.id, up.path, up.name, sha);
+            break;
+          }
+          case "interviewDoc": {
+            const up = await uploadInterviewDoc(ref.candidateId, ref.round, file);
+            await setInterviewMediaWrite(ref.candidateId, ref.round, up.path, up.name);
+            break;
+          }
+          case "onboardingFile": {
+            const k = checkById.get(ref.checkId);
+            if (!k) throw new Error("Checklist item not found");
+            const up = await uploadOnboardingDoc(k.onboardingId, k.itemKey, file);
+            // The item's CURRENT done state, never a hard false: passing false
+            // would silently untick it, and passing true on a requires_file item
+            // is what makes the server refuse a removal that would strand a tick.
+            await toggleOnboardingCheckWrite(k.id, k.done, { filePath: up.path, fileName: up.name });
+            break;
+          }
+          case "probationFile": {
+            const pr = probById.get(ref.probationId);
+            const rv = (reviewsByProb.get(ref.probationId) ?? []).find((x) => x.month === ref.month);
+            if (!pr || !rv) throw new Error("Review not found");
+            const up = await uploadProbationDoc(pr.id, ref.month, file);
+            await recordProbationReviewWrite(pr.id, ref.month, rv.status, rv.remarks ?? "", up.path, up.name);
+            break;
+          }
+          case "jd": {
+            const up = await uploadJd(ref.requisitionId, file);
+            await setRequisitionJdWrite(ref.requisitionId, up.path, up.name);
+            break;
+          }
+        }
+        await removeHrDoc(old);
+        await invalidate();
+      },
+
+      removeAttachment: async (ref) => {
+        const old = attachmentPath(ref);
+        switch (ref.kind) {
+          case "resume":
+            // "" clears; the RPC nulls the name and the hash with it.
+            await setCandidateResumeWrite(ref.candidateId, "", "", "");
+            break;
+          case "interviewDoc":
+            await setInterviewMediaWrite(ref.candidateId, ref.round, "", "");
+            break;
+          case "interviewVideo":
+            await setInterviewMediaWrite(ref.candidateId, ref.round, null, null, "");
+            break;
+          case "onboardingFile": {
+            const k = checkById.get(ref.checkId);
+            if (!k) throw new Error("Checklist item not found");
+            await toggleOnboardingCheckWrite(k.id, k.done, { filePath: "", fileName: "" });
+            break;
+          }
+          case "onboardingLink": {
+            const k = checkById.get(ref.checkId);
+            if (!k) throw new Error("Checklist item not found");
+            await toggleOnboardingCheckWrite(k.id, k.done, { linkUrl: "" });
+            break;
+          }
+          case "probationFile": {
+            const rv = (reviewsByProb.get(ref.probationId) ?? []).find((x) => x.month === ref.month);
+            if (!rv) throw new Error("Review not found");
+            await recordProbationReviewWrite(ref.probationId, ref.month, rv.status, rv.remarks ?? "", "", "");
+            break;
+          }
+          case "jd":
+            await setRequisitionJdWrite(ref.requisitionId, null, null);
+            break;
+        }
+        await removeHrDoc(old);
+        await invalidate();
+      },
+
+      setAttachmentLink: async (ref, url) => {
+        const next = url.trim();
+        if (ref.kind === "interviewVideo") {
+          await setInterviewMediaWrite(ref.candidateId, ref.round, null, null, next);
+        } else if (ref.kind === "onboardingLink") {
+          const k = checkById.get(ref.checkId);
+          if (!k) throw new Error("Checklist item not found");
+          await toggleOnboardingCheckWrite(k.id, k.done, { linkUrl: next });
+        } else {
+          throw new Error("That attachment is a file, not a link");
+        }
         await invalidate();
       },
       // The RPC writes its own activity row — it is the only thing that still knows

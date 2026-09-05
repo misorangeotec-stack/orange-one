@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
+import Button from "@/shared/components/ui/Button";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Modal from "@/shared/components/ui/Modal";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useHrStore } from "../../store";
 import { hrDocUrl } from "../../data/hrWrites";
@@ -21,6 +23,39 @@ export default function CandidateMeetings({ candidate: c }: { candidate: Candida
   // Same gate the Interviews queue uses, so the two cannot disagree about who may
   // re-aim a round — and the RPC re-checks either way.
   const canAct = s.canEdit && s.canActOnCandidate(c);
+
+  /**
+   * (NR-5) Adding a recording link that was never captured.
+   *
+   * The Documents tab can edit and remove a link, but it only lists what EXISTS —
+   * so a round nobody pasted a link for at the time had no way back. That is the
+   * same hole NR-5 exists to close, one step earlier: the result form is sealed
+   * once the candidate advances, and dragging the card back deletes later rounds.
+   *
+   * Only offered where there is NO link yet. Editing and removing an existing one
+   * stay on Documents, so the destructive path keeps its single confirm.
+   */
+  const [addingTo, setAddingTo] = useState<Interview | null>(null);
+  const [linkDraft, setLinkDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [linkErr, setLinkErr] = useState<string | null>(null);
+
+  const saveLink = async () => {
+    if (!addingTo || !linkDraft.trim()) return;
+    setBusy(true);
+    setLinkErr(null);
+    try {
+      await s.setAttachmentLink(
+        { kind: "interviewVideo", candidateId: c.id, round: addingTo.round },
+        linkDraft,
+      );
+      setAddingTo(null);
+    } catch (e) {
+      setLinkErr(e instanceof Error ? e.message : "Could not save that link");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openDoc = async (path: string) => {
     const url = await hrDocUrl(path);
@@ -77,6 +112,22 @@ export default function CandidateMeetings({ candidate: c }: { candidate: Candida
           )}
         </div>
         {iv.remarks && <p className="mt-1 whitespace-pre-wrap text-navy">{iv.remarks}</p>}
+        {/* No link on this round, and this person may set one. Asked per ROUND —
+            not per candidate — because ownership of Round 1 and of Round 3 are
+            different questions, and the card has long since moved on. */}
+        {!iv.videoUrl && s.canActOnInterviewRound(c, iv.round) && (
+          <button
+            type="button"
+            onClick={() => {
+              setLinkErr(null);
+              setLinkDraft("");
+              setAddingTo(iv);
+            }}
+            className="mt-1.5 text-[12px] font-semibold text-grey-2 hover:text-orange"
+          >
+            + Add a recording link
+          </button>
+        )}
         {(iv.videoUrl || iv.documentPath) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
             {iv.videoUrl && (
@@ -134,6 +185,44 @@ export default function CandidateMeetings({ candidate: c }: { candidate: Candida
           onClose={() => setReassign(null)}
         />
       )}
+      <Modal
+        open={!!addingTo}
+        onClose={() => !busy && setAddingTo(null)}
+        title="Add the recording link"
+        subtitle={
+          addingTo ? (addingTo.round === 0 ? "Telephonic screen" : `Round ${addingTo.round}`) : undefined
+        }
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setAddingTo(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => void saveLink()} disabled={busy || !linkDraft.trim()}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          {linkErr && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+              {linkErr}
+            </p>
+          )}
+          <input
+            type="url"
+            value={linkDraft}
+            onChange={(e) => setLinkDraft(e.target.value)}
+            placeholder="https://…"
+            className="w-full rounded-lg border border-line px-3 py-2 text-[13px] text-navy outline-none focus:border-orange"
+          />
+          <p className="text-[12px] text-grey-2">
+            The link to wherever the call was recorded. It can be added at any time, whatever stage the
+            candidate has since reached. Changing or clearing it later is on the Documents tab.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -48,10 +48,24 @@ export default function InterviewResultModal({
   onClose: () => void;
 }) {
   const s = useHrStore();
-  const [result, setResult] = useState<Result>("selected");
-  const [remarks, setRemarks] = useState("");
+
+  /**
+   * What this round already holds. The form used to start blank every time, so
+   * re-recording a result retyped the remarks from memory and showed an empty
+   * video box even when a link was stored — and since '' now CLEARS, submitting
+   * that empty box would have wiped the link. Pre-filling is what makes an
+   * emptied box mean "remove this", deliberately, rather than by accident.
+   */
+  const existing = s.interviewRound(candidate.id, round);
+
+  const [result, setResult] = useState<Result>(
+    existing?.status === "rejected" || existing?.status === "on_hold" || existing?.status === "no_show"
+      ? existing.status
+      : "selected",
+  );
+  const [remarks, setRemarks] = useState(existing?.remarks ?? "");
   const [file, setFile] = useState<File | null>(null);
-  const [videoUrl, setVideoUrl] = useState("");
+  const [videoUrl, setVideoUrl] = useState(existing?.videoUrl ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -109,7 +123,11 @@ export default function InterviewResultModal({
         remarks.trim(),
         path,
         name,
-        videoUrl.trim() || null,
+        // NOT `|| null`. Since NR-5 '' clears the stored link and null leaves it
+        // alone, so collapsing the two would make emptying the box a silent no-op
+        // — exactly the bug this task exists to close. The box is pre-filled, so
+        // an empty one is a decision.
+        videoUrl.trim(),
         result === "selected" ? nextStage : null,
       );
       onClose();

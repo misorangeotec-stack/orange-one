@@ -488,10 +488,78 @@ export async function addCandidates(requisitionId: string, candidates: Candidate
   return (data ?? []) as unknown as string[];
 }
 
+/**
+ * Correct a candidate's own details — the name, the phone, the email.
+ *
+ * ⚠ It rewrites EVERY column from the payload, so the caller must submit the whole
+ *   form loaded fresh, not a patch. `experience_years` and `source_platform_id`
+ *   are written unconditionally and will be nulled by an absent field.
+ *
+ * It does NOT touch the CV. `candidatePayload` maps `resumePath ?? ""`, and since
+ * NR-5 an empty string CLEARS — so leaving the resume columns in this statement
+ * would have deleted the document of every candidate anyone edited, one save at a
+ * time. The RPC no longer writes them at all; use `setCandidateResume`.
+ * `resume_sha256` is still SENT, because the duplicate guard reads it.
+ */
 export async function updateCandidate(id: string, input: CandidateInput): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_update_candidate", {
     p_id: id,
     p: candidatePayload(input) as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Replace or remove the CV, and nothing else.
+ *
+ * One column family of its own rather than a trip through `updateCandidate`,
+ * which rewrites the whole row — the same reasoning notes and tags already
+ * follow. A stale browser copy cannot overwrite a name somebody else has just
+ * corrected, and correcting a name cannot disturb the document.
+ *
+ * Pass `""` to clear. Clearing is all-or-nothing server-side: an empty path nulls
+ * the name and the hash too, because a filename pointing at nothing is worse than
+ * no filename. The activity row is written inside the RPC.
+ */
+export async function setCandidateResume(
+  candidateId: string,
+  path: string | null,
+  name: string | null,
+  sha256: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_candidate_resume", {
+    p_id: candidateId,
+    p_path: path ?? undefined,
+    p_name: name ?? undefined,
+    p_sha256: sha256 ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Change a round's video link or feedback form WITHOUT re-recording its result.
+ *
+ * `recordInterviewResult` refuses unless the candidate is standing at that exact
+ * round, so a wrong Round-1 link was unfixable the moment they reached Round 2 —
+ * and the only workaround, dragging the card back, deletes every later interview
+ * row. This RPC has no stage test; authorisation is the round's own step plus its
+ * booked panel, exactly as recording it was.
+ *
+ * `null`/omitted leaves a field alone, `""` clears it.
+ */
+export async function setInterviewMedia(
+  candidateId: string,
+  round: number,
+  docPath: string | null = null,
+  docName: string | null = null,
+  videoUrl: string | null = null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_interview_media", {
+    p_candidate: candidateId,
+    p_round: round,
+    p_doc_path: docPath ?? undefined,
+    p_doc_name: docName ?? undefined,
+    p_video_url: videoUrl ?? undefined,
   });
   if (error) throw new Error(error.message);
 }
@@ -1022,6 +1090,29 @@ export async function hrDocUrl(path: string): Promise<string | null> {
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 10);
   if (error) return null;
   return data?.signedUrl ?? null;
+}
+
+/**
+ * Drop a superseded object. The ONLY storage delete in this module — every
+ * replace and every remove routes through here, so the next fix lands in one
+ * place rather than four.
+ *
+ * ⚠ ORDER: clear the database reference FIRST, then call this. That is the
+ *   opposite of receivables-hub's `removeCustomerDocs`, and deliberately so:
+ *   there the whole row is being deleted, so nothing can be left pointing at a
+ *   missing file. Here the row survives, and a path left behind after a failed
+ *   RPC is a broken link the UI keeps rendering. A leftover object is invisible,
+ *   costs pennies, and the operation stays safe to retry.
+ *
+ * Best-effort by design: storage failing must not undo a completed write.
+ */
+export async function removeHrDoc(path: string | null | undefined): Promise<void> {
+  if (!path) return;
+  try {
+    await supabase.storage.from(BUCKET).remove([path]);
+  } catch {
+    /* best effort — see the doc comment */
+  }
 }
 
 export const uploadResume = (requisitionId: string, file: File) =>
