@@ -1749,6 +1749,7 @@ export type Database = {
           requisition_id: string
           resume_name: string | null
           resume_path: string | null
+          resume_sha256: string | null
           shared_to_hod_at: string | null
           shared_to_hod_by: string | null
           skills: string[]
@@ -1791,6 +1792,7 @@ export type Database = {
           requisition_id: string
           resume_name?: string | null
           resume_path?: string | null
+          resume_sha256?: string | null
           shared_to_hod_at?: string | null
           shared_to_hod_by?: string | null
           skills?: string[]
@@ -1833,6 +1835,7 @@ export type Database = {
           requisition_id?: string
           resume_name?: string | null
           resume_path?: string | null
+          resume_sha256?: string | null
           shared_to_hod_at?: string | null
           shared_to_hod_by?: string | null
           skills?: string[]
@@ -8228,6 +8231,10 @@ export type Database = {
           p_round: number
           p_scheduled_on?: string
         }
+        Returns: undefined
+      }
+      fms_hr_reconsider_candidate: {
+        Args: { p_id: string; p_note?: string }
         Returns: undefined
       }
       fms_hr_record_interview_result: {

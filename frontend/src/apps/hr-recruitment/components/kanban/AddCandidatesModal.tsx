@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
@@ -8,6 +9,19 @@ import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 import { uploadResume, type CandidateInput } from "../../data/hrWrites";
 import { parseResumes, type ParsedResume } from "../../data/parseResume";
+import {
+  fileSha256,
+  isBlocking,
+  needsAck,
+  signalsBetween,
+  describeSignals,
+  matchedRequisitionIds,
+  type DupIdentity,
+  type DupMatch,
+  type DupSignal,
+} from "../../lib/duplicates";
+import { PHASE_OF, PHASE_PILL, STAGE_LABEL } from "../../lib/board";
+import { formatDateDMY } from "@/shared/lib/date";
 import type { Requisition } from "../../types";
 
 /** What the AI has managed to do with this row's file, if anything. */
@@ -31,6 +45,14 @@ interface Row {
   parsed: Record<string, unknown> | null;
   /** Fields the HUMAN has typed in. The AI fills around them, never over them. */
   touched: Partial<Record<Field, boolean>>;
+  /** SHA-256 of the file. Null until it is computed, and null forever if it cannot be. */
+  sha256: string | null;
+  /**
+   * The human's decision to add this row despite a duplicate. `null` = not decided.
+   * A certain match needs a non-empty REASON; a likely match needs only the tick,
+   * so it stores a fixed marker rather than prose.
+   */
+  ack: string | null;
 }
 
 const blank = (key: string): Row => ({
@@ -45,7 +67,12 @@ const blank = (key: string): Row => ({
   read: "none",
   parsed: null,
   touched: {},
+  sha256: null,
+  ack: null,
 });
+
+/** What a "likely" match's tick records, when no typed reason is asked for. */
+const ACK_CONFIRMED = "Confirmed as a different person";
 
 /**
  * Add candidates — several at once, because CVs arrive in batches.
@@ -56,8 +83,24 @@ const blank = (key: string): Row => ({
  * confirms before anything is saved. A parse that fails, times out or hits a .docx
  * leaves the row exactly as usable as it was before — HR just types the details in.
  *
- * A phone or email that already exists anywhere raises a duplicate warning — it
- * does not block, because the same person genuinely may apply to two vacancies.
+ * ── Duplicates (FIX-5) ─────────────────────────────────────────────────────────
+ *
+ * This used to warn on a matching phone or email, anywhere, and never block. It
+ * warned about Manali Desai and was clicked past; it could say nothing at all about
+ * Purvi Upadhyay, whose CV yielded neither — as is true of 30 of the 119 live rows.
+ * Seven duplicate rows across three vacancies came of it.
+ *
+ * Now, before anything is uploaded, each row is checked three ways:
+ *
+ *   · against the saved candidates on THIS vacancy — a certain match (same file,
+ *     email or phone) blocks and needs a written reason; a likely one (filename or
+ *     name) needs a tick;
+ *   · against the saved candidates on OTHER vacancies — shown as context only,
+ *     never blocking, because applying for two jobs is legitimate;
+ *   · against the other rows in this same batch, which nothing else can see.
+ *
+ * The server enforces the certain tier again in `fms_hr_add_candidates`, so a stale
+ * tab cannot walk past it.
  */
 export default function AddCandidatesModal({
   requisition,
@@ -119,6 +162,25 @@ export default function AddCandidatesModal({
       }),
     );
 
+  /**
+   * A first-guess name from the filename, so the row is savable from the first
+   * second. The AI replaces it unless HR has already typed over it.
+   *
+   * ⚠ The collapse of runs of whitespace is not cosmetic. Without it,
+   * "Purvi Upadhyay - EA.pdf" became the name `Purvi Upadhyay   EA` — which is
+   * verbatim what a live duplicate row is called — because the hyphen became a
+   * third space between two that were already there. Three of the four mangled
+   * names in the live data have this shape, and the mangling is what stopped the
+   * name from matching its properly-parsed twin.
+   */
+  const nameFromFile = (fileName: string): string =>
+    fileName
+      .replace(/\.[^.]+$/, "")
+      .replace(/^\d{8,}[-_\s]+/, "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
   /** Pick several files at once — one row per CV, and the AI starts reading them now. */
   const onFiles = (files: FileList | null) => {
     if (!files?.length) return;
@@ -126,12 +188,19 @@ export default function AddCandidatesModal({
     const added = list.map((f, i) => ({
       ...blank(`f${Date.now()}_${i}`),
       file: f,
-      // A starting guess from the filename so the row is savable from the first second;
-      // the AI replaces it unless HR has already typed over it.
-      name: f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim(),
+      name: nameFromFile(f.name),
       read: "reading" as ReadState,
     }));
     setRows((rs) => [...rs.filter((r) => r.file || r.name.trim()), ...added]);
+
+    // Fingerprint each file. Independent of the parse and of each other, because
+    // this is the one duplicate signal that still works when the parse fails —
+    // which is exactly the case that produced the duplicates. Never throws:
+    // fileSha256 returns null when crypto.subtle is unavailable.
+    for (const r of added) {
+      if (!r.file) continue;
+      void fileSha256(r.file).then((sha) => set(r.key, { sha256: sha }));
+    }
 
     // Fire-and-forget: Save stays usable the whole time, and a row that is still being
     // read simply saves whatever is currently in it.
@@ -148,9 +217,67 @@ export default function AddCandidatesModal({
   };
 
   const filled = rows.filter((r) => r.name.trim());
-  const invalid = filled.length === 0;
 
-  const dupes = (r: Row) => s.duplicatesOf(r.phone.trim() || null, r.email.trim() || null);
+  const identityOfRow = (r: Row): DupIdentity => ({
+    name: r.name.trim() || null,
+    phone: r.phone.trim() || null,
+    email: r.email.trim() || null,
+    resumeName: r.file?.name ?? null,
+    sha256: r.sha256,
+  });
+
+  const dupes = (r: Row): DupMatch[] => s.duplicatesOf(identityOfRow(r), requisition.id);
+
+  /**
+   * The same person twice IN THIS BATCH — dragged in twice, or the same CV saved
+   * under two names.
+   *
+   * The store check cannot see this: neither row exists yet. The server does catch
+   * it (the first insert is visible to the second row's check inside the same
+   * transaction) — but only AFTER every file in the batch has been uploaded, and
+   * nothing in this module can remove a storage object. So it has to be caught
+   * here, before the upload loop.
+   *
+   * Only ever looks BACKWARDS, so the first row of a pair stays clean and the
+   * second is the one asked about. Flagging both would leave no obvious row to drop.
+   */
+  const batchClash = (r: Row): DupSignal[] => {
+    const i = rows.indexOf(r);
+    const me = identityOfRow(r);
+    for (let j = 0; j < i; j++) {
+      if (!rows[j].name.trim()) continue;
+      const sig = signalsBetween(me, identityOfRow(rows[j]));
+      if (sig.length) return sig;
+    }
+    return [];
+  };
+
+  /**
+   * What this row still needs from the human before it can be saved.
+   *
+   * A CERTAIN match on this vacancy (same file, email or phone) needs a typed
+   * reason — it is not a judgement call, so adding anyway is a decision worth
+   * recording. A LIKELY match (same filename or name) needs only the tick.
+   */
+  const blockedBy = (r: Row): { matches: DupMatch[]; needsReason: boolean } | null => {
+    const ms = dupes(r);
+    const hard = ms.filter(isBlocking);
+    const soft = ms.filter(needsAck);
+    if (!hard.length && !soft.length) return null;
+    return { matches: [...hard, ...soft], needsReason: hard.length > 0 };
+  };
+
+  const unresolved = (r: Row): boolean => {
+    // A clash inside this batch is never waved through with a reason — there is no
+    // "add anyway" case for adding the very same CV twice in one go. Drop the row.
+    if (batchClash(r).length) return true;
+    const b = blockedBy(r);
+    if (!b) return false;
+    return b.needsReason ? !r.ack?.trim() : r.ack === null;
+  };
+
+  const blockedRows = filled.filter(unresolved);
+  const invalid = filled.length === 0 || blockedRows.length > 0;
 
   /**
    * How the details got here. The column only allows ok | failed | manual, and that
@@ -160,6 +287,20 @@ export default function AddCandidatesModal({
     r.read === "read" ? "ok" : r.read === "failed" || r.read === "unsupported" ? "failed" : "manual";
 
   const submit = async () => {
+    // 🔴 THE DUPLICATE CHECK RUNS BEFORE ANY UPLOAD, and that ordering is the whole
+    // point. The file is written to storage first so a candidate is creatable
+    // whatever else fails — but NOTHING in this module can remove a storage object
+    // (NR-5), so a CV uploaded for a row the server then refuses is orphaned in the
+    // bucket for good. Check first, upload second.
+    const stillBlocked = filled.filter(unresolved);
+    if (stillBlocked.length) {
+      setErr(
+        `${stillBlocked.length} candidate${stillBlocked.length === 1 ? " is" : "s are"} already on this vacancy. ` +
+          `Reconsider the existing record, remove the row, or say why you are adding it anyway.`,
+      );
+      return;
+    }
+
     setBusy(true);
     setErr(null);
     try {
@@ -190,6 +331,11 @@ export default function AddCandidatesModal({
           sourcePlatformId: platformId || null,
           resumePath,
           resumeName,
+          resumeSha256: r.sha256,
+          // Only ever sent when this row actually had a duplicate the human waved
+          // through. A row with no match sends nothing, so the server's guard is
+          // never handed a blanket permission.
+          duplicateAck: blockedBy(r) ? (r.ack?.trim() || ACK_CONFIRMED) : null,
           parseStatus: parseStatusOf(r),
           parsedJson: r.parsed ?? {},
         });
@@ -300,6 +446,7 @@ export default function AddCandidatesModal({
         <div className="space-y-3">
           {rows.map((r, i) => {
             const d = dupes(r);
+            const clash = batchClash(r);
             return (
               <div key={r.key} className="rounded-xl border border-line p-4">
                 <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line pb-2.5">
@@ -348,11 +495,34 @@ export default function AddCandidatesModal({
                   </FieldLabel>
                 </div>
 
-                {d.length > 0 && (
-                  <p className="mt-2 rounded-lg border border-yellow/40 bg-[#FFF7E6] px-3 py-2 text-[12px] text-navy">
-                    Already applied: {d.map((c) => s.requisitionById(c.requisitionId)?.mrfNo ?? "another vacancy").join(", ")}.
-                    You can still add them.
-                  </p>
+                {clash.length > 0 && (
+                  <div className="mt-2.5 rounded-xl border border-ryg-red/40 bg-[#FDECEC] px-3.5 py-3">
+                    <p className="text-[12.5px] font-semibold text-navy">
+                      This is already one of the rows above.
+                    </p>
+                    <p className="mt-1 text-[11.5px] text-grey">
+                      Matched on {describeSignals(clash)}. Adding it
+                      would create two records for one person on this vacancy.
+                    </p>
+                    {rows.length > 1 && (
+                      <button
+                        onClick={() => removeRow(r.key)}
+                        className="mt-2 text-[12px] font-semibold text-orange hover:underline"
+                      >
+                        Remove this row
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {clash.length === 0 && d.length > 0 && (
+                  <DuplicatePanel
+                    matches={d}
+                    ack={r.ack}
+                    onAck={(v) => set(r.key, { ack: v })}
+                    onDrop={() => removeRow(r.key)}
+                    canRemove={rows.length > 1}
+                  />
                 )}
               </div>
             );
@@ -377,6 +547,158 @@ export default function AddCandidatesModal({
         onRequested={(_id, _mt, name) => setRequested(name)}
       />
     </Modal>
+  );
+}
+
+/**
+ * "This person is already here — and here is where."
+ *
+ * The old version of this was one sentence naming an MRF number: "Already applied:
+ * MRF-2627-0018. You can still add them." It did fire for Manali Desai, and it was
+ * clicked straight past, because it never said the thing that would have stopped
+ * anyone — that she was already on THIS vacancy, and what had happened to her.
+ *
+ * So this shows the stage, the date, and the reason she was dropped, and it
+ * separates the two cases sharply: same vacancy is a mistake being made right now,
+ * another vacancy is just useful context.
+ */
+function DuplicatePanel({
+  matches,
+  ack,
+  onAck,
+  onDrop,
+  canRemove,
+}: {
+  matches: DupMatch[];
+  ack: string | null;
+  onAck: (v: string | null) => void;
+  onDrop: () => void;
+  canRemove: boolean;
+}) {
+  const s = useHrStore();
+  const here = matches.filter((m) => m.sameRequisition);
+  const elsewhere = matches.filter((m) => !m.sameRequisition);
+  const hard = here.some(isBlocking);
+
+  if (!here.length) {
+    // Another vacancy only. Not a problem — applying for two jobs is normal, and
+    // this is the one case the old wording actually got right.
+    return (
+      <p className="mt-2 rounded-lg border border-line bg-page px-3 py-2 text-[12px] text-grey-2">
+        Also applied to{" "}
+        {matchedRequisitionIds(elsewhere)
+          .map((id) => s.requisitionById(id)?.mrfNo ?? "another vacancy")
+          .join(", ")}
+        . That is fine — this is only for context.
+      </p>
+    );
+  }
+
+  return (
+    <div
+      className={`mt-2.5 rounded-xl border px-3.5 py-3 ${
+        hard ? "border-ryg-red/40 bg-[#FDECEC]" : "border-yellow/50 bg-[#FFF7E6]"
+      }`}
+    >
+      <p className="text-[12.5px] font-semibold text-navy">
+        {hard
+          ? "This person is already on this vacancy."
+          : "This may already be someone on this vacancy."}
+      </p>
+
+      <div className="mt-2.5 space-y-2">
+        {here.map((m) => {
+          const c = m.candidate;
+          const phase = PHASE_OF[c.stage];
+          const reason =
+            c.disqualificationNote ??
+            s.disqualificationReasons.find((x) => x.id === c.disqualificationReasonId)?.name ??
+            null;
+          return (
+            <div key={c.id} className="rounded-lg border border-line bg-white px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-[13px] font-semibold text-navy">{c.name}</span>
+                <span className="font-mono text-[11px] text-grey-2">{c.candidateNo}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${PHASE_PILL[phase]}`}>
+                  {STAGE_LABEL[c.stage]}
+                </span>
+              </div>
+              <p className="mt-1 text-[11.5px] text-grey">
+                Added {formatDateDMY(c.uploadedAt)} · matched on{" "}
+                {describeSignals(m.signals)}
+              </p>
+              {c.stage === "disqualified" && (
+                <p className="mt-1 text-[11.5px] text-grey">
+                  Dropped {formatDateDMY(c.disqualifiedAt)}
+                  {reason ? ` — “${reason}”` : ""}
+                </p>
+              )}
+              <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                <Link
+                  to={`/hr-recruitment/candidates/${c.id}`}
+                  className="text-[12px] font-semibold text-orange hover:underline"
+                >
+                  Open this candidate
+                </Link>
+                {c.stage === "disqualified" && (
+                  <span className="text-[11.5px] text-grey-2">
+                    To consider them again, reopen this record rather than adding a second one —
+                    the button is on their page.
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {elsewhere.length > 0 && (
+        <p className="mt-2 text-[11.5px] text-grey-2">
+          They have also applied to{" "}
+          {matchedRequisitionIds(elsewhere)
+            .map((id) => s.requisitionById(id)?.mrfNo ?? "another vacancy")
+            .join(", ")}
+          .
+        </p>
+      )}
+
+      {/* The way out. Never absent — a re-application after a rejection is real,
+          and refusing it outright would just push people to work around us. */}
+      <div className="mt-3 border-t border-line pt-2.5">
+        {hard ? (
+          <>
+            <FieldLabel label="Add anyway — why?" hint="recorded against the vacancy">
+              <TextInput
+                value={ack ?? ""}
+                placeholder="e.g. re-applying after the earlier rejection"
+                onChange={(e) => onAck(e.target.value)}
+              />
+            </FieldLabel>
+            <p className="mt-1 text-[11px] text-grey-2">
+              Leave this empty and the row will not save.
+            </p>
+          </>
+        ) : (
+          <label className="flex cursor-pointer items-start gap-2 text-[12px] text-navy">
+            <input
+              type="checkbox"
+              checked={ack !== null}
+              onChange={(e) => onAck(e.target.checked ? ACK_CONFIRMED : null)}
+              className="mt-0.5"
+            />
+            <span>I have checked — this is a different person</span>
+          </label>
+        )}
+        {canRemove && (
+          <button
+            onClick={onDrop}
+            className="mt-2 text-[12px] font-semibold text-grey-2 hover:text-ryg-red"
+          >
+            Remove this row instead
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -160,6 +160,7 @@ export const mapCandidate = (r: any): Candidate => ({
   sourcePlatformId: r.source_platform_id ?? null,
   resumePath: r.resume_path ?? null,
   resumeName: r.resume_name ?? null,
+  resumeSha256: r.resume_sha256 ?? null,
   parseStatus: (r.parse_status ?? "manual") as ParseStatus,
   parsedJson: (r.parsed_json ?? {}) as Record<string, unknown>,
   stage: toStage(r.stage),

@@ -28,6 +28,7 @@ import {
   saveCandidateScore as saveCandidateScoreWrite,
   reassignInterview as reassignInterviewWrite,
   reassignStep as reassignStepWrite,
+  reconsiderCandidate as reconsiderCandidateWrite,
   recordInterviewResult as recordInterviewResultWrite,
   recordProbationReview as recordProbationReviewWrite,
   scheduleInterview as scheduleInterviewWrite,
@@ -86,6 +87,7 @@ import {
   seatsJoined,
   seatsTaken,
   STAGE_PENDING_STEP,
+  reconsiderTargetStage,
   stageEntryOf,
   hrApprovalLockReason,
   mgmtApprovalLockReason,
@@ -100,6 +102,7 @@ import {
   type CompletedRow,
 } from "./lib/queues";
 import { roundOf } from "./lib/board";
+import { matchesOf, type DupMatch, type DupProbe } from "./lib/duplicates";
 import type {
   Candidate,
   CandidateFit,
@@ -271,8 +274,29 @@ interface HrStoreValue {
   candidateDueIso: (candidate: Candidate) => string | null;
   /** May this person act on the card where it sits? Mirrors fms_hr_can_act. */
   canActOnCandidate: (candidate: Candidate) => boolean;
-  /** Anyone with this phone/email who already applied — a duplicate warning. */
-  duplicatesOf: (phone: string | null, email: string | null, excludeId?: string) => Candidate[];
+  /**
+   * May this person bring a DROPPED candidate back into play?
+   *
+   * Deliberately NOT `canActOnCandidate`, which answers "whose move is it?" and
+   * returns admin-only for a disqualified card (its pending step is null) — that
+   * hid Reconsider from the HR step owner, the one person the feature exists for.
+   * Authorisation here is about the stage they would be RESTORED to: whoever
+   * could have disqualified them from X may bring them back to X. Mirrors the
+   * check in fms_hr_reconsider_candidate.
+   */
+  canReconsiderCandidate: (candidate: Candidate) => boolean;
+  /**
+   * Anyone who looks like this person already — across all five signals, not just
+   * phone and email (see lib/duplicates.ts). `requisitionId` is the vacancy being
+   * added to: a match on it is data corruption, a match elsewhere is a legitimate
+   * second application.
+   */
+  duplicatesOf: (probe: DupProbe, requisitionId: string) => DupMatch[];
+  /**
+   * Bring a dropped candidate back into play, keeping their history — the
+   * alternative to uploading their CV a second time.
+   */
+  reconsiderCandidate: (candidateId: string, note: string | null) => Promise<void>;
 
   // onboarding
   onboardings: Onboarding[];
@@ -912,6 +936,29 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       return isAdmin || isProcessCoordinator;
     };
 
+    /**
+     * Reconsider is authorised by DESTINATION, not by the card's current column.
+     *
+     * A disqualified card has no pending step, so canActOnCandidate falls through
+     * to admin-only — which hid this control from Saloni, the natural hr_shortlist
+     * owner and precisely the person whose CV re-uploads created the duplicate
+     * rows FIX-5 exists to prevent. Conversely a flat "hr_shortlist may reconsider"
+     * would let her resurrect someone a HOD dropped at Round 3, into a stage she
+     * has no authority over. Both are fixed by asking the same question the
+     * disqualify branch of fms_hr_move_candidate asks, about the target stage.
+     */
+    const canReconsiderCandidate = (c: Candidate): boolean => {
+      const r = reqById.get(c.requisitionId);
+      if (!r || c.stage !== "disqualified") return false;
+      const to = reconsiderTargetStage(c, ivsByCan.get(c.id) ?? []);
+      return (
+        canActOn(STAGE_PENDING_STEP[to] ?? "final_decision", r) ||
+        canActOn("final_decision", r) ||
+        (to === "hr_shortlisted" && canActOn("hr_shortlist", r)) ||
+        (to === "finalized" && canActOn("onboarding", r))
+      );
+    };
+
     /* ------------------------------- onboarding ---------------------------- */
 
     const onbById = new Map(onboardings.map((o) => [o.id, o]));
@@ -1202,16 +1249,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       daysInStage,
       candidateDueIso: (c) => candidateDueIso(snapshot, c, reqById),
       canActOnCandidate,
-      duplicatesOf: (phone, email, excludeId) => {
-        const ph = phone?.trim();
-        const em = email?.trim().toLowerCase();
-        if (!ph && !em) return [];
-        return candidates.filter(
-          (c) =>
-            c.id !== excludeId &&
-            ((!!ph && c.phone?.trim() === ph) || (!!em && c.email?.trim().toLowerCase() === em)),
-        );
-      },
+      canReconsiderCandidate,
+      duplicatesOf: (probe, requisitionId) => matchesOf(probe, candidates, requisitionId),
 
       onboardings,
       onboardingById: (id) => onbById.get(id),
@@ -1333,6 +1372,14 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       updateCandidate: async (id, input) => {
         await updateCandidateWrite(id, input);
+        await invalidate();
+      },
+      // The RPC writes its own activity row — it is the only thing that still knows
+      // the original rejection reason at the moment it clears it — so there is no
+      // safeAnnounce here. Nobody is notified: reopening a card is HR's own
+      // housekeeping, and the person who now owes it an action finds it on the board.
+      reconsiderCandidate: async (candidateId, note) => {
+        await reconsiderCandidateWrite(candidateId, note);
         await invalidate();
       },
       // The RPC does its own announcing — it is the only writer that knows who was

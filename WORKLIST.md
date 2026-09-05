@@ -48,7 +48,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | The nine COA parameter **standard values**, to type into Masters → COA Parameters. ⚠ **They are NOT in the QC sheet and never were** — its *Standard Specs.* tab holds one cell reading *"We will enter manually afterwards for our internal reference (No relsation with software)"*, and the COA tab leaves the Standard column blank. Nothing is owed as a file; QC has to state the values | Factory / QC team, via Bushra | **PE-5 · B** | 2026-09-02 |
 | Who owns Production vs Repackaging on the four tail steps (PM Transfer, Packing Entry, Ready to Dispatch, FG Transfer) — the split ships inert until the names are set, so nothing is testable end to end without them | Bushra / factory | **PE-6 go-live** | 2026-09-02 |
 | The PI's **page-2 sales page** for the seven machines that have never had one: **MP5000 · JPK · Mini Lario · Kolorado Alpha 16 · Foil Machine · Label Printer · Book Printer** — plus two confirmations: does **Fab Pro 1I / 3I** share the Fab Pro 2i page, and does **P8D** share Sub Pro II+? 🟢 **The twelve existing pages are BUILT and seeded** (OCPI-36, 02-09) — 18 of 28 machines now print one. Each missing page needs a heading, a tagline, one paragraph and the bullets; likely already in the machine brochure. A machine without one issues its PI one page shorter, which is a correct form | Bushra | **OCPI-36** page 2 — delays those 10 machines only | 2026-09-02 |
-| Were the duplicate CV re-uploads deliberate? **Purvi Upadhyay + Manali Desai** re-added to the EA vacancy on 02-Sep after both were rejected on 31-Aug; **Harsha Jain** twice on Marketing Executive; **Kajal Bhalerao THREE times** on Finance manager, sitting at Interview R3, Telephonic and disqualified simultaneously. If deliberate the new rows are right and the old ones are noise; if accidental it is the reverse. **No data has been touched** | Saloni Rathod, via Bushra | **FIX-5** cleanup — the duplicate-check fix itself is unblocked | 2026-09-03 |
+| Were the duplicate CV re-uploads deliberate? Re-counted 05-Sep: **7 extra rows, not 5**. **Purvi Upadhyay + Manali Desai** re-added to the EA vacancy on 02-Sep after both were rejected on 31-Aug; **Harsha Jain** twice on Marketing Executive; **Kajal Bhalerao THREE times**, **Sunil Sharma** twice, and 🔴 **CA Vandit Mehta twice with BOTH rows at Interview R3** on Finance manager. If deliberate the new rows are right and the old ones are noise; if accidental it is the reverse. **No data has been touched** | Saloni Rathod, via Bushra | **FIX-5** cleanup only — the guard itself shipped 05-Sep | 2026-09-03 |
 | **Two wording confirmations on the Alpha 15 sales page**, now that it is seeded. 🟢 The old question — *which of the two pages is current* — is **ANSWERED and no longer blocking:** `Advantages of KOLORADO ALPHA 15` and `Advantages of FEDAR 15` were both rendered and compared and are **identical word for word**; only the heading differs, so it was seeded under the Kolorado one. What is still open is cosmetic: (a) Kolorado or FEDAR as the printed heading, and (b) both 2026-27 papers print **`ALPHA15` with no space** — is that intended? Either is a one-word edit on the master | Bushra | Nothing — the page is live either way | 2026-09-02 |
 | 🔴 **`machine_model_no` is still blank on 13 of 28 machines — and every templated one of them is a KoloRado Alpha.** Re-checked 03-09-2026 after OCPI-39's fills. **7 templated, all Alphas:** `Kolorado Alpha 15` · `Kolorado Alpha 16` · `KoloRado Alpha 3 — 12 heads` · `KoloRado Alpha 3.2 — 8 heads` · `KoloRado Alpha 3.2 — 24 heads` · `KoloRado Alpha II — 1.8 m` · `KoloRado Alpha II — 2.2 m`. **6 untemplated:** `Book Printer` · `Foil Machine` · `KoloRado Alpha 3.2 — 16 heads` · `Label Printer` · `Mini Lario` · `Pengda PD-1800XD-800`. ⚠ **This may be a fact about the Alphas rather than a hole in the master** — the only Alpha with a code is the II 1.9 m (`OT-1908A`), taken off its own contract's spec row, and real contract 125 prints the label *"Model No:"* **with nothing after it**. So either the Alphas genuinely have no manufacturer code and the answer is "leave them blank", or the codes exist and nobody has written them down. 🟢 **Two candidates already on file** if the answer is the latter: `Mini Lario` → **`MS-MINI LARIO-1.8 MTR`** and `Pengda PD-1800XD-800` → **`PD-1800XD-800`**, both stated on the decks supplied 02-09. 🟢 **Three were filled from real contracts on 03-09 (OCPI-39):** K32 `HM1800B-TK32-B1`, P8S `HM1800R-P8S-A1`, Pengda 800 `PD-1700XD-800` — 15 of 28 now filled. **Nothing is broken meanwhile:** both the PI and the OC omit the phrase entirely rather than printing a gap | Ritesh Bhai, with Bushra | **OCPI-36 / OCPI-39** — cosmetic, blocks nothing | 2026-09-03 |
 | 🔴 **Five machines have NO billing name, and it is the line that prints on the contract.** `Fab Pro 2I` · `Fab Pro 3I` · `JPK` · `Mini Lario` · `MP5000` all carry a null `billing_name`, so a contract for any of them names the machine and then says nothing about what is being sold. `KoloRado Alpha 3 — 12 heads` was the sixth and **is now filled** — its siblings all read `LARGE FORMAT INKJET PRINTER WITH <n> HEADS WITH STD. ACCESSORIES`, so 12 went in the slot, copied not composed. The other five have **no sibling pattern and no real paper stating one**, and a billing description on a signed contract is not something to infer. **Needed: one line each, in Bushra's own wording.** ⚠ The OCPI-40 audit reported this as ONE machine because the sweep was keyed `name ilike '%alpha%'` — the unfiltered count is six | Bushra / Ritesh Bhai | **OCPI-41 C-2** | 2026-09-03 |
@@ -7179,7 +7179,7 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 | 2 | 2026-09-02 | Map one or more HODs to a position so they own it exactly as if they had raised the MRF — today the picker cannot even show them. **Part B:** a Setup → Department HODs master that pre-fills it | **NR-3** | `[ ]` |
 | 3 | 2026-09-02 | HR must have full pipeline control — today they cannot action the seven HOD steps on a position a head raised, and **Settings cannot grant it** | **NR-4** | `[ ]` |
 | 4 | 2026-09-03 | Edit, delete and re-upload the videos and documents HR attaches — today every one is write-once, and the RPCs structurally cannot clear a value | **NR-5** | `[ ]` |
-| 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[ ]` |
+| 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[x]` |
 | 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
 | 7 | 2026-09-03 | The Positions grid's **Close** button actually **cancels** — five real vacancies were cancelled through it. Filed as a **fault**, so it sits in [Fixes](#fixes) | **FIX-6** | `[x]` |
 
@@ -7187,8 +7187,9 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 client wants them gathered first so they can be sequenced together. Add each here as it comes in,
 then write its entry.*
 
-🔴 **ALL FIVE OPEN POINTS ARE HIGH PRIORITY** *(client, 03-09-2026)* — NR-2, NR-3, NR-4, NR-5 and
-FIX-5. This is now the highest-priority block of work on the whole list.
+🔴 **ALL FIVE POINTS WERE HIGH PRIORITY** *(client, 03-09-2026)* — NR-2, NR-3, NR-4, NR-5 and
+FIX-5. **FIX-5 shipped 05-09-2026**; the remaining four are still the highest-priority block on the
+whole list.
 
 ⚠ **Build order is NOT list order, and getting it wrong makes things worse:**
 
@@ -7197,7 +7198,9 @@ FIX-5. This is now the highest-priority block of work on the whole list.
    them. NR-3 alone is a regression.
 2. **NR-3 next** — its Part B (Setup → Department HODs) also unblocks RC-style per-user scoping and
    fixes NR-1’s thin Round-2 interviewer picker at source.
-3. **NR-2, NR-5, FIX-5** are independent of each other and of the above.
+3. **NR-2 and NR-5** are independent of each other and of the above. (**FIX-5** was too, and is
+   done — though NR-5 should re-read its `fms_hr_update_candidate` note: that RPC is now guarded
+   against duplicates, so wiring it to an Edit control no longer reopens FIX-5.)
 
 ⚠ **Points 5 and 7 are FIXES, not NRs.** They were faults somebody hit rather than changes somebody
 asked for, so by this file's own rule they live in [Fixes](#fixes) as **FIX-5** and **FIX-6**. They are
@@ -11378,9 +11381,11 @@ Cancel, the button a user reaches for to go through with it is the one that back
 - **The reason was never shown**, which is what let a mislabelled button go unnoticed for months and is
   fixed under **NR-6**.
 
-### FIX-5 · 🔴 The same candidate can be added to a vacancy twice, and the pipeline counts them twice  `[ ]`
-*New Recruitment · Found 2026-09-03, raised by Ritesh Bhai from the Executive Assistant board · **Not
-yet fixed.** No data has been touched — the cleanup is waiting on Saloni's answer (see below)*
+### FIX-5 · 🔴 The same candidate can be added to a vacancy twice, and the pipeline counts them twice  `[x]`
+*New Recruitment · Found 2026-09-03, raised by Ritesh Bhai from the Executive Assistant board ·
+**Guard built and applied 2026-09-05**, migration live on `icutjkrqkbzwvmnfbzpr`, frontend green,
+driven end-to-end in the browser on MRF-2627-0019 · **The 7 existing duplicate rows are still
+untouched** — that cleanup remains blocked on Saloni's answer (see below)*
 
 **What was seen.** The Executive Assistant position reads **"4 · 2 in play"** on the Positions list.
 Only **two people** have ever applied for it, and both were rejected.
@@ -11420,18 +11425,28 @@ kind**, and `fms_hr_candidates` carries **no unique constraint** on (requisition
 (requisition, phone) — the `email` and `phone` indexes exist but are **non-unique**, built for
 lookup. The RPC inserts whatever it is handed.
 
-#### It is not only the EA board — 3 positions, 5 extra rows
+#### It is not only the EA board — 3 positions, 7 extra rows
 
-| Position | Shows | Actually | Duplicate |
+Re-measured 2026-09-05. **Two more pairs than the 03-Sep count**, one of them added *after* this
+entry was first written:
+
+| Position | Person | Rows | What the old check could see |
 |---|---|---|---|
-| MRF-2627-0018 · Executive Assistant | 4 · 2 in play | **2 people** | Purvi ×2, Manali ×2 |
-| MRF-2627-0006 · Marketing Executive | 11 · 10 in play | 10 people · 9 in play | Harsha Jain ×2 |
-| **MRF-2627-0015 · Finance manager** | 16 · 13 in play | 14 people · 12 in play | **Kajal Bhalerao ×3** |
+| MRF-2627-0018 · Executive Assistant | Purvi Upadhyay | ×2 | **nothing** |
+| MRF-2627-0018 · Executive Assistant | Manali Desai | ×2 | email + phone |
+| MRF-2627-0006 · Marketing Executive | Harsha Jain | ×2 | email + phone |
+| **MRF-2627-0015 · Finance manager** | **Kajal Bhalerao** | **×3** | email + phone |
+| MRF-2627-0015 · Finance manager | Sunil Sharma | ×2 | **nothing** |
+| **MRF-2627-0015 · Finance manager** | **CA Vandit Mehta** | **×2** | **nothing** |
 
-🔴 **Kajal Bhalerao is the one that can cause real harm.** She exists three times on the Finance
-manager vacancy at once — **CAN-2627-0051 at Interview R3, CAN-2627-0054 at Telephonic, and
-CAN-2627-0057 disqualified.** Two different people could book her for two different rounds without
-either seeing the other, and she inflates that pipeline by two.
+🔴 **Two of these can cause real harm, not one.** Kajal Bhalerao exists three times on Finance
+manager at once (CAN-2627-0051 at Interview R3, -0054 at Telephonic, -0057 disqualified). And
+**CA Vandit Mehta — added twice on 02-Sep, 16:01 and 18:08 — has BOTH rows sitting at Interview
+Round 3 simultaneously** (CAN-2627-0118 and -0119). Either way two people can book the same person
+for two rounds without seeing each other.
+
+⚠ **Sunil Sharma and CA Vandit Mehta are caught by neither phone nor email nor filename-as-written.**
+They are why the fix needed five signals rather than the two the 03-Sep write-up proposed.
 
 #### What this quietly distorts
 
@@ -11441,23 +11456,115 @@ KPIs, and — worst — the **pipeline funnel and platform effectiveness** repor
 where one person counted twice at CV stage and once at interview reads as a conversion rate that
 never happened.
 
-#### The fix
+#### What was built  `[x]` 2026-09-05
 
-- [ ] **Compare more than phone and email.** Add the **CV filename** (and ideally a normalised name)
-      to `duplicatesOf`, so a CV with no parsed contact details is still caught. That alone would
-      have caught Purvi.
-- [ ] **Make an exact match within the same vacancy a BLOCK, not a warning.** Same requisition +
-      identical email or phone is not a judgement call. Across *different* vacancies it must stay a
-      warning — applying for two jobs is legitimate, and `CandidateDetailsCard` already shows that
-      as useful context.
-- [ ] **Guard it server-side too.** The RPC accepts anything today. A client-only check is one
-      refreshed tab away from being bypassed.
-- [ ] **Decide on a unique constraint.** `(requisition_id, lower(email))` where email is not null
-      would make it structurally impossible — but it would also reject a legitimate re-application
-      after a rejection, which is exactly what may have happened here. Probably the RPC guard with
-      an explicit "add anyway" is the right shape, not a hard constraint.
+Migration `20260905120000_fix5_candidate_duplicate_guard.sql` (+ its rollback), one new client
+module `lib/duplicates.ts`, and the two screens that read it.
 
-#### The cleanup — 5 extra rows, and it is BLOCKED on a question
+- [x] **Five signals, not two.** `duplicatesOf` now compares the **file's SHA-256**, email, phone,
+      the **normalised CV filename** and the **normalised name**. Measured against the live rows:
+      email/phone alone catches 3 of the 6 groups, filename 4, name 4 — **only all five together
+      catch all six.** `lib/duplicates.ts` holds the normalisers and `fms_hr_norm_*` mirrors them.
+- [x] **A CV fingerprint** — `fms_hr_candidates.resume_sha256`, computed in the browser with
+      `crypto.subtle`, no library. Every case that slipped through undetected was literally the same
+      PDF re-uploaded; this is the one signal that is proof rather than inference. Existing rows stay
+      null on purpose and fall back to the other four.
+- [x] **Two tiers.** Same file / email / phone on the SAME vacancy → **blocked**, with an
+      "Add anyway" that demands a written reason and records a `duplicate_override` activity row.
+      Same filename or name → a tick. A different vacancy → context only, never blocked.
+- [x] **Guarded server-side**, in `fms_hr_add_candidates`. ⚠ The **signature is unchanged** and the
+      ack/hash ride inside the jsonb element — a defaulted third argument would have created a
+      Postgres *overload*, leaving the old two-arg function callable and the guard bypassable by the
+      very stale tab it exists to stop.
+- [x] **🔴 The other way in, closed too.** `fms_hr_update_candidate` sets email and phone
+      unconditionally, so editing one candidate's details onto another's re-creates the duplicate
+      through the back door. It has no callers *today* — but **NR-5 plans to wire it to an Edit
+      control**, which would have reopened this the moment it shipped. Same guard, added now.
+- [x] **The in-batch case**, found only by driving the real browser: two identical CVs dropped in
+      *one* go are invisible to a store-based check, because neither row exists yet. The server does
+      catch it — but only after every file in the batch is already in storage, which nothing in this
+      module can remove. Now caught before the upload loop.
+- [x] **The upload ordering.** Duplicates are evaluated **before** `uploadResume`, not inside the
+      loop. Verified: every blocked attempt left the bucket at exactly 133 objects, 0 orphans.
+- [x] **The name mangling at source.** `AddCandidatesModal:131` turned `"Purvi Upadhyay - EA.pdf"`
+      into the name `Purvi Upadhyay   EA` — verbatim what CAN-2627-0098 is called — because the
+      hyphen became a third space. Three of the four mangled names live have this shape, and it is
+      what stopped the name matching its own twin. One line.
+- [x] **No unique constraint**, deliberately — `(requisition_id, lower(email))` would refuse a
+      legitimate re-application after a rejection, which is exactly what may have happened here. The
+      RPC guard plus a recorded override is the right shape.
+
+#### 🔴 And the thing that removes the CAUSE — "Reconsider this person"
+
+In all three real cases HR's intent was *look at this person again*; a second row was never what
+they wanted. `fms_hr_reconsider_candidate` returns a dropped candidate to the stage they had
+reached, keeps every interview, and writes the original rejection reason into the activity trail
+before clearing it. Surfaced on the candidate page and pointed at from the duplicate card.
+
+⚠ **NOT wired to `fms_hr_move_candidate`, and that matters.** Dragging a card back out of
+Disqualified already worked — and its backward branch runs
+`delete from fms_hr_interviews where round > greatest(-1, v_to_rank - 5)`, so reopening someone
+dropped at Round 3 would have **destroyed all three of their interview records** on the way.
+
+#### 🔴 Follow-up, found by testing as a REAL non-admin HR user  `[x]` 2026-09-05
+
+Migration `20260905130000_fix5_reconsider_authz_mirrors_disqualify.sql`. The whole feature above was
+verified as an **admin**, which hid two faults with one root cause — a **flat** authorisation check
+on Reconsider. Re-tested signed in as **Saloni Rathod** (`recruitment@orangeotec.com`, role
+`employee`, natural owner of `resume_upload` + `hr_shortlist`):
+
+- [x] **🔴 The button was INVISIBLE to the one person it was built for.** A disqualified card has no
+      pending step (`STAGE_PENDING_STEP.disqualified = null`), so `canActOnCandidate` fell through to
+      `return isAdmin || isProcessCoordinator` — Saloni saw *"Only HR or the decision-maker can bring
+      a dropped candidate back."* She is the person whose CV re-uploads created the duplicate rows
+      this fix exists to prevent, and the alternative to re-uploading was hidden from her.
+- [x] **The server was too permissive in the opposite direction.** `final_decision OR hr_shortlist`
+      let the HR owner resurrect someone a HOD had dropped at **Round 2, Round 3 or Final decision** —
+      restoring them into a stage HR could never have dropped them from.
+- [x] **One rule fixes both: authorise by DESTINATION.** Whoever could have *disqualified* them from
+      stage X may bring them back *to* X — the same branch `fms_hr_move_candidate` already uses,
+      evaluated against the restored stage. New `reconsiderTargetStage()` in `lib/queues.ts` mirrors
+      the SQL `CASE`; new `canReconsiderCandidate()` in `store.tsx` replaces `canActOnCandidate` on
+      this control only. Proved both ways in a rolled-back transaction: early stage **allowed**,
+      Round 3 **refused** — *"Not authorized to bring this candidate back to Interview R3 — Director"*.
+
+Also confirmed under her (non-admin) JWT: the blocked/override/clean rows behave as designed, the
+bucket stayed at 133 while rows were blocked, a direct RPC call without the ack is refused, a plain
+payload still works, and `fms_hr_add_candidates` has exactly **one** overload. All five test rows,
+both storage objects and every activity row were removed afterwards; the CAN counter was rolled back
+119 → 119 and every baseline count matches.
+
+✅ **No bells were sent this run** — `announce` for `cvs_added` targets the `hr_shortlist` owner, who
+was also the actor, so she was excluded from her own notification. The earlier admin run wrote 3 to
+her precisely because the actor was somebody else.
+
+⚠ **A second trap, caught before it shipped:** `interviewN_at` is stamped when a round is *held*,
+not when the card is moved into it. Deriving the return stage from timestamps alone sent a candidate
+dropped at "R2 booked, not yet held" all the way back to the HR shortlist. It now reads the
+interview rows too.
+
+⚠ **It cannot help the EA board yet.** MRF-2627-0018 is `cancelled` (one of FIX-6's five), and both
+add and reconsider refuse a cancelled requisition.
+
+#### How it was proved
+
+Applied to the live project, then driven through the real UI on **MRF-2627-0019 (ZZ TEST)** with
+generated CVs: identical file blocked · same email blocked · `9825000002` matched
+`+91 98250 00002` · no-contact CV caught on filename alone (**the Purvi case**) · a clean CV saved
+with no friction · override recorded with its reason · reconsider returned a candidate to Telephonic
+with the interview intact · a direct RPC call from the console refused. Every guard branch also
+asserted in rolled-back transactions, and **the rollback was rehearsed for real** — applied, rolled
+back, plain two-key payload confirmed still working, re-applied.
+
+**All 5 test rows and their 5 storage objects were removed afterwards**, the CAN-2627 counter rolled
+back 124 → 119, and every table returned to its pre-test count (119 / 24 / 472 / 282 / 111 / 133).
+The client's ZZ TEST position and its 3 candidates were left exactly as they were.
+
+⚠ Testing through the UI put **3 `cvs_added` bells in Saloni Rathod's feed**; those were deleted
+with the rest. Worth knowing before anyone browser-tests this module again — the 01-Sep seed avoided
+it by going through SQL, which UI testing cannot.
+
+#### The cleanup — 7 extra rows, and it is STILL BLOCKED on a question
 
 **Nothing has been deleted or changed.** Which row is the truth depends on intent, and only HR knows:
 
@@ -11471,7 +11578,12 @@ never happened.
 answer comes back, the cleanup needs either that capability or a one-off SQL statement.
 
 **Waiting on:** Saloni Rathod — were the 02-Sep EA re-uploads deliberate? Then the same question for
-Harsha Jain (Marketing Executive) and Kajal Bhalerao (Finance manager).
+Harsha Jain (Marketing Executive), Kajal Bhalerao and Sunil Sharma (Finance manager) — and
+**CA Vandit Mehta, who was not on the original list and whose two rows are both at Interview R3**.
+Ask about him first; he is the one that can waste a director's time.
+
+⚠ **The guard does not touch these seven.** It stops the next one being created; it cannot decide
+which of two existing rows is the real person. That is still a judgement only HR can make.
 
 ### FIX-4 · A requisition could not be cancelled once sourcing had begun  `[x]`
 *Purchase RM Domestic · RM Import · **Fixed 2026-08-25, 13:35 IST** · Live on `master` at `3c71504`*

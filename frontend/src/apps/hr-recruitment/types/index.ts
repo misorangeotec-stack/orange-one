@@ -429,6 +429,15 @@ export interface Candidate {
   sourcePlatformId: string | null;
   resumePath: string | null;
   resumeName: string | null;
+  /**
+   * SHA-256 of the CV's bytes — the one duplicate signal that is proof rather
+   * than inference (see lib/duplicates.ts).
+   *
+   * Null on every row created before FIX-5, and on any upload where the browser
+   * had no `crypto.subtle`. A null simply sits out the file comparison; it is
+   * expected, not missing data.
+   */
+  resumeSha256: string | null;
   parseStatus: ParseStatus;
   parsedJson: Record<string, unknown>;
 
