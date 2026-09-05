@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-05
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -11951,6 +11951,81 @@ Three rules:
   what will be searched for a year from now; the tied-timestamp explanation is the second line.
 - **Say what else was at risk.** A fault is rarely alone — if the same mistake sits in other code,
   write down where, so the next reader does not have to find it twice.
+
+### FIX-7 · Order to Dispatch sat on "Loading…" for twenty seconds  `[x]`
+*Order to Dispatch · Found 2026-09-05, raised by Ritesh Bhai — "when any user is loading an order to
+dispatch, it is just showing loading, and it's taking quite some time" · **Fixed the same day**,
+migration `20261111120000_od13_p3b_orders_policy_costs_once_again`, applied 05-09-2026 11:48 IST*
+
+**What was seen.** Every screen in the module — the dashboard, New Sales Order, the queues — showed
+"Loading…" for twenty seconds or more before any data appeared. It affected every user. Nothing was
+wrong with the data; it always arrived eventually.
+
+**One RLS policy was being evaluated once per row instead of once per query.**
+`20261110110000_od13_p2_raise_and_read.sql` (OD-13 P2, commit `cd50847`, 04-09) rewrote
+`fms_dispatch_orders_select` to add the customer-login arm. It added that arm correctly — the two
+caller-side lookups inside it *are* wrapped, and its header explains at length why they must be. What
+it did not notice is that it retyped **the four arms above it** from the text `pg_policies` prints
+back, and **`pg_policies` prints the `(select …)` wrapping away**:
+
+| `20260925130000` (fast) | `20261110110000` (what shipped) |
+|---|---|
+| `(select auth.uid())` | `auth.uid()` |
+| `(select is_admin((select …)))` | `is_admin(auth.uid())` |
+| `(select fms_dispatch_is_coordinator(…))` | `fms_dispatch_is_coordinator(auth.uid())` |
+| `(select module_is_viewer(…))` | `module_is_viewer(auth.uid(), 'order-to-dispatch')` |
+
+Unwrapped, each is a STABLE SECURITY DEFINER call in a per-row `Filter` rather than an InitPlan.
+`EXPLAIN` on live data showed `loops=1128` — one scan of `fms_dispatch_step_owners` per order.
+
+**It was not one table.** `order_items`, `rounds`, `round_items` and `activity` each read
+`exists (select 1 from fms_dispatch_orders o where o.id = …)`, so all four re-ran the whole predicate
+per row (`round_items` twice, through `rounds`). Measured as an ordinary step owner:
+
+| | orders | order_items | rounds | round_items |
+|---|---|---|---|---|
+| Before the regression | 134 ms | 142 ms | — | 136 ms |
+| Broken | **1,397 ms** | **1,189 ms** | **1,181 ms** | **1,207 ms** |
+| After the fix | 19 ms | 14 ms | 9 ms | 16 ms |
+
+Every table the module reads that does *not* touch this policy answered in 1–12 ms throughout, which
+is why the `is_staff` sweep from the same day was not the cause. `pg_stat_statements` had those four
+tables at **89,517 s — 49% of all database execution time on the project**, worst single call 7,964 ms.
+End to end, signed in as Jyoti over the real API: **753 ms for all 14 requests**, in parallel.
+
+**The fix** restores the wrapping and hoists the one arm that could not simply be re-wrapped — the
+step-owner `EXISTS` is correlated on `location_id`, so it splits into `fms_dispatch_sees_every_order()`
+(the location-free half, row-independent) and `fms_dispatch_my_step_locations()` (an InitPlan array
+tested with `= any(…)`). Same rule, same rows: asserted over every `(profile, order)` pair, and the
+per-identity visible-row counts are unchanged for all 15 affected users (1,129 / 937 / 192 / 2 / 0).
+
+**What else was at risk.**
+
+- **`fms_dispatch_can_see_order()` was NOT touched, and that is deliberate.** It judges one row at a
+  time and is what actually governs attachments (`fms_dispatch_can_see_doc` → the `fms-dispatch-docs`
+  storage read policy) and `fms_dispatch_announce`'s recipients. Because this change moves no row, the
+  two spellings stay the same rule. **Any future change here that *does* move a row must move the
+  function in the same migration** — `20260925130000:39-41` says so.
+- **The fix nearly caused its own outage.** As first written, the 7-second equivalence assertion ran
+  *after* `alter policy`, which holds ACCESS EXCLUSIVE until COMMIT. Moving it above the ALTER cut the
+  lock window from ~7 s to **12 ms**. `set local lock_timeout = '5s'` was added too — the server
+  default is 0, i.e. wait forever.
+- **The rollback would have thrown when it was needed.** Its guard used `pg_get_functiondef()`, which
+  raises `42809 "array_agg" is an aggregate function` the moment the planner reaches a non-plain
+  function — and a `nspname` qual is **not** a barrier, since Postgres promises no evaluation order
+  between a qual and a function call in the same scan. Reproduced twice. Now reads `pg_proc.prosrc`,
+  a plain column that cannot throw.
+- **`fms_dispatch_step_assignees_write` is scoped to role `{public}` with an unwrapped
+  `is_admin(auth.uid())`.** Not a hole (the predicate still requires admin) and free today (0 rows),
+  but it sits outside the six-table guard and becomes a per-row cost if that table ever fills.
+- **`KRITIKA SHARMA` holds `edit` on the module and can see 0 orders**, because she owns no step. That
+  follows the documented ownership rule (`20260925130000` — a *view* grant reads the whole module, an
+  editor sees what their ownership says), but it may not be what was intended operationally. Worth
+  putting to Ritesh Bhai.
+- **The general lesson, now in the migration header:** never rewrite a policy from `pg_policies` or the
+  dashboard — always from the previous migration's source. And measure a policy change as a
+  **non-admin**: an admin short-circuits on the first `is_admin` arm, so every arm behind it stays free
+  and the regression is invisible.
 
 ### FIX-6 · The button said "Close" and cancelled the vacancy  `[x]`
 *New Recruitment · Found 2026-09-03, raised by Ritesh Bhai asking what the difference between hold,
