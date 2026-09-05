@@ -7252,7 +7252,7 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 | 1 | 2026-09-02 | A management pipeline dashboard — every position's pipeline on one screen, with the candidate's own detail readable from it | **NR-2** | `[ ]` |
 | 2 | 2026-09-02 | Map one or more HODs to a position so they own it exactly as if they had raised the MRF — today the picker cannot even show them. **Part B:** a Setup → Department HODs master that pre-fills it | **NR-3** | `[ ]` |
 | 3 | 2026-09-02 | HR must have full pipeline control — today they cannot action the seven HOD steps on a position a head raised, and **Settings cannot grant it** | **NR-4** | `[ ]` |
-| 4 | 2026-09-03 | Edit, delete and re-upload the videos and documents HR attaches — today every one is write-once, and the RPCs structurally cannot clear a value | **NR-5** | `[ ]` |
+| 4 | 2026-09-03 | Edit, delete and re-upload the videos and documents HR attaches — today every one is write-once, and the RPCs structurally cannot clear a value | **NR-5** | `[x]` |
 | 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[x]` |
 | 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
 | 7 | 2026-09-03 | The Positions grid's **Close** button actually **cancels** — five real vacancies were cancelled through it. Filed as a **fault**, so it sits in [Fixes](#fixes) | **FIX-6** | `[x]` |
@@ -8051,7 +8051,7 @@ so in a comment on both sides — the next reader will read it as a bug and "fix
       It should stop — HR raises most requisitions, and there is no self-approval check anywhere in
       `fms_hr_decide_mrf`.
 
-### NR-5 · 🔴 Nothing HR uploads can ever be edited, replaced or deleted  `[ ]`
+### NR-5 · Nothing HR uploads can ever be edited, replaced or deleted  `[x]`  — built, browser-verified and applied 05-Sep-2026
 *Raised 2026-09-03 · Audited the same day against the live database, the live storage bucket and the
 running code · Parked with the rest of the HR list*
 
@@ -8169,21 +8169,94 @@ The storage leak begins the day "replace" ships without "remove".
   cannot replace the JD on a position a head raised. The probation and interview attachments sit
   behind `fms_hr_can_act` on HOD steps, which is exactly what **NR-4** unlocks.
 
-#### Phase-wise checklist
+#### Phase-wise checklist — DONE 05-09-2026
 
-- [ ] **P1 · SQL.** Add explicit clear semantics to the five RPCs, plus `fms_hr_set_interview_media`.
-      Additive; no storage migration needed. Applied before the frontend, rollback rehearsed.
-      ⚠ Verify each clear by re-reading the row — a `coalesce` left in place fails silently.
-- [ ] **P2 · The attachment service** — one helper: write, then remove the superseded object, then
-      record the activity line. Copy receivables-hub's `storage.remove` pattern.
-- [ ] **P3 · The Documents tab** gains per-row **Replace** and **Remove**, gated per row, with a
-      confirm that names the file. The JD gets the same on the requisition page.
-- [ ] **P4 · Resolve the `updateCandidate` orphan** — give it a control or remove it.
-- [ ] **P5 · Guards** — refuse removal on a completed onboarding and on a decided probation; require
-      admin/coordinator for anything already decided.
-- [ ] **P6 · Walk it in the browser.** Replace a CV and confirm the **old object is gone from the
-      bucket**, not merely unreferenced. Fix a Round-1 video link while the candidate sits at Round 3.
-      Re-run the orphan count — it should still be 0.
+- [x] **P1 · SQL.** `20261113120000_nr5_attachments_can_be_cleared.sql` (+ `…120001_…_rollback.sql`),
+      applied to `icutjkrqkbzwvmnfbzpr` **before** any frontend change. `CREATE OR REPLACE` only — no
+      signature changed, so no PostgREST overload could form. Rollback **rehearsed on live data**, not
+      read: it ran, restored the old `coalesce`, dropped both new functions, put the old JD guard back,
+      and was then aborted so the migration stands.
+- [x] **P2 · The attachment service** — `removeHrDoc()` beside the existing private `upload()`
+      chokepoint in `hrWrites.ts`, plus `replaceAttachment` / `removeAttachment` /
+      `setAttachmentLink` on the store. **The module's only `storage.remove()`.**
+- [x] **P3 · The Documents tab** gained per-row Replace / Edit-link / Remove, each gated by its own
+      rule, with a confirm that names the file. The JD got the same on the requisition page.
+- [x] **P4 · The `updateCandidate` orphan is resolved** — wired to a real Edit-candidate control.
+- [x] **P5 · Guards** — a completed onboarding and a decided probation already refused server-side;
+      the client now hides the control rather than offering a button the RPC would reject.
+- [x] **P6 · Walked in the browser** on the `ZZ TEST` vacancy. Details below.
+
+#### What shipped
+
+**Three RPCs learned to clear**, on one convention: `NULL`/omitted leaves a value alone, `''` clears
+it, anything else stores it — written everywhere as the same three-armed `case`.
+`fms_hr_record_interview_result`, `fms_hr_toggle_onboarding_check`, `fms_hr_record_probation_review`.
+
+**Two new RPCs.** `fms_hr_set_candidate_resume` (the CV alone, so replacing a document cannot rewrite
+a person's details) and 🔴 **`fms_hr_set_interview_media`** — the one that matters: it changes a
+round's link or form **with no stage test**, so Round 1 is fixable while the candidate sits at Round 3.
+Before this the only route was dragging the card back, which `delete`s every later interview row.
+
+**One guard widened.** `fms_hr_set_requisition_jd` now admits coordinators and
+`fms_hr_can_act('mrf', …)` alongside admin-or-requester.
+
+#### Five things the audit found that the original entry had wrong
+
+1. 🔴 **NR-4 would NOT have unlocked the JD.** This entry said to ship with NR-4 because the JD RPC is
+   admin-or-requester only. But its guard never calls `fms_hr_can_act`, which is the only thing NR-4
+   touches — so NR-5 widened it directly. (NR-4 still matters for HOD-owned steps: Round 2 and the
+   probation months.)
+2. **Four RPCs needed clear semantics, not five** — `fms_hr_set_requisition_jd` already wrote
+   `nullif(trim(p_path),'')` and could always clear. It only ever lacked a control and a guard HR
+   could pass. In the end it was **three**, because of the next point.
+3. 🔴 **`candidatePayload` maps `resumePath ?? ""`.** Under the new convention that empty string would
+   have **CLEARED the CV, its name and its hash on every save of the candidate edit form** — silently
+   deleting all 119 documents one edit at a time. `fms_hr_update_candidate` therefore no longer writes
+   the resume columns at all; it still *reads* `resume_sha256` for the FIX-5 duplicate guard.
+4. 🔴 **`canActOnCandidate` was the wrong gate.** It resolves the step from the card's CURRENT stage,
+   so asked about somebody at Round 3 it answers "may you act on Round 3". A new
+   `canActOnInterviewRound(candidate, round)` mirrors the new RPC per round.
+5. 🔴 **`fms_hr_record_probation_review`'s update arm had to read `p_file_path`, not
+   `excluded.file_path`** — the INSERT side already applies `nullif(p_file_path,'')`, so by the time
+   `on conflict … do update` runs the "omitted" and "clear" cases are indistinguishable.
+
+**No DDL and no storage migration were needed.** Every attachment column was already nullable, and the
+`"fms hr docs delete"` policy already existed. There were **zero stored empty strings** in all thirteen
+attachment columns, so nothing existing was reinterpreted — the migration asserts this and refuses to
+apply if it ever stops being true.
+
+#### Two holes found by walking it, not by reading it
+
+- 🔴 **The requisition page crashed.** The JD hooks were placed beside the block they serve, which sits
+  after `if (s.isLoading)` and `if (!r)` — so React saw a different number of hooks between renders
+  and the whole page went to the error boundary. `tsc` cannot see this; only opening the page can.
+  Fixed by moving the four hooks up with the others, with a comment saying why they live there.
+- 🔴 **The Edit form's comma-separated Skills box split a real skill in two.** `"Payroll, PF & ESIC"`
+  became `"Payroll"` + `"PF & ESIC"` on the first save. It is now **one per line**, which cannot be
+  ambiguous. The corrupted row was restored.
+- ⚠ A third gap, found while testing: the Documents tab lists only what EXISTS, so a round nobody
+  captured a link for had no way back. `CandidateMeetings` now offers **"+ Add a recording link"** per
+  round — but only where there is none. Editing and removing an existing one stay on Documents, so
+  the destructive path keeps its single confirm.
+
+#### Proved in the browser, on live data
+
+On `MRF-2627-0019` (`ZZ TEST`), signed in as a real user:
+
+| | |
+|---|---|
+| Added a Round-1 recording link while the candidate stood at **Made Offer** | ✅ written, `edited_at` stamped, Round 2 untouched — the old RPC would have refused outright |
+| Replaced a CV | ✅ **the old object is GONE from the bucket**, not merely unreferenced |
+| Bucket total across the whole walk | **133 → 133** — one in, one out, every time |
+| **Orphan count** | **0 before, 0 after** |
+| Edited a candidate's name | ✅ CV, filename and hash all survived — the P1 regression, closed |
+| Attached, then removed, a JD on a vacancy | ✅ cleared to NULL, object deleted |
+| Activity trail | ✅ a row per change, each naming the previous and the new path |
+| All 119 live CVs / 18 live video links | ✅ untouched throughout |
+
+⚠ The `ZZ TEST` candidate CAN-2627-0095 now carries `ZZ_TEST_Replacement_CV.pdf` instead of her
+seeded CV, and her original object was permanently deleted. That was the point of the test; it is
+test data, and nothing real was touched.
 
 #### Settled — 03-09-2026, the same day it was raised
 
@@ -8191,16 +8264,24 @@ The storage leak begins the day "replace" ships without "remove".
 |---|---|
 | Does "videos" mean uploaded video FILES, or the links we store today? | **The LINKS.** All 18 live videos are URLs typed into a box on the interview result form. Editing and clearing `video_url` is in scope. **Video-file upload is explicitly OUT** — nothing in the module accepts video, and nothing needs to. If it is ever wanted it needs its own entry: size limits, a MIME allow-list, a player, and storage cost (one 30-minute recording can outweigh all 119 resumes put together). |
 | Should a CV be deletable, or only replaceable? | **Both.** Replace is the everyday action; Delete exists for an erasure request. |
+| **Who may remove?** *(answered 05-09-2026)* | **Whoever may upload it may also replace and delete it** — one rule for both actions, mirroring each RPC's own guard. |
+| **Should HR reach the job description?** *(05-09-2026)* | **Yes** — coordinators and `mrf` step owners added, purely additive. |
+| **Add an Edit control for a candidate's details?** *(05-09-2026)* | **Yes** — it is also what gives the FIX-5 duplicate check something to work with on the 30 rows that carry neither an email nor a phone. |
 
-⚠ **Deleting a CV orphans its AI fit score, and the screen must say so.** `CandidateFit` disables its
-Run button on `!c.resumePath`, so once the CV is gone the score cannot be recomputed. Keep the score
-— it is a real historical reading — but state plainly that the document behind it has been removed.
-The confirm dialog should say it before the delete, not after.
+⚠ **Deleting a CV orphans its AI fit score, and the screen says so.** `CandidateFit` disables its Run
+button on `!c.resumePath`, so once the CV is gone the score cannot be recomputed. The score is kept —
+it is a real historical reading — and the confirm dialog states this **before** the delete.
 
-#### To settle
+#### Still open
 
-- [ ] **Who may remove** — the step's own owner, or HR and coordinators only? The storage policy is
-      already broader than either.
+- 🟡 **HR cannot yet fix a Round-2 or probation-month attachment on a position a head raised.** Those
+  sit behind `fms_hr_can_act` on HOD steps, which is exactly what **NR-4** unlocks. The CV and the JD
+  are HR's own and work today.
+- 🟡 **The storage DELETE policy is broader than the workflow.** `"fms hr docs delete"` admits
+  `fms_hr_is_any_step_owner` — any owner of any step anywhere — and, unlike `fms_hr_can_act`, it skips
+  `module_can_edit`, so even a view-only user passes it. The RPC is the real gate; tightening the
+  policy is optional and was deliberately not done here.
+
 
 ### NR-1 · Round 2 offers every head set up to raise an MRF, and can be handed over  `[x]`
 *Raised 2026-08-25 · **Live 2026-08-26, 08:17 IST** on `master` at `adea51c` · SQL applied to

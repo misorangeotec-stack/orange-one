@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -7,6 +7,7 @@ import DueCell from "@/shared/components/ui/DueCell";
 import { Field } from "@/shared/components/ui/Readout";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import Tabs from "@/shared/components/ui/Tabs";
+import Modal from "@/shared/components/ui/Modal";
 import MrfStepper from "../../components/MrfStepper";
 import StateNote from "../../components/StateNote";
 import StatusPill from "../../components/StatusPill";
@@ -81,6 +82,15 @@ export default function MrfDetail() {
   const [openProbation, setOpenProbation] = useState<Probation | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // ⚠ These four belong HERE, with the other hooks, and not beside the JD block
+  //    they serve further down — that sits after `if (s.isLoading)` and `if (!r)`,
+  //    so a hook declared there is skipped on the loading render and appears on the
+  //    next one: "Rendered more hooks than during the previous render", and the
+  //    whole requisition page goes to the error boundary.
+  const jdInput = useRef<HTMLInputElement>(null);
+  const [jdBusy, setJdBusy] = useState(false);
+  const [jdErr, setJdErr] = useState<string | null>(null);
+  const [removingJd, setRemovingJd] = useState(false);
 
   const r = s.requisitionById(id);
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
@@ -143,6 +153,40 @@ export default function MrfDetail() {
   const isMine = s.myRequisitions.some((m) => m.id === r.id);
   const canResubmit = s.canEdit && r.status === "sent_back" && (isMine || s.isAdmin);
   const canHold = s.canEdit && s.isProcessCoordinator;
+
+  // (NR-5) The job description could always be CLEARED — jd_path is written with
+  // nullif(trim(...),''), not coalesce. What it never had was a control, and a
+  // guard HR could pass: fms_hr_set_requisition_jd asked is_admin OR requester and
+  // never fms_hr_can_act, so on a vacancy a department head raised, HR could not
+  // touch it. Replacing it otherwise meant Edit & resubmit, which only exists on a
+  // sent-back MRF.
+  const jdRef = { kind: "jd", requisitionId: r.id, path: r.jdPath } as const;
+  const canChangeJd = s.canChangeAttachment(jdRef);
+  const replaceJd = async (file: File | undefined) => {
+    if (!file) return;
+    setJdBusy(true);
+    setJdErr(null);
+    try {
+      await s.replaceAttachment(jdRef, file);
+    } catch (e) {
+      setJdErr(e instanceof Error ? e.message : "Could not replace the JD");
+    } finally {
+      setJdBusy(false);
+    }
+  };
+
+  const removeJd = async () => {
+    setJdBusy(true);
+    setJdErr(null);
+    try {
+      await s.removeAttachment(jdRef);
+      setRemovingJd(false);
+    } catch (e) {
+      setJdErr(e instanceof Error ? e.message : "Could not remove the JD");
+    } finally {
+      setJdBusy(false);
+    }
+  };
 
   const candidates = s.candidatesFor(r.id);
   // "Filled" means someone actually JOINED — not that they were finalized. A
@@ -394,17 +438,57 @@ export default function MrfDetail() {
           <Field label="Salary">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod)}</Field>
           <Field label="Experience">{experienceLabel(r.experienceMinYears, r.experienceMaxYears, r.freshersOk) ?? "—"}</Field>
           <Field label="Job description file">
-            {r.jdPath ? (
-              <button
-                type="button"
-                onClick={() => void openJd(r.jdPath!)}
-                className="text-[13px] font-semibold text-orange hover:underline"
-              >
-                {r.jdName ?? "Open JD"} →
-              </button>
-            ) : (
-              "—"
-            )}
+            <input
+              ref={jdInput}
+              type="file"
+              className="hidden"
+              onChange={(e) => void replaceJd(e.target.files?.[0])}
+            />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {r.jdPath ? (
+                <button
+                  type="button"
+                  onClick={() => void openJd(r.jdPath!)}
+                  className="text-[13px] font-semibold text-orange hover:underline"
+                >
+                  {r.jdName ?? "Open JD"} →
+                </button>
+              ) : (
+                <span className="text-[13px] text-grey-2">—</span>
+              )}
+              {canChangeJd && (
+                <>
+                  <button
+                    type="button"
+                    disabled={jdBusy}
+                    onClick={() => {
+                      setJdErr(null);
+                      if (jdInput.current) {
+                        jdInput.current.value = "";
+                        jdInput.current.click();
+                      }
+                    }}
+                    className="text-[12px] font-semibold text-grey-2 hover:text-orange disabled:opacity-50"
+                  >
+                    {jdBusy ? "Working…" : r.jdPath ? "Replace" : "Attach"}
+                  </button>
+                  {r.jdPath && (
+                    <button
+                      type="button"
+                      disabled={jdBusy}
+                      onClick={() => {
+                        setJdErr(null);
+                        setRemovingJd(true);
+                      }}
+                      className="text-[12px] font-semibold text-grey-2 hover:text-red-600 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            {jdErr && <p className="mt-1 text-[12px] text-red-600">{jdErr}</p>}
           </Field>
         </div>
 
@@ -486,6 +570,32 @@ export default function MrfDetail() {
         />
       )}
       {posting && <JobPostingModal requisition={r} open={posting} onClose={() => setPosting(false)} />}
+      <Modal
+        open={removingJd}
+        onClose={() => !jdBusy && setRemovingJd(false)}
+        title="Remove the job description?"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setRemovingJd(false)} disabled={jdBusy}>
+              Keep it
+            </Button>
+            <Button size="sm" onClick={() => void removeJd()} disabled={jdBusy}>
+              {jdBusy ? "Removing…" : "Remove it"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-[13px] text-navy">
+          <p className="font-semibold">{r.jdName ?? "The attached job description"}</p>
+          <p className="text-[12.5px] text-grey-2">
+            The file is deleted from storage as well as from this requisition. There is no backup and no
+            undo. Candidates already on this vacancy keep their AI fit scores, but a new score cannot be
+            worked out without a JD to read against.
+          </p>
+          <p className="text-[12.5px] text-grey-2">Who removed it, and when, is written to the trail.</p>
+        </div>
+      </Modal>
       {holdMode && (
         <HoldCancelModal requisition={r} mode={holdMode} open={!!holdMode} onClose={() => setHoldMode(null)} />
       )}

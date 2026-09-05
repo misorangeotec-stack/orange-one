@@ -3,6 +3,7 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { hrDocUrl } from "../../data/hrWrites";
+import { useHrStore } from "../../store";
 import type { Candidate } from "../../types";
 
 /**
@@ -156,6 +157,26 @@ function PdfPage({
 
 export default function ResumeViewer({ candidate: c }: { candidate: Candidate }) {
   const path = c.resumePath;
+
+  const s = useHrStore();
+  const cvRef = { kind: "resume", candidateId: c.id, path: c.resumePath } as const;
+  const canReplace = s.canChangeAttachment(cvRef);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [replaceErr, setReplaceErr] = useState<string | null>(null);
+
+  const replaceCv = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    setReplaceErr(null);
+    try {
+      await s.replaceAttachment(cvRef, file);
+    } catch (e) {
+      setReplaceErr(e instanceof Error ? e.message : "Could not replace the CV");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const [url, setUrl] = useState<string | null>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
@@ -378,12 +399,45 @@ export default function ResumeViewer({ candidate: c }: { candidate: Candidate })
 
       <div className="flex items-center justify-between gap-3">
         <span className="truncate text-[12.5px] text-grey-2">{c.resumeName ?? "Resume"}</span>
-        {c.parseStatus === "failed" && (
-          <span className="shrink-0 text-[11.5px] text-grey">
-            Couldn't be read automatically — the details beside it were typed in.
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-3">
+          {c.parseStatus === "failed" && (
+            <span className="text-[11.5px] text-grey">
+              Couldn't be read automatically — the details beside it were typed in.
+            </span>
+          )}
+          {/* (NR-5) Replace lives here as well as on the Documents tab because this
+              is where somebody realises the CV is the wrong one — they are looking
+              at it. It routes through the same store method, so there is still one
+              upload-and-clean-up path. REMOVE is deliberately NOT offered here: it
+              is unrecoverable and belongs behind the confirm on Documents, which
+              also warns that the AI fit score can never be recomputed. */}
+          {canReplace && (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                className="hidden"
+                onChange={(e) => void replaceCv(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setReplaceErr(null);
+                  if (fileInput.current) {
+                    fileInput.current.value = "";
+                    fileInput.current.click();
+                  }
+                }}
+                className="text-[12px] font-semibold text-grey-2 hover:text-orange disabled:opacity-50"
+              >
+                {busy ? "Replacing…" : "Replace"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
+      {replaceErr && <p className="text-[12px] text-red-600">{replaceErr}</p>}
     </div>
   );
 }

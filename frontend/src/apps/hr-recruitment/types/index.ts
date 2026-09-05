@@ -708,3 +708,37 @@ export interface CandidateFit {
   scoredBy: string | null;
   scoredAt: string;
 }
+
+/**
+ * One attached thing, named precisely enough to change it.
+ *
+ * Every file and video link in this module — the CV, a round's feedback form or
+ * recording, a joining document, a probation review form, the job description —
+ * is replaced and removed through ONE pair of store methods, and this is what
+ * tells them which row to write and which permission to test.
+ *
+ * The point is that there is exactly one delete path. Before NR-5 the same file
+ * was rendered on four screens; if Remove had been added to each of them, the
+ * next fix would have landed on one and not the others.
+ *
+ * `path` is the storage object to drop once the database reference is cleared.
+ * A `video` or an onboarding `link` has none — those are external URLs (a Teams
+ * recap, a Drive share), and trying to delete one from our bucket is a mistake
+ * the type is shaped to prevent.
+ */
+export type AttachmentRef =
+  | { kind: "resume"; candidateId: string; path: string | null }
+  | { kind: "interviewDoc"; candidateId: string; round: number; path: string | null }
+  | { kind: "interviewVideo"; candidateId: string; round: number }
+  | { kind: "onboardingFile"; checkId: string; done: boolean; path: string | null }
+  | { kind: "onboardingLink"; checkId: string; done: boolean }
+  | { kind: "probationFile"; probationId: string; month: number; path: string | null }
+  | { kind: "jd"; requisitionId: string; path: string | null };
+
+/** The storage object behind a ref, or null for the two that are external links. */
+export const attachmentPath = (a: AttachmentRef): string | null =>
+  "path" in a ? a.path : null;
+
+/** True for the refs that carry a URL somebody typed rather than a file we hold. */
+export const isLinkAttachment = (a: AttachmentRef): boolean =>
+  a.kind === "interviewVideo" || a.kind === "onboardingLink";

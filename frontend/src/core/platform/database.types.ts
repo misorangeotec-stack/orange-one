@@ -8305,6 +8305,10 @@ export type Database = {
         Args: { p_id: string; p_tags: string[] }
         Returns: undefined
       }
+      fms_hr_set_candidate_resume: {
+        Args: { p_id: string; p_name?: string; p_path?: string; p_sha256?: string }
+        Returns: undefined
+      }
       fms_hr_set_employee_code: {
         Args: { p_code: string; p_onb: string }
         Returns: undefined
@@ -8315,6 +8319,16 @@ export type Database = {
       }
       fms_hr_set_onboarding_date: {
         Args: { p_date: string; p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_set_interview_media: {
+        Args: {
+          p_candidate: string
+          p_doc_name?: string
+          p_doc_path?: string
+          p_round: number
+          p_video_url?: string
+        }
         Returns: undefined
       }
       fms_hr_set_requisition_jd: {

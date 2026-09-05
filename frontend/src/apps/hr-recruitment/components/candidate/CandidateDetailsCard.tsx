@@ -9,6 +9,7 @@ import { STAGE_LABEL } from "../../lib/board";
 import { reconsiderTargetStage } from "../../lib/queues";
 import { describeSignals, matchedRequisitionIds } from "../../lib/duplicates";
 import { inr } from "../../lib/format";
+import EditCandidateModal from "./EditCandidateModal";
 import type { Candidate } from "../../types";
 
 /**
@@ -52,6 +53,13 @@ export default function CandidateDetailsCard({
   const alsoApplied = dupes.filter((d) => !d.sameRequisition);
   const sameVacancy = dupes.filter((d) => d.sameRequisition);
   const platform = s.jobPlatforms.find((p) => p.id === c.sourcePlatformId)?.name ?? null;
+
+  /* --------------------------------- edit ---------------------------------- */
+  // (NR-5) Nothing could correct a name, a phone or an email before this. The
+  // gate is the same one the RPC applies — fms_hr_can_act('resume_upload'), i.e.
+  // whoever may put a CV on this vacancy may fix what the parser read off it.
+  const [editing, setEditing] = useState(false);
+  const canEditDetails = s.canEdit && !!r && s.canActOn("resume_upload", r);
 
   /* ------------------------------- quick note ------------------------------- */
   const [note, setNote] = useState(c.notes ?? "");
@@ -109,7 +117,18 @@ export default function CandidateDetailsCard({
   return (
     <div className="space-y-5">
       <div>
-        <SectionHeading>Details</SectionHeading>
+        <div className="flex items-center justify-between gap-2">
+          <SectionHeading>Details</SectionHeading>
+          {canEditDetails && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[12px] font-semibold text-grey-2 hover:text-orange"
+            >
+              Edit
+            </button>
+          )}
+        </div>
         <div className="mt-2 space-y-1.5">
           <FieldRow labelClassName="w-[92px]" label="Stage" value={STAGE_LABEL[c.stage]} />
           <FieldRow labelClassName="w-[92px]" label="Position" value={r?.jobTitle ?? "—"} />
@@ -302,6 +321,10 @@ export default function CandidateDetailsCard({
         />
         {tagErr && <p className="mt-1 text-[11.5px] text-ryg-red">{tagErr}</p>}
       </div>
+
+      {editing && (
+        <EditCandidateModal candidate={c} open={editing} onClose={() => setEditing(false)} />
+      )}
     </div>
   );
 }
