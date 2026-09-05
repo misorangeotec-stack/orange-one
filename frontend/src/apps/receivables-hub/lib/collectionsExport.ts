@@ -216,30 +216,38 @@ function billsFor(
 ): PdfBillRow[] {
   const { rows } = buildDrillRows(node.ids, rowsById, ctx.customerDetail, "overdue");
   const multiLedger = node.ids.length > 1;
-  return rows.map((r) => ({
+  return rows.map((r) => {
+    // The two SYNTHETIC lines — the On Account credit and the folded settled residue — are not
+    // bills: they have no number, no dates, no age and no sale type, and every one of the fields
+    // below that would otherwise be blank-or-nonsense is guarded on this.
+    const synthetic = !!r.isOnAccount || !!r.isSettledResidue;
+    return {
     ledger: multiLedger ? r.customerName : undefined,
     // Just "On Account", not the workbook's fuller "On Account (paid, tagged to no bill)": that
     // label is 36 characters and would be ellipsized into meaninglessness in a Bill No column
-    // sized for bill numbers. The PDF explains it in a line under the table instead.
-    number: r.isOnAccount ? "On Account" : r.number,
+    // sized for bill numbers. The PDF explains it in a line under the table instead. The residue
+    // line's own caption is already written short for this column — see `residueLabel`.
+    number: r.isOnAccount ? "On Account" : r.isSettledResidue ? r.billRefName : r.number,
     date: r.date ? (formatDateDMY(r.date) || "") : "",
     // The raw ISO date alongside the printed one, purely so the renderer can order the page by
     // bill date. `formatDateDMY` is one-way for sorting purposes: it falls back to echoing an
     // unrecognised input verbatim, so a renderer parsing dd-mm-yyyy back out would be guessing.
     sortDate: r.date || "",
     dueDate: r.dueDate ? (formatDateDMY(r.dueDate) || "") : "",
-    overdueDays: r.isOnAccount ? null : r.overdueDays,
-    saleType: r.isOnAccount ? "" : saleTypeLabel(r.voucherType),
-    // The code as well as the label — the bill page groups on it. Empty on the On Account line,
-    // which is a deduction rather than a sale of any type. NOTE that `buildDrillRows` stamps that
-    // line `voucherType: "other"`, so reading the code without the `isOnAccount` guard would file
-    // the credit inside the Other group instead of at the foot of the page.
-    saleTypeCode: r.isOnAccount ? "" : r.voucherType,
+    overdueDays: synthetic ? null : r.overdueDays,
+    saleType: synthetic ? "" : saleTypeLabel(r.voucherType),
+    // The code as well as the label — the bill page groups on it. Empty on both synthetic lines,
+    // which are a deduction and a fold rather than a sale of any type. NOTE that `buildDrillRows`
+    // stamps them `voucherType: "other"`, so reading the code without the guard would file them
+    // inside the Other group instead of at the foot of the page.
+    saleTypeCode: synthetic ? "" : r.voucherType,
     amount: r.amount,
     received: r.received,
     pending: r.pending,
     isOnAccount: !!r.isOnAccount,
-  }));
+    isSettledResidue: !!r.isSettledResidue,
+    };
+  });
 }
 
 /**

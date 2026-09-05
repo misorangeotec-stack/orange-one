@@ -36,6 +36,7 @@ import jsPDF from "jspdf";
 import { formatDateDMY, fmtINRMoney } from "./utils";
 import { STILL_BUYING_NOTE, hasStillBuyingCard } from "./collectionCards";
 import { SALE_TYPE_ORDER, saleTypeLabel, saleTypeRank } from "./salesReport";
+import { SETTLED_RESIDUE_FLOOR } from "./collections";
 import {
   BRAND, CONTENT_W, MARGIN, MINI_CARD_H, PAGE_H,
   applyDeferredLinks, divider, drawTable, ellipsize, footer, headerBand, homeIcon,
@@ -153,6 +154,16 @@ export interface PdfBillRow {
   received: number;
   pending: number;
   isOnAccount: boolean;
+  /**
+   * A folded stand-in for N past-due bills that are settled but for a residue under
+   * `SETTLED_RESIDUE_FLOOR` — see `buildDrillRows`. Its caption arrives already in `number`.
+   *
+   * It carries their combined Amount / Received / Pending, so it is counted by the TOTAL row and
+   * excluded from everything else on the page: it is not banded by sale type, not eligible to be
+   * one of the "biggest bills", and not counted in the "N open past-due bills" heading. None of
+   * those readings mean anything about a line that stands for a set.
+   */
+  isSettledResidue?: boolean;
 }
 
 export interface PdfSalespersonBlock {
@@ -1249,7 +1260,13 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     // The same slice `drawRepBody` printed, on either layout — a bill page nobody can reach from
     // the table is weight in the file and nothing else.
     const listed = sorted.slice(0, topCount(sorted.length));
-    return listed.filter((c) => c.bills?.length).map((cust) => ({ rep, cust }));
+    // A REAL bill, not merely a row: a customer whose whole overdue is the folded settled residue
+    // (six ledgers on 05-09-2026, ₹0.50 to ₹342, one of them literally named "ROUND OFF") has
+    // nothing to chase, so they get no page and their name stays plain text. A page reading
+    // "0 open past-due bills" over a single fold line is worse than no page.
+    return listed
+      .filter((c) => c.bills?.some((b) => !b.isOnAccount && !b.isSettledResidue))
+      .map((cust) => ({ rep, cust }));
   });
 
   for (const { rep, cust } of custPages) {
@@ -1270,7 +1287,11 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     cy += 20;
 
     const bills = cust.bills ?? [];
-    const open = bills.filter((b) => !b.isOnAccount);
+    // `open` is the BILLS — the two synthetic lines are held out of it, because everything the
+    // page does with `open` (band by sale type, rank the biggest fifth, count the heading) is a
+    // reading that only makes sense of a bill.
+    const open = bills.filter((b) => !b.isOnAccount && !b.isSettledResidue);
+    const residue = bills.filter((b) => b.isSettledResidue);
     const onAccount = bills.filter((b) => b.isOnAccount);
     // GROUPED BY SALE TYPE, and BILL DATE OLDEST FIRST inside each group — see `groupBySaleType`.
     // The On Account credit stays out of the grouping and lands last, because it is the deduction
@@ -1332,6 +1353,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       // first band as a sale type and lose their place.
       `${multiLedger ? ` across ${byLedger.length} ledgers` : ""}` +
       `${groups.length > 1 ? `${multiLedger ? " and" : " across"} ${groups.length} sale types` : ""}` +
+      `${residue.length ? " · settled residue folded" : ""}` +
       `${onAccount.length ? " · plus On Account credit" : ""}`,
     ) + 7;
 
@@ -1401,6 +1423,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       }
       if (!multiLedger) firstSection = false;
     }
+    for (const bill of residue) billRows.push({ bill });
     for (const bill of onAccount) billRows.push({ bill });
     billRows.push({ total: true });
 
@@ -1480,7 +1503,14 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
                 : r.ledger ? r.ledger.pending
                 : r.subtotal ? r.subtotal.pending
                 : r.bill!.pending),
-        color: (r) => (r.bill ? (r.bill.isOnAccount ? BRAND.green : BRAND.red) : undefined),
+        // Red is a call to action, and the folded line is the opposite of one — it is grey for the
+        // same reason its bills are no longer listed.
+        color: (r) =>
+          r.bill
+            ? r.bill.isOnAccount ? BRAND.green
+            : r.bill.isSettledResidue ? BRAND.grey
+            : BRAND.red
+            : undefined,
       },
     ];
 
@@ -1499,7 +1529,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
         : r.ledger ? "ledger"
         : r.band ? "band"
         : r.subtotal ? "subtotal"
-        : r.bill?.isOnAccount ? "muted"
+        : r.bill?.isOnAccount || r.bill?.isSettledResidue ? "muted"
         : r.bill && bigBills.has(r.bill) ? "big"
         : "normal",
       rowH: 14,
@@ -1507,17 +1537,30 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       onNewPage: newPage,
     });
 
-    // The one thing a reader WILL query: why the bills do not add up to the figure that sent them
-    // here. Stated under the table rather than left as a mystery negative line.
+    // The two things a reader WILL query: why a line in the list is not a bill, and why the bills
+    // do not add up to the figure that sent them here. Stated under the table rather than left as
+    // a pair of mystery rows.
+    const notes: string[] = [];
+    if (residue.length) {
+      // Two lines, not three. A bill page that runs close to the foot pushes its footnotes onto a
+      // page of their own, and a third line makes that likelier for no gain in meaning.
+      notes.push(
+        "Settled bills are folded into one line: anything with less than " +
+        `₹${SETTLED_RESIDUE_FLOOR} left on it (TDS, round-off, freight adjusted to the paisa) is ` +
+        "finished business, not a call you would make. Its money is still in the folded line and " +
+        "still in the total below.",
+      );
+    }
     if (onAccount.length) {
-      cy = ensureRoom(cy + 12, 20);
-      for (const line of wrapText(
-        pdf,
+      notes.push(
         "On Account is money this customer has already paid that settles no specific bill (advances, " +
         "credit notes, untagged receipts). It is deducted above, which is why Pending totals to the " +
         "Overdue figure rather than to the sum of the bills.",
-        CONTENT_W, 7.2,
-      )) {
+      );
+    }
+    for (const note of notes) {
+      cy = ensureRoom(cy + 12, 20);
+      for (const line of wrapText(pdf, note, CONTENT_W, 7.2)) {
         text(pdf, line, MARGIN, cy, { size: 7.2, color: BRAND.grey2 });
         cy += 9.5;
       }

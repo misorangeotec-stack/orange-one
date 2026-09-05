@@ -1232,6 +1232,37 @@ export interface DrillRowsResult {
 }
 
 /**
+ * A past-due bill with less than this still on it is SETTLED, not overdue.
+ *
+ * ⚠ THIS IS A MATERIALITY FLOOR, NOT A ROUNDING FIX. Tally leaves a residue of a few rupees on a
+ *   bill the customer has actually paid — TDS/TCS shortfalls, round-off, freight adjusted to the
+ *   paisa. Those bills stay in `collection_invoice_snapshot` with `pending` of ₹1, ₹3, ₹10, and
+ *   they are past their due date, so every rule below let them through. On 05-09-2026 that was
+ *   131 of the book's 3,532 overdue bills — 3.7% of the rows carrying ₹18,495 of ₹67.1 Cr, i.e.
+ *   0.003% of the money. On the worst page it was EIGHTEEN of forty rows: a salesperson's call
+ *   list where nearly half the bills were ₹1–₹39 and printed, in the PDF's ₹0.00 L units, as a
+ *   column of zeroes. Reported 05-09-2026 as "bills with zero overdue are showing".
+ *
+ *   ₹500 is where `fmtINRMoney` stops being able to print the figure at all (below it the cell
+ *   reads "₹0.00 L"), which is the same line the reader drew: the report now hides exactly the
+ *   rows it could only ever have rendered as a zero. Nobody rings a customer about ₹472.
+ *
+ * ⚠ AND THE MONEY IS NOT DROPPED. `buildDrillRows` folds these bills into ONE synthetic line per
+ *   ledger carrying their combined Amount / Received / Pending, the same way it already emits the
+ *   On Account credit. Every subtotal, block total and grand total is the figure it was before —
+ *   which matters because the Pending column's total IS the Overdue figure that linked the reader
+ *   to the page, and a page that no longer adds up to the card above it reads as a broken report.
+ */
+export const SETTLED_RESIDUE_FLOOR = 500;
+
+/** The folded line's caption. Short on purpose — `drawTable` ellipsizes and never wraps, and the
+ *  PDF's Bill No column is ~29 characters at the size the bill pages print. */
+const residueLabel = (n: number) =>
+  n === 1
+    ? `1 settled bill (<₹${SETTLED_RESIDUE_FLOOR} left)`
+    : `${n} settled bills (<₹${SETTLED_RESIDUE_FLOOR} each)`;
+
+/**
  * The bill-level rows behind Outstanding / Overdue / > 180 Days, for a set of consolidated
  * customer ids.
  *
@@ -1244,6 +1275,11 @@ export interface DrillRowsResult {
  * credit netted off GROSS OVERDUE and capped there. Outstanding is already a net ledger balance
  * (deducting again would double-count) and the > 180 bucket is bill-based with no per-bucket
  * allocation, so both are left to the caller's generic reconciliation.
+ *
+ * Overdue ALSO folds the settled residue — see `SETTLED_RESIDUE_FLOOR`. Deliberately Overdue only:
+ * this list is the collections call sheet, where a bill with ₹3 left on it is finished business.
+ * Outstanding is the ledger rather than a call sheet, and > 180 Days is an ageing bucket someone
+ * is auditing rather than working, so both keep every bill they have always shown.
  */
 export function buildDrillRows(
   ids: readonly string[],
@@ -1253,6 +1289,7 @@ export function buildDrillRows(
 ): DrillRowsResult {
   const rows: InvoiceDrillRow[] = [];
   const onAcctRows: InvoiceDrillRow[] = [];
+  const residueRows: InvoiceDrillRow[] = [];
   // Keyed exactly as the popup buckets ledgers: name ||| company ||| location.
   const ledgerFigures: Record<string, number> = {};
 
@@ -1284,11 +1321,22 @@ export function buildDrillRows(
 
     // A consolidated row's bills live under its constituent LEDGER ids.
     const ledgerIds = c.constituentIds?.length ? c.constituentIds : [c.id];
+    // Settled-but-for-a-residue bills, accumulated across the constituent ledgers and emitted as
+    // ONE line below — see `SETTLED_RESIDUE_FLOOR`. Kept at consolidated-customer grain, the same
+    // grain the On Account line uses, so every renderer buckets the two identically.
+    const residue = { count: 0, amount: 0, received: 0, pending: 0 };
     for (const lid of ledgerIds) {
       for (const inv of customerDetail[lid]?.invoices ?? []) {
         if (inv.pending <= 0) continue;
         if (drill === "overdue" && inv.overdueDays <= 0) continue;
         if (drill === "over180" && inv.overdueDays <= 180) continue;
+        if (drill === "overdue" && inv.pending < SETTLED_RESIDUE_FLOOR) {
+          residue.count += 1;
+          residue.amount += inv.amount;
+          residue.received += inv.amount - inv.pending;
+          residue.pending += inv.pending;
+          continue;
+        }
         rows.push({
           customerName: c.name,
           groupName: r.group,
@@ -1308,9 +1356,25 @@ export function buildDrillRows(
         });
       }
     }
+
+    if (residue.count) {
+      residueRows.push({
+        customerName: c.name, groupName: r.group, company: c.company, location: c.location, salesperson,
+        // The caption rides in `billRefName`, never in `customerName` — that field is the bucketing
+        // key in all three renderers, so a label written there would file the line under a phantom
+        // customer of its own. Exactly the arrangement `onAccountLabel` documents above.
+        number: "", billRefName: residueLabel(residue.count),
+        date: "", dueDate: "", overdueDays: 0, status: "pending", voucherType: "other",
+        amount: residue.amount, received: residue.received, pending: residue.pending,
+        isSettledResidue: true,
+      });
+    }
   }
 
-  return { rows: [...rows, ...onAcctRows], ledgerFigures };
+  // Bills, then the folded residue, then the credit. Every renderer sinks the two synthetic lines
+  // to the foot of their block anyway; this only fixes their order relative to each other, so the
+  // page closes on the deduction that reconciles it.
+  return { rows: [...rows, ...residueRows, ...onAcctRows], ledgerFigures };
 }
 
 // ── Grouping dimensions + the View presets ──────────────────────────────────────────

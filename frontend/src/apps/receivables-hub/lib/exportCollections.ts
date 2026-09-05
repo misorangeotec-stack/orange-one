@@ -40,7 +40,7 @@ import { formatDateDMY } from "./utils";
 import { SALE_TYPE_ORDER, saleTypeLabel, saleTypeRank } from "./salesReport";
 import { HEADER_STYLE, SUBTOTAL_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import {
-  NEVER_PAID, NEVER_SOLD,
+  NEVER_PAID, NEVER_SOLD, SETTLED_RESIDUE_FLOOR,
   type ZCColumn, type ZCMetrics,
 } from "./collections";
 import type { InvoiceDrillRow } from "../components/InvoiceDrilldownDialog";
@@ -442,7 +442,9 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
   aoa.push([meta.title]);
   aoa.push([
     "Overdue bill details: the open past-due bills behind the Overdue column, " +
-    "grouped by sale type within each customer and oldest bill first.",
+    "grouped by sale type within each customer and oldest bill first. Bills with less than " +
+    `₹${SETTLED_RESIDUE_FLOOR} left on them are settled, and are folded into one line per ` +
+    "customer rather than listed; their money is still in every total.",
   ]);
   aoa.push(["Period", meta.periodLabel]);
   if (meta.dataUpdatedTill) aoa.push(["Data updated till", formatDateDMY(meta.dataUpdatedTill)]);
@@ -517,9 +519,9 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
      * way — and the PDF's bill pages group identically, by the same rank function, so the two
      * documents cannot drift.
      *
-     * ⚠ THE ON-ACCOUNT CLAUSE MUST STAY FIRST. `buildDrillRows` stamps the synthetic credit line
-     *   `voucherType: "other"`, so ranking before sinking it files the deduction inside the Other
-     *   group instead of at the foot of the block, where it belongs.
+     * ⚠ THE SINK CLAUSE MUST STAY FIRST. `buildDrillRows` stamps BOTH synthetic lines — the credit
+     *   and the folded settled residue — `voucherType: "other"`, so ranking before sinking them
+     *   files them inside the Other group instead of at the foot of the block, where they belong.
      *
      * Bill date is NOT Overdue Days, which looks like the same order and is not: due days are
      * measured from the DUE date, so a bill sold in March on 90-day terms sits below one sold in
@@ -530,8 +532,11 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
      * displays), so a plain string comparison is a date comparison. An undated row sinks rather
      * than leading the block on an empty string.
      */
+    // 0 bill, 1 folded settled residue, 2 on-account credit. The two synthetic lines sink below
+    // the bills, in that order, so the block closes on the deduction that reconciles it.
+    const sinkRank = (r: InvoiceDrillRow) => (r.isOnAccount ? 2 : r.isSettledResidue ? 1 : 0);
     const sorted = [...list].sort((a, b) => {
-      if (!!a.isOnAccount !== !!b.isOnAccount) return a.isOnAccount ? 1 : -1;
+      if (sinkRank(a) !== sinkRank(b)) return sinkRank(a) - sinkRank(b);
       const ra = saleTypeRank(a.voucherType);
       const rb = saleTypeRank(b.voucherType);
       if (ra !== rb) return ra - rb;
@@ -548,14 +553,18 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
     });
 
     const pushBill = (r: InvoiceDrillRow) => {
+      // Neither synthetic line is a bill, so it carries no number, no dates, no age and no sale
+      // type. The residue line's caption goes in Bill No beside the On Account one, and NOT in
+      // Bill Ref as well — `billRefName` is only where `buildDrillRows` had to park it.
+      const synthetic = !!r.isOnAccount || !!r.isSettledResidue;
       aoa.push([
         sp, customer, company, location,
-        r.isOnAccount ? (r.onAccountLabel ?? "On Account") : r.number,
-        r.billRefName,
+        r.isOnAccount ? (r.onAccountLabel ?? "On Account") : r.isSettledResidue ? r.billRefName : r.number,
+        r.isSettledResidue ? "" : r.billRefName,
         r.date ? (formatDateDMY(r.date) || "") : "",
         r.dueDate ? (formatDateDMY(r.dueDate) || "") : "",
-        r.isOnAccount ? "" : r.overdueDays,
-        r.isOnAccount ? "" : saleTypeLabel(r.voucherType),
+        synthetic ? "" : r.overdueDays,
+        synthetic ? "" : saleTypeLabel(r.voucherType),
         Math.round(r.amount), Math.round(r.received), Math.round(r.pending),
       ]);
     };
@@ -573,7 +582,8 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
      * on every export. Bill No already carries "On Account (paid, tagged to no bill)", so the
      * caption costs nothing there.
      */
-    const open = sorted.filter((r) => !r.isOnAccount);
+    const open = sorted.filter((r) => !r.isOnAccount && !r.isSettledResidue);
+    const residue = sorted.filter((r) => r.isSettledResidue);
     const onAccount = sorted.filter((r) => r.isOnAccount);
     const byType = open.length ? new Set(open.map((r) => r.voucherType)).size : 0;
 
@@ -599,8 +609,9 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
       run.push(r);
     }
     flushSubtotal();
-    // After every group, never inside one: the credit belongs to no sale type, and the customer
-    // TOTAL below is net of it while the subtotals above are not.
+    // After every group, never inside one: neither line belongs to a sale type, and the customer
+    // TOTAL below counts both while the subtotals above count neither.
+    for (const r of residue) pushBill(r);
     for (const r of onAccount) pushBill(r);
 
     totalRows.push(aoa.length);
