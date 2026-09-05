@@ -8051,9 +8051,14 @@ so in a comment on both sides — the next reader will read it as a bug and "fix
       It should stop — HR raises most requisitions, and there is no self-approval check anywhere in
       `fms_hr_decide_mrf`.
 
-### NR-5 · Nothing HR uploads can ever be edited, replaced or deleted  `[x]`  — built, browser-verified and applied 05-Sep-2026
+### NR-5 · Nothing HR uploads can ever be edited, replaced or deleted  `[x]`  — 🟢 **LIVE 05-Sep-2026**
 *Raised 2026-09-03 · Audited the same day against the live database, the live storage bucket and the
-running code · Parked with the rest of the HR list*
+running code · **Live on `master` at `d5ab7c2`** (cherry-picked from `daily-reports` `40912f3`;
+Vercel reported `success`) · SQL applied to `icutjkrqkbzwvmnfbzpr` as
+`nr5_attachments_can_be_cleared` **BEFORE** the frontend, with the rollback rehearsed against live
+objects rather than read · Built in the `oo-master` worktree as well as here · **Walked in the
+browser on the `ZZ TEST` vacancy**, which is what caught the two defects `tsc` could not see ·
+Plan of record: `C:\Users\Admin\.claude\plans\nr-5-nothing-hr-uploads-cheeky-star.md`*
 
 **The ask.** Videos and every other resource HR uploads are write-once. Give them **edit, delete and
 re-upload**.
