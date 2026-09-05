@@ -53,6 +53,13 @@ export interface InvoiceDrillRow {
    *  bucketing key, so writing the label there would file the credit under a phantom customer
    *  of its own instead of under the ledger it belongs to. */
   onAccountLabel?: string;
+  /**
+   * Synthetic line standing in for N past-due bills that are SETTLED but for a residue under
+   * `SETTLED_RESIDUE_FLOOR` — see `buildDrillRows`. It carries their combined Amount, Received
+   * and Pending, so folding them away costs the reader nothing: every subtotal and total is the
+   * figure it was before. `billRefName` holds the label, exactly as on an `isAdjustment` line.
+   */
+  isSettledResidue?: boolean;
 }
 
 interface Props {
@@ -67,6 +74,14 @@ interface Props {
    *  the base report exactly. */
   ledgerFigures?: Record<string, number>;
 }
+
+/**
+ * Neither of the two SYNTHETIC lines is a bill: the ledger-level On Account credit, and the folded
+ * settled residue (`buildDrillRows`). `sinkRank` is the order a bucket reads in — bills, then what
+ * was folded away, then what was received against no bill at all, then the net.
+ */
+const isSyntheticLine = (r: InvoiceDrillRow) => !!r.isOnAccount || !!r.isSettledResidue;
+const sinkRank = (r: InvoiceDrillRow) => (r.isOnAccount ? 2 : r.isSettledResidue ? 1 : 0);
 
 const SALE_TYPE_LABELS: Record<string, string> = {
   ink: "Ink", paper: "Paper", spare_parts: "Spare Parts", machine: "Machine", head: "Head",
@@ -114,7 +129,10 @@ const exportVal = (key: ColKey, r: InvoiceDrillRow): string | number => {
   switch (key) {
     // On-account lines sit under their ledger's subtotal, which already names the customer —
     // so the first column carries the credit's own label, matching what is on screen.
-    case "customerName": return r.isOnAccount ? (r.onAccountLabel ?? "On Account") : r.customerName;
+    case "customerName":
+      return r.isOnAccount ? (r.onAccountLabel ?? "On Account")
+        : r.isSettledResidue ? r.billRefName
+        : r.customerName;
     case "number":       return r.number;
     case "billRefName":  return r.billRefName;
     case "date":         return formatDateDMY(r.date);
@@ -177,9 +195,11 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const statusSet = new Set(statuses.map((s) => s.toLowerCase()));
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      // On-account lines are ledger-level, not bill-level: keep them in the default view (where
-      // they make the total tie to the report) and drop them under any filter.
-      if (r.isOnAccount) return !filtersActive;
+      // Neither synthetic line is bill-level: keep them in the default view (where they make the
+      // total tie to the report) and drop them under any filter. A per-bill filter cannot mean
+      // anything about a ledger's credit, nor about a line that stands for a SET of bills — and
+      // the reconciliation is switched off under a filter anyway (`reconcile`).
+      if (isSyntheticLine(r)) return !filtersActive;
       if (customerNames.length && !custSet.has(r.customerName)) return false;
       if (companies.length && !coSet.has(r.company)) return false;
       if (locations.length && !locSet.has(r.location)) return false;
@@ -198,9 +218,10 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const dir = sortDir === "asc" ? 1 : -1;
     const textKeys: ColKey[] = ["customerName", "number", "billRefName", "date", "dueDate", "voucherType", "status"];
     arr.sort((a, b) => {
-      // On-account lines always sink below the invoices, whatever the sort — the bucket reads
-      // "invoices, then what has been received against none of them, then the net".
-      if (!!a.isOnAccount !== !!b.isOnAccount) return a.isOnAccount ? 1 : -1;
+      // The synthetic lines always sink below the invoices, whatever the sort — the bucket reads
+      // "invoices, then what was folded away, then what has been received against none of them,
+      // then the net".
+      if (sinkRank(a) !== sinkRank(b)) return sinkRank(a) - sinkRank(b);
       // Within them, the dateless catch-all ("no entry detail") goes last: name what we can
       // account for first, and leave the unexplained remainder at the bottom where it reads as
       // a balancing figure rather than as another entry.
@@ -385,9 +406,15 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
       if (key === "pending")      return <TableCell key={key} className="text-right font-mono text-emerald-700 font-medium">{fmt(r.pending)}</TableCell>;
       return <TableCell key={key} />;
     }
-    if (r.isAdjustment) {
-      // Reconciliation line: label in the first column, only Received/Pending carry values.
+    if (r.isAdjustment || r.isSettledResidue) {
+      // Reconciliation line, or the folded settled-residue line: label in the first column, only
+      // Received/Pending carry values. (The residue line also carries a real Amount, but it is a
+      // stand-in for a set of bills rather than a bill, so it reads like the adjustment.)
       if (key === "customerName") return <TableCell key={key} className="whitespace-nowrap italic text-muted-foreground">{r.billRefName}</TableCell>;
+      // Amount only on the residue line, which stands for real bills and so carries one — the
+      // ledger's Amount subtotal counts it, and without the cell that column would not add up.
+      // A reconciliation line has no amount by construction.
+      if (key === "amount" && r.isSettledResidue) return <TableCell key={key} className="text-right font-mono italic text-muted-foreground">{fmt(r.amount)}</TableCell>;
       if (key === "received")     return <TableCell key={key} className="text-right font-mono italic text-muted-foreground">{fmt(r.received)}</TableCell>;
       if (key === "pending")      return <TableCell key={key} className="text-right font-mono italic text-muted-foreground">{fmt(r.pending)}</TableCell>;
       return <TableCell key={key} />;
@@ -505,17 +532,25 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
    *  in the header — and cannot tell what the invoices alone came to, which is usually the very
    *  number they opened the popup to check. */
   const renderBucketRows = (bucket: Bucket, keyPrefix: string, indentClass: string): ReactNode[] => {
-    const firstOnAcct = bucket.rows.findIndex((r) => r.isOnAccount);
+    // Struck at the first SYNTHETIC line, not the first on-account one, so "Invoice total (N
+    // invoices)" counts and sums exactly the N bill rows above it. Anchoring it lower would have
+    // the folded line's money inside a total labelled with a count that does not include it.
+    const firstSynthetic = bucket.rows.findIndex(isSyntheticLine);
+    const hasOnAccount = bucket.rows.some((r) => r.isOnAccount);
     const out: ReactNode[] = [];
     bucket.rows.forEach((r, i) => {
-      if (i === firstOnAcct) {
+      if (i === firstSynthetic) {
         const invTotal = bucket.rows.slice(0, i).reduce((s, x) => s + x.pending, 0);
         out.push(renderBridgeRow(`${keyPrefix}|invtotal`, `Invoice total (${i} invoices)`, invTotal, indentClass, false));
       }
       out.push(renderInvoiceRow(r, `${keyPrefix}|${r.number}|${r.billRefName}|${i}`, indentClass));
     });
-    if (firstOnAcct >= 0) {
-      out.push(renderBridgeRow(`${keyPrefix}|net`, "Net after on account", bucket.pending, indentClass, true));
+    if (firstSynthetic >= 0) {
+      out.push(renderBridgeRow(
+        `${keyPrefix}|net`,
+        hasOnAccount ? "Net after on account" : "Net after settled bills",
+        bucket.pending, indentClass, true,
+      ));
     }
     return out;
   };
@@ -559,7 +594,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
       for (const m of money) a[m.idx] = v[m.key];
       return a;
     };
-    const invCountOf = (c: Bucket) => c.rows.filter((r) => !r.isAdjustment && !r.isOnAccount).length;
+    const invCountOf = (c: Bucket) => c.rows.filter((r) => !r.isAdjustment && !isSyntheticLine(r)).length;
     const ledgerLabel = (c: Bucket) => `${c.label}${c.sub ? ` — ${c.sub}` : ""} (${invCountOf(c)} invoices)`;
     // Mirror the on-screen view: Groups → group subtotal → ledger subtotal → invoices.
     // Track 0-indexed subtotal rows so they can be styled (green) afterwards.
@@ -833,7 +868,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
                     {renderSummaryRow(`g:${g.key}`, g.label, undefined, g.ledgers.length, "ledgers", g, 0, isOpen(g.key), () => toggle(g.key))}
                     {isOpen(g.key) && g.ledgers.map((c) => {
                       const ck = `${g.key}|${c.key}`;
-                      const invCount = c.rows.filter((r) => !r.isAdjustment && !r.isOnAccount).length;
+                      const invCount = c.rows.filter((r) => !r.isAdjustment && !isSyntheticLine(r)).length;
                       return (
                         <Fragment key={`c:${ck}`}>
                           {renderSummaryRow(`c:${ck}`, c.label, c.sub, invCount, "invoices", c, 1, isOpen(ck), () => toggle(ck))}
@@ -846,7 +881,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
               ) : (
                 // Ledger → Invoices (open by default)
                 customerTree.map((c) => {
-                  const invCount = c.rows.filter((r) => !r.isAdjustment && !r.isOnAccount).length;
+                  const invCount = c.rows.filter((r) => !r.isAdjustment && !isSyntheticLine(r)).length;
                   return (
                     <Fragment key={`c:${c.key}`}>
                       {renderSummaryRow(`c:${c.key}`, c.label, c.sub, invCount, "invoices", c, 0, isOpen(c.key), () => toggle(c.key))}
