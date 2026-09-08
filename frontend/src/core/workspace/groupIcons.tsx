@@ -58,6 +58,13 @@ export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
       <path d="M7 17.5h2M13 17.5h2" />
     </svg>
   ),
+  // Shield with a tick — goods judged and passed, or found wanting.
+  quality: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3 5 6v6c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  ),
   // Rising bars — the sales book and what it collects.
   sales: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

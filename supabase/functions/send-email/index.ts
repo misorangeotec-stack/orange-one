@@ -1185,7 +1185,7 @@ async function compose(row: Row): Promise<Composed | null> {
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_") || row.kind.startsWith("complaint_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
@@ -1212,9 +1212,10 @@ async function compose(row: Row): Promise<Composed | null> {
     // in rather than a queue. It is also the only sender here whose CTA can be
     // a document page rather than a step queue.
     const isOcpi = row.kind.startsWith("ocpi_");
-    const appLabel = isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    const isComplaint = row.kind.startsWith("complaint_");
+    const appLabel = isComplaint ? "Complaint (RM/FG)" : isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isComplaint ? "/complaint" : isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isComplaint ? "Quality · Complaint" : isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
