@@ -67,12 +67,31 @@ export function shipLinesFrom(order: DispatchOrder): ShipLineValue[] {
  * blanks a stored value is worse than the text box it replaced. It is marked so the difference
  * between "Tally has this" and "somebody typed this" stays visible.
  */
-function lotOptions(list: LotOption[] | undefined, current: string) {
-  const opts = (list ?? []).map((l) => ({
+function lotOptions(
+  list: LotOption[] | undefined,
+  current: string,
+  bookOf: (companyGuid: string) => string | null,
+) {
+  const rows = list ?? [];
+
+  /*
+    A LOT NUMBER IS ONLY UNIQUE WITHIN ONE TALLY BOOK. When the order names a company we ask for
+    that book alone and this never bites — but 8 of 1,259 orders carry no company at all, and those
+    fetch every book, so the same number can legitimately come back twice with different balances.
+    That is what the client saw: `#1453-2606994` listed at 90 KGS and again at 6 KGS.
+
+    Naming the book on the repeats — and ONLY on the repeats, so the common case stays uncluttered —
+    is the difference between two indistinguishable rows and a real choice.
+  */
+  const times = new Map<string, number>();
+  rows.forEach((l) => times.set(l.batchName, (times.get(l.batchName) ?? 0) + 1));
+
+  const opts = rows.map((l) => ({
     value: l.batchName,
     label: l.batchName,
     sublabel: [
       `${fmtQty(l.balance)}${l.uom ? ` ${l.uom}` : ""} left`,
+      (times.get(l.batchName) ?? 0) > 1 ? bookOf(l.companyGuid) : null,
       l.lastGodown ?? null,
     ].filter(Boolean).join(" · "),
   }));
@@ -105,6 +124,21 @@ export default function ShipLinesGrid({
    */
   const [lots, setLots] = useState<Record<string, LotOption[]>>({});
   const companyGuid = s.companies.find((c) => c.id === order.companyId)?.tallyGuid ?? null;
+  /*
+    Only consulted when the same lot number comes back from more than one book — see lotOptions.
+    The financial-year tail is trimmed off the company name ("…PVT LTD(F.Y.2026-27)",
+    "…-NOIDA -FY 26-27") because every book carries one, so it is the half that never tells the
+    two apart, and it is what pushes the label past a dropdown's width.
+  */
+  const bookOf = (guid: string) => {
+    const c = s.companies.find((x) => x.tallyGuid === guid);
+    if (!c) return null;
+    return c.name
+      .split("(")[0]
+      .replace(/[-\s]*F\.?Y\.?[\s.]*\d.*$/i, "")
+      .replace(/[-\s]+$/, "")
+      .trim() || c.name;
+  };
   const itemNames = Array.from(
     new Set(order.lines.map((l) => s.itemName(l.itemId)).filter(Boolean)),
     // Joined into a STRING because useEffect compares deps by identity and a fresh array
@@ -193,7 +227,7 @@ export default function ShipLinesGrid({
                       <Combobox
                         value={v.lot_no}
                         onChange={(lot) => patch(l.id, { lot_no: lot })}
-                        options={lotOptions(lots[s.itemName(l.itemId)], v.lot_no)}
+                        options={lotOptions(lots[s.itemName(l.itemId)], v.lot_no, bookOf)}
                         // Accept anything typed, verbatim. This is the escape hatch that keeps a
                         // lot we cannot see from blocking a real dispatch — see the header note.
                         onCreate={(typed) => typed.trim()}
