@@ -23,6 +23,9 @@ const ic = {
   candidates: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" /><path d="M17 8h5M19.5 5.5v5" /></svg>
   ),
+  pipeline: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18" /><path d="M6 10h12" /><path d="M9 15h6" /><path d="M11 20h2" /></svg>
+  ),
   positions: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /><path d="M2 13h20" /></svg>
   ),
@@ -77,6 +80,8 @@ export function buildHrNav(opts: {
   canPostJob: boolean;
   /** Anyone who works a candidate board — see lib/access.ts. */
   canSeePositions: boolean;
+  /** Board access OR the Setup pipeline-viewers list — see lib/access.ts. */
+  canSeePipeline: boolean;
   canInterview: boolean;
   canOnboard: boolean;
   canReview: boolean;
@@ -96,6 +101,11 @@ export function buildHrNav(opts: {
   // one person at a time across all of them. Same gate — a board you may not see has
   // no candidates you may see either.
   if (opts.canSeePositions) nav.push({ label: "Candidates", to: `${B}/candidates`, icon: ic.candidates });
+  // Every pipeline at once. A WIDER gate than the two above on purpose: the whole
+  // point of the Setup list is to admit management, who own no recruitment step and
+  // so fail canSeeBoard. Same predicate the route enforces, so the link and the
+  // screen always agree.
+  if (opts.canSeePipeline) nav.push({ label: "Pipeline", to: `${B}/pipeline`, icon: ic.pipeline });
 
   // "Actions" — the things anyone might personally start. The closure owns the
   // section header, so whichever item renders first carries it (an employee who

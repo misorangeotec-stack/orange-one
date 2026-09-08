@@ -192,6 +192,15 @@ export interface HrConfig {
   reassignPoolDepartmentIds: string[];
   /** Everyone who may be handed a STEP of a requisition. The authority. */
   reassignPoolUserIds: string[];
+  /**
+   * NR-2 — who may read EVERY position's pipeline, and every candidate on it.
+   *
+   * ⚠ NOT a display toggle. This list is OR'd into fms_hr_can_read_requisition() in
+   * SQL, so it is a genuine PII GRANT: names, phones, emails, expected salary, CVs.
+   * The screen it opens is also actionable, which needs `hr-recruitment` at `edit`
+   * on top — fms_hr_can_act() ANDs module_can_edit(). Two grants, both required.
+   */
+  pipelineViewerIds: string[];
 }
 
 /**
@@ -461,6 +470,7 @@ export async function fetchHrData(): Promise<HrData> {
     },
     reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
     reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
+    pipelineViewerIds: (byKey.get("pipeline_viewers")?.user_ids ?? []) as string[],
   };
 
   return {

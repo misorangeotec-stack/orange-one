@@ -7422,217 +7422,182 @@ the screen an approver starts their day on, so it arguably matters more than the
 
 ---
 
-### NR-2 · 🔴 A management pipeline dashboard — every pipeline on one screen  `[ ]`
-*Raised 2026-09-02 · Audited the same day against the live database and the running code · Scoped,
-decided and **parked on purpose** — the client wants the rest of the HR points gathered before any
-of them is built, so they can be sequenced together. Nothing is blocking it.*
+### NR-2 · 🔴 A management pipeline dashboard — every pipeline on one screen  `[x]`  — 🟢 **BUILT 08-Sep-2026**
+*Raised 2026-09-02 · Audited the same day · Decisions settled 02-09 and 07-09 · **Built, applied and
+verified end-to-end on live data 08-Sep-2026.** Awaiting deploy to `master`.*
 
 **The ask.** Management should not have to open each position in turn to see who is in its pipeline.
 Give them **one screen** carrying every pipeline, and let them open **the candidate's detail — the
 one already built — from that same screen.**
 
-**The friction is real and it is measurable** (live database, 02-Sep-2026):
+#### What shipped
 
-| Measured | Found |
+**A new screen at `/hr-recruitment/pipeline`, "Pipeline" in the sidebar under Workspace.** It
+replaces nothing — Positions keeps every job it does today.
+
+1. **KPI strip** — open positions · seats unfilled · in play · at offer · overdue. `seatSummary` and
+   `overdueRollup` are called with the **same inputs `Dashboard.tsx` uses**, so the two screens cannot
+   claim different numbers. Verified in the browser: both read 19 / 26 of 26 / 86 overdue with 2 due
+   today.
+2. **The matrix** — one row per position × **five phase columns** from `PHASE_OF`, cells filled from
+   `PHASE_FILL`, computed in ONE pass that also feeds the KPIs and the column totals. A totals row so
+   the strip and the grid reconcile by eye. Clicking a cell narrows the list below.
+3. **The list, then the detail** — `QueueTable` with sort + searchable filters on every column,
+   cascading, flat. Selecting a person swaps the list band for the full candidate detail at full
+   width, breadcrumb back, ‹ › walking **the dashboard's own filtered rows**. One URL: the selection
+   and the drill live in the query string, so a pasted link restores the exact view.
+
+**Status filter: active jobs by default** (`sourcing` + `posting`), with **Paused / Closed /
+Cancelled** each one click away — client's answer, 08-09-2026. Turning on Cancelled took the matrix
+from 19 positions / 135 candidates to 24 / 139, matching the database exactly.
+
+#### The two contradictions in the original entry — resolved
+
+The entry was written across one day and the later decisions were appended without editing the
+earlier draft. Both are now corrected above:
+
+1. **FIVE phase columns, not ten stage columns.** The `What to build` draft said "one column per
+   board stage (the ten in `BOARD_COLUMNS`)"; `Settled` said five phases. **Five was built**, on the
+   existing `CandidatePhase` / `PHASE_OF` / `PHASE_FILL` in `lib/board.ts` — no new vocabulary.
+2. **TWO MODES ON ONE ROUTE, not a right-hand pane.** The draft's "right-hand pane on a wide screen"
+   was ruled out by `The layout — decided`: the detail is already three columns and folds the sidebar
+   to fit them, so there is no width to put a list beside it. **Two modes was built.**
+
+#### The numbers, re-measured 08-09-2026 (the entry's were from 02-09 and had moved)
+
+| | 02-09 (as first written) | **08-09 (built against)** |
+|---|---|---|
+| Requisitions, all statuses | 23 | **24** — 18 `sourcing`, 1 `posting`, 5 `cancelled`, 0 `closed` |
+| Live positions | 19 | **19** |
+| Candidates | 119 | **139** (all inside the 24-month window) |
+| At R3 — Director | 12 | **7** |
+| At R2 — HOD | 20 | **19** |
+| Offers out | 1 | **1** |
+| Positions carrying 10+ | 6 | **7** — Design Engineer **28**, ASM 18, Finance manager 16, Electrical & Panel 14, Spare Parts 12, Marketing Executive 11, Service Engineer 10 |
+
+Phase totals across all 139: screening **69** · interviewing **36** · offer **1** · hired **0** ·
+dropped **33**.
+
+#### What the build found that the audit had not
+
+- 🔴 **The OR into the read gate does NOT reach CVs.** The private `fms-hr-docs` bucket is gated by a
+  *different* pair — `fms_hr_is_coordinator OR fms_hr_is_any_step_owner` — so a pipeline viewer would
+  have got the candidate's name and phone and an **empty resume viewer**, one of the detail's three
+  columns. Fixed in the same migration, **SELECT only**: insert/update/delete keep their own quals, so
+  a viewer can read a CV but never replace or delete one (NR-5's immutability is untouched). The
+  bucket also holds 14 JDs beside 139 resumes.
+- 🔴 **The blast radius is EIGHT relations, not seven.** `fms_hr_requisitions` is gated by
+  `fms_hr_can_view_requisition`, which *delegates* to `can_read` — so widening `can_read` opens the
+  vacancy tier too. And because `module_is_viewer` is `= 'view'` **exactly**, a user at **`edit`**
+  with no other arm reads **zero** requisitions, not nineteen. Confirmed on the live database with a
+  purpose-made account: 0 before, 24 after.
+- 🔴 **"Two of your five columns render empty" was wrong — only ONE is.** `hired = 0` and
+  `final_decision = 0` are both true, but `final_decision` is a **stage that maps into the
+  *interviewing* phase**, so its being zero empties no column. Only **Hired** is blank. Correct, and
+  not to be "fixed".
+- 🔴 **"In play" already has two conflicting definitions in this codebase.** `isOpenCandidate`
+  (`lib/queues.ts`) excludes an offer that is out → **105**; `PHASE_OF` in-play counts it, which is
+  what `PipelineSummary` shows → **106**. Ship the wrong one and the new screen contradicts Positions.
+  **The screen uses the PHASE tally**, because it is the same single pass that fills the matrix, with
+  "At offer" broken out beside it so the difference is visible rather than argued about.
+- 🟡 **Three live positions have NO candidates** (MIS Executive, Sales Executive, Executive
+  Assisstant). `PipelineSummary` does `if (candidates.length === 0) return null` — so reusing that
+  component would have silently dropped exactly the vacancies management opens this screen to find.
+  The matrix reuses the **vocabulary, not the component**, and renders them as rows of zeros.
+- 🟡 **The only offer in the whole system sits on `ZZ TEST - HR Executive`.** So "At offer = 1" and
+  the single filled Offer cell are both test data (see the New Recruitment test-data note). It will
+  appear on a management dashboard. **Not filtered by name prefix** — a hard-coded `ZZ TEST` exclusion
+  outlives the data it hides. Delete the test position when the client says so.
+- 🟡 **The four modals are not where the entry expected.** `CandidatePage` mounted only `MoveModal` +
+  `OnboardingPanel`; `InterviewResultModal` and `ScheduleInterviewModal` lived on the board and the
+  Interviews queue, and `HodDecisionModal` takes `ids: string[]` — a bulk action with no
+  single-candidate meaning, so it is deliberately **not** on this screen.
+- 🟡 **A mount-timing wipe hazard in the Setup section pattern.** `useState(s.pipelineViewerIds)`
+  captures ONCE, and the store loads asynchronously — so opening Setup and clicking the tab before the
+  fetch lands gives an **empty picker over a non-empty saved list**, and pressing Save writes `[]` and
+  silently revokes everyone. Reproduced, then fixed: the control follows the store until the first
+  edit, and Save is disabled while loading. ⚠ **`CoordinatorsSection` and `SalaryVisibilitySection`
+  still have the original shape** — same hazard, not touched here.
+
+#### Phase-wise checklist — all done
+
+- [x] **P0 · SQL first.** `fms_hr_is_pipeline_viewer(uuid)` (STABLE / SECURITY DEFINER / pinned
+      `search_path`, copied from `fms_hr_is_coordinator`; deliberately **no `is_admin` arm** so it
+      answers "is on the list" and stays testable) OR'd into `fms_hr_can_read_requisition()`, plus the
+      storage SELECT arm, plus the `pipeline_viewers` key seeded with the two Directors
+      (`on conflict do nothing`, so a re-apply never clobbers an edited list). Applied
+      08-09-2026. **Rollback rehearsed on live data, not merely written** — applied → proved →
+      rolled back → proved the restore was byte-identical → re-applied.
+- [x] **P1 · Setup → "Pipeline Access"**, worded as a PII grant, sourced from the **org-wide** roster
+      (`orgPeople`, not the RLS-scoped `profiles` — this is a list of Directors, who are in other
+      departments). Warns beside anyone who cannot open the module.
+- [x] **P2 · The gate.** `canSeePipeline = isAdmin || isPipelineViewer || canSeeBoard`, and the
+      missing `mgmt_approval` / `hr_head_approval` / `job_posting` arms added to `canSeeBoard` — the
+      frontend was **stricter than RLS**. Verified no live behaviour changed: all four current owners
+      already passed by another arm. **`isModuleViewer` is deliberately not an arm.**
+- [x] **P3 · `CandidateDetail` extracted from `CandidatePage` — moved, not copied.** Header came with
+      it: "Change stage" lives in the header while the modal it drives is mounted in the body, so
+      leaving the header behind would have forced the dashboard to rebuild the one control that
+      writes. Host supplies `onBack` and `pager` only. Orphan sweep run: one hit
+      (`CandidateMeetings.setReassign`), opened and confirmed a standing false positive — it is handed
+      over as a prop.
+- [x] **P4 · The route and the three bands.**
+- [x] **P5 · The actions.** Reuses the existing gated modals. **Record result / Book it were lifted in
+      too**, with the gate copied verbatim from `CandidateCard` — so they now appear on
+      `CandidatePage` as well, which never had them. That closes a real gap: a result could previously
+      only be recorded from the board or the Interviews queue. Verified both forks render (unbooked →
+      "Book it", booked → "Record result"). **Neither was pressed** — the only data available is real
+      candidates on real vacancies.
+- [x] **P6 · Sidebar + route**, gated on the same predicate so the link and the screen agree.
+- [x] **P7 · Verified in the browser as a real non-admin.**
+
+#### How it was proved
+
+A throwaway account (`ZZ TEST Pipeline Viewer`, employee, `hr-recruitment` at **edit**, owning no
+step, not a coordinator, no requisitions of its own) — the only configuration that exercises the new
+SQL arm, and **no existing user has it**. Created, used, and **deleted afterwards** (profile, auth row
+and app_access all confirmed gone).
+
+| | Result |
 |---|---|
-| Live positions (`status = 'sourcing'`) | **19** — so "look at the pipeline" is 19 page-opens today |
-| Candidates on them | **119**, of which **96 are still in play** |
-| Sitting at Interview R3 — Director, i.e. management's own round | **12**, spread across several positions with no one screen that lists them |
-| Sitting at R2 — HOD | **20** |
-| Positions carrying 10+ candidates | **6** (ASM 18, Design Engineer 17, Finance Manager 16, Marketing Executive 11, Service Engineer 10, Spare Parts 10) |
-| Offers out | **1** |
+| **Before** the list entry | "Access denied", no matrix, **and no Pipeline link in the sidebar** — the link and the screen agree |
+| **After** | 19 positions **with their candidates**, and **the CV actually opens** (3-page PDF rendered) |
+| Matrix vs database | Design Engineer 28 = 18 screening + 1 interviewing + 9 dropped; totals 67/36/1/0/31 = 135 — exact |
+| KPI vs Dashboard | 19 / 26 of 26 / 86 overdue, 2 due today — identical on both screens |
+| Action buttons | **None rendered** — rows arrive, buttons stay gated. Decision 3 holds: buttons gated, rows not |
+| **Removed** from the list, via the Setup UI | `fms_hr_requisitions`, `candidates`, `interviews`, `onboardings`, `probations` → **0 rows each**, and storage → **0 files**. Proved by querying **as that session**, not by looking at the screen — the frontend gate closes first and would have proved only itself |
+| Existing users | Aayush, Karan, Riya, Saloni, Nakuleshwar all still 24 reqs / 139 candidates; an unrelated employee still 0 / 0. Purely additive |
 
-#### What already exists — and precisely where it stops
+Also confirmed: a pipeline viewer gets **Pipeline but NOT Positions or Candidates** in the sidebar —
+the Setup list opens this dashboard alone, not the module's whole board tier.
 
-Three screens each answer part of this, and none answers it whole:
-
-- **[Positions](frontend/src/apps/hr-recruitment/pages/positions/PositionsList.tsx)** — 19 rows,
-  with a candidate count and a seats-filled meter per row. It says *how many*; it never says
-  **where they are**. Reading a stage breakdown means opening the position.
-- **[PositionPipeline](frontend/src/apps/hr-recruitment/pages/positions/PositionPipeline.tsx)** —
-  the ten-column board, **one vacancy at a time**, deliberately: `PipelineSummary`'s own header
-  records that a summary spanning every vacancy was built once and cut, because *"17 people are
-  interviewing" across unrelated jobs answers nothing anyone asks*. That reasoning holds for a
-  **summed strip** and does not hold for a **matrix** — the shape proposed below keeps every row
-  attached to its own position, so nothing is summed across jobs that have nothing to do with
-  each other.
-- **[CandidatesList](frontend/src/apps/hr-recruitment/pages/candidates/CandidatesList.tsx)** — the
-  closest thing that exists: every candidate across every vacancy, sortable and filterable on
-  Position, Stage, AI fit, Source, Due. **It is already one screen.** What it is not is a
-  *pipeline* — a flat table cannot be read as "this position is top-heavy and that one is at
-  offer" — and clicking a candidate **navigates away** to a full page.
-
-So the gap is two specific things, not a whole new app: **(a)** no position × stage view anywhere,
-and **(b)** the candidate detail costs a page transition.
-
-#### What to build
-
-**One route — `/hr-recruitment/pipeline`, "Pipeline" in the sidebar — master/detail, three bands:**
-
-1. **The numbers, once.** Open positions · seats unfilled · in play · at offer · overdue. Reuse
-   the shared `Kpi`; every figure comes from `lib/analytics.ts` and `store.queueEntries`, never a
-   second calculation (the dashboard's own header states this rule).
-2. **The matrix — the actual answer to the ask.** One row per position, one column per board
-   stage (the ten in `BOARD_COLUMNS`), each cell a count. Nineteen rows by ten columns replaces
-   nineteen page-opens, and top-heavy vs about-to-close reads straight down the columns. Cells
-   carry the one-hue `PHASE_FILL` ramp already used by the board, the strip and the fit bar — so
-   the encoding is learned once and no legend is needed. **Clicking a cell narrows the list
-   below to that position + stage.**
-3. **The list, then the detail.** Under the matrix, the candidate rows. Selecting one opens the
-   **existing candidate detail in place** — right-hand pane on a wide screen, full-width below on
-   a narrow one — with ‹ › walking **the rows currently on screen**.
-
-**The detail panel is an extraction, not a rebuild.** Checked: all six panels
-(`ResumeViewer`, `CandidateDocuments`, `CandidateTimeline`, `CandidateMeetings`, `CandidateFit`,
-`CandidateDetailsCard`) take a `candidate` prop and use **no router hooks at all**. So the body of
-`CandidatePage` lifts cleanly into `<CandidateDetail candidate={c} />`, and both the route and the
-new panel render the same component.
-
-#### The traps — every one of these is live today
-
-- 🔴 **"Management" is not a predicate in this module, and the two people who would use this are
-  admins — so a broken gate will look like it works.** Live: `mgmt_approval` is owned by **Aayush
-  Rathi, Karan Toshniwal, Riya Kumari**; `interview_3` (Director) by **Aayush Rathi, Karan
-  Toshniwal, Nakuleshwar Sharma**. Aayush and Karan are portal **admins**, so they see every screen
-  by the admin bypass and *not* by any management rule. **Test as a non-admin or the gate is
-  untested.**
-- 🔴 **`canSeeBoard` refuses a management approver.**
-  [lib/access.ts](frontend/src/apps/hr-recruitment/lib/access.ts) admits the sourcing, interview,
-  decision and onboarding step owners, the coordinator, and anyone with their own requisitions —
-  **`mgmt_approval`, `hr_head_approval` and `job_posting` are all absent.** The server disagrees:
-  `fms_hr_is_recruitment_staff()` grants candidate read to the owner of **any step except `mrf`**,
-  so a management approver passes RLS and is then refused by the frontend. It bites nobody today
-  only because all three approvers happen to own another step. Add the arm in the same change, or
-  the dashboard is invisible to precisely the person it is for.
-- 🔴 **Nakuleshwar Sharma owns R3 and cannot open the module** — `role = hod`, **no
-  `hr-recruitment` row in `app_access` at all**. He is booked on Director rounds and has no way in.
-  One edit in the admin User form, no code. (Same shape as the four heads already listed under
-  NR-1.)
-- 🟡 **Offered CTC is NOT on this screen — decided 02-09-2026.** Leave it out for now. Worth
-  knowing why it would not have worked anyway: `canViewSalary` is admin, or a named person, or an
-  allowed department, and the `salary_viewers` config row **has never existed in the live table**
-  (only `min_cvs_to_share`, `probation_sla`, `process_coordinators` do) — so every non-admin would
-  have seen a dash. If it is ever wanted, it is a Setup entry rather than code. Keep the existing
-  property that the column is *not built at all* without the right, so it cannot leak through the
-  column picker or the Excel export.
-- 🟡 **The ‹ › pager cannot be copied across.** `CandidatePage`'s siblings are *the same board
-  column of the same requisition*, oldest CV first. On a cross-position screen that set is wrong —
-  it would page to a candidate not on screen. The pager must walk the dashboard's own filtered rows.
-- 🟡 **`useRailWhileMounted()`** folds the sidebar for `CandidatePage`'s three columns. A master/
-  detail screen needs the same width; decide once whether the new route folds the rail, rather than
-  inheriting it by accident from the extracted component.
-- 🟡 **Extraction must MOVE, not copy.** If `CandidateDetail` is lifted out, `CandidatePage` renders
-  it — it does not keep its own copy of the three-column grid. Two renderers of the same fields is
-  how a field gets fixed in one place and stays broken in the other.
-- 🟡 **Grid conventions apply to the list band** — sort and a searchable multi-select filter on
-  every column, cascading options, flat (no `groupBy`), and an empty *result* keeps the table and
-  its filters standing. `QueueTable` does all of this already; the matrix is not a grid and is
-  exempt.
-- 🟡 **`QueueTable` has no row expansion** (checked — no `renderDetail` / `expand` of any kind), so
-  the master/detail split is a layout around the table, not a feature added to it.
-- 🟡 **PII.** Names, phones, CVs and expected salary. This screen must widen *layout*, never the
-  read gate — RLS stays the authority, and the rows it hands over scope themselves, exactly as the
-  dashboard's header notes.
-
-#### Phase-wise checklist
-
-- [ ] **P0a · SQL first.** New `fms_hr_config` key (`pipeline_viewers`: `person_ids`), and
-      `fms_hr_is_pipeline_viewer(uuid)` OR'd into `fms_hr_can_read_requisition()`. Additive only.
-      **Applied before the frontend ships**, or the first person added meets an empty screen.
-      Rehearse the rollback rather than reading it.
-- [ ] **P0b · Setup section.** "Pipeline dashboard access" beside Salary Visibility and
-      Coordinators, which it copies. Seed it with the Directors. Word it as a **PII grant** — the
-      people on it can read every candidate's name, phone, CV and expected salary.
-- [ ] **P0c · The frontend gate.** `canSeePipeline = isAdmin || isPipelineViewer || canSeeBoard(s)`,
-      enforced on the route and used for the sidebar link so the two agree. While here, add the
-      missing `mgmt_approval` / `hr_head_approval` / `job_posting` arm to `canSeeBoard` — RLS
-      already allows those owners and the frontend refuses them.
-- [ ] **P0d · One live grant, no code.** Give `hr-recruitment` to **Nakuleshwar Sharma** (owns R3,
-      cannot open the app). No `salary_viewers` row — CTC is deliberately off this screen.
-- [ ] **P1 · Extract `<CandidateDetail candidate={c} />`** from `CandidatePage`'s body; the route
-      re-renders it, with its own header, back-target and pager kept in the page. `npm run build`
-      green, and the existing candidate route walked once by hand — it is the module's busiest page.
-- [ ] **P2 · The matrix.** One row per position × **five phase columns** (`PHASE_OF` / `PHASE_FILL`,
-      already in lib/board.ts — no new vocabulary). Cell click narrows the list to that position +
-      phase; the list's Stage filter drills the rest of the way. Closed positions off by default
-      with a toggle, matching the Positions list's own treatment.
-- [ ] **P3 · List, then detail** — **two modes on one route**: the matrix and KPIs hold their
-      place while the list area swaps to the full-width detail, breadcrumb back to the same list.
-      ‹ › walks **the dashboard's filtered rows**, and the selection is held in the URL so a link
-      to "this candidate, in this view" survives a paste.
-- [ ] **P4 · The actions.** Reuse the existing gated components — `MoveModal`,
-      `InterviewResultModal`, `HodDecisionModal`, `ScheduleInterviewModal` — so nothing new is
-      permitted and no second authority test is written. Buttons gated, rows not.
-- [ ] **P5 · Sidebar + route** on the P0c predicate.
-- [ ] **P6 · Walk it in the browser** as a **non-admin on the Setup list who owns no step** (the
-      case that proves the SQL arm), then as a Director. Confirm every cell matches the position
-      board it came from.
-
-#### Settled — 02-09-2026, the same day it was raised
+#### Settled — 02-09-2026 and 07-09-2026
 
 | Asked | Answered |
 |---|---|
-| Who counts as "management" | **Nobody, by name, in code.** Build the report, and make the permission a **list in Setup** — an admin adds whichever users should have it. Seed it with the Directors. |
-| Matrix width | **Five phases** — Screening · Interviewing · Offer · Hired · Dropped. Fits one screen with no sideways scroll; a cell click still drills to the exact stage. |
-| Read-only or actionable | **Actionable, gated exactly as everywhere else.** Record an R3 result, make an offer, disqualify — the buttons appear only where the rules already allow. Nothing new is permitted; it saves the trip. |
-| Where the candidate detail opens | **Two modes on one route.** The matrix stays put; the list area below it swaps to the detail at full width, with a breadcrumb back to the exact list you had. A permanent side-by-side split was ruled out — the detail is already three columns and folds the sidebar to fit them. |
+| Who counts as "management" | **Nobody, by name, in code.** A **list in Setup**, seeded with the Directors. |
+| Matrix width | **Five phases** — Screening · Interviewing · Offer · Hired · Dropped. |
+| Read-only or actionable | **Actionable, gated exactly as everywhere else.** Nothing new is permitted; it saves the trip. |
+| Where the candidate detail opens | **Two modes on one route**, full width, breadcrumb back. |
+| Does it replace Positions? | **No — it sits BESIDE it.** |
+| Closed and cancelled positions? | **Shown, filterable.** Default is active jobs; Paused / Closed / Cancelled are one click away (08-09-2026). |
+| CVs for a pipeline viewer? | **Yes, read only** (08-09-2026). They can open a CV, never replace or delete one. |
 
-#### ⚠ A Setup list does NOT grant the read — this is the trap that will waste a day
+#### Still open
 
-Making the permission a config list is the right call and it follows two precedents already in this
-module (`process_coordinators`, `salary_viewers` — both `fms_hr_config` rows edited from Setup). But
-a frontend list decides **which screen renders**, not **which rows arrive**. Candidate read is gated
-in SQL by `fms_hr_can_read_requisition()`, whose arms are: admin · `fms_hr_is_coordinator()` ·
-`fms_hr_is_recruitment_staff()` (owns any step **except** `mrf`) · or being that requisition's own
-requester / hiring manager / reporting-to.
+- ⚠ **Not yet deployed.** Built and applied to the database; the frontend still has to be
+  cherry-picked onto `master`.
+- **Three people own a recruitment step but cannot open the module at all** — no `app_access` row for
+  `hr-recruitment`. Raised with the client 08-09-2026; **they are handling it**, not us:
+  - **Nakuleshwar Sharma** (`hod`, owns `interview_3`) — takes Director rounds, and is one of the
+    people this screen is for.
+  - **DHARMISHTHA PRAJAPATI** (`employee`, owns `onboarding`).
+  - **KHUSHI SONI** (`employee`, owns `hod_share`) — ⚠ that step was **deleted** in
+    `20260903130000`. Her owner row is vestigial and still grants candidate read via
+    `fms_hr_is_recruitment_staff`. Clearing the row is probably righter than adding a grant.
+- The `ZZ TEST - HR Executive` position and its 3 candidates still show on the dashboard. Delete when
+  the client says so.
 
-**So a person added to a Setup-only list who owns no recruitment step sees the new screen, and it is
-empty.** Not an error — nineteen positions, zero candidates, no explanation. The same shape as
-PC-1's "view, not edit" trap, and it will read as a broken build rather than a missing grant.
-
-The fix is one additive migration alongside the config row: `fms_hr_is_pipeline_viewer(uuid)`
-reading that key, OR'd into `fms_hr_can_read_requisition()`. Two things follow from it and both
-should be said out loud before it ships:
-
-- **It widens candidate PII** — names, phones, CVs, expected salary — to whoever is on the list.
-  That is the intent, but the list is then a PII grant and should be described as one in Setup, not
-  as a display toggle.
-- **Deploy ordering.** The migration goes in **before** the frontend, per the repo rule; otherwise
-  the first person added gets the empty screen described above.
-
-**Offered CTC is not on this screen** (decided 02-09-2026). It stays on its own separate gate
-(`salary_viewers`) — being able to read the pipeline is not being able to read what we offered —
-and that config row has never existed, so it would have shown a dash to every non-admin regardless.
-
-#### The layout — decided: two modes on one route
-
-The candidate detail is **already a three-column layout that folds the sidebar to buy width**:
-`CandidatePage` calls `useRailWhileMounted()` and then lays out CV viewer · discussion/meetings/fit ·
-facts card. There is no spare width to put a candidate list beside it. A rail narrow enough to fit
-would squeeze out the facts column, which is the half management actually reads.
-
-**Chosen: two modes on one route.** The matrix and the KPI strip stay where they are; the candidate
-list swaps to the detail at full width, and a breadcrumb returns you to the exact list you had. It
-reads as one screen because the pipeline is still above you while you read the person. The overlay
-is the runner-up and the fallback if the page turns out too tall in practice. Both are genuinely
-"one screen" in the sense that matters — **you never lose your place, your filters, or your
-position in the list:**
-
-- **Two modes on one route.** Matrix + list is the default. Picking a person swaps the list area for
-  the detail **at full width**, with a breadcrumb back and ‹ › walking the rows you had filtered.
-  One URL, no page transition, no cramming.
-- **Full-width overlay.** The detail comes up over the dashboard, closes back to it untouched.
-  Nearly the same experience; it covers the matrix while open, which costs nothing since you are
-  reading a person at that moment.
-
-Either way ‹ › walks **the dashboard's filtered rows**, never `CandidatePage`'s board-column
-siblings — that set would page to somebody not on screen.
-
-#### To settle
-
-- [ ] Does this screen replace Positions for management, or sit beside it? Positions is also where a
-      vacancy is held or closed.
-- [ ] Should closed and cancelled positions appear in the matrix? Four are cancelled today.
 
 ### NR-3 · 🔴 Map one or more HODs to a position, and let them own it as if they had raised it  `[ ]`
 *Raised 2026-09-02 · Audited the same day against the live database and the running code · Parked

@@ -227,6 +227,19 @@ interface HrStoreValue {
    */
   canViewSalary: boolean;
   setSalaryViewers: (departmentIds: string[], personIds: string[]) => Promise<void>;
+  /**
+   * NR-2 — the admin-editable list of people who may read EVERY pipeline.
+   *
+   * ⚠ A PII GRANT, not a display toggle: the same list is OR'd into
+   * `fms_hr_can_read_requisition()` in SQL (20260908120000), so being on it opens
+   * every candidate, interview, onboarding and probation row, and every CV in
+   * `fms-hr-docs`. The frontend list and the SQL arm read the SAME config key, so
+   * they cannot disagree about who is on it.
+   */
+  pipelineViewerIds: string[];
+  /** Is the EFFECTIVE user on that list? Visibility half of the grant above. */
+  isPipelineViewer: boolean;
+  setPipelineViewers: (userIds: string[]) => Promise<void>;
 
   // capabilities (derived from the EFFECTIVE identity, so demo personas re-scope)
   isAdmin: boolean;
@@ -659,6 +672,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const salaryViewers = data?.config.salaryViewers ?? { departmentIds: [], personIds: [] };
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
+  const pipelineViewerIds = data?.config.pipelineViewerIds ?? [];
 
   // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
   // stamping run off the JWT, so any write whose policy checks `= auth.uid()`
@@ -737,6 +751,17 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       isAdmin ||
       salaryViewers.personIds.includes(user.id) ||
       (!!user.departmentId && salaryViewers.departmentIds.includes(user.departmentId));
+
+    /**
+     * NR-2 — on the pipeline-viewer list?
+     *
+     * ⚠ NOT an arm on isProcessCoordinator or canActOn*. This grants READ over every
+     *   pipeline and nothing else; acting still runs the ordinary step authority, and
+     *   the server ANDs module_can_edit() on top (fms_hr_can_act). Admins are true
+     *   here for the same reason they are everywhere else in this store, but the SQL
+     *   predicate deliberately carries no admin arm — it answers "is on the list".
+     */
+    const isPipelineViewer = isAdmin || pipelineViewerIds.includes(user.id);
 
     /** Who to notify when work lands at a step. */
     const ownerIdsOf = (stepKey: StepKey): string[] =>
@@ -1909,6 +1934,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       stepSla,
       salaryViewers,
       canViewSalary,
+      pipelineViewerIds,
+      isPipelineViewer,
 
       isAdmin,
       canEdit,
@@ -1965,6 +1992,12 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       setSalaryViewers: async (departmentIds, personIds) => {
         await setConfigWrite("salary_viewers", { department_ids: departmentIds, person_ids: personIds });
+        await invalidate();
+      },
+      setPipelineViewers: async (userIds) => {
+        // The SAME key fms_hr_is_pipeline_viewer() reads in SQL, so saving here moves
+        // the RLS grant itself — not just what this browser draws.
+        await setConfigWrite("pipeline_viewers", { user_ids: userIds });
         await invalidate();
       },
       insertMaster: async (table, input) => {
@@ -2036,6 +2069,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     // memo keeps the holders and the pool it was built with, so a handover would
     // not move anything on screen and Setup Save would never confirm.
     stepAssignees, reassignPoolDepartmentIds, reassignPoolUserIds,
+    // Same shape: without it Setup's Save would not redraw the list, and the pipeline
+    // gate would keep the membership the memo was built with.
+    pipelineViewerIds,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute

@@ -4,6 +4,7 @@ import StepOwnersSection from "./StepOwnersSection";
 import ReassignmentSection from "./ReassignmentSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
+import PipelineViewersSection from "./PipelineViewersSection";
 import SalaryVisibilitySection from "./SalaryVisibilitySection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
@@ -27,6 +28,7 @@ export default function Setup() {
     { key: "sla", label: "Due Dates" },
     { key: "roles", label: "Coordinators" },
     { key: "salary", label: "Salary Visibility" },
+    { key: "pipeline", label: "Pipeline Access" },
     { key: "masters", label: "Master Owners" },
     { key: "notifications", label: "Notifications" },
   ];
@@ -48,6 +50,7 @@ export default function Setup() {
       {tab === "sla" && <StepDueDatesSection />}
       {tab === "roles" && <CoordinatorsSection />}
       {tab === "salary" && <SalaryVisibilitySection />}
+      {tab === "pipeline" && <PipelineViewersSection />}
       {tab === "masters" && <MasterOwnersSection />}
       {tab === "notifications" && <EmailNotificationsSection />}
     </div>
