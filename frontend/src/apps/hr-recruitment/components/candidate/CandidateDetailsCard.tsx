@@ -25,10 +25,21 @@ import type { Candidate } from "../../types";
 export default function CandidateDetailsCard({
   candidate: c,
   onOpenOnboarding,
+  onOpenCandidate,
 }: {
   candidate: Candidate;
   /** The joining details live on the onboarding; this is the way through to them. */
   onOpenOnboarding?: () => void;
+  /**
+   * Open one of the duplicate records WITHOUT navigating, when the host can do that.
+   *
+   * The duplicate list below is the only candidate-to-candidate jump on this card. On
+   * a page, navigating is right. Inside the pipeline dashboard's detail mode it is
+   * not: a <Link> there quietly abandons the matrix, the filters and your place in the
+   * list, for what is meant to be a glance at "is this the same person?". Hosts that
+   * can swap the record in place pass this; the rest pass nothing and keep the link.
+   */
+  onOpenCandidate?: (candidateId: string) => void;
 }) {
   const s = useHrStore();
   const r = s.requisitionById(c.requisitionId);
@@ -189,12 +200,21 @@ export default function CandidateDetailsCard({
             <ul className="mt-1.5 space-y-1">
               {sameVacancy.map((d) => (
                 <li key={d.candidate.id} className="text-[12px] text-navy">
-                  <Link
-                    to={`/hr-recruitment/candidates/${d.candidate.id}`}
-                    className="font-semibold text-orange hover:underline"
-                  >
-                    {d.candidate.candidateNo}
-                  </Link>{" "}
+                  {onOpenCandidate ? (
+                    <button
+                      onClick={() => onOpenCandidate(d.candidate.id)}
+                      className="font-semibold text-orange hover:underline"
+                    >
+                      {d.candidate.candidateNo}
+                    </button>
+                  ) : (
+                    <Link
+                      to={`/hr-recruitment/candidates/${d.candidate.id}`}
+                      className="font-semibold text-orange hover:underline"
+                    >
+                      {d.candidate.candidateNo}
+                    </Link>
+                  )}{" "}
                   — {STAGE_LABEL[d.candidate.stage]} · matched on{" "}
                   {describeSignals(d.signals)}
                 </li>

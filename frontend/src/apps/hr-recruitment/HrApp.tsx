@@ -11,6 +11,7 @@ import MrfList from "./pages/requisitions/MrfList";
 import MrfDetail from "./pages/requisitions/MrfDetail";
 import { MrfApprovalsQueue, JobPostingQueue } from "./pages/queues/RequisitionQueues";
 import PositionsList from "./pages/positions/PositionsList";
+import PipelineDashboard from "./pages/pipeline/PipelineDashboard";
 import PositionPipeline from "./pages/positions/PositionPipeline";
 import CandidatesList from "./pages/candidates/CandidatesList";
 import CandidatePage from "./pages/candidates/CandidatePage";
@@ -77,6 +78,11 @@ export default function HrApp() {
             <Route path="queues/posting" element={<JobPostingQueue />} />
             <Route path="positions" element={<PositionsList />} />
             <Route path="positions/:id" element={<PositionPipeline />} />
+            {/* The management pipeline dashboard (NR-2) — every position at once.
+                ⚠ Not to be confused with `queues/pipeline` below, which is an old
+                redirect to Positions. Gated in the page on canSeePipeline, the same
+                board-tier idiom Positions and Candidates use. */}
+            <Route path="pipeline" element={<PipelineDashboard />} />
             {/* Top level, not under positions/:id — a notification carries a candidate
                 id and nothing else, so the page resolves its own vacancy. */}
             <Route path="candidates" element={<CandidatesList />} />

@@ -8,7 +8,7 @@ import { useSandbox } from "@/shared/sandbox/SandboxContext";
 import PersonaSwitcher from "@/shared/sandbox/PersonaSwitcher";
 import DemoBanner from "@/shared/sandbox/DemoBanner";
 import { buildHrNav } from "./nav";
-import { canSeeBoard } from "./lib/access";
+import { canSeeBoard, canSeePipeline } from "./lib/access";
 import { usePersonas } from "./sandbox/personas";
 import { useHrStore } from "./store";
 import type { HrNotification } from "./types";
@@ -76,6 +76,7 @@ export default function HrLayout() {
         // The same predicate the Positions pages enforce, so the sidebar never offers
         // a screen that then refuses you — or hides one you are allowed to work.
         canSeePositions: canSeeBoard(s),
+        canSeePipeline: canSeePipeline(s),
         // Not just the interviewers: HR runs the schedule and coordinators chase it, so
         // both need the link to the page they are already allowed to open.
         canInterview:
