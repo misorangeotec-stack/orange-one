@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import { TextInput } from "@/shared/components/ui/Form";
+import Combobox from "@/shared/components/ui/Combobox";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
+import { fetchLotsForItem, type LotOption } from "../data/lotFetch";
 import { creditHeadroomOf, pendingQtyOf } from "../lib/rounds";
 import { qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
@@ -26,6 +29,19 @@ import type { DispatchOrder } from "../types";
  *   Clamping rows individually would invent a per-line allocation credit never
  *   made. A null headroom means uncapped: every order raised before partial
  *   approval existed has one, and they must keep behaving exactly as they did.
+ *
+ * THE LOT COMES LIVE FROM TALLY (OD-12), BUT CAN STILL BE TYPED.
+ *   It used to be a bare text box reading "as marked on the stock", so a lot could be mistyped
+ *   or invented and nothing checked it. It is now a picker of the lots Tally actually holds for
+ *   that item, with how much of each is left.
+ *
+ *   ⚠ Typing is deliberately still allowed, via Combobox's `onCreate`. The balance is Tally's
+ *     paper trail, not a physical count, and ~3.6% of lots do not resolve to a clean figure. A
+ *     lot in the store keeper's hands that we cannot see — Tally not yet posted, a manual
+ *     adjustment — must never block a dispatch. The list HELPS; it does not gate.
+ *
+ *   ⚠ If ConnectWave is unreachable the fetch returns [] and this degrades to exactly the old
+ *     free-text box. Dispatch does not wait on a reporting mirror.
  */
 
 export interface ShipLineValue {
@@ -43,6 +59,35 @@ export function shipLinesFrom(order: DispatchOrder): ShipLineValue[] {
   }));
 }
 
+/**
+ * Lots for one line, as Combobox options: the number, then how much is left.
+ *
+ * `current` is folded in when it is not among them, because a lot typed on an earlier round (or
+ * one that has since gone to zero) must still SHOW as the selected value — a picker that silently
+ * blanks a stored value is worse than the text box it replaced. It is marked so the difference
+ * between "Tally has this" and "somebody typed this" stays visible.
+ */
+function lotOptions(list: LotOption[] | undefined, current: string) {
+  const opts = (list ?? []).map((l) => ({
+    value: l.batchName,
+    label: l.batchName,
+    sublabel: [
+      `${fmtQty(l.balance)}${l.uom ? ` ${l.uom}` : ""} left`,
+      l.lastGodown ?? null,
+    ].filter(Boolean).join(" · "),
+  }));
+  const cur = current.trim();
+  if (cur && !opts.some((o) => o.value === cur)) {
+    opts.unshift({ value: cur, label: cur, sublabel: "not in Tally's stock for this item" });
+  }
+  return opts;
+}
+
+/** Trim trailing zeros — Tally reports 176.0000, and a store keeper wants 176. */
+function fmtQty(n: number): string {
+  return Number(n.toFixed(3)).toLocaleString("en-IN");
+}
+
 export default function ShipLinesGrid({
   order, values, onChange, readOnly = false,
 }: {
@@ -53,6 +98,33 @@ export default function ShipLinesGrid({
 }) {
   const s = useDispatchStore();
   const byId = new Map(values.map((v) => [v.id, v]));
+
+  /**
+   * Lots per line, fetched once per DISTINCT item rather than per row — an order repeating the
+   * same item on two lines must not fire the same lookup twice.
+   */
+  const [lots, setLots] = useState<Record<string, LotOption[]>>({});
+  const companyGuid = s.companies.find((c) => c.id === order.companyId)?.tallyGuid ?? null;
+  const itemNames = Array.from(
+    new Set(order.lines.map((l) => s.itemName(l.itemId)).filter(Boolean)),
+    // Joined into a STRING because useEffect compares deps by identity and a fresh array
+    // would refetch on every render. The separator is \u0000 and NOT a space or comma:
+    // item names legitimately contain both ("REACTIVE INK ECO BLACK"), so either would
+    // split one name into several and look up items that do not exist.
+  ).join("\u0000");
+
+  useEffect(() => {
+    const names = itemNames ? itemNames.split("\u0000") : [];
+    if (!names.length) return;
+    let live = true;
+    void Promise.all(names.map((n) => fetchLotsForItem(n, companyGuid))).then((res) => {
+      if (!live) return;
+      const next: Record<string, LotOption[]> = {};
+      names.forEach((n, i) => { next[n] = res[i]; });
+      setLots(next);
+    });
+    return () => { live = false; };
+  }, [itemNames, companyGuid]);
 
   const patch = (id: string, part: Partial<ShipLineValue>) => {
     onChange(values.map((v) => (v.id === id ? { ...v, ...part } : v)));
@@ -118,11 +190,23 @@ export default function ShipLinesGrid({
                     {done ? (
                       <span className="text-[12.5px] text-grey-2">—</span>
                     ) : (
-                      <TextInput
+                      <Combobox
                         value={v.lot_no}
-                        onChange={(e) => patch(l.id, { lot_no: e.target.value })}
+                        onChange={(lot) => patch(l.id, { lot_no: lot })}
+                        options={lotOptions(lots[s.itemName(l.itemId)], v.lot_no)}
+                        // Accept anything typed, verbatim. This is the escape hatch that keeps a
+                        // lot we cannot see from blocking a real dispatch — see the header note.
+                        onCreate={(typed) => typed.trim()}
+                        createLabel={(q) => `Use “${q}” (not in Tally)`}
+                        searchable
+                        clearable
                         disabled={readOnly}
-                        placeholder="as marked on the stock"
+                        /* Says BOTH things on purpose. The old box read "as marked on the stock",
+                           which is still the instruction — but now that a list exists, a store
+                           keeper has to be told the list is not a closed one, or a lot Tally has
+                           not caught up with looks impossible to enter. */
+                        placeholder="pick or type the lot"
+                        triggerClassName="py-1"
                       />
                     )}
                   </td>
