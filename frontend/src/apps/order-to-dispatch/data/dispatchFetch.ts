@@ -154,7 +154,7 @@ async function fetchAll(table: Tbl, orderBy = "created_at", cols = "*"): Promise
  *   guarantee worth resting a silent-truncation bug on.
  */
 const COLS = {
-  companies: "id,name,active,sort_order,created_at,alias,location,gstin,address,gate_pass_prefix",
+  companies: "id,name,active,sort_order,created_at,alias,location,gstin,address,gate_pass_prefix,tally_guid",
   locations: "id,name,active,sort_order,created_at",
   companySites: "id,active,sort_order,created_at,location_id,company_id",
   partyItems: "id,active,sort_order,created_at,party_id,item_id",
@@ -741,6 +741,7 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       name: [str(r.alias) || r.name, str(r.location)].filter(Boolean).join(" — "),
       gstin: str(r.gstin), address: str(r.address),
       gatePassPrefix: str(r.gate_pass_prefix),
+      tallyGuid: str(r.tally_guid),
     })),
     /**
      * A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.

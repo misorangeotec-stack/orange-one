@@ -534,8 +534,13 @@ export default function StepModal({
         wrapped item names onto two lines. The two that are purely a decision plus
         a remark stay `lg`; widening those would only strand a lone dropdown in a
         lot of white.
+
+        `2xl` (max-w-6xl) rather than `xl` (max-w-3xl, 768px) since the LOT became a
+        picker: six columns — item, ordered, dispatched, pending, ship now, LOT —
+        no longer fit in 768px, so the grid gained a horizontal scrollbar and the LOT
+        cell, the one being filled in, was the column pushed off the right edge.
       */
-      size={cfg.lines === "ship" || cfg.context?.showLines || cfg.context?.showOrderLines ? "xl" : "lg"}
+      size={cfg.lines === "ship" || cfg.context?.showLines || cfg.context?.showOrderLines ? "2xl" : "lg"}
       /* Steps filled in on a phone open as a bottom sheet under `sm`. */
       mobileFull={cfg.mobileFirst}
       readOnly={locked}

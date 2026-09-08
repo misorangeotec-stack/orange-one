@@ -44,6 +44,16 @@ export interface Company extends NamedMaster {
    * would otherwise interleave silently into one series.
    */
   gatePassPrefix: string | null;
+  /**
+   * This company's Tally company book GUID, straight off `mst_companies.tally_guid`.
+   *
+   * Needed to scope the LOT picker: a lot held in one company's book is not stock another
+   * company can ship, and the same lot number legitimately exists in more than one book. All
+   * five companies carry one (verified against ConnectWave 07-09-2026, no orphans either way).
+   * Null for any company not yet synced from Tally — the picker then shows lots from every
+   * book, labelled, rather than silently showing none.
+   */
+  tallyGuid: string | null;
 }
 
 /**
