@@ -7587,10 +7587,17 @@ the Setup list opens this dashboard alone, not the module's whole board tier.
 
 - ⚠ **Not yet deployed.** Built and applied to the database; the frontend still has to be
   cherry-picked onto `master`.
-- **Three people own a recruitment step but cannot open the module at all** — no `app_access` row for
-  `hr-recruitment`. Raised with the client 08-09-2026; **they are handling it**, not us:
-  - **Nakuleshwar Sharma** (`hod`, owns `interview_3`) — takes Director rounds, and is one of the
-    people this screen is for.
+- ✅ **Access for anyone beyond the Directors: CLOSED, 08-09-2026.** *"Right now this report is only
+  for the directors, so don't worry about access to other staff members."* Both Directors (Aayush
+  Rathi, Karan Toshniwal) are portal **admins**, so they already pass every gate and can open the
+  screen today — **nothing is pending for this feature to be usable.**
+  ⚠ Note the consequence: because both are admins, the new SQL arm is **dormant** for them. It is
+  proven (see the table above) but nobody is currently *relying* on it. The first non-admin added to
+  the Setup list is the first real use of it.
+- **Separately — three people own a recruitment step and cannot open the module at all** (no
+  `app_access` row for `hr-recruitment`). **NOT an NR-2 item** and explicitly out of scope per the
+  decision above; logged here only so it is not re-discovered as new:
+  - **Nakuleshwar Sharma** (`hod`, owns `interview_3`) — takes Director rounds.
   - **DHARMISHTHA PRAJAPATI** (`employee`, owns `onboarding`).
   - **KHUSHI SONI** (`employee`, owns `hod_share`) — ⚠ that step was **deleted** in
     `20260903130000`. Her owner row is vestigial and still grants candidate read via
