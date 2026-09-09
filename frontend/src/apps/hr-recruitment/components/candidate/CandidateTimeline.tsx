@@ -74,7 +74,13 @@ export default function CandidateTimeline({ candidate: c }: { candidate: Candida
     s.stepOwners.forEach((o) => o.employeeIds.forEach((id) => ids.add(id)));
     s.interviewsFor(c.id).forEach((iv) => iv.interviewerIds.forEach((id) => ids.add(id)));
     ids.delete(s.userId); // tagging yourself would just mail you your own comment
-    return s.profiles
+    // NR-3: resolved against the ORG-WIDE roster, not `s.profiles`. The id set above is
+    // built from the requisition and the step owners, so it is already the right list —
+    // but `profiles` is RLS-scoped, and filtering through it silently dropped anybody
+    // outside the reader's own department. The hiring manager is exactly that person
+    // once a head from another department is mapped, so the one individual most likely
+    // to be needed on a candidate's thread could not be tagged on it.
+    return s.orgPeople
       .filter((p) => ids.has(p.id))
       .map((p) => ({ id: p.id, name: p.name, designation: p.designation ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name));

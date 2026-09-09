@@ -12,6 +12,7 @@ import JdProgress from "./JdProgress";
 import RequestMasterModal from "./RequestMasterModal";
 import { masterTypeLabel, type MasterValues } from "../lib/masterFields";
 import { jobTitleOptions, qualificationOptions, skillOptions } from "../lib/jd";
+import { personOptions } from "../lib/people";
 import { parseJd, type ParsedJd } from "../data/parseJd";
 import { useHrStore } from "../store";
 import type { MrfInput } from "../data/hrWrites";
@@ -213,14 +214,63 @@ export default function MrfForm({
   /** "from the JD" replaces a field's usual hint once the JD supplied it. */
   const hintFor = (k: string, fallback?: string) => (jdFilled.has(k) ? "from the JD" : fallback);
 
+  /**
+   * NR-3 P3a — when a department is chosen, offer its heads in BOTH people boxes.
+   *
+   * A DEFAULT, NEVER A LOCK. It writes only into a box the user has not touched and
+   * that is still empty, and they can change it before saving — a vacancy that
+   * genuinely belongs to somebody else must still be recordable.
+   *
+   * Keyed on the department VALUE rather than the field's onChange, because the
+   * department has three writers: the field itself, a parsed JD, and the job-title
+   * template (`applyJobTitleTemplate` sets it from `t.departmentId`). Hooking the
+   * handler would miss two of them.
+   *
+   * ⚠ Reads the SAVED master only, never `suggestedHodsFor`. The suggestion is a guess
+   *   the Setup screen shows an admin for confirmation; putting a guess straight into a
+   *   permission field is a different thing entirely, and for Sales it would be six
+   *   people. If nobody has stated a department's heads, this does nothing and the
+   *   old default-to-raiser behaviour stands.
+   *
+   * ⚠ `existing` (Edit & resubmit) is excluded outright: those boxes already hold
+   *   what was saved, and a master added since must not overwrite it.
+   */
+  const masterFilledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (existing) return;
+    if (!departmentId) return;
+    if (masterFilledRef.current === departmentId) return;
+    const heads = s.departmentHodsFor(departmentId);
+    if (heads.length === 0) return;
+    masterFilledRef.current = departmentId;
+    // Only into genuine blanks nobody has claimed.
+    if (hiringManagerIds.length === 0 && !isTouched("hiringManagerIds")) setHiringManagerIds(heads);
+    if (reportingToIds.length === 0 && !isTouched("reportingToIds") && !reportingToNote.trim())
+      setReportingToIds(heads);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [departmentId, s.departmentHods, existing]);
+
+  /** True while a box still holds exactly what the department master offered. */
+  const fromMaster = (ids: string[]) => {
+    const heads = s.departmentHodsFor(departmentId || null);
+    return heads.length > 0 && ids.length === heads.length && heads.every((h) => ids.includes(h));
+  };
+
   /* ------------------------------- options -------------------------------- */
 
+  /**
+   * NR-3 — the ORG-WIDE roster, not `s.profiles`.
+   *
+   * This one line is the root cause the task was raised for. `profiles` is RLS-scoped
+   * to self + downline + same-department peers, so HR saw 5 of 68 people and not one
+   * of the heads they needed to name. The field then fell back to "defaults to you",
+   * which is how 17 of 19 live positions ended up owned by whoever raised them.
+   *
+   * Both people fields share this memo, so both are fixed together.
+   */
   const people: MultiOption[] = useMemo(
-    () =>
-      [...s.profiles]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((p) => ({ value: p.id, label: p.designation ? `${p.name} · ${p.designation}` : p.name })),
-    [s.profiles]
+    () => personOptions(s.orgPeople, s.moduleUserIds, s.moduleEditUserIds),
+    [s.orgPeople, s.moduleUserIds, s.moduleEditUserIds]
   );
   const titleOptions: ComboOption[] = useMemo(
     () => jobTitleOptions(s.jobTitles, s.departments, existing?.jobTitleId ?? null),
@@ -839,22 +889,35 @@ export default function MrfForm({
             </FieldLabel>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldLabel label="Who will manage this hire?" hint="optional — can be more than one">
+              <FieldLabel
+                label="Which HOD owns this vacancy?"
+                hint={fromMaster(hiringManagerIds) ? "the department’s head, from Setup" : "can be more than one"}
+              >
                 <MultiSelect
                   values={hiringManagerIds}
-                  onChange={setHiringManagerIds}
+                  onChange={(v) => {
+                    setHiringManagerIds(v);
+                    markTouched("hiringManagerIds");
+                  }}
                   options={people}
-                  placeholder="Defaults to you"
+                  placeholder="Search anyone in the company"
                 />
                 <span className="mt-1 block text-[11px] leading-snug text-grey-2">
-                  Leave empty and it's you. The hiring manager shortlists this requisition's CVs, takes Interview Round
-                  2, and does the new hire's monthly reviews.
+                  They shortlist this requisition's CVs, take Interview Round 2, and do the new hire's monthly
+                  reviews — and they can read every candidate on it, including phone numbers, expected salary and
+                  CVs. Leave it empty and all of that stays with you.
                 </span>
               </FieldLabel>
-              <FieldLabel label="Who will they report to?" hint="optional — can be more than one">
+              <FieldLabel
+                label="Who will they report to?"
+                hint={fromMaster(reportingToIds) ? "the department’s head, from Setup" : "the day-to-day manager"}
+              >
                 <MultiSelect
                   values={reportingToIds}
-                  onChange={setReportingToIds}
+                  onChange={(v) => {
+                    setReportingToIds(v);
+                    markTouched("reportingToIds");
+                  }}
                   options={people}
                   placeholder="Select people"
                 />

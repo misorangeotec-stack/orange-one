@@ -74,7 +74,9 @@ export default function MrfRecap({
   const loc = s.locations.find((l) => l.id === r.locationId)?.name ?? null;
   const jobType = s.jobTypes.find((t) => t.id === r.jobTypeId)?.name ?? null;
 
-  const person = (uid: string | null) => (uid ? (s.profileById(uid)?.name ?? "Unknown") : null);
+  // NR-3: org-wide. profileById is RLS-scoped, so a hiring manager or a reporting-to
+  // from another department rendered as the literal word "Unknown" on the recap.
+  const person = (uid: string | null) => (uid ? s.personName(uid) : null);
   /** Resolved names plus any free-text note, as one line. */
   const peopleList = (ids: string[], note: string | null) => {
     const names = ids.map((uid) => person(uid)).filter((n): n is string => !!n);

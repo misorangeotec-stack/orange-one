@@ -1906,6 +1906,35 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_department_hods: {
+        Row: {
+          department_id: string
+          hod_ids: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          department_id: string
+          hod_ids?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          department_id?: string
+          hod_ids?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_department_hods_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: true
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_disqualification_reasons: {
         Row: {
           active: boolean
@@ -8200,6 +8229,10 @@ export type Database = {
         Args: { p_candidate: string; p_round: number; p_uid: string }
         Returns: boolean
       }
+      fms_hr_module_edit_user_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: { user_id: string }[]
+      }
       fms_hr_module_user_ids: {
         Args: Record<PropertyKey, never>
         Returns: { user_id: string }[]
@@ -8215,6 +8248,27 @@ export type Database = {
       }
       fms_hr_open_probation: { Args: { p_onb: string }; Returns: undefined }
       fms_hr_pending_step: { Args: { p_stage: string }; Returns: string }
+      fms_hr_preview_hiring_managers: {
+        Args: { p_ids: string[]; p_reporting_to?: string[]; p_req: string }
+        Returns: {
+          id: string
+          name: string
+          designation: string | null
+          department_id: string | null
+          department: string | null
+          direction: string
+          field: string
+          is_valid: boolean
+          retains_read: boolean
+          retains_requisition_row: boolean
+          has_module: boolean
+          can_edit_module: boolean
+          sees_cvs: boolean
+          owns_hod_steps: boolean
+          loses_step_assignees: string[]
+          pending_hod_shortlist: number
+        }[]
+      }
       fms_hr_post_comment: {
         Args: { p_candidate: string; p_mentions?: string[]; p_text: string }
         Returns: undefined
@@ -8296,6 +8350,15 @@ export type Database = {
       fms_hr_save_candidate_score: {
         Args: { p: Json; p_candidate: string }
         Returns: string
+      }
+      fms_hr_set_hiring_managers: {
+        Args: {
+          p_ids: string[]
+          p_note?: string
+          p_reporting_to?: string[]
+          p_req: string
+        }
+        Returns: undefined
       }
       fms_hr_set_candidate_note: {
         Args: { p_id: string; p_note: string }

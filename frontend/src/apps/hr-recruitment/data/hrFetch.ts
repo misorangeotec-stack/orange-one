@@ -50,6 +50,7 @@ import type {
   RequisitionStatus,
   StepAssignee,
   StepOwner,
+  DepartmentHods,
 } from "../types";
 
 /**
@@ -129,6 +130,7 @@ type Tbl =
   | "fms_hr_job_titles"
   | "fms_hr_skills"
   | "fms_hr_qualifications"
+  | "fms_hr_department_hods"
   | "designations";
 
 /** Narrow a candidate read. `q` is the PostgREST builder mid-chain. */
@@ -238,6 +240,8 @@ export interface HrData {
   notifications: HrNotification[];
   masterManagers: HrMasterManager[];
   masterRequests: HrMasterRequest[];
+  /** NR-3 Part B. The Setup master, NOT a grant - see the type. */
+  departmentHods: DepartmentHods[];
 }
 
 const mapMaster = (r: any) => ({
@@ -381,6 +385,13 @@ const mapNotification = (r: any): HrNotification => ({
   createdAt: r.created_at,
 });
 
+const mapDepartmentHods = (r: any): DepartmentHods => ({
+  departmentId: r.department_id,
+  hodIds: (r.hod_ids ?? []) as string[],
+  updatedAt: r.updated_at,
+  updatedBy: r.updated_by ?? null,
+});
+
 export async function fetchHrData(): Promise<HrData> {
   // Requisitions first, and in full: they are bounded by vacancies, the Requisitions
   // list must show the closed ones, and clause B of the candidate read needs to know
@@ -413,6 +424,7 @@ export async function fetchHrData(): Promise<HrData> {
     notifications,
     masterManagers,
     masterRequests,
+    departmentHods,
   ] = await Promise.all([
     fetchAll("fms_hr_step_owners"),
     fetchAll("fms_hr_step_assignees", "requisition_id"),
@@ -457,6 +469,9 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_notifications"),
     fetchAll("fms_hr_master_managers"),
     fetchAll("fms_hr_master_requests"),
+    // NR-3 Part B. Keyed on department_id, so ordered by it - the table has no
+    // created_at for fetchAll's default to sort on.
+    fetchAll("fms_hr_department_hods", "department_id"),
   ]);
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -499,6 +514,7 @@ export async function fetchHrData(): Promise<HrData> {
     notifications: notifications.map(mapNotification),
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),
+    departmentHods: departmentHods.map(mapDepartmentHods),
   };
 }
 
@@ -520,6 +536,30 @@ export const hrModuleUserIdsKey = ["hrModuleUserIds"] as const;
 
 export async function fetchHrModuleUserIds(): Promise<string[]> {
   const { data, error } = await supabase.rpc("fms_hr_module_user_ids");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { user_id: string }[]).map((r) => r.user_id);
+}
+
+/**
+ * Of those, the ones at **Edit** — the level that can actually press anything.
+ *
+ * `fms_hr_can_act()` ANDs `module_can_edit()`, so somebody granted the module at
+ * "View only" sees the vacancies and can press nothing. Mapping such a person as a
+ * hiring manager produces a head who owns seven steps and cannot work one of them,
+ * and the picker has no way to say so from `fms_hr_module_user_ids()` alone — that
+ * returns any access level.
+ *
+ * A STRICT SUBSET of that list, deliberately: "view-only" is computed as the set
+ * difference, and that arithmetic only holds while the two lists are built the same
+ * way. Admins appear in both, because `module_level()` resolves an admin to 'edit'.
+ *
+ * Its own cache entry, for the same reason as its sibling: it changes when an admin
+ * edits a user, not when recruitment work moves.
+ */
+export const hrModuleEditUserIdsKey = ["hrModuleEditUserIds"] as const;
+
+export async function fetchHrModuleEditUserIds(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("fms_hr_module_edit_user_ids");
   if (error) throw new Error(error.message);
   return ((data ?? []) as { user_id: string }[]).map((r) => r.user_id);
 }
