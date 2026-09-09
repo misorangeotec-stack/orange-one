@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
+import { formatDateDMY } from "@/shared/lib/date";
 import { BOARD_COLUMNS, PHASE_FILL, PHASE_OF, type BoardColumnKey, type CandidatePhase } from "../../lib/board";
+import { isLivePosition } from "../../lib/positions";
 import type { Requisition } from "../../types";
 
 /**
@@ -92,6 +94,29 @@ export const PHASE_CONTENTS: Record<CandidatePhase, string> = Object.fromEntries
 const HEAD_CELL =
   "px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2";
 
+/**
+ * EVERY column boundary carries a rule, and they are all the same weight.
+ *
+ * The first cut drew one only where a phase band started, which left the table looking
+ * half-ruled — a line after Position and another before All, nothing between the phase
+ * columns. A grid of numbers wants its columns separated consistently or the eye cannot
+ * tell which figure belongs to which heading.
+ */
+const RULE = "border-l border-line/70";
+
+/** When the position was opened. Same expression PositionsList's Posted column uses,
+ *  so the two screens cannot print different dates for the same vacancy. */
+const openedIso = (r: Requisition): string | null => r.postedAt ?? r.submittedAt ?? null;
+
+/** Whole days since it opened. Only meaningful while it is still taking candidates. */
+function daysOpen(r: Requisition): number | null {
+  const iso = openedIso(r);
+  if (!iso || !isLivePosition(r)) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+}
+
 export default function PipelineMatrix({
   rows,
   totals,
@@ -126,6 +151,7 @@ export default function PipelineMatrix({
           {stages && (
             <tr className="border-b border-line bg-page/60">
               <th className="sticky left-0 z-10 bg-page/60 px-3 py-1.5" aria-hidden="true" />
+              <th className={`${RULE} px-3 py-1.5`} aria-hidden="true" />
               {STAGE_BANDS.map((b) => (
                 <th
                   key={b.phase}
@@ -142,13 +168,16 @@ export default function PipelineMatrix({
                   </span>
                 </th>
               ))}
-              <th className="px-3 py-1.5" aria-hidden="true" />
-              <th className="px-3 py-1.5" aria-hidden="true" />
+              <th className="border-l border-line px-3 py-1.5" aria-hidden="true" />
+              <th className={`${RULE} px-3 py-1.5`} aria-hidden="true" />
             </tr>
           )}
 
           <tr className="border-b border-line bg-page/60">
             <th className={`sticky left-0 z-10 bg-page/60 text-left ${HEAD_CELL}`}>Position</th>
+            <th className={`${RULE} ${HEAD_CELL} text-left`} title="When this position was opened">
+              Opened
+            </th>
 
             {stages
               ? STAGE_COLUMNS.map((key, i) => {
@@ -156,7 +185,7 @@ export default function PipelineMatrix({
                   return (
                     <th
                       key={key}
-                      className={`${HEAD_CELL} ${startsBand && i > 0 ? "border-l border-line" : ""}`}
+                      className={`${HEAD_CELL} ${startsBand ? "border-l border-line" : RULE}`}
                       title={BOARD_COLUMNS.find((c) => c.key === key)?.label}
                     >
                       {COLUMN_LABEL[key]}
@@ -166,7 +195,7 @@ export default function PipelineMatrix({
               : MATRIX_PHASES.map((p) => (
                   <th
                     key={p.key}
-                    className={`${HEAD_CELL} ${p.key === "hired" ? "border-l border-line" : ""}`}
+                    className={`${HEAD_CELL} ${p.key === "hired" ? "border-l border-line" : RULE}`}
                     // The grouping, discoverable without switching view.
                     title={`${p.label}: ${PHASE_CONTENTS[p.key]}`}
                   >
@@ -182,7 +211,12 @@ export default function PipelineMatrix({
                 ))}
 
             <th className={`border-l border-line ${HEAD_CELL}`}>All</th>
-            <th className={`${HEAD_CELL} text-left`}>Shape</th>
+            <th
+              className={`${RULE} ${HEAD_CELL} text-left`}
+              title="How this position's people are spread across the five phases. A longer bar means more candidates."
+            >
+              Breakdown
+            </th>
           </tr>
         </thead>
 
@@ -208,6 +242,19 @@ export default function PipelineMatrix({
                 </div>
               </td>
 
+              <td className={`${RULE} whitespace-nowrap px-3 py-2`}>
+                {openedIso(r) ? (
+                  <>
+                    <div className="text-[12.5px] text-grey">{formatDateDMY(openedIso(r))}</div>
+                    {daysOpen(r) !== null && (
+                      <div className="mt-0.5 text-[11px] text-grey-2">{daysOpen(r)}d open</div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-[12.5px] text-grey-2">–</span>
+                )}
+              </td>
+
               {stages
                 ? STAGE_COLUMNS.map((key, i) => {
                     const startsBand = STAGE_BANDS.some((b) => b.columns[0] === key);
@@ -218,7 +265,7 @@ export default function PipelineMatrix({
                         label={BOARD_COLUMNS.find((c) => c.key === key)?.label ?? COLUMN_LABEL[key]}
                         job={r.jobTitle}
                         selected={selected?.requisitionId === r.id && selected.column === key}
-                        divider={startsBand && i > 0}
+                        bandStart={startsBand}
                         onPick={() => onPick(r.id, { column: key })}
                       />
                     );
@@ -230,7 +277,7 @@ export default function PipelineMatrix({
                       label={p.label}
                       job={r.jobTitle}
                       selected={selected?.requisitionId === r.id && selected.phase === p.key}
-                      divider={p.key === "hired"}
+                      bandStart={p.key === "hired"}
                       onPick={() => onPick(r.id, { phase: p.key })}
                     />
                   ))}
@@ -239,7 +286,7 @@ export default function PipelineMatrix({
                 {total === 0 ? <span className="font-normal text-grey-2">–</span> : total}
               </td>
 
-              <td className="px-3 py-2">
+              <td className={`${RULE} px-3 py-2`}>
                 <ShapeBar counts={counts} total={total} busiest={busiest} />
               </td>
             </tr>
@@ -253,12 +300,13 @@ export default function PipelineMatrix({
             <td className="sticky left-0 z-10 bg-page/60 px-3 py-2 text-[12px] font-semibold text-navy">
               {rows.length} {rows.length === 1 ? "position" : "positions"} shown
             </td>
+            <td className={RULE} />
             {stages
               ? STAGE_COLUMNS.map((key, i) => (
                   <td
                     key={key}
                     className={`px-3 py-2 text-right text-[13px] font-semibold tabular-nums text-navy ${
-                      STAGE_BANDS.some((b) => b.columns[0] === key) && i > 0 ? "border-l border-line" : ""
+                      STAGE_BANDS.some((b) => b.columns[0] === key) ? "border-l border-line" : RULE
                     }`}
                   >
                     {columnTotals[key]}
@@ -268,7 +316,7 @@ export default function PipelineMatrix({
                   <td
                     key={p.key}
                     className={`px-3 py-2 text-right text-[13px] font-semibold tabular-nums text-navy ${
-                      p.key === "hired" ? "border-l border-line" : ""
+                      p.key === "hired" ? "border-l border-line" : RULE
                     }`}
                   >
                     {totals[p.key]}
@@ -277,7 +325,7 @@ export default function PipelineMatrix({
             <td className="border-l border-line px-3 py-2 text-right text-[13px] font-bold tabular-nums text-navy">
               {MATRIX_PHASES.reduce((n, p) => n + totals[p.key], 0)}
             </td>
-            <td />
+            <td className={RULE} />
           </tr>
         </tfoot>
       </table>
@@ -296,18 +344,19 @@ function Cell({
   label,
   job,
   selected,
-  divider,
+  bandStart,
   onPick,
 }: {
   n: number;
   label: string;
   job: string;
   selected: boolean;
-  divider: boolean;
+  /** First column of a phase band — the same rule, drawn a shade stronger. */
+  bandStart: boolean;
   onPick: () => void;
 }) {
   return (
-    <td className={`px-1.5 py-1.5 text-right ${divider ? "border-l border-line" : ""}`}>
+    <td className={`px-1.5 py-1.5 text-right ${bandStart ? "border-l border-line" : RULE}`}>
       <button
         type="button"
         onClick={onPick}
