@@ -7660,7 +7660,70 @@ numbers; colour now only names the phase.
   the client says so.
 
 
-### NR-3 · 🔴 Map one or more HODs to a position, and let them own it as if they had raised it  `[ ]`
+### NR-3 · Map one or more HODs to a position, and let them own it as if they had raised it  `[x]` — 🟢 **SHIPPED 09-Sep-2026**
+*Raised 2026-09-02 · Audited the same day and again 08-09 · Decisions settled 02-09, 07-09 and 09-09 ·
+**Built, applied on live data and deployed 09-Sep-2026.** The backfill of the 19 is still to do, and
+the browser walk was never possible — see P5.*
+
+#### What shipped
+
+**Two migrations, six new database objects, and nine frontend sites — only one of which was the
+picker everybody was looking at.**
+
+1. **`20260909130000_nr3_p0_department_hods.sql`** (+ rollback) — the `fms_hr_department_hods` master,
+   RLS mirroring `fms_hr_config`, a BEFORE trigger that stamps `updated_by`, dedupes and refuses any
+   non-staff id, and `fms_hr_module_edit_user_ids()` so a picker can tell "no access" from "view only".
+2. **`20260909140000_nr3_p1_the_hod_can_be_changed.sql`** (+ rollback) — `fms_hr_set_hiring_managers`,
+   the shared predicate `fms_hr_may_set_hiring_managers`, the read-gate simulator
+   `fms_hr_would_read_requisition` and `fms_hr_preview_hiring_managers`. The migration asserts the
+   simulator agrees with the live read gate on **every** requisition × person pair (1,632 today,
+   2.55s) and refuses to commit if it does not.
+3. **Frontend** — `lib/people.ts` (one access-marked people list for all three pickers),
+   `HiringTeamModal`, `DepartmentHodsSection`, the `MrfForm` picker and labels, the P3a default from
+   the master, and the store / fetch / write / types wiring.
+
+#### 🔴 Four things this entry did not know
+
+1. **The picker fix was nine sites, not one.** Every screen naming a hiring manager resolved it
+   through the RLS-scoped `profileById`, so a head from another department would have vanished from
+   the position header and list (and the Excel export), printed "Unknown" on the recap and the
+   dashboard, left the stepper's HOD steps unowned, made the **Control Center report real work as
+   "Unassigned"**, and — not cosmetic — **could not be @-mentioned on their own vacancy's
+   candidates.** `MrfList` and `RequisitionQueues` have the same defect on the *requester*; that
+   predates this task and was deliberately left alone.
+2. **`fms_hr_notify_hod_pending` can never clean up after a re-map.** It only touches rows for people
+   *currently* named, so an outgoing head keeps a live "N CVs awaiting your shortlist" bell on a
+   vacancy they can no longer open. 12 such rows exist, 4 unread. The RPC now retires the outgoing
+   head's and fires the incoming head's.
+3. **`p_reporting_to` had to be in the signature on day one.** `CREATE OR REPLACE` cannot add a
+   parameter — it makes an overload, and PostgREST then fails a 3-argument call with PGRST203.
+   `null` = leave alone, `{}` = clear, else set.
+4. **`closed` must stay re-mappable.** Four of the seven HOD steps are probation steps that run
+   *after* a vacancy closes. Only `cancelled` is refused.
+
+#### How it was proved, 09-09-2026
+
+Through **PostgREST as a real signed-in user**, not a rolled-back transaction — the MCP session runs
+as `postgres` without `safeupdate`, so it can prove a predicate but never an RPC.
+
+- All five refusals returned their exact messages and wrote nothing.
+- **The no-op** returned 204 with `updated_at` unchanged and no activity row.
+- **The selective handover clearing**, the test that matters: `interview_2` was handed to the outgoing
+  head and `hod_shortlist` to a third party, then the position was re-mapped. `interview_2` was
+  deleted, `hod_shortlist` **survived**, and `meta->'cleared_step_assignees'` recorded the deleted row
+  with its `assigned_by`. That it passed at all is also the only proof the DELETE kept its WHERE
+  clause.
+- **Preview matched reality both ways** — it correctly said removing Riya Kumari takes *nothing*
+  away, because she is the process coordinator.
+- **The picker, measured as Saloni**: the old source gives her **5** people, the new one **65**
+  (68 less the 3 external accounts `list_org_people` excludes).
+- Bells went to the added, the removed and the requester, **none to the actor**; `email_outbox` empty.
+- **Rollback rehearsed on live data** and re-applied; the assertion passed a second time.
+- `get_advisors` caught the new trigger function being `anon`-executable. Revoked, and the trigger
+  proved still to fire.
+- All work ran on the `ZZ TEST` row MRF-2627-0019 and was restored. **The 19 live positions kept
+  their `hiring_manager_ids`, `reporting_to_ids` and `updated_at` byte for byte.**
+
 *Raised 2026-09-02 · Audited the same day against the live database and the running code · Parked
 with the rest of the HR list*
 
@@ -7792,7 +7855,12 @@ Setup screen and let them state it once per department**, then have every positi
    field) **and** *Who will they report to?* with Supply Chain's heads. HR no longer has to know,
    remember, or find them in a dropdown — which is the whole failure this task exists to fix.
    Both stay editable before saving: the two are the same person in most cases, not all.
-   ⚠ Filling the second box is not cosmetic — *reporting to* is empty on **15 of 23** requisitions
+   ⚠ ~~Filling the second box also fixes NR-1's thin Round 2 picker.~~ **STALE — corrected 09-09-2026.**
+   `lib/interviewers.ts` no longer builds R2 from `hiring_manager_ids` ∪ `reporting_to_ids` alone:
+   **NR-1 shipped**, and R2 now comes from the `mrf` step owners *plus* whoever the requisition
+   names, with all three interview modals reading `s.orgPeople`. Filling *reporting to* is still
+   worth doing — empty on **20 of 24**, and real information — but it is no longer that fix.
+   ~~*reporting to* is empty on **15 of 23** requisitions
    today, and `lib/interviewers.ts` builds the **Round 2 interviewer list** from
    `hiring_manager_ids` ∪ `reporting_to_ids`. Leaving it blank is half of why that picker offers
    almost nobody (**NR-1**).
@@ -7899,6 +7967,15 @@ Finance alone — but it is now answered by a screen rather than by a conversati
       that HOD and confirm they get the board, the CVs, the HOD-shortlist queue entry, Round 2 and
       the probation reviews — and that the requester still reads as HR.
 - [ ] **P6 · The backfill**, once HR supplies the position→HOD list.
+
+**Phases as shipped, 09-09-2026:** P0, P1, P2, P3, P3a and P4 are **done** — see *What shipped*.
+- [ ] **P5 · Walk it in the browser.** ⚠ **NOT DONE.** The Playwright Chrome profile was held by
+      another session all afternoon and killing it was not an option. Everything below the UI is
+      proved end-to-end; what is unproved is that the screens render. The user tested on localhost
+      before approving the deploy, but no automated walk exists.
+- [ ] **P6 · The backfill.** Unchanged and still the user's call: **17 positions**, 15 of them sitting
+      with Saloni, across 106 in-play candidates. HR fills Setup → Department HODs first, then each
+      position is opened and moved with *Hiring team*. Nothing about this ships automatically.
 
 #### To settle
 
