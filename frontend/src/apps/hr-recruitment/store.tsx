@@ -860,10 +860,6 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       r.requesterId === user.id || r.hiringManagerIds.includes(user.id);
 
     /**
-     * Mirrors fms_hr_can_act() in SQL. Kept in step with it deliberately: this
-     * only decides what the UI offers — the RPC re-checks and is the real gate.
-     */
-    /**
      * Who is HOLDING (requisition, step), or null. Keyed exactly the way
      * fms_hr_can_act authorises, so the client and the server cannot disagree.
      */
@@ -872,6 +868,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     const holderOfStep = (requisitionId: string | null, stepKey: string): string | null =>
       requisitionId ? holderByKey.get(requisitionId + '|' + stepKey) ?? null : null;
 
+    /**
+     * Mirrors fms_hr_can_act() in SQL. Kept in step with it deliberately: this
+     * only decides what the UI offers — the RPC re-checks and is the real gate.
+     */
     const canActOn = (stepKey: StepKey, r: Requisition): boolean => {
       // Resubmitting a sent-back MRF is the ONE step whose server rule is neither
       // "step owner" nor "hiring manager": fms_hr_resubmit_mrf allows the REQUESTER (or
@@ -888,14 +888,34 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       // unreachable for the seven steps that need this most.
       const holder = holderOfStep(r.id, stepKey);
       if (holder) return holder === user.id;
-      if (isHodStep(stepKey)) return r.hiringManagerIds.includes(user.id);
+      // NR-4. A HOD step is the requisition's OWN hiring manager, OR anyone named on
+      // that step in Setup — an override, never a swap. The head keeps the step; HR
+      // gains the button so it can move when a head has stalled. Same order as
+      // fms_hr_is_natural_step_owner evaluates it.
+      //
+      // ⚠ AUTHORITY ONLY, AND IT DIVERGES FROM WORKLOAD ON PURPOSE. The queue entry,
+      //   the bell and the daily digest stay with the hiring manager alone — see
+      //   `queueOwnerIds`, `reassignCandidates`, the two notification fan-outs and
+      //   `reassignStep` below, which all keep the plain `isHodStep ? hiringManagerIds`
+      //   shape, as does core/workspace/mywork/items/hr.ts. That reads like a bug and
+      //   is not one: co-ownership would drop every department's in-play candidates
+      //   into HR's "On you right now" and bury the work that genuinely is theirs.
+      if (isHodStep(stepKey))
+        return (
+          r.hiringManagerIds.includes(user.id) ||
+          stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id))
+        );
       return stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
     };
 
-    /** Who owns a step when nobody holds it. Mirrors fms_hr_is_natural_step_owner. */
+    /**
+     * Who owns a step when nobody holds it. Mirrors fms_hr_is_natural_step_owner.
+     * NR-4: the HOD arm is a union, for the reasons spelled out in `canActOn`.
+     */
     const isNaturalStepOwner = (stepKey: StepKey, r: Requisition, uid: string): boolean =>
       isHodStep(stepKey)
-        ? r.hiringManagerIds.includes(uid)
+        ? r.hiringManagerIds.includes(uid) ||
+          stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid))
         : stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid));
 
     /**
@@ -1171,6 +1191,19 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     const stepIsMine = (stepKey: StepKey, r: Requisition): boolean => {
       const holder = holderOfStep(r.id, stepKey);
       if (holder) return holder === user.id;
+      // ⚠ NR-4 — THE SEVENTH WORKLOAD SITE, and the one that is easy to miss because
+      //   it does not carry the `isHodStep ? hiringManagerIds : …` shape the other six
+      //   do; it inherits the rule by delegating to canActOn. Once canActOn learned
+      //   that a named step owner may ACT on a HOD step, this line silently started
+      //   saying they are OWED it too: HR's "On you right now" went from 6 HOD-shortlist
+      //   items to 22, and Round 2 from 0 to 19 — every department's candidates, which
+      //   is precisely the co-ownership that was considered and rejected.
+      //
+      //   So the HOD arm is spelled out here instead. The `!isAdmin && !isProcessCoordinator`
+      //   guard keeps canActOn's own short-circuit intact for them, so an admin's queue is
+      //   exactly what it was; only the arm NR-4 added is withheld.
+      if (isHodStep(stepKey) && !isAdmin && !isProcessCoordinator)
+        return r.hiringManagerIds.includes(user.id);
       return canActOn(stepKey, r);
     };
 
@@ -1194,6 +1227,12 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       // global owners table (which has no row for this step, so without this branch it
       // would be reported as work owed by "Nobody").
       if (e.stepKey === "mrf_resubmit") return r?.requesterId ? [r.requesterId] : [];
+      // ⚠ NR-4 DELIBERATELY DID NOT TOUCH THIS LINE, and the same goes for
+      //   `reassignCandidates`, the two notification fan-outs, `reassignStep` and
+      //   core/workspace/mywork/items/hr.ts. `canActOn` now lets a named step owner
+      //   ACT on a HOD step; WORK is still owed by the hiring manager alone. Widening
+      //   it here would be co-ownership, which was considered and rejected: it drops
+      //   every department's in-play candidates into HR's queue and bell.
       if (isHodStep(e.stepKey)) return r?.hiringManagerIds ?? [];
       return ownerIdsOf(e.stepKey);
     };

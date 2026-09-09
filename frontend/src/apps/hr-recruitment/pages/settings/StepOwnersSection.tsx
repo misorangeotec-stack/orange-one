@@ -13,11 +13,24 @@ import { STEPS, isHodStep, type StepKey } from "../../lib/steps";
  * Employees drawn from them — a step can be co-owned. Every selected employee may
  * action the step and all are notified.
  *
- * The five HOD steps are shown but NOT assignable: they are owned per-requisition
- * by whoever raised the MRF, so a Sachin Plant vacancy is shortlisted and reviewed
- * by the Sachin Plant head automatically. Assigning them globally here would send
- * every department's candidates to one person, which is exactly the bug this
- * design avoids.
+ * The SEVEN HOD steps (hod_shortlist, interview_2, probation_m1/m2/m3,
+ * probation_final, probation_extension — HOD_STEPS in lib/steps.ts) are different,
+ * and since NR-4 they are editable too. They are owned per-requisition by the hiring
+ * manager who raised the MRF, so a Sachin Plant vacancy is shortlisted and reviewed
+ * by the Sachin Plant head automatically, with no setup at all. Naming somebody here
+ * ADDS to that. It never replaces it.
+ *
+ * ⚠ THE `OR` IS THE WHOLE DESIGN, and this file used to argue the opposite. The
+ *   original objection was that an owner list on these steps "would send every
+ *   department's candidates to one person, which is exactly the bug this design
+ *   avoids". That is true of a SWAP and false of an OR: the hiring manager keeps the
+ *   step, keeps the queue entry, keeps the bell and keeps the daily digest, and the
+ *   people named here merely gain the button as well — so HR can move a card when a
+ *   head has stalled. Mirrors fms_hr_is_natural_step_owner in SQL; change one list
+ *   and change the other.
+ *
+ * ⚠ NAMING SOMEBODY ON ANY STEP BUT `mrf` IS A PII GRANT, not just a button. See the
+ *   note rendered in the modal — it is on screen because it is easy to miss here.
  */
 export default function StepOwnersSection() {
   const s = useHrStore();
@@ -50,7 +63,17 @@ export default function StepOwnersSection() {
     setEmpIds((prev) => prev.filter((id) => allowed.has(id)));
   };
 
+  /**
+   * ⚠ NOTHING MAY BE EDITED FROM A TABLE THAT HAS NOT YET SEEN WHAT IS SAVED.
+   *   This modal seeds itself from the store at click time, so opening it before the
+   *   fetch lands gives an EMPTY picker over a non-empty saved row — and Save then
+   *   writes `[]`, silently revoking everyone on it. That is not hypothetical: it
+   *   happened here on 09-09-2026 and wiped Riya Kumari off HR Head Approval, the
+   *   same failure PipelineViewersSection was rewritten to avoid. The Edit buttons
+   *   and Save are both gated on `s.isLoading`; see [[usestate-of-store-value-wipes-the-list]].
+   */
   const open = (stepKey: StepKey) => {
+    if (s.isLoading) return;
     const cur = s.stepOwnerFor(stepKey);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
@@ -74,6 +97,13 @@ export default function StepOwnersSection() {
   };
 
   const editingStep = STEPS.find((st) => st.key === editing);
+  const editingIsHod = editing ? isHodStep(editing) : false;
+  /**
+   * `mrf` is "may raise a requisition", which every department head holds. It is the
+   * one step that grants no sight of candidates — fms_hr_is_recruitment_staff()
+   * excludes it by name — so it is the one step this warning must NOT appear on.
+   */
+  const editingGrantsPii = editing !== null && editing !== "mrf";
 
   return (
     <div className="space-y-3">
@@ -99,32 +129,33 @@ export default function StepOwnersSection() {
                     className={`border-b border-line/70 last:border-0 ${hod ? "bg-page/40" : "hover:bg-page/60"}`}
                   >
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {hod ? (
-                        <span className="text-[12px] text-grey-2">Automatic</span>
-                      ) : (
-                        <button
-                          onClick={() => open(st.key)}
-                          className="text-[12.5px] font-semibold text-orange hover:underline"
-                        >
-                          Edit
-                        </button>
-                      )}
+                      {/* NR-4: every row is editable now, the seven HOD steps included.
+                          They keep the tint because they still behave differently — the
+                          hiring manager owns them whether or not anyone is named. */}
+                      <button
+                        onClick={() => open(st.key)}
+                        disabled={s.isLoading}
+                        className="text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
+                      >
+                        Edit
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-grey-2">{st.index}</td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{st.title}</td>
                     <td className="px-4 py-3">
+                      {/* A HOD step always names the hiring manager first, because that is
+                          true whether or not anybody is listed. Anyone named is shown as an
+                          addition, never as a replacement. (The old copy here claimed Round 2
+                          was offered to "anyone set up to raise an MRF" — that describes the
+                          nav gate in `isStepOwner`, not who may act, and it was misleading.) */}
                       {hod ? (
                         <span className="text-grey-2">
-                          {/* Round 2 is the one HOD step with a wider rule: it is offered to
-                              everyone set up to raise an MRF (the row above), because the
-                              stage means "a head of department takes this" and the
-                              requisition's own manager defaults to whoever raised it. It
-                              stays Automatic rather than becoming an editable owner list —
-                              naming people here would make them recruitment staff, which
-                              grants sight of EVERY candidate's PII in the module. */}
-                          {st.key === "interview_2"
-                            ? "Anyone set up to raise an MRF, plus this requisition's hiring manager"
-                            : "The hiring manager who raised the requisition"}
+                          The hiring manager who raised it
+                          {names.length ? (
+                            <>
+                              , plus <span className="text-navy">{names.join(", ")}</span>
+                            </>
+                          ) : null}
                         </span>
                       ) : names.length ? (
                         <span className="text-navy">{names.join(", ")}</span>
@@ -141,21 +172,27 @@ export default function StepOwnersSection() {
       </Card>
 
       <p className="text-[12.5px] text-grey-2">
-        The greyed-out steps follow the requisition automatically — whoever raises an MRF shortlists its CVs, takes
-        Interview Round&nbsp;2, and does that hire's monthly reviews. No setup needed.
+        The tinted steps follow the requisition on their own — whoever raises an MRF shortlists its CVs, takes
+        Interview Round&nbsp;2 and does that hire's probation reviews, with no setup at all. Anyone you name on one of
+        them can act on it <strong className="font-semibold text-navy">as well</strong>, on every position; the hiring
+        manager keeps it either way, and keeps the queue entry and the reminders.
       </p>
 
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={`Owners — ${editingStep?.title ?? ""}`}
-        subtitle="Pick a department, then every employee who owns this step. All of them can action it and are notified."
+        subtitle={
+          editingIsHod
+            ? "The hiring manager who raised the requisition always owns this step. Anyone you add here can act on it as well, on every position — the work and the reminders stay with the hiring manager."
+            : "Pick a department, then every employee who owns this step. All of them can action it and are notified."
+        }
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button size="sm" onClick={save} disabled={busy}>
+            <Button size="sm" onClick={save} disabled={busy || s.isLoading}>
               {busy ? "Saving…" : "Save"}
             </Button>
           </>
@@ -176,6 +213,15 @@ export default function StepOwnersSection() {
                 : `${empIds.length} of ${peopleOptions.length} selected · every owner can action this step.`}
             </span>
           </FieldLabel>
+          {editingGrantsPii && (
+            <p className="rounded-lg bg-orange-soft px-3 py-2 text-[12px] leading-snug text-navy">
+              <strong className="font-semibold">This is a data grant, not just a button.</strong> Naming somebody on any
+              step but Manpower Requisition makes them recruitment staff: they can then read every candidate in the
+              module — name, phone, email, expected salary — every interview, onboarding and probation record, and
+              every CV and job description in the document store, on every position, not only this step's. Remove the
+              name to take it back.
+            </p>
+          )}
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>

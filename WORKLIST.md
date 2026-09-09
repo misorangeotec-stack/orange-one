@@ -7249,9 +7249,9 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 
 | # | Raised | What | Entry | Status |
 |---|---|---|---|---|
-| 1 | 2026-09-02 | A management pipeline dashboard — every position's pipeline on one screen, with the candidate's own detail readable from it | **NR-2** | `[ ]` |
+| 1 | 2026-09-02 | A management pipeline dashboard — every position's pipeline on one screen, with the candidate's own detail readable from it | **NR-2** | `[x]` |
 | 2 | 2026-09-02 | Map one or more HODs to a position so they own it exactly as if they had raised the MRF — today the picker cannot even show them. **Part B:** a Setup → Department HODs master that pre-fills it | **NR-3** | `[ ]` |
-| 3 | 2026-09-02 | HR must have full pipeline control — today they cannot action the seven HOD steps on a position a head raised, and **Settings cannot grant it** | **NR-4** | `[ ]` |
+| 3 | 2026-09-02 | HR must have full pipeline control — today they cannot action the seven HOD steps on a position a head raised, and **Settings cannot grant it** | **NR-4** | `[x]` |
 | 4 | 2026-09-03 | Edit, delete and re-upload the videos and documents HR attaches — today every one is write-once, and the RPCs structurally cannot clear a value | **NR-5** | `[x]` |
 | 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[x]` |
 | 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
@@ -7910,15 +7910,126 @@ Finance alone — but it is now answered by a screen rather than by a conversati
       editable before saving. They are the same person in most cases, and *reporting to* is empty on
       **15 of 23** requisitions today — which is also why the Round 2 interviewer picker is thin,
       since it reads both arrays.
-- [ ] **Who may change the mapping after the fact** — coordinator and admin only, or the requester
-      and the current HODs too? Letting a head hand their own vacancy on is convenient and is also
-      how a vacancy quietly leaves the right person's queue.
-- [ ] **What happens to an existing per-step handover when the HOD changes** — cleared, or left
-      standing? Zero exist today, so this is free to decide now.
+- [x] ~~**Who may change the mapping after the fact?**~~ **Answered 07-09-2026: the HOD too.**
+      *"Once the HOD is mapped, the HOD also becomes the process owner, so the HOD themselves too can
+      edit or update anything."* So the mapped HOD is not merely an approver on the position — they
+      own it, with the same reach the raiser has, which is exactly what **NR-3**'s title asks for.
+      ⚠ **The convenience and the risk are the same mechanism**, and the client has chosen it
+      knowingly: a head can hand their own vacancy to someone else, which is also how a vacancy
+      quietly leaves the right person's queue. Since it is allowed, **the change must be visible** —
+      log every re-map to the position's activity with who, when and from whom, so a vacancy that
+      moved can be traced rather than discovered.
+- [x] ~~**What happens to an existing per-step handover when the HOD changes?**~~ **Answered
+      07-09-2026 — clear ONLY the ones pointing at the outgoing HOD.** The client asked for the
+      recommendation and took it.
 
-### NR-4 · 🔴 HR cannot work seven pipeline steps on a position a HOD raised  `[ ]`
-*Raised 2026-09-02 · Audited the same day against the live database and the running code · Parked
-with the rest of the HR list*
+      The table is `fms_hr_step_assignees` (`requisition_id, step_key, assigned_to, assigned_by,
+      assigned_at, note`), **0 rows today** — so nothing is at stake yet and this is free to build
+      correctly.
+
+      ⚠ **The blanket answer is the wrong one, and this is why.** The person named on a step is not
+      always the HOD. A head may assign one step to a third party — *"Ramesh takes Round 2"* — and
+      that is an instruction about who does the WORK, not about who owns the position. It stays true
+      whoever the HOD is. Clearing every assignee on a re-map would destroy a real delegation nobody
+      asked to cancel. So:
+
+      - assignee **is** the outgoing HOD → **clear it**; the new HOD owns the position and a step
+        still pointing at their predecessor contradicts that.
+      - assignee **is anyone else** → **leave it standing**.
+
+      Log the clearing to the position's activity, alongside the re-map entry — `assigned_by` is
+      already stored, so who set it and who removed it are both answerable.
+
+### NR-4 · 🔴 HR cannot work seven pipeline steps on a position a HOD raised  `[x]` — 🟢 **BUILT 09-Sep-2026**
+*Raised 2026-09-02 · Audited the same day against the live database and the running code · Decisions
+settled 02-09, 07-09 and 09-09 · **Built, applied and verified end-to-end on live data 09-Sep-2026.**
+Awaiting deploy to `master`.*
+
+#### What shipped
+
+**One line of SQL, two lines of client mirror, and the Setup screen that was refusing to configure it.**
+
+1. **Migration `20260909120000_fms_hr_hr_can_work_the_hod_steps.sql`** (+ rollback at the same prefix)
+   — `fms_hr_is_natural_step_owner`'s HOD branch becomes
+   `(v_managers is not null and p_uid = any(v_managers)) or fms_hr_is_step_owner(p_step_key, p_uid)`.
+   `create or replace`, same signature, so the OID and the execute grants survive. Nothing in RLS calls
+   it; 22 RPCs reach it through `fms_hr_can_act`, **and a 23rd that does not** — `fms_hr_reassign_step`
+   calls it twice directly, so a named owner can now also hand a HOD step on and receive one.
+2. **`store.tsx` — `canActOn` and `isNaturalStepOwner` only**, plus comments on both sides of the
+   authority/workload divergence.
+3. **`StepOwnersSection.tsx`** — all seven rows unlocked, the "Automatic" copy replaced, the stale
+   "five HOD steps" docblock rewritten with the `OR`-never-a-swap reasoning, and the PII consequence
+   stated **on screen** in the modal for every step but `mrf`.
+
+#### 🔴 Three things the entry below did not know
+
+1. **P4 needed no code at all.** The client's answer on 09-09 was that HR should have **both** approval
+   gates, may approve **their own** requisitions, and that it is configured **in Setup**. Once the seven
+   rows are editable, HR Head Approval and Management Approval were *already* editable — they are
+   ordinary step-owner rows, not HOD steps. So the planned `fms_hr_config` key, new predicate, new Setup
+   tab and `fms_hr_decide_mrf` arm were all dropped. Saloni Rathod was added to those two rows instead;
+   removing her is deleting a name.
+2. **There is a SEVENTH workload site, and it does not look like one.** `stepIsMine` (store.tsx)
+   delegates to `canActOn` instead of carrying the `isHodStep ? hiringManagerIds : …` shape the other six
+   have — so widening authority silently widened the workload. Caught in the browser: HR's *"On you right
+   now"* jumped from 98 items to 116, HOD Shortlist from 4 to 22 and Round 2 from 0 to 19 — every
+   department's candidates, exactly the co-ownership that was rejected. The HOD arm is now spelled out
+   there, guarded with `!isAdmin && !isProcessCoordinator` so an admin's queue is untouched.
+3. **The Setup screen could silently wipe a permission row, and it did.** `StepOwnersSection` seeds its
+   modal from the store at click time, so opening it before the fetch lands gives an empty picker over a
+   saved row — and Save writes `[]`. It **removed Riya Kumari from HR Head Approval** during this build.
+   Restored within the minute, and Edit + Save are now both gated on `s.isLoading`. Same failure as the
+   Pipeline Access tab on 08-09; the remaining sections with this shape (`CoordinatorsSection`,
+   `SalaryVisibilitySection`, and the equivalents in the other FMS modules) are still unfixed.
+
+#### The nine rows now set in Setup → Step Owners
+
+| Step | Owners after |
+|---|---|
+| Shortlist by HOD · Interview Round 2 · Month-1/2/3 Review · Probation Decision · Extended Review | hiring manager **+ Saloni Rathod** |
+| HR Head Approval | Riya Kumari, **Saloni Rathod** |
+| Management Approval | Riya Kumari, Aayush Rathi, Karan Toshniwal, **Saloni Rathod** |
+| **Make the Offer** | **Riya Kumari alone — unchanged**, and the widening structurally cannot reach it |
+
+#### Verified on live data, as the real users
+
+- **Predicates**: all seven steps `false → true` for Saloni; all seven **still `true` for Gorakh Pawar**;
+  `final_decision` still `false` for her.
+- **The rollback was rehearsed, not just written** — run inside an aborting transaction with a named
+  `hod_shortlist` row in place, and it made that row inert again before the abort restored the migration.
+- **Signed in as Saloni Rathod** (not admin, not Demo mode): on **MRF-2627-0012**, Gorakh's position with
+  6 CVs waiting, the *Shortlisted by HOD* action now renders. On the **ZZ TEST** position she shortlisted
+  a candidate at the HOD step and **booked Interview Round 2** through the UI. Make the Offer was
+  attempted and **refused**.
+- **Signed in as Gorakh Pawar**: 6 items still on him at Shortlist by HOD, bell still unread, the action
+  still on his cards. Override, not swap.
+- **HR's workload is unchanged** at 98 items across 8 steps.
+- ⚠ **Probation could not be walked** — there are **zero** `fms_hr_probations` rows in the database, and
+  reaching one needs a hire. Those four steps are proved by the predicate only.
+
+#### The figures in the entry below are stale — corrected 09-Sep-2026
+
+| | Entry says | Live on 09-09 |
+|---|---|---|
+| Candidates HR could not action | 13 | **17**, plus 1 on the ZZ TEST position |
+| Positions affected | 4 | **3** — MRF-2627-0012 (6), -0013 (1), -0017 (10) |
+| "the five HOD steps" | five | **seven**, everywhere |
+
+MRF-2627-0018 was cancelled in the meantime and -0013 appeared. **MRF-2627-0017 went from 2 waiting to
+10 in a single day** — the problem was growing, not shrinking, and NR-3 will add 17 more positions.
+
+#### 🔴 Also found, NOT fixed — a stale row is granting PII invisibly
+
+`hod_share` was dropped as a step on 03-09 (`20260903130000`), but its `fms_hr_step_owners` row survives
+and still names **KHUSHI SONI**. That row alone satisfies `fms_hr_is_recruitment_staff()` — every
+candidate's PII — and `fms_hr_is_any_step_owner()`, which gates **read, update and delete** on the whole
+`fms-hr-docs` bucket. Because the step is gone from `STEPS`, the Setup screen can neither show it nor
+remove it. Deleting a live row needs the client's say-so:
+`delete from public.fms_hr_step_owners where step_key = 'hod_share';`
+
+---
+
+*Original entry, as written 2026-09-02, follows.*
 
 **The ask.** HR should have **full pipeline control**. Today, when a HOD raises a position, HR
 cannot action several of its stages. That should not happen.
@@ -8055,27 +8166,54 @@ so in a comment on both sides — the next reader will read it as a bug and "fix
 
 #### Phase-wise checklist
 
-- [ ] **P1 · SQL.** The `OR` in `fms_hr_is_natural_step_owner`, applied **before** the frontend.
-      Additive; the rollback is the old function body, and it must be rehearsed on live data.
-- [ ] **P2 · The client mirror** — `canActOn` and `isNaturalStepOwner` **only**. Do NOT touch
-      `queueOwnerIds`, `reassignCandidates` or the two fan-out sites: the override decision is that
-      the work stays in the HOD's queue. Comment both sides so the divergence reads as deliberate.
-- [ ] **P3 · Setup → Step Owners** — unlock the seven rows, rewrite the "Automatic" copy, and state
-      the PII consequence on the screen.
-- [ ] **P4 · Walk it in the browser as Saloni** on **MRF-2627-0012** (Gorakh Pawar's, 6 CVs waiting
-      at HOD shortlist): shortlist one, book Round 2, record a probation review. Then confirm Gorakh
-      Pawar has lost nothing.
-- [ ] **P5 · Ship with NR-3**, or sequence NR-4 first. NR-3 alone makes this worse on 17 positions.
+- [x] **P1 · SQL.** ✅ Applied 09-09-2026 and the rollback **rehearsed on live data**, not merely written.
+- [x] **P2 · The client mirror** — `canActOn` and `isNaturalStepOwner`. ✅ Plus `stepIsMine`, the
+      **seventh** workload site, which had to be pinned back precisely because it delegates to
+      `canActOn` rather than carrying the shape. The other six are untouched.
+- [x] **P3 · Setup → Step Owners** — ✅ all seven unlocked, copy rewritten, PII consequence on screen,
+      and the empty-picker Save bug fixed after it wiped Riya Kumari mid-build.
+- [x] **P4 · Walk it in the browser as Saloni** ✅ — HOD shortlist and Round 2 both worked on a position
+      she does not own; Make the Offer refused; Gorakh Pawar lost nothing. **Probation could not be
+      walked: zero probation rows exist.** Predicate-verified instead.
+- [ ] **P5 · Deploy.** Cherry-pick onto the `oo-master` worktree. **NR-3 is still unbuilt and is now
+      unblocked** — the seven steps stay with HR whichever heads it hands the 17 positions to.
 
 #### To settle
 
 - [x] ~~Override or co-owner?~~ **Answered 02-09-2026: override.** HR can act on any position; the
       work stays in the HOD's queue and the HOD keeps the reminders.
-- [ ] **Should HR also own *Make the Offer* (`final_decision`)?** Riya Kumari alone owns it today.
-      Pure settings, no code, but worth deciding in the same conversation.
-- [ ] **Does "full pipeline control" stop at the pipeline, or include the two approval gates?**
-      It should stop — HR raises most requisitions, and there is no self-approval check anywhere in
-      `fms_hr_decide_mrf`.
+- [x] ~~**Should HR also own *Make the Offer* (`final_decision`)?**~~ **Answered 07-09-2026: NO —
+      it stays with Riya Kumari alone.** *"Riya Kumari is also part of the HR team, so this Make
+      Offer should only be given to Riya Kumari."* ⚠ **So "HR gets full pipeline control" has one
+      deliberate exception, and it must be built as one**: the widening in NR-4 covers the seven
+      pipeline steps and stops short of `final_decision`. Do not let a blanket "HR can act on any
+      step" rule swallow it — the step-owner row for Make the Offer stays exactly as it is, naming
+      one person.
+- [x] ~~**Does "full pipeline control" stop at the pipeline, or include the two approval gates?**~~
+      **Answered 07-09-2026: it INCLUDES them — and it becomes a switch.** *"When we give HR full
+      control, HR will have the power to approve the vacancy request as well. Maybe we can do this
+      setup somewhere in the settings so that, if we want to remove that thing from HR, we can do
+      that."* So HR can approve a requisition, and an admin can take that away again without a code
+      change. **Default it ON**, matching the client's "otherwise HR should also be able to do this".
+
+      **Where the switch lives:** Setup, beside Step Owners rather than buried in a general settings
+      page — it is an authority over a step, and that is where every other such answer is set today.
+      One flag, named for what it does (*HR may approve requisitions*), not for the column it writes.
+
+      ⚠ **The consequence, stated on the record because the switch does not remove it.** HR raises
+      most requisitions, and `fms_hr_decide_mrf` has **no self-approval check of any kind**. With
+      this on, the same person can raise a vacancy and approve it, and no second person ever sees it.
+      That was put to the client and the answer was to proceed with a switch — so this is a known,
+      accepted position, not an oversight. It is written here so the next reader does not "fix" it.
+
+      🟢 **A better shape exists, is already built in this codebase, and is worth one question before
+      building:** OCPI refuses to let anyone approve their **own** deal — the panel hides the button
+      *and* the SQL rejects it, see [[ocpi-cannot-approve-own-deal]]. The same rule here would give
+      the client exactly what they asked for — HR approving requisitions — while keeping the one
+      case that has no reviewer out of it: **HR approves anyone's requisition except one they raised
+      themselves.** That is a narrower hole than the switch alone, costs a single predicate, and does
+      not need the switch turned off to be safe. ⚠ **Confirm before assuming it** — if HR genuinely
+      raises and approves in one pair of hands by design, the plain switch is the right build.
 
 ### NR-5 · Nothing HR uploads can ever be edited, replaced or deleted  `[x]`  — 🟢 **LIVE 05-Sep-2026**
 *Raised 2026-09-03 · Audited the same day against the live database, the live storage bucket and the
