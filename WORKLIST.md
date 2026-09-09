@@ -7638,8 +7638,15 @@ numbers; colour now only names the phase.
 
 #### Still open
 
-- ⚠ **Not yet deployed.** Built and applied to the database; the frontend still has to be
-  cherry-picked onto `master`.
+- ✅ **LIVE on production, 09-Sep-2026.** Four commits cherry-picked onto `master` (`edb582d`,
+  `e286713`, `c77f00a`, `2483ad2`) and pushed; Vercel reports `success`. The database side had gone in
+  on 08-09, ahead of the frontend, as the deploy order requires.
+  **Live at `portal.orangeotec.com/hr-recruitment/pipeline`.**
+- **Access list as at 09-09-2026: three people** — Aayush Rathi, Karan Toshniwal (both Directors, both
+  also portal admins) and **Riya Kumari, HR Head**, added by the client through Setup → Pipeline
+  Access. Riya was already a process coordinator, so being on the list grants her no candidate data
+  she could not already read; it is what makes the SCREEN render for her. Everyone else, including all
+  13 department heads, is out.
 - ✅ **Access for anyone beyond the Directors: CLOSED, 08-09-2026.** *"Right now this report is only
   for the directors, so don't worry about access to other staff members."* Both Directors (Aayush
   Rathi, Karan Toshniwal) are portal **admins**, so they already pass every gate and can open the
