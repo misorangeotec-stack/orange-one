@@ -216,7 +216,8 @@ export default function PositionsList() {
         key: "team",
         header: "Hiring team",
         cell: (r) => {
-          const names = r.hiringManagerIds.map((id) => s.profileById(id)?.name).filter((n): n is string => !!n);
+          // NR-3: org-wide — see PositionPipeline. A cross-department head was dropped here too.
+          const names = r.hiringManagerIds.map((id) => s.personNameOrNull(id)).filter((n): n is string => !!n);
           if (!names.length) return <span className="text-grey-2">—</span>;
           return (
             <span className="flex items-center -space-x-1.5">
@@ -229,7 +230,7 @@ export default function PositionsList() {
         },
         exportValue: (r) =>
           r.hiringManagerIds
-            .map((id) => s.profileById(id)?.name)
+            .map((id) => s.personNameOrNull(id))
             .filter(Boolean)
             .join(", "),
       },

@@ -134,9 +134,12 @@ export default function ControlCenter() {
   };
 
   const ownerNames = (e: QueueEntry): string => {
+    // NR-3: org-wide. queueOwnerIds resolves the seven HOD steps to hiring_manager_ids,
+    // so a head from another department was dropped and the row read "Unassigned" —
+    // a monitoring screen reporting owned work as owned by nobody.
     const names = s
       .queueOwnerIds(e)
-      .map((id) => s.profileById(id)?.name)
+      .map((id) => s.personNameOrNull(id))
       .filter(Boolean) as string[];
     return names.length ? names.join(", ") : "Unassigned";
   };

@@ -89,10 +89,14 @@ export default function MrfStepper({ requisition: r }: { requisition: Requisitio
           ? r.hiringManagerIds
           : (s.stepOwners.find((o) => o.stepKey === key)?.employeeIds ?? []);
 
-        const people = ownerIds.map((id) => s.profileById(id)?.name).filter((n): n is string => !!n);
+        // NR-3: org-wide. For a HOD step `ownerIds` IS hiring_manager_ids, so a head
+        // mapped from another department left the step looking unowned.
+        const people = ownerIds.map((id) => s.personNameOrNull(id)).filter((n): n is string => !!n);
         const departments = [
           ...new Set(
             ownerIds
+              // Still the RLS directory: only a NAME is resolvable org-wide, and a
+              // missing department band is a cosmetic gap, not a wrong owner.
               .map((id) => s.profileById(id)?.departmentId)
               .map((did) => (did ? s.departments.find((d) => d.id === did)?.name : undefined))
               .filter((n): n is string => !!n),

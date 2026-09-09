@@ -414,6 +414,119 @@ export async function updatePostJob(
   if (error) throw new Error(error.message);
 }
 
+/* ================== NR-3 — who acts as the HOD on a vacancy ================= */
+
+/**
+ * Re-map a position's hiring managers, and optionally its reporting-to line.
+ *
+ * ⚠ THE ONLY WRITE PATH. `hiring_manager_ids` is a PII grant — it is an arm of
+ * `fms_hr_can_read_requisition()`, which gates SELECT on eight candidate-side
+ * relations — so nothing may PATCH the column from the client. Both call sites (the
+ * position header and the MRF page) come through here, because two writers of one
+ * column is how they drift.
+ *
+ * `reportingTo` is tri-state, matching the RPC: `undefined` leaves the column alone,
+ * `[]` clears it, an array sets it.
+ *
+ * The RPC refuses an empty `ids` outright — an empty array would leave HOD shortlist,
+ * Round 2 and all four probation reviews owned by nobody in particular — and it
+ * clears ONLY the per-step handovers pointing at an outgoing manager.
+ */
+export async function setHiringManagers(
+  requisitionId: string,
+  ids: string[],
+  note: string | null,
+  reportingTo?: string[],
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_hiring_managers", {
+    p_req: requisitionId,
+    p_ids: ids,
+    p_note: note ?? undefined,
+    ...(reportingTo === undefined ? {} : { p_reporting_to: reportingTo }),
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** One row of the Change HOD dialog's before-you-write panel. */
+export interface HiringManagerPreviewRow {
+  id: string;
+  name: string;
+  designation: string | null;
+  departmentId: string | null;
+  department: string | null;
+  direction: "added" | "removed" | "kept";
+  field: "hiring_manager" | "reporting_to" | "both";
+  isValid: boolean;
+  /** Would they still read this requisition's candidates AFTER the write? */
+  retainsRead: boolean;
+  /** ...and would they still see the vacancy card? A module viewer keeps it either way. */
+  retainsRequisitionRow: boolean;
+  hasModule: boolean;
+  canEditModule: boolean;
+  /** The private CV bucket has its OWN policy and ignores the read gate entirely. */
+  seesCvs: boolean;
+  ownsHodSteps: boolean;
+  /** Handovers this write will clear, because they name this departing head. */
+  losesStepAssignees: string[];
+  pendingHodShortlist: number;
+}
+
+/**
+ * Who gains and who loses, computed server-side BEFORE the write.
+ *
+ * Not derivable in the browser: losing `hiring_manager_ids` does not necessarily
+ * revoke a read (the person may still be a coordinator, recruitment staff, a pipeline
+ * viewer, on `reporting_to_ids`, a step assignee or an interview panellist), and the
+ * CV bucket answers to a different policy again. It raises the same refusal as the
+ * write, so a dialog can never offer a Save the RPC would reject.
+ */
+export async function previewHiringManagers(
+  requisitionId: string,
+  ids: string[],
+  reportingTo?: string[],
+): Promise<HiringManagerPreviewRow[]> {
+  const { data, error } = await supabase.rpc("fms_hr_preview_hiring_managers", {
+    p_req: requisitionId,
+    p_ids: ids,
+    ...(reportingTo === undefined ? {} : { p_reporting_to: reportingTo }),
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    designation: r.designation ?? null,
+    departmentId: r.department_id ?? null,
+    department: r.department ?? null,
+    direction: r.direction,
+    field: r.field,
+    isValid: !!r.is_valid,
+    retainsRead: !!r.retains_read,
+    retainsRequisitionRow: !!r.retains_requisition_row,
+    hasModule: !!r.has_module,
+    canEditModule: !!r.can_edit_module,
+    seesCvs: !!r.sees_cvs,
+    ownsHodSteps: !!r.owns_hod_steps,
+    losesStepAssignees: (r.loses_step_assignees ?? []) as string[],
+    pendingHodShortlist: r.pending_hod_shortlist ?? 0,
+  }));
+}
+
+/**
+ * Setup > Department HODs. One row per department, upserted like the config keys.
+ *
+ * A plain PostgREST upsert rather than an RPC because this table GRANTS NOTHING —
+ * no policy, no RPC and no read gate reads it. RLS restricts the write to admins, and
+ * a BEFORE trigger stamps `updated_by`, dedupes and refuses non-staff ids, so the
+ * things an RPC would have guarded are guarded anyway — including against a direct
+ * SQL-editor write.
+ */
+export async function setDepartmentHods(departmentId: string, hodIds: string[]): Promise<void> {
+  const { error } = await supabase
+    .from("fms_hr_department_hods")
+    .upsert({ department_id: departmentId, hod_ids: hodIds }, { onConflict: "department_id" });
+  if (error) throw new Error(error.message);
+}
+
 export async function holdRequisition(requisitionId: string, hold: boolean, reason: string): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_hold_requisition", {
     p_req: requisitionId,

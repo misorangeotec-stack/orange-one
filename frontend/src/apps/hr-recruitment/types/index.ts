@@ -181,6 +181,21 @@ export interface StepAssignee {
   note: string | null;
 }
 
+/**
+ * NR-3 Part B - Setup > Department HODs. Who normally owns a department's hiring.
+ *
+ * A DEFAULT for a NEW requisition and nothing else: it is read by no RLS policy, no
+ * RPC and no read gate, and being listed here grants not one candidate row. The grant
+ * is, and stays, `Requisition.hiringManagerIds`, which only fms_hr_set_hiring_managers
+ * writes. Changing this master must never move an existing position.
+ */
+export interface DepartmentHods {
+  departmentId: string;
+  hodIds: string[];
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
 export interface StepOwner {
   id: string;
   stepKey: string;

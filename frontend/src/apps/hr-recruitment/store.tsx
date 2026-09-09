@@ -10,8 +10,10 @@ import {
   candidateWindowStartIso,
   fetchHrData,
   fetchHrModuleUserIds,
+  fetchHrModuleEditUserIds,
   HR_QK,
   hrModuleUserIdsKey,
+  hrModuleEditUserIdsKey,
   hrQueryKey,
 } from "./data/hrFetch";
 import {
@@ -49,6 +51,10 @@ import {
   setOfferStatus as setOfferStatusWrite,
   setOnboardingDate as setOnboardingDateWrite,
   setStepOwner as setStepOwnerWrite,
+  setHiringManagers as setHiringManagersWrite,
+  previewHiringManagers as previewHiringManagersWrite,
+  setDepartmentHods as setDepartmentHodsWrite,
+  type HiringManagerPreviewRow,
   setRequisitionJd as setRequisitionJdWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
@@ -139,6 +145,7 @@ import type {
   RequisitionPlatform,
   StepOwner,
   AttachmentRef,
+  DepartmentHods,
 } from "./types";
 import { attachmentPath, isLinkAttachment } from "./types";
 
@@ -240,6 +247,42 @@ interface HrStoreValue {
   /** Is the EFFECTIVE user on that list? Visibility half of the grant above. */
   isPipelineViewer: boolean;
   setPipelineViewers: (userIds: string[]) => Promise<void>;
+
+  /* ---------------------- NR-3 — who acts as the HOD --------------------- */
+
+  /**
+   * Setup > Department HODs. The DEFAULT for a new requisition, NOT a grant — no
+   * policy, no RPC and no read gate reads this table. Changing it must never move an
+   * existing position; that is `setHiringManagers`, which is audited and notifies.
+   */
+  departmentHods: DepartmentHods[];
+  /** The saved heads for a department, or [] when nobody has stated it. */
+  departmentHodsFor: (departmentId: string | null) => string[];
+  /**
+   * Who the portal already has on record as a head of that department — everyone
+   * holding the `hod` role who sits in it. NOT a grant and NOT saved: the Setup screen
+   * offers it as a suggestion an admin confirms, so no guess is ever stored as truth.
+   *
+   * ⚠ NOT `user_hods`, which is a reporting line and cannot be aggregated into a
+   *   department head — Accounting & Finance alone names five different people there.
+   */
+  suggestedHodsFor: (departmentId: string | null) => string[];
+  setDepartmentHods: (departmentId: string, hodIds: string[]) => Promise<void>;
+
+  /** May the EFFECTIVE user re-map this position? Mirrors fms_hr_may_set_hiring_managers. */
+  canSetHiringManagers: (r: Requisition) => boolean;
+  setHiringManagers: (args: {
+    requisition: Requisition;
+    ids: string[];
+    note: string | null;
+    /** undefined = leave reporting-to alone; [] clears it. Matches the RPC. */
+    reportingTo?: string[];
+  }) => Promise<void>;
+  previewHiringManagers: (
+    requisitionId: string,
+    ids: string[],
+    reportingTo?: string[],
+  ) => Promise<HiringManagerPreviewRow[]>;
 
   // capabilities (derived from the EFFECTIVE identity, so demo personas re-scope)
   isAdmin: boolean;
@@ -466,6 +509,12 @@ interface HrStoreValue {
   orgPeople: OrgPerson[];
   /** Everyone who can open New Recruitment. Empty while the lookup is in flight. */
   moduleUserIds: ReadonlySet<string>;
+  /**
+   * Of those, the ones at **Edit**. A strict subset, so "view only" is the set
+   * difference — a picker that marks only "no access" would pass over somebody who
+   * can open the module and press nothing.
+   */
+  moduleEditUserIds: ReadonlySet<string>;
   /** Owners of the `mrf` step — the heads this module is set up with, offered for R2. */
   mrfOwnerIds: string[];
   /** On the panel of at least one interview that has not been held yet. */
@@ -643,6 +692,14 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  // ...and which of them hold it at Edit. fms_hr_can_act() ANDs module_can_edit(), so a
+  // View-only grant maps a head who owns seven steps and can work none of them.
+  const { data: moduleEditUserIdList } = useQuery({
+    queryKey: hrModuleEditUserIdsKey,
+    queryFn: fetchHrModuleEditUserIds,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const stepOwners = data?.stepOwners ?? [];
   const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
@@ -673,6 +730,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
   const pipelineViewerIds = data?.config.pipelineViewerIds ?? [];
+  const departmentHods = data?.departmentHods ?? [];
 
   // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
   // stamping run off the JWT, so any write whose policy checks `= auth.uid()`
@@ -1259,6 +1317,27 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     };
 
     const moduleUserIds: ReadonlySet<string> = new Set(moduleUserIdList ?? []);
+    const moduleEditUserIds: ReadonlySet<string> = new Set(moduleEditUserIdList ?? []);
+
+    const departmentHodsFor = (departmentId: string | null): string[] =>
+      departmentId ? (departmentHods.find((h) => h.departmentId === departmentId)?.hodIds ?? []) : [];
+
+    /**
+     * Who is already on record as a head of this department: the `hod` role, filtered
+     * to that department. Read from the ORG-WIDE roster, which carries both facts —
+     * `s.profiles` would only ever surface the reader's own department, which is the
+     * bug this whole task exists to fix.
+     *
+     * A SUGGESTION, never a saved value. Seven of twelve active departments resolve to
+     * exactly one name this way; Sales resolves to six and Supply Chain to two, so an
+     * admin still has to choose. Nothing is stored until they do.
+     */
+    const suggestedHodsFor = (departmentId: string | null): string[] =>
+      departmentId
+        ? (orgPeople ?? [])
+            .filter((p) => p.departmentId === departmentId && p.role === "hod")
+            .map((p) => p.id)
+        : [];
     const mrfOwnerIds = stepOwnerFor("mrf")?.employeeIds ?? [];
 
     /**
@@ -1527,6 +1606,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       personNameOrNull,
       orgPeople: orgPeople ?? [],
       moduleUserIds,
+      moduleEditUserIds,
       mrfOwnerIds,
       isBookedInterviewer,
       userId: user.id,
@@ -1975,6 +2055,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       canViewSalary,
       pipelineViewerIds,
       isPipelineViewer,
+      departmentHods,
+      departmentHodsFor,
+      suggestedHodsFor,
 
       isAdmin,
       canEdit,
@@ -2039,6 +2122,34 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite("pipeline_viewers", { user_ids: userIds });
         await invalidate();
       },
+      setDepartmentHods: async (departmentId, hodIds) => {
+        // A DEFAULT for the next requisition. It deliberately does NOT touch any
+        // existing position — moving one is setHiringManagers, which is audited and
+        // notifies the people it affects.
+        await setDepartmentHodsWrite(departmentId, hodIds);
+        await invalidate();
+      },
+
+      /**
+       * Mirrors fms_hr_may_set_hiring_managers. The RPC stays the authority; this only
+       * decides whether the control is worth rendering, so the button and the Save it
+       * offers can never disagree.
+       *
+       * Uses the EFFECTIVE user, like every other capability here — a demo persona sees
+       * the control their persona would have, and the RPC then answers to the real JWT.
+       */
+      canSetHiringManagers: (r) =>
+        isAdmin || isProcessCoordinator || r.requesterId === user.id || r.hiringManagerIds.includes(user.id),
+
+      setHiringManagers: async ({ requisition, ids, note, reportingTo }) => {
+        // ⚠ Through the RPC, always. The column is an arm of the server read gate, and
+        // the RPC is what refuses an empty array, validates every id and writes the
+        // activity row. Nothing here may PATCH fms_hr_requisitions.
+        await setHiringManagersWrite(requisition.id, ids, note, reportingTo);
+        await invalidate();
+      },
+      previewHiringManagers: (requisitionId, ids, reportingTo) =>
+        previewHiringManagersWrite(requisitionId, ids, reportingTo),
       insertMaster: async (table, input) => {
         await insertMasterWrite(table, input);
         await invalidate();
@@ -2119,6 +2230,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     // Same reason: the interview picker marks anyone who cannot open this module, and
     // that marking must appear when the lookup lands rather than on the next board move.
     moduleUserIdList,
+    // Same reason again: the Change HOD picker marks View-only grants, and Setup >
+    // Department HODs must redraw when a save lands rather than on the next reload.
+    moduleEditUserIdList, departmentHods,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

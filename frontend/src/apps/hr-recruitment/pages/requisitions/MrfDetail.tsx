@@ -11,6 +11,7 @@ import Modal from "@/shared/components/ui/Modal";
 import MrfStepper from "../../components/MrfStepper";
 import StateNote from "../../components/StateNote";
 import StatusPill from "../../components/StatusPill";
+import HiringTeamModal from "../../components/HiringTeamModal";
 import CandidateBoard from "../../components/kanban/CandidateBoard";
 import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
 import ProbationPanel from "../../components/probation/ProbationPanel";
@@ -77,6 +78,9 @@ export default function MrfDetail() {
   const [posting, setPosting] = useState(false);
   const [holdMode, setHoldMode] = useState<"hold" | "resume" | "cancel" | null>(null);
   const [editing, setEditing] = useState(false);
+  // NR-3. Declared up here with the other modal state — the block above warns that
+  // a hook after the early returns crashes the page.
+  const [changingTeam, setChangingTeam] = useState(false);
   const [tab, setTab] = useState("mrf");
   const [openOnboarding, setOpenOnboarding] = useState<Onboarding | null>(null);
   const [openProbation, setOpenProbation] = useState<Probation | null>(null);
@@ -270,6 +274,14 @@ export default function MrfDetail() {
           {canDecideMgmt && <Button size="sm" onClick={() => setDecideStage("mgmt")}>Management decision</Button>}
           {canPost && <Button size="sm" onClick={() => setPosting(true)}>Post the job</Button>}
           {canResubmit && <Button size="sm" onClick={() => setEditing(true)}>Edit & resubmit</Button>}
+          {/* NR-3 — the same dialog the position header opens, and the same RPC behind
+              it. The MRF page is where the field is displayed, so it is where somebody
+              looking at a wrong hiring manager will try to fix it. */}
+          {r.status !== "cancelled" && s.canSetHiringManagers(r) && (
+            <Button size="sm" variant="ghost" onClick={() => setChangingTeam(true)}>
+              Hiring team
+            </Button>
+          )}
           {canHold && r.status === "on_hold" && (
             <Button size="sm" variant="ghost" onClick={() => setHoldMode("resume")}>Take off hold</Button>
           )}
@@ -596,6 +608,10 @@ export default function MrfDetail() {
           <p className="text-[12.5px] text-grey-2">Who removed it, and when, is written to the trail.</p>
         </div>
       </Modal>
+      {changingTeam && (
+        <HiringTeamModal requisition={r} open={changingTeam} onClose={() => setChangingTeam(false)} />
+      )}
+
       {holdMode && (
         <HoldCancelModal requisition={r} mode={holdMode} open={!!holdMode} onClose={() => setHoldMode(null)} />
       )}

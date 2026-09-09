@@ -83,7 +83,9 @@ export default function Dashboard() {
   const today = todayLocalIso();
 
   const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "Unknown";
-  const personName = (id: string | null) => (id ? (s.profileById(id)?.name ?? "Unknown") : "Unassigned");
+  // NR-3: org-wide. This names queue OWNERS, and for the seven HOD steps that is
+  // hiring_manager_ids — so a cross-department head read "Unknown" on the dashboard.
+  const personName = (id: string | null) => (id ? s.personName(id) : "Unassigned");
 
   /* --------------------------- the reporting model -------------------------- */
   const report = useMemo(() => {

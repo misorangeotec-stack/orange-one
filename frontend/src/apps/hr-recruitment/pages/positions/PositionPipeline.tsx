@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
+import Button from "@/shared/components/ui/Button";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { formatDateDMY } from "@/shared/lib/date";
 import CandidateBoard from "../../components/kanban/CandidateBoard";
 import PipelineSummary from "../../components/positions/PipelineSummary";
 import StateNote from "../../components/StateNote";
 import StatusPill from "../../components/StatusPill";
+import HiringTeamModal from "../../components/HiringTeamModal";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
@@ -25,6 +28,8 @@ export default function PositionPipeline() {
   const { id = "" } = useParams();
   const s = useHrStore();
   const navigate = useNavigate();
+  // Declared before the early returns below — a hook after them crashes the page.
+  const [changingTeam, setChangingTeam] = useState(false);
 
   if (!canSeeBoard(s)) return <AccessDenied />;
 
@@ -45,7 +50,10 @@ export default function PositionPipeline() {
   const inPlay = candidates.filter(isOpenCandidate).length;
   const joined = s.seatsJoined(r.id);
   const location = r.locationId ? s.locations.find((l) => l.id === r.locationId)?.name : null;
-  const team = r.hiringManagerIds.map((mid) => s.profileById(mid)?.name).filter((n): n is string => !!n);
+  // NR-3: org-wide, NOT profileById. The directory is RLS-scoped, so a head mapped
+  // from another department resolved to undefined and was dropped by the filter —
+  // the cluster then showed nothing at all on a vacancy that has an owner.
+  const team = r.hiringManagerIds.map((mid) => s.personNameOrNull(mid)).filter((n): n is string => !!n);
 
   return (
     <div className="space-y-4">
@@ -78,16 +86,25 @@ export default function PositionPipeline() {
           </div>
         </div>
 
-        {team.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-grey-2">Hiring team</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-grey-2">Hiring team</span>
+          {team.length > 0 ? (
             <span className="flex items-center -space-x-1.5">
               {team.map((n) => (
                 <Avatar key={n} name={n} size={26} className="ring-2 ring-white" />
               ))}
             </span>
-          </div>
-        )}
+          ) : (
+            <span className="text-[12.5px] text-grey-2">Not set</span>
+          )}
+          {/* NR-3. Gated on the client mirror of fms_hr_may_set_hiring_managers; the
+              RPC is still the authority, so the two can never disagree about Save. */}
+          {s.canSetHiringManagers(r) && (
+            <Button size="sm" variant="ghost" onClick={() => setChangingTeam(true)}>
+              Change
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Why it stopped, then what that means for this board. The note carries the reason,
@@ -107,6 +124,10 @@ export default function PositionPipeline() {
         requisition={r}
         onOpenCandidate={(cand) => navigate(`/hr-recruitment/candidates/${cand.id}`)}
       />
+
+      {changingTeam && (
+        <HiringTeamModal requisition={r} open={changingTeam} onClose={() => setChangingTeam(false)} />
+      )}
     </div>
   );
 }
