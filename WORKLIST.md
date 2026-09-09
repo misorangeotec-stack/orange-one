@@ -7630,6 +7630,11 @@ numbers; colour now only names the phase.
   `PHASE_OF` counts it as *interviewing* — 0 such cards today, so this is prevention.
 - **Clicking a cell now scrolls the list into view.** ⚠ `window.scrollTo` would have done nothing:
   AppShell scrolls an inner `<main className="flex-1 overflow-y-auto">`, not the window.
+- **Read-through, same day:** an **Opened** column (date + days open, from `postedAt ?? submittedAt`
+  — the same expression PositionsList's Posted column uses, so the two cannot print different dates);
+  **"Shape" renamed "Breakdown"**, which nobody had to ask about; and a **rule on every column
+  boundary** — the first cut ruled only the phase-band edges, which left a grid of numbers looking
+  half-drawn.
 
 #### Still open
 
