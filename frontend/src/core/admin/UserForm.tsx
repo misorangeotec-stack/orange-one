@@ -10,6 +10,9 @@ import { useDirectory } from "@/core/platform/store";
 import { grantableModules, levelsForModule, NO_VIEW_ONLY_APP_IDS } from "@/apps/registry";
 import { groupByCategory } from "@/apps/categories";
 import { MODULE_LEVEL_LABEL, type AppRole, type ModuleLevel } from "@/core/platform/types";
+// Type only — erased at build time, so this does NOT drag the receivables libs into the entry
+// bundle the way a value import would. The fetch below is still dynamic.
+import type { NameMasterRow } from "@/apps/receivables-hub/lib/nameMasters";
 import {
   PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@/apps/receivables-hub/lib/menus";
@@ -184,7 +187,7 @@ export default function UserForm() {
   // Per-report grants (profiles.receivables_allowed_reports). An ALLOW-list — empty means the
   // user can open no report at all, which is the correct default for a new user.
   const [receivablesAllowedReports, setReceivablesAllowedReports] = useState<string[]>(editing?.receivablesAllowedReports ?? []);
-  const [spNames, setSpNames] = useState<string[]>([]);
+  const [spRows, setSpRows] = useState<NameMasterRow[]>([]);
   const [spLoading, setSpLoading] = useState(false);
   const [spError, setSpError] = useState("");
   const [error, setError] = useState("");
@@ -345,25 +348,51 @@ export default function UserForm() {
    */
   const showSalespersonScope = moduleAccess.includes(RECEIVABLES_APP_ID);
 
-  // Lazy-load the live salesperson names (ConnectWave ext_ledger_tags) the first
-  // time the scope picker is shown, so the admin tags exact-matching values.
+  // Lazy-load the salesperson names the first time the scope picker is shown.
   //
-  // ⚠ IMPORTED DYNAMICALLY, and it has to stay that way. connectwaveFetcher is a
-  //   code-split chunk (useAppData / CustomerDetail / TallyPanel all import() it);
-  //   a static import here is in the CORE admin form, so it would pull the entire
-  //   hub fetcher and its second Supabase client into the entry bundle for every
-  //   user — for the sake of one string list. Vite says so out loud if you try:
-  //   "dynamically imported by … but also statically imported by … UserForm.tsx".
+  // ⚠ FROM THE MASTER, NOT FROM WHAT SOMEBODY TYPED ONTO A CUSTOMER (RC-15). This used to read the
+  //   distinct values found on ledgers, and before that the LEGACY project — which is how "MAYANK"
+  //   came to be tagged on three real users while matching zero customers. Matching is exact and
+  //   case-sensitive (lib/scopeParties.ts), so a name that is not on the list is a scope that
+  //   silently sees nothing, and an email that silently goes nowhere.
+  //
+  // ⚠ A NAME THE USER ALREADY CARRIES IS ALWAYS OFFERED, even switched off or absent from the
+  //   master entirely. Dropping it would untick it, and saving the form would then quietly strip a
+  //   tag the admin never touched — taking that person's view and their report with it.
+  //
+  // ⚠ STILL IMPORTED DYNAMICALLY, though it no longer splits. The old target, connectwaveFetcher,
+  //   is its own chunk and had to be kept out of the core admin bundle. nameMasters is a small leaf
+  //   that the hub's own Masters screen statically imports, so Vite reports "dynamically imported
+  //   by … but also statically imported by …" and leaves it where it is. The import stays dynamic
+  //   anyway: it costs nothing today, and it is the one thing keeping this CORE form from binding
+  //   statically to hub code if the hub is ever split into a chunk of its own.
   useEffect(() => {
-    if (!showSalespersonScope || spNames.length || spLoading) return;
+    if (!showSalespersonScope || spRows.length || spLoading) return;
     setSpLoading(true);
     setSpError("");
-    import("@/apps/receivables-hub/lib/connectwaveFetcher")
-      .then((m) => m.fetchSalespersonNames())
-      .then(setSpNames)
+    import("@/apps/receivables-hub/lib/nameMasters")
+      .then((m) => m.fetchSalespersonMaster())
+      .then(setSpRows)
       .catch((e) => setSpError((e as Error).message))
       .finally(() => setSpLoading(false));
-  }, [showSalespersonScope, spNames.length, spLoading]);
+  }, [showSalespersonScope, spRows.length, spLoading]);
+
+  /**
+   * The names to offer: every active one, plus anything this user is already tagged with.
+   * Sorted together so a retired name does not hide at the bottom of a long list.
+   */
+  const spOffered = useMemo(() => {
+    const active = spRows.filter((r) => r.is_active).map((r) => r.name);
+    const extra = receivablesSalespersons.filter((n) => !active.includes(n));
+    return [...active, ...extra].sort((a, b) => a.localeCompare(b));
+  }, [spRows, receivablesSalespersons]);
+
+  /** Why a name is not a plain active entry — the marker on its chip. */
+  const spMark = (n: string): "" | " · switched off" | " · not in the list" => {
+    const row = spRows.find((r) => r.name === n);
+    if (!row) return " · not in the list";
+    return row.is_active ? "" : " · switched off";
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -951,8 +980,11 @@ export default function UserForm() {
                 <p className="text-[12.5px] text-grey-2">Loading salespersons…</p>
               ) : spError ? (
                 <p className="text-[12.5px] text-[#d4493f]">Couldn't load salespersons: {spError}</p>
-              ) : spNames.length === 0 ? (
-                <p className="text-[12.5px] text-grey-2">No salespersons found in the receivables data.</p>
+              ) : spOffered.length === 0 ? (
+                <p className="text-[12.5px] text-grey-2">
+                  The salesperson master is empty. Add names under the Outstanding Dashboard's
+                  Settings → Masters before tagging anyone.
+                </p>
               ) : (
                 <>
                   {/* Two different warnings, because the same empty field means two different
@@ -973,19 +1005,28 @@ export default function UserForm() {
                     )
                   )}
                   <div className="flex flex-wrap gap-2 max-h-48 overflow-auto p-0.5">
-                    {spNames.map((n) => {
+                    {spOffered.map((n) => {
                       const on = receivablesSalespersons.includes(n);
+                      const mark = spMark(n);
                       return (
                         <button
                           key={n}
                           type="button"
                           onClick={() => toggleSalesperson(n)}
+                          title={
+                            mark === " · not in the list"
+                              ? `"${n}" is not in the salesperson master, so it matches no customers. Fix it in Settings → Masters.`
+                              : mark
+                                ? `"${n}" has been switched off. Existing customers still read it; it is not offered for new mappings.`
+                                : undefined
+                          }
                           className={cn(
                             "inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[12.5px] transition",
                             on ? "border-orange bg-orange-soft text-orange font-semibold" : "border-line text-navy hover:border-orange/40"
                           )}
                         >
                           {n}
+                          {mark && <span className="text-[11px] font-normal opacity-70">{mark}</span>}
                           {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
                         </button>
                       );

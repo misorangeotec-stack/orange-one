@@ -148,7 +148,8 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
     icon: SettingsIcon,
     fullAccessOnly: true,
     fullAccessNote:
-      "gives the Masters tab — salesperson & category tags, customer groups, companies & locations, other payments and red marks",
+      "gives the Masters tab — salesperson & category tags, customer groups, companies & locations, " +
+      "other payments, red marks, and the salesperson and collection team lists themselves",
   },
 ];
 

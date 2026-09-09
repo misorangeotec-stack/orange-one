@@ -153,15 +153,19 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
   });
 
   /**
-   * The salesperson names in the DATA, not the names somebody has been tagged with.
+   * The salesperson names from the MASTER (RC-15) — not the distinct values somebody has typed onto
+   * a customer, which is what this read before.
    *
-   * Dynamically imported for the same reason UserForm does it: a static import would pull the
-   * receivables fetcher into the admin chunk for the sake of one string list.
+   * ⚠ A NEW QUERY KEY, deliberately. The old one cached a list from a different source, and reusing
+   *   it would serve that list for up to its staleTime after the change shipped.
+   *
+   * ⚠ The list is held for ten minutes, so a name added or renamed in Settings → Masters can take
+   *   that long to appear here. Fine for a vocabulary that changes a few times a year; worth knowing
+   *   rather than reporting as a fault.
    */
   const namesQ = useQuery({
-    queryKey: ["receivables", "salespersonNames"],
-    queryFn: () =>
-      import("@hub/lib/connectwaveFetcher").then((m) => m.fetchSalespersonNames()),
+    queryKey: ["receivables", "salespersonMaster"],
+    queryFn: () => import("@hub/lib/nameMasters").then((m) => m.fetchSalespersonMaster()),
     staleTime: 10 * 60 * 1000,
   });
 
@@ -199,12 +203,26 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
     return m;
   }, [profiles]);
 
-  /** Every name worth showing: what the data holds, plus anything already saved. */
+  /**
+   * Every name worth showing: the active master, plus anything already ticked.
+   *
+   * ⚠ A TICKED NAME IS NEVER DROPPED FROM THIS LIST, switched off or missing from the master
+   *   entirely. Hiding it would leave a recipient row nobody can see and nobody can untick, still
+   *   resolving to an inbox at send time — a mailing list that cannot be read is worse than one
+   *   carrying a retired name, which at least says so on its face.
+   */
   const allNames = useMemo(() => {
-    const s = new Set<string>(namesQ.data ?? []);
+    const s = new Set<string>((namesQ.data ?? []).filter((r) => r.is_active).map((r) => r.name));
     for (const n of reps) if (n) s.add(n);
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [namesQ.data, reps]);
+
+  /** Why a ticked name is not a plain active entry, for the note under it. */
+  const nameMark = (n: string): string => {
+    const row = (namesQ.data ?? []).find((r) => r.name === n);
+    if (!row) return "Not in the salesperson master — this matches no customers";
+    return row.is_active ? "" : "Switched off in the salesperson master";
+  };
 
   /** Ticked, but nobody carries the tag — the failure that otherwise looks like success. */
   const unclaimed = useMemo(
@@ -441,10 +459,13 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
         ) : (
           <div className="max-h-56 overflow-y-auto rounded-input border border-line bg-white">
             {allNames.length === 0 ? (
-              <p className="px-2.5 py-3 text-[11px] text-grey-2">No salespeople in the data.</p>
+              <p className="px-2.5 py-3 text-[11px] text-grey-2">
+                The salesperson master is empty. Add names under Settings &rsaquo; Masters.
+              </p>
             ) : allNames.map((n) => {
               const to = addressBook.get(n) ?? [];
               const on = reps.has(n);
+              const mark = nameMark(n);
               return (
                 <label
                   key={n}
@@ -457,7 +478,10 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
                     className="h-3.5 w-3.5 accent-[#FF6A1F]"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs text-navy">{n}</span>
+                    <span className="block truncate text-xs text-navy">
+                      {n}
+                      {mark && <span className="ml-1.5 text-[11px] font-normal text-grey-2">({mark})</span>}
+                    </span>
                     <span className={cn("block truncate text-[11px]", to.length ? "text-grey" : "text-ryg-red")}>
                       {to.length ? to.join(", ") : "No portal user tagged with this salesperson"}
                     </span>

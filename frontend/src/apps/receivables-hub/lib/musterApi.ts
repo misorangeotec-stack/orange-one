@@ -108,7 +108,8 @@ export interface RedMarkInput {
 }
 
 // PostgREST caps a request at 1000 rows; page through until exhausted.
-async function fetchAll<T>(table: string, columns: string, order: string): Promise<T[]> {
+// Exported for lib/nameMasters.ts, which reads the two vocabulary masters the same way.
+export async function fetchAll<T>(table: string, columns: string, order: string): Promise<T[]> {
   const cw = getConnectwaveSupabase();
   const out: T[] = [];
   const PAGE = 1000;
@@ -181,8 +182,11 @@ export function fetchSnapshot(): Promise<SnapRow[]> {
   );
 }
 
-/** Invoke muster-write and surface the REAL error message (mirrors adminUserApi). */
-async function invokeMuster(body: Record<string, unknown>): Promise<void> {
+/**
+ * Invoke muster-write and surface the REAL error message (mirrors adminUserApi).
+ * Exported for lib/nameMasters.ts — the vocabulary masters write through the same door.
+ */
+export async function invokeMuster(body: Record<string, unknown>): Promise<void> {
   const { data, error } = await supabase.functions.invoke("muster-write", { body });
   if (error) {
     let detail = error.message;
@@ -238,8 +242,11 @@ export function saveCompanyMap(input: {
  * A separate function rather than a widened invokeMuster: that one returns void and already has
  * three callers, and only the insert below needs the created row (so the tab can append it
  * without re-reading every payment).
+ *
+ * Exported for lib/nameMasters.ts: a vocabulary rename cascades across two projects and returns a
+ * per-target row count, which the screen reports rather than saying a bare "Renamed".
  */
-async function invokeMusterData<T>(body: Record<string, unknown>): Promise<T> {
+export async function invokeMusterData<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke("muster-write", { body });
   if (error) {
     let detail = error.message;

@@ -29,6 +29,23 @@
 //      what the Live (Tally) netting groups by.)
 //   POST body { action: "update_segment_config", company_guid, small_max_pct, medium_max_pct }
 //     -> { ok: true }  (the Customer Profile screen's "Edit Segments" bands, per company)
+//   POST body { action: "add_list_value",        list, name, note }        -> { ok: true }
+//   POST body { action: "set_list_value_active", list, name, is_active }   -> { ok: true }
+//   POST body { action: "rename_list_value",     list, from, to }          -> { ok: true, counts }
+//     (the two managed vocabularies — `list` is "salesperson" | "collection_team", never a table
+//      name. RC-15: a customer's salesperson and collection team are picked from a list instead of
+//      typed, because matching is exact and case-sensitive, so a typo is a scope that silently
+//      matches nothing. Entries are switched OFF, never deleted.)
+//
+// ⚠️ RENAME CASCADES ACROSS BOTH PROJECTS, AND THAT IS THE WHOLE POINT.
+//   Nothing holds a foreign key to these masters — the name is stored as a bare string on ledgers
+//   here and on user tags in the identity project. Renaming the master alone would leave 319
+//   customers reading "NAKUL JI" against a master that no longer contains it: the exact bug the
+//   feature exists to remove, re-created by the tool meant to fix it. So rename_list_value moves
+//   ext_ledger_tags, ext_redmark, profiles.receivables_salespersons and
+//   report_email_recipients.salesperson too, and returns a per-target count.
+//   It is NOT atomic — five statements over two projects with no shared transaction — so a partial
+//   failure reports what did move instead of failing bare.
 //
 // Deploy (identity project):
 //   supabase secrets set CONNECTWAVE_URL=<Tally CoPilot .env SUPABASE_URL> \
@@ -124,6 +141,58 @@ const rowId = (v: unknown): number | null => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
+// ── The two managed vocabularies (RC-15) ─────────────────────────────────────
+// The client sends a `list` KEY, never a table name — a client-supplied table would be this
+// function handing the browser its own service key.
+type ListKind = "salesperson" | "collection_team";
+
+const LISTS: Record<ListKind, { table: string; label: string }> = {
+  salesperson: { table: "ext_salesperson_master", label: "salesperson" },
+  collection_team: { table: "ext_collection_team_master", label: "collection team" },
+};
+
+const listKind = (v: unknown): ListKind | null =>
+  v === "salesperson" || v === "collection_team" ? v : null;
+
+/**
+ * Is this value permitted for the given list? Returns an error string, or null when it is fine.
+ *
+ * ⚠ IT GUARDS AGAINST INTRODUCING AN OFF-LIST VALUE, NOT AGAINST LEAVING ONE ALONE. `current` is
+ *   what the row already holds, and an unchanged value always passes. Without that, a row carrying
+ *   a name from before this feature existed — Red Mark holds 4 at "PURAV JI" and 2 at "MAYANK" —
+ *   could never be saved again, so editing its REASON would fail on a field the user never touched.
+ *   The cell offers that value back for exactly the same reason; the two must agree, or the picker
+ *   suggests something the server then refuses.
+ *
+ * ⚠ ACTIVE AND INACTIVE BOTH PASS. Inactive means "not offered for NEW mappings", not "invalid".
+ *   Rejecting it would 400 every save on the rows of a salesperson who has left — including a save
+ *   that only ticked the Checked box — which is precisely the orphaning the feature promises not to
+ *   do. Only a value absent from the master ENTIRELY, and not already on the row, is refused.
+ *
+ * ⚠ NULL ALWAYS PASSES. 37 ledgers have no salesperson and they are not 'OTHERS'.
+ *
+ * ⚠ AND IT FAILS CLOSED. If the master cannot be read the write is refused, not waved through: a
+ *   validator that quietly becomes a no-op is worse than no validator, because the screen still
+ *   claims the value was checked.
+ */
+async function checkListValue(
+  cw: ReturnType<typeof createClient>,
+  list: ListKind,
+  value: string | null,
+  current: string | null,
+): Promise<string | null> {
+  if (value === null) return null;
+  if (current !== null && current !== "" && value === current) return null;
+  const { table, label } = LISTS[list];
+  const { data, error } = await cw.from(table).select("name").eq("name", value).maybeSingle();
+  if (error) return `could not read the ${label} master, so the save was refused: ${error.message}`;
+  if (!data) {
+    return `"${value}" is not in the ${label} master. Add it under Settings → Masters first, ` +
+           `then set it here.`;
+  }
+  return null;
+}
+
 /**
  * Validate + normalise a Red Mark row from the request body.
  * Red Mark is a per-ledger flag keyed by the Tally GUID (presence = flagged), so ledger_id is the
@@ -202,6 +271,17 @@ Deno.serve(async (req) => {
   if (body.action === "update_tag") {
     const ledger_id = clean(body.ledger_id);
     if (!ledger_id) return json(400, { error: "ledger_id required" });
+    // Read the row first: it tells us what the mapping is TODAY (so an unchanged off-list value is
+    // not blocked), and it turns a ledger_id that matches nothing into a 404 instead of the silent
+    // ok:true this action used to return — the same trap update_company_map documents above.
+    const { data: curTag, error: curTagErr } = await cw
+      .from("ext_ledger_tags").select("salesperson").eq("ledger_id", ledger_id).maybeSingle();
+    if (curTagErr) return json(400, { error: curTagErr.message });
+    if (!curTag) return json(404, { error: `customer ${ledger_id} is not in the muster` });
+    // The picker in the browser is a drawing decision; this is the constraint. (category is
+    // deliberately NOT validated — it is free text and out of RC-15's scope.)
+    const bad = await checkListValue(cw, "salesperson", clean(body.salesperson), curTag.salesperson);
+    if (bad) return json(400, { error: bad });
     const { error } = await cw
       .from("ext_ledger_tags")
       .update({
@@ -219,8 +299,16 @@ Deno.serve(async (req) => {
   if (body.action === "update_group") {
     const ledger_id = clean(body.ledger_id);
     if (!ledger_id) return json(400, { error: "ledger_id required" });
+    const { data: curGrp, error: curGrpErr } = await cw
+      .from("ext_ledger_group").select("collection_team").eq("ledger_id", ledger_id).maybeSingle();
+    if (curGrpErr) return json(400, { error: curGrpErr.message });
+    if (!curGrp) return json(404, { error: `customer ${ledger_id} is not in the group muster` });
+    const badTeam = await checkListValue(
+      cw, "collection_team", clean(body.collection_team), curGrp.collection_team);
+    if (badTeam) return json(400, { error: badTeam });
     // group_name is NOT NULL — only overwrite it when a non-empty value is sent (the client sends the
     // customer's own name when the field is left blank, so it never nulls the column).
+    // group_name is a per-customer label, not a vocabulary, so it is not validated against a master.
     const patch: Record<string, unknown> = {
       collection_team: clean(body.collection_team),
       checked: body.checked === true,
@@ -315,6 +403,9 @@ Deno.serve(async (req) => {
   if (body.action === "insert_redmark") {
     const parsed = parseRedmark(body);
     if ("err" in parsed) return json(400, { error: parsed.err });
+    // An insert always INTRODUCES the value, so there is nothing to grandfather.
+    const badSp = await checkListValue(cw, "salesperson", clean(body.salesperson), null);
+    if (badSp) return json(400, { error: badSp });
     const { data, error } = await cw
       .from("ext_redmark")
       .upsert({ ...parsed.row, updated_by }, { onConflict: "ledger_id" })
@@ -327,6 +418,13 @@ Deno.serve(async (req) => {
   if (body.action === "update_redmark") {
     const ledger_id = clean(body.ledger_id);
     if (!ledger_id) return json(400, { error: "ledger_id required" });
+    const { data: curRm, error: curRmErr } = await cw
+      .from("ext_redmark").select("salesperson").eq("ledger_id", ledger_id).maybeSingle();
+    if (curRmErr) return json(400, { error: curRmErr.message });
+    if (!curRm) return json(404, { error: `red mark ${ledger_id} not found` });
+    const badRmSp = await checkListValue(
+      cw, "salesperson", clean(body.salesperson), curRm.salesperson);
+    if (badRmSp) return json(400, { error: badRmSp });
     // Only the editable metadata is patched here (not the key). .select() so a zero-row match is a
     // 404, not a silent ok:true.
     const { data, error } = await cw
@@ -387,6 +485,182 @@ Deno.serve(async (req) => {
       }, { onConflict: "company_guid" });
     if (error) return json(400, { error: error.message });
     return json(200, { ok: true });
+  }
+
+  // ── The two managed vocabularies (RC-15) ───────────────────────────────────
+  // ext_salesperson_master / ext_collection_team_master. Switched off, never deleted.
+
+  if (body.action === "add_list_value") {
+    const list = listKind(body.list);
+    if (!list) return json(400, { error: "list must be salesperson or collection_team" });
+    const name = clean(body.name);
+    if (!name) return json(400, { error: "name required" });
+    const { table, label } = LISTS[list];
+
+    const { error } = await cw.from(table).insert({ name, note: clean(body.note), updated_by });
+    if (error) {
+      // 23505 is either the primary key or the case-insensitive unique index beside it. Name the
+      // spelling that is already there: "already exists" about a name the user cannot see in the
+      // list is baffling, and the near-miss is the whole reason the index is there.
+      if (error.code === "23505") {
+        const { data: all } = await cw.from(table).select("name");
+        const existing =
+          (all ?? []).find((r: { name: string }) => r.name.toUpperCase() === name.toUpperCase())?.name;
+        return json(409, {
+          error: !existing || existing === name
+            ? `"${name}" is already in the ${label} list.`
+            : `The ${label} list already contains "${existing}". Two spellings differing only in ` +
+              `capitalisation would be two different ${label}s everywhere else, so only one is kept.`,
+        });
+      }
+      return json(400, { error: error.message });
+    }
+    return json(200, { ok: true });
+  }
+
+  if (body.action === "set_list_value_active") {
+    const list = listKind(body.list);
+    if (!list) return json(400, { error: "list must be salesperson or collection_team" });
+    const name = clean(body.name);
+    if (!name) return json(400, { error: "name required" });
+    const is_active = body.is_active === true;
+    const { table, label } = LISTS[list];
+
+    const { data: row, error: readErr } = await cw
+      .from(table).select("name,is_protected").eq("name", name).maybeSingle();
+    if (readErr) return json(400, { error: readErr.message });
+    if (!row) return json(404, { error: `"${name}" is not in the ${label} list.` });
+    if (row.is_protected && !is_active) {
+      return json(400, {
+        error: `"${name}" cannot be switched off. Every sync writes that exact value onto ` +
+               `brand-new customers, so a list without it would make each of them invalid on arrival.`,
+      });
+    }
+
+    const { data, error } = await cw
+      .from(table).update({ is_active, updated_by }).eq("name", name).select("name");
+    if (error) return json(400, { error: error.message });
+    if (!data?.length) return json(404, { error: `"${name}" is not in the ${label} list.` });
+    return json(200, { ok: true });
+  }
+
+  if (body.action === "rename_list_value") {
+    const list = listKind(body.list);
+    if (!list) return json(400, { error: "list must be salesperson or collection_team" });
+    const from = clean(body.from);
+    const to = clean(body.to);
+    if (!from || !to) return json(400, { error: "from and to are both required" });
+    if (from === to) return json(400, { error: "the new name is the same as the old one" });
+    const { table, label } = LISTS[list];
+
+    const { data: src, error: srcErr } = await cw
+      .from(table).select("name,is_protected").eq("name", from).maybeSingle();
+    if (srcErr) return json(400, { error: srcErr.message });
+    if (!src) return json(404, { error: `"${from}" is not in the ${label} list.` });
+    if (src.is_protected) {
+      return json(400, {
+        error: `"${from}" cannot be renamed. Every sync writes that exact spelling onto brand-new ` +
+               `customers, so renaming it would break each of them on arrival.`,
+      });
+    }
+
+    // Renaming ONTO an existing name is refused rather than merged: a merge would have to delete a
+    // master row, and no master row is ever deleted. Compared case-insensitively, because the list
+    // cannot hold two spellings that differ only in capitalisation.
+    const { data: allNames, error: allErr } = await cw.from(table).select("name");
+    if (allErr) return json(400, { error: allErr.message });
+    const clash = (allNames ?? []).find(
+      (r: { name: string }) => r.name !== from && r.name.toUpperCase() === to.toUpperCase(),
+    );
+    if (clash) {
+      return json(409, {
+        error: `The ${label} list already contains "${clash.name}". To combine the two, reassign ` +
+               `the customers on "${from}" and then switch "${from}" off.`,
+      });
+    }
+
+    const counts = { master: 0, ledgers: 0, redmark: 0, userTags: 0, recipients: 0 };
+    const moved = () =>
+      `Moved so far — list ${counts.master}, customers ${counts.ledgers}, red marks ` +
+      `${counts.redmark}, user tags ${counts.userTags}, report recipients ${counts.recipients}.`;
+    const stop = (where: string, msg: string) =>
+      json(500, {
+        error: `Renamed part-way and stopped at ${where}: ${msg}. ${moved()} The Masters screen ` +
+               `flags any name in use but missing from the list, so the gap is visible.`,
+        counts,
+      });
+
+    // 1. The master row. First because it is the likeliest to be refused (a constraint, a clash),
+    //    and failing before 300 customers have moved is better than failing after.
+    {
+      const { data, error } = await cw
+        .from(table).update({ name: to, updated_by }).eq("name", from).select("name");
+      if (error) return json(400, { error: error.message });
+      if (!data?.length) return json(404, { error: `"${from}" is not in the ${label} list.` });
+      counts.master = data.length;
+    }
+
+    // 2. The customer mappings.
+    // ⚠ The COUNT is capped by PostgREST's max-rows (1000) even though the UPDATE itself is not —
+    //    the update always applies to every matching row, but a name on more than 1000 customers
+    //    would under-report here. The largest today is OTHERS at 682, and OTHERS cannot be renamed.
+    {
+      const col = list === "salesperson" ? "salesperson" : "collection_team";
+      const tbl = list === "salesperson" ? "ext_ledger_tags" : "ext_ledger_group";
+      const { data, error } = await cw
+        .from(tbl).update({ [col]: to, updated_by }).eq(col, from).select("ledger_id");
+      if (error) return stop("the customer muster", error.message);
+      counts.ledgers = data?.length ?? 0;
+    }
+
+    if (list === "salesperson") {
+      // 3. Red Mark keeps its own copy of the salesperson.
+      const { data: rm, error: rmErr } = await cw
+        .from("ext_redmark").update({ salesperson: to, updated_by })
+        .eq("salesperson", from).select("ledger_id");
+      if (rmErr) return stop("the red mark master", rmErr.message);
+      counts.redmark = rm?.length ?? 0;
+
+      // 4. The user tags, in the IDENTITY project. text[], and PostgREST cannot express
+      //    array_replace — so read, rewrite, write back, one row at a time. Every update carries
+      //    its id: PostgREST refuses an unqualified write.
+      const { data: profs, error: profErr } = await idAdmin
+        .from("profiles").select("id,receivables_salespersons")
+        .contains("receivables_salespersons", [from]);
+      if (profErr) return stop("the user tags", profErr.message);
+      for (const p of profs ?? []) {
+        // De-duplicate. Somebody tagged with BOTH names would otherwise hold the new one twice, and
+        // how many names a person carries is a figure the scheduled send reports on.
+        const next = [...new Set(
+          ((p.receivables_salespersons ?? []) as string[]).map((s) => (s === from ? to : s)),
+        )];
+        const { error: upErr } = await idAdmin
+          .from("profiles").update({ receivables_salespersons: next }).eq("id", p.id);
+        if (upErr) return stop("the user tags", upErr.message);
+        counts.userTags++;
+      }
+
+      // 5. The scheduled-report recipients, also identity. There is NO unique key on
+      //    (report_key, scope, salesperson), so renaming onto a name already ticked on the same
+      //    report would quietly give that rep two copies of the mail. Drop the old row instead.
+      const { data: recips, error: recErr } = await idAdmin
+        .from("report_email_recipients").select("id,report_key")
+        .eq("scope", "salesperson").eq("salesperson", from);
+      if (recErr) return stop("the report recipients", recErr.message);
+      for (const r of recips ?? []) {
+        const { data: dupe, error: dupErr } = await idAdmin
+          .from("report_email_recipients").select("id")
+          .eq("report_key", r.report_key).eq("scope", "salesperson").eq("salesperson", to).limit(1);
+        if (dupErr) return stop("the report recipients", dupErr.message);
+        const { error: wErr } = dupe?.length
+          ? await idAdmin.from("report_email_recipients").delete().eq("id", r.id)
+          : await idAdmin.from("report_email_recipients").update({ salesperson: to }).eq("id", r.id);
+        if (wErr) return stop("the report recipients", wErr.message);
+        counts.recipients++;
+      }
+    }
+
+    return json(200, { ok: true, counts });
   }
 
   return json(400, { error: "unknown action" });
