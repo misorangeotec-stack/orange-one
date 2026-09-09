@@ -7531,10 +7531,12 @@ dropped **33**.
 - [x] **P1 · Setup → "Pipeline Access"**, worded as a PII grant, sourced from the **org-wide** roster
       (`orgPeople`, not the RLS-scoped `profiles` — this is a list of Directors, who are in other
       departments). Warns beside anyone who cannot open the module.
-- [x] **P2 · The gate.** `canSeePipeline = isAdmin || isPipelineViewer || canSeeBoard`, and the
-      missing `mgmt_approval` / `hr_head_approval` / `job_posting` arms added to `canSeeBoard` — the
-      frontend was **stricter than RLS**. Verified no live behaviour changed: all four current owners
-      already passed by another arm. **`isModuleViewer` is deliberately not an arm.**
+- [x] **P2 · The gate.** ⚠ **Revised 09-09-2026 — see "The report was not actually locked" below.**
+      Now `canSeePipeline = isAdmin || isPipelineViewer`: the Setup list is the only control.
+      Separately, the missing `mgmt_approval` / `hr_head_approval` / `job_posting` arms were added to
+      `canSeeBoard` — the frontend was **stricter than RLS** on Positions and Candidates. Verified no
+      live behaviour changed there: all four current owners already passed by another arm.
+      **`isModuleViewer` is deliberately not an arm of either.**
 - [x] **P3 · `CandidateDetail` extracted from `CandidatePage` — moved, not copied.** Header came with
       it: "Change stage" lives in the header while the modal it drives is mounted in the body, so
       leaving the header behind would have forced the dashboard to rebuild the one control that
@@ -7583,6 +7585,52 @@ the Setup list opens this dashboard alone, not the module's whole board tier.
 | Closed and cancelled positions? | **Shown, filterable.** Default is active jobs; Paused / Closed / Cancelled are one click away (08-09-2026). |
 | CVs for a pipeline viewer? | **Yes, read only** (08-09-2026). They can open a CV, never replace or delete one. |
 
+#### Revised 09-09-2026 — first use, and a gate that was not a gate
+
+**🔴 The report was not actually locked.** It was gated
+`isAdmin || isPipelineViewer || canSeeBoard`, and that third arm was far wider than it looks:
+`canSeeBoard` tests `isStepOwner("interview_2")`, `interview_2` is a **HOD step**, and `isStepOwner`
+answers TRUE for a HOD step to **anyone who owns `mrf`**. Every head set up to raise a requisition
+therefore walked in. Measured live: **21 people could open it** — 6 admins, 1 coordinator, 1 HR step
+owner and **13 department heads** — against a client who had asked for the Directors.
+
+Worse, most of the 13 met a **blank report**: RLS hands a head only their own vacancies, and 5 of the
+8 checked could read no position and no candidate at all. The screen was being offered to people for
+whom it was empty — the exact failure the original entry's own ⚠ warned about, arriving by a
+different door.
+
+**Fixed: `canSeePipeline = isAdmin || isPipelineViewer`.** The Setup list is the only control; the
+portal-wide admin bypass stays because it is not this module's to withdraw. **21 → 6** (the 2
+Directors, who are admins, plus 4 other portal admins). Proved with a throwaway non-admin holding
+`hr-recruitment` at edit: refused with no sidebar link while off the list, full report the moment it
+was added, refused again when removed. Since the predicate now has only those two inputs, that
+refusal is the proof for all 13 heads too — none is an admin and none is on the list.
+
+**🔴 The matrix numbers were unreadable, and that was a defect not a taste.** The cells tinted by
+phase and scaled `opacity` with the count — but `opacity` fades the ELEMENT, so it faded the digits
+too: a cell holding 1 against a peak of 28 drew its text at **27%**. Replaced with plain full-strength
+numbers; colour now only names the phase.
+
+**Also fixed, all raised on first use:**
+
+- **The KPI strip half-followed the filters.** "In play" and "At offer" moved with the status chips
+  while "Open positions", "Seats unfilled" and "Overdue" did not — worse than either. All five now
+  scope to the positions shown, via the *same* two `lib/analytics` functions on a stated subset, with
+  the scope printed under the strip. ⚠ *Seats unfilled* and *Overdue* still legitimately hold still
+  when Cancelled is switched on — a cancelled vacancy has no seats to fill and emits no queue entries
+  — so the first card is now **"Positions shown"** (19 → 24), which is what proves the strip is live.
+- **A row's shape, at a glance.** Each row carries a slim stacked bar: segments give the mix, and the
+  bar's LENGTH gives the size, scaled against the busiest row. (Normalising every bar to full width —
+  the obvious first cut — made a row of 1 look identical to a row of 28.)
+- **A `Phases / Stages` switch** (`?view=stages`). Phases stays the default; Stages opens the ten
+  board columns under phase bands — which is also how the screen answers "what is inside Screening?".
+  Counted through `columnOf`, never the raw stage. Verified the two views reconcile exactly: band
+  totals 67/36/1/0/31, every row's stage cells summing to its own All. **No per-band subtotals in
+  Stages**, because `columnOf` can place a `final_decision` card under a *screening* column while
+  `PHASE_OF` counts it as *interviewing* — 0 such cards today, so this is prevention.
+- **Clicking a cell now scrolls the list into view.** ⚠ `window.scrollTo` would have done nothing:
+  AppShell scrolls an inner `<main className="flex-1 overflow-y-auto">`, not the window.
+
 #### Still open
 
 - ⚠ **Not yet deployed.** Built and applied to the database; the frontend still has to be
@@ -7590,7 +7638,8 @@ the Setup list opens this dashboard alone, not the module's whole board tier.
 - ✅ **Access for anyone beyond the Directors: CLOSED, 08-09-2026.** *"Right now this report is only
   for the directors, so don't worry about access to other staff members."* Both Directors (Aayush
   Rathi, Karan Toshniwal) are portal **admins**, so they already pass every gate and can open the
-  screen today — **nothing is pending for this feature to be usable.**
+  screen today — **nothing is pending for this feature to be usable.** Since 09-09-2026 they are also
+  the only non-admin-bypass route in: the Setup list is the whole gate.
   ⚠ Note the consequence: because both are admins, the new SQL arm is **dormant** for them. It is
   proven (see the table above) but nobody is currently *relying* on it. The first non-admin added to
   the Setup list is the first real use of it.
