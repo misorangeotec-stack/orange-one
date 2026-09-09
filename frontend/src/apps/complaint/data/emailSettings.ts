@@ -1,0 +1,30 @@
+import { supabase } from "@/core/platform/supabase";
+
+/**
+ * Per-module email on/off switch for Complaint (module id "complaint"), backed by
+ * public.email_module_settings via the admin-checked set_email_module_enabled
+ * RPC. The server-side fms_complaint_announce enqueue only fires when this is on.
+ *
+ * ⚠ THE ROW MUST EXIST, seeded `false` by the module's registration migration.
+ *   Without it `email_module_enabled()` returns false and every notification is
+ *   silently dropped — no error, no outbox row, nothing to find.
+ */
+export const COMPLAINT_MODULE_ID = "complaint";
+
+export async function fetchEmailModuleEnabled(moduleId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("email_module_settings")
+    .select("enabled")
+    .eq("module_id", moduleId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.enabled ?? false;
+}
+
+export async function setEmailModuleEnabled(moduleId: string, enabled: boolean): Promise<void> {
+  const { error } = await supabase.rpc("set_email_module_enabled", {
+    p_module: moduleId,
+    p_enabled: enabled,
+  });
+  if (error) throw new Error(error.message);
+}

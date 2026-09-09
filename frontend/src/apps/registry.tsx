@@ -9,6 +9,7 @@ import { hrExitApp } from "./hr-exit/meta";
 import { travelDeskApp } from "./travel-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
+import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -55,6 +56,12 @@ export const apps: AppManifest[] = [
   // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
   // the sampling team (not universal). Ink / raw-material lab sampling.
   samplingApp,
+  // Complaint (RM/FG) FMS — own fms_complaint_* tables, granted per user to the
+  // quality team and to whoever raises, resolves and confirms. ONE flow taken
+  // from either side: a finished-good complaint arrives from a customer against a
+  // sales invoice, a raw-material one goes out to a vendor against a purchase
+  // invoice, and the same seven steps run either way.
+  complaintApp,
   // Production Entry FMS — separate module (own fms_production_* tables), granted per
   // user to the production team (not universal). Ink production job-card tracker.
   productionEntryApp,

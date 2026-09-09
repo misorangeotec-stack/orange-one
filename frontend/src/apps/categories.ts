@@ -45,6 +45,7 @@ export type AppCategory =
   | "productivity"
   | "sampling"
   | "production"
+  | "quality"
   | "asset"
   | "purchase"
   | "sales"
@@ -57,6 +58,10 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   // ── the plant floor: sample it, make it, and the machines that do the making ─
   { key: "sampling", label: "Sampling" },
   { key: "production", label: "Production" },
+  // Judging what came off the line — and what came in from a supplier. Sits with
+  // the plant rather than with Sales because the investigation and the corrective
+  // action are plant work, whichever side the complaint arrived from.
+  { key: "quality", label: "Quality" },
   { key: "asset", label: "Asset" },
   // ── the commercial chain wrapped around it ─────────────────────────────────
   { key: "purchase", label: "Purchase" },

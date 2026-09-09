@@ -16,13 +16,16 @@ const fieldBase =
  *   `sticky top-0` and 68px tall, so a plain `scrollIntoView` parks the label
  *   underneath it. 96px clears the bar with a little air above.
  */
-export function FieldLabel({ label, required, hint, anchor, children }: { label: string; required?: boolean; hint?: ReactNode; anchor?: string; children: ReactNode }) {
+export function FieldLabel({ label, required, hint, anchor, strong, children }: { label: string; required?: boolean; hint?: ReactNode; anchor?: string; strong?: boolean; children: ReactNode }) {
   return (
     <label id={anchor} className={anchor ? "block scroll-mt-24" : "block"}>
       {/* Baseline-aligned with the label pinned: a hint long enough to wrap used to
           vertically re-centre the label and collide with it. */}
       <span className="flex items-baseline justify-between gap-3 mb-1.5">
-        <span className="text-[13px] font-medium text-navy shrink-0">
+        {/* `strong` is opt-in and defaults OFF, so the ~200 existing call sites
+            across every app are untouched. Complaint uses it because its form is
+            read as a list of questions rather than a dense entry grid. */}
+        <span className={cn("text-[13px] text-navy shrink-0", strong ? "font-bold" : "font-medium")}>
           {label}
           {required && <span className="text-orange"> *</span>}
         </span>
