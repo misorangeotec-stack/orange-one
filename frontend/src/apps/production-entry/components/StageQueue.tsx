@@ -70,11 +70,13 @@ export default function StageQueue({
    * Per ROW, not per step: "this completed entry has nothing to change, so offer
    * a clean View and no Edit".
    *
-   * ⚠ IT IS A PREDICATE BECAUSE ONE STEP CAN BE BOTH. PM Transfer is a pure
-   *   review-and-confirm on a production card, but on a REPACKAGING card it is
-   *   also where the production-entry Tally no. is typed — and a number someone
-   *   types is a number someone mistypes. A flat boolean here left the only card
-   *   with an editable field on that step showing View alone.
+   * ⚠ IT IS A PREDICATE BECAUSE ONE STEP CAN BE BOTH. The Packing Entry is a pure
+   *   review-and-confirm on a production card, but on a REPACKAGING card it is also
+   *   where the packed quantity and the production-entry Tally no. are typed — and a
+   *   number someone types is a number someone mistypes. A flat boolean here left the
+   *   only card with an editable field on that step showing View alone.
+   *   (This example used to be PM Transfer, the step that carried the Tally no.
+   *   before it was dropped and the field moved to packing.)
    */
   viewOnlyWhenDone?: (r: ProductionRequest) => boolean;
 }) {

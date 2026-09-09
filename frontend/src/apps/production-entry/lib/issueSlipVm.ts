@@ -32,9 +32,14 @@ export function buildIssueSlipExport(
 ): IssueSlipExport {
   const baseLines =
     r.bomLines.length > 0
-      ? r.bomLines.map((l) => ({ rawMaterialId: l.rawMaterialId, requiredQty: l.requiredQty, pct: l.pct }))
+      ? r.bomLines.map((l) => ({
+          rawMaterialId: l.rawMaterialId,
+          requiredQty: l.requiredQty,
+          pct: l.pct,
+          isAdditional: l.isAdditional,
+        }))
       : r.rawMaterialId || r.requiredQty != null
-        ? [{ rawMaterialId: r.rawMaterialId, requiredQty: r.requiredQty, pct: null }]
+        ? [{ rawMaterialId: r.rawMaterialId, requiredQty: r.requiredQty, pct: null, isAdditional: false }]
         : [];
 
   const handoverFor = handoverMatcher(r.mhBomLines, baseLines.length);
@@ -50,7 +55,11 @@ export function buildIssueSlipExport(
     lines: baseLines.map((l, i) => {
       const h = handoverFor(l.rawMaterialId, i);
       return {
-        productName: lookups.rawMaterialName(l.rawMaterialId),
+        // Marked in the NAME rather than as a column: the printed slip's layout is
+        // fixed and shared with the additional-issue-slip export, and a whole column
+        // that is blank on almost every row costs more than it says.
+        productName:
+          lookups.rawMaterialName(l.rawMaterialId) + (l.isAdditional ? " (Additional)" : ""),
         theoreticalKg: l.requiredQty,
         proportionPct: l.pct,
         rmBatchNo: h?.lotNo ?? "",

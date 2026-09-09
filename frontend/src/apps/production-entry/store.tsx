@@ -16,6 +16,7 @@ import {
 import {
   announce as announceWrite,
   cancelRequest as cancelRequestWrite,
+  deleteDraft as deleteDraftWrite,
   holdRequest as holdRequestWrite,
   importBoms as importBomsWrite,
   insertMaster as insertMasterWrite,
@@ -28,9 +29,11 @@ import {
   resolveMasterRequest as resolveMasterRequestWrite,
   saveBom as saveBomWrite,
   saveCoa as saveCoaWrite,
+  saveDraft as saveDraftWrite,
   setConfig as setConfigWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
+  submitDraft as submitDraftWrite,
   submitRequest as submitRequestWrite,
   updateRequest as updateRequestWrite,
   updateMaster as updateMasterWrite,
@@ -206,6 +209,13 @@ interface ProductionStoreValue {
   // requests
   requests: ProductionRequest[];
   requestById: (id: string) => ProductionRequest | undefined;
+  /** Parked, half-filled issue slips. Never part of `requests`. */
+  drafts: ProductionRequest[];
+  /** Save (or update) a draft — no validation. Returns its id. */
+  saveDraft: (requestId: string | null, input: RequestInput) => Promise<string>;
+  /** Raise a draft as a real job card, keeping its reserved numbers. */
+  submitDraft: (requestId: string, input: RequestInput) => Promise<string>;
+  deleteDraft: (requestId: string) => Promise<void>;
   myRequests: ProductionRequest[];
   isOpenRequest: (r: ProductionRequest) => boolean;
   /** Whether the issue slip may still be edited (raiser/admin/coordinator, and the
@@ -292,7 +302,16 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const bomComponents = data?.bomComponents ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
-  const requests = data?.requests ?? [];
+  /**
+   * ⚠ SPLIT AT THE SOURCE, on purpose. A draft is a row in the same table but is
+   * NOT a job card, and `requests` is read by every list, report, dashboard and
+   * COA screen in this module. Filtering here means none of them had to be
+   * touched and none of them can accidentally start showing half-typed slips.
+   * Drafts are reached through `drafts` / `requestById` instead.
+   */
+  const allRows = data?.requests ?? [];
+  const requests = allRows.filter((r) => r.status !== "draft");
+  const drafts = allRows.filter((r) => r.status === "draft");
   const activity = data?.activity ?? [];
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
@@ -388,15 +407,18 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     // Mirrors fms_production_request_editable + the RPC authz: the raiser / admin /
     // coordinator may edit an issue slip until its FIRST real step is recorded.
     // Production: awaiting the first material handover (mh_at null excludes the AIS
-    // re-loop, which re-enters the same status). Repackaging: awaiting the
-    // packing-material transfer, which IS its first step — it has no handover.
+    // re-loop, which re-enters the same status). Repackaging: awaiting the PACKING
+    // ENTRY, which IS its first step — it has no handover.
     // ⚠ Both branches must track fms_production_request_editable; the disabled
     // button is a courtesy, the RPC re-checks this.
     const canEditRequest = (r: ProductionRequest): boolean =>
       canEdit &&
       (r.raisedBy === uid || isAdmin || isProcessCoordinator) &&
       (r.cardType === "repackaging"
-        ? r.status === "awaiting_pm_transfer" && r.pmtAt == null
+        // A repackaging card is raised straight into the packing entry now (it used
+        // to land on the dropped packing-material transfer), so its slip stays
+        // editable until that packing is recorded.
+        ? r.status === "awaiting_packing" && r.pkAt == null
         : r.status === "awaiting_material_handover" && r.mhAt == null);
 
     const personName = (id: string | null): string => {
@@ -488,7 +510,9 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const requestMap = new Map(requests.map((r) => [r.id, r]));
+    // Keyed over EVERYTHING, drafts included: the issue-slip form looks a draft up
+    // by id to continue it, and requestById must find it.
+    const requestMap = new Map(allRows.map((r) => [r.id, r]));
 
     const snapshot: ProductionSnapshot = productionSnapshotFrom({ requests, stepSla });
     const queueEntries = buildQueueEntries(snapshot);
@@ -625,6 +649,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       },
 
       requests,
+      drafts,
       requestById: (id) => requestMap.get(id),
       myRequests: requests.filter((r) => r.raisedBy === uid),
       isOpenRequest,
@@ -650,6 +675,20 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       // These write CARDS, never masters — so they refresh the workflow slice
       // rather than re-reading every master table. See `refreshWorkflow`.
 
+      saveDraft: async (requestId, input) => {
+        const id = await saveDraftWrite(requestId, input);
+        await refreshWorkflow();
+        return id;
+      },
+      submitDraft: async (requestId, input) => {
+        const id = await submitDraftWrite(requestId, input);
+        await refreshWorkflow();
+        return id;
+      },
+      deleteDraft: async (requestId) => {
+        await deleteDraftWrite(requestId);
+        await refreshWorkflow();
+      },
       submitRequest: async (input) => {
         const id = await submitRequestWrite(input);
         await refreshWorkflow();
@@ -736,7 +775,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   }, [
     isLoading, error, dir, userId, isAdmin, designations, categories, rawMaterials, packagingItems, fgItems, units,
     boms, bomComponents,
-    masterManagers, masterRequests, requests, activity, notifications, stepOwners, processCoordinatorIds,
+    masterManagers, masterRequests, requests, drafts, activity, notifications, stepOwners, processCoordinatorIds,
     stepSla, batchSeqStart, batchNoPreview, queryClient, session.user, orgPeople,
     testEquipments, coaParameters, coas, coaOutput,
   ]);

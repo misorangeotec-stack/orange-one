@@ -17,7 +17,6 @@ import ProductionQueue from "./pages/queues/ProductionQueue";
 import QualityQueue from "./pages/queues/QualityQueue";
 import AdditionalIssueSlipQueue from "./pages/queues/AdditionalIssueSlipQueue";
 import McTestingQueue from "./pages/queues/McTestingQueue";
-import PmTransferQueue from "./pages/queues/PmTransferQueue";
 import PackingQueue from "./pages/queues/PackingQueue";
 import ReadyToDispatchQueue from "./pages/queues/ReadyToDispatchQueue";
 import FgTransferQueue from "./pages/queues/FgTransferQueue";
@@ -99,9 +98,8 @@ export default function ProductionEntryApp() {
           <Route path="queues/additional-issue-slip" element={<RequireQueue step="additional_issue_slip"><AdditionalIssueSlipQueue /></RequireQueue>} />
           <Route path="queues/transfer-slip" element={<RequireQueue step="transfer_slip"><TransferSlipQueue /></RequireQueue>} />
           <Route path="queues/production" element={<RequireQueue step="production_entry"><ProductionQueue /></RequireQueue>} />
-          <Route path="queues/mc-testing" element={<RequireQueue step="mc_testing"><McTestingQueue /></RequireQueue>} />
-          <Route path="queues/pm-transfer" element={<RequireQueue step="pm_transfer"><PmTransferQueue /></RequireQueue>} />
           <Route path="queues/packing" element={<RequireQueue step="packing_entry"><PackingQueue /></RequireQueue>} />
+          <Route path="queues/mc-testing" element={<RequireQueue step="mc_testing"><McTestingQueue /></RequireQueue>} />
           <Route path="queues/ready-to-dispatch" element={<RequireQueue step="ready_to_dispatch"><ReadyToDispatchQueue /></RequireQueue>} />
           <Route path="queues/fg-transfer" element={<RequireQueue step="fg_transfer"><FgTransferQueue /></RequireQueue>} />
           {/* The COA register is a Quality Checking record: its owners and the

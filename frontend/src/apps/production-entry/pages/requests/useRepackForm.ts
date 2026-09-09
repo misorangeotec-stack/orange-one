@@ -109,6 +109,25 @@ export function useRepackForm(init?: RepackFormInit | null) {
     };
   };
 
+  /** The repackaging twin of useJobCardForm's `draftInput` — everything typed so
+   *  far, nothing checked. See the ⚠ there for why this is not `build()`. */
+  const draftInput = (): RequestInput => ({
+    cardType: "repackaging",
+    fgTotalQty: fgQty.trim(),
+    fgItemId,
+    fgLotNo: fgLotNo.trim(),
+    issueDate,
+    bomLines: [],
+    packLines: filledPackRows.map((r) => ({
+      packagingItemId: r.packagingItemId,
+      unitId: r.unitId,
+      qty: r.qty.trim(),
+      extra: (r.extra ?? "").trim(),
+    })),
+    issueRemarks: issueRemarks.trim() || null,
+    requesterName: session.user?.name ?? "Requester",
+  });
+
   return {
     fgQty, setFgQty,
     fgItemId, setFgItemId,
@@ -120,7 +139,7 @@ export function useRepackForm(init?: RepackFormInit | null) {
     raise, setRaise,
     requested, setRequested,
     fgItemOptions, fgUnitName, filledPackRows,
-    build,
+    build, draftInput,
   };
 }
 

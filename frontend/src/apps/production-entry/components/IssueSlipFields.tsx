@@ -28,6 +28,13 @@ export default function IssueSlipFields({
 }) {
   const s = useProductionStore();
 
+  /**
+   * No BOM selected → the split is derived from the quantities, not typed.
+   * Drives the Split % column's read-only rendering and its "· auto" header.
+   * Shared by the Production and Convert tabs, which render this same form.
+   */
+  const pctDerived = !f.bomId;
+
   const columns: LineGridColumn<RmLine>[] = [
     {
       key: "rm",
@@ -55,21 +62,49 @@ export default function IssueSlipFields({
       ),
     },
     {
-      // Editing either of the next two columns re-derives the other, so a line
-      // typed by hand still rescales when the FG quantity changes.
+      /**
+       * With a BOM loaded, Split % and Qty are two ways of saying the same thing:
+       * edit either and the other re-derives, so a line still rescales when the FG
+       * quantity changes.
+       *
+       * ⚠ WITH NO BOM IT IS READ-ONLY. "No BOM — enter manually" means the person
+       * is working from quantities they already know; the split is then a RESULT
+       * (qty ÷ FG total), not an input. Leaving it editable there let the two be
+       * typed independently and disagree — you could enter 400 + 100 against an FG
+       * total of 500 and still leave the split reading 30/30, which is what the
+       * printed slip's Proportion Dosage would then carry.
+       *
+       * `readOnly` rather than `disabled`: the value stays selectable and legible
+       * rather than greying out, and it keeps the column's width and alignment
+       * identical whichever mode the grid is in. Keyboard navigation skips it, so
+       * tabbing along a row lands on Qty — the field there is to type in.
+       */
       key: "pct",
-      header: <span className="block text-right">Split %</span>,
-      className: "w-28 min-w-[5.5rem]",
-      cell: (row, api) => (
-        <TextInput
-          ref={api.focusRef as (el: HTMLInputElement | null) => void}
-          type="number"
-          className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums"
-          value={row.pct}
-          onChange={(e) => api.patch(f.patchLinePct(e.target.value))}
-          onKeyDown={api.keyHandler}
-        />
+      header: (
+        <span className="block text-right">
+          Split %{pctDerived && <span className="font-normal text-grey-2"> · auto</span>}
+        </span>
       ),
+      className: "w-28 min-w-[5.5rem]",
+      skipFocus: pctDerived,
+      cell: (row, api) =>
+        pctDerived ? (
+          <div
+            className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums text-grey-2"
+            title="Calculated from the quantity and the FG total. Pick a BOM to set the split directly."
+          >
+            {row.pct === "" ? "—" : row.pct}
+          </div>
+        ) : (
+          <TextInput
+            ref={api.focusRef as (el: HTMLInputElement | null) => void}
+            type="number"
+            className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums"
+            value={row.pct}
+            onChange={(e) => api.patch(f.patchLinePct(e.target.value))}
+            onKeyDown={api.keyHandler}
+          />
+        ),
     },
     {
       key: "qty",
@@ -95,6 +130,70 @@ export default function IssueSlipFields({
       cell: (row) => <span className="text-grey">{s.unitById(row.unitId)?.name ?? "—"}</span>,
     },
   ];
+
+  /**
+   * The ADDITIONAL grid's columns: raw material, quantity, unit.
+   *
+   * ⚠ No Split % column, deliberately. An extra sits on top of the formulation, so
+   * it has no share of the FG quantity to express — a percentage here would either
+   * read as part of the split (it isn't) or always show blank.
+   */
+  const addColumns: LineGridColumn<RmLine>[] = [
+    {
+      key: "rm",
+      header: "Raw Material",
+      className: "min-w-[240px]",
+      cell: (row, api) => (
+        <Combobox
+          ref={api.focusRef as (el: ComboboxHandle | null) => void}
+          value={row.rawMaterialId}
+          onChange={(v) => {
+            // Same default as the main grid: qty 1 so the row is usable at once.
+            // No pct — an extra has no share of the FG split.
+            api.patch({ rawMaterialId: v, unitId: f.unitForRawMaterial(v), qty: row.qty || "1" });
+            api.advance();
+          }}
+          options={f.additionalOptionsFor(row)}
+          placeholder="Select raw material…"
+          searchable
+          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
+          onTriggerKeyDown={api.keyHandler}
+          onCreate={(name) => f.setRaise({ mt: "raw_material", prefill: { name } })}
+          createLabel={(q) => `Request new raw material “${q}”`}
+        />
+      ),
+    },
+    {
+      key: "qty",
+      header: <span className="block text-right">Qty</span>,
+      className: "w-36 min-w-[7rem]",
+      cell: (row, api) => (
+        <TextInput
+          ref={api.focusRef as (el: HTMLInputElement | null) => void}
+          type="number"
+          className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums"
+          value={row.qty}
+          onChange={(e) => api.patch({ qty: e.target.value })}
+          onKeyDown={api.keyHandler}
+        />
+      ),
+    },
+    {
+      key: "unit",
+      header: "Unit",
+      className: "w-24",
+      skipFocus: true,
+      cell: (row) => <span className="text-grey">{s.unitById(row.unitId)?.name ?? "—"}</span>,
+    },
+  ];
+
+  const addFilledLines = f.addLines.filter((l) => !isRmLineBlank(l));
+  const addTotalsByUnit = new Map<string, number>();
+  for (const l of addFilledLines) {
+    const u = s.unitById(l.unitId)?.name ?? "—";
+    addTotalsByUnit.set(u, (addTotalsByUnit.get(u) ?? 0) + (Number(l.qty) || 0));
+  }
+  const addUnitTotals = [...addTotalsByUnit.entries()].map(([unit, qty]) => ({ unit, qty: Math.round(qty * 1000) / 1000 }));
 
   // Totals across the filled BOM lines, split BY UNIT — items in different units
   // (KGS, LTR, …) each get their own subtotal rather than a meaningless single sum.
@@ -235,8 +334,10 @@ export default function IssueSlipFields({
           {f.requested && (
             <p className="text-[12px] text-teal">Requested {f.requested} — selectable once the master's owner approves it.</p>
           )}
-          {/* Informational only. Formulations legitimately fall short of the FG
-              quantity, so this reports the gap and never blocks the save. */}
+          {/* On a NEW card the raw-material total must equal the FG quantity and
+              build() refuses the save otherwise. On an EXISTING card it is only a
+              note — the rule is new and the card may predate it. The Additional
+              grid below is never counted here. */}
           {filledLines.length > 0 && (
             <div className={`text-[12.5px] font-medium ${f.sumMatches ? "text-ryg-green" : "text-grey"}`}>
               Raw-material total: <span className="tabular-nums">{f.rmSum}</span>
@@ -247,11 +348,54 @@ export default function IssueSlipFields({
                   {" ("}
                   <span className="tabular-nums">{f.pctTotal}%</span>
                   {")"}
-                  {!f.sumMatches && <span className="text-grey-2"> — doesn't add up to the FG quantity, which is fine</span>}
+                  {!f.sumMatches &&
+                    (f.enforceSum ? (
+                      <span className="text-ryg-red"> — must equal the FG quantity before this card can be raised</span>
+                    ) : (
+                      <span className="text-grey-2"> — doesn't add up to the FG quantity, which is fine on an existing card</span>
+                    ))}
                 </>
               )}
             </div>
           )}
+        </div>
+
+        {/* ADDITIONAL RAW MATERIALS — quantity on top of the formulation.
+            Sits below the main grid and above Remarks, exactly where it reads as
+            "and also these". Its total is shown on its own and is deliberately
+            NOT folded into the FG-total check above: that readout measures the
+            formulation, and an extra is not part of it. */}
+        <div className="space-y-2">
+          <div>
+            <span className="block text-[13px] font-medium text-navy">Additional Raw Materials</span>
+            <span className="block text-[12px] text-grey-2">
+              Extra material on top of the formulation — optional. It travels with the job card and appears in the
+              same raw-material table at every later step, marked as additional.
+            </span>
+          </div>
+          <LineGrid
+            rows={f.addLines}
+            onRowsChange={f.setAddLines}
+            columns={addColumns}
+            makeEmptyRow={makeEmptyRmLine}
+            isRowBlank={isRmLineBlank}
+            footer={
+              addFilledLines.length > 0 ? (
+                <tfoot>
+                  {addUnitTotals.map((t, i) => (
+                    <tr key={t.unit} className={`bg-page/50 text-navy ${i === 0 ? "border-t border-line" : ""}`}>
+                      <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">
+                        {i === 0 ? "Additional Total" : ""}
+                      </td>
+                      <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{t.qty}</td>
+                      <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{t.unit}</td>
+                      <td />
+                    </tr>
+                  ))}
+                </tfoot>
+              ) : undefined
+            }
+          />
         </div>
 
         <FieldLabel label="Remarks">

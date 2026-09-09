@@ -150,10 +150,11 @@ function legStart(step: QueueStep, r: ProductionRequest): string | null {
   // actually left a stamp, and failing that, to the card's own start.
   //
   // This is not belt-and-braces — without it a repackaging card is unmeasurable end
-  // to end. Such a card is raised straight into `awaiting_pm_transfer`, but
-  // `pm_transfer` anchors on `mc_testing`, a step repackaging NEVER runs. So its
-  // anchor is null and always will be, and every leg downstream would inherit a
-  // missing start. The same hole opens for a production card whose M/C testing was
+  // to end. Such a card is raised straight into `awaiting_packing`, but
+  // `packing_entry` anchors on `production_entry`, a step repackaging NEVER runs. So
+  // its anchor is null and always will be, and every leg downstream would inherit a
+  // missing start. The same hole opens at `ready_to_dispatch` for any card that
+  // skipped M/C testing — a repackaging card, or a production card whose test was
   // BYPASSED by an admin, which sets `mc_bypassed_at` and leaves `mc_at` null.
   //
   // Safe for a step the card has simply not REACHED yet: such a leg has no end and is

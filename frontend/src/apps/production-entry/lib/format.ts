@@ -4,9 +4,11 @@ import type { PackingBomLine, ProductionCardType, ProductionRequest, ProductionS
 export const CARD_TYPE_LABEL: Record<ProductionCardType, string> = {
   production: "Production",
   repackaging: "Repackaging",
+  convert: "Convert",
 };
 
 export const STATUS_LABEL: Record<ProductionStatus, string> = {
+  draft: "Draft",
   awaiting_material_handover: "Awaiting material handover",
   awaiting_rm_transfer: "Awaiting RM transfer to production",
   awaiting_quality: "Awaiting quality checking",
@@ -26,6 +28,7 @@ export const STATUS_LABEL: Record<ProductionStatus, string> = {
 
 /** Tailwind text/bg classes per status (mirrors the portal's status-pill palette). */
 export const STATUS_TONE: Record<ProductionStatus, string> = {
+  draft: "text-grey bg-grey/[0.10]",
   awaiting_material_handover: "text-orange bg-orange-soft",
   awaiting_rm_transfer: "text-orange bg-orange-soft",
   awaiting_quality: "text-navy bg-navy/[0.06]",

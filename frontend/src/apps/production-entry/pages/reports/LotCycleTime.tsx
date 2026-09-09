@@ -186,8 +186,8 @@ export default function LotCycleTime() {
       },
       {
         // Hidden by default because it SAYS THE SAME THING as `Now at` one column
-        // over — "Awaiting PM transfer" beside "Packing Material Transfer (Tally)" —
-        // and both were wrapping to three lines to do it. `Now at` covers the open
+        // over — "Awaiting packing entry" beside "Packing Entry (Tally)" — and both
+        // were wrapping to three lines to do it. `Now at` covers the open
         // steps in fewer words and covers closed / held / cancelled too, so this is
         // the one that goes. Still a tick away in the Columns menu.
         key: "status",
@@ -201,8 +201,8 @@ export default function LotCycleTime() {
         key: "at",
         header: "Now at",
         tdClassName: "whitespace-nowrap",
-        // The SHORT step label, not the full title: "PM Transfer" says what
-        // "Packing Material Transfer (Tally)" says, in one line instead of three.
+        // The SHORT step label, not the full title: "Packing" says what
+        // "Packing Entry (Tally)" says, in one line instead of three.
         // A card that owes no step is closed, held or cancelled — say which, rather
         // than an em-dash that leaves the reader hunting for the Status column.
         cell: (c) => whereNow(c),
