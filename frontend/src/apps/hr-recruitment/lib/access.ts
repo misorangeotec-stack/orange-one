@@ -49,19 +49,27 @@ export const canSeeBoard = (s: BoardAccess): boolean =>
 /**
  * Who may open the management pipeline dashboard (NR-2).
  *
- * Board access, PLUS the admin-editable Setup list — because the whole point of that
- * list is to admit people who own no recruitment step at all.
+ * THE SETUP LIST IS THE ONLY CONTROL. An admin picks the people; nobody else gets in.
  *
- * ⚠ `isModuleViewer` is deliberately NOT an arm. A "View only" module grant reaches
- *   the VACANCY tier only, on purpose: 20260925130100 widened the sibling
+ * ⚠ `canSeeBoard` is deliberately NOT an arm, and it used to be. That arm quietly
+ *   handed the report to 21 people: it admits anyone who works a candidate board, and
+ *   `canSeeBoard` tests `isStepOwner("interview_2")` — a HOD step, which `isStepOwner`
+ *   answers TRUE for anyone who merely owns `mrf`. So all 13 department heads set up to
+ *   raise a requisition were let in, against a client who had asked for "the directors".
+ *   Worse, most of them met a BLANK report: RLS hands a head only their own vacancies,
+ *   and 5 of the 8 checked on 09-09-2026 could read no position and no candidate at all.
+ *   Positions and Candidates already serve a head's own hiring, and serve it better.
+ *
+ * ⚠ `isModuleViewer` is not an arm either. A "View only" module grant reaches the
+ *   VACANCY tier only, on purpose: 20260925130100 widened the sibling
  *   `fms_hr_can_view_requisition` precisely so the candidate-PII gate stayed shut, and
- *   folding it in here would render a screen whose rows RLS then refuses to send —
- *   nineteen positions and no candidates, with nothing to explain it. A viewer who
- *   should see this screen needs the Setup list (for the rows) and `edit` (to open the
- *   app and to press anything) — see PipelineViewersSection.
+ *   folding it in here would render a screen whose rows RLS then refuses to send.
+ *
+ * `isAdmin` remains, because the portal's admin bypass is platform-wide and is not this
+ * module's to withdraw. Everyone else is added on Setup → Pipeline Access, which grants
+ * the candidate data in SQL at the same time — one list, one meaning.
  *
  * The route and the sidebar both read this, so the link can never offer a screen that
  * then refuses you.
  */
-export const canSeePipeline = (s: PipelineAccess): boolean =>
-  s.isAdmin || s.isPipelineViewer || canSeeBoard(s);
+export const canSeePipeline = (s: PipelineAccess): boolean => s.isAdmin || s.isPipelineViewer;

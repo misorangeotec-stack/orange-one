@@ -1,21 +1,37 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import Card from "@/shared/components/ui/Card";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Kpi from "@/shared/components/ui/Kpi";
+import PillToggle from "@/shared/components/ui/PillToggle";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useRailWhileMounted } from "@/shared/components/layout/navRail";
 import { formatDateDMY } from "@/shared/lib/date";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import CandidateDetail from "../../components/candidate/CandidateDetail";
-import PipelineMatrix, { MATRIX_PHASES, type MatrixRow } from "../../components/pipeline/PipelineMatrix";
+import PipelineMatrix, {
+  MATRIX_PHASES,
+  PHASE_CONTENTS,
+  STAGE_COLUMNS,
+  type MatrixRow,
+  type MatrixView,
+} from "../../components/pipeline/PipelineMatrix";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeePipeline } from "../../lib/access";
 import { overdueRollup, seatSummary } from "../../lib/analytics";
-import { PHASE_FILL, PHASE_OF, PHASE_PILL, STAGE_LABEL, type CandidatePhase } from "../../lib/board";
+import {
+  BOARD_COLUMNS,
+  PHASE_FILL,
+  PHASE_OF,
+  PHASE_PILL,
+  STAGE_LABEL,
+  columnOf,
+  type BoardColumnKey,
+  type CandidatePhase,
+} from "../../lib/board";
 import { fitFill } from "../../lib/fit";
 import { REQ_STATUS_LABEL } from "../../lib/format";
 import { isPosition, isLivePosition } from "../../lib/positions";
@@ -40,11 +56,18 @@ import type { Candidate, CandidateStage, Requisition, RequisitionStatus } from "
  *   list ALSO needs `hr-recruitment` at Edit to open the app at all and to press
  *   anything — see PipelineViewersSection.
  *
- * ONE CALCULATION, NEVER TWO
- *   The KPI strip reads `seatSummary` and `overdueRollup` from lib/analytics with the
- *   SAME inputs the Dashboard uses, so the two screens cannot claim different numbers.
- *   "In play" and "At offer" come out of the very same PHASE_OF pass that fills the
- *   matrix — not a second tally beside it.
+ * ONE CALCULATION, NEVER TWO — BUT SCOPED TO WHAT IS ON SCREEN
+ *   The KPI strip reads `seatSummary` and `overdueRollup` from lib/analytics, the same
+ *   two functions the Dashboard calls, applied to the POSITIONS CURRENTLY SHOWN rather
+ *   than to the whole module. Same calculation, stated subset — the strip says which
+ *   subset, and it moves when the status chips move. "In play" and "At offer" come out
+ *   of the very same PHASE_OF pass that fills the matrix, not a second tally beside it.
+ *
+ *   ⚠ Two cards legitimately DO NOT move when Cancelled or Closed is switched on, and
+ *     it will look like the bug that made this scoped in the first place. `seatSummary`
+ *     filters `isOpenRequisition` internally, and a cancelled or closed vacancy emits no
+ *     queue entries — so it has no seats left to fill and no work that can be late.
+ *     "Positions shown" is the card that proves the strip is live.
  *
  *   ⚠ "In play" is genuinely ambiguous in this codebase and the two answers differ.
  *     `isOpenCandidate` (lib/queues) excludes an offer that is out; PHASE_OF counts it
@@ -78,6 +101,11 @@ const EMPTY_PHASES: Record<CandidatePhase, number> = {
   dropped: 0,
 };
 
+/** A fresh zeroed tally over every board column. Built from BOARD_COLUMNS so a new
+ *  column on the board cannot be silently missing from this screen. */
+const emptyColumns = (): Record<BoardColumnKey, number> =>
+  Object.fromEntries(BOARD_COLUMNS.map((c) => [c.key, 0])) as Record<BoardColumnKey, number>;
+
 /** Stage options in BOARD ORDER, not alphabetical — the filter reads as the pipeline. */
 const STAGE_OPTIONS: string[] = (
   [
@@ -102,7 +130,21 @@ export default function PipelineDashboard() {
   const openId = params.get("c");
   const drillReq = params.get("pos");
   const drillPhase = params.get("phase") as CandidatePhase | null;
+  const drillCol = params.get("col") as BoardColumnKey | null;
   const extraStatuses = (params.get("show") ?? "").split(",").filter(Boolean);
+  const view: MatrixView = params.get("view") === "stages" ? "stages" : "phases";
+
+  /**
+   * Where the people land. A cell click changes a band the reader may not have on
+   * screen — see the effect below.
+   *
+   * ⚠ The scroll parent is NOT the window: AppShell renders
+   *   `<main className="flex-1 overflow-y-auto">`, so `window.scrollTo` would do
+   *   nothing at all. `scrollIntoView` walks to the nearest scrollable ancestor, which
+   *   finds that main.
+   */
+  const listRef = useRef<HTMLDivElement>(null);
+  const firstRender = useRef(true);
 
   // The detail is three columns wide, exactly as on the candidate page — so the rail
   // folds only while it is open, and springs back when you return to the matrix.
@@ -143,40 +185,56 @@ export default function PipelineDashboard() {
    * `candidatesFor` is an O(1) map lookup in the store, so this stays cheap as the
    * position list grows.
    */
-  const { matrixRows, totals, visibleCandidates } = useMemo(() => {
+  const { matrixRows, totals, columnTotals, visibleCandidates } = useMemo(() => {
     const rows: MatrixRow[] = [];
     const sum: Record<CandidatePhase, number> = { ...EMPTY_PHASES };
+    const colSum = emptyColumns();
     const all: Candidate[] = [];
 
     for (const r of positions) {
       const counts: Record<CandidatePhase, number> = { ...EMPTY_PHASES };
+      const columnCounts = emptyColumns();
       const cands = s.candidatesFor(r.id);
       for (const c of cands) {
         const phase = PHASE_OF[c.stage];
         counts[phase] += 1;
         sum[phase] += 1;
+        // ⚠ columnOf, never `c.stage === …`. `final_decision` has no column of its own
+        //   and is drawn under the round that produced it; reading the stage directly
+        //   would hide a card the queues still count as open work (see lib/board.ts).
+        const col = columnOf(c);
+        columnCounts[col] += 1;
+        colSum[col] += 1;
       }
       all.push(...cands);
       // Positions with NO candidates are kept, as a row of zeros. A vacancy nobody has
       // applied to is exactly what this screen exists to surface.
-      rows.push({ requisition: r, counts, total: cands.length });
+      rows.push({ requisition: r, counts, columnCounts, total: cands.length });
     }
-    return { matrixRows: rows, totals: sum, visibleCandidates: all };
+    return { matrixRows: rows, totals: sum, columnTotals: colSum, visibleCandidates: all };
   }, [positions, s]);
 
   /* -------------------------------- the KPI strip ------------------------------- */
   /**
-   * seatSummary and overdueRollup are called with the SAME arguments Dashboard.tsx
-   * passes, deliberately: these are module-wide figures and must match that screen to
-   * the digit. The matrix below is filtered, and says so in its own footer row.
+   * The SAME two lib/analytics functions the Dashboard calls, applied to the positions
+   * currently shown. Scoped, not re-implemented — so the strip follows the status chips
+   * instead of sitting still while the matrix underneath it moves, which is what made it
+   * read as broken.
+   *
+   * Every queue entry carries a real `requisitionId` (checked: no onboarding or probation
+   * row lacks one), so filtering by the shown set cannot silently drop work.
    */
-  const report = useMemo(
-    () => ({
-      seats: seatSummary(s.requisitions, s.candidates, s.onboardings),
-      overdue: overdueRollup(s.queueEntries, s.queueOwnerIds, today),
-    }),
-    [s, today],
-  );
+  const report = useMemo(() => {
+    const shownIds = new Set(positions.map((r) => r.id));
+    return {
+      seats: seatSummary(positions, visibleCandidates, s.onboardings),
+      overdue: overdueRollup(
+        s.queueEntries.filter((e) => e.requisitionId && shownIds.has(e.requisitionId)),
+        s.queueOwnerIds,
+        today,
+      ),
+    };
+  }, [positions, visibleCandidates, s, today]);
 
   const inPlay = totals.screening + totals.interviewing + totals.offer;
 
@@ -194,8 +252,10 @@ export default function PipelineDashboard() {
     let out = visibleCandidates;
     if (drillReq) out = out.filter((c) => c.requisitionId === drillReq);
     if (drillPhase) out = out.filter((c) => PHASE_OF[c.stage] === drillPhase);
+    // Same rule as the matrix: resolve the column through columnOf, never the raw stage.
+    if (drillCol) out = out.filter((c) => columnOf(c) === drillCol);
     return out;
-  }, [visibleCandidates, drillReq, drillPhase]);
+  }, [visibleCandidates, drillReq, drillPhase, drillCol]);
 
   const positionLabel = (c: Candidate): string => {
     const r = s.requisitionById(c.requisitionId);
@@ -220,14 +280,21 @@ export default function PipelineDashboard() {
     next.delete("c");
     setParams(next, { replace: false });
   };
-  const pickCell = (requisitionId: string, phase: CandidatePhase) => {
+  const pickCell = (
+    requisitionId: string,
+    key: { phase?: CandidatePhase; column?: BoardColumnKey },
+  ) => {
     const next = new URLSearchParams(params);
-    if (drillReq === requisitionId && drillPhase === phase) {
-      next.delete("pos");
-      next.delete("phase");
-    } else {
+    const same =
+      drillReq === requisitionId &&
+      (key.phase ? drillPhase === key.phase : drillCol === key.column);
+    next.delete("pos");
+    next.delete("phase");
+    next.delete("col");
+    if (!same) {
       next.set("pos", requisitionId);
-      next.set("phase", phase);
+      if (key.phase) next.set("phase", key.phase);
+      if (key.column) next.set("col", key.column);
     }
     next.delete("c");
     setParams(next, { replace: true });
@@ -236,6 +303,21 @@ export default function PipelineDashboard() {
     const next = new URLSearchParams(params);
     next.delete("pos");
     next.delete("phase");
+    next.delete("col");
+    setParams(next, { replace: true });
+  };
+  /**
+   * Switching view CLEARS the drill. A phase key is not a column key, and guessing a
+   * mapping between them ("Screening" -> which of its three stages?) would invent an
+   * intent the reader never expressed.
+   */
+  const setView = (v: MatrixView) => {
+    const next = new URLSearchParams(params);
+    if (v === "stages") next.set("view", "stages");
+    else next.delete("view");
+    next.delete("pos");
+    next.delete("phase");
+    next.delete("col");
     setParams(next, { replace: true });
   };
   const toggleStatus = (key: string) => {
@@ -247,6 +329,22 @@ export default function PipelineDashboard() {
     else next.set("show", [...on].join(","));
     setParams(next, { replace: true });
   };
+
+  /**
+   * Bring the list into view when a matrix cell narrows it.
+   *
+   * Without this the click changes a band that is often below the fold, and the screen
+   * looks like it ignored you. Skipped on FIRST render so a pasted deep link still lands
+   * on the matrix with its context, rather than jumping past it.
+   */
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (!drillReq || openId) return;
+    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [drillReq, drillPhase, drillCol, openId]);
 
   const columns: QueueColumn<Candidate>[] = useMemo(() => {
     const cols: QueueColumn<Candidate>[] = [
@@ -444,7 +542,9 @@ export default function PipelineDashboard() {
   const drilledPosition = drillReq ? s.requisitionById(drillReq) : undefined;
   const drillPhaseLabel = drillPhase
     ? MATRIX_PHASES.find((p) => p.key === drillPhase)?.label ?? drillPhase
-    : null;
+    : drillCol
+      ? BOARD_COLUMNS.find((c) => c.key === drillCol)?.label ?? drillCol
+      : null;
 
   /* ------------------------------- detail mode --------------------------------- */
   if (openCandidateRow) {
@@ -508,11 +608,19 @@ export default function PipelineDashboard() {
         <>
           {/* ---- Band 1: the numbers, once ---- */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            {/* "Positions shown", not "Open positions": this is the card that MOVES
+                when the status chips move, and so the one that shows the strip is live.
+                Seats and Overdue below are about open work, and a cancelled or closed
+                vacancy has none — they stay put, correctly. */}
             <Kpi
-              label="Open positions"
-              value={seats.openRequisitions}
+              label="Positions shown"
+              value={matrixRows.length}
               size="lg"
-              hint={seats.onHold > 0 ? `+${seats.onHold} on hold` : "being worked now"}
+              hint={
+                extraStatuses.length > 0
+                  ? `${seats.openRequisitions} still being worked`
+                  : "being worked now"
+              }
             />
             <Kpi
               label="Seats unfilled"
@@ -537,7 +645,13 @@ export default function PipelineDashboard() {
             />
           </div>
 
-          {/* ---- Which positions ---- */}
+          <p className="-mt-1 text-[11.5px] text-grey-2">
+            Across the {matrixRows.length} {matrixRows.length === 1 ? "position" : "positions"} shown
+            below. Seats and overdue count only work that is still open, so a cancelled or closed
+            vacancy adds nothing to them.
+          </p>
+
+          {/* ---- Which positions, and how much detail ---- */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[12px] font-semibold text-grey-2">Showing active jobs</span>
             {STATUS_GROUPS.map((g) => {
@@ -558,6 +672,23 @@ export default function PipelineDashboard() {
                 </button>
               );
             })}
+
+            {/* Five phases is the glance; ten stages is the pipeline underneath it.
+                The band headers in Stages view double as the answer to "what is
+                inside Screening?", so no separate legend is needed. */}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[12px] text-grey-2" title={`Screening: ${PHASE_CONTENTS.screening}`}>
+                Detail
+              </span>
+              <PillToggle
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: "phases", label: "Phases" },
+                  { value: "stages", label: "Stages" },
+                ]}
+              />
+            </div>
           </div>
 
           {/* ---- Band 2: the matrix ---- */}
@@ -569,14 +700,24 @@ export default function PipelineDashboard() {
             <PipelineMatrix
               rows={matrixRows}
               totals={totals}
-              selected={drillReq && drillPhase ? { requisitionId: drillReq, phase: drillPhase } : null}
+              columnTotals={columnTotals}
+              view={view}
+              selected={
+                drillReq && (drillPhase || drillCol)
+                  ? {
+                      requisitionId: drillReq,
+                      phase: drillPhase ?? undefined,
+                      column: drillCol ?? undefined,
+                    }
+                  : null
+              }
               onPick={pickCell}
               statusLabelOf={statusLabelOf}
             />
           )}
 
           {/* ---- Band 3: the people ---- */}
-          <div className="space-y-2">
+          <div ref={listRef} className="scroll-mt-4 space-y-2">
             {(drilledPosition || drillPhaseLabel) && (
               <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
                 <span className="text-grey-2">Showing</span>
