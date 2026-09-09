@@ -7641,7 +7641,7 @@ numbers; colour now only names the phase.
 - ✅ **LIVE on production, 09-Sep-2026.** Four commits cherry-picked onto `master` (`edb582d`,
   `e286713`, `c77f00a`, `2483ad2`) and pushed; Vercel reports `success`. The database side had gone in
   on 08-09, ahead of the frontend, as the deploy order requires.
-  **Live at `portal.orangeotec.com/hr-recruitment/pipeline`.**
+  **Live at `orangeonehub.com/hr-recruitment/pipeline`.**
 - **Access list as at 09-09-2026: three people** — Aayush Rathi, Karan Toshniwal (both Directors, both
   also portal admins) and **Riya Kumari, HR Head**, added by the client through Setup → Pipeline
   Access. Riya was already a process coordinator, so being on the list grants her no candidate data
