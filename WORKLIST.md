@@ -8182,8 +8182,18 @@ so in a comment on both sides — the next reader will read it as a bug and "fix
 - [x] **P4 · Walk it in the browser as Saloni** ✅ — HOD shortlist and Round 2 both worked on a position
       she does not own; Make the Offer refused; Gorakh Pawar lost nothing. **Probation could not be
       walked: zero probation rows exist.** Predicate-verified instead.
-- [ ] **P5 · Deploy.** Cherry-pick onto the `oo-master` worktree. **NR-3 is still unbuilt and is now
-      unblocked** — the seven steps stay with HR whichever heads it hands the 17 positions to.
+- [x] **P5 · Deploy.** ✅ **Shipped 09-Sep-2026.** Committed `c317b9b` on `daily-reports`, cherry-picked
+      to the `oo-master` worktree as **`fbfba81`** (applied clean despite `master` having touched
+      `store.tsx` since), built green there, and pushed — `2483ad2..fbfba81`. **NR-3 is still unbuilt and
+      is now unblocked** — the seven steps stay with HR whichever heads it hands the 17 positions to.
+
+      ⚠ **The database half went live BEFORE the frontend, and one part of it was visible immediately.**
+      The migration and the nine Setup rows were applied straight to `icutjkrqkbzwvmnfbzpr` during the
+      build. HR Head Approval and Management Approval are ordinary step-owner rows that the *already
+      deployed* frontend reads, so **Saloni Rathod could approve requisitions on the live site from the
+      moment those rows were saved**, hours before this deploy. The seven pipeline steps were the
+      opposite: server authority with no buttons until `fbfba81` served. Harmless here, but the general
+      rule stands — applying step-owner rows is a live grant on the current build, not a staged one.
 
 #### To settle
 
