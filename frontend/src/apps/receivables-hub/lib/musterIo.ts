@@ -87,15 +87,40 @@ const changedFields = (pairs: [string, boolean][]): string =>
 const DO_NOT_EDIT_KEY = "The first column is the identity key used to match rows on import — do not edit or delete it.";
 const UPDATE_ONLY_NOTE = "Import updates existing rows only. Rows whose key is blank or unrecognised are skipped, not added.";
 
+/**
+ * A value that must come from a managed master (RC-15): salesperson, collection team.
+ *
+ * Returns the reason to report, or null when the cell is fine. Blank is always fine — it means
+ * unset, and 37 ledgers genuinely have no salesperson.
+ *
+ * ⚠ THE SET HOLDS EVERY NAME THE MASTER KNOWS, SWITCHED OFF OR NOT. Inactive means "not offered for
+ *   new mappings", not "invalid": re-importing a sheet that still carries a retired salesperson's
+ *   own customers must not turn every one of those rows into an error.
+ *
+ * ⚠ AND THE COMPARISON IS EXACT AND CASE-SENSITIVE, like every other comparison of these values.
+ *   Accepting "others" for "OTHERS" here would put a value into the data that the scope filter then
+ *   matches against nothing — the precise bug the master exists to prevent.
+ */
+function offMaster(value: string | null, known: Set<string>, what: string): string | null {
+  if (value === null) return null;
+  if (known.has(value)) return null;
+  return `${what} "${value}" is not in the ${what.toLowerCase()} master. ` +
+         `Add it under Settings → Masters first, or correct the spelling — it is matched exactly.`;
+}
+
+const MASTER_NOTE = (what: string) =>
+  `${what} must already exist in the ${what.toLowerCase()} master (Settings → Masters). ` +
+  `An unrecognised name is reported and skipped, never written. Spelling is matched exactly.`;
+
 // ── Salesperson & Category (ext_ledger_tags, key = Ledger ID) ─────────────────
 const K_LEDGER = "Ledger ID";
-export function tagIo(snapByGuid: Map<string, SnapRow>): MasterIo<TagRow> {
+export function tagIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: Set<string>): MasterIo<TagRow> {
   const name = (r: TagRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
   return {
     fileName: "Master_Salesperson_Category",
     sheetName: "Salesperson & Category",
     title: "Salesperson & Category master",
-    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Salesperson, Category, Checked."],
+    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Salesperson, Category, Checked.", MASTER_NOTE("Salesperson")],
     exportColumns: [
       { header: K_LEDGER, width: 34, value: (r) => r.ledger_id },
       { header: "Customer", width: 34, value: name },
@@ -118,6 +143,8 @@ export function tagIo(snapByGuid: Map<string, SnapRow>): MasterIo<TagRow> {
         const salesperson = cell(rec["Salesperson"]);
         const category = cell(rec["Category"]);
         const checked = readBool(rec["Checked"]);
+        const bad = offMaster(salesperson, knownSalespersons, "Salesperson");
+        if (bad) { plan.invalid.push({ label, reason: bad }); continue; }
         const dSp = salesperson !== (cur.salesperson ?? null);
         const dCat = category !== (cur.category ?? null);
         const dChk = checked !== cur.checked;
@@ -134,13 +161,13 @@ export function tagIo(snapByGuid: Map<string, SnapRow>): MasterIo<TagRow> {
 }
 
 // ── Customer Groups (ext_ledger_group, key = Ledger ID) ───────────────────────
-export function groupIo(snapByGuid: Map<string, SnapRow>): MasterIo<GroupRow> {
+export function groupIo(snapByGuid: Map<string, SnapRow>, knownTeams: Set<string>): MasterIo<GroupRow> {
   const name = (r: GroupRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
   return {
     fileName: "Master_Customer_Groups",
     sheetName: "Customer Groups",
     title: "Customer Groups master",
-    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Group, Collection Team, Checked. Leave Group blank to keep the customer's own name."],
+    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Group, Collection Team, Checked. Leave Group blank to keep the customer's own name.", MASTER_NOTE("Collection team")],
     exportColumns: [
       { header: K_LEDGER, width: 34, value: (r) => r.ledger_id },
       { header: "Customer", width: 34, value: name },
@@ -165,6 +192,9 @@ export function groupIo(snapByGuid: Map<string, SnapRow>): MasterIo<GroupRow> {
         const group = cell(rec["Group"]);
         const team = cell(rec["Collection Team"]);
         const checked = readBool(rec["Checked"]);
+        // Group is a per-customer label, not a vocabulary, so only the team is checked.
+        const badTeam = offMaster(team, knownTeams, "Collection team");
+        if (badTeam) { plan.invalid.push({ label, reason: badTeam }); continue; }
         // A blank Group in the file is not a change (the server keeps the existing NOT NULL name).
         const dGrp = group !== null && group !== (cur.group_name ?? null);
         const dTeam = team !== (cur.collection_team ?? null);
@@ -312,7 +342,7 @@ export function otherPaymentIo(snapByGuid: Map<string, SnapRow>): MasterIo<Other
 }
 
 // ── Red Mark (ext_redmark, key = Ledger ID) ───────────────────────────────────
-export function redMarkIo(snapByGuid: Map<string, SnapRow>): MasterIo<RedMarkRow> {
+export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: Set<string>): MasterIo<RedMarkRow> {
   const name = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
   const company = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "";
   const location = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.location ?? r.location ?? "";
@@ -320,7 +350,7 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>): MasterIo<RedMarkRow
     fileName: "Master_Red_Mark",
     sheetName: "Red Mark",
     title: "Red Mark master",
-    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Salesperson, Reason, Checked. Import cannot add or remove a Red Mark — only edit its details."],
+    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Salesperson, Reason, Checked. Import cannot add or remove a Red Mark — only edit its details.", MASTER_NOTE("Salesperson")],
     exportColumns: [
       { header: K_LEDGER, width: 34, value: (r) => r.ledger_id },
       { header: "Customer", width: 30, value: name },
@@ -342,6 +372,8 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>): MasterIo<RedMarkRow
         const salesperson = cell(rec["Salesperson"]);
         const reason = cell(rec["Reason"]);
         const checked = readBool(rec["Checked"]);
+        const badSp = offMaster(salesperson, knownSalespersons, "Salesperson");
+        if (badSp) { plan.invalid.push({ label, reason: badSp }); continue; }
         const dSp = salesperson !== (cur.salesperson ?? null);
         const dRs = reason !== (cur.reason ?? null);
         const dChk = checked !== cur.checked;

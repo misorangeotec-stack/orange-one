@@ -38,6 +38,12 @@ import {
   type RedMarkRow,
 } from "@hub/lib/musterApi";
 import { fetchCompanyMap, makeCompanyResolver, companyGuidOf, type CompanyMapRow } from "@hub/lib/companyMap";
+import {
+  fetchSalespersonMaster, fetchCollectionTeamMaster, isUnset, knownNames,
+  type NameMasterRow,
+} from "@hub/lib/nameMasters";
+import MasterValueCell from "@hub/components/MasterValueCell";
+import NameMasterTab, { type NameMasterUsage } from "./NameMasterTab";
 import { formatDateDMY } from "@hub/lib/utils";
 import { MasterIoBar } from "@hub/pages/MusterIoBar";
 import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo } from "@hub/lib/musterIo";
@@ -255,19 +261,16 @@ function useMusterFilters() {
 // ── Salesperson & Category muster ───────────────────────────────────────────────
 interface TagDraft { salesperson: string; category: string; checked: boolean }
 
-function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload }: {
+function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
   rows: TagRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[]; onReload: () => void;
+  companyOptions: string[]; locationOptions: string[];
+  /** The salesperson master. The cell picks from it; the Excel import is validated against it. */
+  master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
   const f = useMusterFilters();
   const [draft, setDraft] = useState<Record<string, TagDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
-
-  const salespersons = useMemo(
-    () => [...new Set(rows.map((r) => r.salesperson).filter((s): s is string => !!s && s !== "OTHERS"))].sort(),
-    [rows],
-  );
   const categories = useMemo(
     () => [...new Set(rows.map((r) => r.category).filter((c): c is string => !!c))].sort(),
     [rows],
@@ -339,12 +342,13 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload
 
   return (
     <>
-      <datalist id="muster-salespersons">{salespersons.map((s) => <option key={s} value={s} />)}</datalist>
+      {/* Salesperson has no datalist any more — it is a picker fed by the master (RC-15).
+          Category is still free text and deliberately out of scope. */}
       <datalist id="muster-categories">
         {["A", "B", "C", "D", "E", "AA", ...categories].filter((v, i, a) => a.indexOf(v) === i).map((c) => <option key={c} value={c} />)}
       </datalist>
       <div className="flex justify-end pb-2">
-        <MasterIoBar io={tagIo(snapByGuid)} exportRows={view} existingRows={rows}
+        <MasterIoBar io={tagIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
           activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations })}
           onReload={onReload} />
       </div>
@@ -380,8 +384,10 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload
                   <TableCell className="text-muted-foreground whitespace-nowrap">{s?.company ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground whitespace-nowrap">{s?.location || "—"}</TableCell>
                   <TableCell>
-                    <Input list="muster-salespersons" value={d.salesperson}
-                      onChange={(e) => patch(r, { salesperson: e.target.value })} placeholder="OTHERS" className="h-8" />
+                    <MasterValueCell
+                      value={d.salesperson} master={master}
+                      onChange={(v) => patch(r, { salesperson: v ?? "" })}
+                    />
                   </TableCell>
                   <TableCell>
                     <Input list="muster-categories" value={d.category}
@@ -420,9 +426,11 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload
 // ── Customer group muster (keyed by ledger GUID, one row per ledger/company) ─────
 interface GroupDraft { group_name: string; collection_team: string; checked: boolean }
 
-function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload }: {
+function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
   rows: GroupRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[]; onReload: () => void;
+  companyOptions: string[]; locationOptions: string[];
+  /** The collection team master. Group name stays free text — it is a label, not a vocabulary. */
+  master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
   const f = useMusterFilters();
@@ -430,7 +438,6 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const groups = useMemo(() => [...new Set(rows.map((r) => r.group_name).filter((g): g is string => !!g))].sort(), [rows]);
-  const teams = useMemo(() => [...new Set(rows.map((r) => r.collection_team).filter((t): t is string => !!t))].sort(), [rows]);
   const snap = (r: GroupRow) => snapByGuid.get(r.ledger_id);
   const name = (r: GroupRow) => snap(r)?.name ?? r.tally_name ?? "—";
   const out = (r: GroupRow) => Number(snap(r)?.outstanding ?? 0);
@@ -501,9 +508,9 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
   return (
     <>
       <datalist id="muster-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
-      <datalist id="muster-teams">{teams.map((t) => <option key={t} value={t} />)}</datalist>
+      {/* Collection team has no datalist any more — it is a picker fed by the master (RC-15). */}
       <div className="flex justify-end pb-2">
-        <MasterIoBar io={groupIo(snapByGuid)} exportRows={view} existingRows={rows}
+        <MasterIoBar io={groupIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
           activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations })}
           onReload={onReload} />
       </div>
@@ -543,8 +550,10 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
                       onChange={(e) => patch(r, { group_name: e.target.value })} placeholder={name(r)} className="h-8" />
                   </TableCell>
                   <TableCell>
-                    <Input list="muster-teams" value={d.collection_team}
-                      onChange={(e) => patch(r, { collection_team: e.target.value })} className="h-8" />
+                    <MasterValueCell
+                      value={d.collection_team} master={master}
+                      onChange={(v) => patch(r, { collection_team: v ?? "" })}
+                    />
                   </TableCell>
                   <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtINR(out(r))}</TableCell>
                   <TableCell className="text-center"><StatusBadge checked={r.checked} source={r.source} /></TableCell>
@@ -1226,9 +1235,12 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
   );
 }
 
-function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, onReload }: {
+function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
   rows: RedMarkRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[]; onReload: () => void;
+  companyOptions: string[]; locationOptions: string[];
+  /** The salesperson master. This tab kept its OWN copy of the salesperson as bare free text with
+   *  no suggestions at all, and 6 of its 54 rows had already drifted off the muster vocabulary. */
+  master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState<Record<string, RmDraft>>({});
@@ -1318,7 +1330,7 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
           <div className="flex items-center gap-2 flex-wrap">
             <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
             <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
-            <MasterIoBar io={redMarkIo(snapByGuid)} exportRows={view} existingRows={rows}
+            <MasterIoBar io={redMarkIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
               activeFilters={describeFilters({ search, companies, locations })} onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />Add Red Mark
@@ -1362,8 +1374,10 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
                   <TableCell className="text-muted-foreground">{s?.company ?? r.company ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{s?.location ?? r.location ?? "—"}</TableCell>
                   <TableCell>
-                    <Input value={d.salesperson} className="h-8 min-w-[140px]"
-                      onChange={(e) => patch(r, { salesperson: e.target.value })} />
+                    <MasterValueCell
+                      value={d.salesperson} master={master} className="min-w-[140px]"
+                      onChange={(v) => patch(r, { salesperson: v ?? "" })}
+                    />
                   </TableCell>
                   <TableCell>
                     <Input value={d.reason} className="h-8 min-w-[200px]"
@@ -1462,14 +1476,23 @@ export function MusterPanel() {
   const [companyMap, setCompanyMap] = useState<CompanyMapRow[] | null>(null);
   const [otherPayments, setOtherPayments] = useState<OtherPaymentRow[] | null>(null);
   const [redMarks, setRedMarks] = useState<RedMarkRow[] | null>(null);
+  // The two managed vocabularies (RC-15). They gate what the pickers on the tabs below may offer,
+  // so they are loaded with everything else rather than per-tab: the io descriptors that validate
+  // an Excel import are built from them at render time.
+  const [salespersonMaster, setSalespersonMaster] = useState<NameMasterRow[] | null>(null);
+  const [teamMaster, setTeamMaster] = useState<NameMasterRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([fetchTagRows(), fetchGroupRows(), fetchSnapshot(), fetchCompanyMap(), fetchOtherPaymentRows(), fetchRedMarkRows()])
-      .then(([t, g, s, cm, op, rm]) => {
+    Promise.all([
+      fetchTagRows(), fetchGroupRows(), fetchSnapshot(), fetchCompanyMap(),
+      fetchOtherPaymentRows(), fetchRedMarkRows(),
+      fetchSalespersonMaster(), fetchCollectionTeamMaster(),
+    ])
+      .then(([t, g, s, cm, op, rm, spm, ctm]) => {
         // Resolve each snapshot row's company/location from the master ONCE, here, so every
         // consumer below (filters, search, columns) sees the same finance-facing pair the reports
         // show — the snapshot itself only carries the raw Tally book name and a blank location.
@@ -1479,6 +1502,8 @@ export function MusterPanel() {
         setCompanyMap(cm);
         setOtherPayments(op);
         setRedMarks(rm);
+        setSalespersonMaster(spm);
+        setTeamMaster(ctm);
         setSnap(s.map((row) => ({ ...row, ...resolve(row.tenant_id, row.company) })));
       })
       .catch((e) => setError((e as Error).message))
@@ -1510,6 +1535,44 @@ export function MusterPanel() {
     });
     return m;
   }, [snap]);
+
+  /**
+   * How each vocabulary value is actually used — the "Customers" column on the master tabs, and the
+   * drift banner beside it.
+   *
+   * Both come from rows already in memory, so the master screens cost no extra query.
+   * `inUseAnywhere` is deliberately WIDER than `counts`: Red Mark keeps its own copy of the
+   * salesperson, and 6 of its 54 rows carry a name the customer muster has never held. Counting only
+   * customers would leave that invisible, which is the failure this whole feature is about.
+   */
+  const salespersonUsage = useMemo<NameMasterUsage>(() => {
+    const counts = new Map<string, number>();
+    const anywhere = new Set<string>();
+    (tags ?? []).forEach((t) => {
+      if (isUnset(t.salesperson)) return;
+      const n = t.salesperson as string;
+      counts.set(n, (counts.get(n) ?? 0) + 1);
+      anywhere.add(n);
+    });
+    (redMarks ?? []).forEach((r) => { if (!isUnset(r.salesperson)) anywhere.add(r.salesperson as string); });
+    return { counts, inUseAnywhere: anywhere };
+  }, [tags, redMarks]);
+
+  const teamUsage = useMemo<NameMasterUsage>(() => {
+    const counts = new Map<string, number>();
+    (groups ?? []).forEach((g) => {
+      // '' and NULL both mean unset here, and they are not the same value — the sheet seed left an
+      // empty string on 1,631 of the 1,875 rows. Counting them would invent a team named "".
+      if (isUnset(g.collection_team)) return;
+      const n = g.collection_team as string;
+      counts.set(n, (counts.get(n) ?? 0) + 1);
+    });
+    return { counts, inUseAnywhere: new Set(counts.keys()) };
+  }, [groups]);
+
+  /** What a WRITE is validated against — every name the list knows, switched off or not. */
+  const knownSalespersons = useMemo(() => knownNames(salespersonMaster ?? []), [salespersonMaster]);
+  const knownTeams = useMemo(() => knownNames(teamMaster ?? []), [teamMaster]);
 
   if (!canManage) return null;
 
@@ -1547,12 +1610,22 @@ export function MusterPanel() {
               <TabsTrigger value="companies">Companies &amp; Locations</TabsTrigger>
               <TabsTrigger value="other-payments">Other Payments</TabsTrigger>
               <TabsTrigger value="redmark">Red Mark</TabsTrigger>
+              <TabsTrigger value="salesperson-list">Salespersons</TabsTrigger>
+              <TabsTrigger value="team-list">Collection Teams</TabsTrigger>
             </TabsList>
             <TabsContent value="tags" className="mt-4">
-              <TagMuster rows={tags} snapByGuid={snapByGuid} companyOptions={companyOptions} locationOptions={locationOptions} onReload={load} />
+              <TagMuster
+                rows={tags} snapByGuid={snapByGuid} companyOptions={companyOptions}
+                locationOptions={locationOptions} master={salespersonMaster ?? []}
+                knownNames={knownSalespersons} onReload={load}
+              />
             </TabsContent>
             <TabsContent value="groups" className="mt-4">
-              <GroupMuster rows={groups} snapByGuid={snapByGuid} companyOptions={companyOptions} locationOptions={locationOptions} onReload={load} />
+              <GroupMuster
+                rows={groups} snapByGuid={snapByGuid} companyOptions={companyOptions}
+                locationOptions={locationOptions} master={teamMaster ?? []}
+                knownNames={knownTeams} onReload={load}
+              />
             </TabsContent>
             <TabsContent value="companies" className="mt-4">
               <CompanyMuster rows={companyMap ?? []} custCounts={custCountByGuid} onReload={load} />
@@ -1566,7 +1639,20 @@ export function MusterPanel() {
             <TabsContent value="redmark" className="mt-4">
               <RedMarkMuster
                 rows={redMarks ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
-                companyOptions={companyOptions} locationOptions={locationOptions} onReload={load}
+                companyOptions={companyOptions} locationOptions={locationOptions}
+                master={salespersonMaster ?? []} knownNames={knownSalespersons} onReload={load}
+              />
+            </TabsContent>
+            <TabsContent value="salesperson-list" className="mt-4">
+              <NameMasterTab
+                kind="salesperson" title="salesperson"
+                rows={salespersonMaster ?? []} usage={salespersonUsage} onReload={load}
+              />
+            </TabsContent>
+            <TabsContent value="team-list" className="mt-4">
+              <NameMasterTab
+                kind="collection_team" title="collection team"
+                rows={teamMaster ?? []} usage={teamUsage} onReload={load}
               />
             </TabsContent>
           </Tabs>

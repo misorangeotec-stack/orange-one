@@ -10356,6 +10356,174 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
+### RC-15 · Salesperson and Collection Team become managed masters, picked from a list  🔴  `[~]`
+🟢 **BUILT, DEPLOYED TO CONNECTWAVE AND BROWSER-VERIFIED 10-09-2026.** Both lists are live and both
+mapping cells are pickers; there is no free-text path left on the muster, on Red Mark, in the Excel
+import, or in the admin Users form. Only **P6** is open, and only because the client chose to leave
+the two phantom tags alone for now.
+⚠ The frontend is committed but **not yet on `master`** — the ConnectWave tables and the redeployed
+`muster-write` are already live, which is the safe half of that ordering (the function refuses an
+off-list value regardless of which frontend is being served).
+*Raised 2026-09-09 by Ritesh Bhai · Audited the same day against the live ConnectWave musters, the
+live user tags and the running code*
+
+⚠ **Sequence this BEFORE RC-11.** RC-11 loads 722 rows of Collection Team from a spreadsheet. Loading
+free text first and adding the master afterwards means cleaning the same data twice — and RC-11's own
+notes already record the `Vijay` / `vijay` split waiting in that sheet. Build the list, then load
+against it.
+
+**The ask.** *"The salesperson and the collection team both should be fixed lists, and when we map
+that to the customer, we should only be able to select from that list. Only then will we be able to
+avoid typos."* Plus, agreed the same day: entries are **switched off, never deleted** — a salesperson
+who leaves disappears from the picker while their existing customers and past reports still read.
+
+#### 🔴 This is not hypothetical — two phantom tags are live right now
+
+Measured 09-09-2026 on `profiles.receivables_salespersons`, the tag that decides **both** what a user
+sees **and** which report is emailed to them:
+
+| Tag | On | Customers it matches |
+|---|---|---|
+| **`MAYANK`** | Bushra · Jayshree Patil · Ritesh Tulsyan | **0** — the name exists only in the dead legacy project. `supabaseFetcher.ts:215` predicted this in writing: *"'MAYANK' is tagged on three real users and exists in this source only."* |
+| **`Others`** (title case) | Jayshree Patil · Ritesh Tulsyan | **0** — the muster holds `OTHERS`, and `scopeParties.ts` matches **exactly and case-sensitively** |
+
+Both were typed into a free-text-fed picker. Neither is visible as wrong on any screen. A fixed list
+makes both unrepresentable.
+
+#### What the live data actually looks like — and it is better news than expected
+
+`ext_ledger_tags` and `ext_ledger_group`, **1,875 ledger rows each** (ConnectWave, read 09-09-2026):
+
+| | Distinct values | Case clashes | Untrimmed | Verdict |
+|---|---|---|---|---|
+| **`salesperson`** | **14** — `OTHERS` 682, `NAKUL JI` 319, `MANMOHAN JI` 307, `UMESH JI` 132, `KHURSHID JI` 116, `KARAN SIR` 75, `AAYUSH SIR` 62, `DHANANJAY` 42, `PURAV SHAH` 40, `SUHEL` 27, `RELATED PARTY` 24, `ABHISHEK` 9, `HARI OM` 3, plus **37 NULL** | **none** | **none** | 🟢 **Seeds cleanly. No merge needed** — the mess is in the user tags, not the muster |
+| **`collection_team`** | **2** — empty string on **1,631** rows, NULL on **244** | — | — | 🟢 **Completely unpopulated.** Nothing to clean, nothing to migrate — the list can be right from its first row |
+
+⚠ **The empty string and NULL are not the same thing** and both mean "unset" here. Whatever writes the
+new mapping should settle on one (NULL) and the reader must treat `''` as unset, or 1,631 rows acquire
+a team named "".
+
+🟡 **`category` on the same tab has the same shape and is NOT in scope** — 8 free-typed values
+(`E` 658, `B` 485, `C` 240, `A` 232, `D` 198, `AA` 23, `''` 35, NULL 4), no case clashes today. Worth
+the same treatment later; do not widen this task to it without being asked.
+
+#### What exists today, and what has to change
+
+The customer-facing half is **already built and shipping** — it is the input control that changes,
+not the screen:
+
+| Today | After |
+|---|---|
+| **Settings → Masters → "Salesperson & Category"** — a free-text `<Input list=…>` per ledger, suggestions drawn from values already typed (`MusterEditor.tsx:342`, `:383`) | The same cell, a **picker** limited to the active master |
+| **Settings → Masters → "Customer Groups"** — same shape for Collection Team (`MusterEditor.tsx:546`) | Same |
+| **Excel export / import** on both tabs (`musterIo.ts`) | Import must **reject** an unknown name and say which, instead of writing it |
+| **Admin → Users → salesperson access** — chips from `fetchSalespersonNames()`, which returns the distinct values found on customers (`connectwaveFetcher.ts:1015`) | Chips from the **master**, so a name that matches nothing cannot be ticked |
+| No master table of either | Two new tables, admin-managed, `active` flag |
+
+**Writes already have their path** — the `muster-write` Edge Function on the identity project
+re-verifies the caller is an Orange One admin and writes to ConnectWave with its service key, so the
+browser never holds write access. New master writes go the same way; do not add a second route.
+
+#### The traps
+
+- 🔴 **`OTHERS` must be in the master and must not be deletable.** Every sync tops the muster up with
+  stub rows for brand-new customers at salesperson `OTHERS` (`musterApi.ts:14`). If it is not a valid
+  value, every new customer arrives invalid.
+- 🔴 **`RELATED PARTY` is a salesperson value too** (24 ledgers). It is not a person. It belongs in the
+  list; do not "tidy" it out because it reads oddly beside the names.
+- 🔴 **Switching a name off must not orphan its customers.** Inactive means *not offered on new
+  mappings*; the existing 3 `HARI OM` ledgers keep reading `HARI OM`. Every screen that renders the
+  value must render an inactive one normally — a name that vanishes from a report because someone
+  left is worse than the typo this task exists to fix.
+- 🔴 **The user tag is TWO things.** `receivables_salespersons` decides what a user sees *and* which
+  report is mailed to them (`UserForm.tsx:327`). Cleaning `MAYANK` and `Others` off three users
+  changes both. Do it deliberately, and check nobody's mail stops.
+- 🟡 **The 37 NULL salespersons.** Untagged ledgers exist. They are not `OTHERS` and the picker should
+  say so rather than silently defaulting them.
+- 🟡 **Matching stays exact and case-sensitive** everywhere (`scopeParties.ts`). The master removes the
+  *opportunity* to disagree; it does not add normalisation, and should not.
+- 🟡 **Do not seed the master from the LEGACY project.** `supabaseFetcher.fetchSalespersonNames` is
+  deprecated and points at the dead database — it is where `MAYANK` came from.
+
+#### Phase-wise checklist — P1-P5 and P7 BUILT AND VERIFIED 10-09-2026; P6 deferred by the client
+
+- [x] **P1 · The two masters.** `ext_salesperson_master` + `ext_collection_team_master` in ConnectWave,
+      applied 10-09-2026: `supabase/connectwave/salesperson_and_collection_team_masters.sql`. 13
+      salesperson values (`OTHERS` seeded `is_protected`), 4 collection teams. Column naming follows
+      `sale_type`, this project's existing vocabulary master, not `ext_redmark`.
+      🟢 **The rollback was REHEARSED on live data**, not just written: applied → dropped → verified
+      both gone and both musters still at 1,875 rows → re-applied → verified. Done BEFORE the Edge
+      Function was redeployed, because after that a drop 400s every save.
+      ⚠ **No foreign key, deliberately** — `collection_refresh()` mints `OTHERS` stubs on cron and
+      `seed_ext_tables.py` upserts from Sheets; a rejected insert there would abort the nightly
+      refresh. Validation lives in `muster-write` instead, and drift is surfaced on the screen.
+      ⚠ **A case-insensitive unique index on the master itself** is what stops the LIST ever holding
+      `OTHERS` and `Others` at once. It adds no normalisation to matching, which stays exact.
+- [x] **P2 · A Masters screen for each** — two new tabs, `pages/NameMasterTab.tsx`, hub-native rather
+      than `MasterCrud` (which uses the portal kit and would render as a different product inside the
+      dashboard). Add, rename, switch off; no delete. Sort on every column, cascading searchable
+      filters on Status and Updated-by, and an empty *result* keeps the table and its filters standing.
+      Gate reused unchanged: `canEdit && hasFullAccess("settings")`. A banner lists any value in use
+      but missing from the list, with one-click add.
+- [x] **P3 · The mapping cells become pickers** — `components/MasterValueCell.tsx` at THREE sites, not
+      two: the tag tab, the group tab, and **the Red Mark tab**, which held its own salesperson as bare
+      free text with no suggestions at all. Active values, plus the row's own value when it is switched
+      off or off-list, plus an explicit **Not set** writing NULL (the placeholder used to read `OTHERS`,
+      which implied unset meant OTHERS — it does not; 37 ledgers are genuinely unset).
+      🟢 **`muster-write` validates too** — the picker is a drawing decision and the browser can be
+      bypassed. Active AND inactive both pass; a value the row ALREADY holds passes even if it is off
+      the list entirely, or Red Mark's 6 drifted rows could never be saved again; and it FAILS CLOSED
+      if the master cannot be read.
+- [x] **P4 · The Excel import validates.** Proved in the browser: 3 bad rows → *0 to update, 1
+      unchanged, 0 unmatched, 3 invalid*, each naming the customer and the value, and **Write 0 changes
+      disabled**. A case variant (`nakul ji`) and a double-space variant (`KARAN  SIR`) are both caught.
+- [x] **P5 · The pickers read the master** — `core/admin/UserForm.tsx` and
+      `components/ReportDeliveryConfig.tsx`, both on a NEW React Query key so no stale cache from the
+      old source is served. Neither ever drops a name somebody already carries: an inactive or
+      off-master tag stays offered, ticked and labelled, so saving the form cannot silently strip a tag.
+      ⚠ Residual, recorded rather than hidden: `customerOnboarding/SalespersonPicker.tsx` still reads
+      `fetchSalespersonNames()` and still has a free-text *Other* box, which writes the name a new Tally
+      ledger is created under. And `admin-users` / `directoryWrites` write `receivables_salespersons`
+      with no server-side check — validating there would mean handing the identity project's
+      user-management function the ConnectWave service key. Both are admin-only paths, and the Users
+      form now marks a tag that is not in the master, so drift is visible on sight.
+- [ ] **P6 · Clean the two phantom tags.** 🟡 **DEFERRED 10-09-2026, the client's call — leave both for
+      now.** Re-measured the same day: `MAYANK` on Bushra, Jayshree Patil and Ritesh Tulsyan; `Others`
+      on Jayshree Patil and Ritesh Tulsyan; **0 customers matched by either**. 🟢 **No mail depends on
+      them** — the 13 enabled salesperson recipients on `zero-collections` include neither, and each
+      person keeps 11-12 real tags. Neither can spread now: the picker no longer offers either.
+- [x] **P7 · Walked in the browser** 10-09-2026. Both tabs render; `HARI OM` switched off →
+      its 3 customers still read `HARI OM (switched off)` on the muster, its own rows still offer it,
+      every other row does not, and the Salesperson Collection Report shows it normally with no marker.
+      Switched back on. **Rename rehearsed on live data and reverted**: `HARI OM` → and back, moving
+      1 list row, 3 customers, 1 user tag and 1 report recipient across BOTH projects, with the
+      identity side byte-identical afterwards. Musters re-counted after every write: 1,875 each, and
+      no row acquired a team named `""`.
+      ⚠ Not tested as Jayshree — her password is her mobile number and was not needed. The gate was
+      **reused unchanged**, and the three new Edge Function actions were proved to sit behind it
+      (anon key alone → 401 on all three).
+
+#### Left behind on purpose
+
+- 🟡 **`ZZ TEST SALESPERSON`** was added through the live Edge Function to prove add / switch off /
+      switch on land in the right database. The app has no delete by design, so removing it is a
+      one-liner: `supabase/connectwave/salesperson_master_remove_test_row.sql`.
+- 🟡 **Red Mark holds 6 rows off the vocabulary** — `PURAV JI` (4) and `MAYANK` (2). **Left as they
+      are, 10-09-2026, for Ritesh Bhai to say who those customers belong to.** They read normally,
+      neither can be picked for anything new, and the Masters tab flags both with a one-click add.
+      Visible only on that tab and its Excel export: the Red Mark *report* reads the customer's own
+      salesperson, not this column.
+
+#### Settled — 09-09-2026, the same day it was raised
+
+| Asked | Answered |
+|---|---|
+| Who may manage the lists? | **Anyone who can open Masters**, not admins only. 🟢 **This needs no new permission** — `muster-write` already authorises *"an Orange One admin, OR a user an admin granted FULL ACCESS to the Settings menu"* (`receivables_admin_menus` contains `settings`). Live today that is the 5 admins **plus Jayshree Patil**, which is exactly the intended set. Reuse it; do not invent a second rule. |
+| Should `category` get the same treatment? | **Not now.** Same tab, same free text, 8 values, no clashes today — worth doing later, out of scope here. |
+| What happens to a customer whose salesperson is switched off? | **Leave them exactly as they are.** No warning, no forced reassignment. They keep reading the old name until somebody reassigns them by hand. ⚠ This makes the "picker still shows an inactive value it already holds" trap **load-bearing** rather than a nicety — without it, editing any other field on one of those rows blanks the salesperson. |
+
+---
+
 ### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[ ]`
 *Raised 2026-09-03 · Audited the same day against the code and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **DISPUTE***
