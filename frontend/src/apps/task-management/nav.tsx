@@ -12,6 +12,9 @@ const ic = {
   tagged: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9" /></svg>
   ),
+  peer: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="7" r="3" /><circle cx="18" cy="17" r="3" /><path d="M9.5 8.5l5 5" /><path d="M15 8h3.5v3.5" /></svg>
+  ),
   team: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3 3-5 6-5s6 2 6 5" /><circle cx="17.5" cy="9" r="2.4" /><path d="M16 14c3 0 5 2 5 5" /></svg>
   ),
@@ -64,6 +67,9 @@ export function buildTaskNav(opts: { unreadCount: number }): NavItem[] {
   { label: "Notifications", to: `${B}/notifications`, icon: ic.notifications, badge: opts.unreadCount || undefined },
   { label: "Team Tasks", to: `${B}/team`, icon: ic.team, roles: ["hod", "sub_hod"] },
   { label: "All Tasks", to: `${B}/all`, icon: ic.all, roles: ["admin"] },
+  // TM-1. Sub-HODs are kept here deliberately: the peer PICKER is HODs only, but
+  // a HOD who is also somebody's sub-HOD must still be able to read the board.
+  { label: "Peer Tasks", to: `${B}/peer`, icon: ic.peer, roles: ["admin", "hod", "sub_hod"] },
   { label: "Recurring", to: `${B}/recurring`, icon: ic.recurring, roles: ["admin", "hod", "sub_hod"], section: "Manage" },
   { label: "Weekly Scorecard", to: `${B}/scorecard`, icon: ic.scorecard },
   { label: "Master Analysis", to: `${B}/reports`, icon: ic.reports },

@@ -78,7 +78,7 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[] }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean }) => Promise<string>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
   createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
   /** Edit a personal task's title/description/due date. */
@@ -178,6 +178,22 @@ interface TaskStoreValue {
   directReportIds: (hodId: string) => string[];
   downlineIds: (rootId: string) => string[];
   assignableUsers: (role: AppRole, userId: string) => Profile[];
+  /**
+   * The OTHER HODs, for the peer group of the Create Task picker (TM-1).
+   *
+   * ⚠ A SECOND FUNCTION RATHER THAN A WIDER `assignableUsers`, deliberately.
+   *   That one has five callers and two of them break silently if the list
+   *   gains peers: WeeklyPlanModal would offer a peer HOD whose plan
+   *   `weekly_plans_insert` then refuses to save, and RecurringForm would
+   *   enable peer recurring templates by accident — whose generated instances
+   *   the server never stamps, so they would score in the wrong block.
+   *
+   * Sourced from `list_org_people()` (SECURITY DEFINER, name-only), NOT the
+   * directory: `profiles_select` cannot see another department's HOD at all,
+   * and widening it is not an option because a profile row carries the phone
+   * number, which doubles as the user's login password.
+   */
+  peerAssignableUsers: (userId: string) => OrgPerson[];
   visibleTasks: (role: AppRole, userId: string) => Task[];
   addDepartment: (input: { name: string; description?: string }) => string;
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => void;
@@ -470,6 +486,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       if (o) return { id: o.id, name: o.name, avatarColor: o.avatarColor };
       return undefined;
     };
+
+    // TM-1: any HOD may assign to any other HOD (settled 07-09-2026 — no pair
+    // master, no Setup screen), so this is simply "role is hod, minus me".
+    // Sub-HODs are out for round one; widening it later is this one line, with
+    // no data migration, because the marker is stamped per task and says
+    // nothing about roles.
+    const peerAssignableUsers = (userId: string): OrgPerson[] =>
+      (orgPeople ?? []).filter((p) => p.role === "hod" && p.id !== userId);
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
@@ -879,6 +903,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       directReportIds: dir.directReportIds,
       downlineIds: dir.downlineIds,
       assignableUsers: dir.assignableUsers,
+      peerAssignableUsers,
       visibleTasks,
       addDepartment: readOnlyId,
       updateDepartment: readOnly,

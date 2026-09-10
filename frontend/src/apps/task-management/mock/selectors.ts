@@ -12,12 +12,55 @@ import { isToday, isOverdue } from "@/shared/lib/time";
 // the core directory store; re-exported here for the pages that already import it.
 export { computeDownlineIds as downlineIds } from "@/core/platform/store";
 
+/** A predicate deciding which tasks a score is allowed to count. */
+export type TaskCounts = (t: Task) => boolean;
+
 /**
- * A task counts toward scores / RYG / dashboard metrics only if it is neither
- * marked Not Applicable ("when" instances) nor a personal (self-tracking) task.
- * Personal tasks are visible in list views but must never affect any number.
+ * Work somebody actually OWES, whoever ends up scoring it: everything except
+ * Not-Applicable ("when") instances and personal self-tracking tasks.
+ *
+ * This is the predicate for WORKLISTS and REMINDERS — "due today", "overdue",
+ * My Work — where a peer task must still appear, because the person has to do
+ * it. It is what `countsTowardMetrics` meant before TM-1 split the two, and it
+ * is what `core/workspace/mywork/items/tasks.ts` inlines (deliberately; see the
+ * note in its header).
  */
-export const countsTowardMetrics = (t: Task) => !t.notApplicable && !t.isPersonal;
+export const countsTowardWorkload: TaskCounts = (t) => !t.notApplicable && !t.isPersonal;
+
+/**
+ * A task counts toward a person's OWN score / RYG / report only if it is neither
+ * Not Applicable, nor personal, nor **peer work**.
+ *
+ * ⚠ THE PEER EXCLUSION IS LOAD-BEARING AND IT LIVES HERE ON PURPOSE. Eight
+ *   separate screens compute an own-score from a list that is not pre-filtered
+ *   by kind — the Scorecard's total and its Planned-vs-Actual table, both
+ *   Dashboard RYG panels, PlanVsActual, EmployeeReport, DepartmentReport
+ *   (Master Analysis) and the scorecard export's team row. Filtering at each of
+ *   them would be eight chances to miss one. Every selector below funnels
+ *   through this predicate instead, so all eight are correct with no edit, and
+ *   anything added later is correct by default.
+ *
+ *   It also fails SAFE: a surface that forgets omits peer work from a score,
+ *   which is the conservative direction. The client settled (07-09-2026) that a
+ *   peer task is scored in the peer block and NOWHERE else, so a HOD's own score
+ *   keeps counting only their own team's work.
+ *
+ * Pass `countsTowardPeerMetrics` to score the peer block, and
+ * `countsTowardWorkload` for a worklist.
+ */
+export const countsTowardMetrics: TaskCounts = (t) =>
+  !t.notApplicable && !t.isPersonal && !t.isPeerAssignment;
+
+/**
+ * The peer block's mirror of `countsTowardMetrics` — the ONLY predicate under
+ * which peer work counts. Same arithmetic, opposite side of the same split, so
+ * `metrics + peer = workload` for any list.
+ */
+export const countsTowardPeerMetrics: TaskCounts = (t) =>
+  !t.notApplicable && !t.isPersonal && t.isPeerAssignment;
+
+/** A HOD handed this to another HOD. See tasks.is_peer_assignment (migration 20261116120000). */
+export const isPeerTask = (t: Task) => t.isPeerAssignment;
 
 /**
  * Whether a task originated from a recurring template (vs an ad-hoc one-off).
@@ -52,11 +95,11 @@ export interface PersonReport {
 }
 
 /** Planned-vs-actual style report numbers for one person, from a task list. */
-export function reportFor(all: Task[], personId: string): PersonReport {
+export function reportFor(all: Task[], personId: string, counts: TaskCounts = countsTowardMetrics): PersonReport {
   // N/A instances ("when" tasks marked Not Applicable for the day) and personal
   // self-tracking tasks are excluded from every count so they never affect the
   // planned total or RYG buckets.
-  const mine = all.filter((t) => t.assignedTo === personId && countsTowardMetrics(t));
+  const mine = all.filter((t) => t.assignedTo === personId && counts(t));
   const r: PersonReport = { planned: mine.length, completed: 0, pending: 0, revised: 0, shifted: 0, revisionTotal: 0 };
   for (const t of mine) {
     if (t.status === "completed") r.completed++;
@@ -83,8 +126,8 @@ const EMPTY_RYG: RygPct = { red: 0, yellow: 0, green: 0, total: 0 };
  * Actual achieved RYG (%) for one person in one week, from their tasks:
  * Green = completed, Yellow = revised, Red = everything else (pending / in-progress / overdue / shifted).
  */
-export function actualRygFor(all: Task[], personId: string, weekStart: string): RygPct {
-  const mine = all.filter((t) => t.assignedTo === personId && t.weekStart === weekStart && countsTowardMetrics(t));
+export function actualRygFor(all: Task[], personId: string, weekStart: string, counts: TaskCounts = countsTowardMetrics): RygPct {
+  const mine = all.filter((t) => t.assignedTo === personId && t.weekStart === weekStart && counts(t));
   const total = mine.length;
   if (!total) return EMPTY_RYG;
   let g = 0, y = 0;
@@ -103,7 +146,7 @@ type PlanLookup = (doerId: string, weekStart: string) => { redPct: number; yello
  * Planned (average of available plan %s) vs actual (pooled task buckets) across a set of
  * people over one or more weeks. Used for both per-week rows and the month rollup.
  */
-export function aggregateRyg(people: string[], weeks: string[], all: Task[], planFor: PlanLookup): { planned: RygPct; actual: RygPct } {
+export function aggregateRyg(people: string[], weeks: string[], all: Task[], planFor: PlanLookup, counts: TaskCounts = countsTowardMetrics): { planned: RygPct; actual: RygPct } {
   let pr = 0, py = 0, pg = 0, plans = 0;
   let g = 0, y = 0, tasks = 0;
   for (const pid of people) {
@@ -111,7 +154,7 @@ export function aggregateRyg(people: string[], weeks: string[], all: Task[], pla
       const plan = planFor(pid, w);
       if (plan) { pr += plan.redPct; py += plan.yellowPct; pg += plan.greenPct; plans++; }
       for (const t of all) {
-        if (t.assignedTo !== pid || t.weekStart !== w || !countsTowardMetrics(t)) continue;
+        if (t.assignedTo !== pid || t.weekStart !== w || !counts(t)) continue;
         tasks++;
         if (t.status === "completed") g++;
         else if (t.status === "revised") y++;
@@ -129,7 +172,7 @@ export function aggregateRyg(people: string[], weeks: string[], all: Task[], pla
   return { planned, actual };
 }
 
-export function computeStats(list: Task[]): DashboardStats {
+export function computeStats(list: Task[], counts: TaskCounts = countsTowardMetrics): DashboardStats {
   const statusCounts: Record<Task["status"], number> = {
     pending: 0,
     in_progress: 0,
@@ -142,7 +185,7 @@ export function computeStats(list: Task[]): DashboardStats {
     overdue = 0,
     total = 0;
   for (const t of list) {
-    if (!countsTowardMetrics(t)) continue; // N/A + personal tasks are excluded from every dashboard metric
+    if (!counts(t)) continue; // N/A + personal + peer tasks are excluded from every own-score metric
     total++;
     statusCounts[t.status]++;
     if (isToday(t.dueDate) && t.status !== "completed") dueToday++;

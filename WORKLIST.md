@@ -11088,6 +11088,411 @@ the unused templates are switched off or the work actually gets ticked.
 
 ---
 
+### TM-1 · 🟢 A HOD can assign a task to another HOD — and that work is scored on its own  `[x]`
+*Raised 2026-09-07 · Audited the same day against the running code and the live database ·
+**All seven open decisions settled with the client the same day** — see the foot of this entry ·
+**BUILT, APPLIED TO LIVE AND BROWSER-VERIFIED 10-09-2026***
+
+🟢 **DONE 10-09-2026.** Migration
+[20261116120000_tm1_a_hod_can_assign_to_another_hod.sql](supabase/migrations/20261116120000_tm1_a_hod_can_assign_to_another_hod.sql)
+is **applied to live**, with its rollback **rehearsed on live data** (applied → rolled back →
+re-applied) before the frontend was written. The frontend is committed on `daily-reports` and is
+**NOT yet on `master`** — that is the safe half of the ordering, since the column is additive and
+nothing reads it until the frontend ships.
+
+**What shipped**
+
+| | |
+|---|---|
+| Server | `tasks.is_peer_assignment boolean not null default false`, **no backfill** · `shift_task_to_week()` carries the flag onto a forward-reschedule continuation |
+| Picker | A second group, *Other HODs*, in Create Task — **HODs only**, so an admin→HOD task can never be stamped |
+| Board | New **Peer Tasks** screen: *Received* / *Given*, plus *All peer tasks* for admins |
+| Scoring | A third card on the Weekly Scorecard, four columns in its export, and peer work out of every other score |
+| Tagging | A **Peer** badge on the task row and on Task Detail, so the receiver sees it in My Tasks and knows why it is not in their own numbers |
+
+**Four things the audit found that the entry above did not**
+
+1. 🔴 **A forward reschedule would have stripped the classification.** `shift_task_to_week`
+   closes the task and inserts a fresh copy; a new column defaults to false on that copy, so the
+   moment a receiver pushed a peer task to next week it would have silently become their own
+   ordinary work — the one outcome the client ruled out. The migration is therefore **two
+   statements, not one**. The continuation's `created_by` becomes the shifter (RLS forces it: the
+   function is not `SECURITY DEFINER`), which is why the *Given* board is `peer AND created-by-me
+   AND NOT assigned-to-me`.
+2. 🔴 **`peerAssignableUsers` could not live in `core/platform/store.tsx`** as the entry
+   specified — that file has no access to `list_org_people()`, and adding the query there would
+   make every app in the portal fetch it. It lives in the task store, which already has both halves.
+3. 🔴 **The New Task button was gated on having a downline in three places.** Four HODs have
+   nobody under them and were turned away outright; all three gates now count peers too.
+4. 🔴 **The peer card's drill-downs landed on a broken page — found only by browser-testing
+   as a real HOD.** `taskListRouteForRole` sends a HOD to Team Tasks, which scopes to
+   `self + downline` and, with no reports, replaces the whole table with *"No team members mapped"*
+   while its own header read *"1 task across your team"*. A peer counterparty is by definition not
+   in your team. Peer links now route to the peer board. **An admin lands on All Tasks and would
+   never have seen this.**
+
+**The design decision worth keeping.** Eight screens compute an own-score from a list that is not
+pre-filtered by kind — including the *Planned vs Actual vs Next* table the client's own decision
+named. Rather than filter in eight places (the FIX-4 failure mode), the exclusion went into the
+single existing chokepoint: `countsTowardMetrics` now also excludes peer work, with
+`countsTowardPeerMetrics` for the peer block and `countsTowardWorkload` for worklists. Every
+existing call site is correct with **no edit**, anything missed fails **safe**, and because no task
+carried the flag it provably moved nothing.
+
+⚠ **Worklists deliberately still show peer tasks** — the receiver has to do the work. That
+includes the Dashboard cards, My Work, and the live 09:00 snapshot email, whose SQL twin
+`user_snapshot()` and compiled bundle cross-check each other; if an exclusion is ever added to one,
+it must go into both. `master_report_daily` also counts peer work, deliberately: it is an adoption
+report, not a score.
+
+**Verified on live data, as two throwaway HOD accounts in different departments (since deleted)**
+
+- The receiver's own weekly total read **0 tasks** while the peer card held the 1.
+- 298 recurring + 29 one-off + 1 peer = 328 = the week's total; recurring and one-off were
+  **unchanged** from before the change.
+- The task carried a real **department** — proved side by side that the old code path resolved it
+  to `null` (the assigner cannot read another department's HOD under `profiles_select`) and the new
+  one to *Ink Manufacturing*.
+- Both names rendered; the receiver was notified in-app; **no email** (Task Management email is off).
+- A forward reschedule kept the flag, and the continuation stayed off the receiver's *Given* board.
+- The sender could delete a pending peer task — the settled substitute for a Decline button.
+- Master Analysis, and **the 183 admin→HOD tasks, were untouched.** Database returned to exactly
+  6,924 tasks / 0 flagged / 14 HODs afterwards.
+
+*(Not built, as settled: peer **recurring** templates, and a Decline button.)*
+
+---
+
+
+**The ask.** Today a HOD can only assign work **down** their own tree. Let a HOD assign a task to
+**another HOD**, and score that peer-to-peer work **separately** — its own RYG block, its own
+counts — rather than folding it into either person's team numbers. Scored the same way an
+individual's My Tasks work is scored today: same selectors, same colours, its own board.
+
+---
+
+#### What actually blocks this today — one function, not the database
+
+The whole restriction is **eight lines of TypeScript**:
+
+```ts
+// core/platform/store.tsx:202-209
+const assignableUsers = (role: AppRole, userId: string): Profile[] => {
+  if (role === "admin") return profiles.filter((p) => p.id !== userId);
+  if (role === "hod" || role === "sub_hod") {
+    const ids = new Set(downlineIds(userId));   // full downline — no self
+    return profiles.filter((p) => ids.has(p.id) && p.id !== userId);
+  }
+  return [];                                     // employees have no one to assign to
+};
+```
+
+**The database already permits it.** Every task-domain policy was re-issued in
+[20260730130000_speed_up_task_rls.sql](supabase/migrations/20260730130000_speed_up_task_rls.sql),
+and each one already carries the arms a peer assignment needs:
+
+| Policy / trigger | Relevant arms | Does a HOD→HOD task pass? |
+|---|---|---|
+| `tasks_insert` | `created_by = auth.uid()` — **and nothing else** | ✅ any assignee at all |
+| `tasks_select` | `assigned_to = uid` · `created_by = uid` · admin · downline | ✅ both HODs read it |
+| `tasks_update` | `assigned_to = uid` · `created_by = uid` · admin · downline | ✅ receiver starts/completes, assigner edits |
+| `tasks_delete_pending` | `created_by = uid` · `assigned_to = uid` · admin | ✅ while pending |
+| `task_locations_rw`, `task_activity_select` | the same arms, via `EXISTS` on the task | ✅ |
+| `notify_task_assignee()` | excludes only self-assign / personal / recurring-generated / shift continuation | ✅ **notifies and emails today, unchanged** |
+| `add_task_remark()` gate | `assigned_to = uid` OR `created_by = uid` OR admin OR `is_hod_of` | ✅ both sides can comment |
+
+So this is **not** a permissions build. The server needs **one additive column** — a marker, see
+below — and everything else is frontend.
+
+#### Measured on the live database, 07-09-2026
+
+| | |
+|---|---|
+| Users by role | **14 HOD · 11 sub-HOD · 5 admin · 38 employee** |
+| Tasks, all | 6,702 (6,060 assigned, non-personal, assignee ≠ creator) |
+| **HOD → HOD tasks today** | **0.** The shape has never occurred — there is no history to classify |
+| HODs who have ever *created* a task | **3 of 14** — 5,098 to employees, 588 to sub-HODs |
+| sub-HODs who have ever created a task | **1** (one task) |
+| **Admin → HOD, outside any downline** | **134 tasks, 4 admins, 11 HODs** — the peer *shape* already exists, done by admins, and today it lands silently in the HOD's own score |
+| Admin → anyone, outside any downline | **215 tasks** (134 HOD + 40 admin + 28 sub-HOD + 13 employee) |
+| HOD/sub-HODs with a boss mapped | 12 of 25 — so **13 have nobody above them at all** |
+| `weekly_plans` rows in the whole database | **8 rows, 7 people, 4 of them HODs** |
+
+Two of those numbers drive decisions further down: the **134** (what a derived rule would
+retroactively move) and the **8** (the Planned side of the scorecard is barely used, so the peer
+block must not be built to depend on it).
+
+---
+
+#### ⚠ Do NOT implement this by adding a HOD mapping
+
+The five-minute version is to insert a `user_hods` row making HOD B report to HOD A. **It is the
+wrong edge and it changes far more than the ask.** `hod_downline()` is transitive and is read by
+policies and screens all over the module:
+
+- A gets **B's entire downline**, not B — every employee under B becomes A's to read, assign and score.
+- B and B's whole team appear in A's **Team Tasks**, **Weekly Scorecard** dropdown, **Master
+  Analysis** roll-up and **Activity**.
+- `weekly_plans_insert` / `weekly_plans_update` are keyed on `hod_downline`, so **A can now set B's
+  weekly RYG plan**.
+- It is **retroactive**: every historical task of B's team becomes visible and countable in A's
+  numbers the moment the row is inserted.
+
+A peer grant is a **lateral edge**. It must never touch `user_hods`, `hod_downline()` or
+`is_hod_of()` — leaving those alone is the design, not an omission.
+
+---
+
+#### 🔴 The decision that must be taken before any code: derive it, or stamp it?
+
+**Derived** — ask at read time, *"is `createdBy` in the assignee's HOD chain?"* Free, no migration,
+and **wrong here**, for three reasons:
+
+1. **It reclassifies work that has already been reported.** The 134 admin→HOD tasks (and 81 more
+   admin-created out-of-downline rows) match "creator is not above the assignee" *exactly*. They
+   would all become "peer" tasks on the day this ships — leaving the HODs' own scores and appearing
+   in a peer block nobody assigned. Closed weeks' scorecards would move.
+2. **The hierarchy is mutable.** `user_hods` rows are edited from the admin User form. A HOD
+   changing department, or a mapping being tidied up, silently reclassifies a year of history and
+   moves numbers in weeks that were signed off months ago.
+3. It costs a `hod_downline()` walk per row, on a table growing ~2,400 rows/month — the exact cost
+   the RLS speed-up migration was written to remove.
+
+**Stamp it.** The module already took this decision once and wrote down the reasoning —
+`tasks.from_recurring`, in [types/index.ts](frontend/src/apps/task-management/types/index.ts):
+
+> *"Durable 'born from a recurring template' flag, stamped at generation time and never cleared.
+> `recurringTaskId` is ON DELETE SET NULL, so it goes null if the template is deleted; this flag
+> survives that, keeping the task classified as recurring."*
+
+Same shape, same reason. **One additive column — `tasks.is_peer_assignment boolean not null default
+false`** — written by `insertTask` when the assignee was picked from the peer list. `created_by` is
+already the assigning HOD and `assigned_to` the receiving one, so no second column is needed to name
+the counterparty.
+
+⚠ **`default false`, and NO BACKFILL.** The assignee-notification migration set that precedent and
+said why (*"Backfilling would mark every historical task unread for everyone at once"*). Here the
+equivalent is: the 134 admin→HOD tasks **stay exactly where they are**, in the HOD's own score,
+counted the way they were counted last week. Nothing already reported moves. If the client later
+wants them reclassified that is a separate, deliberate backfill — and one that must carry the
+original dates rather than `now()`, or it corrupts the Master Report.
+
+---
+
+#### The scoring — the pattern already exists, and the trap in extending it
+
+**The Weekly Scorecard already does this exact thing.**
+[WeeklyScorecard.tsx](frontend/src/apps/task-management/pages/WeeklyScorecard.tsx) splits the week
+into *"Recurring vs one-off — each task type scored on its own; the total above is the two
+combined"*, rendering one shared `ActualScoreBlock` per slice. A peer block is **a third call to
+that same component with a third slice**. None of the arithmetic is new: `actualRygFor`,
+`reportFor` → `rygCounts` and `computeStats` all take `(tasks, personId, weekStart)` and are handed
+a pre-filtered list.
+
+> ⚠ **But recurring/one-off is a PARTITION, and a peer block breaks it.** "One-off" is defined as
+> `!isRecurringTask(t) && !t.isPersonal` in **three** places —
+> [TasksList.tsx:105](frontend/src/apps/task-management/pages/TasksList.tsx#L105),
+> [TaskBrowser.tsx:177](frontend/src/apps/task-management/components/TaskBrowser.tsx#L177) and
+> `lib/exportWeeklyScorecard.ts`. A peer task **is** a one-off, so unless that predicate is
+> narrowed, the same task is counted in the One-off card *and* the Peer card, and the two stop
+> adding up to the total above them. Narrow it in all three places in the same change — otherwise
+> the sheet and the screen disagree, which is the one thing `exportWeeklyScorecard`'s own header
+> comment warns against.
+
+**Two blocks, not one — a peer relationship has two sides:**
+
+- **Given** — tasks I assigned to other HODs. Today this is **nearly invisible to the assigner**:
+  `TeamTasks` filters on `teamIds = [self, ...downline]`, so a peer task is not there; and
+  `TasksList` defaults `relation` to `"assigned"`, so the assigner has to know to switch a dropdown
+  to *"Created by me"* to find work they handed out. **This is the gap the ask is pointing at** — it
+  is the peer equivalent of My Tasks, and it does not exist.
+- **Received** — tasks other HODs assigned to me. These already reach My Tasks (`assigned_to = uid`).
+
+**✅ DECIDED 07-09-2026 — a received peer task does NOT count in the receiving HOD's own weekly
+RYG.** It is scored in the peer block and nowhere else. Two reasons, both of which held up:
+
+- `weekly_plans` is set by an admin or by a HOD **above** the doer (`weekly_plans_insert` is keyed on
+  `hod_downline`), so **no plan can ever cover work a lateral peer dropped in.** Folding it into
+  Actual while Planned cannot move makes the Delta column on *Planned vs Actual vs Next* lie.
+- And the planned side is barely populated anyway — **8 plan rows in the entire database**. So the
+  peer block should be **actual-only**, and must not be built to wait on plans being filled in.
+
+**What follows from that, and must be built accordingly:** a HOD's existing score is untouched by
+work a peer hands them, so **no number anyone has already seen moves**. The peer block is a pure
+addition. It also means the total block on the Weekly Scorecard must **exclude** peer tasks, or the
+"recurring + one-off = total" line stops being true.
+
+---
+
+#### 🔴 Where the peer HOD's NAME comes from — four places that render blank today
+
+`profiles_select` is `id = auth.uid() OR is_admin OR is_hod_of OR same_department`. **A HOD cannot
+read another department's HOD's profile row at all**, so every `profileById(peer)` returns
+`undefined`.
+
+**No RLS widening is needed.** `list_org_people()` already exists, is `SECURITY DEFINER`, is
+executable by `authenticated`, and returns `id, name, designation, department_id, avatar_color,
+role` for the whole org — **`role` included**, which is exactly what a HOD-only picker needs. The
+task store already consumes it (`mentionablePeople`) and already has the `actorById` fallback built
+on it.
+
+⚠ **Do not "fix" this by widening `profiles_select`.** That policy is read by every app in the
+portal, and a profile row carries the phone number — which doubles as the user's login password.
+That is precisely why `list_org_people()` was written name-only in the first place.
+
+The four call sites that break until they switch:
+
+| Where | What it does now | What happens with a peer assignee |
+|---|---|---|
+| [TaskDetail.tsx:93](frontend/src/apps/task-management/pages/TaskDetail.tsx#L93) | `const owner = profileById(task.assignedTo)` | Assignee renders empty. Line 97 **already** uses `actorById` for the creator, with a comment describing this exact failure — the assignee line never got the same treatment, because an assignee was always in your downline. Now it isn't |
+| [CreateTask.tsx:31](frontend/src/apps/task-management/pages/CreateTask.tsx#L31) | `profileById(assignedTo)?.departmentId ?? null` | 🔴 Resolves to **null** — the task is born with **no department**, and Master Analysis files it under *Unassigned* forever. Must read the org list |
+| `WeeklyScorecard.tsx` `pool` | `profiles` filtered to self + downline | A peer HOD is not in the dropdown, so their peer block cannot be opened |
+| `TeamTasks.tsx` / `TaskBrowser` person filter | `people` built from `profileById` | Peer rows show a blank Assigned-to and cannot be filtered on |
+
+---
+
+#### ⚠ Do NOT widen `assignableUsers` in place — add a second function
+
+`assignableUsers` lives in the shared portal directory store but is consumed **only** by Task
+Management — six call sites. Widening it looks like a one-line win, and quietly changes three other
+things:
+
+| Caller | What it uses the list for | If the list gains peer HODs |
+|---|---|---|
+| `CreateTask.tsx:19` | the assignee picker | ✅ the intended change |
+| **`WeeklyPlanModal.tsx:18`** | **the pool of people whose weekly RYG plan you may set** | 🔴 A HOD is offered peer HODs, picks one, and the save is **refused by `weekly_plans_insert`** (`doer_id in hod_downline(uid)`). A dead option that errors on submit |
+| **`RecurringForm.tsx:37`** | the recurring-template assignee | 🔴 Silently enables **peer recurring tasks** before the server-side generators know to stamp the marker — every generated instance would be unclassified |
+| `Dashboard.tsx:47`, `TasksList.tsx:39` | `.length > 0` → show the *New Task* button | Harmless, arguably correct |
+
+**So: leave `assignableUsers` alone and add `peerAssignableUsers(userId)`** — HODs from
+`list_org_people()`, minus self — and let `CreateTask` compose the two as two groups in one picker.
+This is [FIX-4](#fixes) read forwards: before changing a shared thing, list every consumer and prove
+each one either wants the change or is untouched.
+
+---
+
+#### What to build
+
+**Server — one migration, applied BEFORE the frontend ships** (repo rule: a change that reads a new
+column goes live only after the column exists, or the load errors):
+
+1. `alter table public.tasks add column is_peer_assignment boolean not null default false;` —
+   additive, no backfill, with its rollback file beside it.
+2. Nothing else. No policy change, no new function; `hod_downline` / `is_hod_of` untouched.
+
+**Frontend:**
+
+| File | Change |
+|---|---|
+| `types/index.ts` · `database.types.ts` | `isPeerAssignment` on `Task`; keep the generated types in sync |
+| `data/fetchTaskData.ts` | `select("*")` already brings the column — add it to the row mapper |
+| `data/taskWrites.ts` → `insertTask` | accept and write `is_peer_assignment` |
+| `core/platform/store.tsx` | **new** `peerAssignableUsers(userId)` off `list_org_people()`, role `hod` (+ `sub_hod`?), minus self. `assignableUsers` untouched |
+| `pages/CreateTask.tsx` | two groups in the assignee `Combobox` ("My team" / "Other HODs"); department from the **org** list, not `profileById`; stamp the flag **only** when a HOD picked from the peer group. ⚠ The peer group is shown to HODs only — an **admin never gets it**, so an admin→HOD task stays ordinary work, per the client's rule at the foot of this entry |
+| `mock/selectors.ts` | `isPeerTask(t)`, beside `isRecurringTask` / `countsTowardMetrics` |
+| `pages/WeeklyScorecard.tsx` | a third `ActualScoreBlock` — *"Assigned by another HOD"* — and, if the client agrees, peer tasks out of the total block |
+| **new page + route + nav** | The peer board: **Given** and **Received**, each a `TaskBrowser` with its own RYG strip. `nav.tsx` entry `roles: ["admin","hod","sub_hod"]`; route wrapped in `RequireRole` in `TaskManagementApp.tsx` |
+| `lib/taskLink.ts` | `TaskKind` gains `"peer"`; `parseTaskFilters` and `LINK_PARAMS` accept it, so every peer number drills into a list that matches it |
+| `components/TaskBrowser.tsx` · `pages/TasksList.tsx` | third pill on the kind toggle; **narrow the `oneoff` predicate**; peer column + filter on the grid |
+| `pages/TaskDetail.tsx:93` | `profileById` → `actorById` for the assignee |
+| `lib/exportWeeklyScorecard.ts` | `ScorecardRow` gains `peer: Slice`; `buildScorecardRow` + `buildTeamRow` |
+| `components/DepartmentReport.tsx` · `lib/exportMasterAnalysis.ts` | decide whether peer tasks appear in the department roll-up (they carry the *receiver's* department) |
+| `pages/settings/Permissions.tsx` | the role matrix is hand-written and read-only — add *"Assign tasks to another HOD"*, or the module's own documentation of itself becomes wrong |
+
+**Grids.** The peer board is a table of rows, so per the standing rule it sorts on every column and
+filters under every column, with cascading options and a "no rows match" row rather than an empty
+state. `TaskBrowser` already does all of this — which is the reason to reuse it rather than write a
+new table.
+
+**Not in scope for round one:** peer **recurring** templates. `recurring_tasks` has the same
+`assigned_to` and the same RLS shape, but the instances are created by `generate_recurring_tasks` /
+`generate_recurring_task_now` **server-side**, so carrying the marker through is a second migration
+against live functions. One-off tasks first; recurring as a follow-up if it is actually wanted.
+
+#### What does NOT need to change — so nobody rebuilds it
+
+- **The DB permission model.** Insert, select, update and delete all already carry the
+  `created_by = uid` / `assigned_to = uid` arms (table above).
+- **Notifications and the assignment email.** `notify_task_assignee()` is hierarchy-agnostic — it
+  excludes only self-assignment, personal, recurring-generated and shift continuations. A peer
+  assignment already notifies the receiver and enqueues their email.
+- **Remarks and @mentions.** `add_task_remark`'s visibility gate has both arms, and
+  `mentionablePeople` has been org-wide since the mention picker was built.
+- **`hod_downline()` / `is_hod_of()` / `user_hods`.** Untouched, deliberately.
+- **`visibleTasks`** ([mock/store.tsx:474](frontend/src/apps/task-management/mock/store.tsx#L474)) —
+  already returns `t.assignedTo === userId || t.createdBy === userId || team.has(...)`, so both
+  sides of a peer task are already in the store. It is the *screens* that filter them out, not the
+  fetch.
+
+#### Sequencing
+
+1. Settle the questions below — the first one changes the arithmetic, so it cannot follow the build.
+2. Migration + rollback, applied to live.
+3. Store + write path + types — the flag exists and is stamped, nothing reads it yet.
+4. `CreateTask` peer picker, with the department fix.
+5. The peer board, then the scorecard block, then the export column — in that order, so each is
+   verifiable on real rows before the next depends on it.
+6. Browser-test **as a real HOD, not as an admin** — admins bypass every gate in this module, and an
+   admin-only pass would show none of the four blank-name failures above.
+
+#### Decisions — all settled 07-09-2026
+
+✅ **Every open question on this task was answered by the client on 07-09-2026. Nothing here is
+blocked; it is ready to build as specified.** Each answer is kept with its reasoning and with what
+follows from it, so the build does not have to re-derive them.
+
+- [x] ✅ **Does a peer-assigned task count in the receiving HOD's own weekly RYG?**
+      **Settled 07-09-2026 — no. The peer block only.** A HOD's own score keeps counting only their
+      own team's work, so nothing already reported changes.
+- [x] ✅ **Any HOD to any HOD, or a configured pair list?** **Settled 07-09-2026 — any HOD to any
+      HOD.** All 14 see the other 13; no pair master to build, and a new HOD can send and receive the
+      day they are created. `peerAssignableUsers()` is therefore just "role = hod, minus self" off
+      `list_org_people()` — no config table, no Setup screen.
+- [x] ✅ **Do sub-HODs take part?** **Settled 07-09-2026 — HODs only, round one.** The peer picker
+      is `role = 'hod'`; the 11 sub-HODs are out. Widening it later is a one-line change to
+      `peerAssignableUsers()` with **no data migration**, because the marker is stamped per task and
+      says nothing about roles. ⚠ Keep the nav entry `roles: ["admin","hod","sub_hod"]` as written
+      anyway — a sub-HOD must still be able to *read* a peer board, or a HOD who is also somebody's
+      sub-HOD loses the screen.
+- [x] ✅ **Who may see a peer score?** **Settled 07-09-2026 — the two HODs involved, plus admins.**
+      🟢 **This needs no server work at all:** `tasks_select` already reads
+      `assigned_to = uid OR created_by = uid OR is_admin OR downline`, which *is* this rule exactly.
+      A third HOD's browser never receives the rows, so the restriction is real, not cosmetic.
+      ⚠ The corollary for the UI: the peer board must be built from the **viewer's own** given /
+      received tasks, never from "pick a HOD and see their peer score" — that dropdown cannot be
+      populated for anyone but an admin, and building it would imply an access we just declined.
+- [x] ✅ **The 134 existing admin→HOD tasks — and every future one.** **Settled 07-09-2026, and the
+      client widened the question when answering it.** An admin handing a task to a HOD is **ordinary
+      downward work, not a peer assignment** — it happens today, *"in the future as well these kinds
+      of tasks will again come"*, and it must keep being scored the normal way. So:
+      **the 134 stay exactly where they are, and admin→HOD is never marked as peer work, ever.**
+      🔴 **This is the rule that kills the derived approach outright.** "Creator is not above the
+      assignee" matches admin→HOD *perfectly* — it would sweep up all 134 today **and every new one
+      forever**, which is the opposite of what was just asked for. Only a stamped flag, written when
+      **a HOD** picks **another HOD** from the peer group, can tell the two apart. An admin's picker
+      is the ordinary all-users list, so an admin assignment never stamps the flag by construction —
+      but the rule is now explicit, and any future change to the picker must preserve it.
+- [x] ✅ **May a HOD set a *recurring* task on a peer?** **Settled 07-09-2026 — one-off tasks only,
+      round one.** ⚠ This is the reason `assignableUsers` must be left alone rather than widened:
+      `RecurringForm.tsx:37` reads it, so widening it in place would enable peer recurring templates
+      **by accident**, and every instance `generate_recurring_tasks` produced would be unstamped and
+      therefore scored in the wrong block. Adding it later = one migration to carry the flag through
+      the two generator functions.
+- [x] ✅ **Can the receiver decline or send back?** **Settled 07-09-2026 — no Decline button.** The
+      receiver writes a remark and the sender removes the task; `tasks_delete_pending` already lets
+      the creator delete it **while it is still pending**, so that path exists today and needs no
+      build. A new `task_status` label was the alternative and was rejected — it would ripple through
+      `StatusChip`, `STATUS_FILTER_OPTIONS`, `matchesStatusFilter`, `computeStats`, `reportFor`,
+      `COLOUR_STATUSES` and every RYG bucket, and would first need an answer to *"what colour is a
+      declined task?"*.
+      ⚠ **The known cost of this choice, to watch for after go-live:** once the receiver has
+      **started** the task it is past `pending`, so the sender can no longer delete it, and the only
+      exits left are complete / revise / shift — all of which score. A task the two of them have
+      agreed to drop then sits red on the peer board with no honest way to close it. If that happens
+      in practice, the Decline button is the fix and this decision should be reopened.
+
+---
+
 ## Outstanding Dashboard (Receivables)
 
 The Zero-Collection report itself is built. Live handover doc:

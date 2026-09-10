@@ -90,7 +90,12 @@ export default function TaskDetail() {
     if (newId) navigate(`/task-management/tasks/${newId}`); // shifted to a future week
   };
 
-  const owner = profileById(task.assignedTo);
+  // actorById, not profileById: since TM-1 the ASSIGNEE can be a HOD in another
+  // department, whom `profiles_select` will not return, so the RLS-scoped
+  // directory renders them as "—". Same fix and same reason as the creator two
+  // lines below; the assignee only escaped it while an assignee was always in
+  // your own downline.
+  const owner = actorById(task.assignedTo);
   // actorById (not profileById) so a cross-department creator/assigner — e.g. a
   // Director in another dept who set up a recurring task — resolves to a name
   // instead of "—"/"Someone" for viewers outside their RLS-scoped directory.
@@ -165,6 +170,15 @@ export default function TaskDetail() {
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                 Other
+              </span>
+            )}
+            {task.isPeerAssignment && (
+              <span
+                title="Assigned by another HOD — scored on the Peer Tasks board, not in your own weekly score."
+                className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-[#5b52c9] bg-[#EEECFB] rounded-pill px-2 py-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><polyline points="8 7 17 7 17 16" /></svg>
+                Peer
               </span>
             )}
             {task.recurringTaskId && (

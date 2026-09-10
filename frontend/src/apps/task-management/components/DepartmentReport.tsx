@@ -78,6 +78,13 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
   const onSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" ? "asc" : "desc" }));
 
+  // ⚠ PEER (HOD→HOD) TASKS ARE EXCLUDED FROM THIS REPORT, and there is no filter
+  //   here doing it: every number below goes through reportFor / actualRygFor /
+  //   redCounts / aggregateRyg, whose default predicate (countsTowardMetrics)
+  //   drops them. That is deliberate — this report attributes a task to the
+  //   ASSIGNEE's department, so counting peer work would move a department's score
+  //   because another department's head handed them something (client's call,
+  //   07-09-2026). Peer work is scored on the Peer Tasks board only.
   const weekTasks = useMemo(() => tasks.filter((t) => t.weekStart === weekStart), [tasks, weekStart]);
 
   const groups = useMemo<Group[]>(() => {

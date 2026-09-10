@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
-import { countsTowardMetrics, type PersonReport, type RygPct } from "../mock/selectors";
+import { countsTowardMetrics, type PersonReport, type RygPct, type TaskCounts } from "../mock/selectors";
 import type { Task } from "../types";
 import RygBar from "./RygBar";
 
@@ -19,12 +19,13 @@ export function rygCounts(r: PersonReport): RygCount {
  *   pending    = still pending
  *   inProgress = being worked on
  *   shifted    = moved to another week
- * N/A and personal tasks are excluded, matching reportFor so the breakdown ties to the Red count.
+ * N/A, personal and peer tasks are excluded, matching reportFor so the breakdown ties to the Red
+ * count. Pass `counts` to score a different slice (the peer board passes countsTowardPeerMetrics).
  */
-export function redCounts(tasks: Task[], ids: Set<string>): RedCounts {
+export function redCounts(tasks: Task[], ids: Set<string>, counts: TaskCounts = countsTowardMetrics): RedCounts {
   let pending = 0, inProgress = 0, shifted = 0;
   for (const t of tasks) {
-    if (!t.assignedTo || !ids.has(t.assignedTo) || !countsTowardMetrics(t)) continue;
+    if (!t.assignedTo || !ids.has(t.assignedTo) || !counts(t)) continue;
     if (t.status === "pending") pending++;
     else if (t.status === "in_progress") inProgress++;
     else if (t.status === "shifted") shifted++;
