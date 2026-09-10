@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useOcpiStore } from "../../store";
 import { fetchOcCounter } from "../../data/ocpiFetch";
-import { fyCode, ocNoFor } from "../../lib/format";
+import { fyCode, ocNoFor, periodCode } from "../../lib/format";
 
 /**
  * Where the ORDER-CONFIRMATION series stands, and the one control that moves it.
@@ -37,6 +37,7 @@ import { fyCode, ocNoFor } from "../../lib/format";
 export default function OcNumberingSection() {
   const s = useOcpiStore();
   const fy = fyCode();
+  const period = periodCode();
   const series = s.config.ocSeries[fy];
 
   const {
@@ -44,8 +45,8 @@ export default function OcNumberingSection() {
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["ocpiOcCounter", fy],
-    queryFn: () => fetchOcCounter(fy),
+    queryKey: ["ocpiOcCounter", period],
+    queryFn: () => fetchOcCounter(period),
     enabled: s.isAdmin,
     staleTime: 0,
   });
@@ -69,7 +70,7 @@ export default function OcNumberingSection() {
       const now = await s.setOcSeries(typed, fy);
       await refetch();
       setValue("");
-      setSaved(`Confirmed. The next order confirmation will be ${ocNoFor(now + 1, fy)}.`);
+      setSaved(`Confirmed. The next order confirmation will be ${ocNoFor(now + 1, period)}.`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -107,12 +108,12 @@ export default function OcNumberingSection() {
             <p className="text-[13px] text-navy">
               Last number issued:{" "}
               <span className="font-semibold">
-                {current === null ? "none yet this year" : ocNoFor(current, fy)}
+                {current === null ? "none yet this month" : ocNoFor(current, period)}
               </span>
             </p>
             <p className="mt-0.5 text-[12.5px] text-grey">
               The next order confirmation will be{" "}
-              <span className="font-medium text-navy">{ocNoFor((current ?? 0) + 1, fy)}</span>.
+              <span className="font-medium text-navy">{ocNoFor((current ?? 0) + 1, period)}</span>.
             </p>
           </>
         )}
@@ -120,7 +121,7 @@ export default function OcNumberingSection() {
 
       {series?.confirmed ? (
         <p className="text-[12.5px] text-ryg-green">
-          Confirmed at {ocNoFor(series.confirmedAtValue ?? 0, fy)}
+          Confirmed at {ocNoFor(series.confirmedAtValue ?? 0, period)}
           {series.confirmedAt
             ? ` on ${new Date(series.confirmedAt).toLocaleDateString("en-GB")}`
             : ""}

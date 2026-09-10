@@ -4,10 +4,10 @@ import {
   setDraw, setFill, text, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { DELIVERY_DATE_REMARK, INSURANCE_CLAUSE, type DealFacts } from "./fieldSpec";
+import { DELIVERY_PERIOD_SUFFIX, INSURANCE_CLAUSE, type DealFacts } from "./fieldSpec";
 import { conditionsFor, render, type Conditions } from "./conditions";
 import { tokensFor } from "./tokens";
-import { paperDate, paperFileBase } from "./format";
+import { paperDate, paperFileBase, proseCompanyName } from "./format";
 import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiSalesPage, SalesPageBlock,
 } from "../types";
@@ -165,7 +165,7 @@ function itemRows(
     ? render(machine.billingName, tokens, conditions).text
     : "";
   const desc = [billing || machine?.name || ""].filter(Boolean);
-  return [{ qty: d.machineCount, lines: [...desc, ...machineDetailLines(machine)] }];
+  return [{ qty: d.machineCount, lines: [...desc, ...machineDetailLines(d, machine)] }];
 }
 
 /**
@@ -184,14 +184,32 @@ function itemRows(
  *    one that does is an IMPORTED machine (the K64: `HSN CODE: 84433910`,
  *    `MFG: HAN GLORY (HONG KONG) LIMITED`, `Country of Origin: HONG KONG , CHINA`).
  *
+ *    ⚠ THOSE ARE COUNTS OF REAL PI FILES, NOT OF THE MACHINE MASTER, and the two
+ *      are easy to confuse. The master holds a manufacturer on TWO machines —
+ *      K64 and Position Printer (the latter added by 20261107150000, after this
+ *      note was written). The same caveat is on `types/index.ts` and
+ *      `Machines.tsx`.
+ *
  *    ⚠ DO NOT "MAKE THIS CONSISTENT" WITH THE REST OF THE MODULE. That change
  *      would put three blanks on every domestic invoice this company issues.
  */
-function machineDetailLines(machine?: OcpiMachine): string[] {
+function machineDetailLines(deal: OcpiDeal, machine?: OcpiMachine): string[] {
   if (!machine) return [];
   const out: string[] = [];
-  const model = machine.machineModelNo?.trim();
-  const hsn = machine.hsnCode?.trim();
+  /*
+    R8 · BOTH VALUES ARE THE DEAL'S CHOICE FIRST, the machine master's second.
+    They print as ONE string here — `(HM1800B-TK64-A1)  HSN CODE: 84433910` —
+    so they resolve identically or the pair goes out half-overridden.
+    `ocPdf.ts` · `machineDetailLine` does exactly the same for the contract.
+
+    ⚠ `deal.machineModelNo` HAS ALWAYS BEEN AN OVERRIDE AND THIS FILE IGNORED IT,
+      reading the master alone while the contract read the deal. A deal that had
+      answered the model number printed one code on its contract and another on
+      its invoice. Fixed here in passing, because the HSN change forced the deal
+      into this function and left the omission impossible to miss.
+  */
+  const model = deal.machineModelNo?.trim() || machine.machineModelNo?.trim();
+  const hsn = deal.hsnCode?.trim() || machine.hsnCode?.trim();
   /*
     The real papers put the model number and the HSN on one line:
     "(HM1800B-TK64-A1)  HSN CODE: 84433910".
@@ -207,14 +225,24 @@ function machineDetailLines(machine?: OcpiMachine): string[] {
       a second time what the subject had just said. Verified against both papers.
   */
   if (hsn) out.push([model ? `(${model})` : "", `HSN CODE: ${hsn}`].filter(Boolean).join("  "));
-  if (machine.manufacturer?.trim()) out.push(`MFG: ${machine.manufacturer.trim()}`);
   /*
-    🔴 COUNTRY OF ORIGIN IS A BULLET, NOT A DESCRIPTION LINE, AND IT USED TO BE
-       BOTH. `termsBullets` prints "Country of Origin : X" further down the page;
-       printing it here as well put the same fact on folder 120's invoice twice,
-       once with a spaced colon and once without. Bushra's paper carries the HSN
-       and the MFG in this cell and the country ONLY in the bullet list. The
-       bullet is the one true home — do not re-add it here.
+    🔴 COUNTRY OF ORIGIN AND THE MANUFACTURER ARE BOTH BULLETS, NOT DESCRIPTION
+       LINES, AND EACH USED TO BE BOTH.
+
+       Country of Origin came first: `termsBullets` printed "Country of Origin : X"
+       further down the page, and printing it here as well put the same fact on
+       folder 120's invoice twice, once with a spaced colon and once without.
+
+       ⚠ MANUFACTURE FOLLOWED IT OUT (B9, 07-09-2026). `MFG: <manufacturer>` was
+         on this line until then; folder 106's real paper carries it in the Terms
+         & Conditions block as "Manufacture : Xiamen Hanin Co., Ltd.", between
+         Payment Terms and Shipment Terms. It was MOVED, not copied — leaving both
+         would have reproduced the Country of Origin defect exactly, on the two
+         machines that have a manufacturer (K64 and Position Printer).
+
+       Bushra's paper carries the HSN and the model in this cell, and the country
+       and the manufacturer ONLY in the bullet list. The bullets are the one true
+       home — do not re-add either here.
   */
   return out;
 }
@@ -295,7 +323,7 @@ function moneyLines(d: OcpiDeal): MoneyLine[] {
     out.push({ label: "Machine Value INR", value: money(d.machineValueInr) });
   }
   if (d.gstRate !== null && d.gstAmountInr !== null) {
-    out.push({ label: `+ ${d.gstRate}% GST Value INR`, value: money(d.gstAmountInr) });
+    out.push({ label: `+${d.gstRate}% GST Value INR`, value: money(d.gstAmountInr) });
   }
 
   const dryerCharged = d.dryerValueInr !== null && d.dryerValueInr > 0;
@@ -331,27 +359,38 @@ function moneyLines(d: OcpiDeal): MoneyLine[] {
  *   customer-facing paper, and the reason there is no ruled blank anywhere in
  *   this list.
  *
- * 🔴 THE DELIVERY BULLET DOES NOT RESTORE `delivery_days`. OCPI-18 retired that
- *    field deliberately: a day-count told the customer nothing about WHEN, and
- *    the tentative date replaced it on the contract. The real PIs still read
- *    "30 Days after Order Confirmation" and that wording does not come back —
- *    two papers carrying two different delivery promises on one deal is exactly
- *    the failure OCPI-18 removed. This prints the SAME date the contract's SALE
- *    CONDITIONS clause prints, from the same column.
+ * 🔴 THE DELIVERY BULLET IS A PERIOD AGAIN (R1, 07-09-2026), REVERSING OCPI-18.
+ *    OCPI-18 replaced the day-count with a tentative date so a deal's two papers
+ *    could not disagree. The counted evidence went the other way: 28 of 36 real
+ *    PIs promise a number of days and NOT ONE promises a date. Read back off
+ *    folder 109 during this change:
  *
- * ⚠ FORMATTED WITH `paperDate`, NOT THE SCREEN'S `dmy`. The identical warning is
- *   on `{{delivery_date}}` in tokens.ts, and it is there because the two can
- *   disagree.
+ *        Delivery Terms : 30 Days from the date of confirmation
  *
- * ⚠ NO DATE → NO BULLET, never "Delivery : ________". The date is optional and a
- *   deal without one has not promised anything to rule a blank about.
+ *    The single-source property is KEPT — one field still feeds this bullet and
+ *    the contract's SALE CONDITIONS clause, from the same column. Only the shape
+ *    changed.
+ *
+ * ⚠ THE LABEL IS `Shipment Terms`, the plurality across the real invoices (16 of
+ *   36, against 12 for `Delivery Terms`). It also avoids colliding with the three
+ *   Fab Pro decks, where `{{trade_term}}` already prints under a `Delivery Terms:`
+ *   heading on the same page.
+ *
+ * ⚠ NO PERIOD → NO BULLET, never "Shipment Terms : ________". A deal without one
+ *   has not promised anything to rule a blank about.
+ *
+ * ⚠ MANUFACTURE IS A BULLET HERE AND NOWHERE ELSE (B9, folder 106). It used to
+ *   print as `MFG:` inside the item description cell; that line was DELETED in
+ *   the same commit. Printing it in both places is exactly the defect the
+ *   Country of Origin note below records.
  */
 function termsBullets(d: OcpiDeal, machine?: OcpiMachine): string[] {
   const out: string[] = [];
   if (d.paymentTerms?.trim()) out.push(`Payment Terms : ${d.paymentTerms.trim()}`);
+  if (machine?.manufacturer?.trim()) out.push(`Manufacture : ${machine.manufacturer.trim()}`);
   if (d.tradeTerm?.trim()) out.push(`Trade Terms : ${d.tradeTerm.trim()}`);
-  if (d.deliveryDate) {
-    out.push(`Delivery : Tentative delivery ${paperDate(d.deliveryDate)}, ${lowerFirst(DELIVERY_DATE_REMARK)}`);
+  if (d.deliveryDays?.trim()) {
+    out.push(`Shipment Terms : ${d.deliveryDays.trim()} ${DELIVERY_PERIOD_SUFFIX}`);
   }
   /*
     ⚠ THIS IS WHERE THE INSURANCE ANSWER FINALLY PRINTS (OCPI-34 item 1). The
@@ -367,8 +406,6 @@ function termsBullets(d: OcpiDeal, machine?: OcpiMachine): string[] {
   return out;
 }
 
-/** "Applicable from the date of signing…" → "applicable from…", mid-sentence. */
-const lowerFirst = (s: string): string => (s ? s[0].toLowerCase() + s.slice(1) : s);
 
 /**
  * The `Note:` lines.
@@ -519,14 +556,35 @@ export async function buildPiPdf(input: PiDocInput): Promise<jsPDF> {
   y = drawToBlock(y);
 
   /*
-    The subject line.
+    The subject line — B1.
 
-    ⚠ THE PHRASE IS OMITTED WHEN THERE IS NO MODEL NUMBER, not printed with a
-      gap after it. `machine_model_no` is NULL on 16 of the 28 machines, so
-      "Subject: Model No:" with nothing after it would be the common case rather
-      than the exception. Filling those 16 is a data ask on the machine sheet.
+    🔴 IT NAMES THE MACHINE THE WAY THE CUSTOMER DOES, NOT THE WAY THE FACTORY
+       DOES. This printed `machine_model_no` and was wrong on 11 of the 11
+       re-entered contracts: folder 120's real invoice is headed
+       `Subject: Model No: HOMER K64(With 64 Heads)`, ours said
+       `HM1800B-TK64-A1`. `salesName` now leads, and 18 of the 29 machines carry
+       one read straight off a real invoice's Subject line.
+
+    ⚠ THE ORDER IS DELIBERATE, AND THE FALLBACK IS THE OLD BEHAVIOUR UNCHANGED.
+      salesName → machineModelNo → name. The 11 machines with no real invoice
+      have no sales name, and they print exactly what they printed before B1 —
+      so this ships without waiting on the client's remaining names, and nothing
+      regresses when it lands.
+
+    ⚠ `Model No:` STAYS IN THE PHRASE even though a sales name is not a model
+      number. It is what the papers do: 34 of the 43 real Subject lines read
+      `Subject: Model No: X`, against 14 reading `SUBJECT: X` — and the shorter
+      form is not tied to any one machine (K24 uses it, K32 does not).
+
+    ⚠ THE PHRASE IS OMITTED WHEN THERE IS NOTHING TO NAME, not printed with a
+      gap after it — the rule this line has always followed.
+
+    ⚠ NO HEAD COUNT IS APPENDED HERE. The real papers carry one
+      (`(With 64 Heads)`, `(WITHOUT PRINTHEADS)`) but it varies by DEAL, and
+      `head_count` is never cleared when a machine is sold without heads. R4 is
+      where that belongs; asserting it here would put heads on a headless deal.
   */
-  const model = machine?.machineModelNo?.trim();
+  const model = machine?.salesName?.trim() || machine?.machineModelNo?.trim();
   const subject = model
     ? `Subject: Model No: ${model}`
     : machine?.name
@@ -663,24 +721,14 @@ export async function buildPiPdf(input: PiDocInput): Promise<jsPDF> {
  *   case here would invent a house style this function has no business setting.
  */
 function letterName(profile?: OcpiCompanyProfile): string {
-  const legal = profile?.legalName?.trim() || "Orange O Tec Pvt Ltd";
-  const bare = legal.replace(/^m\/s\.?\s+/i, "").trim() || legal;
   /*
-    ⚠ AND THE CASE COMES DOWN TOO, BUT ONLY ON WORDS THAT ARE SHOUTING.
-      Counted across all 56 real Performa Invoices in both years: 48 read
-      "Orange O Tec Pvt Ltd", 2 read "Orange O Tec PVT LTD", 2 name a different
-      entity — so the house form is title case and NOT the stored
-      "M/s ORANGE O TEC PVT LTD.", which appears in prose on none of them.
-
-      Only ALL-CAPS words are touched. A word already carrying lower-case letters
-      is left exactly as stored, so a name like "Colorix InkJet" survives intact
-      and only genuine shouting is calmed. One-letter words (the "O") are safe
-      either way. The BANK line keeps the stored form untouched — see bankLines.
+    ⚠ THE RULE MOVED TO `proseCompanyName` IN format.ts, AND THE BODY IS NOT
+      DUPLICATED HERE. The OCPI-42 audit found the identical "M/s" leak a second
+      time, inside the composed trade term, which this private copy could never
+      have reached. One rule, two callers. The BANK line still keeps the stored
+      form untouched — see bankLines.
   */
-  return bare
-    .split(/(\s+)/)
-    .map((w) => (/[a-z]/.test(w) || !/[A-Z]/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()))
-    .join("");
+  return proseCompanyName(profile?.legalName) || "Orange O Tec Pvt Ltd";
 }
 
 /**

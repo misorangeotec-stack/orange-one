@@ -4,7 +4,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import Button from "@/shared/components/ui/Button";
 import DueCell from "@/shared/components/ui/DueCell";
 import { useOcpiStore } from "../../store";
-import { dealRef, dueIsoFor } from "../../lib/queues";
+import { dealRef, dealRefSort, dueIsoFor } from "../../lib/queues";
 import { signedPages } from "../../lib/signatures";
 import { dmy, fmtDealValue } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
@@ -47,7 +47,7 @@ export default function FinanceHandoverQueue() {
             {dealRef(d)}
           </Link>
         ),
-        sortValue: (d) => dealRef(d),
+        sortValue: (d) => dealRefSort(d),
         filter: { kind: "text", get: (d) => dealRef(d) },
       },
       {

@@ -62,6 +62,26 @@ export const CONDITION_HELP: { name: string; means: string }[] = [
   },
   { name: "centering", means: "the deal includes a centering device" },
   { name: "usd", means: "the deal is quoted in dollars" },
+  /*
+    R4 · TWO POSITIVE NAMES FOR ONE QUESTION, AND THE PAIR IS DELIBERATE.
+
+    🔴 DO NOT REPLACE THESE WITH `[[if !heads]]`. `incl_head` has three states and
+       the third is real: `!false` is `true`, so a negated marker would print
+       "(WITHOUT PRINTHEADS)" FROM SILENCE on a deal nobody has answered —
+       inventing a promise on a document a customer signs. Two positive names
+       mean an unanswered deal prints NEITHER claim, which is the only safe
+       reading of "we don't know yet".
+
+    ⚠ THEY ARE NOT REDUNDANT WITH EACH OTHER. `heads` is not the negation of
+      `noHeads`; both are false together on an unanswered deal, and that middle
+      state is the whole reason there are two.
+  */
+  { name: "heads", means: "this deal includes print heads in the machine price" },
+  {
+    name: "noHeads",
+    means:
+      "the deal EXPLICITLY excludes print heads — false while the question is unanswered, so it can never assert 'without heads' from silence",
+  },
 ];
 
 /*
@@ -256,6 +276,32 @@ export function render(
   };
 }
 
+/**
+ * A template read as the machine is NORMALLY SOLD — for screens with no deal.
+ *
+ * 🔴 THE OBVIOUS SHORTCUT IS WRONG AND PRODUCES A CONTRADICTION. `applyConditions
+ *    (text, {})` looks like a marker-stripper — every name is unknown, unknown
+ *    fails open, the words survive — and it is exactly right for a vocabulary of
+ *    mutually independent names. It stopped being right when R4 added a PAIR:
+ *    `heads` and `noHeads` both fail open, so both bodies print and an admin list
+ *    reads "LARGE FORMAT INKJET PRINTER WITH 24 HEADS (WITHOUT PRINTHEADS) WITH
+ *    STD. ACCESSORIES". A visible marker would have been better than that.
+ *
+ * ⚠ SO THE HEAD PAIR IS PINNED AND NOTHING ELSE IS. `dryer`, `centering` and
+ *   `usd` stay unknown and keep failing open, which is what a preview wants —
+ *   they are independent, and showing their words describes the fullest machine.
+ *   Only a pair needs an opinion, and "as sold with heads" is the common case.
+ *
+ * ⚠ THIS IS A DISPLAY AID, NEVER A DOCUMENT PATH. Anything a customer receives
+ *   has a deal behind it and must go through `conditionsFor`. Use this only
+ *   where there is genuinely no deal: the Machines master's list column and its
+ *   filter text, and the quotation form's machine picker, which shows every
+ *   machine before one is chosen.
+ */
+export function asNormallySold(text: string): string {
+  return applyConditions(text, { heads: true, noHeads: false }).text;
+}
+
 /** Every condition a template uses — for the editor's "is this recognised?" card. */
 export function conditionsUsedIn(text: string): string[] {
   if (!text || !text.includes("[[")) return [];
@@ -317,5 +363,25 @@ export function conditionsFor({ deal, facts }: { deal: OcpiDeal; facts: DealFact
     dryer: facts.showsDryer && !facts.noDryerCategory,
     centering: deal.inclCentering === true,
     usd: isUsdDealRow(deal),
+    /*
+      R4 · `incl_head` READ STRICTLY, BOTH WAYS. Neither is `!` of the other, and
+      an unanswered deal is false on both — see the note in CONDITION_HELP.
+
+      ⚠ `incl_head = false` MEANS "NOT IN THE MACHINE PRICE", NOT "NO HEADS".
+        branching.ts:207-235 is explicit about it, and a deal may go on to buy
+        heads separately (`head_offer_agreed`). That does not change what belongs
+        on the PRICED SUPPLY LINE: it describes what the machine price covers, so
+        "(WITHOUT PRINTHEADS)" is right in both readings — and R3 already rules
+        that separately-invoiced items keep their money out of that total.
+
+      ⚠ THE SPEC ROW IS WHERE THE TWO READINGS WOULD DIVERGE. "Number of
+        installed printing heads" describes the physical machine, so a deal that
+        buys heads separately AND fits them would lose a row it should keep. No
+        live deal does — of ten `incl_head = false` deals, five answered
+        `head_offer_agreed = false` and five never answered, none true. If that
+        ever changes, key the spec row on `head_offer_qty`, not on this.
+    */
+    heads: deal.inclHead === true,
+    noHeads: deal.inclHead === false,
   };
 }

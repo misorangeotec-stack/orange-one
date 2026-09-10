@@ -23,6 +23,8 @@ import type { OcpiMachine, OcpiMachineSection } from "../types";
 export interface MachineInput {
   name: string;
   billingName: string | null;
+  /** B1 · the Performa Invoice's Subject line. Blank = fall back to the model code. */
+  salesName: string | null;
   categoryId: string | null;
   needsDryer: boolean | null;
   optAirBlade: string | null;
@@ -58,6 +60,7 @@ export interface MachineInput {
 const toRow = (m: MachineInput) => ({
   name: m.name.trim(),
   billing_name: m.billingName?.trim() || null,
+  sales_name: m.salesName?.trim() || null,
   category_id: m.categoryId || null,
   needs_dryer: m.needsDryer,
   opt_air_blade: m.optAirBlade || null,
@@ -99,6 +102,7 @@ export async function updateMachine(id: string, input: Partial<MachineInput>): P
   // screen must not blank the spec rows it never showed.
   if (input.name !== undefined) row.name = full.name.trim();
   if (input.billingName !== undefined) row.billing_name = full.billingName?.trim() || null;
+  if (input.salesName !== undefined) row.sales_name = full.salesName?.trim() || null;
   if (input.categoryId !== undefined) row.category_id = full.categoryId || null;
   if (input.needsDryer !== undefined) row.needs_dryer = full.needsDryer;
   if (input.optAirBlade !== undefined) row.opt_air_blade = full.optAirBlade || null;
@@ -167,6 +171,18 @@ export async function copyTemplate(from: OcpiMachine, toId: string, sections: Oc
   await updateMachine(toId, {
     docTitle: from.docTitle,
     introText: from.introText,
+    /*
+      ⚠ R4 · `billingName` IS TEMPLATE TEXT NOW, so it has to travel with the
+        rest of it. It was left out while it was a flat sentence and the omission
+        did not show; once it carries `[[if heads]]` markers, a clone would get a
+        conditional supply description beside a billing name that always asserts
+        heads — the two halves of one machine disagreeing on the same invoice.
+
+      ⚠ This is how a build-width variant starts — `20261114120001` split the K64
+        exactly this way — so the clone is a REAL machine a customer is quoted,
+        not a scratch copy.
+    */
+    billingName: from.billingName,
     supplyDescription: from.supplyDescription,
     specRows: from.specRows,
     composition: from.composition,

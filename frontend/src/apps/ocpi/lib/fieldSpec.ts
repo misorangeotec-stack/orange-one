@@ -283,6 +283,8 @@ export interface QuotationDraft {
   deliveryDays: string;
   tradeTerm: string;
   machineModelNo: string;
+  /** R8 · the customs heading for THIS deal. "" = use the machine master's. */
+  hsnCode: string;
   preparedBy: string;
   approvedBy: string;
 
@@ -453,6 +455,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   deliveryDays: "",
   tradeTerm: "",
   machineModelNo: "",
+  hsnCode: "",
   preparedBy: "",
   approvedBy: "",
   gstRate: DEFAULT_GST_RATE,
@@ -1012,10 +1015,27 @@ export const SUBSIDIZED_RATE_NOTE =
   "quantity only. Any further quantity will be charged at the rate prevailing at the time " +
   "of that order.";
 
-/** The standing insurance clause, printed verbatim and confirmed by the salesperson. */
-export const INSURANCE_CLAUSE =
-  "Insurance coverage up to the point of loading will be the responsibility of the company, " +
-  "while any coverage required during unloading will be the responsibility of the customer.";
+/**
+ * The standing insurance clause, printed verbatim and confirmed by the salesperson.
+ *
+ * 🔴 THIS IS A COMMERCIAL PROMISE, NOT WORDING (R2, 07-09-2026). It used to read
+ *    "Insurance coverage up to the point of loading will be the responsibility of
+ *    the company, while any coverage required during unloading will be the
+ *    responsibility of the customer" — which took PART OF THE RISK ONTO ORANGE.
+ *    Every real signed paper places it wholly on the customer, and the split
+ *    version was logged as a defect in six places (N-18, D-4, F-05, A-04/A-07/A-10)
+ *    with no decision anywhere defending it. Ritesh Bhai settled it: transit
+ *    insurance, borne by the customer.
+ *
+ * ⚠ THERE IS A SECOND COPY, IN SQL, AND THERE HAS TO BE. All 21 machine decks
+ *   carry the sentence as literal text in their SALE CONDITIONS clause — a
+ *   migration cannot import a TypeScript const. Written by
+ *   `20261114120002_fms_ocpi_insurance_is_the_customers.sql`, whose post-flight
+ *   assertion counts 21 bodies holding this exact string. Change the wording here
+ *   and a new migration must rewrite those 21; change one without the other and
+ *   the form and the paper drift apart.
+ */
+export const INSURANCE_CLAUSE = "Transit insurance will be borne by the customer.";
 
 /*
   The consumables supplier is a standing answer too, but it is declared UP BESIDE
@@ -1078,24 +1098,32 @@ export const PAYMENT_TERMS_FORMATS = [
 ] as const;
 
 /**
- * The condition the machine delivery date is given under (OCPI-18, 01-Sep-2026).
+ * The sentence the delivery PERIOD is stated in (R1, 07-09-2026).
  *
- * 🔴 THIS SENTENCE PRINTS ON A SIGNED CONTRACT. It is shown under the date on the
- *    form, printed under the date on the summary sheet, and written into the SALE
- *    CONDITIONS OF THE SUPPLY clause of all 21 machine decks that have one. The
- *    form and the contract must state the delivery condition in the SAME WORDS —
- *    a customer reading two slightly different sentences about when a date starts
- *    running has two different answers to which one governs.
+ * 🔴 THIS REVERSES OCPI-18, DELIBERATELY AND ON THE CLIENT'S INSTRUCTION.
+ *    OCPI-18 (01-Sep-2026) replaced a counted-days term with a tentative DATE so
+ *    a deal's two papers could not carry two different delivery promises, and
+ *    `OCPI-OC-AUDIT.md` carried an explicit "do not restore `delivery_days`" flag.
+ *    The counted evidence went the other way: of 36 real Performa Invoices in the
+ *    26-27 folder, 28 promise a number of days and NOT ONE promises a date. Read
+ *    back off real papers during this change:
  *
- * ⚠ THERE IS A THIRD COPY, IN SQL, AND THERE HAS TO BE. The 21 template bodies
- *   hold the sentence as literal text — a migration cannot import a TypeScript
- *   const. It was written by
- *   `supabase/migrations/20261102120000_fms_ocpi_delivery_date_on_the_contract.sql`,
- *   whose post-flight assertion counts 21 bodies carrying this exact string.
- *   Changing the wording here means a new migration rewriting those 21 bodies;
- *   changing only one of the two is how the form and the paper drift apart.
+ *        folder 109  Delivery Terms : 30 Days from the date of confirmation
+ *        folder  81  Delivery Terms : 30 Days After Order Confirmation.
+ *
+ * 🟢 THE SINGLE-SOURCE PROPERTY OCPI-18 PROTECTED IS KEPT. One field still feeds
+ *    both papers — only its SHAPE changed, from a date to a duration. The invoice
+ *    and the contract still cannot disagree.
+ *
+ * ⚠ THE BOX HOLDS ONLY THE PERIOD — "30", or "30 to 45". This suffix is printed
+ *   around it so the wording cannot drift deal to deal, while a range still works
+ *   (folder 106's real paper reads "30 to 45 Days from Order confirmation").
+ *
+ * ⚠ THERE IS A SECOND COPY, IN SQL. All 21 machine decks print
+ *   `Shipment Terms: {{delivery_days}} <this suffix>` in their SALE CONDITIONS
+ *   clause. Change it here and a migration must rewrite those 21.
  */
-export const DELIVERY_DATE_REMARK = "Applicable from the date of signing of this contract.";
+export const DELIVERY_PERIOD_SUFFIX = "Days from the date of confirmation";
 
 /*
   ⚠ THERE IS NO GROUP TABLE HERE ANY MORE, AND THAT IS DELIBERATE.
@@ -1171,7 +1199,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   dealValueAmount: "Total deal value (excl. GST)",
   paymentType: "Type of payment",
   paymentTerms: "Terms of payment",
-  deliveryDate: "Tentative machine delivery date",
+  deliveryDate: "Tentative machine delivery date",  // RETIRED (R1) — kept so stored answers round-trip
   transportTerms: "Deal type",
   highSeasVia: "High seas delivery via",
   highSeasCostBy: "High seas cost borne by",
@@ -1256,13 +1284,14 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   consumablesSupplier: "Consumables to be bought from",
   insuranceClauseAgreed: "Insurance clause agreed",
   refNo: "Reference no.",
-  deliveryDays: "Delivery days",
+  deliveryDays: "Delivery period",
   // ⚠ RELABELLED IN PLACE, NEVER MOVED (OCPI-35). Its position is revision-diff
   //   history. The name distinguishes it from `deliveryVia` above, which is the
   //   QUESTION; this is the composed answer that actually reaches the paper, and
   //   two rows captioned "Delivery term" in one diff would be unreadable.
   tradeTerm: "Delivery term (as printed)",
   machineModelNo: "Manufacturer's model no.",
+  hsnCode: "HSN code",
   preparedBy: "Prepared by",
   approvedBy: "Approved by",
   gstRate: "GST %",
@@ -1435,6 +1464,7 @@ export function draftFromDeal(
     deliveryDays: s(d.deliveryDays),
     tradeTerm: s(d.tradeTerm),
     machineModelNo: s(d.machineModelNo),
+    hsnCode: s(d.hsnCode),
     preparedBy: s(d.preparedBy),
     approvedBy: s(d.approvedBy),
     gstRate:
@@ -1604,6 +1634,7 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     delivery_days: d.deliveryDays,
     trade_term: d.tradeTerm,
     machine_model_no: d.machineModelNo,
+    hsn_code: d.hsnCode,
     prepared_by: d.preparedBy,
     approved_by: d.approvedBy,
     gst_rate: d.gstRate,

@@ -150,7 +150,36 @@ const REQUIREMENTS: readonly Requirement[] = [
   { key: "spareDetails", tier: "approval" },
   { key: "inclCentering", tier: "approval" },
   { key: "centeringDetails", tier: "approval" },
-  { key: "inclHead", tier: "approval" },
+  /*
+    🔴 R4 · PROMOTED FROM `approval` TO `generate`, AND IT IS THE FIX FOR A HOLE
+       THE REST OF R4 CANNOT CLOSE.
+
+       Since R4 the priced supply line, the spec row, the billing name and the
+       opening sentence all branch on this answer through the `heads` / `noHeads`
+       pair. Both are false while it is unanswered — deliberately, so silence can
+       never assert "(WITHOUT PRINTHEADS)" — which means an UNANSWERED deal
+       prints no head phrase at all.
+
+       That is the right reading of silence, but only if silence cannot reach a
+       customer. It could: `missingForGenerate` checks the `generate` tier alone,
+       so a customer-facing ORDER QUOTATION could be produced with `incl_head`
+       null, and the head phrase would quietly disappear from a paper that used
+       to state it. Forcing the answer at Generate closes it at the source.
+
+    ⚠ THE PRICE IS THE PRECEDENT, not an exception being invented here. OCPI-15
+      shipped with only customer and machine blocking, and the client overruled
+      it — "a quotation cannot be generated without the pricing, otherwise we
+      already have the save draft option". Whether the machine includes its
+      print heads is the same kind of answer: the paper is wrong without it.
+
+    ⚠ `headCount` STAYS AT `approval` ON PURPOSE. It only matters once `heads` is
+      true, and promoting it would block more than was asked — a salesperson
+      settling "heads: yes" mid-negotiation can still put a paper in front of a
+      customer before the exact count is agreed.
+
+    🟢 SAVE DRAFT ENFORCES NOTHING, as always. This blocks the PDF, not the work.
+  */
+  { key: "inclHead", tier: "generate" },
   { key: "headsIncluded", tier: "approval" },
 
   /*
@@ -205,7 +234,7 @@ const REQUIREMENTS: readonly Requirement[] = [
   { key: "fxRate", tier: "generate" },
 
   { key: "paymentTerms", tier: "approval" },
-  { key: "deliveryDate", tier: "approval" },
+  { key: "deliveryDays", tier: "approval" },
 ];
 
 /**
@@ -365,6 +394,18 @@ export function requiredKeys(
  */
 const DETAIL_SHEET_FIELDS: readonly (keyof QuotationDraft)[] = [
   "tradeTerm",
+  /*
+    ⚠ RESTORED BY R1 (07-09-2026). OCPI-18 removed this entry because the line it
+      warned about was gone — `{{delivery_days}}` had been rewritten out of all 21
+      SALE CONDITIONS sections. R1 puts the token back, so the warning has to come
+      back with it: a deal generated without a period prints
+      `Shipment Terms: ________` in the delivery clause of the contract.
+
+      It is BOTH here and in REQUIREMENTS at the approval tier, and that is not a
+      duplicate: the requirement blocks Send for approval, this warns at Generate,
+      which happens first.
+  */
+  "deliveryDays",
   "headShipMode",
   "inkShipMode",
   "sparesShipMode",

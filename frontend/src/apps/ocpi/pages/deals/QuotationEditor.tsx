@@ -78,7 +78,7 @@ const CUSTOMER_FACING = new Set<string>([
   "transportTerms",
   "deliveryVia",
   "paymentTerms",
-  "deliveryDate",
+  "deliveryDays",
   "headCount",
 ]);
 

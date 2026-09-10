@@ -63,6 +63,34 @@ export function dealRef(d: OcpiDeal): string {
 }
 
 /**
+ * How the Ref column SORTS, which is not how it reads.
+ *
+ * 🔴 SORTING THE RENDERED NUMBER AS TEXT DOES NOT GIVE CHRONOLOGICAL ORDER, and
+ *    R6 made that impossible to ignore. `OTPL/OC/2627/SEP/0001` sorts on the
+ *    MONTH NAME, so a year runs APR, AUG, DEC, FEB, JAN, JUL, JUN, MAR, MAY,
+ *    NOV, OCT, SEP.
+ *
+ * ⚠ AND IT WAS ALREADY WRONG BEFORE R6, quietly. `QT-M0067` is zero-padded so
+ *   lexical order happened to equal mint order — but OCPI-36's `OTPL/OC/22/26-27`
+ *   is NOT padded, so `…/10/…` sorted before `…/9/…` on every one of these
+ *   screens. Nobody had reason to notice, because the number that sorts is the
+ *   quotation number until a deal is approved.
+ *
+ * ⚠ THE COLUMN MIXES TWO SERIES. `dealRef` shows the CONTRACT number once a deal
+ *   is approved and the QUOTATION number before that, so there is no single
+ *   numeric series to sort on even in principle. Creation time is the one key
+ *   that orders the mixture correctly — and it is also the order the numbers were
+ *   minted in, which is what a reader means by sorting on Ref.
+ *
+ * ⚠ ISO 8601 SORTS CORRECTLY AS TEXT, so this needs no date parsing. Rows with no
+ *   timestamp sort last rather than first, which is where an unnumbered draft
+ *   belongs.
+ */
+export function dealRefSort(d: OcpiDeal): string {
+  return d.createdAt ?? "9999";
+}
+
+/**
  * When each step was finished, as a timestamp another step can be measured from.
  *
  * ⚠ EVERY ONE OF THESE IS A REAL STAMP ON THE ROW, not a guess. `quotation`
