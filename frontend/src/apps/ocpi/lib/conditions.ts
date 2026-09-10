@@ -180,6 +180,30 @@ export function applyConditions(text: string, conditions: Conditions): Condition
   const unknown = new Set<string>();
   let unbalanced = false;
 
+  /*
+    🔴 THE SUPPLIED MAP IS LOWERCASED, AND WITHOUT THIS A CAMELCASE NAME CANNOT
+       EVER MATCH. The matcher below reads the name out of the template and
+       lowercases it (`name.toLowerCase()`, and the regex is `gi`), so a key
+       spelled `noHeads` in `conditionsFor` is looked up as `noheads`, is not
+       found, and is reported UNKNOWN — which FAILS OPEN and prints the body on
+       every deal.
+
+    🔴 THAT SHIPPED, BRIEFLY, AND RENDERED PROOF CAUGHT IT. R4's `noHeads` was
+       the first name in this vocabulary that was not already all-lowercase;
+       `dryer`, `centering` and `usd` had hidden the asymmetry for months. A
+       heads-included contract printed BOTH branches —
+       "LARGE FORMAT INKJET PRINTER WITH 32 HEADS (WITHOUT PRINTHEADS)" — and an
+       unanswered deal asserted "(WITHOUT PRINTHEADS)" from silence, which is the
+       exact failure the two-positive-names rule exists to prevent.
+
+    ⚠ FIXED HERE RATHER THAN BY RENAMING THE KEY, deliberately. Renaming would
+      fix today's pair and leave the trap set for the next author, who has every
+      reason to think a name is case-insensitive — the regex is `gi` and the
+      doc comments say so. This makes that true on BOTH sides.
+  */
+  const byLowerKey: Conditions = {};
+  for (const k of Object.keys(conditions)) byLowerKey[k.toLowerCase()] = conditions[k];
+
   const keepWords = (line: string): string | null => {
     unbalanced = true;
     marker.lastIndex = 0;
@@ -198,11 +222,11 @@ export function applyConditions(text: string, conditions: Conditions): Condition
     cond.lastIndex = 0;
     const next = line.replace(cond, (_m, neg: string, name: string, body: string) => {
       const key = name.toLowerCase();
-      if (!Object.prototype.hasOwnProperty.call(conditions, key)) {
+      if (!Object.prototype.hasOwnProperty.call(byLowerKey, key)) {
         unknown.add(key);
         return body;
       }
-      return (neg === "!" ? !conditions[key] : conditions[key]) ? body : "";
+      return (neg === "!" ? !byLowerKey[key] : byLowerKey[key]) ? body : "";
     });
 
     // A backstop for the structurally valid but unreadable — `[[if 2-fast]]`
