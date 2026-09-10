@@ -23,6 +23,7 @@ export interface ExposureRow {
   id: string;
   customer: string;
   salesPerson: string;
+  collectionTeam: string;
   company: string;
   location: string;
   category: string;
@@ -49,6 +50,9 @@ export function toExposureRow(c: Customer, groupMap: CustomerGroupMap): Exposure
     id: c.id,
     customer: c.name,
     salesPerson: c.salesPerson || "Unassigned",
+    // "" rather than a sentinel: unassigned must not look like a team called "Unassigned",
+    // because the filter offers only real teams and would never match it.
+    collectionTeam: c.collectionTeam || "",
     company: c.company || "—",
     location: c.location || "—",
     category: c.category || "",

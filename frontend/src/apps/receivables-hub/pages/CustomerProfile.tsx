@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@hub/lib/customerProfile";
 import { exportCustomerProfileXlsx } from "@hub/lib/exportCustomerProfile";
 import { useReceivablesScope } from "@hub/lib/scope";
+import { filterByScope, useScopedParties } from "@hub/lib/scopeParties";
 
 /**
  * Reports → Insights → Customer Profile.
@@ -322,13 +323,36 @@ export default function CustomerProfile() {
    * is null for an admin and `[]` for an untagged non-admin — and `[]` must mean NOTHING, so
    * the null check has to come first.
    */
-  const { restrictToSalespersons } = useReceivablesScope();
-  const rows: CustomerRow[] = useMemo(() => {
-    const all = data?.customers ?? [];
-    if (restrictToSalespersons === null) return all;
-    const allowed = new Set(restrictToSalespersons);
-    return all.filter((r) => r.salesperson != null && allowed.has(r.salesperson));
-  }, [data, restrictToSalespersons]);
+  const { restrictToSalespersons, restrictToCollectionTeams } = useReceivablesScope();
+  // The team dimension (RC-11) cannot use the row's own tag: rpt_customer_profile resolves the
+  // SALESPERSON per row server-side and carries no collection team. So it narrows by party name
+  // instead, through the same scope every other report uses. The two dimensions are exclusive, so
+  // only one of the two branches below ever runs on a real user.
+  const { scope: partyScope, loading: scopeLoading } = useScopedParties();
+  /**
+   * Narrow any list from this RPC to what the viewer may see.
+   *
+   * ⚠ THE PAGE HAS TWO DATASETS, AND BOTH NEED THIS. `data.customers` feeds the bands and the New
+   *   Customers table; `data.inactive` feeds the "gone quiet" table lower down. Only the first was
+   *   ever scoped, so a salesperson-scoped user could read every other rep's dormant customers by
+   *   name, salesperson and pending receivable. Pre-dates collection teams — found while browser
+   *   testing RC-11, and fixed here for both dimensions at once.
+   */
+  const scopeRows = useCallback(<T extends { name: string; salesperson: string | null }>(list: T[]): T[] => {
+    let out = list;
+    if (restrictToSalespersons !== null) {
+      const allowed = new Set(restrictToSalespersons);
+      out = out.filter((r) => r.salesperson != null && allowed.has(r.salesperson));
+    }
+    if (restrictToCollectionTeams !== null) {
+      // Fails closed while the party map loads: an empty scope shows nothing, never everything.
+      out = scopeLoading ? [] : filterByScope(out, partyScope, (r) => r.name);
+    }
+    return out;
+  }, [restrictToSalespersons, restrictToCollectionTeams, partyScope, scopeLoading]);
+
+  const rows: CustomerRow[] = useMemo(() => scopeRows(data?.customers ?? []), [data, scopeRows]);
+  const inactiveRows = useMemo(() => scopeRows(data?.inactive ?? []), [data, scopeRows]);
 
   const bands = useMemo(() => bandTotals(rows, cfg), [rows, cfg]);
   const journey = useMemo(() => journeys(rows, cfg), [rows, cfg]);
@@ -374,7 +398,7 @@ export default function CustomerProfile() {
   const meta = data?.meta;
   const kpi = useMemo(() => {
     const full = data?.kpi;
-    if (!full || restrictToSalespersons === null) return full;
+    if (!full || (restrictToSalespersons === null && restrictToCollectionTeams === null)) return full;
     const count = (l: CustomerRow["lifecycle"]) => rows.filter((r) => r.lifecycle === l).length;
     const new_count = count("new");
     const existing_count = count("existing");
@@ -385,7 +409,7 @@ export default function CustomerProfile() {
       existing_count,
       nonactive_count: count("nonactive"),
     };
-  }, [data, rows, restrictToSalespersons]);
+  }, [data, rows, restrictToSalespersons, restrictToCollectionTeams]);
 
   const heroSummary: React.ReactNode = heroLoading
     ? "Reading the customer base…"
@@ -681,7 +705,7 @@ export default function CustomerProfile() {
       </SalesPanel>
 
       {/* ---- Gone quiet ---- */}
-      {(data?.inactive?.length ?? 0) > 0 && (
+      {inactiveRows.length > 0 && (
         <SalesPanel
           title={`Customers with no invoice in ${inactiveApplied} days`}
           icon={UserX}
@@ -697,7 +721,7 @@ export default function CustomerProfile() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.inactive ?? []).slice(0, 25).map((r) => (
+                {inactiveRows.slice(0, 25).map((r) => (
                   <tr key={`${r.name}-${r.last_invoice}`} className="border-t border-line hover:bg-page/60">
                     <Td className="max-w-[300px] truncate">{r.name}</Td>
                     <Td className="text-grey">{r.salesperson ?? ""}</Td>

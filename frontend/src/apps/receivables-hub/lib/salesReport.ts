@@ -22,6 +22,8 @@
  * (company, FY) and `tenantForFy()` below reads it.
  */
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
+import { fetchAll } from "./musterApi";
+import { isUnset } from "./nameMasters";
 
 /* ---------------------------------------------------------------- palette */
 
@@ -456,24 +458,51 @@ export async function loadSalesReportMulti(
  * because Tally carries no salesperson dimension — we fill the panel from our own
  * `ext_ledger_tags`, the same muster that drives receivables scoping.
  * Returns a party-name → salesperson map.
+ *
+ * ⚠ PAGED, and it has to be. Both musters hold ~1,875 rows and PostgREST caps a plain `.select()`
+ *   at 1,000 — so this silently returned a map missing roughly a third of the ledgers, which on the
+ *   scoping path means a user quietly not seeing customers that are theirs. Fixed 10-09-2026 while
+ *   building the collection-team twin below; `fetchAll` orders by the primary key, which is what
+ *   makes paging safe (an unordered `.range()` walk can repeat one row and drop another).
  */
 export async function loadSalespersonByParty(): Promise<Record<string, string>> {
-  const cw = getConnectwaveSupabase();
   const [tags, names] = await Promise.all([
-    cw.from("ext_ledger_tags").select("ledger_id,salesperson"),
-    cw.from("ext_ledger_group").select("ledger_id,tally_name"),
+    fetchAll<{ ledger_id: string; salesperson: string | null }>(
+      "ext_ledger_tags", "ledger_id,salesperson", "ledger_id"),
+    fetchAll<{ ledger_id: string; tally_name: string }>(
+      "ext_ledger_group", "ledger_id,tally_name", "ledger_id"),
   ]);
-  if (tags.error) throw new Error(tags.error.message);
-  if (names.error) throw new Error(names.error.message);
 
   const nameOf = new Map<string, string>();
-  for (const r of (names.data ?? []) as { ledger_id: string; tally_name: string }[]) {
+  for (const r of names) {
     if (r.ledger_id && r.tally_name) nameOf.set(r.ledger_id, r.tally_name);
   }
   const out: Record<string, string> = {};
-  for (const r of (tags.data ?? []) as { ledger_id: string; salesperson: string | null }[]) {
+  for (const r of tags) {
     const nm = nameOf.get(r.ledger_id);
     if (nm && r.salesperson) out[nm] = r.salesperson;
+  }
+  return out;
+}
+
+/**
+ * The same thing for COLLECTION TEAM (RC-11), and simpler: `collection_team` sits on
+ * `ext_ledger_group` beside `tally_name`, so there is nothing to join.
+ *
+ * ⚠ `isUnset` rather than a truthiness test. The muster stores BOTH `''` and NULL for unassigned —
+ *   the sheet seed left an empty string on most rows — and a bare `if (r.collection_team)` would
+ *   read the empty ones as a team literally named "".
+ *
+ * ⚠ Last write wins on a duplicated party NAME, exactly as the salesperson map above does: 387 names
+ *   repeat across companies. That is a known property of keying by name, not a new one — the scoping
+ *   layer is party-name based end to end.
+ */
+export async function loadCollectionTeamByParty(): Promise<Record<string, string>> {
+  const rows = await fetchAll<{ ledger_id: string; tally_name: string | null; collection_team: string | null }>(
+    "ext_ledger_group", "ledger_id,tally_name,collection_team", "ledger_id");
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.tally_name && !isUnset(r.collection_team)) out[r.tally_name] = r.collection_team as string;
   }
   return out;
 }

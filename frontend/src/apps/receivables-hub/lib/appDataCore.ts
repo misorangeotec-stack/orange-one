@@ -156,6 +156,9 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
       locations:               [...new Set(entries.map((c) => c.location))].sort(),
       constituentIds:          entries.map((c) => c.id),
       salesPersons:            [...new Set(entries.map((c) => c.salesPerson).filter(Boolean))].sort(),
+      // filter(Boolean) drops the unassigned, exactly as it does for salesperson: an empty string is
+      // "nobody is chasing this", not a team called "".
+      collectionTeams:         [...new Set(entries.map((c) => c.collectionTeam).filter(Boolean))].sort(),
       categories:              [...new Set(entries.map((c) => c.category).filter(Boolean))].sort(),
     } as ConsolidatedCustomer;
   });

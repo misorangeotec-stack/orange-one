@@ -228,13 +228,14 @@ function Toolbar({
 /** Plain-English list of the active filters, recorded on the export's "About" sheet. */
 function describeFilters(o: {
   search?: string; mode?: FilterMode; balanceOnly?: boolean;
-  allocs?: string[]; companies?: string[]; locations?: string[];
+  allocs?: string[]; companies?: string[]; locations?: string[]; unassignedTeam?: boolean;
 }): string[] {
   const out: string[] = [];
   if (o.search?.trim()) out.push(`Search: "${o.search.trim()}"`);
   if (o.mode === "unchecked") out.push("Only unchecked");
   if (o.mode === "new") out.push("Only new");
   if (o.balanceOnly) out.push("Only rows with a balance");
+  if (o.unassignedTeam) out.push("Only customers with no collection team");
   if (o.allocs?.length) out.push(`Allocation: ${o.allocs.join(", ")}`);
   if (o.companies?.length) out.push(`Companies: ${o.companies.join(", ")}`);
   if (o.locations?.length) out.push(`Locations: ${o.locations.join(", ")}`);
@@ -442,6 +443,31 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
   const name = (r: GroupRow) => snap(r)?.name ?? r.tally_name ?? "—";
   const out = (r: GroupRow) => Number(snap(r)?.outstanding ?? 0);
 
+  /**
+   * "Unassigned" — a customer that owes money and has no collection team (RC-11).
+   *
+   * ⚠ THIS IS NOT A TIDINESS REPORT. Once a user is scoped by collection team, a customer with no
+   *   team is invisible to every one of them. And the gap re-opens on its own: collection_refresh()
+   *   enrols each new customer with no team at all, so the list grows quietly unless somebody looks.
+   *   This is where they look.
+   *
+   * ⚠ OWING, not merely carrying a balance. `out(r) >= 1`, deliberately not the `Math.abs()` the
+   *   "Only rows with a balance" toggle beside it uses: a CREDIT balance is money we owe the
+   *   customer, so there is nothing to collect and nobody to assign. Counting those made this read
+   *   64 against the 54 on the list handed to the collection team — one question, two answers.
+   *
+   * ⚠ DECLARED AFTER `out`, and it has to be. useMemo runs its callback DURING render, at the line
+   *   it sits on — so referencing a const declared further down throws "Cannot access 'out' before
+   *   initialization" and takes the whole tab out. TypeScript cannot catch it: the reference is
+   *   inside a closure, which for all the compiler knows runs later.
+   */
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const unassignedCount = useMemo(
+    () => rows.filter((r) => isUnset(r.collection_team) && out(r) >= 1).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, snapByGuid],
+  );
+
   const counts = useMemo(() => ({
     all: rows.length,
     unchecked: rows.filter((r) => !r.checked).length,
@@ -454,6 +480,9 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
       if (f.filter === "unchecked" && r.checked) return false;
       if (f.filter === "new" && r.source !== "sync_stub") return false;
       if (f.balanceOnly && Math.abs(out(r)) < 1) return false;
+      // Owing money AND unassigned. A customer with nothing outstanding needs no collector, so
+      // including those would bury the ~50 rows that actually matter under a thousand that do not.
+      if (unassignedOnly && !(isUnset(r.collection_team) && out(r) >= 1)) return false;
       const s = snap(r);
       if (f.companies.length && !f.companies.includes(s?.company ?? "")) return false;
       if (f.locations.length && !f.locations.includes(s?.location ?? "")) return false;
@@ -466,7 +495,7 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
     if (f.sortDir) list.sort((a, b) => f.sortDir === "desc" ? out(b) - out(a) : out(a) - out(b));
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, f.search, f.filter, f.balanceOnly, f.companies, f.locations, f.sortDir, snapByGuid]);
+  }, [rows, f.search, f.filter, f.balanceOnly, unassignedOnly, f.companies, f.locations, f.sortDir, snapByGuid]);
 
   const totalPages = Math.max(1, Math.ceil(view.length / PAGE_SIZE));
   const pageRows = view.slice((f.page - 1) * PAGE_SIZE, f.page * PAGE_SIZE);
@@ -511,7 +540,7 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
       {/* Collection team has no datalist any more — it is a picker fed by the master (RC-15). */}
       <div className="flex justify-end pb-2">
         <MasterIoBar io={groupIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
-          activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations })}
+          activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations, unassignedTeam: unassignedOnly })}
           onReload={onReload} />
       </div>
       <Toolbar
@@ -520,6 +549,19 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
         companyOptions={companyOptions} selectedCompanies={f.companies} onCompanies={f.setCompanies}
         locationOptions={locationOptions} selectedLocations={f.locations} onLocations={f.setLocations}
       />
+      <div className="flex items-center gap-2 pb-2">
+        <Button
+          size="sm" variant={unassignedOnly ? "default" : "outline"}
+          onClick={() => setUnassignedOnly((v) => !v)} className="gap-1.5"
+        >
+          No collection team
+          <span className="tabular-nums opacity-80">{unassignedCount}</span>
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Customers who owe money and have nobody chasing them. Anyone scoped to a collection team
+          cannot see these at all, and every new customer starts here.
+        </span>
+      </div>
       <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>

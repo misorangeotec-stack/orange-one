@@ -77,7 +77,7 @@ export interface DirectoryValue {
   addBand: (input: { bandNo: number; name: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<string>;
   updateBand: (id: string, patch: { bandNo?: number; name?: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<void>;
 
-  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; isExternal?: boolean; password?: string }) => Promise<string>;
+  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesCollectionTeams?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; isExternal?: boolean; password?: string }) => Promise<string>;
   /**
    * Set one user's login password outright.
    *
@@ -94,7 +94,7 @@ export interface DirectoryValue {
    *   `moduleAccess` is deliberately NOT accepted here: two ways to say the same
    *   thing is how the id list and the levels drift apart.
    */
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "gender" | "dateOfBirth" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "gender" | "dateOfBirth" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesCollectionTeams" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, levels: Record<string, ModuleLevel>) => Promise<void>;
 }
@@ -306,6 +306,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           hodIds: input.hodIds ?? [],
           moduleLevels: input.moduleLevels ?? {},
           receivablesSalespersons: input.receivablesSalespersons ?? [],
+          receivablesCollectionTeams: input.receivablesCollectionTeams ?? [],
           receivablesHiddenMenus: input.receivablesHiddenMenus ?? [],
           receivablesAdminMenus: input.receivablesAdminMenus ?? [],
           receivablesAllowedReports: input.receivablesAllowedReports ?? [],
@@ -353,6 +354,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           dateOfBirth: patch.dateOfBirth,
           avatarColor: patch.avatarColor,
           receivablesSalespersons: patch.receivablesSalespersons,
+          receivablesCollectionTeams: patch.receivablesCollectionTeams,
           receivablesHiddenMenus: patch.receivablesHiddenMenus,
           receivablesAdminMenus: patch.receivablesAdminMenus,
           receivablesAllowedReports: patch.receivablesAllowedReports,

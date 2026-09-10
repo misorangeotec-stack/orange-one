@@ -130,7 +130,7 @@ export async function updateBand(id: string, patch: { bandNo?: number; name?: st
 /** Update an existing user's profile fields (admin-only under RLS). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; designationId?: string | null; departmentId?: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; gender?: "male" | "female" | "other" | null; dateOfBirth?: string | null; avatarColor?: string; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; receivablesAllowPipeline?: boolean }
+  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; designationId?: string | null; departmentId?: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; gender?: "male" | "female" | "other" | null; dateOfBirth?: string | null; avatarColor?: string; receivablesSalespersons?: string[]; receivablesCollectionTeams?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; receivablesAllowPipeline?: boolean }
 ): Promise<void> {
   const fields: ProfileUpdate = {};
   if (patch.name !== undefined) fields.name = patch.name;
@@ -151,6 +151,7 @@ export async function updateUserProfile(
   if (patch.dateOfBirth !== undefined) fields.date_of_birth = patch.dateOfBirth;
   if (patch.avatarColor !== undefined) fields.avatar_color = patch.avatarColor;
   if (patch.receivablesSalespersons !== undefined) fields.receivables_salespersons = patch.receivablesSalespersons;
+  if (patch.receivablesCollectionTeams !== undefined) fields.receivables_collection_teams = patch.receivablesCollectionTeams;
   if (patch.receivablesHiddenMenus !== undefined) fields.receivables_hidden_menus = patch.receivablesHiddenMenus;
   if (patch.receivablesAdminMenus !== undefined) fields.receivables_admin_menus = patch.receivablesAdminMenus;
   if (patch.receivablesAllowedReports !== undefined) fields.receivables_allowed_reports = patch.receivablesAllowedReports;

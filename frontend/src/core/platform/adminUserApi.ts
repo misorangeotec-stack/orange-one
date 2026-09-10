@@ -58,6 +58,8 @@ export interface CreateUserInput {
   moduleLevels?: Record<string, "view" | "edit">;
   /** Outstanding Dashboard scope — salesperson names this user may see. */
   receivablesSalespersons?: string[];
+  /** Outstanding Dashboard scope — collection teams this user may see. Exclusive with the above. */
+  receivablesCollectionTeams?: string[];
   /** Outstanding Dashboard menu deny-list — menu keys this user may NOT see. */
   receivablesHiddenMenus?: string[];
   /** Outstanding Dashboard full-access allow-list — menus used with admin-level depth. */

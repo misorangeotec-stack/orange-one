@@ -29,6 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@hub/components/ui/tooltip";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
@@ -144,7 +145,7 @@ function toDrillRow(b: EnrichedBill): InvoiceDrillRow {
 function CustomerCategoryInner() {
   const {
     loading, allCustomers, consolidatedCustomers, customerDetail, customerGroupMap,
-    dashboard, salesPersonOptions,
+    dashboard, salesPersonOptions, collectionTeamOptions,
   } = useAppData({});
   const asOfDate = dashboard?.asOfDate ?? "";
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
@@ -176,6 +177,7 @@ function CustomerCategoryInner() {
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -221,11 +223,12 @@ function CustomerCategoryInner() {
     if (companies.length)     { const s = new Set(companies);     d = d.filter((c) => s.has(c.company)); }
     if (locations.length)     { const s = new Set(locations);     d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length)  { const s = new Set(salespersons);  d = d.filter((c) => s.has(c.salesPerson)); }
+    if (collectionTeams.length) { const s = new Set(collectionTeams); d = d.filter((c) => s.has(c.collectionTeam)); }
     if (customerNames.length) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
     if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (blockedOnly) d = d.filter((c) => c.blocked === true);
     return d;
-  }, [allCustomers, categories, companies, locations, salespersons, customerNames, groupNamesSel,
+  }, [allCustomers, categories, companies, locations, salespersons, collectionTeams, customerNames, groupNamesSel,
       blockedOnly, customerGroupMap]);
 
   const inScopeLedgerIds = useMemo(() => new Set(scopedLedgers.map((c) => c.id)), [scopedLedgers]);
@@ -1051,6 +1054,7 @@ function CustomerCategoryInner() {
             <MultiSelect options={customerOptions} value={customerNames} onChange={setCustomerNames} allLabel="All Customers" noun="Customers" />
             <MultiSelect options={groupOptions} value={groupNamesSel} onChange={setGroupNamesSel} allLabel="All Groups" noun="Groups" />
             <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} />
+            <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} />
             <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="Companies" />
             <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="Locations" />
             <CustomerCategoryMultiSelect value={categories} onChange={setCategories} />

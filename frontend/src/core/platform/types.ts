@@ -170,6 +170,19 @@ export interface Profile {
    */
   receivablesSalespersons: string[];
   /**
+   * Outstanding Dashboard scope, second dimension (profiles.receivables_collection_teams): the
+   * collection team(s) whose customers this user may see.
+   *
+   * ⚠ MUTUALLY EXCLUSIVE WITH receivablesSalespersons — a user is scoped by one dimension or the
+   *   other, never both (the client's decision). The admin form enforces it; the reader intersects
+   *   if both are somehow set, so the failure direction is narrower, never wider.
+   *
+   * ⚠ AND THE EMPTY LIST MEANS SOMETHING DIFFERENT HERE. An empty salesperson list on a non-admin
+   *   means "sees nothing". An empty team list means "this dimension does not restrict" — otherwise
+   *   every existing salesperson-scoped user would go blank the day this shipped.
+   */
+  receivablesCollectionTeams: string[];
+  /**
    * Outstanding Dashboard menu deny-list (profiles.receivables_hidden_menus): the
    * menu keys this user may NOT see in the receivables app's left nav. Admins ignore
    * this (see all menus); an empty list means every menu is visible (the default).

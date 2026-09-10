@@ -25,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@hub/components/ui/tooltip";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
@@ -158,7 +159,7 @@ function OverdueAgingInner() {
 
   const {
     loading, allCustomers, consolidatedCustomers, customerDetail, customerGroupMap,
-    dashboard, salesPersonOptions,
+    dashboard, salesPersonOptions, collectionTeamOptions,
   } = useAppData({});
   const asOfDate = dashboard?.asOfDate ?? "";
 
@@ -177,6 +178,7 @@ function OverdueAgingInner() {
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -242,11 +244,12 @@ function OverdueAgingInner() {
     if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => s.has(c.company)); }
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => s.has(c.salesPerson)); }
+    if (collectionTeams.length) { const s = new Set(collectionTeams); d = d.filter((c) => s.has(c.collectionTeam)); }
     if (customerNames.length){ const s = new Set(customerNames);d = d.filter((c) => s.has(c.name)); }
     if (groupNamesSel.length){ const s = new Set(groupNamesSel);d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     return d;
   }, [
-    allCustomers, categories, companies, locations, salespersons, customerNames, groupNamesSel,
+    allCustomers, categories, companies, locations, salespersons, collectionTeams, customerNames, groupNamesSel,
     customerGroupMap,
   ]);
 
@@ -1229,6 +1232,7 @@ function OverdueAgingInner() {
               <MultiSelect options={customerOptions} value={customerNames} onChange={setCustomerNames} allLabel="All Customers" noun="customers" triggerClassName="h-8 w-44 text-xs rounded-input" />
               <MultiSelect options={groupOptions} value={groupNamesSel} onChange={setGroupNamesSel} allLabel="All Groups" noun="groups" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />

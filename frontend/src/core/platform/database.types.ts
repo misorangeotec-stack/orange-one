@@ -6764,6 +6764,7 @@ export type Database = {
           receivables_allowed_reports: string[] | null
           receivables_hidden_menus: string[] | null
           receivables_report_prefs: Json | null
+          receivables_collection_teams: string[] | null
           receivables_salespersons: string[] | null
           updated_at: string
         }
@@ -6789,6 +6790,7 @@ export type Database = {
           receivables_allowed_reports?: string[] | null
           receivables_hidden_menus?: string[] | null
           receivables_report_prefs?: Json | null
+          receivables_collection_teams?: string[] | null
           receivables_salespersons?: string[] | null
           updated_at?: string
         }
@@ -6814,6 +6816,7 @@ export type Database = {
           receivables_allowed_reports?: string[] | null
           receivables_hidden_menus?: string[] | null
           receivables_report_prefs?: Json | null
+          receivables_collection_teams?: string[] | null
           receivables_salespersons?: string[] | null
           updated_at?: string
         }

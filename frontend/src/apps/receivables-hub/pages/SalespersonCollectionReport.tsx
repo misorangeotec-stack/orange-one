@@ -21,6 +21,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { MultiSelect } from "@hub/components/MultiSelect";
@@ -337,6 +338,7 @@ export default function SalespersonCollectionReport() {
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   // Customer Segment — mirrors the Risk Register / Dashboard filter. "Active" = had any
   // activity (sales / receipts / credit notes / other payments) in the FY; defaults to Active.
@@ -426,6 +428,12 @@ export default function SalespersonCollectionReport() {
     () => [...new Set(allCustomers.map((c) => spName(c.salesPerson)))].sort(),
     [allCustomers],
   );
+  // No spName() twin here on purpose: that helper folds an untagged salesperson into "Others", a
+  // real muster value. There is no equivalent team, so unassigned customers simply offer nothing.
+  const collectionTeamOptions = useMemo(
+    () => [...new Set(allCustomers.map((c) => c.collectionTeam).filter(Boolean))].sort(),
+    [allCustomers],
+  );
 
   // ── Sale-type filter ─────────────────────────────────────────────────────────
   // Received (Tally receipts) is now tagged per month by the sale type of the bill
@@ -503,6 +511,10 @@ export default function SalespersonCollectionReport() {
       const set = new Set(salesPersons);
       d = d.filter((c) => set.has(spName(c.salesPerson)));
     }
+    if (collectionTeams.length > 0) {
+      const set = new Set(collectionTeams);
+      d = d.filter((c) => set.has(c.collectionTeam));
+    }
     if (categories.length) d = d.filter((c) => matchesCategory(c, categories));
     // Customer Segment — judged on the customer's COMBINED (consolidate-by-name) activity,
     // exactly like the Dashboard (useAppData groups ledgers by name BEFORE the segment filter:
@@ -538,7 +550,7 @@ export default function SalespersonCollectionReport() {
     const q = customerSearch.trim().toLowerCase();
     if (q) d = d.filter((c) => c.name.toLowerCase().includes(q));
     return d;
-  }, [allCustomers, companies, locations, salesPersons, categories, customerSegment, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
+  }, [allCustomers, companies, locations, salesPersons, collectionTeams, categories, customerSegment, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
 
   // Customer-ledger lookup for the invoice drill-down (company/location/name per id).
   const customerById = useMemo(() => {
@@ -2200,6 +2212,10 @@ export default function SalespersonCollectionReport() {
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sales Person</span>
               <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Collection Team</span>
+              <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>

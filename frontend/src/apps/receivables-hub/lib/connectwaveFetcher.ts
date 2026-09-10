@@ -19,6 +19,7 @@ import { getConnectwaveSupabase } from "./connectwaveSupabase";
 import { categorizeRisk } from "./appDataCore";
 import { applyOtherPaymentsToLive } from "./liveOtherPayments";
 import { applyNonBillRefsToLive } from "./liveNonBillRefs";
+import { isUnset } from "./nameMasters";
 import { fetchCompanyMap, makeCompanyResolver, type CompanyIdentity } from "./companyMap";
 import type {
   Customer, CustomerDetail, DashboardData, CustomerGroupMap,
@@ -218,6 +219,9 @@ function toCustomer(r: CustSnap, identity: CompanyIdentity): Customer {
     company: identity.company,
     location: identity.location,
     salesPerson: r.salesperson ?? "",
+    // The snapshot carries no team; loadFromConnectwave stamps the real value from ext_ledger_group
+    // straight after. "" is the honest default: unassigned, not "everyone's".
+    collectionTeam: "",
     category: r.category ?? "",
     creditPeriod: Number(r.credit_period) || 0,
     creditLimit,
@@ -296,8 +300,11 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     fetchAll<CustSnap>(() => sb.from("collection_customer_snapshot").select("*"), ["tenant_id", "ledger_id"]),
     fetchAll<InvSnap>(() => sb.from("collection_invoice_snapshot").select("*"), ["tenant_id", "ledger_id", "bill_ref"]),
     sb.from("collection_meta").select("*").maybeSingle(),
-    fetchAll<{ ledger_id: string; tally_name: string; group_name: string }>(
-      () => sb.from("ext_ledger_group").select("ledger_id,tally_name,group_name"), ["ledger_id"]),
+    // collection_team rides along here (RC-11). It lives on this same muster row, so it costs no
+    // extra query — and until it was added to this select the column was a dead end: editable in
+    // Settings → Masters, exported, re-imported, and read by nothing.
+    fetchAll<{ ledger_id: string; tally_name: string; group_name: string; collection_team: string | null }>(
+      () => sb.from("ext_ledger_group").select("ledger_id,tally_name,group_name,collection_team"), ["ledger_id"]),
     fetchAll<{ ledger_id: string; salesperson: string | null; category: string | null }>(
       () => sb.from("ext_ledger_tags").select("ledger_id,salesperson,category"), ["ledger_id"]),
     fetchCompanyMap(),
@@ -324,14 +331,24 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
   const resolveCompany = makeCompanyResolver(companyRows);
   const tagByGuid = new Map(tagRows.map((t) => [t.ledger_id, t]));
   const tallyGroupByGuid = new Map(ledgerGroupRows.map((g) => [g.guid, g.sub_group ?? undefined]));
+  // Collection team by Tally GUID. '' and NULL both mean unset here — the original sheet seed left
+  // an empty string on most rows — so it is normalised to '' once, not tested for truthiness twice.
+  const teamByGuid = new Map(
+    groupRows.map((g) => [g.ledger_id, isUnset(g.collection_team) ? "" : (g.collection_team as string)]),
+  );
   // Red Mark membership by Tally GUID (= Customer.id). `blocked` carries the Red Mark flag on Live.
   const redmarkSet = new Set(redmarkRows.map((r) => r.ledger_id));
   const cust = custRows.map((r) => toCustomer(r, resolveCompany(r.tenant_id, r.company))).map((c) => {
     const tallyGroup = tallyGroupByGuid.get(c.id);
     const blocked = redmarkSet.has(c.id);
+    // ⚠ STAMPED OUTSIDE THE TAG GUARD BELOW, DELIBERATELY. `t` is the ext_ledger_tags row, which
+    // carries salesperson and category; collection_team comes from a DIFFERENT muster. Folding it
+    // into the early return would silently blank the team on every customer that happens to have no
+    // salesperson-tag row.
+    const collectionTeam = teamByGuid.get(c.id) ?? "";
     const t = tagByGuid.get(c.id);
-    if (!t) return { ...c, tallyGroup: tallyGroup ?? c.tallyGroup, blocked };
-    return { ...c, tallyGroup, blocked, salesPerson: t.salesperson ?? c.salesPerson, category: t.category ?? c.category };
+    if (!t) return { ...c, tallyGroup: tallyGroup ?? c.tallyGroup, blocked, collectionTeam };
+    return { ...c, tallyGroup, blocked, collectionTeam, salesPerson: t.salesperson ?? c.salesPerson, category: t.category ?? c.category };
   });
   // The as-of month comes from collection_meta (the authoritative stamp collection_refresh()
   // writes), not from an arbitrary snapshot row — row 0 of an unordered fetch is whatever the

@@ -17,8 +17,10 @@ export function SalesPersonMultiSelect({ options, value, onChange, triggerClassN
   // allCustomers), and useAppData enforces the data scope regardless of selection,
   // so widening the picker can never leak another salesperson's data. The selector
   // is only inert when the user has no salesperson access at all (no options).
-  const { restrictToSalespersons } = useReceivablesScope();
-  const scoped = restrictToSalespersons !== null;
+  const { restrictToSalespersons, restrictToCollectionTeams } = useReceivablesScope();
+  // Scoped on EITHER dimension. A team-scoped viewer has no salesperson tag, so keying on that
+  // alone would have shown them a live, empty dropdown instead of the honest "No access" state.
+  const scoped = restrictToSalespersons !== null || restrictToCollectionTeams !== null;
 
   const toggle = (sp: string) => {
     onChange(value.includes(sp) ? value.filter((v) => v !== sp) : [...value, sp]);

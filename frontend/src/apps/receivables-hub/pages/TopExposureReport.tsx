@@ -23,6 +23,7 @@ import {
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { GroupByBuilder, type GroupByPreset } from "@hub/components/GroupByBuilder";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
@@ -112,6 +113,7 @@ export default function TopExposureReport() {
   // Filters
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
@@ -143,7 +145,7 @@ export default function TopExposureReport() {
     saleTypes.length > 0 && saleTypes.length < SALE_TYPE_OPTIONS.length
       ? saleTypes.join(",")
       : undefined;
-  const { loading, error, customers, salesPersonOptions, customerGroupMap } = useAppData({
+  const { loading, error, customers, salesPersonOptions, collectionTeamOptions, customerGroupMap } = useAppData({
     saleType: saleTypeParam,
   });
 
@@ -177,6 +179,7 @@ export default function TopExposureReport() {
   const filteredRows = useMemo<ExposureRow[]>(() => {
     const q = search.trim().toLowerCase();
     const spSet = new Set(salesPersons);
+    const ctSet = new Set(collectionTeams);
     const coSet = new Set(companies);
     const loSet = new Set(locations);
     return customers
@@ -185,13 +188,14 @@ export default function TopExposureReport() {
       .filter((r) => Math.abs(r.outstanding) >= 0.5 || Math.abs(r.overdue) >= 0.5)
       .filter((r) => {
         if (spSet.size > 0 && !spSet.has(r.salesPerson)) return false;
+        if (ctSet.size > 0 && !ctSet.has(r.collectionTeam)) return false;
         if (coSet.size > 0 && !coSet.has(r.company)) return false;
         if (loSet.size > 0 && !loSet.has(r.location)) return false;
         if (!matchesCategory({ category: r.category }, categories)) return false;
         if (q && !(r.customer.toLowerCase().includes(q) || r.salesPerson.toLowerCase().includes(q))) return false;
         return true;
       });
-  }, [customers, customerGroupMap, salesPersons, companies, locations, categories, search]);
+  }, [customers, customerGroupMap, salesPersons, collectionTeams, companies, locations, categories, search]);
 
   // ── The call-list set: Top-N by the ranking metric, ALWAYS applied ───────────
   // Ranked FIRST (by rankBy), then capped to Top-N. This same capped set feeds BOTH
@@ -561,6 +565,7 @@ export default function TopExposureReport() {
                 <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search customer / salesperson" className="h-8 w-56 pl-7 text-xs rounded-input" />
               </div>
               <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} triggerClassName="h-8 w-44 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />

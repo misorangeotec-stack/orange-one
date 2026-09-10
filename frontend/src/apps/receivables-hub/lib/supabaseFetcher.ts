@@ -115,6 +115,10 @@ function toCustomer(r: CustomerRow): Customer {
   return {
     id: r.id, name: r.name, company: r.company, location: r.location,
     salesPerson: r.sales_person ?? "",
+    // The legacy pipeline source has no collection-team column and never will — that project is
+    // dead (see CLAUDE.md, RC-4). Empty means unassigned, so a team-scoped viewer sees nothing here
+    // rather than everything, which is the safe direction.
+    collectionTeam: "",
     category: r.category ?? "",
     creditPeriod: r.credit_period,
     creditLimit: Number(r.credit_limit),
