@@ -4,7 +4,10 @@ import {
   setDraw, setFill, text, wrapText,
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
-import { DELIVERY_PERIOD_SUFFIX, INSURANCE_CLAUSE, type DealFacts } from "./fieldSpec";
+import {
+  DELIVERY_PERIOD_SUFFIX, INSURANCE_CLAUSE, deliveryPeriodTakesSuffix, deliveryPeriodValue,
+  type DealFacts,
+} from "./fieldSpec";
 import { conditionsFor, render, type Conditions } from "./conditions";
 import { tokensFor } from "./tokens";
 import { paperDate, paperFileBase, proseCompanyName } from "./format";
@@ -390,7 +393,19 @@ function termsBullets(d: OcpiDeal, machine?: OcpiMachine): string[] {
   if (machine?.manufacturer?.trim()) out.push(`Manufacture : ${machine.manufacturer.trim()}`);
   if (d.tradeTerm?.trim()) out.push(`Trade Terms : ${d.tradeTerm.trim()}`);
   if (d.deliveryDays?.trim()) {
-    out.push(`Shipment Terms : ${d.deliveryDays.trim()} ${DELIVERY_PERIOD_SUFFIX}`);
+    /*
+      ⚠ THE UNIT COMES OFF BEFORE THE SUFFIX GOES ON. The box asks for a bare
+        period but the column holds free text typed under the older reading —
+        "30 days", "30 Days After Order confirmation" — and appending blindly
+        printed "30 days Days from the date of confirmation" on six real
+        quotations. See `deliveryPeriodValue`.
+    */
+    const period = deliveryPeriodValue(d.deliveryDays);
+    out.push(
+      deliveryPeriodTakesSuffix(d.deliveryDays)
+        ? `Shipment Terms : ${period} ${DELIVERY_PERIOD_SUFFIX}`
+        : `Shipment Terms : ${period}`,
+    );
   }
   /*
     ⚠ THIS IS WHERE THE INSURANCE ANSWER FINALLY PRINTS (OCPI-34 item 1). The

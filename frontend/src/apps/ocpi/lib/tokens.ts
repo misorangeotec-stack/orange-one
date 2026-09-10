@@ -1,4 +1,10 @@
 import { paperDate } from "./format";
+/*
+  ⚠ ONE-WAY ONLY, AND CHECKED: `fieldSpec.ts` imports nothing from this file, so
+    there is no cycle. `deliveryPeriodValue` lives there because that is where
+    `DELIVERY_PERIOD_SUFFIX` lives, and the two must be read together.
+*/
+import { deliveryPeriodValue } from "./fieldSpec";
 import type { OcpiCompanyProfile, OcpiDeal } from "../types";
 
 /**
@@ -202,7 +208,19 @@ export function tokensFor({ deal, profile, warranty, warrantyNote }: TokenContex
         An empty string is not an answer, hence the `|| null`: that is what makes
         an unanswered period rule a blank rather than printing nothing at all.
     */
-    delivery_days: deal.deliveryDays?.trim() || null,
+    /*
+      🔴 NORMALISED, NOT RAW — AND THIS IS THE ONE THAT REACHES THE CONTRACT.
+         All 22 machine decks print `Shipment Terms: {{delivery_days}} Days from
+         the date of confirmation`, with the suffix as LITERAL text in the body.
+         Resolving this token to "30 days" therefore printed "30 days Days from
+         the date of confirmation" on a document a customer signs.
+
+      ⚠ A DIGITLESS ANSWER STILL READS WRONGLY HERE and cannot be fixed from this
+        side: the deck's suffix is literal, so a token has no way to suppress it.
+        The two PDFs drop the suffix themselves; the contract cannot. See
+        `deliveryPeriodTakesSuffix`.
+    */
+    delivery_days: deliveryPeriodValue(deal.deliveryDays) || null,
     delivery_date: paperDate(deal.deliveryDate) || null,
     payment_terms: deal.paymentTerms,
     trade_term: deal.tradeTerm,

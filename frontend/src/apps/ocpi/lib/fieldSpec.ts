@@ -1125,6 +1125,62 @@ export const PAYMENT_TERMS_FORMATS = [
  */
 export const DELIVERY_PERIOD_SUFFIX = "Days from the date of confirmation";
 
+/**
+ * The bare period, with any unit or condition the salesperson already typed
+ * taken back off — so the fixed suffix cannot be printed twice.
+ *
+ * 🔴 THE BOX SAYS "ONLY THE PERIOD" AND THE STORED DATA DOES NOT AGREE. The
+ *    column predates R1's fixed-suffix rule and holds whatever was typed under
+ *    the older, free-text reading. Read live the day R1 shipped, 19 deals held a
+ *    value and only 13 were bare periods:
+ *
+ *      "30 days"                                → 30 days Days from the date of confirmation
+ *      "30 Days After Order confirmation"       → …confirmation Days from the date of confirmation
+ *      "30 days  from  the date of confirmation" → the sentence printed twice
+ *
+ *    Six of those are REAL customer quotations sitting at approval, so this is
+ *    not a tidy-up: without it they go out with a mangled delivery promise.
+ *
+ * ⚠ IT NORMALISES AT RENDER, NOT IN THE DATABASE, and that is deliberate. The
+ *   stored string is what a person typed and is the record of what was agreed;
+ *   rewriting 19 rows to make the printer's life easier loses that, and would
+ *   have to be re-done every time somebody types the unit again. Normalising
+ *   here fixes the contract too — `tokensFor` resolves `{{delivery_days}}`
+ *   through this, and the 22 machine decks print the suffix as a literal.
+ *
+ * ⚠ A VALUE WITH NO DIGITS IS RETURNED UNTOUCHED, because it is not a period at
+ *   all and there is nothing to strip. One live deal reads "Immediately", which
+ *   the fixed-suffix design cannot express — see `deliveryPeriodTakesSuffix`.
+ */
+export function deliveryPeriodValue(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim().replace(/\s+/g, " ");
+  if (!v) return "";
+  // Everything from the unit word onwards is the suffix restated — drop it.
+  // Anchored on `day(s)`, which every observed variant uses, and never on the
+  // condition alone: "after order confirmation" and "from the date of
+  // confirmation" are different promises and only the unit is safe to key on.
+  const cut = v.replace(/\s*\bdays?\b.*$/i, "").trim();
+  return cut === "" ? v : cut;
+}
+
+/**
+ * Does this answer read as a number of days at all?
+ *
+ * ⚠ "Immediately" IS A LEGITIMATE ANSWER THE DESIGN CANNOT DRESS. R1 chose a
+ *   fixed suffix so the wording could not drift; a value with no digits in it
+ *   takes that suffix into nonsense — "Immediately Days from the date of
+ *   confirmation". The papers print such a value ALONE instead.
+ *
+ * 🔴 THE CONTRACT CANNOT DO THIS. Its suffix is literal text inside 22 deck
+ *    bodies, so `{{delivery_days}}` has no way to suppress it. A digitless
+ *    answer therefore still reads wrongly on the order confirmation, and the
+ *    only fix is for a person to answer the box with a period. Raised with the
+ *    client for QT-M0041 (Skymidtown Textiles).
+ */
+export function deliveryPeriodTakesSuffix(raw: string | null | undefined): boolean {
+  return /\d/.test(raw ?? "");
+}
+
 /*
   ⚠ THERE IS NO GROUP TABLE HERE ANY MORE, AND THAT IS DELIBERATE.
 
