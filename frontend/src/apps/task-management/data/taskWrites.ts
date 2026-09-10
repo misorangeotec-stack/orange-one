@@ -46,6 +46,8 @@ export async function insertTask(input: {
   createdBy: string;
   locationIds?: string[];
   isPersonal?: boolean;
+  /** Stamped true only when a HOD picked the assignee from the peer (other HODs) group. */
+  isPeerAssignment?: boolean;
 }): Promise<string> {
   const weekStart = mondayOf(input.dueDate ?? new Date().toISOString());
   const { data, error } = await supabase
@@ -60,6 +62,7 @@ export async function insertTask(input: {
       created_by: input.createdBy,
       status: "pending",
       is_personal: input.isPersonal ?? false,
+      is_peer_assignment: input.isPeerAssignment ?? false,
     })
     .select("id")
     .single();

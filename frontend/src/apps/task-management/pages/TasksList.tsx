@@ -16,8 +16,15 @@ import { formatDate, isToday } from "@/shared/lib/time";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
-import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
+import { countsTowardMetrics, countsTowardPeerMetrics, isRecurringTask, isPeerTask } from "../mock/selectors";
+import { parseTaskFilters, taskLinkSignature, type TaskKind } from "../lib/taskLink";
+
+/** Chip wording per kind. A map, not a ternary — a ternary silently mislabels a third value. */
+const KIND_LABEL: Record<TaskKind, string> = {
+  recurring: "Recurring tasks",
+  oneoff: "One-off tasks",
+  peer: "Peer tasks",
+};
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter, isOverdueTask, type StatusFilter } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
@@ -35,8 +42,10 @@ const RELATION_OPTIONS: { value: Relation; label: string }[] = [
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
   const { user, role } = useSession();
-  const { tasks, canCreateTask, actorById, assignableUsers } = useTaskStore();
-  const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
+  const { tasks, canCreateTask, actorById, assignableUsers, peerAssignableUsers } = useTaskStore();
+  // ...or to a peer HOD. Four HODs have no downline at all, so without the peer
+  // arm the New Task button stays hidden from exactly the people TM-1 is for.
+  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || (role === "hod" && peerAssignableUsers(user.id).length > 0));
   const [params] = useSearchParams();
   const location = useLocation();
   // Seed status + an exact week from a deep-link (e.g. a RYG number on the scorecard).
@@ -48,7 +57,7 @@ export default function TasksList() {
   const [q, setQ] = useStickyState(sticky, "q", "");
   const [statuses, setStatuses] = useStickyState<StatusFilter[]>(sticky, "statuses", initialFilters.statuses);
   // Recurring-vs-one-off scope, seeded from a deep-link (Weekly Scorecard split blocks).
-  const [kind, setKind] = useStickyState<"all" | "recurring" | "oneoff">(sticky, "kind", initialFilters.kind ?? "all");
+  const [kind, setKind] = useStickyState<"all" | TaskKind>(sticky, "kind", initialFilters.kind ?? "all");
   const [relation, setRelation] = useStickyState<Relation>(sticky, "relation", "assigned");
   // Show ONLY "Other" (self-tracking) tasks — set when arriving from the Other-tasks
   // card on the scorecard, which counts them all-time, so default to all-time scope.
@@ -92,12 +101,17 @@ export default function TasksList() {
   // (previously they counted the full list and never moved when a filter changed).
   const base = useMemo(() => {
     let list = exactWeek ? mine.filter((t) => t.weekStart === exactWeek) : scopeTasks(mine, scope);
-    if (metricOnly) list = list.filter(countsTowardMetrics);
+    // ⚠ The metric predicate depends on the kind, and is applied before the kind
+    //   filter below. countsTowardMetrics excludes peer tasks, so a fixed
+    //   predicate makes every ?kind=peer&metric=1 drill-down come back empty.
+    if (metricOnly) list = list.filter(kind === "peer" ? countsTowardPeerMetrics : countsTowardMetrics);
     if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
     else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
     if (statuses.length) list = list.filter((t) => matchesStatusFilter(t, statuses));
-    if (kind === "recurring") list = list.filter(isRecurringTask);
-    else if (kind === "oneoff") list = list.filter((t) => !isRecurringTask(t) && !t.isPersonal);
+    // Peer wins, so the three kinds partition the list.
+    if (kind === "peer") list = list.filter(isPeerTask);
+    else if (kind === "recurring") list = list.filter((t) => isRecurringTask(t) && !isPeerTask(t));
+    else if (kind === "oneoff") list = list.filter((t) => !isRecurringTask(t) && !t.isPersonal && !isPeerTask(t));
     if (personalOnly) list = list.filter((t) => t.isPersonal);
     if (overdueOnly) list = list.filter(isOverdueTask);
     list = list.filter((t) => dateInRange(t.createdAt, assignedRange) && dateInRange(t.dueDate, dueRange));
@@ -177,7 +191,7 @@ export default function TasksList() {
   if (kind !== "all")
     activeFilters.push({
       key: "kind",
-      label: kind === "recurring" ? "Recurring tasks" : "One-off tasks",
+      label: KIND_LABEL[kind],
       onClear: () => setKind("all"),
     });
   if (personalOnly)
@@ -276,13 +290,14 @@ export default function TasksList() {
           {/* Only the filters with no column of their own live up here — the rest
               sit in the table's own filter row, under the column they narrow. */}
           <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
-            <PillToggle<"all" | "recurring" | "oneoff">
+            <PillToggle<"all" | TaskKind>
               value={kind}
               onChange={setKind}
               options={[
                 { value: "all", label: "All types" },
                 { value: "recurring", label: "Recurring" },
                 { value: "oneoff", label: "One-off" },
+                { value: "peer", label: "Peer" },
               ]}
             />
             {/* ANDs with the status filter — see the note in types/index.ts. */}

@@ -67,6 +67,7 @@ const mapTask = (r: any): Task => ({
   notApplicable: r.not_applicable ?? false,
   notApplicableAt: r.not_applicable_at ?? null,
   isPersonal: r.is_personal ?? false,
+  isPeerAssignment: r.is_peer_assignment ?? false,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   lastRemarkAt: r.last_remark_at,

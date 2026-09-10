@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -15,9 +15,28 @@ import { useReportsToSuffix } from "../components/ReportsToTag";
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { createTask, assignableUsers, departmentById, profileById, canCreateTask } = useTaskStore();
+  const { createTask, assignableUsers, peerAssignableUsers, departmentById, canCreateTask } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
   const reportsToSuffix = useReportsToSuffix();
+
+  // TM-1: a HOD may also hand a one-off task sideways, to another HOD.
+  //
+  // ⚠ HODs ONLY — an ADMIN never gets this group. That is not an oversight: the
+  //   client settled (07-09-2026) that an admin assigning to a HOD is ordinary
+  //   downward work and must keep being scored the normal way. Because the flag
+  //   is stamped only from this list, an admin assignment cannot become peer
+  //   work by construction — and the 183 such tasks already in the database are
+  //   untouched.
+  //
+  // ⚠ Anyone already in the downline is filtered OUT. Nobody is mapped that way
+  //   today (the three HODs with a boss report to admins), but user_hods is
+  //   editable, and the moment a HOD is mapped under another HOD that is a
+  //   reporting line, not a peer one. "My team" wins.
+  const peers = useMemo(() => {
+    if (role !== "hod") return [];
+    const team = new Set(canAssign.map((p) => p.id));
+    return peerAssignableUsers(user.id).filter((p) => !team.has(p.id));
+  }, [role, user.id, canAssign.map((p) => p.id).join(","), peerAssignableUsers]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -28,8 +47,20 @@ export default function CreateTask() {
   const [busy, setBusy] = useState(false);
 
   // Department is derived from the assignee — never selected manually.
-  const departmentId = profileById(assignedTo)?.departmentId ?? null;
+  //
+  // 🔴 RESOLVED AGAINST BOTH LISTS, NOT `profileById`. `profiles_select` cannot
+  //   see another department's HOD at all, so profileById(peer) is undefined and
+  //   the task would be born with NO department — filed under "Unassigned" in
+  //   Master Analysis forever. The peer list comes from list_org_people(), which
+  //   is SECURITY DEFINER and carries department_id. (Proved at the SQL level
+  //   before this was written: the same insert run as the assigning HOD resolved
+  //   the department to null.) The department NAME is fine either way —
+  //   `departments_select` is is_staff, so every department is readable.
+  const picked = canAssign.find((p) => p.id === assignedTo) ?? peers.find((p) => p.id === assignedTo);
+  const departmentId = picked?.departmentId ?? null;
   const departmentName = departmentById(departmentId)?.name;
+  /** Stamped only when the pick came from the peer group — never inferred later. */
+  const isPeerAssignment = !!assignedTo && peers.some((p) => p.id === assignedTo);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,6 +82,7 @@ export default function CreateTask() {
         departmentId,
         dueDate: dueDate || null,
         locationIds,
+        isPeerAssignment,
       });
       navigate(`/task-management/tasks/${id}`);
     } catch (err) {
@@ -67,7 +99,9 @@ export default function CreateTask() {
   );
 
   // You assign tasks down your team — with no team members, there's no one to assign to.
-  if (canAssign.length === 0) {
+  // Peers count: four HODs have no downline at all, and before TM-1 this screen
+  // turned them away outright. They can still hand work to another HOD.
+  if (canAssign.length === 0 && peers.length === 0) {
     return (
       <div className="max-w-2xl mx-auto space-y-5">
         <div>
@@ -75,7 +109,7 @@ export default function CreateTask() {
           <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
         </div>
         <Card className="p-6">
-          <p className="text-[14px] text-grey">You don't have any team members to assign tasks to.</p>
+          <p className="text-[14px] text-grey">You don't have anyone to assign tasks to.</p>
         </Card>
       </div>
     );
@@ -86,7 +120,9 @@ export default function CreateTask() {
       <div>
         {BackLink}
         <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
-        <p className="text-grey text-[13px] mt-1">Assign a task to a member of your team.</p>
+        <p className="text-grey text-[13px] mt-1">
+          {peers.length > 0 ? "Assign a task to a member of your team, or to another HOD." : "Assign a task to a member of your team."}
+        </p>
       </div>
 
       <Card className="p-6">
@@ -109,16 +145,36 @@ export default function CreateTask() {
               <Combobox
                 value={assignedTo}
                 onChange={setAssignedTo}
-                options={canAssign.map((p) => {
-                  const dept = departmentById(p.departmentId)?.name;
-                  const sub = [p.designation, dept, reportsToSuffix(p, user.id)].filter(Boolean).join(" · ");
-                  return {
-                    value: p.id,
-                    label: p.name,
-                    sublabel: sub || undefined,
-                    icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-                  };
-                })}
+                options={[
+                  // Team first, then peers. Combobox draws a heading wherever
+                  // `group` changes between consecutive options, so the order IS
+                  // the grouping. Groups are only set when there is something to
+                  // separate — a HOD with no peers keeps the plain flat list.
+                  ...canAssign.map((p) => {
+                    const dept = departmentById(p.departmentId)?.name;
+                    const sub = [p.designation, dept, reportsToSuffix(p, user.id)].filter(Boolean).join(" · ");
+                    return {
+                      value: p.id,
+                      label: p.name,
+                      sublabel: sub || undefined,
+                      icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                      group: peers.length > 0 ? "My team" : undefined,
+                    };
+                  }),
+                  // No reportsToSuffix here — a peer does not report to you, which
+                  // is the whole point of the group.
+                  ...peers.map((p) => {
+                    const dept = departmentById(p.departmentId)?.name;
+                    const sub = [p.designation, dept].filter(Boolean).join(" · ");
+                    return {
+                      value: p.id,
+                      label: p.name,
+                      sublabel: sub || undefined,
+                      icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                      group: "Other HODs",
+                    };
+                  }),
+                ]}
               />
             </FieldLabel>
 

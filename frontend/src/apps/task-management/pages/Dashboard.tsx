@@ -6,7 +6,7 @@ import { dateLabel, timeAgo, formatDate } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { WEEK_START } from "../mock/data";
-import { computeStats, actualRygFor, aggregateRyg } from "../mock/selectors";
+import { computeStats, actualRygFor, aggregateRyg, countsTowardWorkload } from "../mock/selectors";
 import type { ActivityType, AppRole, StatusFilter, Task } from "../types";
 import { taskListLink, taskDetailPath } from "../lib/taskLink";
 import { notificationText, notificationLink } from "../lib/notifyText";
@@ -37,15 +37,20 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { visibleTasks, workspace, canCreateTask, assignableUsers } = useTaskStore();
+  const { visibleTasks, workspace, canCreateTask, assignableUsers, peerAssignableUsers } = useTaskStore();
   const [scope, setScope] = useState<Scope>("week");
   const list = visibleTasks(role, user.id);
   // Scope toggle: "this week" keeps only tasks planned for the current week
   // (weekStart = this Monday, the same boundary the RYG sections use); "all
   // time" keeps the full backlog. Every card + the donut read the scoped list.
   const scopedList = scopeTasks(list, scope);
-  const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
-  const stats = computeStats(scopedList);
+  // ...or to a peer HOD. Four HODs have no downline at all, so without the peer
+  // arm the New Task button stays hidden from exactly the people TM-1 is for.
+  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || (role === "hod" && peerAssignableUsers(user.id).length > 0));
+  // countsTowardWorkload, not the default: these cards are a WORKLIST, so a peer
+  // task the viewer has been handed must still read as due today / overdue. It is
+  // scored on the peer board, but it is still work somebody owes today.
+  const stats = computeStats(scopedList, countsTowardWorkload);
   const weekly = scope === "week";
   const firstName = user.name.split(" ")[0];
   // Deep-link a stat card to the role-appropriate task list, scoped to this week

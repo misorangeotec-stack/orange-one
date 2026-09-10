@@ -7235,6 +7235,8 @@ export type Database = {
           },
         ]
       }
+      // is_peer_assignment hand-added for migration 20261116120000 (applied): TM-1,
+      // a HOD assigning a one-off task to another HOD. Stamped at creation, never backfilled.
       tasks: {
         Row: {
           assigned_to: string | null
@@ -7247,6 +7249,7 @@ export type Database = {
           follow_up_date: string | null
           from_recurring: boolean
           id: string
+          is_peer_assignment: boolean
           is_personal: boolean
           last_remark_at: string | null
           last_revised_at: string | null
@@ -7272,6 +7275,7 @@ export type Database = {
           follow_up_date?: string | null
           from_recurring?: boolean
           id?: string
+          is_peer_assignment?: boolean
           is_personal?: boolean
           last_remark_at?: string | null
           last_revised_at?: string | null
@@ -7297,6 +7301,7 @@ export type Database = {
           follow_up_date?: string | null
           from_recurring?: boolean
           id?: string
+          is_peer_assignment?: boolean
           is_personal?: boolean
           last_remark_at?: string | null
           last_revised_at?: string | null

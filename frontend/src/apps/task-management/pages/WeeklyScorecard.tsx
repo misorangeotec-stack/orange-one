@@ -10,7 +10,7 @@ import { addWeeks, formatDate, isoWeekOf, weekEndOf, weekStartOf } from "@/share
 import { WEEK_START } from "../mock/data";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { actualRygFor, computeStats, downlineIds, isRecurringTask, reportFor } from "../mock/selectors";
+import { actualRygFor, computeStats, countsTowardMetrics, countsTowardPeerMetrics, downlineIds, isPeerTask, isRecurringTask, reportFor, type TaskCounts } from "../mock/selectors";
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import { useReportsToSuffix } from "../components/ReportsToTag";
@@ -93,11 +93,19 @@ export default function WeeklyScorecard() {
   const actual = useMemo(() => actualRygFor(weekTasks, selectedId, weekStart), [weekTasks, selectedId, weekStart]);
   const hasTasks = actual.total > 0;
 
-  // Split the week's tasks into recurring (generated from a RecurringTask) vs
-  // one-off (ad-hoc), so each can be scored on its own. Personal / Not-Applicable
-  // tasks are dropped inside the score selectors, so they never land in either.
-  const recurringTasks = useMemo(() => weekTasks.filter(isRecurringTask), [weekTasks]);
-  const oneOffTasks = useMemo(() => weekTasks.filter((t) => !isRecurringTask(t)), [weekTasks]);
+  // Split the week's tasks into recurring (generated from a RecurringTask), one-off
+  // (ad-hoc) and peer (handed over by another HOD), so each is scored on its own.
+  // Personal / Not-Applicable tasks are dropped inside the score selectors, so they
+  // never land in any of the three.
+  //
+  // ⚠ PEER WINS, making these a true PARTITION. A peer task IS a one-off, so
+  //   without the carve-out the same task would sit behind the One-off card AND
+  //   the Peer card on this screen. The COUNTS would self-correct (peer tasks are
+  //   dropped inside countsTowardMetrics), but the LISTS the cards drill into
+  //   would not, so the drill-down would disagree with the number above it.
+  const recurringTasks = useMemo(() => weekTasks.filter((t) => isRecurringTask(t) && !isPeerTask(t)), [weekTasks]);
+  const oneOffTasks = useMemo(() => weekTasks.filter((t) => !isRecurringTask(t) && !isPeerTask(t)), [weekTasks]);
+  const peerTasks = useMemo(() => weekTasks.filter(isPeerTask), [weekTasks]);
 
   // Personal (self-tracking) tasks are excluded from every score, so they never
   // show up in the RYG/stat counts above. Surface their own counters here — all
@@ -226,10 +234,13 @@ export default function WeeklyScorecard() {
           </div>
         </Card>
 
-        {/* 2. actual score — total summary (recurring + one-off combined) */}
+        {/* 2. actual score — total summary (recurring + one-off combined).
+            weekTasks still CONTAINS peer tasks; countsTowardMetrics drops them
+            inside the selectors, which is what keeps this equal to recurring +
+            one-off and keeps a peer HOD's work out of this person's own score. */}
         <ActualScoreBlock
           title="Actual score — total"
-          subtitle="Recurring + one-off combined"
+          subtitle="Recurring + one-off combined — peer work is scored separately below"
           tasks={weekTasks}
           role={role}
           assignee={selectedId}
@@ -255,11 +266,11 @@ export default function WeeklyScorecard() {
         </Card>
       </div>
 
-      {/* split analysis: recurring vs one-off, scored independently */}
+      {/* split analysis: recurring vs one-off vs peer, each scored independently */}
       <div>
-        <h3 className="text-[13px] font-bold text-navy">Recurring vs one-off</h3>
-        <p className="text-[11.5px] text-grey-2">Each task type scored on its own; the total above is the two combined.</p>
-        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        <h3 className="text-[13px] font-bold text-navy">Recurring vs one-off vs peer</h3>
+        <p className="text-[11.5px] text-grey-2">Each task type scored on its own; the total above is recurring + one-off. Peer work is counted here only.</p>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
           <ActualScoreBlock
             title="Recurring tasks"
             subtitle="Generated from a recurring schedule"
@@ -279,6 +290,20 @@ export default function WeeklyScorecard() {
             weekStart={weekStart}
             kind="oneoff"
             rightSlot={<KindBadge label="One-off" />}
+          />
+          {/* TM-1. `metric` is what makes this the ONE card where peer work scores:
+              every other selector call on this screen uses countsTowardMetrics,
+              which excludes it. Without it the card would render 0 of 0. */}
+          <ActualScoreBlock
+            title="Peer tasks"
+            subtitle="Assigned by another HOD — not counted in the total above"
+            tasks={peerTasks}
+            role={role}
+            assignee={selectedId}
+            weekStart={weekStart}
+            kind="peer"
+            metric={countsTowardPeerMetrics}
+            rightSlot={<KindBadge label="Peer" />}
           />
         </div>
       </div>
@@ -351,7 +376,7 @@ export default function WeeklyScorecard() {
  * `kind`, so the drill-down matches the count behind it.
  */
 function ActualScoreBlock({
-  title, subtitle, tasks, role, assignee, weekStart, kind, rightSlot,
+  title, subtitle, tasks, role, assignee, weekStart, kind, metric = countsTowardMetrics, rightSlot,
 }: {
   title: string;
   subtitle?: string;
@@ -360,11 +385,17 @@ function ActualScoreBlock({
   assignee: string;
   weekStart: string;
   kind?: TaskKind;
+  /**
+   * Which tasks this card is allowed to count. Defaults to a person's own scored
+   * work, which EXCLUDES peer tasks — so the peer card must pass
+   * countsTowardPeerMetrics, and every other card is right by leaving it alone.
+   */
+  metric?: TaskCounts;
   rightSlot?: ReactNode;
 }) {
-  const actual = useMemo(() => actualRygFor(tasks, assignee, weekStart), [tasks, assignee, weekStart]);
-  const counts = useMemo(() => rygCounts(reportFor(tasks, assignee)), [tasks, assignee]);
-  const stats = useMemo(() => computeStats(tasks), [tasks]);
+  const actual = useMemo(() => actualRygFor(tasks, assignee, weekStart, metric), [tasks, assignee, weekStart, metric]);
+  const counts = useMemo(() => rygCounts(reportFor(tasks, assignee, metric)), [tasks, assignee, metric]);
+  const stats = useMemo(() => computeStats(tasks, metric), [tasks, metric]);
   const hasTasks = actual.total > 0;
 
   const colourLink = (colour: RygColour) => taskListLink({ role, assignee, weekStart, colour, kind, metricOnly: true });

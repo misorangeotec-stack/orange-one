@@ -1,6 +1,6 @@
 import { exportSheetsToXlsx, GROUP_ROW_STYLE, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { addWeeks, formatDate, weekEndOf } from "@/shared/lib/time";
-import { actualRygFor, aggregateRyg, computeStats, isRecurringTask, reportFor } from "../mock/selectors";
+import { actualRygFor, aggregateRyg, computeStats, countsTowardPeerMetrics, isPeerTask, isRecurringTask, reportFor, type TaskCounts } from "../mock/selectors";
 import { rygCounts } from "../components/RygCells";
 import type { AppRole, Profile, Task, WeeklyPlan } from "../types";
 
@@ -42,7 +42,7 @@ const deltaOf = (planned: number | null, actual: number | null): number | string
  * set of people: green = completed, yellow = revised, and red absorbs the rounding so
  * the three always sum to 100.
  */
-function pooledPct(green: number, yellow: number, total: number): { green: number; yellow: number; red: number } {
+export function pooledPct(green: number, yellow: number, total: number): { green: number; yellow: number; red: number } {
   if (!total) return { green: 0, yellow: 0, red: 0 };
   const g = Math.round((green / total) * 100);
   const y = Math.round((yellow / total) * 100);
@@ -66,9 +66,9 @@ interface Slice {
  * `reportFor` → `rygCounts`. N/A and personal tasks are dropped inside those
  * selectors, so the slice is passed in unfiltered exactly as the screen passes it.
  */
-function sliceOf(tasks: Task[], personId: string, weekStart: string): Slice {
-  const ryg = actualRygFor(tasks, personId, weekStart);
-  const counts = rygCounts(reportFor(tasks, personId));
+function sliceOf(tasks: Task[], personId: string, weekStart: string, metric?: TaskCounts): Slice {
+  const ryg = actualRygFor(tasks, personId, weekStart, metric);
+  const counts = rygCounts(reportFor(tasks, personId, metric));
   return {
     total: ryg.total,
     green: counts.green,
@@ -102,6 +102,8 @@ export interface ScorecardRow {
 
   recurring: Slice;
   oneOff: Slice;
+  /** HOD→HOD work. Scored on its own and NOT part of `total` — see the note in buildScorecardRow. */
+  peer: Slice;
 
   /** Next week's saved plan. */
   nextG: number | string;
@@ -163,8 +165,12 @@ export function buildScorecardRow(args: {
   const id = profile.id;
 
   const weekTasks = tasks.filter((t) => t.weekStart === weekStart);
-  const recurringTasks = weekTasks.filter(isRecurringTask);
-  const oneOffTasks = weekTasks.filter((t) => !isRecurringTask(t));
+  // Mirrors WeeklyScorecard.tsx exactly, peer first so the three partition the
+  // week. `total` is deliberately still fed the whole week: countsTowardMetrics
+  // drops peer tasks inside the selectors, so Total stays recurring + one-off.
+  const recurringTasks = weekTasks.filter((t) => isRecurringTask(t) && !isPeerTask(t));
+  const oneOffTasks = weekTasks.filter((t) => !isRecurringTask(t) && !isPeerTask(t));
+  const peerTasks = weekTasks.filter(isPeerTask);
 
   const total = sliceOf(weekTasks, id, weekStart);
   const stats = computeStats(weekTasks);
@@ -200,6 +206,7 @@ export function buildScorecardRow(args: {
     greenVsPlan: deltaOf(thisPlan?.greenPct ?? null, hasTasks ? total.greenPct : null),
     recurring: sliceOf(recurringTasks, id, weekStart),
     oneOff: sliceOf(oneOffTasks, id, weekStart),
+    peer: sliceOf(peerTasks, id, weekStart, countsTowardPeerMetrics),
     nextG: pct(!!nextPlan, nextPlan?.greenPct ?? 0),
     nextY: pct(!!nextPlan, nextPlan?.yellowPct ?? 0),
     nextR: pct(!!nextPlan, nextPlan?.redPct ?? 0),
@@ -271,6 +278,7 @@ export function buildTeamRow(args: {
     greenVsPlan: deltaOf(hasPlan ? planned.green : null, hasTasks ? actual.green : null),
     recurring: sumSlice((r) => r.recurring),
     oneOff: sumSlice((r) => r.oneOff),
+    peer: sumSlice((r) => r.peer),
     nextG: pct(next.total > 0, next.green),
     nextY: pct(next.total > 0, next.yellow),
     nextR: pct(next.total > 0, next.red),
@@ -329,6 +337,11 @@ const SCORECARD_COLUMNS: ExportColumn<ScorecardRow>[] = [
   { header: "One-off Green %", width: 15, value: (r) => slicePct(r.oneOff, "greenPct") },
   { header: "One-off Yellow %", width: 16, value: (r) => slicePct(r.oneOff, "yellowPct") },
   { header: "One-off Red %", width: 13, value: (r) => slicePct(r.oneOff, "redPct") },
+
+  { header: "Peer tasks", width: 11, value: (r) => r.peer.total },
+  { header: "Peer Green %", width: 13, value: (r) => slicePct(r.peer, "greenPct") },
+  { header: "Peer Yellow %", width: 14, value: (r) => slicePct(r.peer, "yellowPct") },
+  { header: "Peer Red %", width: 11, value: (r) => slicePct(r.peer, "redPct") },
 
   { header: "Next week Green %", width: 17, value: (r) => r.nextG },
   { header: "Next week Yellow %", width: 18, value: (r) => r.nextY },
@@ -396,6 +409,7 @@ const NOTES = [
   "Total tasks = Green + Yellow + Red. Tasks marked Not Applicable, and personal (self-tracking) tasks, are excluded from every score.",
   "Pending / In progress / Shifted are the task statuses behind the Red column, and sum to it.",
   "Recurring and one-off tasks are scored independently; the Total columns are the two combined.",
+  "Peer tasks were assigned by another HOD. They are scored on their own and are NOT in the Total columns — a HOD's own score counts only their own team's work.",
   "Percentages are rounded; Red absorbs the rounding so Green + Yellow + Red = 100.",
   "A blank percentage means nothing was planned, or that slice had no tasks — it is NOT a score of 0.",
   "Other tasks are personal, self-tracking tasks. They are counted ALL-TIME (not just this week) and never affect any score.",
