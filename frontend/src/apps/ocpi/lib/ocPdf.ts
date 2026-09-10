@@ -512,11 +512,20 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
         hold more than one.
     */
     customer_gstin: deal.gstNo?.trim() || null,
-    sections: sections.map((s) => ({
-      key: s.key,
-      title: s.title,
-      body: render(s.body ?? "", tokens, conditions).text,
-    })),
+    /*
+      ⚠ R4 · A SECTION A CONDITION EMPTIED IS LEFT OUT HERE TOO. The freeze must
+        be what the customer received, and the PDF loop drops such a section
+        whole rather than printing a bare heading. Keeping it here would make a
+        reprint of a frozen contract differ from the contract itself — the one
+        thing the snapshot exists to prevent.
+    */
+    sections: sections
+      .map((s) => ({
+        key: s.key,
+        title: s.title,
+        body: render(s.body ?? "", tokens, conditions).text,
+      }))
+      .filter((s) => s.body.trim() !== ""),
     /*
       ⚠ WHY THE CLAUSE WAS LEFT OUT IS PART OF THE RECORD (OCPI-31 / OCPI-33).
         The same argument the money block below makes for the currency and the
@@ -951,6 +960,25 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   // ── The machine's own sections, in its own order ─────────────────────────
   for (const sec of sections) {
     const body = render(sec.body ?? "", tokens, conditions).text;
+    /*
+      🔴 A SECTION A CONDITION EMPTIED IS DROPPED WHOLE, HEADING AND ALL (R4).
+         The loop used to print the title unconditionally, so a body that
+         resolved to nothing left a bare navy heading with white space under it.
+         That mattered the moment `head_policy` became conditional: a machine
+         sold without print heads would carry "PRINT HEAD POLICY PROGRAM" over
+         an empty gap — which reads as a clause somebody forgot to write, and is
+         worse on a signed contract than the promise it was meant to remove.
+
+      ⚠ IT CAN ONLY EVER FIRE ON A CONDITION. All 190 active sections hold a
+        non-empty body — checked live — so nothing that prints today stops
+        printing. `renderSpecRows` and `renderComposition` have always dropped
+        an emptied row and an emptied bullet; this is the same rule, arriving
+        late because until now no whole section could empty.
+
+      ⚠ THE SNAPSHOT DROPS IT TOO (see `resolvedOcDocument`), or a frozen paper
+        would re-render with a heading the issued one never had.
+    */
+    if (body.trim() === "") continue;
     y = room(y, 30);
     text(pdf, sec.title.toUpperCase(), left, y, { size: 9.5, bold: true, color: BRAND.navy });
     y += 13;
