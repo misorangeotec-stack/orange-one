@@ -387,6 +387,7 @@ const mapDeal = (r: any): OcpiDeal => ({
   deliveryVia: r.delivery_via ?? null,
   deliveryPort: r.delivery_port ?? null,
   deliveryFactoryCity: r.delivery_factory_city ?? null,
+  deliveryDestination: r.delivery_destination ?? null,
   deliveryLeg: r.delivery_leg ?? null,
   remarks: r.remarks ?? null,
   dollarClauseAgreed: r.dollar_clause_agreed ?? null,

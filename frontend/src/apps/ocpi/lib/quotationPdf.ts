@@ -6,7 +6,7 @@ import {
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import {
   COST_BEARERS, DELIVERY_PERIOD_SUFFIX, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
-  deliveryPeriodTakesSuffix, deliveryPeriodValue,
+  deliveryPeriodTakesSuffix, deliveryPeriodValue, isSchemeDeal, transportTermLabel,
   SUBSIDIZED_RATE_NOTE, TRANSPORT_BEARER_MARK, isUsdDealRow, type DealFacts,
 } from "./fieldSpec";
 import { docHeading, fmtDealValue, paperDate, paperFileBase, paperNo } from "./format";
@@ -203,13 +203,24 @@ function sectionRows(
   */
   const termNamesTheBearer = (d.tradeTerm ?? "").includes(TRANSPORT_BEARER_MARK);
 
-  const transport = isHighSeas
-    ? ["High Seas", deliveryTerm, costBy(d.highSeasCostBy)].filter(Boolean).join(" · ")
-    : d.transportTerms === "local"
-      ? ["Local Delivery", deliveryTerm, termNamesTheBearer ? null : costBy(d.localCostBy)]
-          .filter(Boolean)
-          .join(" · ")
-      : "";
+  /*
+    🔴 R5 · DRIVEN BY THE VOCABULARY, BECAUSE A TERNARY HERE FELL THROUGH TO "".
+       This was `isHighSeas ? … : transportTerms === "local" ? … : ""`, which was
+       exhaustive while there were exactly two deal types. The moment EPCG,
+       MOOWR and HSS-with-EPCG existed, those deals produced an EMPTY STRING —
+       so the summary sheet lost its whole "Term of Delivery" line, the only
+       place it states the delivery term and who bears the cost. Not a wrong
+       label: a missing line on a customer's sheet.
+
+    ⚠ THE LABEL COMES FROM `TRANSPORT_TERMS` so a sixth deal type cannot blank
+      it again, and the delivery term now prints on EVERY type rather than only
+      on the two the old branches happened to name.
+  */
+  const dealTypeLabel = transportTermLabel(d.transportTerms);
+  const bearer = isSchemeDeal(d.transportTerms) ? costBy(d.highSeasCostBy) : costBy(d.localCostBy);
+  const transport = dealTypeLabel
+    ? [dealTypeLabel, deliveryTerm, termNamesTheBearer ? null : bearer].filter(Boolean).join(" · ")
+    : "";
 
   /*
     ⚠ SECTION C IS BUILT, NOT LISTED. Which money rows a deal carries depends on
@@ -222,7 +233,8 @@ function sectionRows(
   const commercial: Row[] = [
     {
       label: "Deal Type",
-      value: isHighSeas ? "High Seas" : d.transportTerms === "local" ? "Others" : "",
+      // R5 · the same fall-through, and the same fix — see `transport` above.
+      value: dealTypeLabel,
     },
     { label: "Machine Value", value: fmtDealValue(d.dealValueAmount, d.dealValueCurrency) },
   ];

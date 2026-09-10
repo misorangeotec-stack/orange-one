@@ -75,7 +75,9 @@ export interface OcpiDoc {
 /** What the deal is quoted in. The source form records dollar deals as free text. */
 export type DealCurrency = "INR" | "USD";
 
-export type TransportTerms = "high_seas" | "local";
+// R5 · five deal types. ⚠ `high_seas` is CAPTIONED "HSS" and `local` is
+// captioned "Others" — the label is not the value; see TRANSPORT_TERMS.
+export type TransportTerms = "high_seas" | "hss_epcg" | "epcg" | "moowr" | "local";
 /**
  * ⚠ RETAINED, DERIVED, AND NO LONGER ASKED (OCPI-35). The form merged this
  *   question into the one delivery question -- `deliveryVia`, asked on BOTH
@@ -83,7 +85,9 @@ export type TransportTerms = "high_seas" | "local";
  *   three live constraints and one RPC demand it on a High Seas deal. See the
  *   note on `deliveryVia` below.
  */
-export type HighSeasVia = "CIF" | "EX Factory" | "FOB";
+// R5 · `FOB` is retired from the buttons but MUST stay here — the column can
+// still hold it, and `Local` joined it. Equal to the column CHECK by design.
+export type HighSeasVia = "CIF" | "EX Factory" | "FOB" | "Local";
 export type CostBearer = "customer" | "company";
 /**
  * Where the customer's own delivery leg starts, on a High Seas deal whose cost
@@ -233,6 +237,8 @@ export interface OcpiDeal {
   deliveryVia: string | null;
   deliveryPort: string | null;
   deliveryFactoryCity: string | null;
+  /** R5 · where a LOCAL delivery goes. Free text, like `deliveryPort`. */
+  deliveryDestination: string | null;
   deliveryLeg: DeliveryLeg | null;
   remarks: string | null;
   dollarClauseAgreed: boolean | null;

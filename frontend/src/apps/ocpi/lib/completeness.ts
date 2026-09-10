@@ -222,6 +222,8 @@ const REQUIREMENTS: readonly Requirement[] = [
   { key: "deliveryVia", tier: "approval" },
   { key: "deliveryPort", tier: "approval" },
   { key: "deliveryFactoryCity", tier: "approval" },
+  // R5 · a Local delivery names where it goes, exactly as EX Factory does.
+  { key: "deliveryDestination", tier: "approval" },
 
   { key: "highSeasCostBy", tier: "approval" },
   { key: "localCostBy", tier: "approval" },
