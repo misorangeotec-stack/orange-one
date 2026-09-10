@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-09-10
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -11005,7 +11005,86 @@ history goes missing. He can fill it in or the QC team can decide what to do wit
 
 ## Task Management
 
-*(nothing yet)*
+### TM-2 · 🟡 Accounting & Finance never worked its recurring queue, and it is 91% of the company's backlog  `[~]`
+*Raised 2026-09-10 · Measured the same day against the live database · Asked for by the client ·
+Migration `20260910120000_close_accounting_finance_recurring_backlog.sql` with a companion
+`_rollback.sql` · **Rollback rehearsed on live data before the run** — see below*
+
+**The ask.** Mark every recurring task in **Accounting & Finance** completed, up to and including
+**9 Sep 2026**. Only recurring work — the tasks the generator mints on a schedule. One-off tasks
+are somebody's real outstanding work and stay open.
+
+**Why it matters beyond the one department.** A&F holds **1,631 of the 1,784 open tasks org-wide**.
+The Master Report's "Open now" and "Overdue" tiles are therefore a picture of this one department,
+not of the company. Closing the backlog: open **1,784 → 217**, overdue **1,700 → 133**.
+
+**Measured on the live database, 10-Sep-2026.** 1,567 rows to close, 7,003 location checklist rows
+to resolve, 10 people, 11 weekly scorecards rewritten, ~3,134 new activity rows.
+
+| frequency | rows | | person | rows |
+|---|---|---|---|---|
+| daily | 735 | | Ravina | 488 |
+| weekly | 98 | | Dimple | 459 |
+| monthly | 151 | | Bharat | 178 |
+| as-and-when | 583 | | Jyoti | 144 |
+| **total** | **1,567** | | Neha | 119 |
+| | | | Yash Joshi | 85 |
+| | | | Jayshree Patil | 40 |
+| | | | Ritesh Tulsyan | 27 |
+| | | | Bushra | 26 |
+| | | | Vishal Dabekar | 1 |
+
+**"As and When" was included on the client's call.** The ask said daily/weekly/monthly, but
+*As and When* is a fourth recurrence type that fires Mon–Sat like a daily one, and it is the single
+largest bucket at 583 rows. Taking the ask literally would have closed 984 and left 647 rows on the
+screen, so the department would have looked untouched. Confirmed 10-09-2026 before any code was run.
+
+**What is deliberately excluded — five categories, none of them an oversight.**
+- 🟢 **64 one-off tasks** — not recurring. Real work somebody still owes.
+- 🟢 **22 shifted rows** — each already has a successor via `shifted_to_task_id`, and every chain
+  terminates in a completed task. Shifted is a closed state here; completing it would double-count.
+- 🟢 **349 rows already flagged Not Applicable** — they render as "N/A", not as open work.
+  Overwriting somebody's deliberate N/A with "completed" is a lie in the audit trail.
+- 🟢 **3 orphaned "Expenses" rows** (2, 4, 6 Jul) — `from_recurring` is true but the template was
+  deleted, so the cadence is unknowable. Left open on purpose.
+- 🟢 **Anything due 10 Sep or later** — "up to 9 September" read as inclusive of the 9th.
+
+⚠ **The locations gate is what shapes the whole migration.** `trg_tasks_locations_gate` raises
+unless every `task_locations` row is completed or N/A, and **1,561 of the 1,567 targets are blocked
+by it** across 7,003 rows. A plain `UPDATE tasks SET status='completed'` fails on nearly every row.
+The checklists are marked **N/A** first — the truthful resolution, since those locations were never
+visited. Same order as the 1 Sep pre-go-live close.
+
+*(cross-ref: **the 1 Sep pre-go-live close**, `20260901120000_close_pre_golive_task_backlog.sql`,
+which closed the 638 rows due on or before 30 Jun. This is the same pattern, second run. No overlap
+— that migration is why nothing in A&F is open before 1 Jul.)*
+
+**The rollback was rehearsed, not read.** Piloted on Bushra's 26 tasks / 131 location rows as a real
+committed cutover on live data: capture → apply → roll back → diff. All three md5 fingerprints
+(tasks, locations, activity) came back **identical** to the pre-run state and both snapshot tables
+emptied. The rollback deletes the `completed` and `remark` activity rows too — restoring only
+`tasks.status` would leave a reopened task carrying "Master Admin completed this task" in its
+timeline.
+
+**What the client will see.** Each of the 10 people's July–September weekly scorecards flips from
+mostly Red to mostly Green. Worth saying out loud before it happens rather than after.
+
+⚠ **Not one of the 58 person-weeks in scope has a weekly plan on file.** That is *why* the
+department reads Red today. The Planned column stays empty afterwards, so the scorecard is still
+only half a document until people file plans.
+
+**What this does NOT fix — the backlog starts rebuilding at 06:00 IST the next morning.** A&F has
+**192 active recurring templates**, and **66 of them produced nothing completed between 1 Aug and
+9 Sep** (49 of those monthly). Closing 1,567 rows clears the history; it does nothing to the
+templates that generate them, so the department is back in the same position within weeks unless
+the unused templates are switched off or the work actually gets ticked.
+
+**To discuss with Ritesh Bhai**
+- [ ] **The 66 idle templates.** Switch them off, reassign them, or accept the churn? This is the
+      only thing that stops a third bulk close being needed.
+- [ ] **Weekly plans.** The scorecard cannot mean anything until A&F files them. Whose call is it?
+- [ ] **The 64 one-off tasks** left open — should they be reviewed individually, or closed too?
+
 
 ---
 
