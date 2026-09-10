@@ -1,4 +1,5 @@
 import { UserX } from "lucide-react";
+import { useScopeDimension } from "@hub/lib/scope";
 
 /**
  * What a scoped report shows when the viewer's salespeople own no customers at all.
@@ -14,17 +15,22 @@ import { UserX } from "lucide-react";
  * ext_ledger_tags.salesperson, so "Others" and "OTHERS" are different people.
  */
 export default function NothingInScope({ label = "report" }: { label?: string }) {
+  // Which tag is doing the restricting, so the message names the thing the reader can actually get
+  // fixed. Hard-coding "salespeople" here would send a collector to ask about the wrong setting.
+  const dimension = useScopeDimension();
+  const isTeam = dimension === "collection_team";
+  const noun = isTeam ? "collection teams" : "salespeople";
   return (
     <div className="p-6">
       <div className="rounded-lg border border-border bg-surface px-4 py-12 text-center">
         <UserX className="mx-auto h-6 w-6 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium text-foreground">
-          No customers are assigned to your salespeople.
+          No customers are assigned to your {noun}.
         </p>
         <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-          This {label} is filtered to the salespeople on your profile, and none of them currently
-          has a customer tagged to them. Ask an administrator to check your salesperson access, or
-          the salesperson tags in Settings → Masters.
+          This {label} is filtered to the {noun} on your profile, and none of them currently
+          has a customer tagged to them. Ask an administrator to check your {isTeam ? "collection team" : "salesperson"} access, or
+          the {isTeam ? "collection team" : "salesperson"} tags in Settings → Masters.
         </p>
       </div>
     </div>

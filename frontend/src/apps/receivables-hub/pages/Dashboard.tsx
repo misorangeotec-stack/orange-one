@@ -25,6 +25,7 @@ import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { ActivityLegendPopover } from "@hub/components/ActivityLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect } from "@hub/components/CustomerCategoryMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
@@ -81,6 +82,7 @@ export default function Dashboard() {
   const [balanceFilter,   setBalanceFilter]   = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
   const [blockedFilter,   setBlockedFilter]   = useState<"all" | "blocked" | "not_blocked">("all");
   const [salesPersons,    setSalesPersons]    = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories,      setCategories]      = useState<string[]>([]);
   const [saleTypes,       setSaleTypes]       = useState<string[]>([]);
   // Which drill-down panel a KPI card has opened, if any. Was a single `showBuildup` boolean;
@@ -95,13 +97,14 @@ export default function Dashboard() {
   const { loading, error, kpis, trend, aging, riskSegmentation,
           topRiskyCustomers, alerts, dashboard, riskTrend, riskCountTrend,
           groupedCustomers, netOnAccount, onAccountOfIds, allCustomers,
-          salesPersonOptions } = useAppData({
+          salesPersonOptions, collectionTeamOptions } = useAppData({
     risk: riskLevels.length === 0 ? "all" : riskLevels.join(","),
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
     customerSegment,
     balanceFilter,
     blockedFilter,
     salesPerson: salesPersons.length === 0 ? "all" : salesPersons.join(","),
+    collectionTeam: collectionTeams.length === 0 ? "all" : collectionTeams.join(","),
     category: categories.length === 0 ? "all" : categories.join(","),
   });
 
@@ -237,6 +240,10 @@ export default function Dashboard() {
     salesPersons.length > 0 && {
       label: salesPersons.length <= 2 ? `Sales: ${salesPersons.join(", ")}` : `Sales: ${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
+    },
+    collectionTeams.length > 0 && {
+      label: collectionTeams.length <= 2 ? `Team: ${collectionTeams.join(", ")}` : `Team: ${collectionTeams.length} teams`,
+      onRemove: () => setCollectionTeams([]),
     },
     categories.length > 0 && {
       label: categories.length <= 3 ? `Category: ${categories.join(", ")}` : `Category: ${categories.length} selected`,
@@ -426,6 +433,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sales Person</span>
           <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
+          <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} />
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>

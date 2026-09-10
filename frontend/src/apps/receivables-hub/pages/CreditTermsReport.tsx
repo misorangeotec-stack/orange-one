@@ -20,6 +20,7 @@ import {
 } from "@hub/components/ui/pagination";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
@@ -108,7 +109,7 @@ const hasLimit = (creditLimit: number) => creditLimit > 1;
 const hasDays = (creditPeriod: number) => creditPeriod > 0;
 
 /** Filters a caller can ask survives() to ignore. */
-type Skippable = "book" | "status" | "salesPerson" | "saleType";
+type Skippable = "book" | "status" | "salesPerson" | "collectionTeam" | "saleType";
 
 /**
  * Which balances the list keeps.
@@ -166,6 +167,7 @@ interface Row {
   /** "O-tec — Surat". The book is the grain: O-tec Surat and O-tec Noida are nothing alike. */
   book: string;
   salesPerson: string;
+  collectionTeam: string;
   category: string;
   creditDays: number;
   creditLimit: number;
@@ -284,6 +286,7 @@ export default function CreditTermsReport() {
   const [books, setBooks] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<TermStatus[]>(INCOMPLETE);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [onlyElsewhere, setOnlyElsewhere] = useState(false);
@@ -340,6 +343,7 @@ export default function CreditTermsReport() {
         location: c.location,
         book: c.location ? `${c.company} — ${c.location}` : c.company,
         salesPerson: c.salesPerson || "—",
+        collectionTeam: c.collectionTeam || "",
         category: c.category || "",
         creditDays: c.creditPeriod,
         creditLimit: c.creditLimit,
@@ -387,13 +391,14 @@ export default function CreditTermsReport() {
       (skip.includes("book") || books.length === 0 || books.includes(r.book)) &&
       (skip.includes("status") || statuses.length === 0 || statuses.includes(r.status)) &&
       (skip.includes("salesPerson") || salesPersons.length === 0 || salesPersons.includes(r.salesPerson)) &&
+      (skip.includes("collectionTeam") || collectionTeams.length === 0 || collectionTeams.includes(r.collectionTeam)) &&
       // A customer matches a sale type if they trade in ANY of the selected ones.
       (skip.includes("saleType") || !saleTypeFilterOn || r.saleTypes.some((t) => saleTypes.includes(t))) &&
       matchesCategory(r, categories) &&
       (!onlyElsewhere || r.setElsewhere) &&
       passesBalance(r.outstanding, balanceMode) &&
       (!q || r.customer.toLowerCase().includes(q) || r.salesPerson.toLowerCase().includes(q));
-  }, [search, books, statuses, salesPersons, categories, saleTypes, saleTypeFilterOn, onlyElsewhere, balanceMode]);
+  }, [search, books, statuses, salesPersons, collectionTeams, categories, saleTypes, saleTypeFilterOn, onlyElsewhere, balanceMode]);
 
   const bookOptions = useMemo(
     () => [...new Set(allRows.filter((r) => survives(r, "book")).map((r) => r.book))].sort()
@@ -406,6 +411,12 @@ export default function CreditTermsReport() {
   }, [allRows, survives]);
   const salesPersonOptions = useMemo(
     () => [...new Set(allRows.filter((r) => survives(r, "salesPerson")).map((r) => r.salesPerson))].sort(),
+    [allRows, survives],
+  );
+  // Cascading, like every other filter on this page: the options are what the OTHER filters still
+  // allow. filter(Boolean) drops the unassigned — there is no team to offer for them.
+  const collectionTeamOptions = useMemo(
+    () => [...new Set(allRows.filter((r) => survives(r, "collectionTeam")).map((r) => r.collectionTeam).filter(Boolean))].sort(),
     [allRows, survives],
   );
 
@@ -807,6 +818,10 @@ export default function CreditTermsReport() {
         <SalesPersonMultiSelect
           options={salesPersonOptions} value={salesPersons}
           onChange={(v) => { setSalesPersons(v); resetPage(); }}
+        />
+        <CollectionTeamMultiSelect
+          options={collectionTeamOptions} value={collectionTeams}
+          onChange={(v) => { setCollectionTeams(v); resetPage(); }}
         />
         <CustomerCategoryMultiSelect
           value={categories} onChange={(v) => { setCategories(v); resetPage(); }}

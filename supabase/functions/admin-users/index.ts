@@ -160,6 +160,9 @@ Deno.serve(async (req) => {
       for (const [app_id, level] of Object.entries(rawLevels)) moduleLevels[app_id] = level === "view" ? "view" : "edit";
     }
     const receivablesSalespersons = Array.isArray(body.receivablesSalespersons) ? (body.receivablesSalespersons as string[]) : [];
+    // RC-11's second scope dimension. Set HERE on create; updates go through directoryWrites, so
+    // both doors carry it or a tag silently fails to save on one of the two paths.
+    const receivablesCollectionTeams = Array.isArray(body.receivablesCollectionTeams) ? (body.receivablesCollectionTeams as string[]) : [];
     // Outstanding Dashboard menu access, set on the SAME form as everything above. Both
     // used to be dropped on create (only the update path wrote them), so a brand-new user
     // silently landed on the defaults — every menu visible, nothing elevated — and the
@@ -196,6 +199,7 @@ Deno.serve(async (req) => {
         employee_code: employeeCode,
         phone,
         receivables_salespersons: receivablesSalespersons,
+        receivables_collection_teams: receivablesCollectionTeams,
         receivables_hidden_menus: receivablesHiddenMenus,
         receivables_admin_menus: receivablesAdminMenus,
         receivables_allowed_reports: receivablesAllowedReports,

@@ -15,6 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
 import { formatDateDMY } from "@hub/lib/utils";
@@ -71,10 +72,11 @@ const ROWS_COLLAPSED = 25;
 
 export default function Alerts() {
   const navigate = useNavigate();
-  const { loading, error, allCustomers, customerDetail, dashboard, salesPersonOptions } = useAppData();
+  const { loading, error, allCustomers, customerDetail, dashboard, salesPersonOptions, collectionTeamOptions } = useAppData();
 
   const [search, setSearch]             = useState("");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [company, setCompany]           = useState("all");
   const [location, setLocation]         = useState("all");
   const [expanded, setExpanded]         = useState<Set<HubAlertType>>(new Set());
@@ -99,17 +101,31 @@ export default function Alerts() {
     [allCustomers, customerDetail, asOfDate],
   );
 
+  /**
+   * customer name → collection team. An AlertItem carries the SALESPERSON but no team — alerts are
+   * built from the dashboard feed, not from the muster — so the team is looked up here rather than
+   * threaded through the alert shape. Names, because that is what an alert identifies a customer by.
+   */
+  const teamByCustomer = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of allCustomers) if (c.collectionTeam) m.set(c.name, c.collectionTeam);
+    return m;
+  }, [allCustomers]);
+
   const alerts = useMemo(() => {
     const q = search.trim().toLowerCase();
     const spSet = salesPersons.length ? new Set(salesPersons) : null;
+    const ctSet = collectionTeams.length ? new Set(collectionTeams) : null;
     return allAlerts.filter((a) => {
       if (q && !a.customer.toLowerCase().includes(q)) return false;
       if (spSet && !spSet.has(a.salesPerson)) return false;
+      // An alert for an unassigned customer matches no team, so it drops out when the filter is on.
+      if (ctSet && !ctSet.has(teamByCustomer.get(a.customer) ?? "")) return false;
       if (company !== "all" && a.company !== company) return false;
       if (location !== "all" && a.location !== location) return false;
       return true;
     });
-  }, [allAlerts, search, salesPersons, company, location]);
+  }, [allAlerts, search, salesPersons, collectionTeams, teamByCustomer, company, location]);
 
   const byType = useMemo(() => {
     const map = new Map<HubAlertType, HubAlert[]>();
@@ -242,6 +258,14 @@ export default function Alerts() {
                 options={salesPersonOptions}
                 value={salesPersons}
                 onChange={setSalesPersons}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Collection Team</span>
+              <CollectionTeamMultiSelect
+                options={collectionTeamOptions}
+                value={collectionTeams}
+                onChange={setCollectionTeams}
               />
             </div>
             <div className="flex flex-col gap-1">

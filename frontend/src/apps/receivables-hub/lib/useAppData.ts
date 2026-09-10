@@ -101,6 +101,7 @@ export function consolidateByGroup(
     const companies = [...new Set(children.flatMap((c) => c.companies ?? [c.company]))].sort();
     const locations = [...new Set(children.flatMap((c) => c.locations ?? [c.location]))].sort();
     const salesPersons = [...new Set(children.flatMap((c) => c.salesPersons ?? (c.salesPerson ? [c.salesPerson] : [])).filter(Boolean))].sort();
+    const collectionTeams = [...new Set(children.flatMap((c) => c.collectionTeams ?? (c.collectionTeam ? [c.collectionTeam] : [])).filter(Boolean))].sort();
     const categories = [...new Set(children.flatMap((c) => c.categories ?? (c.category ? [c.category] : [])).filter(Boolean))].sort();
     const constituentIds = children.flatMap((c) => c.constituentIds ?? [c.id]);
     const childNames = children.map((c) => c.name).sort();
@@ -122,6 +123,10 @@ export function consolidateByGroup(
       company:                  collapsed(companies),
       location:                 collapsed(locations),
       salesPerson:              collapsed(salesPersons.length > 0 ? salesPersons : ["Others"]),
+      // Unassigned stays "" rather than borrowing salesperson's "Others" sentinel — there is no
+      // catch-all team, and inventing one here would hide the gap the Masters screen reports.
+      collectionTeam:           collectionTeams.length === 0 ? "" : collapsed(collectionTeams),
+      collectionTeams,
       category:                 categories.length === 0 ? "" : collapsed(categories),
       categories,
       sales:                    numSum("sales"),
@@ -210,6 +215,7 @@ interface Filters {
   balanceFilter?: "all" | "has_outstanding" | "zero_outstanding";
   blockedFilter?: "all" | "blocked" | "not_blocked";
   salesPerson?: string; // comma-separated list of selected salespersons, or "all"
+  collectionTeam?: string; // comma-separated list of selected collection teams, or "all" (RC-11)
   category?: string;    // comma-separated list of selected categories, or "all"
 }
 
@@ -260,6 +266,7 @@ interface AppData {
   lowCollectionCustomers: LowCollectionCustomer[];
   /** Distinct salesperson names across the (filtered) consolidated customers */
   salesPersonOptions: string[];
+  collectionTeamOptions: string[];
   /**
    * Whether Overdue is being shown NET of On Account (Live source, no sale-type filter).
    * A page that renders a netted figure must say so when this is false, or the number
@@ -350,11 +357,17 @@ export function useAppData(filters: Filters = {}): AppData {
   const { suffix: fySuffix } = useFY();
   // Per-salesperson scope (UI-level): null = unrestricted (admin); otherwise only
   // these salesperson names are visible — an empty array means "nothing".
-  const { restrictToSalespersons } = useReceivablesScope();
+  const { restrictToSalespersons, restrictToCollectionTeams } = useReceivablesScope();
   const source = useReceivablesSource();
   const allowedSalespersonSet = useMemo(
     () => (restrictToSalespersons !== null ? new Set(restrictToSalespersons) : null),
     [restrictToSalespersons],
+  );
+  // The second dimension (RC-11). null = does not restrict; see lib/scope.tsx for why an empty team
+  // list resolves to null while an empty salesperson list does not.
+  const allowedTeamSet = useMemo(
+    () => (restrictToCollectionTeams !== null ? new Set(restrictToCollectionTeams) : null),
+    [restrictToCollectionTeams],
   );
 
   // React Query caches the fetched payload at the QueryClient level (configured
@@ -401,18 +414,26 @@ export function useAppData(filters: Filters = {}): AppData {
     const list = raw
       ? raw.cust.map((c) => ({ ...c, blocked: source === "connectwave" ? c.blocked === true : c.creditLimit === 1 }))
       : [];
-    return allowedSalespersonSet ? list.filter((c) => allowedSalespersonSet.has(c.salesPerson)) : list;
-  }, [raw, allowedSalespersonSet, source]);
+    // Both dimensions narrow. They are mutually exclusive in practice (the admin form enforces it),
+    // so normally only one set is non-null — but when both are, this INTERSECTS, which is the safe
+    // direction: a customer must never become visible because one grant allowed what the other hid.
+    let out = list;
+    if (allowedSalespersonSet) out = out.filter((c) => allowedSalespersonSet.has(c.salesPerson));
+    // A customer with no team is not "everyone's" — an unassigned customer is invisible to every
+    // team-scoped viewer, which is exactly why the Masters tab reports the unassigned ones.
+    if (allowedTeamSet) out = out.filter((c) => allowedTeamSet.has(c.collectionTeam));
+    return out;
+  }, [raw, allowedSalespersonSet, allowedTeamSet, source]);
   const dashboard = raw?.dash ?? null;
   // Allowed customer ids for the current scope (null = unrestricted).
   const allowedCustomerIds = useMemo(
-    () => (allowedSalespersonSet ? new Set(allCustomers.map((c) => c.id)) : null),
-    [allowedSalespersonSet, allCustomers],
+    () => (allowedSalespersonSet || allowedTeamSet ? new Set(allCustomers.map((c) => c.id)) : null),
+    [allowedSalespersonSet, allowedTeamSet, allCustomers],
   );
   // Allowed customer names for the current scope (used to scope alerts).
   const allowedCustomerNames = useMemo(
-    () => (allowedSalespersonSet ? new Set(allCustomers.map((c) => c.name)) : null),
-    [allowedSalespersonSet, allCustomers],
+    () => (allowedSalespersonSet || allowedTeamSet ? new Set(allCustomers.map((c) => c.name)) : null),
+    [allowedSalespersonSet, allowedTeamSet, allCustomers],
   );
   // Scope the per-customer invoice/trend detail too, so a restricted user can't
   // open another salesperson's customer by typing the /customer/:id URL.
@@ -601,6 +622,10 @@ export function useAppData(filters: Filters = {}): AppData {
       const spSet = new Set(filters.salesPerson.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => c.salesPersons?.some((sp) => spSet.has(sp)) || spSet.has(c.salesPerson));
     }
+    if (filters.collectionTeam && filters.collectionTeam !== "all") {
+      const ctSet = new Set(filters.collectionTeam.split(",").map((s) => s.trim()).filter(Boolean));
+      result = result.filter((c) => c.collectionTeams?.some((t) => ctSet.has(t)) || ctSet.has(c.collectionTeam));
+    }
     if (filters.category && filters.category !== "all") {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => {
@@ -755,6 +780,10 @@ export function useAppData(filters: Filters = {}): AppData {
     if (filters.salesPerson && filters.salesPerson !== "all") {
       const spSet = new Set(filters.salesPerson.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => c.salesPersons?.some((sp) => spSet.has(sp)) || spSet.has(c.salesPerson));
+    }
+    if (filters.collectionTeam && filters.collectionTeam !== "all") {
+      const ctSet = new Set(filters.collectionTeam.split(",").map((s) => s.trim()).filter(Boolean));
+      result = result.filter((c) => c.collectionTeams?.some((t) => ctSet.has(t)) || ctSet.has(c.collectionTeam));
     }
     if (filters.category && filters.category !== "all") {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
@@ -1313,6 +1342,12 @@ export function useAppData(filters: Filters = {}): AppData {
     [projectedConsolidatedCustomers],
   );
 
+  /** Teams present in the rows the viewer can see. Unassigned customers contribute nothing. */
+  const collectionTeamOptions = useMemo(
+    () => [...new Set(projectedConsolidatedCustomers.flatMap((c) => c.collectionTeams ?? (c.collectionTeam ? [c.collectionTeam] : [])).filter(Boolean))].sort(),
+    [projectedConsolidatedCustomers],
+  );
+
   // Grouped customer rows — filter-aware (uses the same consolidatedCustomers
   // chain so toggling between Customer/Group view doesn't change which records
   // are included, only how they're aggregated).
@@ -1346,6 +1381,7 @@ export function useAppData(filters: Filters = {}): AppData {
     lowCollectionCount,
     lowCollectionCustomers,
     salesPersonOptions,
+    collectionTeamOptions,
     netOnAccount,
     onAccountOfIds,
   };

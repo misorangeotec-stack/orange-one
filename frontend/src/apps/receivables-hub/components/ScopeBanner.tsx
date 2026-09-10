@@ -1,5 +1,5 @@
 import { Info } from "lucide-react";
-import { useReceivablesScope } from "@hub/lib/scope";
+import { useReceivablesScope, useScopeDimension } from "@hub/lib/scope";
 import type { ReportEntry } from "@hub/lib/reportCatalog";
 
 /**
@@ -24,10 +24,13 @@ import type { ReportEntry } from "@hub/lib/reportCatalog";
  * "party-server", the banner disappears on its own.
  */
 export default function ScopeBanner({ report }: { report: ReportEntry }) {
-  const { restrictToSalespersons } = useReceivablesScope();
+  const { restrictToSalespersons, restrictToCollectionTeams } = useReceivablesScope();
+  const dimension = useScopeDimension();
 
-  // null = unrestricted viewer (admin). Nothing to warn about.
-  if (restrictToSalespersons === null) return null;
+  // Nothing restricting on EITHER dimension = an unrestricted viewer (an admin). Nothing to warn
+  // about. Checking only the salesperson tag here would have shown a team-scoped user no banner on
+  // a report that silently ignores their scope — the one case the banner exists for.
+  if (restrictToSalespersons === null && restrictToCollectionTeams === null) return null;
   if (report.scoping !== "none") return null;
 
   return (
@@ -35,7 +38,9 @@ export default function ScopeBanner({ report }: { report: ReportEntry }) {
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="text-xs leading-relaxed">
         {report.scopeNote ??
-          "Company-wide figures — this report cannot be filtered to your assigned salespeople."}
+          `Company-wide figures — this report cannot be filtered to your assigned ${
+            dimension === "collection_team" ? "collection teams" : "salespeople"
+          }.`}
       </p>
     </div>
   );

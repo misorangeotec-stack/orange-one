@@ -19,6 +19,7 @@ import {
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from "@hub/components/ui/pagination";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
@@ -54,6 +55,7 @@ interface OpRow {
   date: string;          // ISO
   customer: string;
   salesPerson: string;
+  collectionTeam: string;
   category: string;
   categories?: string[];
   company: string;
@@ -70,11 +72,12 @@ type SortKey = "date" | "customer" | "salesPerson" | "alloc" | "amount";
 /* ── Page ──────────────────────────────────────────────────── */
 
 export default function OtherPaymentsReport() {
-  const { loading, error, allCustomers, customerDetail, salesPersonOptions } = useAppData();
+  const { loading, error, allCustomers, customerDetail, salesPersonOptions, collectionTeamOptions } = useAppData();
   const { label: fyLabel } = useFY();
 
   const [search, setSearch] = useState("");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [allocFilter, setAllocFilter] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("date");
@@ -93,6 +96,7 @@ export default function OtherPaymentsReport() {
           date: t.date ?? "",
           customer: c.name,
           salesPerson: c.salesPerson || "—",
+          collectionTeam: c.collectionTeam || "",
           category: c.category || "",
           company: c.company,
           location: c.location,
@@ -112,9 +116,11 @@ export default function OtherPaymentsReport() {
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const spSet = new Set(salesPersons);
+    const ctSet = new Set(collectionTeams);
     const alSet = new Set(allocFilter);
     const rows = allRows.filter((r) => {
       if (spSet.size > 0 && !spSet.has(r.salesPerson)) return false;
+      if (ctSet.size > 0 && !ctSet.has(r.collectionTeam)) return false;
       if (!matchesCategory(r, categories)) return false;
       if (alSet.size > 0 && !alSet.has(r.alloc)) return false;
       if (q && !(r.customer.toLowerCase().includes(q) || r.refInvoice.toLowerCase().includes(q) || r.paymentRef.toLowerCase().includes(q) || r.remark.toLowerCase().includes(q))) return false;
@@ -135,7 +141,7 @@ export default function OtherPaymentsReport() {
       return 0;
     });
     return rows;
-  }, [allRows, search, salesPersons, categories, allocFilter, sortKey, sortDir]);
+  }, [allRows, search, salesPersons, collectionTeams, categories, allocFilter, sortKey, sortDir]);
 
   // Summary
   const totalAmt = filteredRows.reduce((s, r) => s + r.amount, 0);
@@ -239,6 +245,7 @@ export default function OtherPaymentsReport() {
           />
         </div>
         <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={(v) => { setSalesPersons(v); setCurrentPage(1); }} />
+        <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={(v) => { setCollectionTeams(v); setCurrentPage(1); }} />
         <CustomerCategoryMultiSelect value={categories} onChange={(v) => { setCategories(v); setCurrentPage(1); }} triggerClassName="w-44 h-9 text-sm rounded-input" />
         <MultiSelect options={allocOptions} value={allocFilter} onChange={(v) => { setAllocFilter(v); setCurrentPage(1); }} allLabel="All Allocations" noun="Types" triggerClassName="w-44 h-9 text-sm rounded-input" />
       </div>

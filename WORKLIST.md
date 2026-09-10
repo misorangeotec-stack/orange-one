@@ -10880,9 +10880,29 @@ who-may-clear are the same decisions, and implementing them twice is how the two
 behaving differently.
 
 
-### RC-11 · Collection Team — fill it, filter on it, and scope each collector to their own customers  `[ ]`
+### RC-11 · Collection Team — fill it, filter on it, and scope each collector to their own customers  🔴  `[~]`
+🟢 **BUILT, LOADED AND BROWSER-VERIFIED 10-09-2026.** Every customer who owes money now has a
+collection team — **648 owing, 0 unmapped, ₹0.00 unaccounted** — a user can be scoped by team
+instead of by salesperson, and all 13 salesperson filters have a team twin beside them.
+⚠ **Nobody is tagged to a team yet, deliberately**, so nothing changed for any real user on the day
+it shipped. Switching a person over is a two-click admin action, and it is not reversible for them
+without a second one: Nitesh would go from 1,326 customers to 156, Vijay from 319 to 114.
+⚠ **The gap re-opens on its own** — `collection_refresh()` enrols every new customer with no team,
+so the count drifts back up unless somebody looks. The **No collection team** button on Settings →
+Masters → Customer Groups is where they look. Only P6 (the scheduled email) is open, by choice.
 *Raised 2026-09-03 · Audited the same day against the code, the muster masters and the supplied
 sheet · Source file: [Misc/Jayshree/UPDATED MASTER SHEET.xlsx](Misc/Jayshree/UPDATED%20MASTER%20SHEET.xlsx)*
+
+⚠ **Sequence [RC-15](#rc-15--salesperson-and-collection-team-become-managed-masters-picked-from-a-list) FIRST** *(added 09-09-2026)* — 🟢 **RC-15 SHIPPED 10-09-2026, so this is unblocked.** The four teams
+(`Mohta ji`, `Jayshree`, `Nitesh`, `Vijay`) are seeded in `ext_collection_team_master` and the muster
+cell is a picker, so the 722 rows now load **against** the list and the `Vijay`/`vijay` split cannot
+survive the load. Collection Team becomes a
+managed list picked from a dropdown rather than free text, so the 722 rows below load **against** that
+list — which is also what disposes of the `Vijay` / `vijay` split noted further down, without cleaning
+the same data twice. ⚠ Re-measured 09-09-2026: `collection_team` is **entirely unpopulated on live
+data** — 1,631 empty strings and 244 NULLs across 1,875 ledgers — so nothing has been loaded yet and
+there is no migration to unpick. Ritesh Bhai also has further context to give on this task before it
+starts.
 
 **The ask, in two halves.**
 1. Load the **Collection Team** against each customer from Jayshree's sheet, and let the dashboard
@@ -11026,23 +11046,60 @@ is very likely wanted, and is worth confirming rather than discovering later.
   an admin action, and a collector cannot re-assign their own customers. That is probably right —
   confirm it is intended.
 
-#### Phase-wise checklist
+#### Phase-wise checklist — BUILT AND BROWSER-VERIFIED 10-09-2026
 
-- [ ] **P1 · Clean and load the data.** Fix `vijay` → `Vijay`, drop the `Grand Total` row, then
-      **export the Customer Groups master, paste the team column in against the GUIDs, import it
-      back.** No code. Report how many of the 722 rows matched and what was left untagged.
-- [ ] **P2 · Carry the value into the app.** Add `collection_team` to the `ext_ledger_group` select
-      in `connectwaveFetcher`, onto `Customer`, and as `collectionTeams: string[]` on
-      `ConsolidatedCustomer` (following `categories`).
-- [ ] **P3 · The filter**, on the agreed pages, with an explicit "Not assigned" value.
-- [ ] **P4 · The scope.** `profiles.receivables_collection_teams` (migration **before** the
-      frontend), the chips in the Admin user form, `scope.tsx`, and a second scope through
-      `scopeParties.ts` — reused, not forked. Intersect with the salesperson scope.
-- [ ] **P5 · Walk it in the browser** as Nitesh (should see only his), then as Jayshree (all), then
-      as a user carrying **both** a salesperson tag and a team tag — the intersection is the case
-      most likely to be wrong.
-- [ ] **P6 · The scheduled Collection email** — decide whether it splits by team, and if so add the
-      field to `ZCFilters` so the screen and the send cannot diverge.
+- [x] **P1 · Data loaded.** 720 of 722 rows matched a ledger on `(Customer, Company, Location)` with
+      **zero ambiguity** — the sheet carries Company and Location, so the write-up's fear of
+      name-matching did not apply. `vijay` → `Vijay` corrected at the door; the `Grand Total` footer
+      dropped. Written through `muster-write`, so every value was validated against the master.
+      Then **Jayshree filled the 49 previously-unassigned customers** and that sheet was loaded too.
+      ⚠ Her sheet came back in UPPER CASE (`MOHTA JI` against a master holding `Mohta ji`), which the
+      exact-match import would have rejected in full. Canonicalised at the door, four mappings, all
+      reported. She also used two names the master lacked — **`RELATED PARTY` and `OTHERS` are now
+      collection teams** (the client's call, 10-09), mirroring the salesperson master.
+      🟢 **Verified row by row: all 54 of her rows stored exactly as filled, 0 mismatches.**
+- [x] **P2 · The value reaches the app.** `collection_team` added to the `ext_ledger_group` select in
+      `connectwaveFetcher`, stamped onto `Customer.collectionTeam`, aggregated as
+      `collectionTeams: string[]` on both consolidations, and exposed as `collectionTeamOptions`.
+      ⚠ Stamped OUTSIDE the `if (!t)` salesperson-tag guard — folding it in would blank the team on
+      every customer that happens to have no tag row.
+- [x] **P3 · The filter**, on all **13** pages that carry a salesperson filter — not 15. Verified:
+      Salesperson Analysis has no such dropdown (the dimension is its pivot) and the "share dialog"
+      picks recipients, not rows. New `CollectionTeamMultiSelect`, a near-copy of its twin.
+      ⚠ `ZCFilters` gained `collectionTeams` **and a default** — that shape is shared with the
+      scheduled send, and a missing default would have broken a live email rather than a build.
+- [x] **P4 · The scope.** `profiles.receivables_collection_teams` (migration applied first),
+      a dimension chooser in the Admin form, a widened `ReceivablesScope`, and a second scope through
+      `scopeParties.ts` — reused, not forked, which is what carried the new dimension to seven
+      screens without touching them.
+      ⚠ **NOT intersected, as originally planned — the two are MUTUALLY EXCLUSIVE** (the client's
+      call, 09-09). The form enforces it and clears whichever list you leave. The readers still
+      intersect if both are somehow set, so the failure direction stays narrower, never wider.
+- [x] **P5 · Walked in the browser** 10-09-2026 as a throwaway user scoped to team `Nitesh`, then
+      deleted. Dashboard 112 customers / ₹7.37 Cr; another team's customer by URL returns "Customer
+      not found" with no name or amount; the team dropdown offers that collector only `Nitesh`; and
+      every row on Customer Profile was confirmed against the database as his.
+      🔴 **This is where the value was.** Three defects that no build or type check could see:
+      see *What browser testing caught* below.
+- [ ] **P6 · The scheduled Collection email** — **deferred 10-09-2026, the client's call: screens
+      only.** `ZCFilters.collectionTeams` defaults to empty, so the send behaves exactly as before.
+
+#### 🔴 What browser testing caught — none of it visible to `tsc`
+
+1. **A team-scoped collector saw a COMPLETELY EMPTY dashboard.** A user scoped by team has an empty
+   salesperson list by construction, and `[]` has always meant "sees nothing" — so it wiped every
+   customer before the team filter could let any back in. The team tag is what disambiguates that
+   empty list; `scope.tsx` now says so at length.
+2. **`admin-users` was edited but never redeployed**, so creating a user silently dropped the new
+   field while the update path worked. Two write doors, one deployed. Both now.
+3. 🔴 **A PRE-EXISTING LEAK on Customer Profile, on the salesperson dimension.** That page has two
+   datasets and only one was ever scoped: the "gone quiet" table read `data.inactive` straight from
+   the RPC, so a **salesperson**-scoped user could already read every other rep's dormant customers
+   by name, salesperson and pending receivable. Both datasets now go through one helper.
+
+Also fixed on the way: `loadSalespersonByParty` paged with a bare `.select()` against a 1,875-row
+table, so it silently returned a map missing about a third of the ledgers — on the scoping path, a
+salesperson quietly not seeing customers that were theirs. It pages by primary key now.
 
 #### To settle
 

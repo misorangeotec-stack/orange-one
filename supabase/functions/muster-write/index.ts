@@ -43,7 +43,8 @@
 //   customers reading "NAKUL JI" against a master that no longer contains it: the exact bug the
 //   feature exists to remove, re-created by the tool meant to fix it. So rename_list_value moves
 //   ext_ledger_tags, ext_redmark, profiles.receivables_salespersons and
-//   report_email_recipients.salesperson too, and returns a per-target count.
+//   report_email_recipients.salesperson too, and returns a per-target count. A collection-team
+//   rename moves ext_ledger_group and profiles.receivables_collection_teams (RC-11).
 //   It is NOT atomic — five statements over two projects with no shared transaction — so a partial
 //   failure reports what did move instead of failing bare.
 //
@@ -611,6 +612,26 @@ Deno.serve(async (req) => {
         .from(tbl).update({ [col]: to, updated_by }).eq(col, from).select("ledger_id");
       if (error) return stop("the customer muster", error.message);
       counts.ledgers = data?.length ?? 0;
+    }
+
+    if (list === "collection_team") {
+      // 3. The user tags, in the IDENTITY project. Until RC-11 a collection team could not be tagged
+      //    on anybody, so this cascade legitimately did nothing and said so. Now it can, and leaving
+      //    it out would recreate the phantom-tag bug on the new dimension: a user carrying a team
+      //    name the master no longer contains, matching nothing, with no screen saying so.
+      const { data: profs, error: profErr } = await idAdmin
+        .from("profiles").select("id,receivables_collection_teams")
+        .contains("receivables_collection_teams", [from]);
+      if (profErr) return stop("the user tags", profErr.message);
+      for (const p of profs ?? []) {
+        const next = [...new Set(
+          ((p.receivables_collection_teams ?? []) as string[]).map((t) => (t === from ? to : t)),
+        )];
+        const { error: upErr } = await idAdmin
+          .from("profiles").update({ receivables_collection_teams: next }).eq("id", p.id);
+        if (upErr) return stop("the user tags", upErr.message);
+        counts.userTags++;
+      }
     }
 
     if (list === "salesperson") {

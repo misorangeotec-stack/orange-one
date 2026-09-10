@@ -15,6 +15,7 @@ import {
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
@@ -67,13 +68,14 @@ const PRESETS: { label: string; dims: AgingDimension[] }[] = [
 ];
 
 export default function AgingReport() {
-  const { loading, customers, customerDetail, dashboard, salesPersonOptions, customerGroupMap } = useAppData({});
+  const { loading, customers, customerDetail, dashboard, salesPersonOptions, collectionTeamOptions, customerGroupMap } = useAppData({});
   const asOfDate = dashboard?.asOfDate ?? "";
 
   // ── Filters ────────────────────────────────────────────────────────────────
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   // Customer Segment — mirrors the Dashboard / Risk Register / Collection Report filter.
   // "Active" = had any activity (sales / receipts / credit notes / other payments) in the FY,
@@ -196,6 +198,7 @@ export default function AgingReport() {
     if (companies.length > 0) { const s = new Set(companies); d = d.filter((c) => s.has(c.company)); }
     if (locations.length > 0) { const s = new Set(locations); d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length > 0) { const s = new Set(salespersons); d = d.filter((c) => s.has(c.salesPerson)); }
+    if (collectionTeams.length > 0) { const s = new Set(collectionTeams); d = d.filter((c) => s.has(c.collectionTeam)); }
     if (customerNames.length > 0) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
     if (customerSegment !== "all") {
       const act = new Map<string, number>();
@@ -208,7 +211,7 @@ export default function AgingReport() {
       );
     }
     return d;
-  }, [customers, categories, companies, locations, salespersons, customerNames, customerSegment]);
+  }, [customers, categories, companies, locations, salespersons, collectionTeams, customerNames, customerSegment]);
 
   // ── Build the bill list + tree ───────────────────────────────────────────────
   const filters = useMemo(
@@ -568,6 +571,7 @@ export default function AgingReport() {
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <Select value={customerSegment} onValueChange={(v) => setCustomerSegment(v as "all" | "active" | "no_activity")}>
                 <SelectTrigger className="h-8 w-40 rounded-input border-border text-xs">

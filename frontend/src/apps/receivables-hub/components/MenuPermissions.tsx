@@ -200,7 +200,13 @@ export function MenuPermissions() {
               <div className="min-w-0 flex-1 space-y-4">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-foreground">{selected.name}</h3>
-                  {selected.receivablesSalespersons.length > 0 ? (
+                  {selected.receivablesCollectionTeams.length > 0 ? (
+                    // A user is scoped by ONE dimension, so name the one actually in use rather
+                    // than reporting an empty salesperson list as a problem when it is not.
+                    <span className="text-xs text-muted-foreground">
+                      scoped to collection team {selected.receivablesCollectionTeams.join(", ")}
+                    </span>
+                  ) : selected.receivablesSalespersons.length > 0 ? (
                     <span className="text-xs text-muted-foreground">
                       scoped to {selected.receivablesSalespersons.join(", ")}
                     </span>
@@ -208,7 +214,7 @@ export function MenuPermissions() {
                     // Worth saying out loud: an untagged non-admin sees an EMPTY dashboard, so
                     // granting them reports here achieves nothing on its own.
                     <span className="text-xs text-amber-700">
-                      no salesperson assigned — scoped reports will be empty for this user
+                      no salesperson or collection team assigned — scoped reports will be empty for this user
                     </span>
                   )}
                   <Button

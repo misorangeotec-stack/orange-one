@@ -43,6 +43,7 @@ import { useHubBase } from "@hub/lib/sourceContext";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
@@ -689,6 +690,7 @@ export default function CustomerRiskRegister() {
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
   const [blockedFilter, setBlockedFilter] = useState<"all" | "blocked" | "not_blocked">("all");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [companyFilters, setCompanyFilters] = useState<string[]>([]);
@@ -794,11 +796,12 @@ export default function CustomerRiskRegister() {
     return () => window.removeEventListener("resize", measureCols);
   }, [measureCols]);
 
-  const { loading, error, customers, allCustomers, consolidatedCustomers, groupedCustomers, customerGroupMap, customerDetail, salesPersonOptions } = useAppData({
+  const { loading, error, customers, allCustomers, consolidatedCustomers, groupedCustomers, customerGroupMap, customerDetail, salesPersonOptions, collectionTeamOptions } = useAppData({
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
     customerSegment,
     balanceFilter,
     salesPerson: salesPersons.length === 0 ? "all" : salesPersons.join(","),
+    collectionTeam: collectionTeams.length === 0 ? "all" : collectionTeams.join(","),
     company:  companyFilters.length  === 0 ? undefined : companyFilters.join(","),
     location: locationFilters.length === 0 ? undefined : locationFilters.join(","),
   });
@@ -1003,7 +1006,7 @@ export default function CustomerRiskRegister() {
     }
   };
 
-  const activeFilterCount = [specialFilter, customerSegment, balanceFilter, blockedFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (agingFilters.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0) + (companyFilters.length > 0 ? 1 : 0) + (locationFilters.length > 0 ? 1 : 0);
+  const activeFilterCount = [specialFilter, customerSegment, balanceFilter, blockedFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (agingFilters.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0) + (collectionTeams.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0) + (companyFilters.length > 0 ? 1 : 0) + (locationFilters.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setSearch("");
@@ -1052,6 +1055,10 @@ export default function CustomerRiskRegister() {
     salesPersons.length > 0 && {
       label: salesPersons.length <= 2 ? `Sales: ${salesPersons.join(", ")}` : `Sales: ${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
+    },
+    collectionTeams.length > 0 && {
+      label: collectionTeams.length <= 2 ? `Team: ${collectionTeams.join(", ")}` : `Team: ${collectionTeams.length} teams`,
+      onRemove: () => setCollectionTeams([]),
     },
     categories.length > 0 && {
       label: categories.length <= 3 ? `Category: ${categories.join(", ")}` : `Category: ${categories.length} selected`,
@@ -2019,6 +2026,10 @@ export default function CustomerRiskRegister() {
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sales Person</span>
               <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Collection Team</span>
+              <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>

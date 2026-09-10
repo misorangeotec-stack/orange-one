@@ -126,6 +126,17 @@ export default function UserForm() {
   // user can open no report at all, which is the correct default for a new user.
   const [receivablesAllowedReports, setReceivablesAllowedReports] = useState<string[]>(editing?.receivablesAllowedReports ?? []);
   const [spRows, setSpRows] = useState<NameMasterRow[]>([]);
+  const [receivablesCollectionTeams, setReceivablesCollectionTeams] =
+    useState<string[]>(editing?.receivablesCollectionTeams ?? []);
+  const [ctRows, setCtRows] = useState<NameMasterRow[]>([]);
+  /**
+   * Which dimension this user is scoped on. The two are MUTUALLY EXCLUSIVE (the client's decision,
+   * 09-09-2026), so this is a chooser, not two independent pickers — and choosing one CLEARS the
+   * other, here and in what is saved, so a row carrying both can never be created from this screen.
+   */
+  const [scopeDimension, setScopeDimension] = useState<"salesperson" | "collection_team">(
+    (editing?.receivablesCollectionTeams?.length ?? 0) > 0 ? "collection_team" : "salesperson",
+  );
   const [spLoading, setSpLoading] = useState(false);
   const [spError, setSpError] = useState("");
   const [error, setError] = useState("");
@@ -309,8 +320,13 @@ export default function UserForm() {
     setSpLoading(true);
     setSpError("");
     import("@/apps/receivables-hub/lib/nameMasters")
-      .then((m) => m.fetchSalespersonMaster())
-      .then(setSpRows)
+      .then(async (m) => {
+        // Both vocabularies in one round trip — the form offers whichever dimension is chosen, and
+        // switching between them must not stall on a second fetch.
+        const [sp, ct] = await Promise.all([m.fetchSalespersonMaster(), m.fetchCollectionTeamMaster()]);
+        setSpRows(sp);
+        setCtRows(ct);
+      })
       .catch((e) => setSpError((e as Error).message))
       .finally(() => setSpLoading(false));
   }, [showSalespersonScope, spRows.length, spLoading]);
@@ -330,6 +346,36 @@ export default function UserForm() {
     const row = spRows.find((r) => r.name === n);
     if (!row) return " · not in the list";
     return row.is_active ? "" : " · switched off";
+  };
+
+  /** The same two, for collection teams. */
+  const ctOffered = useMemo(() => {
+    const active = ctRows.filter((r) => r.is_active).map((r) => r.name);
+    const extra = receivablesCollectionTeams.filter((n) => !active.includes(n));
+    return [...active, ...extra].sort((a, b) => a.localeCompare(b));
+  }, [ctRows, receivablesCollectionTeams]);
+
+  const ctMark = (n: string): "" | " · switched off" | " · not in the list" => {
+    const row = ctRows.find((r) => r.name === n);
+    if (!row) return " · not in the list";
+    return row.is_active ? "" : " · switched off";
+  };
+
+  const toggleCollectionTeam = (n: string) =>
+    setReceivablesCollectionTeams((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+
+  /**
+   * Switching dimension EMPTIES the one being left.
+   *
+   * Not cosmetic: leaving the old list populated would write a row tagged on both dimensions, and
+   * every reader then intersects them — the user would see the customers that are both, which is
+   * almost always nothing. Better to make the exclusivity real at the only place that writes it.
+   */
+  const chooseDimension = (d: "salesperson" | "collection_team") => {
+    if (d === scopeDimension) return;
+    setScopeDimension(d);
+    if (d === "salesperson") setReceivablesCollectionTeams([]);
+    else setReceivablesSalespersons([]);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -363,7 +409,10 @@ export default function UserForm() {
       // The tag survives for an admin — it decides which report is MAILED to them, a question
       // that has nothing to do with what they may open. The three restriction lists do not:
       // clearing them is what keeps an admin's access unconditional.
-      receivablesSalespersons: showSalespersonScope ? receivablesSalespersons : [],
+      receivablesSalespersons:
+        showSalespersonScope && scopeDimension === "salesperson" ? receivablesSalespersons : [],
+      receivablesCollectionTeams:
+        showSalespersonScope && scopeDimension === "collection_team" ? receivablesCollectionTeams : [],
       receivablesHiddenMenus: showReceivablesLimits ? receivablesHiddenMenus : [],
       receivablesAdminMenus: showReceivablesLimits ? receivablesAdminMenus : [],
       receivablesAllowedReports: showReceivablesLimits ? receivablesAllowedReports : [],
@@ -752,14 +801,91 @@ export default function UserForm() {
 
           {showSalespersonScope && (
             <FieldLabel
-              label="Outstanding Dashboard — salesperson access"
+              label="Outstanding Dashboard — data access"
               hint={
                 role === "admin"
-                  ? "admins see every salesperson; this only decides which reports are EMAILED to them"
-                  : "which salesperson's data this user sees, and which reports are emailed to them"
+                  ? "admins see everything; this only decides which reports are EMAILED to them"
+                  : "whose customers this user sees — by salesperson, or by collection team"
               }
             >
-              {spLoading ? (
+              {/* The chooser. Exclusive by design: a user is scoped on one dimension or the other,
+                  and switching clears the list being left. */}
+              <div className="mb-3 flex gap-2">
+                {([
+                  ["salesperson", "By salesperson"],
+                  ["collection_team", "By collection team"],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => chooseDimension(key)}
+                    className={cn(
+                      "rounded-pill border px-3 py-1.5 text-[12.5px] transition",
+                      scopeDimension === key
+                        ? "border-orange bg-orange-soft text-orange font-semibold"
+                        : "border-line text-navy hover:border-orange/40",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mb-2.5 text-[12px] text-grey-2">
+                A user is scoped one way or the other, never both. Switching clears the other list.
+                {scopeDimension === "collection_team" && (
+                  <span> A customer with no collection team is not visible to anyone scoped this way.</span>
+                )}
+              </p>
+
+              {scopeDimension === "collection_team" ? (
+                spLoading ? (
+                  <p className="text-[12.5px] text-grey-2">Loading collection teams…</p>
+                ) : spError ? (
+                  <p className="text-[12.5px] text-[#d4493f]">Couldn't load collection teams: {spError}</p>
+                ) : ctOffered.length === 0 ? (
+                  <p className="text-[12.5px] text-grey-2">
+                    The collection team master is empty. Add teams under the Outstanding Dashboard's
+                    Settings → Masters before tagging anyone.
+                  </p>
+                ) : (
+                  <>
+                    {receivablesCollectionTeams.length === 0 && role !== "admin" && (
+                      <p className="mb-2 text-[12px] text-[#d4493f]">
+                        No collection team selected — this user will see an empty dashboard until you tag at least one.
+                      </p>
+                    )}
+                    <div className="flex max-h-48 flex-wrap gap-2 overflow-auto p-0.5">
+                      {ctOffered.map((n) => {
+                        const on = receivablesCollectionTeams.includes(n);
+                        const mark = ctMark(n);
+                        return (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => toggleCollectionTeam(n)}
+                            title={
+                              mark === " · not in the list"
+                                ? `"${n}" is not in the collection team master, so it matches no customers. Fix it in Settings → Masters.`
+                                : mark
+                                  ? `"${n}" has been switched off. Existing customers still read it; it is not offered for new mappings.`
+                                  : undefined
+                            }
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[12.5px] transition",
+                              on ? "border-orange bg-orange-soft text-orange font-semibold" : "border-line text-navy hover:border-orange/40",
+                            )}
+                          >
+                            {n}
+                            {mark && <span className="text-[11px] font-normal opacity-70">{mark}</span>}
+                            {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )
+              ) : (
+                spLoading ? (
                 <p className="text-[12.5px] text-grey-2">Loading salespersons…</p>
               ) : spError ? (
                 <p className="text-[12.5px] text-[#d4493f]">Couldn't load salespersons: {spError}</p>
@@ -816,6 +942,7 @@ export default function UserForm() {
                     })}
                   </div>
                 </>
+              )
               )}
             </FieldLabel>
           )}

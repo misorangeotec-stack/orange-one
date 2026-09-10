@@ -17,6 +17,7 @@ import {
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from "@hub/components/ui/pagination";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
@@ -51,6 +52,7 @@ interface RmRow {
   id: string;
   customer: string;
   salesPerson: string;
+  collectionTeam: string;
   category: string;
   categories?: string[];
   company: string;
@@ -66,7 +68,7 @@ type SortKey = "customer" | "salesPerson" | "outstanding" | "overdue" | "maxOver
 /* ── Page ──────────────────────────────────────────────────── */
 
 export default function RedMarkCustomersReport() {
-  const { loading, error, allCustomers, salesPersonOptions } = useAppData();
+  const { loading, error, allCustomers, salesPersonOptions, collectionTeamOptions } = useAppData();
   const { label: fyLabel } = useFY();
 
   // Optional `reason` from the ext_redmark master, joined by Tally GUID (= Customer.id on Live).
@@ -81,6 +83,7 @@ export default function RedMarkCustomersReport() {
 
   const [search, setSearch] = useState("");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("outstanding");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -96,6 +99,7 @@ export default function RedMarkCustomersReport() {
         id: c.id,
         customer: c.name,
         salesPerson: c.salesPerson || "—",
+          collectionTeam: c.collectionTeam || "",
         category: c.category || "",
         company: c.company,
         location: c.location,
@@ -109,8 +113,10 @@ export default function RedMarkCustomersReport() {
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const spSet = new Set(salesPersons);
+    const ctSet = new Set(collectionTeams);
     const rows = allRows.filter((r) => {
       if (spSet.size > 0 && !spSet.has(r.salesPerson)) return false;
+      if (ctSet.size > 0 && !ctSet.has(r.collectionTeam)) return false;
       if (!matchesCategory(r, categories)) return false;
       if (q && !(r.customer.toLowerCase().includes(q) || r.salesPerson.toLowerCase().includes(q) || r.reason.toLowerCase().includes(q))) return false;
       return true;
@@ -130,7 +136,7 @@ export default function RedMarkCustomersReport() {
       return 0;
     });
     return rows;
-  }, [allRows, search, salesPersons, categories, sortKey, sortDir]);
+  }, [allRows, search, salesPersons, collectionTeams, categories, sortKey, sortDir]);
 
   // Summary
   const totalOutstanding = filteredRows.reduce((s, r) => s + r.outstanding, 0);
@@ -231,6 +237,7 @@ export default function RedMarkCustomersReport() {
           />
         </div>
         <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={(v) => { setSalesPersons(v); setCurrentPage(1); }} />
+        <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={(v) => { setCollectionTeams(v); setCurrentPage(1); }} />
         <CustomerCategoryMultiSelect value={categories} onChange={(v) => { setCategories(v); setCurrentPage(1); }} triggerClassName="w-44 h-9 text-sm rounded-input" />
       </div>
 

@@ -36,6 +36,15 @@ export interface Customer {
   company: string;
   location: string;
   salesPerson: string;
+  /**
+   * The collection team that chases this ledger (`ext_ledger_group.collection_team`), or `""` when
+   * nobody is assigned.
+   *
+   * ⚠ ALWAYS `""` FOR UNSET, NEVER null. The muster stores both `''` and NULL — the sheet seed left
+   * an empty string on most rows — and the fetcher normalises them to `""` on the way in, so every
+   * reader tests one thing. Live (Tally) source only; the legacy pipeline source has no such column.
+   */
+  collectionTeam: string;
   /** Sales/finance tier: 'A' | 'B' | 'C' | 'D' | 'E' | 'AA'; '' when Uncategorized. */
   category: string;
   /**
@@ -210,6 +219,8 @@ export interface ConsolidatedCustomer extends Customer {
   constituentIds: string[];
   /** All unique sales persons for this consolidated customer */
   salesPersons: string[];
+  /** All unique collection teams for this consolidated customer; excludes the unassigned ones. */
+  collectionTeams: string[];
   /** All unique categories (tiers) for this consolidated customer */
   categories: string[];
   /** Per-constituent AI-proposed-limit breakdowns (one entry per merged source row). */

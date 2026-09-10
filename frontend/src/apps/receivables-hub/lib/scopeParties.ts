@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { loadSalespersonByParty } from "@hub/lib/salesReport";
+import { loadCollectionTeamByParty, loadSalespersonByParty } from "@hub/lib/salesReport";
 import { useReceivablesScope } from "@hub/lib/scope";
 
 /**
@@ -24,6 +24,12 @@ import { useReceivablesScope } from "@hub/lib/scope";
  * casing does not match the tags — would have been shown the ENTIRE COMPANY. So the scope is
  * a tagged union that cannot collapse to an array, and `{ kind: "only", parties: [] }` is a
  * real, representable, honoured state. See `scopedParties()` below for how callers use it.
+ *
+ * ── It resolves TWO dimensions, not one ──
+ * A viewer is scoped by salesperson OR by collection team (RC-11), never both — see lib/scope.tsx.
+ * Both resolve to the same PartyScope, so every consumer below is unchanged by the second dimension.
+ * That is the whole reason the scope was widened here rather than given a second provider: the
+ * seven screens that read this got the new dimension without being touched.
  *
  * ── Matching is exact and case-sensitive ──
  * `profiles.receivables_salespersons` lives in the identity project; `ext_ledger_tags.salesperson`
@@ -134,10 +140,12 @@ export interface ScopedPartiesResult {
  * everything.
  */
 export function useScopedParties(): ScopedPartiesResult {
-  const { restrictToSalespersons } = useReceivablesScope();
-  const unrestricted = restrictToSalespersons === null;
+  const { restrictToSalespersons, restrictToCollectionTeams } = useReceivablesScope();
+  const bySalesperson = restrictToSalespersons !== null;
+  const byTeam = restrictToCollectionTeams !== null;
+  const unrestricted = !bySalesperson && !byTeam;
 
-  const { data, isLoading, error } = useQuery({
+  const spQ = useQuery({
     queryKey: ["scopedParties"],
     queryFn: loadSalespersonByParty,
     // The tags are edited by hand in Settings → Masters and change rarely, so this is worth
@@ -146,21 +154,47 @@ export function useScopedParties(): ScopedPartiesResult {
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
     // An unrestricted viewer never needs the map at all; skip the round trip entirely.
-    enabled: !unrestricted,
+    enabled: bySalesperson,
+  });
+
+  // ⚠ A DISTINCT KEY. Both maps are Record<string, string> of the same shape, so sharing
+  // ["scopedParties"] would serve one dimension's answer for the other's question — and it would
+  // look right, because the values are plausible names either way.
+  const ctQ = useQuery({
+    queryKey: ["scopedPartiesByCollectionTeam"],
+    queryFn: loadCollectionTeamByParty,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: byTeam,
   });
 
   if (unrestricted) return { scope: SCOPE_ALL, loading: false, error: null };
 
-  const allowedNames = new Set(restrictToSalespersons);
-  const parties = data
-    ? Object.entries(data)
-        .filter(([, salesperson]) => allowedNames.has(salesperson))
-        .map(([party]) => party)
-    : [];
+  /** Party names whose tag on `map` is in `allowed`; [] while the map is still loading. */
+  const partiesFor = (map: Record<string, string> | undefined, allowed: string[]): string[] =>
+    map ? Object.entries(map).filter(([, tag]) => allowed.includes(tag)).map(([party]) => party) : [];
+
+  // Bound once so TypeScript can see they are non-null past the flags above.
+  const spAllowed = restrictToSalespersons ?? [];
+  const ctAllowed = restrictToCollectionTeams ?? [];
+
+  let parties: string[];
+  if (bySalesperson && byTeam) {
+    // Both tagged — the admin form prevents this, so it is a repaired-by-hand or scripted row.
+    // INTERSECT: both narrow, neither widens. A user must never be shown a customer because one of
+    // two grants allowed it when the other did not.
+    const fromSp = new Set(partiesFor(spQ.data, spAllowed));
+    parties = partiesFor(ctQ.data, ctAllowed).filter((p) => fromSp.has(p));
+  } else if (byTeam) {
+    parties = partiesFor(ctQ.data, ctAllowed);
+  } else {
+    parties = partiesFor(spQ.data, spAllowed);
+  }
 
   return {
     scope: { kind: "only", parties },
-    loading: isLoading,
-    error: error ? (error as Error).message : null,
+    loading: (bySalesperson && spQ.isLoading) || (byTeam && ctQ.isLoading),
+    error: (spQ.error ?? ctQ.error) ? ((spQ.error ?? ctQ.error) as Error).message : null,
   };
 }

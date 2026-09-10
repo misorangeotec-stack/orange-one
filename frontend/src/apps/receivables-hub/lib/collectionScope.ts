@@ -45,6 +45,12 @@ export interface ZCFilters {
   companies: string[];
   locations: string[];
   salespersons: string[];
+  /**
+   * RC-11. ⚠ THIS SHAPE IS SHARED WITH THE SCHEDULED SEND (supabase/collectionsreport), so a new
+   * field must also be given a default in `defaultFilters()` below — that is what the job builds
+   * its request from, and an undefined here would filter every customer out of a live email.
+   */
+  collectionTeams: string[];
   saleTypes: string[];
   segment: Segment;
   blockedOnly: boolean;
@@ -68,6 +74,7 @@ export function selectEligible(
   if (f.companies.length)    { const s = new Set(f.companies);    d = d.filter((c) => (c.companies ?? [c.company]).some((x) => s.has(x))); }
   if (f.locations.length)    { const s = new Set(f.locations);    d = d.filter((c) => (c.locations ?? [c.location]).some((x) => s.has(x))); }
   if (f.salespersons.length) { const s = new Set(f.salespersons); d = d.filter((c) => (c.salesPersons?.length ? c.salesPersons : [c.salesPerson]).some((x) => s.has(x))); }
+  if (f.collectionTeams?.length) { const s = new Set(f.collectionTeams); d = d.filter((c) => (c.collectionTeams?.length ? c.collectionTeams : [c.collectionTeam]).some((x) => s.has(x))); }
   if (f.segment === "active")
     d = d.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
   else if (f.segment === "no_activity")
@@ -120,6 +127,7 @@ export function buildFilterSummary(
   for (const b of bands) s.push(`Band: ${bandLabels[b]}`);
   if (f.search.trim()) s.push(`Search: ${f.search.trim()}`);
   if (f.salespersons.length) s.push(`Salesperson: ${f.salespersons.join(", ")}`);
+  if (f.collectionTeams?.length) s.push(`Collection team: ${f.collectionTeams.join(", ")}`);
   if (f.companies.length) s.push(`Company: ${f.companies.join(", ")}`);
   if (f.locations.length) s.push(`Location: ${f.locations.join(", ")}`);
   if (f.categories.length) s.push(`Category: ${f.categories.join(", ")}`);
@@ -240,6 +248,8 @@ export function defaultFilters(): ZCFilters {
     companies: [],
     locations: [],
     salespersons: [],
+    // Empty = no team filtering, so the scheduled send behaves exactly as it did before RC-11.
+    collectionTeams: [],
     saleTypes: [...DEFAULT_SALE_TYPES],
     segment: "all",
     blockedOnly: false,

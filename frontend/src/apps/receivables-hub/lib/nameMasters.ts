@@ -85,7 +85,10 @@ export interface RenameCounts {
   ledgers: number;
   /** ext_redmark rows. Salesperson only; always 0 for a collection team. */
   redmark: number;
-  /** profiles.receivables_salespersons. Salesperson only. */
+  /**
+   * The user tags this moved: `profiles.receivables_salespersons` for a salesperson,
+   * `profiles.receivables_collection_teams` for a team. Both dimensions cascade (RC-11).
+   */
   userTags: number;
   /** report_email_recipients.salesperson — renamed, or deleted where the new name already had a row. */
   recipients: number;

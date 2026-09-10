@@ -25,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@hub/components/ui/tooltip";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CollectionTeamMultiSelect } from "@hub/components/CollectionTeamMultiSelect";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory, CATEGORY_OPTIONS } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
@@ -218,7 +219,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
   const {
     loading, allCustomers, consolidatedCustomers, customerDetail, customerGroupMap,
-    dashboard, salesPersonOptions,
+    dashboard, salesPersonOptions, collectionTeamOptions,
   } = useAppData({});
   const asOfDate = dashboard?.asOfDate ?? "";
   // How complete the books behind those figures are. A LABEL — nothing here is computed against
@@ -383,6 +384,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // ── Filters (the bar; the rest behind "More") ─────────────────────────────────────
   const [search, setSearch] = useState("");
   const [salespersons, setSalespersons] = useState<string[]>([]);
+  const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>(() => [...DEFAULT_CATEGORIES]);
@@ -567,10 +569,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   /** Every narrowing the screen offers, as data — the shape `lib/collectionScope.ts` reads. */
   const zcFilters: ZCFilters = useMemo(
     () => ({
-      categories, companies, locations, salespersons, saleTypes,
+      categories, companies, locations, salespersons, collectionTeams, saleTypes,
       segment, blockedOnly, includeNonDebtors, minOut, search,
     }),
-    [categories, companies, locations, salespersons, saleTypes, segment, blockedOnly, includeNonDebtors, minOut, search],
+    [categories, companies, locations, salespersons, collectionTeams, saleTypes, segment, blockedOnly, includeNonDebtors, minOut, search],
   );
 
   const eligibleAllTypes = useMemo(
@@ -1616,6 +1618,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   dominantSaleTypeOf / DEFAULT_SALE_TYPES. */}
               <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="h-8 w-36 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              <CollectionTeamMultiSelect options={collectionTeamOptions} value={collectionTeams} onChange={setCollectionTeams} triggerClassName="h-8 w-44 text-xs rounded-input" />
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
