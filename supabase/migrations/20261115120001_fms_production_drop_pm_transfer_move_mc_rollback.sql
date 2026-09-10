@@ -15,6 +15,26 @@
 --
 --   Nothing was dropped going forward, so there is nothing to recreate here: the
 --   pmt_* columns and the pm_transfer RPCs were never removed.
+--
+-- ⚠ ROLL BACK IN REVERSE ORDER, AND MIND THE SHARED FUNCTION.
+--
+--   The three migrations went on as 120000 → 130000 → 140000. Undoing them runs
+--   the other way: 140001 (drafts), then 130001 (convert), then THIS file.
+--
+--   The reason it matters is fms_production_submit_request, which 120000 and
+--   130000 BOTH replace. Section 4 below tells you to re-run
+--   20260925120000_fms_production_repack_fg_lot_no.sql to restore the
+--   pm_transfer landing — and that file's version knows nothing about convert
+--   cards. Run it while the convert migration is still applied and you silently
+--   delete the convert branch from the intake: the card type stays legal in the
+--   check constraint and on the tab strip, and raising one starts failing with
+--   'Unknown card type convert'.
+--
+--   So: roll back 130001 FIRST if you are undoing the whole set. If you are
+--   undoing ONLY this migration and intend to keep convert cards working, do not
+--   re-run 20260925120000 — take the submit_request body from 130000 and change
+--   the repackaging landing back to 'awaiting_pm_transfer' / 'pm_transfer' by
+--   hand instead.
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------

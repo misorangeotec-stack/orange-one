@@ -11,10 +11,11 @@ import { useRepackForm } from "./useRepackForm";
 import IssueSlipFields from "../../components/IssueSlipFields";
 import RepackSlipFields from "../../components/RepackSlipFields";
 import { newUid } from "@/shared/components/ui/LineGrid";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import CardTypePill from "../../components/CardTypePill";
 import { dmy } from "../../lib/format";
 import { makeEmptyRmLine, type RmLine } from "./useJobCardForm";
-import type { BomLine, ProductionCardType } from "../../types";
+import type { BomLine, ProductionCardType, ProductionRequest } from "../../types";
 
 /** A stored issue-slip line back into an editable grid row. */
 const toRmLine = (l: BomLine): RmLine => ({
@@ -258,8 +259,77 @@ export default function NewRequest() {
     );
   }
 
+  /**
+   * The Drafts list. A grid like every other grid in this app: every column sorts,
+   * every column filters. It is usually short, which is exactly why it was easy to
+   * hand-roll a bare <table> here — but "usually short" is not a property anyone
+   * checks before a second shift has parked eight slips on it.
+   *
+   * `jobDate` carries no filter: a date column's picker restates a column that is
+   * already sortable, and the two date filters that earn their place elsewhere sit
+   * on queues spanning months rather than on a handful of open drafts.
+   */
+  const draftColumns: QueueColumn<ProductionRequest>[] = [
+    {
+      key: "jobcardNo",
+      header: "Lot/Batch Card No.",
+      cell: (d) =>
+        d.jobcardNo ? (
+          <span className="font-semibold text-navy tabular-nums">{d.jobcardNo}</span>
+        ) : (
+          // A convert draft has no number until one is typed, and reserving nothing
+          // is the point — so say so rather than showing an empty cell.
+          <span className="text-grey-2">not set</span>
+        ),
+      sortValue: (d) => d.jobcardNo ?? "",
+      filter: { kind: "text", get: (d) => d.jobcardNo ?? "" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "reqNo",
+      header: "Reference",
+      cell: (d) => <span className="text-grey">{d.reqNo}</span>,
+      sortValue: (d) => d.reqNo,
+      // Unique per draft, so a dropdown would only restate the table.
+      filter: { kind: "text", get: (d) => d.reqNo },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "cardType",
+      header: "Type",
+      cell: (d) => <CardTypePill cardType={d.cardType} />,
+      sortValue: (d) => d.cardType,
+      filter: { kind: "select", get: (d) => d.cardType },
+    },
+    {
+      key: "fgItem",
+      header: "FG Item",
+      cell: (d) => <span className="text-navy">{s.fgItemById(d.fgItemId)?.name ?? "—"}</span>,
+      sortValue: (d) => s.fgItemById(d.fgItemId)?.name ?? "",
+      filter: { kind: "select", get: (d) => s.fgItemById(d.fgItemId)?.name ?? "" },
+    },
+    {
+      key: "savedBy",
+      header: "Saved by",
+      cell: (d) => <span className="text-grey">{d.requesterName}</span>,
+      sortValue: (d) => d.requesterName,
+      filter: { kind: "select", get: (d) => d.requesterName },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "jobDate",
+      header: "Job date",
+      cell: (d) => <span className="text-grey">{d.issueDate ? dmy(d.issueDate) : "—"}</span>,
+      // Sorts on the ISO value, never the dd-mm-yyyy the cell renders.
+      sortValue: (d) => d.issueDate ?? "",
+      tdClassName: "whitespace-nowrap",
+    },
+  ];
+
+  // A slip reads best in a narrow column; the Drafts grid is six columns plus a
+  // filter row and needs the width. Same page, two jobs.
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
+    <div className={`${isDrafts ? "max-w-6xl" : "max-w-4xl"} mx-auto space-y-5`}>
       <div>
         <h1 className="text-[22px] font-bold text-navy">Generate Issue Slip</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
@@ -283,65 +353,42 @@ export default function NewRequest() {
       />
 
       {isDrafts ? (
-        <Card className="p-5">
-          {s.drafts.length === 0 ? (
-            <p className="text-[13.5px] text-grey-2">
-              No drafts yet. Fill in a slip on any tab and choose <strong>Save as draft</strong> to park it here.
-            </p>
-          ) : (
-            <div className="rounded-xl border border-line overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                    <th className="font-medium px-3 py-2 whitespace-nowrap">Lot/Batch Card No.</th>
-                    <th className="font-medium px-3 py-2 whitespace-nowrap">Reference</th>
-                    <th className="font-medium px-3 py-2">Type</th>
-                    <th className="font-medium px-3 py-2 min-w-[180px]">FG Item</th>
-                    <th className="font-medium px-3 py-2 whitespace-nowrap">Saved by</th>
-                    <th className="font-medium px-3 py-2 whitespace-nowrap">Job date</th>
-                    <th className="font-medium px-3 py-2 w-40" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.drafts.map((d) => (
-                    <tr key={d.id} className="border-b border-line/70 last:border-0">
-                      <td className="px-3 py-2 font-semibold text-navy tabular-nums whitespace-nowrap">
-                        {d.jobcardNo || <span className="font-normal text-grey-2">not set</span>}
-                      </td>
-                      <td className="px-3 py-2 text-grey whitespace-nowrap">{d.reqNo}</td>
-                      <td className="px-3 py-2"><CardTypePill cardType={d.cardType} /></td>
-                      <td className="px-3 py-2 text-navy">{s.fgItemById(d.fgItemId)?.name ?? "—"}</td>
-                      <td className="px-3 py-2 text-grey whitespace-nowrap">{d.requesterName}</td>
-                      <td className="px-3 py-2 text-grey whitespace-nowrap">{d.issueDate ? dmy(d.issueDate) : "—"}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2 justify-end">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setSavedNote(null);
-                              setDraftId(d.id);
-                              setTab(d.cardType);
-                            }}
-                          >
-                            Continue
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => discardDraft(d.id)}
-                            className="text-[12.5px] font-semibold text-ryg-red hover:underline"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <QueueTable<ProductionRequest>
+          rows={s.drafts}
+          rowKey={(d) => d.id}
+          columns={draftColumns}
+          // Newest first: a draft is picked up again within a shift or two, so the
+          // one you parked last is almost always the one you came back for.
+          initialSort={{ key: "jobDate", dir: "desc" }}
+          rowsLabel="drafts"
+          loading={s.isLoading}
+          emptyTitle="No drafts yet"
+          emptyMessage="Fill in a slip on any tab and choose Save as draft to park it here."
+          actions={(d) => (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSavedNote(null);
+                  setDraftId(d.id);
+                  setTab(d.cardType);
+                }}
+                className="text-[12.5px] font-semibold text-orange hover:underline"
+              >
+                Continue
+              </button>
+              {s.canDeleteDraft(d) && (
+                <button
+                  type="button"
+                  onClick={() => discardDraft(d.id)}
+                  className="text-[12.5px] font-semibold text-ryg-red hover:underline"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           )}
-        </Card>
+        />
       ) : isRepack ? (
         <RepackSlipFields f={repack} batchField={batchField}>{actions}</RepackSlipFields>
       ) : (

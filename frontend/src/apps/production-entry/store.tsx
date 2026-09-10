@@ -221,6 +221,10 @@ interface ProductionStoreValue {
   /** Whether the issue slip may still be edited (raiser/admin/coordinator, and the
    *  card is still awaiting its first material handover). Mirrors the RPC gate. */
   canEditRequest: (r: ProductionRequest) => boolean;
+  /** Whether this draft may be DELETED — its author, an admin or the coordinator.
+   *  Mirrors fms_production_delete_draft. Continuing someone else's draft is fine;
+   *  discarding their work is not. */
+  canDeleteDraft: (d: ProductionRequest) => boolean;
 
   // queues
   queueEntries: QueueEntry[];
@@ -420,6 +424,14 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         // editable until that packing is recorded.
         ? r.status === "awaiting_packing" && r.pkAt == null
         : r.status === "awaiting_material_handover" && r.mhAt == null);
+
+    // Mirrors fms_production_delete_draft. Every draft is visible to every staff
+    // member (the select policy is staff-wide) and continuing a colleague's draft
+    // is the point of it being a row rather than a browser tab — but deleting one
+    // is not recoverable, and it burns the PRD and Lot/Batch numbers it reserved.
+    // The RPC re-checks this; hiding the button is the courtesy half.
+    const canDeleteDraft = (d: ProductionRequest): boolean =>
+      canRaise && (d.raisedBy === uid || isAdmin || isProcessCoordinator);
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -654,6 +666,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       myRequests: requests.filter((r) => r.raisedBy === uid),
       isOpenRequest,
       canEditRequest,
+      canDeleteDraft,
 
       queueEntries,
       myQueue,

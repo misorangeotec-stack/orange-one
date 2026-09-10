@@ -26,9 +26,19 @@
 --     '' included, and the number is required and checked for uniqueness only when
 --     the card is finally raised. The unique index skips blanks for this reason.
 --
--- NOTHING IS VALIDATED ON SAVE. An empty draft is a legitimate draft; every rule
--- (FG item, raw materials, the FG-quantity match) runs at submit, in
--- fms_production_submit_draft, which mirrors fms_production_submit_request.
+-- NOTHING IS VALIDATED ON SAVE. An empty draft is a legitimate draft; the rules
+-- run at submit, in fms_production_submit_draft, which mirrors the checks
+-- fms_production_submit_request makes: signed in, authorized, a job date that is
+-- not in the future, an FG item, at least one raw material, and — on a convert
+-- card — a typed Lot/Batch number that no other card is using.
+--
+--   ⚠ THE FG-QUANTITY MATCH IS NOT AMONG THEM, here or in submit_request. That
+--     rule ("raw materials must total the FG quantity, on new cards only") lives
+--     in the FORM, in useJobCardForm.ts, and nowhere else. Both intake RPCs accept
+--     a short BOM. That is deliberate for now — the old cards that are legitimately
+--     short are the reason the rule is new-cards-only, and a server-side check
+--     would need the same carve-out — but do not read this file as proof the
+--     database enforces it.
 --
 -- Additive: the 'draft' status value and three RPCs. Nothing existing is replaced.
 --
@@ -284,14 +294,40 @@ language plpgsql
 security definer
 set search_path = public
 as $fn$
-declare v_status text; v_uid uuid := auth.uid();
+declare v_status text; v_raiser uuid; v_uid uuid := auth.uid();
 begin
   if v_uid is null then raise exception 'Not signed in'; end if;
-  select status into v_status from public.fms_production_requests where id = p_req for update;
+
+  -- ⚠ THE SAME GATE fms_production_save_draft APPLIES. Without it this function
+  --   checked only that you were signed in, so ANY staff member could delete
+  --   ANY draft: the select policy on this table is staff-wide, so every draft
+  --   is visible to everyone, and deleting one is not recoverable — the row goes,
+  --   and its reserved PRD and Lot/Batch numbers are burned for good. Writing a
+  --   draft was gated and destroying one was not.
+  if exists (
+    select 1 from public.fms_production_step_owners
+    where step_key = 'issue_slip' and coalesce(array_length(employee_ids, 1), 0) > 0
+  ) and not public.fms_production_can_act('issue_slip', null, v_uid) then
+    raise exception 'You are not authorized to delete a draft issue slip. Ask an admin to add you as an owner of the Raise Request step.';
+  end if;
+
+  select status, raised_by into v_status, v_raiser
+    from public.fms_production_requests where id = p_req for update;
   if v_status is null then raise exception 'Draft not found'; end if;
   if v_status <> 'draft' then
     raise exception 'This job card has been raised and cannot be deleted — cancel it instead (status %).', v_status;
   end if;
+
+  -- Your own draft, or an admin / process coordinator clearing up. A second person
+  -- on the same step can continue a colleague's draft, which is the point of it
+  -- being a row rather than a browser tab — but discarding their half-typed work
+  -- is not the same act as picking it up.
+  if v_raiser is distinct from v_uid
+     and not public.is_admin(v_uid)
+     and not public.fms_production_is_coordinator(v_uid) then
+    raise exception 'This draft was saved by someone else. Only its author, an admin or the process coordinator can delete it.';
+  end if;
+
   delete from public.fms_production_requests where id = p_req;
 end
 $fn$;
