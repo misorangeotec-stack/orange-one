@@ -158,6 +158,8 @@ export interface QuotationDraft {
   deliveryVia: string;
   deliveryPort: string;
   deliveryFactoryCity: string;
+  /** R5 · where a LOCAL delivery goes — the customer's place, not our factory. */
+  deliveryDestination: string;
   deliveryLeg: string;
 
   /* The FX position, for a dollar deal. Held on the draft so the salesperson can
@@ -397,6 +399,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   deliveryVia: "",
   deliveryPort: "",
   deliveryFactoryCity: "",
+  deliveryDestination: "",
   deliveryLeg: "",
   fxRate: "",
   fxRateAt: "",
@@ -515,10 +518,65 @@ export const EMPTY_DRAFT: QuotationDraft = {
  *   `high_seas` / `local` — this is the same column the module has always had.
  *   Do not add a parallel "deal type" field.
  */
+/*
+  R5 · FIVE DEAL TYPES, AND THE STORED VALUES OF THE FIRST TWO DID NOT CHANGE.
+
+  🔴 `high_seas` IS CAPTIONED "HSS" AND `local` IS CAPTIONED "Others". The label
+     and the value are different things here, deliberately: relabelling is free,
+     renaming `local` to `others` would rewrite 30 live deals and four SQL
+     functions to fix a caption. Never assume the value from the button.
+
+  ⚠ `local` HERE IS NOT `delivery_via = "Local"`. This column answers "what KIND
+    of deal is it" — Others, meaning no named scheme. That one answers "how does
+    it get there". Two columns, two meanings, one unfortunate word; the column
+    comment on `transport_terms` says so too.
+
+  ⚠ EVERY ENTRY CARRIES THE PHRASE IT PRINTS, so the vocabulary is the single
+    source and a sixth deal type cannot be added without deciding its wording.
+    `phrase: null` means the term prints unadorned, as Others always has.
+*/
 export const TRANSPORT_TERMS = [
-  { value: "high_seas", label: "High Seas" },
-  { value: "local", label: "Others" },
+  { value: "high_seas", label: "HSS", phrase: "Under High Seas Sales Agreement" },
+  { value: "hss_epcg", label: "HSS with EPCG", phrase: "High Seas Sales under EPCG" },
+  { value: "epcg", label: "EPCG", phrase: "Under EPCG License" },
+  { value: "moowr", label: "MOOWR scheme", phrase: "Under MOOWR Scheme" },
+  { value: "local", label: "Others", phrase: null },
 ] as const;
+
+/**
+ * The deal types that are a NAMED SCHEME — every one but Others.
+ *
+ * 🔴 ONE PREDICATE, BECAUSE THIRTEEN HAND-WRITTEN `=== "high_seas"` TESTS ARE
+ *    WHAT LET THE FOURTEENTH BE FORGOTTEN. Before R5 the module spelled that
+ *    comparison out in four files — the currency lock, the GST rule, the FX
+ *    rule, the dollar clause, the form's note, the summary sheet's two rows —
+ *    and each one had to be found by hand. They all read this instead.
+ *
+ * ⚠ ITS SQL TWIN IS `fms_ocpi_write_quotation`, which derives the currency and
+ *   nulls the GST from the same list. Change one and change the other, or the
+ *   screen asks for a tax the server will not store.
+ *
+ * ⚠ A SCHEME MEANS US DOLLARS AND NO GST — the client's explicit choice,
+ *   10-Sep-2026, put with both readings shown side by side. So an EPCG or MOOWR
+ *   deal prints NO TAX LINE on the invoice and the contract. That is a statement
+ *   about tax on a customer's paper, not a formatting decision, and it is
+ *   recorded here so it is never re-raised as a defect.
+ */
+export const SCHEME_TERMS = ["high_seas", "hss_epcg", "epcg", "moowr"] as const;
+
+export function isSchemeDeal(transportTerms: string | null | undefined): boolean {
+  return (SCHEME_TERMS as readonly string[]).includes((transportTerms ?? "").trim());
+}
+
+/** The parenthetical a deal type adds to the printed delivery term, if any. */
+export function schemePhrase(transportTerms: string | null | undefined): string | null {
+  return TRANSPORT_TERMS.find((t) => t.value === (transportTerms ?? "").trim())?.phrase ?? null;
+}
+
+/** The button caption for a stored deal type — for the papers, not just the form. */
+export function transportTermLabel(transportTerms: string | null | undefined): string {
+  return TRANSPORT_TERMS.find((t) => t.value === (transportTerms ?? "").trim())?.label ?? "";
+}
 
 /**
  * THE ONE DELIVERY QUESTION (OCPI-35), asked on BOTH deal types.
@@ -537,7 +595,29 @@ export const TRANSPORT_TERMS = [
  *   it keep it: `optsWithCurrent` in QuotationForm feeds a deal's own value back
  *   in as an extra button, so it renders and cannot be arrowed over.
  */
-export const DELIVERY_VIA = ["CIF", "EX Factory", "FOB"] as const;
+export const DELIVERY_VIA = ["CIF", "EX Factory", "Local"] as const;
+
+/**
+ * What `high_seas_via` is allowed to hold — and it is NOT `DELIVERY_VIA`.
+ *
+ * 🔴 THEY WERE THE SAME CONSTANT AND THAT WAS A TRAP THE FILE ITSELF PREDICTED.
+ *    `payloadFromDraft` mirrors the delivery term into `high_seas_via` on a
+ *    scheme deal, gated on membership of the delivery vocabulary. While the two
+ *    lists were one constant that was safe by accident. R5 replaced FOB with
+ *    `Local` in the vocabulary, and the mirror would then have written `Local`
+ *    into a column whose CHECK did not allow it — a raw 23514 naming no field,
+ *    invisible to `tsc` because `payloadFromDraft` returns `Record<string,
+ *    unknown>`.
+ *
+ * ⚠ `FOB` IS STILL HERE THOUGH NO BUTTON OFFERS IT. The column must be able to
+ *   hold what a deal already says; `optsWithCurrent` does the same for the form.
+ *   No deal uses it today — all three columns return 0 — but a list that can
+ *   only express the present tense is how retired values become save failures.
+ *
+ * ⚠ KEEP THIS EQUAL TO `fms_ocpi_deals_high_seas_via_check`, widened by
+ *   20261114120015. Two lists in two places, and the database is the authority.
+ */
+export const HIGH_SEAS_VIA_MIRROR = ["CIF", "EX Factory", "FOB", "Local"] as const;
 
 /**
  * ⚠ HARDCODED, AND THAT IS A RECORDED DRIFT RISK RATHER THAN AN OVERSIGHT.
@@ -595,7 +675,9 @@ export const CURRENCIES = ["INR", "USD"] as const;
  *   The two must agree: change one and change the other.
  */
 export const isUsdDeal = (d: QuotationDraft): boolean =>
-  d.dealValueCurrency === "USD" || d.transportTerms === "high_seas";
+  // R5 · ANY named scheme is a dollar deal, not just High Seas. Written through
+  // `isSchemeDeal` so the list lives in exactly one place — see its note.
+  d.dealValueCurrency === "USD" || isSchemeDeal(d.transportTerms);
 
 /**
  * The same question, asked of a SAVED ROW rather than a draft.
@@ -845,12 +927,16 @@ export const TRANSPORT_BEARER_MARK = "Transportation bear by";
  * appended only to a term beginning this way -- see composeTradeTerm.
  */
 export const EX_WORKS_PREFIX = "Ex-Work";
+/** R5 · the composed prefix a Local delivery starts with — see `composeTradeTerm`. */
+export const LOCAL_DELIVERY_PREFIX = "Local Delivery";
 
 export function composeTradeTerm(
   d: {
     deliveryVia: string;
     deliveryPort: string;
     deliveryFactoryCity: string;
+    /** R5 · where a LOCAL delivery goes — the customer's place, not our factory. */
+    deliveryDestination: string;
     deliveryLeg: string;
     transportTerms: string;
     highSeasCostBy: string;
@@ -876,41 +962,70 @@ export function composeTradeTerm(
     const city = d.deliveryFactoryCity.trim();
     // Title case here and nowhere else -- see the casing note above.
     term = city ? `Ex-Work ${city}` : "Ex-Work";
+  } else if (via === "Local") {
+    /*
+      R5 · LOCAL CARRIES A PLACE, LIKE EX FACTORY, AND THAT WAS A CLIENT
+      DECISION MADE AGAINST THE OBVIOUS ONE. A bare "Local" says LESS than the
+      "Ex-Work Surat" it replaces, and it would silently lose the
+      "(Transportation bear by Customer)" clause below, whose guard is the
+      EX_WORKS_PREFIX test -- the very clause OCPI-42 was built to add and which
+      every real ex-works contract carries. So it reads as a delivery TO
+      somewhere, and the bearer guard was widened to admit it.
+    */
+    const to = d.deliveryDestination.trim();
+    term = to ? `Local Delivery ${to}` : "Local Delivery";
   } else {
     // FOB, and any retired value an older deal still carries, verbatim.
     term = via;
   }
 
   /*
-    The customer's leg joins the term rather than getting a line of its own.
-    Settled 02-09-2026: a token would print nowhere until all 21 decks were
-    rewritten, and a field captured but never printed is the defect OCPI-12
-    exists to find. Appending reaches both papers with no template change.
+    R5 · THE SCHEME GOES IMMEDIATELY AFTER THE PORT, NOT AT THE END.
 
-    ⚠ Guarded on the SAME two conditions as its branch rule in branching.ts. The
-      RPC nulls the column on a Company-borne deal, so without this guard the
-      screen and the paper would disagree for one render after the bearer moved.
+    🔴 EVERY REAL PAPER PUTS IT THERE. Folder 121 reads
+       `CIF NHAVA SHEVA PORT (Under EPCG License)`, folder 120
+       `CIF Hazira Port (Under EPCG License)`, folder 106
+       `CIF, NHAVA SHEVA (UNDER HIGH SEAS SALES AGREEMENT) (UNDER EPCG License)`
+       -- two parentheticals, both straight after the port. Appending it after
+       the transport bearer instead would produce a string matching no paper the
+       client has.
+
+    ⚠ ONE WORDING PER DEAL TYPE CANNOT REPRODUCE EVERY ATTESTED STRING, and this
+      is a deliberate normalisation like R2's insurance clause. Folder 106 and
+      the parsed K32 contract state the SAME thing two ways --
+      `(UNDER HIGH SEAS SALES AGREEMENT) (UNDER EPCG License)` against
+      `.(HIGH SEAS SALES UNDER EPCG)`. `hss_epcg` prints the second reading's
+      sense in the first reading's case; the other is knowingly not reproduced.
+
+    ⚠ MOOWR'S WORDING IS INVENTED. It appears on no paper, in no note and in no
+      migration in this repo -- it follows the EPCG shape because there was
+      nothing to copy. Worth confirming with the client before it is signed.
   */
-  if (d.transportTerms === "high_seas" && d.highSeasCostBy === "customer") {
-    const leg = DELIVERY_LEGS.find((l) => l.value === d.deliveryLeg);
-    /*
-      ⚠ ONLY THE FIRST LETTER DROPS CASE. The label reads "From Indian port to
-        customer premises" and joins mid-sentence, so the leading "From" should
-        not be capitalised — but `toLowerCase()` on the whole label also lowered
-        "Indian", and "from indian port" is wrong on a document a customer
-        signs. Caught on the composed clause, not in review.
+  const phrase = schemePhrase(d.transportTerms);
+  if (phrase) term = `${term} (${phrase})`;
 
-      🔴 THE SEPARATOR IS A COMMA, AND THAT IS A DELIBERATE CLIMBDOWN FROM AN
-         EM DASH. An em dash reads better and is what this codebase uses in
-         prose — but it appears in ZERO of the 180 live template bodies, so it
-         is an UNPROVEN GLYPH in these PDFs, and jsPDF draws a glyph the
-         embedded font subset lacks as nothing at all. Silently, on a document
-         the customer signs. A comma is ASCII, cannot fail, and reads correctly
-         in the clause. Upgrade it only after rendering one and reading it back
-         with pdf.js.
-    */
-    if (leg) term = `${term}, ${leg.label.charAt(0).toLowerCase()}${leg.label.slice(1)}`;
-  }
+  /*
+    🔴 R5 · THE CUSTOMER'S LEG IS RECORDED BUT NO LONGER PRINTED, and the branch
+       that printed it has been REMOVED rather than re-guarded.
+
+       The client asked for the question on every CIF deal, then chose that its
+       answer must not reach the paper — because no real CIF contract of theirs
+       carries the sentence. Folder 121 reads `CIF NHAVA SHEVA PORT (Under EPCG
+       License)` and stops. Broadening the old high-seas-only rule to all CIF
+       deals while still appending would have put a clause on every CIF contract
+       that none of their contracts has.
+
+    ⚠ THE ANSWER IS STILL ASKED, STORED, AND VISIBLE ON THE DEAL. It is not a
+      field captured and thrown away — the OCPI-12 defect — it is a fact the
+      business wants on record and off the page. If it is ever wanted back, the
+      composer is where it goes, immediately after the scheme phrase and before
+      the transport bearer, and the separator must stay a COMMA: an em dash
+      appears in zero of the 180 live template bodies, so it is an unproven glyph
+      and jsPDF draws a missing glyph as nothing at all.
+
+    ⚠ `DELIVERY_LEGS` IS STILL USED — by the form, and by the one live deal that
+      already holds a leg. Do not delete it as an orphan.
+  */
 
   /*
     OCPI-42 · WHO BEARS THE LOCAL TRANSPORT, ON THE PAPER AT LAST.
@@ -964,7 +1079,20 @@ export function composeTradeTerm(
          -- which is an ex-works term and should carry the bearer if anyone
          edits it -- without a second condition to keep in step.
   */
-  if (d.transportTerms === "local" && d.localCostBy.trim() && term.startsWith(EX_WORKS_PREFIX)) {
+  /*
+    ⚠ R5 · NO LONGER GATED ON `transportTerms === "local"`. An EX FACTORY deal
+      sold under EPCG is still an ex-works delivery somebody has to pay to move,
+      and the old guard would have dropped its "(Transportation bear by …)"
+      clause the moment the deal type stopped being Others — silently undoing
+      OCPI-42 for every scheme deal. What decides is the TERM, not the scheme.
+
+    ⚠ AND `Local Delivery` QUALIFIES. It is the replacement for the retired FOB
+      button and behaves like ex-works by the client's decision, so it carries
+      the bearer for the same reason. The test stays on the COMPOSED TERM, which
+      is what also covers a legacy deal hydrated with the literal `Ex-Work Surat`.
+  */
+  const carriesABearer = term.startsWith(EX_WORKS_PREFIX) || term.startsWith(LOCAL_DELIVERY_PREFIX);
+  if (d.localCostBy.trim() && carriesABearer) {
     const bearer =
       d.localCostBy === "customer"
         ? (COST_BEARERS.find((c) => c.value === "customer")?.label ?? "Customer")
@@ -1258,7 +1386,15 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   deliveryDate: "Tentative machine delivery date",  // RETIRED (R1) — kept so stored answers round-trip
   transportTerms: "Deal type",
   highSeasVia: "High seas delivery via",
-  highSeasCostBy: "High seas cost borne by",
+  /*
+    ⚠ R5 · RE-CAPTIONED, COLUMN NAME UNCHANGED. It is asked on every named
+      scheme now — EPCG and MOOWR are not high-seas sales — so "High seas cost
+      borne by" read wrongly on three of the four. The column stays
+      `high_seas_cost_by`: renaming a column to fix a caption is how the SQL and
+      the form drift apart, and `fms_ocpi_submit_quotation` still names the old
+      caption in its "Still needed" list, which is fixed there, not here.
+  */
+  highSeasCostBy: "Shipping cost borne by",
   localCostBy: "Local delivery cost borne by",
   // OCPI-35 · inserted HERE, beside the questions they are read with on screen.
   // This object's key order is revisionDiff.ts's row order, so a reader
@@ -1266,6 +1402,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   deliveryVia: "Delivery term",
   deliveryPort: "Port",
   deliveryFactoryCity: "Ex-factory location",
+  deliveryDestination: "Delivery destination",
   deliveryLeg: "Customer's delivery leg",
   fxRate: "USD to INR rate",
   fxRateAt: "Rate fetched at",
@@ -1457,6 +1594,7 @@ export function draftFromDeal(
         ? s(d.tradeTerm).slice("CIF ".length).trim()
         : ""),
     deliveryFactoryCity: s(d.deliveryFactoryCity),
+    deliveryDestination: s(d.deliveryDestination),
     deliveryLeg: s(d.deliveryLeg),
     fxRate: s(d.fxRate),
     fxRateAt: s(d.fxRateAt),
@@ -1618,9 +1756,20 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
       Falling back to the draft's own `highSeasVia` rather than to null is what
       stops an untouched older deal losing its answer on the next save.
     */
+    /*
+      ⚠ R5 · GATED ON `HIGH_SEAS_VIA_MIRROR`, NOT ON `DELIVERY_VIA`. They were one
+        constant, and the day `DELIVERY_VIA` swapped FOB for `Local` the mirror
+        would have written a value the column's CHECK refused — see the note on
+        `HIGH_SEAS_VIA_MIRROR`. The database is the authority for that list.
+
+      ⚠ AND IT FIRES FOR EVERY SCHEME, not just High Seas: `epcg`, `moowr` and
+        `hss_epcg` are import deals too, and leaving their mirror empty would
+        strand the `d.tradeTerm || d.highSeasVia` fallback the summary sheet
+        still leans on.
+    */
     high_seas_via:
-      d.transportTerms === "high_seas" &&
-      (DELIVERY_VIA as readonly string[]).includes(d.deliveryVia)
+      isSchemeDeal(d.transportTerms) &&
+      (HIGH_SEAS_VIA_MIRROR as readonly string[]).includes(d.deliveryVia)
         ? d.deliveryVia
         : d.highSeasVia,
     high_seas_cost_by: d.highSeasCostBy,
@@ -1631,6 +1780,7 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     delivery_via: d.deliveryVia,
     delivery_port: d.deliveryPort,
     delivery_factory_city: d.deliveryFactoryCity,
+    delivery_destination: d.deliveryDestination,
     delivery_leg: d.deliveryLeg,
     fx_rate: d.fxRate,
     fx_rate_at: d.fxRateAt,

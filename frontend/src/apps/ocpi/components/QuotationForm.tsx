@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import { isSchemeDeal } from "../lib/fieldSpec";
 // R4 · the machine picker and the "Bills as" line both read a template that can
 // now branch on print heads. Neither has an OcpiDeal — see `asNormallySold`.
 import { applyConditions, asNormallySold } from "../lib/conditions";
@@ -167,6 +168,28 @@ const optsWithCurrent = (xs: readonly string[], current: string) =>
   opts(current && !xs.includes(current) ? [...xs, current] : xs);
 const optsKV = (xs: readonly { value: string; label: string }[]) =>
   xs.map((x) => ({ value: x.value, label: x.label }));
+/**
+ * `optsWithCurrent` for a coded vocabulary — and R5 is why it exists.
+ *
+ * 🔴 A STRIP THAT DOES NOT RECOGNISE ITS OWN VALUE IS ONE KEYPRESS FROM
+ *    REWRITING THE DEAL. `ChoiceButtons` sets `index = -1` for a value it cannot
+ *    match and then, on the FIRST arrow key, fires `onChange(options[0].value)`
+ *    — and the strip carries a tab stop either way. The Deal type strip used
+ *    plain `optsKV`, so during a deploy window an older bundle would show an
+ *    `epcg` deal as nothing selected, and one ↓ would silently convert it to
+ *    High Seas, force the currency to USD and recompose the printed term. No
+ *    click, nothing on screen to see.
+ *
+ * ⚠ The label falls back to the raw code, which is ugly on purpose: an
+ *   unrecognised value should look wrong rather than look like a choice.
+ */
+const optsKVWithCurrent = (
+  xs: readonly { value: string; label: string }[],
+  current: string,
+) =>
+  current && !xs.some((x) => x.value === current)
+    ? [...optsKV(xs), { value: current, label: current }]
+    : optsKV(xs);
 
 /**
  * A warranty as it will print — SHOWN, NEVER TYPED (Ritesh Bhai, 01-Sep-2026).
@@ -1126,7 +1149,12 @@ export default function QuotationForm({
    * The currency picker is disabled rather than hidden — a reader still needs to
    * see WHICH currency, and hiding it would make the rule look like a bug.
    */
-  const isHighSeas = draft.transportTerms === "high_seas";
+  /*
+    R5 · ANY NAMED SCHEME, not High Seas alone — HSS, HSS with EPCG, EPCG and
+    MOOWR are all dollar deals with no GST. One predicate, shared with the SQL
+    writer; see `isSchemeDeal`.
+  */
+  const isScheme = isSchemeDeal(draft.transportTerms);
 
   /** The rupee equivalent, shown beside the rate so the figure is never a surprise. */
   const inrEquivalent = useMemo(() => {
@@ -2472,13 +2500,22 @@ export default function QuotationForm({
                 //   customer's-leg clause is appended on High Seas alone.
                 //   Leaving it would strand that sentence on an Others deal's
                 //   contract after a change of mind.
+                /*
+                  🔴 R5 · AND IT PUTS THE CURRENCY BACK. This only ever SET USD,
+                     never cleared it, which was survivable while one deal type
+                     in two forced dollars. With four of five forcing them, going
+                     scheme → Others left `dealValueCurrency` on USD — which
+                     hides the GST question and nulls the tax server-side, so a
+                     ₹50,00,000 machine would go out reading $50,00,000 with no
+                     tax line. The reset is the whole point of this branch.
+                */
                 patchDelivery(
-                  v === "high_seas"
+                  isSchemeDeal(v)
                     ? { transportTerms: v, dealValueCurrency: "USD" }
-                    : { transportTerms: v },
+                    : { transportTerms: v, dealValueCurrency: "INR" },
                 )
               }
-              options={optsKV(TRANSPORT_TERMS)}
+              options={optsKVWithCurrent(TRANSPORT_TERMS, draft.transportTerms)}
               disabled={disabled}
               ariaLabel="Deal type"
             />
@@ -2580,6 +2617,34 @@ export default function QuotationForm({
               />
             </FieldLabel>
           )}
+          {show("deliveryDestination") && (
+            <FieldLabel
+              label="Delivery destination"
+              hint="e.g. Surat"
+              required={req.has("deliveryDestination")}
+              anchor={FIELD_ANCHOR("deliveryDestination")}
+            >
+              {/*
+                R5 · A LOCAL DELIVERY NAMES WHERE IT GOES, and it has to. A bare
+                "Local" on the contract says LESS than the "Ex-Work Surat" it
+                replaced, and it would silently drop the
+                "(Transportation bear by …)" clause — whose guard is the term's
+                prefix — which is the clause OCPI-42 was built to add and which
+                every real ex-works contract carries. Client's decision,
+                10-Sep-2026: Local behaves like EX Factory.
+
+                ⚠ FREE TEXT, and its own column. It is the CUSTOMER's place;
+                  `deliveryFactoryCity` is OUR despatching factory, and one
+                  column holding two meanings is how the form and the SQL drift.
+              */}
+              <TextInput
+                value={draft.deliveryDestination}
+                onChange={(e) => patchDelivery({ deliveryDestination: e.target.value })}
+                placeholder="e.g. Surat"
+                disabled={disabled}
+              />
+            </FieldLabel>
+          )}
           {show("deliveryFactoryCity") && (
             <FieldLabel
               label="Ex-factory location"
@@ -2597,7 +2662,7 @@ export default function QuotationForm({
           )}
           {show("highSeasCostBy") && (
             <FieldLabel
-              label="High seas cost borne by"
+              label="Shipping cost borne by"
               required={req.has("highSeasCostBy")}
               anchor={FIELD_ANCHOR("highSeasCostBy")}
             >
@@ -2615,7 +2680,7 @@ export default function QuotationForm({
                 options={optsKV(COST_BEARERS)}
                 clearable
                 disabled={disabled}
-                ariaLabel="High seas cost borne by"
+                ariaLabel="Shipping cost borne by"
               />
             </FieldLabel>
           )}
@@ -2673,7 +2738,7 @@ export default function QuotationForm({
           )}
         </div>
 
-        {isHighSeas && (
+        {isScheme && (
           <p className="rounded-lg border border-line bg-[#FBFCFE] px-3 py-2 text-[12.5px] text-grey">
             A high seas sale is in <span className="font-medium text-navy">US dollars</span> and carries{" "}
             <span className="font-medium text-navy">no GST</span>. Both are set for you, and the papers
@@ -2686,13 +2751,13 @@ export default function QuotationForm({
             label="Currency"
             required={req.has("dealValueCurrency")}
             anchor={FIELD_ANCHOR("dealValueCurrency")}
-            hint={isHighSeas ? "fixed by the deal type" : undefined}
+            hint={isScheme ? "fixed by the deal type" : undefined}
           >
             <ChoiceButtons
               value={draft.dealValueCurrency}
               onChange={(v) => patch({ dealValueCurrency: v })}
               options={opts(CURRENCIES)}
-              disabled={disabled || isHighSeas}
+              disabled={disabled || isScheme}
               ariaLabel="Currency"
             />
           </FieldLabel>
