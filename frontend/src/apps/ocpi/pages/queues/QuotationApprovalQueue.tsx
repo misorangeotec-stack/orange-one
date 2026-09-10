@@ -6,7 +6,7 @@ import Modal from "@/shared/components/ui/Modal";
 import { useOcpiStore } from "../../store";
 import ApprovalPanel from "../../components/ApprovalPanel";
 import DueCell from "@/shared/components/ui/DueCell";
-import { dealRef, dueIsoFor } from "../../lib/queues";
+import { dealRef, dealRefSort, dueIsoFor } from "../../lib/queues";
 import { dmy, fmtDealValue } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
 
@@ -47,7 +47,7 @@ export default function QuotationApprovalQueue() {
             {dealRef(d)}
           </Link>
         ),
-        sortValue: (d) => dealRef(d),
+        sortValue: (d) => dealRefSort(d),
         filter: { kind: "text", get: (d) => dealRef(d) },
       },
       {

@@ -63,6 +63,19 @@ export default function MachineTemplate() {
     () => [
       supply,
       machine?.introText ?? "",
+      /*
+        🔴 R4 · `billingName` WAS THE ONE COLUMN THIS SCAN COULD NOT SEE, and it
+           is the only column that has ever leaked a marker onto a live paper:
+           `20260904065928` put markers in and `20260904092052` took them back
+           out the same day, after pdf.js read `…224 PRINTHEADS[[if` off a
+           generated document. The card that would have caught it was blind to
+           the field.
+
+           Like the opening line above, it is edited on the Machines master
+           rather than here — which is exactly why both were missed. It is this
+           machine's template text, and this is the page that reports on it.
+      */
+      machine?.billingName ?? "",
       ...specs.map((sp) => sp.value),
       ...composition,
       ...sections.map((sec) => sec.body),

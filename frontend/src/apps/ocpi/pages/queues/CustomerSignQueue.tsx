@@ -4,7 +4,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import Button from "@/shared/components/ui/Button";
 import { useOcpiStore } from "../../store";
 import DueCell from "@/shared/components/ui/DueCell";
-import { dealRef, dueIsoFor } from "../../lib/queues";
+import { dealRef, dealRefSort, dueIsoFor } from "../../lib/queues";
 import { stepByKey } from "../../lib/steps";
 import { dmy, fmtDealValue } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
@@ -65,7 +65,7 @@ export default function CustomerSignQueue() {
             {dealRef(d)}
           </Link>
         ),
-        sortValue: (d) => dealRef(d),
+        sortValue: (d) => dealRefSort(d),
         filter: { kind: "text", get: (d) => dealRef(d) },
       },
       {

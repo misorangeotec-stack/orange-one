@@ -11,6 +11,9 @@ import { useSalespeople } from "../../lib/useSalespeople";
 import {
   quotationDetailFileName, quotationFileName, quotationPdfBlob,
 } from "../../lib/quotationPdf";
+// R4 · the summary revision snapshot now freezes the conditions beside the
+// unrendered template it stores — see `documentPayload`.
+import { conditionsFor } from "../../lib/conditions";
 import { ocPdfBlob, resolvedOcDocument } from "../../lib/ocPdf";
 import { piPdfBlob, piFileName } from "../../lib/piPdf";
 import { docHeading } from "../../lib/format";
@@ -257,6 +260,27 @@ export function useQuotationDraft(dealId?: string) {
         spec_rows: machine?.specRows ?? [],
         composition: machine?.composition ?? [],
         sections: sections.map((x) => ({ key: x.key, title: x.title, body: x.body })),
+        /*
+          🔴 R4 · THE CONDITIONS THIS REVISION WAS ISSUED UNDER, frozen beside the
+             template they resolve. Without them this payload is unreadable: the
+             three fields above are stored UNRENDERED (see the note below, which
+             is deliberate), and once a template carries `[[if heads]]` there is
+             nothing here to say what `incl_head` was at the time.
+
+             `oc_document_payload` has always frozen its `conditions`
+             (`ocPdf.ts` · `resolvedOcDocument`); this payload never did, because
+             until R4 nothing it stored could branch. `field_payload` does carry
+             `incl_head`, so it was technically recoverable — by cross-referencing
+             two payloads and knowing to. One line closes it.
+
+          ⚠ FROZEN, NOT RE-DERIVED. Reading them off the machine later would give
+            today's answer to a question this revision settled months ago, which
+            is the whole failure the freeze exists to prevent.
+        */
+        conditions: conditionsFor({
+          deal: saved,
+          facts: factsForDeal(s.dryerTypes, s.machineCategories, saved, machine),
+        }),
         company_profile: profile
           ? {
               legal_name: profile.legalName,

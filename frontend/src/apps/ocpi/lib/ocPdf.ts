@@ -422,7 +422,18 @@ export function machineDetailLine(
   const said = fold(supplyText);
   const absent = (v: string) => v !== "" && !said.includes(fold(v));
   const modelNo = (deal.machineModelNo?.trim() || machine.machineModelNo?.trim()) ?? "";
-  const hsnCode = machine.hsnCode?.trim() ?? "";
+  /*
+    R8 · THE HEADING IS THE DEAL'S CHOICE FIRST, the machine master's second —
+    resolved exactly like `modelNo` on the line above, and for the same reason:
+    the two print as one string, `(Model No: …)  (HSN Code: …)`, so overriding
+    one and not the other would send out a half-overridden pair.
+
+    ⚠ BOTH `84433250` AND `84433910` ARE LIVE. Tally filed nine P8D lines under
+      one and seven under the other; the K32 and K64 disagree between the signed
+      papers and what was declared. It is a per-consignment call, not a fact
+      about the machine — hence the picker on the form and its export-team note.
+  */
+  const hsnCode = (deal.hsnCode?.trim() || machine.hsnCode?.trim()) ?? "";
   const parts = [
     absent(modelNo) ? `(Model No: ${modelNo})` : "",
     absent(hsnCode) ? `(HSN Code: ${hsnCode})` : "",

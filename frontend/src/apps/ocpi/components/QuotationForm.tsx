@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+// R4 · the machine picker and the "Bills as" line both read a template that can
+// now branch on print heads. Neither has an OcpiDeal — see `asNormallySold`.
+import { applyConditions, asNormallySold } from "../lib/conditions";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
@@ -14,7 +17,7 @@ import { isVisible } from "../lib/branching";
 import { useSalespeople } from "../lib/useSalespeople";
 import { fmtDealValue, proseCompanyName } from "../lib/format";
 import {
-  COST_BEARERS, CURRENCIES, DELIVERY_DATE_REMARK, DELIVERY_FACTORY_CITIES, DELIVERY_LEGS,
+  COST_BEARERS, CURRENCIES, DELIVERY_FACTORY_CITIES, DELIVERY_LEGS, DELIVERY_PERIOD_SUFFIX,
   DELIVERY_VIA, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA, INSURANCE_CLAUSE,
   PAYMENT_TERMS_FORMATS, PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRANSPORT_TERMS,
   composeTradeTerm, dealFacts,
@@ -666,6 +669,23 @@ export default function QuotationForm({
    */
   const chosenMachine = s.machineById(draft.machineId || null);
 
+  /*
+    R8 · the HSN vocabulary, read off the machine master rather than declared.
+    Every distinct heading any machine carries, plus whatever this deal already
+    holds — the `masterOpts` contract, so a deal quoted under a heading later
+    removed from every machine still shows its own answer instead of an empty
+    box. Sorted, because two codes that differ in one digit are read as a pair.
+  */
+  const hsnOptions = useMemo(() => {
+    const codes = new Set<string>();
+    for (const m of s.machines) {
+      const c = m.hsnCode?.trim();
+      if (c) codes.add(c);
+    }
+    if (draft.hsnCode.trim()) codes.add(draft.hsnCode.trim());
+    return [...codes].sort().map((c) => ({ value: c, label: c }));
+  }, [s.machines, draft.hsnCode]);
+
   /**
    * Everything a branch needs that is not on the draft.
    *
@@ -769,7 +789,9 @@ export default function QuotationForm({
           label: m.name,
           sublabel:
             [
-              m.billingName,
+              // R4 · every machine in the list, before one is chosen — so there
+              // is no deal to resolve against. See `asNormallySold`.
+              m.billingName ? asNormallySold(m.billingName) : null,
               m.hasTemplate ? null : "summary sheet only — no detailed template yet",
             ]
               .filter(Boolean)
@@ -1396,7 +1418,28 @@ export default function QuotationForm({
             )}
             {chosenMachine?.billingName && (
               <p className="mt-1.5 text-[12px] text-grey-2">
-                Bills as <b className="text-navy">{chosenMachine.billingName}</b>
+                {/*
+                  R4 · THIS ONE IS ABOUT **THIS** DEAL, so it resolves the head
+                  pair from the draft's own answer rather than previewing the
+                  machine — the whole point of the line is to show what the
+                  invoice will actually say.
+
+                  ⚠ `conditionsFor` takes an `OcpiDeal` and this is a DRAFT, so
+                    the pair is read straight off `draft.inclHead` with the same
+                    strictness: `=== true` / `=== false`, never `!`. Unanswered
+                    shows neither phrase — which is exactly what the paper will
+                    do, and seeing that here is the point.
+
+                  Every other name stays unknown and fails open, as in
+                  `asNormallySold`; billing names carry no other marker today.
+                */}
+                Bills as{" "}
+                <b className="text-navy">
+                  {applyConditions(chosenMachine.billingName, {
+                    heads: draft.inclHead === true,
+                    noHeads: draft.inclHead === false,
+                  }).text}
+                </b>
               </p>
             )}
           </div>
@@ -2842,32 +2885,41 @@ export default function QuotationForm({
         */}
         <div className="grid gap-3 sm:grid-cols-2">
           {/*
-            ⚠ THE REMARK IS OUTSIDE `FieldLabel`, which renders a <label>. Text
-              inside it is part of the label, so a click anywhere on the sentence
-              would open the date picker — and the sentence is a statement about
-              the contract, not a prompt to fill anything in. Same reason the
-              payment-format hint below sits outside its own label.
+            🔴 A PERIOD, NOT A DATE (R1, 07-09-2026) — REVERSING OCPI-18.
+              OCPI-18 replaced the day-count with a tentative date so a deal's two
+              papers could not disagree. The counted evidence went the other way:
+              of 36 real Performa Invoices, 28 promise a number of days and NOT
+              ONE promises a date. The single-source property is kept — this one
+              box still feeds the invoice, the summary sheet and all 21 contract
+              decks. Only its shape changed.
 
-            ⚠ AND IT IS THE SAME SENTENCE THE CONTRACT CARRIES, from one const.
-              It is written into all 21 SALE CONDITIONS sections and printed on
-              the summary sheet; if the screen and the paper worded the delivery
-              condition differently, a customer would have two answers to which
-              one governs. See DELIVERY_DATE_REMARK in fieldSpec.ts.
+            ⚠ THE BOX HOLDS ONLY THE NUMBER. The suffix beside it is printed by
+              the papers from `DELIVERY_PERIOD_SUFFIX`, so the wording cannot
+              drift deal to deal — while a RANGE still works, because the field is
+              text: folder 106's real paper reads "30 to 45 Days from Order
+              confirmation".
+
+            ⚠ THE SUFFIX IS OUTSIDE `FieldLabel`, which renders a <label>. Text
+              inside it becomes part of the label, and clicking a statement about
+              the contract should not focus the box. Same reason the
+              payment-format hint below sits outside its own label.
           */}
           <div>
             <FieldLabel
-              label="Tentative machine delivery date"
-              required={req.has("deliveryDate")}
-              anchor={FIELD_ANCHOR("deliveryDate")}
+              label="Delivery period"
+              required={req.has("deliveryDays")}
+              anchor={FIELD_ANCHOR("deliveryDays")}
             >
-              <TextInput
-                type="date"
-                value={draft.deliveryDate}
-                onChange={(e) => patch({ deliveryDate: e.target.value })}
-                disabled={disabled}
-              />
+              <div className="flex items-center gap-2">
+                <TextInput
+                  value={draft.deliveryDays}
+                  onChange={(e) => patch({ deliveryDays: e.target.value })}
+                  placeholder="e.g. 30, or 30 to 45"
+                  disabled={disabled}
+                />
+                <span className="shrink-0 text-[12.5px] text-grey-2">{DELIVERY_PERIOD_SUFFIX}</span>
+              </div>
             </FieldLabel>
-            <p className="mt-1 text-[12px] text-grey-2">{DELIVERY_DATE_REMARK}</p>
           </div>
         </div>
         {/*
@@ -3319,6 +3371,65 @@ export default function QuotationForm({
                 onChange={(e) => patch({ machineModelNo: e.target.value })}
                 disabled={disabled}
               />
+            </FieldLabel>
+            <FieldLabel
+              label="HSN code"
+              /*
+                R8 · WHY THIS IS A CHOICE AND NOT A FACT ABOUT THE MACHINE.
+                It was built as one heading per machine and the evidence broke
+                that: Tally filed nine P8D lines under 84433250 and seven under
+                84433910, and the K32 and both K64s disagree between the signed
+                invoices (84433910) and what was actually declared (84433250).
+                Neither is wrong — which applies depends on the consignment. So
+                the question gets asked instead of guessed.
+
+                ⚠ THE OPTIONS ARE DERIVED FROM THE MACHINE MASTER, not from a
+                  list in this file and not from a second master table. Setting a
+                  new heading on any machine makes it selectable on every deal —
+                  no migration, no screen, no deploy. The trade-off is real and
+                  accepted: a typo typed on the Machines master would appear
+                  here. That screen is admin-only, and the alternative was a
+                  second vocabulary to keep in step with the first.
+
+                ⚠ BLANK IS CORRECT AND COMMON. 30 of 34 real Performa Invoices
+                  carry no heading at all — a Surat-built machine has none to
+                  state — so this is never required and an empty box prints no
+                  line rather than a ruled blank.
+              */
+              hint={
+                chosenMachine?.hsnCode
+                  ? <>blank uses <b className="text-navy">{chosenMachine.hsnCode}</b> from the machine master</>
+                  : "blank prints no HSN line"
+              }
+            >
+              <Combobox
+                value={draft.hsnCode}
+                onChange={(v) => patch({ hsnCode: v })}
+                options={hsnOptions}
+                placeholder={chosenMachine?.hsnCode ?? "Choose"}
+                clearable
+                disabled={disabled}
+                triggerClassName="w-full"
+              />
+              {/*
+                🔴 THE NOTE IS NOT A HINT, AND THAT IS DELIBERATE. `FieldLabel`'s
+                   hint renders at 11px in grey-2 up beside the label, which is
+                   where "blank uses the master's value" belongs — a convenience.
+                   This is a compliance instruction: a wrong customs heading on a
+                   signed invoice is a mis-declaration, not a typo. It sits UNDER
+                   the control, in the module's emphasis orange, so it is read
+                   after the choice is made rather than before it is considered.
+
+                ⚠ ORANGE, NOT AMBER. There is no amber in this palette — `ryg` is
+                  red / yellow / green — so `text-ryg-amber` emits no rule at all
+                  and the warning would render in the surrounding navy, reading
+                  as ordinary text. The same trap is recorded on `MasterFact`.
+              */}
+              <p className="mt-1.5 text-[11.5px] leading-snug text-orange">
+                Confirm the HSN code with the export team before this paper goes out.
+                Both 84433250 and 84433910 are in use and the correct one depends on
+                the consignment.
+              </p>
             </FieldLabel>
             <FieldLabel label="Prepared by">
               <TextInput

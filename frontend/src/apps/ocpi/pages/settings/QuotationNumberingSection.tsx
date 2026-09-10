@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useOcpiStore } from "../../store";
 import { fetchQuotationCounter } from "../../data/ocpiFetch";
-import { quotationNoFor } from "../../lib/format";
+import { periodCode, quotationNoFor } from "../../lib/format";
 
 /**
  * Where the quotation series stands, and the one control that can move it.
@@ -36,13 +36,15 @@ export default function QuotationNumberingSection() {
   const s = useOcpiStore();
   const series = s.config.quotationSeries;
 
+  const period = periodCode();
+
   const {
     data: counter,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["ocpiQuotationCounter"],
-    queryFn: fetchQuotationCounter,
+    queryKey: ["ocpiQuotationCounter", period],
+    queryFn: () => fetchQuotationCounter(period),
     enabled: s.isAdmin,
     staleTime: 0,
   });
@@ -67,7 +69,7 @@ export default function QuotationNumberingSection() {
       const now = await s.setQuotationSeries(typed);
       await refetch();
       setValue("");
-      setSaved(`Confirmed. The next quotation will be ${quotationNoFor(now + 1)}.`);
+      setSaved(`Confirmed. The next quotation will be ${quotationNoFor(now + 1, period)}.`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -96,12 +98,12 @@ export default function QuotationNumberingSection() {
             <p className="text-[13px] text-navy">
               Last number issued:{" "}
               <span className="font-semibold">
-                {current === null ? "none yet" : quotationNoFor(current)}
+                {current === null ? "none yet this month" : quotationNoFor(current, period)}
               </span>
             </p>
             <p className="mt-0.5 text-[12.5px] text-grey">
               The next quotation generated will be{" "}
-              <span className="font-medium text-navy">{quotationNoFor((current ?? 0) + 1)}</span>.
+              <span className="font-medium text-navy">{quotationNoFor((current ?? 0) + 1, period)}</span>.
             </p>
           </>
         )}
@@ -109,7 +111,7 @@ export default function QuotationNumberingSection() {
 
       {series.confirmed ? (
         <p className="text-[12.5px] text-ryg-green">
-          Confirmed at {quotationNoFor(series.confirmedAtValue ?? 0)}
+          Confirmed at {quotationNoFor(series.confirmedAtValue ?? 0, period)}
           {series.confirmedAt ? ` on ${new Date(series.confirmedAt).toLocaleDateString("en-GB")}` : ""}.
           It can still be moved forward if a stray paper quotation turns up.
         </p>

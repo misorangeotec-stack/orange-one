@@ -5,6 +5,7 @@ import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { useOcpiStore } from "../../store";
 import { createMachine, setMachineActive, updateMachine } from "../../data/ocpiMachineWrites";
 import { replaceMachineHeads } from "../../data/ocpiMasterWrites";
+import { asNormallySold } from "../../lib/conditions";
 import { MACHINE_OPTIONS, type OcpiMachine } from "../../types";
 
 /**
@@ -49,9 +50,24 @@ export default function Machines() {
         //   client asked for both to print, and a reader filtering on "the name"
         //   has to be able to pick which one they mean. `name` is untouched and
         //   is still the code every existing deal points at.
+        // ⚠ R4 · READ AS NORMALLY SOLD, because this column has no deal behind
+        //   it and the template can now branch on print heads. The EDIT field
+        //   below (`billingName`) still shows the raw source — a template is
+        //   edited as source and read as prose, the same split MachineTemplate
+        //   uses. The filter takes the same reading, or its dropdown would offer
+        //   marker syntax as a value to filter on.
         header: "Billing name",
-        render: (m) => m.billingName ?? <span className="text-grey-2">—</span>,
-        filter: { get: (m) => m.billingName ?? "" },
+        render: (m) =>
+          m.billingName ? asNormallySold(m.billingName) : <span className="text-grey-2">—</span>,
+        filter: { get: (m) => (m.billingName ? asNormallySold(m.billingName) : "") },
+      },
+      {
+        // B1 · the third name, and the one the customer reads first. Shown here
+        // so the eleven still blank are visible on the master rather than only
+        // on a generated invoice.
+        header: "Sales name",
+        render: (m) => m.salesName ?? <span className="text-grey-2">—</span>,
+        filter: { get: (m) => m.salesName ?? "" },
       },
       {
         header: "Category",
@@ -135,6 +151,8 @@ export default function Machines() {
       hint: "What a salesperson picks on the quotation. Include the width and head count where models differ. Existing deals point at this, so changing it renames the machine everywhere." },
     { key: "billingName", label: "Billing name", type: "text",
       hint: "The full product name as it reads on an invoice, e.g. “Large format inkjet printer with 24 heads with std. accessories”. Prints beside the code." },
+    { key: "salesName", label: "Sales name", type: "text",
+      hint: "The SHORT name the customer knows this machine by — “HOMER K64”, “Sub Pro II+”, “ROCKET MACHINE”. It prints on the Performa Invoice's Subject line and nowhere else. Do NOT put a head count or a width in it; those vary by deal. Leave blank and the Subject line falls back to the model number." },
     { key: "categoryId", label: "Category", type: "select",
       options: s.machineCategories
         .filter((c) => c.active)
@@ -283,7 +301,7 @@ export default function Machines() {
         columns={columns}
         fields={fields}
         searchText={(m) =>
-          `${m.name} ${m.billingName ?? ""} ${categoryName(m.categoryId)} ${headNames(m)} ${m.machineModelNo ?? ""} ${m.docTitle}`
+          `${m.name} ${m.billingName ? asNormallySold(m.billingName) : ""} ${m.salesName ?? ""} ${categoryName(m.categoryId)} ${headNames(m)} ${m.machineModelNo ?? ""} ${m.docTitle}`
         }
         defaultOrder={(m) => m.sortOrder}
         canManage={s.isAdmin}
@@ -296,6 +314,7 @@ export default function Machines() {
         emptyValues={{
           name: "",
           billingName: "",
+          salesName: "",
           categoryId: "",
           headTypeIds: "",
           machineWarranty: "",
@@ -319,6 +338,7 @@ export default function Machines() {
         toValues={(m) => ({
           name: m.name,
           billingName: m.billingName ?? "",
+          salesName: m.salesName ?? "",
           categoryId: m.categoryId ?? "",
           headTypeIds: s.headsFor(m.id).map((h) => h.id).join(","),
           // "" is UNSET and is not the same answer as "no" — a machine nobody
@@ -345,6 +365,9 @@ export default function Machines() {
           const patch = {
             name: values.name,
             billingName: values.billingName || null,
+            // "" is stored as null, and null means the Subject line falls back
+            // to the model number — the pre-B1 behaviour, not a ruled blank.
+            salesName: values.salesName || null,
             categoryId: values.categoryId || null,
             // Three states, not two: "" means nobody has said yet.
             machineWarranty: values.machineWarranty || null,

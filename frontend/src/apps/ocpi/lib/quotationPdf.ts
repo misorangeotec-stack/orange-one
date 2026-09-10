@@ -5,10 +5,19 @@ import {
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import {
-  COST_BEARERS, DELIVERY_DATE_REMARK, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
+  COST_BEARERS, DELIVERY_PERIOD_SUFFIX, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
   SUBSIDIZED_RATE_NOTE, TRANSPORT_BEARER_MARK, isUsdDealRow, type DealFacts,
 } from "./fieldSpec";
 import { docHeading, fmtDealValue, paperDate, paperFileBase, paperNo } from "./format";
+/*
+  R4 · THE SUMMARY SHEET RENDERS THE BILLING NAME NOW, AND IT DID NOT BEFORE.
+  This file printed `machine.billingName` as a bare string while `piPdf.ts` and
+  `ocPdf.ts` both rendered it. That was harmless only while the column carried no
+  markers — and it is the column that has already leaked one onto a live paper
+  (`20260904065928` in, `20260904092052` straight back out the same day).
+*/
+import { conditionsFor, render } from "./conditions";
+import { tokensFor } from "./tokens";
 import type { OcpiCompanyProfile, OcpiDeal, OcpiMachine } from "../types";
 
 /**
@@ -272,25 +281,23 @@ function sectionRows(
       deals that recorded an answer. That is deliberate: a paper reissued today
       should read the way the module asks its questions today.
 
-    ⚠ THE DELIVERY DATE IS RELABELLED AND CARRIES ITS CONDITION. The same change
-      wrote the date and this sentence into the SALE CONDITIONS clause of all 21
-      machine decks; a date whose condition appears on the contract but not on
-      the summary invites the question of which paper governs.
+    ⚠ THE DELIVERY PROMISE IS A PERIOD AGAIN (R1, 07-09-2026), REVERSING OCPI-18.
+      28 of 36 real Performa Invoices promise a number of days and not one
+      promises a date. The suffix carries the condition inside the sentence, so
+      the separate "Delivery Condition" row that OCPI-18 added is GONE — there is
+      no longer a standing sentence for it to state.
 
-    ⚠ THE CONDITION PRINTS ONLY WHERE THERE IS A DATE, which is the rule the
-      warranty note below already follows. A standing sentence about when a date
-      starts running, under no date at all, is noise on a signed document.
-
-    ⚠ BOTH ROWS ARE `wide`, AND THE FIRST ONE HAS TO BE. A half-width cell gives
-      the label `LABEL_W / 2`, which "Tentative Machine Delivery Date" does not
-      fit: rendered narrow it wrapped to "Tentative Machine" / "Delivery Date" /
-      "30 Sept 2026" — three lines for one field, read off the actual PDF, not
-      guessed. The old label ("Machine Delivery Date") fitted, so this is a cost
-      of the new wording rather than something that was already wrong.
+    ⚠ THE ROW IS STILL `wide`. "Shipment Terms" is shorter than the label it
+      replaces, but its VALUE is now a whole sentence ("30 Days from the date of
+      confirmation") rather than a date, so the wide cell is still what keeps it
+      on one line.
   */
-  commercial.push({ label: "Tentative Machine Delivery Date", value: dmy(d.deliveryDate), wide: true });
-  if (d.deliveryDate) {
-    commercial.push({ label: "Delivery Condition", value: DELIVERY_DATE_REMARK, wide: true });
+  if (d.deliveryDays?.trim()) {
+    commercial.push({
+      label: "Shipment Terms",
+      value: `${d.deliveryDays.trim()} ${DELIVERY_PERIOD_SUFFIX}`,
+      wide: true,
+    });
   }
   commercial.push({ label: "Payment Terms", value: d.paymentTerms ?? "", wide: true });
   commercial.push({ label: "Term of Delivery", value: transport, wide: true });
@@ -394,7 +401,35 @@ function sectionRows(
   */
   const machineRows: Row[] = [{ label: "Machine Name", value: machine?.name ?? "" }];
   if (machine?.billingName) {
-    machineRows.push({ label: "Billing Name", value: machine.billingName, wide: true });
+    /*
+      R4 · RENDERED, NOT PRINTED RAW. `billing_name` gained `[[if heads]]` /
+      `[[if noHeads]]` markers, and this row is CUSTOMER-FACING — a leaked marker
+      here lands on the summary sheet a customer reads.
+
+      ⚠ TOKENS TOO, NOT JUST CONDITIONS. The wrapped phrase contains
+        `{{head_count}}`; rendering conditions alone would leave the token to
+        print as a ruled blank. `render` does both, in that order, exactly as
+        `piPdf.ts` does for the same column.
+
+      ⚠ `facts` DEFAULTS TO `NO_DEAL_FACTS` ON THIS FUNCTION, which is the OPEN
+        default — every flag true. That is fine for `dryer`/`centering`, which is
+        why it was chosen, and IRRELEVANT to `heads`/`noHeads`: both read
+        `deal.inclHead` directly and never touch `facts`.
+    */
+    /*
+      ⚠ NO `profile` AND NO `warranty` — both optional on `TokenContext`, and no
+        billing name states a bank or a warranty period. `piPdf.ts:438` records
+        the same reasoning for the same column, and `{{head_count}}` — the only
+        token that appears here — comes off the deal.
+    */
+    const done = render(
+      machine.billingName,
+      tokensFor({ deal: d }),
+      conditionsFor({ deal: d, facts }),
+    );
+    if (done.text.trim()) {
+      machineRows.push({ label: "Billing Name", value: done.text, wide: true });
+    }
   }
   machineRows.push(
     { label: "No. of Print Heads Required", value: d.headCount === null ? "" : String(d.headCount) },
@@ -673,12 +708,30 @@ export async function buildQuotationPdf(input: QuotationDocInput): Promise<jsPDF
       : ["Quotation No. :", deal.quotationNo ?? "DRAFT — not yet issued"],
     ["Date :", dmy(genIso)],
   ];
+  /*
+    🔴 THE VALUE SHRINKS TO FIT ITS COLUMN, AND THAT REPLACES A MEASUREMENT.
+       The note above measured one number against the 176pt third and chose a
+       shorter LABEL to make it fit. R6 made the number longer again —
+       `OTPL/OC/2627/SEP/0001` is 21 characters against `QT-M0009`'s 8 — so the
+       measurement would have had to be redone, and redone again the next time
+       the format moves. Nothing here wrapped or clipped, so an overlong value
+       printed straight over the "Date :" column beside it.
+
+       Fitting the value to the space it actually has is the fix that does not
+       expire. 8.5pt is still what prints whenever it fits, so every existing
+       paper is unchanged; only a value that would have overrun is reduced, and
+       never below 6pt — at which point it is still legible and the caller has a
+       real problem worth seeing rather than a silent overprint.
+  */
   const colW = cw / 3;
   head.forEach(([label, value], i) => {
     const x = left + i * colW;
     text(pdf, label, x, y, { size: 8.5, bold: true });
     const lw = widthOf(pdf, label, 8.5, true);
-    text(pdf, value, x + lw + 5, y, { size: 8.5 });
+    const room = colW - lw - 15;
+    let size = 8.5;
+    while (size > 6 && widthOf(pdf, value, size, false) > room) size -= 0.25;
+    text(pdf, value, x + lw + 5, y, { size });
     setDraw(pdf, BRAND.grey2);
     pdf.setLineWidth(0.5);
     pdf.line(x + lw + 4, y + 2.5, x + colW - 10, y + 2.5);

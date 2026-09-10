@@ -210,6 +210,8 @@ const mapMachine = (r: any): OcpiMachine => ({
   id: r.id,
   name: r.name,
   billingName: r.billing_name ?? null,
+  // B1 · the Subject line's name. Null on 11 machines and that is correct.
+  salesName: r.sales_name ?? null,
   categoryId: r.category_id ?? null,
   needsDryer: r.needs_dryer ?? null,
   optAirBlade: r.opt_air_blade ?? null,
@@ -457,6 +459,8 @@ const mapDeal = (r: any): OcpiDeal => ({
   postWarrantyHeadPrice: num(r.post_warranty_head_price),
   consumablesSupplier: r.consumables_supplier ?? null,
   machineModelNo: r.machine_model_no ?? null,
+  // R8 · null means "use the machine master's heading" — the normal state.
+  hsnCode: r.hsn_code ?? null,
   preparedBy: r.prepared_by ?? null,
   approvedBy: r.approved_by ?? null,
 
@@ -671,11 +675,11 @@ export async function fetchDealById(id: string): Promise<OcpiDeal | null> {
  *   screen carry a figure that is stale the moment somebody else clicks
  *   Generate. The one screen that needs it reads it fresh.
  */
-export async function fetchQuotationCounter(): Promise<number | null> {
+export async function fetchQuotationCounter(period: string): Promise<number | null> {
   const { data, error } = await db
     .from("fms_ocpi_counters")
     .select("last_value")
-    .eq("scope", "quotation")
+    .eq("scope", `qt:${period}`)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ? (data.last_value as number) : null;
@@ -684,17 +688,18 @@ export async function fetchQuotationCounter(): Promise<number | null> {
 /**
  * Where the ORDER-CONFIRMATION series stands, for one financial year.
  *
- * ⚠ THE SCOPE CARRIES THE YEAR — `oc:2627` — because this counter restarts each
- *   April while the quotation counter runs on forever. A year nobody has issued
- *   under yet has no row, and null here means "nothing issued", not "unknown".
+ * ⚠ THE SCOPE CARRIES THE PERIOD — `oc:2627/SEP` — because R6 made this counter
+ *   restart every MONTH, not every April. A period nobody has issued under yet
+ *   has no row, and null here means "nothing issued this month", not "unknown".
+ *   The pre-R6 rows (`oc:2627`, `quotation`) are left in place, unread.
  *
  * Same admin-only RLS and same freshness reasoning as the quotation counter.
  */
-export async function fetchOcCounter(fy: string): Promise<number | null> {
+export async function fetchOcCounter(period: string): Promise<number | null> {
   const { data, error } = await db
     .from("fms_ocpi_counters")
     .select("last_value")
-    .eq("scope", `oc:${fy}`)
+    .eq("scope", `oc:${period}`)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ? (data.last_value as number) : null;

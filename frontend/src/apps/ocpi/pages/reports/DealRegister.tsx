@@ -11,6 +11,7 @@ import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../../store";
 import { OCPI_MASTERS_QK, fetchOcpiMasters } from "../../data/ocpiMasters";
 import { exportDealRegister } from "../../lib/exportRegister";
+import { factsForDeal } from "../../lib/fieldSpec";
 import { exportTemplateComparison } from "../../lib/exportTemplateComparison";
 import { STATUS_LABEL } from "../../lib/format";
 import DealsTable from "../deals/DealsTable";
@@ -110,6 +111,9 @@ export default function DealRegister() {
         companyName: (id) =>
           (id ? masters?.companies.find((c) => c.id === id)?.name : "") ?? "",
         personName: (id) => (id ? people?.find((p) => p.id === id)?.name ?? "" : ""),
+        // R4 · the Billing name column renders its template now, and the
+        // conditions cannot be resolved from the deal row alone.
+        factsFor: (d) => factsForDeal(s.dryerTypes, s.machineCategories, d, s.machineById(d.machineId)),
       },
       filters,
     );

@@ -180,32 +180,29 @@ export function tokensFor({ deal, profile, warranty, warrantyNote }: TokenContex
     ex_works_city: profile?.exWorksCity ?? null,
     bank_block: bank,
     /*
-      OCPI-18 · THE DELIVERY DATE REPLACED THE DELIVERY DAYS, on the form and on
-      the contract, and the two halves had to land in this order.
+      R1 (07-09-2026) · THE DELIVERY PERIOD REPLACES THE DELIVERY DATE — reversing
+      OCPI-18, on the client's instruction, and the two halves land in this order
+      for exactly the reason OCPI-18's own note gives.
 
-      `{{delivery_days}}` was live in the SALE CONDITIONS OF THE SUPPLY clause of
-      21 of the 28 machine decks. Removing the form field on its own would have
-      printed "Delivery Days: ________" in the delivery clause of a signed
-      document, so the same change rewrites those 21 sections to read
+      🔴 THIS TOKEN MUST EXIST BEFORE THE MIGRATION RUNS. A section rewritten to
+         use a token the resolver does not know resolves to `undefined`, which
+         `resolve()` reports as unresolved and prints as `________` — a ruled
+         blank in the delivery clause of a document a customer signs. OCPI-18
+         learned this in the other direction; the same rule applies coming back.
 
-          Tentative Machine Delivery Date: {{delivery_date}}
-          Applicable from the date of signing of this contract.
+      🔴 BOTH TOKENS ARE EMITTED DURING THE OVERLAP. The 21 decks still hold
+         `{{delivery_date}}` until the migration lands, and a deployed frontend
+         that stopped emitting it would blank them. `delivery_date` is removed in
+         a FOLLOW-UP commit, after the migration has been applied — not here.
 
-      ⚠ THIS TOKEN HAD TO EXIST BEFORE THE MIGRATION RAN. A section rewritten to
-        use a token the resolver does not know resolves to `undefined`, which is
-        reported as unresolved and printed as the very ruled blank the change was
-        made to remove.
-
-      ⚠ IT IS FORMATTED, AND WITH THE PAPERS' FORMATTER, NOT THE SCREEN'S. This
-        token prints INSIDE the contract, three lines under a "Date:" header the
-        same document draws with `paperDate`, so it reads through the same
-        function rather than through the screen's `dmy`. The two happen to return
-        identical text today — checked month by month — and `paperDate` carries
-        the note on why that is a coincidence worth not depending on.
-
-        An empty string is not an answer, hence the `|| null` — that is what makes
-        an unanswered date rule a blank instead of printing nothing at all.
+      ⚠ THE PERIOD IS NOT FORMATTED. It is free text holding a number or a range
+        ("30", "30 to 45"), and the suffix around it is written into the template
+        body rather than into this value — so the deck reads
+        `Shipment Terms: {{delivery_days}} Days from the date of confirmation`.
+        An empty string is not an answer, hence the `|| null`: that is what makes
+        an unanswered period rule a blank rather than printing nothing at all.
     */
+    delivery_days: deal.deliveryDays?.trim() || null,
     delivery_date: paperDate(deal.deliveryDate) || null,
     payment_terms: deal.paymentTerms,
     trade_term: deal.tradeTerm,
@@ -278,7 +275,8 @@ export const TOKEN_HELP: { token: string; means: string }[] = [
   { token: "heating_medium", means: "how the dryer heats — electric, gas, thermic fluid" },
   { token: "ex_works_city", means: "Ex-Works city of the selling company" },
   { token: "bank_block", means: "the selling company's full bank details" },
-  { token: "delivery_date", means: "the tentative machine delivery date, dd-mmm-yyyy" },
+  { token: "delivery_days", means: "the delivery period, as typed — a number or a range (\"30\", \"30 to 45\")" },
+  { token: "delivery_date", means: "RETIRED (R1) — the tentative delivery date; kept only until the deck migration lands" },
   { token: "payment_terms", means: "the agreed payment terms" },
   // OCPI-35 · composed from the delivery question and its follow-up, not typed.
   { token: "trade_term", means: "the delivery term, e.g. CIF Jebel Ali / Ex-Work Surat / FOB" },
