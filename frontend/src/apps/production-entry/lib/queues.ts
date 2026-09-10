@@ -44,9 +44,8 @@ const AT: Record<QueueStep, (r: ProductionRequest) => string | null> = {
   additional_issue_slip: (r) => r.aisAt,
   transfer_slip: (r) => r.tsAt,
   production_entry: (r) => r.peAt,
-  mc_testing: (r) => r.mcAt,
-  pm_transfer: (r) => r.pmtAt,
   packing_entry: (r) => r.pkAt,
+  mc_testing: (r) => r.mcAt,
   ready_to_dispatch: (r) => r.rtdAt,
   fg_transfer: (r) => r.fgAt,
 };
@@ -59,9 +58,8 @@ const BY: Record<QueueStep, (r: ProductionRequest) => string | null> = {
   additional_issue_slip: (r) => r.aisBy,
   transfer_slip: (r) => r.tsBy,
   production_entry: (r) => r.peBy,
-  mc_testing: (r) => r.mcBy,
-  pm_transfer: (r) => r.pmtBy,
   packing_entry: (r) => r.pkBy,
+  mc_testing: (r) => r.mcBy,
   ready_to_dispatch: (r) => r.rtdBy,
   fg_transfer: (r) => r.fgBy,
 };
@@ -74,10 +72,13 @@ const ANCHOR_AT: Record<QueueStep, (r: ProductionRequest) => string | null> = {
   additional_issue_slip: (r) => r.qcActualDate,
   transfer_slip: (r) => r.qcAt,
   production_entry: (r) => r.tsAt,
-  mc_testing: (r) => r.peAt,
-  pm_transfer: (r) => r.mcAt,
-  packing_entry: (r) => r.pmtAt,
-  ready_to_dispatch: (r) => r.pkAt,
+  packing_entry: (r) => r.peAt,
+  mc_testing: (r) => r.pkAt,
+  // Normally the M/C test. A card that skipped it — a repackaging card, or one
+  // already tested before M/C moved after packing — has no mcAt, and falling back
+  // to `submittedAt` would date the clock from the day the card was raised and show
+  // it weeks overdue the moment it is packed. Its real anchor is the packing.
+  ready_to_dispatch: (r) => r.mcAt ?? r.pkAt,
   fg_transfer: (r) => r.rtdAt,
 };
 
@@ -89,9 +90,13 @@ const STATUS_STEP: Partial<Record<ProductionStatus, QueueStep>> = {
   awaiting_additional_issue_slip: "additional_issue_slip",
   awaiting_transfer_slip: "transfer_slip",
   awaiting_production: "production_entry",
-  awaiting_mc_testing: "mc_testing",
-  awaiting_pm_transfer: "pm_transfer",
   awaiting_packing: "packing_entry",
+  awaiting_mc_testing: "mc_testing",
+  // The dropped step. No card should hold this after the drop migration ran, but
+  // one that somehow does is shown at the packing entry rather than mapped
+  // nowhere — an unmapped status silently removes the card from EVERY queue, and
+  // invisible work is worse than work sitting in a queue that refuses to save it.
+  awaiting_pm_transfer: "packing_entry",
   awaiting_ready_to_dispatch: "ready_to_dispatch",
   awaiting_fg_transfer: "fg_transfer",
 };
@@ -103,10 +108,13 @@ const LOCK: Record<QueueStep, { open: ProductionStatus; what: string; nextWhat: 
   quality_check: { open: "awaiting_transfer_slip", what: "quality checking", nextWhat: "the log book entry" },
   additional_issue_slip: { open: "awaiting_material_handover", what: "additional issue slip", nextWhat: "the material handover" },
   transfer_slip: { open: "awaiting_production", what: "log book entry", nextWhat: "production entry" },
-  production_entry: { open: "awaiting_mc_testing", what: "production entry", nextWhat: "M/C testing" },
-  mc_testing: { open: "awaiting_pm_transfer", what: "M/C testing", nextWhat: "the packing-material transfer" },
-  pm_transfer: { open: "awaiting_packing", what: "packing-material transfer", nextWhat: "the packing entry" },
-  packing_entry: { open: "awaiting_ready_to_dispatch", what: "packing entry", nextWhat: "ready to dispatch" },
+  production_entry: { open: "awaiting_packing", what: "production entry", nextWhat: "the packing entry" },
+  // ⚠ The packing entry has TWO open statuses, not one: a packed card goes to M/C
+  //   testing, or straight to ready-to-dispatch when it has no machine to test.
+  //   `open` names the common one; lockReasonFor special-cases the other, or a
+  //   repackaging card's packing would read as locked the moment it was saved.
+  packing_entry: { open: "awaiting_mc_testing", what: "packing entry", nextWhat: "M/C testing" },
+  mc_testing: { open: "awaiting_ready_to_dispatch", what: "M/C testing", nextWhat: "ready to dispatch" },
   ready_to_dispatch: { open: "awaiting_fg_transfer", what: "ready to dispatch", nextWhat: "the finished-good transfer" },
   fg_transfer: { open: "closed", what: "finished-good transfer", nextWhat: "" },
 };
@@ -180,6 +188,13 @@ export function lockReasonFor(step: QueueStep, r: ProductionRequest): string | n
   if (r.status === "cancelled") return `This job card was cancelled — its ${what} can no longer be changed.`;
   // The finished-good transfer is the last step; nothing downstream can lock it.
   if (step === "fg_transfer") return null;
+  // Packing's successor depends on the card: M/C testing normally, ready-to-dispatch
+  // for one with no machine to test. Both mean "nothing after packing yet".
+  // Mirrors fms_production_pk_editable(), which accepts the same two statuses.
+  if (step === "packing_entry") {
+    if (r.status === "awaiting_mc_testing" || r.status === "awaiting_ready_to_dispatch") return null;
+    return `The card has already moved on — the ${what} can no longer be changed.`;
+  }
   if (r.status !== open) return `${nextWhat[0].toUpperCase()}${nextWhat.slice(1)} has already been recorded — the ${what} can no longer be changed.`;
   return null;
 }

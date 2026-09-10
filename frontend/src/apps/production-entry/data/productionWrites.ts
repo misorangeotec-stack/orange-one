@@ -24,6 +24,8 @@ export interface RequestLineInput {
   pct: string | null;
   /** The BOM master row this line came from, or null when typed by hand. */
   bomId: string | null;
+  /** Typed on the ADDITIONAL Raw Materials grid rather than the main one. */
+  isAdditional?: boolean;
 }
 
 /** One packaging line of a REPACKAGING slip. Same element shape the log book
@@ -54,6 +56,10 @@ export interface RequestInput {
   /** Repackaging only — the incoming FG lot number, MANDATORY there (the server
    *  rejects a blank). Ignored for production cards, which have no such lot. */
   fgLotNo?: string | null;
+  /** CONVERT only — the typed Lot/Batch Card number, MANDATORY there and rejected
+   *  as a duplicate by the server. Ignored for the other two types, whose number
+   *  is generated. */
+  jobcardNo?: string | null;
 }
 
 /** The pmh_bom_lines element shape — server recomputes extra/total from it. */
@@ -73,6 +79,25 @@ const bomLinePayload = (l: RequestLineInput) => ({
   unit_id: l.unitId ?? "",
   pct: l.pct ?? "",
   bom_id: l.bomId ?? "",
+  // Rides through with no migration: both intake RPCs re-aggregate WHOLE jsonb
+  // elements (`jsonb_agg(l)` over `jsonb_array_elements`), and the handover RPC
+  // stores its array verbatim, so an unknown key is preserved rather than dropped.
+  is_additional: !!l.isAdditional,
+});
+
+/** The draft RPCs read the same keys the intake RPC does, so one builder serves
+ *  save, submit-draft and the plain raise. */
+const draftPayload = (input: RequestInput) => ({
+  fg_qty: input.fgTotalQty ?? "",
+  bom_lines: input.bomLines.map(bomLinePayload),
+  fg_item_id: input.fgItemId ?? "",
+  issue_remarks: input.issueRemarks ?? "",
+  requester_name: input.requesterName,
+  issue_date: input.issueDate ?? "",
+  card_type: input.cardType ?? "production",
+  fg_lot_no: input.fgLotNo ?? "",
+  jobcard_no: input.jobcardNo ?? "",
+  pmh_bom_lines: (input.packLines ?? []).map(packLinePayload),
 });
 
 /** Raise a job card. The Lot/Batch number is auto-generated server-side — from the
@@ -88,11 +113,43 @@ export async function submitRequest(input: RequestInput): Promise<string> {
       issue_date: input.issueDate ?? "",
       card_type: input.cardType ?? "production",
       fg_lot_no: input.fgLotNo ?? "",
+      jobcard_no: input.jobcardNo ?? "",
       pmh_bom_lines: (input.packLines ?? []).map(packLinePayload),
     },
   });
   if (error) throw new Error(error.message);
   return data as string;
+}
+
+/**
+ * Save a half-filled issue slip as a DRAFT. Nothing is validated — that is the
+ * point. Pass `requestId` to update an existing draft, null to create one (which
+ * reserves its PRD and Lot/Batch numbers). Returns the draft's id.
+ */
+export async function saveDraft(requestId: string | null, input: RequestInput): Promise<string> {
+  const { data, error } = await db.rpc("fms_production_save_draft", {
+    p_req: requestId,
+    p: draftPayload(input),
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+/** Raise a draft as a real job card. Applies every rule `submitRequest` applies,
+ *  keeping the numbers the draft already reserved. */
+export async function submitDraft(requestId: string, input: RequestInput): Promise<string> {
+  const { data, error } = await db.rpc("fms_production_submit_draft", {
+    p_req: requestId,
+    p: draftPayload(input),
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+/** Discard a draft. Refused by the server on anything already raised. */
+export async function deleteDraft(requestId: string): Promise<void> {
+  const { error } = await db.rpc("fms_production_delete_draft", { p_req: requestId });
+  if (error) throw new Error(error.message);
 }
 
 /** Edit an issue slip (step 1). Server-gated: only while it is still awaiting the
@@ -128,9 +185,8 @@ const RECORD_RPC: Record<QueueStep, string> = {
   additional_issue_slip: "fms_production_record_additional_issue_slip",
   transfer_slip: "fms_production_record_transfer_slip",
   production_entry: "fms_production_record_production",
-  mc_testing: "fms_production_record_mc_testing",
-  pm_transfer: "fms_production_record_pm_transfer",
   packing_entry: "fms_production_record_packing",
+  mc_testing: "fms_production_record_mc_testing",
   // ready_to_dispatch & fg_transfer use dedicated multi-select pages + the bulk
   // helpers below; these entries exist only to satisfy the map type.
   ready_to_dispatch: "fms_production_mark_ready_to_dispatch",
@@ -144,9 +200,8 @@ const UPDATE_RPC: Record<QueueStep, string> = {
   additional_issue_slip: "fms_production_update_additional_issue_slip",
   transfer_slip: "fms_production_update_transfer_slip",
   production_entry: "fms_production_update_production",
-  mc_testing: "fms_production_update_mc_testing",
-  pm_transfer: "fms_production_update_pm_transfer",
   packing_entry: "fms_production_update_packing",
+  mc_testing: "fms_production_update_mc_testing",
   ready_to_dispatch: "fms_production_mark_ready_to_dispatch",
   fg_transfer: "fms_production_update_fg_transfer",
 };

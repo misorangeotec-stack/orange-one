@@ -44,10 +44,13 @@ export default function EditRequest() {
           issueDate: request.issueDate ?? request.submittedAt.slice(0, 10),
           // The BOM this card was raised from, when it was raised from one.
           bomId: request.bomLines.find((l) => l.bomId)?.bomId ?? "",
+          // The two grids share ONE stored array; split it back apart on the way in.
+          // A card raised before the additional grid existed has the flag on none
+          // of its lines, so it hydrates entirely into the main grid, as before.
           lines: (request.bomLines.length > 0
-            ? request.bomLines
+            ? request.bomLines.filter((l) => !l.isAdditional)
             : request.rawMaterialId || request.requiredQty != null
-              ? [{ rawMaterialId: request.rawMaterialId, requiredQty: request.requiredQty, unitId: request.unitId, pct: null, bomId: null }]
+              ? [{ rawMaterialId: request.rawMaterialId, requiredQty: request.requiredQty, unitId: request.unitId, pct: null, bomId: null, isAdditional: false }]
               : []
           ).map((l): RmLine => {
             const qty = l.requiredQty ?? 0;
@@ -64,6 +67,17 @@ export default function EditRequest() {
               fromBom: !!l.bomId,
             };
           }),
+          addLines: request.bomLines
+            .filter((l) => l.isAdditional)
+            .map((l): RmLine => ({
+              uid: newUid(),
+              rawMaterialId: l.rawMaterialId ?? "",
+              qty: l.requiredQty != null ? String(l.requiredQty) : "",
+              unitId: l.unitId ?? "",
+              // An extra has no share of the FG split and never came from a BOM.
+              pct: "",
+              fromBom: false,
+            })),
         }
       : null;
 
@@ -94,7 +108,7 @@ export default function EditRequest() {
 
   // Hooks must run unconditionally, so BOTH forms are created before the guards —
   // only the one matching this card's type is rendered and submitted.
-  const prodForm = useJobCardForm(init);
+  const prodForm = useJobCardForm(init, { enforceSum: false });
   const repackForm = useRepackForm(repackInit);
   const f = isRepack ? repackForm : prodForm;
   const [busy, setBusy] = useState(false);
@@ -118,7 +132,7 @@ export default function EditRequest() {
             : request.status === "on_hold"
               ? "It is on hold — take it off hold to edit it."
               : isRepack
-                ? "The packing-material transfer has already been recorded. A repackaging slip can only be changed before that."
+                ? "The packing entry has already been recorded. A repackaging slip can only be changed before that."
                 : "Material handover has already started. An issue slip can only be changed before its first handover."}
         </p>
         <Link to={`/production-entry/requests/${request.id}`} className="mt-4 inline-block text-[13px] font-semibold text-orange hover:underline">Back to the issue slip</Link>
@@ -168,7 +182,7 @@ export default function EditRequest() {
         </h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           {isRepack
-            ? "Correct this repackaging slip while it is still awaiting the packing-material transfer. The Lot/Batch Card number stays the same."
+            ? "Correct this repackaging slip while it is still awaiting the packing entry. The Lot/Batch Card number stays the same."
             : "Correct this issue slip while it is still awaiting material handover. The Lot/Batch Card number stays the same."}
         </p>
       </div>

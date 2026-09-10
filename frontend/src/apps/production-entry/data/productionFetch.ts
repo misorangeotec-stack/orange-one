@@ -201,7 +201,13 @@ const mapRequest = (r: any): ProductionRequest => ({
   reqNo: r.req_no,
   jobcardNo: r.jobcard_no,
   // Every card raised before repackaging existed reads as production.
-  cardType: r.card_type === "repackaging" ? "repackaging" : "production",
+  // ⚠ Whitelist, not a two-way branch. Written as `=== "repackaging" ? … : "production"`
+  // this silently relabelled every convert card as Production on the way in — the
+  // badge, the Type filter and the detail heading would all have lied. Anything
+  // genuinely unrecognised still falls back to production, which is what a card
+  // raised before card_type existed reads as.
+  cardType:
+    r.card_type === "repackaging" || r.card_type === "convert" ? r.card_type : "production",
   // Null on cards raised before the job date existed — displays fall back to submittedAt.
   issueDate: r.issue_date ?? null,
   categoryId: r.category_id ?? null,
@@ -217,6 +223,9 @@ const mapRequest = (r: any): ProductionRequest => ({
         unitId: l.unit_id ?? null,
         pct: num(l.pct),
         bomId: l.bom_id || null,
+        // Absent on every card raised before the additional grid existed, which
+        // reads correctly as "all of these are main lines".
+        isAdditional: !!l.is_additional,
       }))
     : [],
   fgItemId: r.fg_item_id ?? null,
@@ -240,6 +249,7 @@ const mapRequest = (r: any): ProductionRequest => ({
         unitId: l.unit_id ?? null,
         qty: num(l.qty),
         lotNo: l.lot_no ?? null,
+        isAdditional: !!l.is_additional,
       }))
     : [],
   rmBookNo: r.rm_book_no ?? null,

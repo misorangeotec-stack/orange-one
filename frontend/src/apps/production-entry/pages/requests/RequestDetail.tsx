@@ -134,7 +134,6 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
       return [last?.aisQty != null ? `Extra ${last.aisQty}` : null, r.aisRounds.length ? `${r.aisRounds.length} slip${r.aisRounds.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
     }
     case "mc_testing": return [r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : null, r.mcRemarks].filter(Boolean).join(" · ") || null;
-    case "pm_transfer": return r.pmtAt ? `Transferred${r.pmhBomLines.length ? ` · ${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : ""}` : null;
     case "packing_entry": {
       const net = r.actualQty != null ? Math.round((r.actualQty - (r.peLabQty ?? 0)) * 1000) / 1000 : null;
       return [r.pkAt ? "Logged" : null, net != null ? `Net ${net}` : null, r.pmhBomLines.length ? `${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
@@ -384,7 +383,14 @@ export default function RequestDetail() {
                 <tbody>
                   {r.bomLines.map((l, i) => (
                     <tr key={i} className="border-b border-line/70 last:border-0">
-                      <td className="px-3 py-2 text-navy">{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</td>
+                      <td className="px-3 py-2 text-navy">
+                        {s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}
+                        {l.isAdditional && (
+                          <span className="ml-2 rounded px-1.5 py-0.5 align-middle text-[10.5px] font-semibold uppercase tracking-wide text-orange bg-orange/10">
+                            Additional
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.requiredQty)}</td>
                       <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
                     </tr>

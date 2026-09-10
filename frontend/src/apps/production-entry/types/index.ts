@@ -8,6 +8,14 @@
 
 /** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled leave every queue. */
 export type ProductionStatus =
+  /**
+   * A parked, half-filled issue slip — NOT a job card. It holds no queue, owes no
+   * step and has no due date (`draft` is deliberately absent from queues.ts's
+   * STATUS_STEP map), and the store keeps it out of `requests` entirely so no
+   * list, report or dashboard has to filter it out by hand. Read it from
+   * `store.drafts`.
+   */
+  | "draft"
   | "awaiting_material_handover"
   | "awaiting_rm_transfer"
   | "awaiting_quality"
@@ -186,6 +194,21 @@ export interface BomLine {
   unitId: string | null;
   pct: number | null;
   bomId: string | null;
+  /**
+   * Raised on the issue slip's ADDITIONAL RAW MATERIALS grid rather than the main
+   * one. Both grids write into this same array, in order — main lines first — so
+   * every downstream step keeps showing ONE raw-material table, with the extras
+   * flagged rather than split off into a second list.
+   *
+   * ⚠ NOT the Additional Issue Slip step. That is the QC-reject top-up loop and
+   * lives in `aisRounds`. This is quantity added at intake, before any handover.
+   *
+   * ⚠ A material may legitimately appear TWICE — once in each grid — so nothing
+   * downstream may key these lines by `rawMaterialId`. Match them by POSITION.
+   * `isAdditional` has no bearing on the FG-total readout, which measures the main
+   * grid only.
+   */
+  isAdditional: boolean;
 }
 
 /** One raw-material line of the material handover: the ACTUAL qty handed over
@@ -193,6 +216,9 @@ export interface BomLine {
 export interface HandoverBomLine {
   rawMaterialId: string | null;
   unitId: string | null;
+  /** Carried from the issue slip's BomLine so the handover table can mark the
+   *  extras. Positional: mh_bom_lines mirrors bom_lines index for index. */
+  isAdditional?: boolean;
   qty: number | null;
   lotNo: string | null;
 }
@@ -263,14 +289,28 @@ export interface LogBookLine {
  * `production` — the full manufacturing chain, and what EVERY card raised before
  * repackaging existed reads as. `repackaging` — a traded FG that is only
  * repacked: no BOM, no raw materials, no wastage, so packed qty = FG qty. It is
- * raised straight into `awaiting_pm_transfer`, bypassing material handover, RM
- * transfer, quality, log book, production entry and M/C testing.
+ * raised straight into `awaiting_packing`, bypassing material handover, RM
+ * transfer, quality, log book, production entry — and M/C testing, which it still
+ * skips now that the test runs after packing rather than before it.
  *
- * ⚠ Nothing DOWNSTREAM of intake branches on this — pm_transfer onwards reads the
- * same columns either way. It drives the intake form, the rail's skipped nodes
- * and the detail page only.
+ * ⚠ Downstream, the ONE thing that branches on this is where a packed card goes
+ * next: a repackaging card has no machine to test, so it skips M/C testing and goes
+ * straight to ready-to-dispatch. Everything else reads the same columns either way.
+ * Otherwise it drives the intake form, the rail's skipped nodes and the detail page.
  */
-export type ProductionCardType = "production" | "repackaging";
+export type ProductionCardType = "production" | "repackaging" | "convert";
+
+/**
+ * ⚠ `convert` IS A PRODUCTION CARD. It runs the identical chain — handover, RM
+ * transfer, quality, log book, production entry, packing, M/C testing, dispatch —
+ * and every downstream predicate that asks "is this repackaging?" must keep
+ * treating it as production. Its ONE difference is at intake: the Lot/Batch Card
+ * number is TYPED by the user rather than drawn from the batch counter, because a
+ * converted lot already carries a number from outside this system.
+ *
+ * So compare against "repackaging" explicitly; never write `!== "production"` as a
+ * shorthand for "is repackaging", or a convert card silently takes the repack path.
+ */
 
 export interface ProductionRequest {
   id: string;
@@ -409,7 +449,9 @@ export interface ProductionRequest {
   pmhAt: string | null;
   pmhBy: string | null;
 
-  // step 8: pm_transfer
+  // pm_transfer — THE DROPPED STEP. Nothing writes these any more and no queue
+  // shows it; they are kept so a card transferred before the step was removed can
+  // still show what was recorded. Do not wire anything new to them.
   pmtActualDate: string | null;
   pmtStatus: string | null;
   pmtQty: number | null;

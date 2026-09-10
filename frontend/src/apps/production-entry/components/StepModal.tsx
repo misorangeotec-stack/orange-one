@@ -47,6 +47,9 @@ interface HandoverRow {
   requestedQty: number | null;
   qty: string;
   lotNo: string;
+  /** Raised on the issue slip's Additional Raw Materials grid. Shown as a badge in
+   *  the same table rather than split into a second one. */
+  isAdditional: boolean;
 }
 
 /** One additional-raw-material row on the Generate Additional Issue Slip form. */
@@ -80,10 +83,18 @@ const isLogRowBlank = (r: LogRow) => r.isNew && !r.rawMaterialId && !(r.name ?? 
 
 /** Seed the handover rows from the issue slip, pre-filling the handover qty +
  *  lot number from an already-recorded handover when one exists. */
+/**
+ * ⚠ MATCHED BY POSITION, NOT BY RAW MATERIAL ID.
+ *
+ * The issue slip can list the same material twice — once in the main grid and
+ * again as an Additional Raw Material ("another 5 LTR of DM Water"). Keyed by id,
+ * both rows read back the SAME recorded handover line, so one row's quantity and
+ * lot number silently overwrote the other's. `mh_bom_lines` is written from these
+ * rows in order and stored verbatim, so index i here is index i there.
+ */
 function seedHandoverRows(request: ProductionRequest): HandoverRow[] {
-  const recorded = new Map(request.mhBomLines.map((l) => [l.rawMaterialId, l]));
-  return request.bomLines.map((b) => {
-    const done = recorded.get(b.rawMaterialId);
+  return request.bomLines.map((b, i) => {
+    const done = request.mhBomLines[i];
     return {
       rawMaterialId: b.rawMaterialId,
       unitId: b.unitId,
@@ -91,6 +102,7 @@ function seedHandoverRows(request: ProductionRequest): HandoverRow[] {
       // pre-fill the handover qty from the recorded value, else the requested qty
       qty: done ? (done.qty != null ? String(done.qty) : "") : b.requiredQty != null ? String(b.requiredQty) : "",
       lotNo: done?.lotNo ?? "",
+      isAdditional: !!b.isAdditional,
     };
   });
 }
@@ -126,17 +138,20 @@ export default function StepModal({
   const isQuality = stepKey === "quality_check";
   const isAis = stepKey === "additional_issue_slip";
   const isMc = stepKey === "mc_testing";
-  const isPmTransfer = stepKey === "pm_transfer";
   const isPacking = stepKey === "packing_entry";
   const isFgTransfer = stepKey === "fg_transfer";
   /**
    * A repackaging card bypasses the Production Entry step, so its production-entry
-   * Tally no. has nowhere to be captured — the packing-material transfer takes it
-   * instead. On a production card that field is filled at its own step and stays
-   * READ-ONLY here (the RPC ignores the key for those cards too).
+   * Tally no. has nowhere to be captured — the PACKING ENTRY takes it instead. On a
+   * production card that field is filled at its own step and stays READ-ONLY here
+   * (the RPC ignores the key for those cards too).
+   *
+   * ⚠ This used to live on the packing-material transfer, which has been dropped.
+   * Packing is now the first step a repackaging card runs, so it is the only place
+   * left to ask — without this the number would have nowhere to be entered at all.
    */
   const isRepackCard = request?.cardType === "repackaging";
-  const pmtNeedsTally = isPmTransfer && isRepackCard;
+  const pkNeedsTally = isPacking && isRepackCard;
   /**
    * A repackaging card has no log book, so its packed quantity was assumed to be
    * the whole FG quantity at intake. Reality can differ — some of the drums go out
@@ -268,15 +283,19 @@ export default function StepModal({
   const seedAisHandoverRows = (r: ProductionRequest): HandoverRow[] => {
     const round = r.aisRounds[r.aisRounds.length - 1];
     if (!round) return [];
-    const recorded = new Map((round.mhLines ?? []).map((l) => [l.rawMaterialId, l]));
-    return round.aisBomLines.map((b) => {
-      const done = recorded.get(b.rawMaterialId);
+    // Positional for the same reason as seedHandoverRows: a top-up round may name
+    // a material the base slip already used.
+    const recorded = round.mhLines ?? [];
+    return round.aisBomLines.map((b, i) => {
+      const done = recorded[i];
       return {
         rawMaterialId: b.rawMaterialId,
         unitId: b.unitId,
         requestedQty: b.qty,
         qty: done ? (done.qty != null ? String(done.qty) : "") : b.qty != null ? String(b.qty) : "",
         lotNo: done?.lotNo ?? "",
+        // An Additional Issue Slip top-up is its own thing, not an intake extra.
+        isAdditional: false,
       };
     });
   };
@@ -309,8 +328,8 @@ export default function StepModal({
       setLogLab(isLogBook && request.peLabQty != null ? String(request.peLabQty) : "");
       setLogPacked(isLogBook && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
       // Shared by the production entry step and, on a repackaging card, by the
-      // packing-material transfer that stands in for it.
-      setProdTally(isProduction || isPmTransfer ? request.peTallyEntry ?? "" : "");
+      // packing entry that stands in for it.
+      setProdTally(isProduction || isPacking ? request.peTallyEntry ?? "" : "");
       setPkPacked(isPacking && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
       setFgProdTick(isFgTransfer ? request.fgProdToFg : false);
       setFgHojiwalaTick(isFgTransfer ? request.fgToHojiwala : false);
@@ -349,7 +368,7 @@ export default function StepModal({
       setCoaRound(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, request, cfg, isHandover, isLogBook, isProduction, isPmTransfer, isPacking, isQuality, isMc, isAis, editing]);
+  }, [open, request, cfg, isHandover, isLogBook, isProduction, isPacking, isQuality, isMc, isAis, editing]);
 
   /** Net quantity available for packing = Actual Output − Lab Testing Qty. */
   const packNet =
@@ -420,6 +439,9 @@ export default function StepModal({
             unit_id: r.unitId,
             qty: r.qty ?? "",
             lot_no: r.lotNo ?? "",
+            // Written in the same order as bom_lines, so index i matches index i.
+            // The flag is stored too, so a reader never has to re-derive it.
+            is_additional: r.isAdditional,
           }));
         } else {
           payload.mh_qty = qtyFallback;
@@ -505,10 +527,10 @@ export default function StepModal({
         payload.pe_tally_entry = prodTally;
       }
 
-      // Repackaging only — the step that stands in for the bypassed production
+      // Repackaging only — the packing entry stands in for the bypassed production
       // entry. The RPC ignores this key on a production card, so a stale value
       // could never overwrite one recorded at the real step.
-      if (pmtNeedsTally) {
+      if (pkNeedsTally) {
         payload.pe_tally_entry = prodTally;
       }
 
@@ -752,7 +774,7 @@ export default function StepModal({
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={busy || qcBlocked || (isFgTransfer && !(fgProdTick && fgHojiwalaTick)) || (isAis && !aisMatches) || (isRmTransfer && !(values["rmt_tally_entry"] ?? "").trim()) || ((isProduction || pmtNeedsTally) && !prodTally.trim()) || (pkEditsQty && !pkPackedValid)}>{busy ? "Saving…" : "Save"}</Button>
+          <Button size="sm" onClick={save} disabled={busy || qcBlocked || (isFgTransfer && !(fgProdTick && fgHojiwalaTick)) || (isAis && !aisMatches) || (isRmTransfer && !(values["rmt_tally_entry"] ?? "").trim()) || ((isProduction || pkNeedsTally) && !prodTally.trim()) || (pkEditsQty && !pkPackedValid)}>{busy ? "Saving…" : "Save"}</Button>
         </>
       }
     >
@@ -812,7 +834,17 @@ export default function StepModal({
                     <tbody>
                       {hoRows.map((row, i) => (
                         <tr key={i} className="border-b border-line/70 last:border-0">
-                          <td className="px-3 py-2 text-navy">{s.rawMaterialById(row.rawMaterialId)?.name ?? "—"}</td>
+                          {/* ONE table, not two: an intake extra is flagged in place
+                              rather than split into its own grid, so the person
+                              handing material over reads a single list. */}
+                          <td className="px-3 py-2 text-navy">
+                            {s.rawMaterialById(row.rawMaterialId)?.name ?? "—"}
+                            {row.isAdditional && (
+                              <span className="ml-2 rounded px-1.5 py-0.5 align-middle text-[10.5px] font-semibold uppercase tracking-wide text-orange bg-orange/10">
+                                Additional
+                              </span>
+                            )}
+                          </td>
                           <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(row.requestedQty)}</td>
                           <td className="px-1.5 py-1.5">
                             <TextInput
@@ -1406,77 +1438,6 @@ export default function StepModal({
           );
         })()}
 
-        {isPmTransfer && request && (() => {
-          const lines = request.pmhBomLines;
-          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
-          return (
-            <>
-              <div className="grid grid-cols-2 gap-3 rounded-xl bg-page px-3.5 py-3">
-                {/* On a repackaging card the number is ENTERED below, not shown
-                    here — repeating it read-only above its own input reads as two
-                    different fields. */}
-                {!pmtNeedsTally && (
-                  <div><div className={cap}>Production Entry Tally No.</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
-                )}
-                <div><div className={cap}>FG Packed Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.pmhQty)}</div></div>
-              </div>
-
-              {pmtNeedsTally && (
-                <FieldLabel
-                  label="Production Entry Tally No."
-                  required
-                  hint="a repackaging card skips the production entry step, so its Tally number is recorded here"
-                >
-                  <TextInput disabled={readOnly} value={prodTally} onChange={(e) => setProdTally(e.target.value)} placeholder="e.g. voucher / entry no." />
-                </FieldLabel>
-              )}
-
-              <div className="space-y-1.5">
-                <span className="block text-[13px] font-medium text-navy">Packaging items (from log book)</span>
-                <div className="rounded-xl border border-line overflow-x-auto">
-                  <table className="w-full text-[13px]">
-                    <thead>
-                      <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                        <th className="font-medium px-3 py-2 min-w-[220px]">Packaging Item</th>
-                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Base Qty</th>
-                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Extra</th>
-                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Total</th>
-                        <th className="font-medium px-2 py-2 w-20">Unit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.length === 0 ? (
-                        <tr><td colSpan={5} className="px-3 py-3 text-grey-2">No packaging items were recorded in the log book.</td></tr>
-                      ) : (
-                        lines.map((l, i) => (
-                          <tr key={i} className="border-b border-line/70 last:border-0">
-                            <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
-                            <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.qty)}</td>
-                            <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.extra)}</td>
-                            <td className="px-2 py-2 text-right tabular-nums font-semibold text-navy">{numOrDash(packFinalQty(l))}</td>
-                            <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                    {lines.length > 0 && (
-                      <tfoot>
-                        <tr className="border-t border-line bg-page/50 text-navy">
-                          <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
-                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.qty))}</td>
-                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.extra))}</td>
-                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map(packFinalQty))}</td>
-                          <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(lines.map((l) => l.unitId))}</td>
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
-              </div>
-            </>
-          );
-        })()}
-
         {isRmTransfer && request && (() => {
           // After an Additional Issue Slip top-up, RM Transfer moves the ADDITIONAL
           // raw material of the open round — the original RM was already transferred
@@ -1486,10 +1447,17 @@ export default function StepModal({
           const aisRound = lastRound && lastRound.mhDone && !lastRound.rmtDone ? lastRound : null;
           const lines = aisRound ? (aisRound.mhLines ?? []) : request.mhBomLines;
           if (lines.length === 0) return null;
-          const requestedFor = (rmId: string | null): number | null =>
+          /**
+           * ⚠ BY POSITION. This used to `.find()` on raw material id, which returns
+           * the FIRST match — so where a material appears both in the formulation
+           * and as an Additional Raw Material, the second row displayed the first
+           * row's requested quantity. `lines` is index-aligned with the slip's own
+           * line list, so read straight across.
+           */
+          const requestedFor = (i: number): number | null =>
             aisRound
-              ? aisRound.aisBomLines.find((b) => b.rawMaterialId === rmId)?.qty ?? null
-              : request.bomLines.find((b) => b.rawMaterialId === rmId)?.requiredQty ?? null;
+              ? aisRound.aisBomLines[i]?.qty ?? null
+              : request.bomLines[i]?.requiredQty ?? null;
           return (
             <div className="space-y-1.5">
               <span className="block text-[13px] font-medium text-navy">
@@ -1514,8 +1482,15 @@ export default function StepModal({
                   <tbody>
                     {lines.map((l, i) => (
                       <tr key={i} className="border-b border-line/70 last:border-0">
-                        <td className="px-3 py-2 text-navy">{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</td>
-                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(requestedFor(l.rawMaterialId))}</td>
+                        <td className="px-3 py-2 text-navy">
+                          {s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}
+                          {l.isAdditional && (
+                            <span className="ml-2 rounded px-1.5 py-0.5 align-middle text-[10.5px] font-semibold uppercase tracking-wide text-orange bg-orange/10">
+                              Additional
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(requestedFor(i))}</td>
                         <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.qty)}</td>
                         <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
                         <td className="px-2 py-2 text-grey">{l.lotNo || "—"}</td>
@@ -1525,7 +1500,7 @@ export default function StepModal({
                   <tfoot>
                     <tr className="border-t border-line bg-page/50 text-navy">
                       <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
-                      <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => requestedFor(l.rawMaterialId)))}</td>
+                      <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((_l, i) => requestedFor(i)))}</td>
                       <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.qty))}</td>
                       <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(lines.map((l) => l.unitId))}</td>
                       <td />
@@ -1582,7 +1557,23 @@ export default function StepModal({
                   <div className={cap}>Loose Qty</div>
                   <div className={`${val} ${valRow}`}>{metric(pkEditsQty ? looseNow : request.tsLooseQty)}</div>
                 </div>
-                <div><div className={cap}>Production Tally Entry</div><div className={`text-[14px] font-semibold text-navy leading-tight ${valRow}`}>{request.peTallyEntry || "—"}</div></div>
+                <div>
+                  <div className={cap}>Production Tally Entry{pkNeedsTally && <span className="text-orange"> *</span>}</div>
+                  {/* A repackaging card never ran the production entry, so this is
+                      the one place its Tally number can be typed. A production card
+                      already has it from that step and keeps it read-only. */}
+                  {pkNeedsTally ? (
+                    <TextInput
+                      disabled={readOnly}
+                      className="w-full px-2.5 py-1.5 text-[14px]"
+                      value={prodTally}
+                      onChange={(e) => setProdTally(e.target.value)}
+                      placeholder="voucher / entry no."
+                    />
+                  ) : (
+                    <div className={`text-[14px] font-semibold text-navy leading-tight ${valRow}`}>{request.peTallyEntry || "—"}</div>
+                  )}
+                </div>
               </div>
 
               {pkEditsQty && (

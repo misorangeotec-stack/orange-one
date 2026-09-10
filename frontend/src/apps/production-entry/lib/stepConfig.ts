@@ -139,34 +139,12 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     ],
     captured: { key: "peTally", header: "Tally Entry", get: (r) => s(r.peTallyEntry) || "—" },
   },
-  mc_testing: {
-    stepKey: "mc_testing",
-    title: "Testing of M/C",
-    actionLabel: "Record M/C testing",
-    description: "Job cards awaiting machine testing after lab testing (approve / reject / bypass).",
-    completedBlurb: "M/C tests you record appear here, and stay revisable until the packing-material transfer is recorded.",
-    // The approve / reject / bypass form (read-only top, result + remarks + optional
-    // attachment) is rendered entirely by StepModal. Bypass is admin-only.
-    fields: [],
-    captured: { key: "mcResult", header: "Result", get: (r) => (r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : "—") },
-  },
-  pm_transfer: {
-    stepKey: "pm_transfer",
-    title: "Packing Material Transfer (Tally)",
-    actionLabel: "Confirm transfer",
-    description: "Job cards awaiting the packing-material transfer confirmation.",
-    completedBlurb: "Transfers you confirm appear here, and stay revisable until the packing entry is recorded.",
-    // View-only: StepModal shows the production-entry Tally no., FG packed qty and
-    // the log book's packaging list; the user just saves to advance.
-    fields: [],
-    captured: { key: "pmtDate", header: "Transferred", get: (r) => dmy(r.pmtActualDate), isDate: true },
-  },
   packing_entry: {
     stepKey: "packing_entry",
     title: "Packing Entry (Tally)",
     actionLabel: "Record packing",
     description: "Job cards awaiting the packing consumption entry.",
-    completedBlurb: "Packing entries you record appear here, and stay revisable until the card is marked ready to dispatch.",
+    completedBlurb: "Packing entries you record appear here, and stay revisable until the card moves on to M/C testing or dispatch.",
     // Review-only step: StepModal shows the net packing qty (Actual Output − Lab),
     // the packed/loose qtys + production Tally entry (from earlier steps) and the
     // log book's packaging list, all READ-ONLY. The user just Saves to log it in Tally.
@@ -176,6 +154,17 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       header: "Net Qty",
       get: (r) => numOrDash(r.actualQty != null ? Math.round((r.actualQty - (r.peLabQty ?? 0)) * 1000) / 1000 : null),
     },
+  },
+  mc_testing: {
+    stepKey: "mc_testing",
+    title: "Testing of M/C",
+    actionLabel: "Record M/C testing",
+    description: "Packed job cards awaiting machine testing (approve / reject / bypass).",
+    completedBlurb: "M/C tests you record appear here, and stay revisable until the card is marked ready to dispatch.",
+    // The approve / reject / bypass form (read-only top, result + remarks + optional
+    // attachment) is rendered entirely by StepModal. Bypass is admin-only.
+    fields: [],
+    captured: { key: "mcResult", header: "Result", get: (r) => (r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : "—") },
   },
   ready_to_dispatch: {
     stepKey: "ready_to_dispatch",

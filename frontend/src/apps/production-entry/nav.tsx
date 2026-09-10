@@ -27,9 +27,8 @@ const QUEUE_PATH: Record<QueueStep, string> = {
   additional_issue_slip: "additional-issue-slip",
   transfer_slip: "transfer-slip",
   production_entry: "production",
-  mc_testing: "mc-testing",
-  pm_transfer: "pm-transfer",
   packing_entry: "packing",
+  mc_testing: "mc-testing",
   ready_to_dispatch: "ready-to-dispatch",
   fg_transfer: "fg-transfer",
 };

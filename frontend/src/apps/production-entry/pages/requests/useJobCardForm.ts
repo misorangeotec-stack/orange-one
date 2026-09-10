@@ -6,7 +6,7 @@ import { useSession } from "@/core/platform/session";
 import { useProductionStore } from "../../store";
 import { pctFromQty, qtyForPct, round3, round6 } from "../../lib/bomMath";
 import type { RequestInput } from "../../data/productionWrites";
-import type { ProductionMasterType } from "../../types";
+import type { ProductionCardType, ProductionMasterType } from "../../types";
 import type { MasterValues } from "../../lib/masterFields";
 
 /**
@@ -28,9 +28,19 @@ import type { MasterValues } from "../../lib/masterFields";
  * master — one card's typo must not silently rewrite the recipe for every future
  * card.
  *
- * ⚠ The raw-material quantities are NOT required to sum to the FG quantity. Real
- * formulations legitimately fall short (two of the six in the source data total
- * 33.3% and 42.8%), so the mismatch is surfaced as a warning and never blocks.
+ * ⚠ ON A NEW CARD the raw-material quantities MUST sum to the FG quantity —
+ * `build()` refuses to raise one that does not total it exactly.
+ *
+ * ⚠ ON AN EXISTING CARD THE RULE DOES NOT APPLY. The rule is new; the cards
+ * already in the database are not, and several were raised legitimately short
+ * (two of the six formulations in the source data total 33.3% and 42.8%).
+ * Enforcing it on edit would lock those cards: someone opening one to fix a
+ * remark would be refused until they altered quantities that were correct when
+ * they were entered. A new rule governs new work, never a rewrite of old work.
+ *
+ * ⚠ The ADDITIONAL grid is excluded from the check either way. An extra sits on
+ * top of the formulation, so counting it would make a correct 100% slip fail the
+ * moment any extra was added.
  */
 
 /** One raw-material row of the BOM grid. `unitId` is not user-picked — it is
@@ -72,9 +82,24 @@ export interface JobCardFormInit {
   /** yyyy-mm-dd; falls back to today for cards raised before the field existed. */
   issueDate: string;
   lines: RmLine[];
+  /** The additional-raw-material rows, split out of the stored bom_lines. */
+  addLines?: RmLine[];
 }
 
-export function useJobCardForm(init?: JobCardFormInit | null) {
+/**
+ * `enforceSum` — must the main raw-material grid total the FG quantity?
+ *
+ * TRUE for anything being RAISED, including a draft being continued: a draft is a
+ * card that has not been raised yet, so the new rule applies to it in full.
+ * FALSE only when correcting a card that is ALREADY raised (EditRequest), which
+ * may predate the rule.
+ *
+ * ⚠ Passed in, never inferred from `init`. Drafts hydrate from `init` too, so
+ * "has been hydrated" and "is an existing card" are different questions and
+ * conflating them silently switched the rule off for every continued draft.
+ */
+export function useJobCardForm(init?: JobCardFormInit | null, opts?: { enforceSum?: boolean }) {
+  const enforceSum = opts?.enforceSum ?? true;
   const s = useProductionStore();
   const session = useSession();
 
@@ -82,11 +107,28 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
   const [fgItemId, setFgItemIdRaw] = useState("");
   const [bomId, setBomIdRaw] = useState("");
   const [issueRemarks, setIssueRemarks] = useState("");
+  /**
+   * CONVERT ONLY — the typed Lot/Batch Card number. Empty and unused on a
+   * production card, whose number is generated server-side on save. `build()`
+   * validates it only when it is asked to build a convert card, so the production
+   * path is byte-for-byte unchanged.
+   */
+  const [jobcardNo, setJobcardNo] = useState("");
   // The job date — today unless the user back-dates it. todayLocalIso (NOT
   // time.ts's UTC todayIso) because this is a date a person picks off a
   // calendar: in IST the UTC date reads as yesterday until 05:30.
   const [issueDate, setIssueDate] = useState(todayLocalIso());
   const [lines, setLines] = useState<RmLine[]>([makeEmptyRmLine()]);
+  /**
+   * ADDITIONAL RAW MATERIALS — a second grid below the main one, for quantity
+   * added on top of the formulation. Same row shape so it can reuse LineGrid and
+   * the blank test, but `pct` is never used: an extra is not part of the FG split,
+   * and the FG-total readout deliberately ignores this list.
+   *
+   * ⚠ NOT the Additional Issue Slip step (the QC-reject top-up loop, `aisRounds`).
+   * This is extra material declared at intake, before any handover happens.
+   */
+  const [addLines, setAddLines] = useState<RmLine[]>([makeEmptyRmLine()]);
   const [err, setErr] = useState<string | null>(null);
   /** Components the BOM carries that could not be loaded (raw material since
    *  deactivated) — reported rather than dropped into an unselectable row. */
@@ -111,13 +153,14 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     setIssueRemarks(init.issueRemarks);
     setIssueDate(init.issueDate);
     setLines(init.lines.length ? init.lines : [makeEmptyRmLine()]);
+    setAddLines(init.addLines?.length ? init.addLines : [makeEmptyRmLine()]);
   }
 
   /** Sum of the filled raw-material line quantities (across all units). */
   const rmSum = round3(lines.filter((l) => !isRmLineBlank(l)).reduce((a, l) => a + (Number(l.qty) || 0), 0));
   const fgTotal = round3(Number(fgTotalQty) || 0);
-  /** Do the quantities add up to the FG total? Shown, never enforced — see the
-   *  header note. Kept as a named value because the UI colours the readout by it. */
+  /** Do the quantities add up to the FG total? ENFORCED in `build()` and used by
+   *  the UI to colour the readout. Counts the MAIN grid only. */
   const sumMatches = fgTotal > 0 && rmSum === fgTotal;
   /** The grid's combined share of the FG quantity. */
   const pctTotal = round3(lines.filter((l) => !isRmLineBlank(l)).reduce((a, l) => a + (Number(l.pct) || 0), 0));
@@ -136,6 +179,23 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.rawMaterialId).map((l) => l.rawMaterialId));
     return s.activeRawMaterials.filter((rm) => !taken.has(rm.id)).map((rm) => ({ value: rm.id, label: rm.name }));
   };
+
+  /**
+   * Raw materials offered on the ADDITIONAL grid.
+   *
+   * ⚠ Deliberately does NOT exclude what the main grid picked — topping up a
+   * material that is already in the formulation is the common case ("another 5 LTR
+   * of DM Water"). It only hides what another ADDITIONAL row has taken, so the two
+   * grids can each hold DM Water but neither can hold it twice.
+   */
+  const additionalOptionsFor = (line: RmLine): ComboOption[] => {
+    const taken = new Set(addLines.filter((l) => l.uid !== line.uid && l.rawMaterialId).map((l) => l.rawMaterialId));
+    return s.activeRawMaterials.filter((rm) => !taken.has(rm.id)).map((rm) => ({ value: rm.id, label: rm.name }));
+  };
+
+  /** Sum of the filled additional quantities (across all units) — shown, never
+   *  counted against the FG total. */
+  const addSum = round3(addLines.filter((l) => !isRmLineBlank(l)).reduce((a, l) => a + (Number(l.qty) || 0), 0));
 
   /** The unit a raw material carries in its master (empty if none set yet). */
   const unitForRawMaterial = (rawMaterialId: string): string => s.rawMaterialById(rawMaterialId)?.unitId ?? "";
@@ -217,6 +277,18 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     setLines((prev) =>
       prev.map((l) => {
         if (isRmLineBlank(l)) return l;
+        /**
+         * ⚠ NO BOM — THE TYPED QUANTITIES ARE THE TRUTH, so re-derive the split
+         * and leave every quantity exactly as entered.
+         *
+         * Without this branch the rule below takes over the moment a split has
+         * been derived once: raising the FG total from 500 to 1000 would rescale
+         * a hand-typed 400 / 100 into 800 / 200 and silently discard the numbers
+         * the person actually entered. That is right for a BOM, whose percentages
+         * ARE the recipe, and exactly wrong here, where the Split % column is
+         * read-only precisely because it is an output.
+         */
+        if (!bomId) return { ...l, pct: qty > 0 ? String(pctFromQty(qty, Number(l.qty) || 0)) : "" };
         const pct = Number(l.pct) || 0;
         if (pct > 0) return { ...l, qty: qty > 0 ? String(qtyForPct(qty, pct)) : "" };
         // No percentage yet (a hand-typed line entered before any FG quantity):
@@ -253,7 +325,15 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     });
   })();
 
-  const build = (): { input: RequestInput } | { error: string } => {
+  /**
+   * `cardType` is passed in rather than held in the hook: NewRequest owns the tab,
+   * and one form instance serves both the Production and Convert tabs — they are
+   * the same slip. Defaults to production so every other caller is untouched.
+   */
+  const build = (cardType: ProductionCardType = "production"): { input: RequestInput } | { error: string } => {
+    if (cardType === "convert" && !jobcardNo.trim()) {
+      return { error: "Enter the Lot/Batch Card Number." };
+    }
     if (!fgItemId) return { error: "Finished-good item is required." };
     // Required, not just capped: the edit RPC coalesces a blank to the stored
     // value, so without this a cleared field would save silently doing nothing.
@@ -264,25 +344,93 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     if (filled.length === 0) return { error: "Add at least one raw material." };
     if (filled.some((l) => !l.rawMaterialId)) return { error: "Every line needs a raw material." };
     if (filled.some((l) => !(Number(l.qty) > 0))) return { error: "Every line needs a quantity greater than 0." };
+    // ⚠ Main grid only — `rmSum` never includes the additional lines. Skipped
+    //   entirely when editing: see the ⚠ in the header.
+    if (enforceSum && !sumMatches) {
+      return {
+        error: `Raw materials must total the FG quantity (${fgTotal}). They currently total ${rmSum}.`,
+      };
+    }
+    const addFilled = addLines.filter((l) => !isRmLineBlank(l));
+    if (addFilled.some((l) => !l.rawMaterialId)) return { error: "Every additional raw-material line needs a raw material." };
+    if (addFilled.some((l) => !(Number(l.qty) > 0)))
+      return { error: "Every additional raw-material line needs a quantity greater than 0." };
     return {
       input: {
         fgTotalQty: fgTotalQty.trim(),
-        bomLines: filled.map((l) => ({
+        // ⚠ ONE array, main lines FIRST. Downstream steps render a single
+        //   raw-material table off this, marking the tail as additional; keeping
+        //   the order stable is what lets the handover match its recorded rows
+        //   back by position rather than by raw material id (which may repeat).
+        bomLines: [
+          ...filled.map((l) => ({
           rawMaterialId: l.rawMaterialId,
           qty: l.qty.trim(),
           unitId: l.unitId || null,
           // Persisted so the printed slip's Proportion Dosage shows the split
           // actually used, rather than re-deriving one that assumes 100%.
-          pct: l.pct === "" ? String(pctFromQty(fgTotal, Number(l.qty) || 0)) : String(round6(Number(l.pct) || 0)),
-          bomId: bomId || null,
-        })),
+            pct: l.pct === "" ? String(pctFromQty(fgTotal, Number(l.qty) || 0)) : String(round6(Number(l.pct) || 0)),
+            bomId: bomId || null,
+            isAdditional: false,
+          })),
+          // An extra has no share of the FG split and never came from a BOM.
+          ...addFilled.map((l) => ({
+            rawMaterialId: l.rawMaterialId,
+            qty: l.qty.trim(),
+            unitId: l.unitId || null,
+            pct: null,
+            bomId: null,
+            isAdditional: true,
+          })),
+        ],
         fgItemId,
         issueDate,
         issueRemarks: issueRemarks.trim() || null,
         requesterName: session.user?.name ?? "Requester",
+        cardType,
+        // Sent only for a convert card; the server ignores the key otherwise and
+        // generates the number itself.
+        jobcardNo: cardType === "convert" ? jobcardNo.trim() : null,
       },
     };
   };
+
+  /**
+   * Everything on the form, with NOTHING checked — what "Save as draft" sends.
+   *
+   * ⚠ Deliberately NOT `build()` with the rules switched off. build() also DERIVES
+   * (it back-fills a missing pct from the quantities), and deriving from a
+   * half-typed form writes numbers the person never entered. A draft stores what
+   * is on screen and nothing more; every rule and every derivation happens when it
+   * is finally raised.
+   */
+  const draftInput = (cardType: ProductionCardType = "production"): RequestInput => ({
+    fgTotalQty: fgTotalQty.trim(),
+    bomLines: [
+      ...lines.filter((l) => !isRmLineBlank(l)).map((l) => ({
+        rawMaterialId: l.rawMaterialId,
+        qty: l.qty.trim(),
+        unitId: l.unitId || null,
+        pct: l.pct === "" ? null : l.pct,
+        bomId: bomId || null,
+        isAdditional: false,
+      })),
+      ...addLines.filter((l) => !isRmLineBlank(l)).map((l) => ({
+        rawMaterialId: l.rawMaterialId,
+        qty: l.qty.trim(),
+        unitId: l.unitId || null,
+        pct: null,
+        bomId: null,
+        isAdditional: true,
+      })),
+    ],
+    fgItemId,
+    issueDate,
+    issueRemarks: issueRemarks.trim() || null,
+    requesterName: session.user?.name ?? "Requester",
+    cardType,
+    jobcardNo: cardType === "convert" ? jobcardNo.trim() : null,
+  });
 
   return {
     fgTotalQty, setFgTotalQty,
@@ -290,14 +438,19 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     issueDate, setIssueDate,
     bomId, applyBom, bomOptions, fgHasBoms, bomDirty, skipped,
     issueRemarks, setIssueRemarks,
+    jobcardNo, setJobcardNo,
     lines, setLines,
+    addLines, setAddLines, additionalOptionsFor, addSum,
+    /** Is the FG-total match a hard rule on this form? False only when correcting
+     *  an already-raised card. */
+    enforceSum,
     err, setErr,
     raise, setRaise,
     requested, setRequested,
     rmSum, fgTotal, sumMatches, pctTotal,
     fgItemOptions, rawMaterialOptionsFor, unitForRawMaterial,
     patchLineQty, patchLinePct,
-    build,
+    build, draftInput,
   };
 }
 
