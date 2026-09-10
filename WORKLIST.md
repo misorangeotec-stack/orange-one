@@ -10884,12 +10884,36 @@ behaving differently.
 🟢 **BUILT, LOADED AND BROWSER-VERIFIED 10-09-2026.** Every customer who owes money now has a
 collection team — **648 owing, 0 unmapped, ₹0.00 unaccounted** — a user can be scoped by team
 instead of by salesperson, and all 13 salesperson filters have a team twin beside them.
-⚠ **Nobody is tagged to a team yet, deliberately**, so nothing changed for any real user on the day
-it shipped. Switching a person over is a two-click admin action, and it is not reversible for them
-without a second one: Nitesh would go from 1,326 customers to 156, Vijay from 319 to 114.
-⚠ **The gap re-opens on its own** — `collection_refresh()` enrols every new customer with no team,
-so the count drifts back up unless somebody looks. The **No collection team** button on Settings →
-Masters → Customer Groups is where they look. Only P6 (the scheduled email) is open, by choice.
+🔴 **SUPERSEDED 10-09-2026 — the tags are now SET and the scoping is LIVE.** This line used to read
+*"nobody is tagged to a team yet, deliberately, so nothing changed for any real user"*. That is no
+longer true and must not be read as reassurance. Four people are tagged: **BENI MADHAV MOHTA** →
+`Mohta ji`, **Nitesh Prajapati** → `Nitesh`, **VIJAY** → `Vijay`, **Jayshree Patil** → all five
+(`Jayshree`, `Mohta ji`, `Nitesh`, `OTHERS`, `Vijay`). So Nitesh now sees **156** customers where he
+saw 1,326, and Vijay **114** where he saw 319. ✅ **Confirmed intended by Ritesh Bhai 10-09-2026** —
+leave it live. Untagging is the only way back, and it is a two-click admin action.
+🟢 **The gap no longer re-opens on its own — CLOSED 10-09-2026.** `collection_refresh()` used to
+enrol every new customer with no team at all, so the count drifted back up unless somebody looked.
+It now stamps `collection_team = 'Jayshree'` on each new debtor ledger, the way it has always
+stamped `salesperson = 'OTHERS'` (the client's call). See
+`supabase/connectwave/collection_refresh_default_collection_team.sql`, with a rollback beside it,
+both rehearsed on the live function. Existing rows are untouched — the insert carries
+`on conflict (ledger_id) do nothing`.
+⚠ **It patches the LIVE function body rather than redefining it, deliberately.** ConnectWave's own
+APPLY-ORDER.md records that the deployed `collection_refresh` is AHEAD of every repo copy, so
+pasting a full body from a file would silently revert fixes that exist only in the database. The
+script replaces one insert and raises if it does not find it exactly once.
+⚠ **And it costs a signal.** The **No collection team** button on Settings → Masters → Customer
+Groups will now stay at zero for new arrivals, so it stops being how anyone notices that a new
+customer needs an owner. What remains is `checked = false` — the **New** filter on that same tab,
+which is what that flag was always for. Tell whoever watches that screen.
+Measured 10-09-2026 before the patch: all **648 customers who actually owe money are mapped**, and
+the unassigned remainder owe nothing.
+
+🔴 **P6 — the scheduled collection email split by collector — is DEFERRED, not forgotten.**
+*(Ritesh Bhai, 10-09-2026: "not now".)* Until it is built, the scheduled mail is unchanged: it does
+**not** split by team, so a collector's **screen** is scoped while their **email** is not. That
+divergence is now a deliberate position rather than an oversight — say so if anyone asks why the two
+disagree. Everything else in RC-11 is done.
 *Raised 2026-09-03 · Audited the same day against the code, the muster masters and the supplied
 sheet · Source file: [Misc/Jayshree/UPDATED MASTER SHEET.xlsx](Misc/Jayshree/UPDATED%20MASTER%20SHEET.xlsx)*
 
