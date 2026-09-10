@@ -6,6 +6,7 @@ import {
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import {
   COST_BEARERS, DELIVERY_PERIOD_SUFFIX, DOLLAR_CLAUSE, INSURANCE_CLAUSE, NO_DEAL_FACTS,
+  deliveryPeriodTakesSuffix, deliveryPeriodValue,
   SUBSIDIZED_RATE_NOTE, TRANSPORT_BEARER_MARK, isUsdDealRow, type DealFacts,
 } from "./fieldSpec";
 import { docHeading, fmtDealValue, paperDate, paperFileBase, paperNo } from "./format";
@@ -293,9 +294,13 @@ function sectionRows(
       on one line.
   */
   if (d.deliveryDays?.trim()) {
+    // The unit comes off before the suffix goes on — see `deliveryPeriodValue`.
+    const period = deliveryPeriodValue(d.deliveryDays);
     commercial.push({
       label: "Shipment Terms",
-      value: `${d.deliveryDays.trim()} ${DELIVERY_PERIOD_SUFFIX}`,
+      value: deliveryPeriodTakesSuffix(d.deliveryDays)
+        ? `${period} ${DELIVERY_PERIOD_SUFFIX}`
+        : period,
       wide: true,
     });
   }
