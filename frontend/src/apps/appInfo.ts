@@ -195,6 +195,16 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/master-report",
     category: "control",
   },
+  // The evening snapshot for management and the CFO: what was sold, collected,
+  // paid and purchased today, and what is in the bank. Its own module rather
+  // than a page inside the Master Report — a CFO should not have to hold the
+  // module-adoption report, nor the user-access matrix beside it, to read the
+  // day's cash position.
+  "daily-report": {
+    name: "Daily Report",
+    basePath: "/daily-report",
+    category: "control",
+  },
   // The coordinator's own desk: every module's master approvals in one queue,
   // and every process at a glance with the person to ring about a stuck step.
   // Sits in Control between the two screens it is deliberately not — the

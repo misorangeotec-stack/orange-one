@@ -298,6 +298,133 @@ export type Database = {
         }
         Relationships: []
       }
+      // Hand-added for migrations 20261118120000 / 20261118120100 (DR-1, Daily Report
+      // banks), both applied. Regenerate this file (supabase gen types) at the next
+      // convenient point and these two entries will simply be reproduced.
+      daily_report_bank_accounts: {
+        Row: {
+          account_no: string | null
+          account_type: string
+          active: boolean
+          bank_name: string
+          branch: string | null
+          cc_limit_lacs: number | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          hold_by_bank_lacs: number | null
+          id: string
+          ifsc: string | null
+          lc_bc_limit_lacs: number | null
+          location: string
+          notes: string | null
+          short_label: string
+          sort_order: number
+          tally_ledger_guid: string | null
+          tally_ledger_name: string | null
+          tally_tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_no?: string | null
+          account_type?: string
+          active?: boolean
+          bank_name: string
+          branch?: string | null
+          cc_limit_lacs?: number | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          hold_by_bank_lacs?: number | null
+          id?: string
+          ifsc?: string | null
+          lc_bc_limit_lacs?: number | null
+          location: string
+          notes?: string | null
+          short_label: string
+          sort_order?: number
+          tally_ledger_guid?: string | null
+          tally_ledger_name?: string | null
+          tally_tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_no?: string | null
+          account_type?: string
+          active?: boolean
+          bank_name?: string
+          branch?: string | null
+          cc_limit_lacs?: number | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          hold_by_bank_lacs?: number | null
+          id?: string
+          ifsc?: string | null
+          lc_bc_limit_lacs?: number | null
+          location?: string
+          notes?: string | null
+          short_label?: string
+          sort_order?: number
+          tally_ledger_guid?: string | null
+          tally_ledger_name?: string | null
+          tally_tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_bank_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "mst_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_report_bank_balances: {
+        // closing_balance_lacs is NOT NULL on purpose. An absent ROW is the only way
+        // this table says "nobody recorded that day", which is how a Sunday stays
+        // blank while a genuinely empty account reads 0.00.
+        Row: {
+          balance_date: string
+          bank_account_id: string
+          closing_balance_lacs: number
+          entered_at: string
+          entered_by: string | null
+          lc_bc_utilised_lacs: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          balance_date: string
+          bank_account_id: string
+          closing_balance_lacs: number
+          entered_at?: string
+          entered_by?: string | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          balance_date?: string
+          bank_account_id?: string
+          closing_balance_lacs?: number
+          entered_at?: string
+          entered_by?: string | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_bank_balances_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "daily_report_bank_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_entries: {
         Row: {
           code: string
@@ -7774,6 +7901,29 @@ export type Database = {
         Returns: string
       }
       email_module_enabled: { Args: { p_module: string }; Returns: boolean }
+      // Hand-added for migration 20261118120000 (DR-1, Daily Report banks), applied.
+      //
+      // p_closing is nullable and that is load-bearing: NULL DELETES the day's row,
+      // returning it to "not recorded". Typing 0 instead would record a real zero
+      // balance, which the report would then print. The two are different answers.
+      set_bank_daily_balance: {
+        Args: {
+          p_balance_date: string
+          p_bank_account_id: string
+          p_closing: number | null
+          p_lc_bc_utilised?: number | null
+        }
+        Returns: undefined
+      }
+      // The evening's entries in ONE transaction — the whole evening lands or none
+      // of it does. Returns how many rows it acted on.
+      set_bank_daily_balances: { Args: { p_rows: Json }; Returns: number }
+      // { date, expected, entered, missing[] }. The nav badge, the report's Bank KPI
+      // tile and the entry screen all read THIS, so the three cannot drift apart.
+      daily_report_balance_status: {
+        Args: { p_date?: string | null }
+        Returns: Json
+      }
       set_email_module_enabled: {
         Args: { p_enabled: boolean; p_module: string }
         Returns: undefined

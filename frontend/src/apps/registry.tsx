@@ -19,6 +19,7 @@ import { ocpiApp } from "./ocpi/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
+import { dailyReportApp } from "./daily-report/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -104,6 +105,11 @@ export const apps: AppManifest[] = [
   // question that one cannot: "is anyone actually using this module?". Counts
   // come from a single server-side RPC so the page and the 08:00 email agree.
   masterReportApp,
+  // Daily Report — the evening snapshot for management and the CFO: the day's
+  // sales, collections, payments and purchases out of the Tally mirror, plus the
+  // bank balances somebody types each evening. Granted separately from the
+  // Master Report because the readers are different and this one WRITES.
+  dailyReportApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
