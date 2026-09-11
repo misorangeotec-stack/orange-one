@@ -70,6 +70,19 @@ export interface DeskOrder {
   orderNo: string;
   orderDate: string;
   orderRemarks: string | null;
+  /**
+   * Which of ours it was ordered from.
+   *
+   * ⚠ NEEDED TO CHANGE THE ORDER, not only to display it. The item picker is
+   *   scoped to a book since OD-14, so re-rendering it for an edit without this
+   *   would fall back to every book and let a line onto the order that the
+   *   billing company cannot supply.
+   *
+   *   Null on orders placed before OD-14, which had no company until credit check
+   *   filled one in.
+   */
+  companyId: string | null;
+  companyLabel: string | null;
   /** Already collapsed by the server — see lib/customerLabels.ts. */
   statusKey: string;
   /**
@@ -86,8 +99,31 @@ export interface DeskOrder {
 }
 
 export const PROFILE_QK = ["order-desk", "profile"] as const;
-export const ITEMS_QK = ["order-desk", "items"] as const;
+export const COMPANIES_QK = ["order-desk", "companies"] as const;
+/** Keyed on the book, because the list IS the book's. */
+export const itemsQueryKey = (companyId: string | null) =>
+  ["order-desk", "items", companyId ?? "all"] as const;
 export const ORDERS_QK = ["order-desk", "orders"] as const;
+
+/**
+ * One of ours the customer may buy from, named as they would recognise it.
+ *
+ * ⚠ THIS IS NOT THE LEDGER LIST, AND Q11 STILL STANDS. What comes back is our
+ *   COMPANY — "O-tec - Surat" — which is on every invoice we send them. The ticked
+ *   ledgers behind it never leave the server, exactly as before.
+ */
+export interface DeskCompany {
+  companyId: string;
+  label: string;
+  itemCount: number;
+}
+
+export async function fetchDeskCompanies(): Promise<DeskCompany[]> {
+  const { data, error } = await db.rpc("fms_dispatch_my_companies");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { company_id: string; label: string; item_count: number | null }[])
+    .map((r) => ({ companyId: r.company_id, label: r.label, itemCount: r.item_count ?? 0 }));
+}
 
 /**
  * Who am I, as a customer?
@@ -117,11 +153,18 @@ export async function fetchCustomerProfile(): Promise<CustomerProfile | null> {
  *   customer is several Tally ledgers, and the same ink is a separate item row in
  *   each book — "KY SUBLIMATION INK BLACK" is three rows for one product. Listed
  *   raw, the customer sees the same ink three times with nothing on screen to tell
- *   them apart. Which row survives does not matter: credit check re-points the
- *   line to the billing book's own row afterwards.
+ *   them apart.
+ *
+ * ⚠ AND SCOPED TO THE BOOK THEY CHOSE (OD-14). Given a company, the server returns
+ *   THAT BOOK'S OWN copy of everything mapped to their ledger there, matched by
+ *   name. So the id on the line is already one the billing book can supply, and
+ *   the old best-effort re-point at credit check has nothing left to move.
+ *
+ *   Called with null only by the order-history screen, which needs every book's
+ *   items to name lines already placed.
  */
-export async function fetchDeskItems(): Promise<DeskItem[]> {
-  const { data, error } = await db.rpc("fms_dispatch_my_items");
+export async function fetchDeskItems(companyId: string | null): Promise<DeskItem[]> {
+  const { data, error } = await db.rpc("fms_dispatch_my_items", { p_company: companyId });
   if (error) throw new Error(error.message);
   return ((data ?? []) as { item_id: string; name: string; unit: string | null; item_type: string | null }[])
     .map((r) => ({ itemId: r.item_id, name: r.name, unit: r.unit, itemType: r.item_type }));
@@ -140,6 +183,7 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
   return ((data ?? []) as {
     id: string; order_no: string; order_date: string; order_remarks: string | null;
     status_key: string; can_change: boolean; placed_at: string | null;
+    company_id: string | null; company_label: string | null;
     lines:
       | {
           line_no: number; item_id: string; name: string; quantity: number | string;
@@ -154,6 +198,8 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
     statusKey: r.status_key,
     canChange: r.can_change,
     placedAt: r.placed_at,
+    companyId: r.company_id,
+    companyLabel: r.company_label,
     lines: (r.lines ?? []).map((l) => ({
       lineNo: l.line_no,
       itemId: l.item_id,
@@ -193,11 +239,16 @@ const linePayload = (lines: DeskLineInput[]) =>
     }));
 
 export async function submitDeskOrder(input: {
+  companyId: string;
   orderRemarks: string;
   lines: DeskLineInput[];
 }): Promise<string> {
   const { data, error } = await db.rpc("fms_dispatch_submit_customer_order", {
-    p: { order_remarks: input.orderRemarks.trim() || null, lines: linePayload(input.lines) },
+    p: {
+      company_id: input.companyId,
+      order_remarks: input.orderRemarks.trim() || null,
+      lines: linePayload(input.lines),
+    },
   });
   if (error) throw new Error(error.message);
   return data as string;

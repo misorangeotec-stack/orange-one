@@ -8,8 +8,12 @@ import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelec
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { FieldLabel, TextInput, PasswordInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../../store";
+import CustomerOrgItemsSection, {
+  NO_ITEM_EDITS, type OrgItemEdits,
+} from "../../components/CustomerOrgItemsSection";
 import {
-  CUSTOMER_ORGS_QK, MISSING_LABEL, addCustomer, fetchCustomerOrgs, saveCustomerOrg,
+  CUSTOMER_ORGS_QK, MISSING_LABEL, addCustomer, fetchCustomerOrgs, orgItemsQueryKey,
+  saveCustomerOrg, setCustomerOrgItems,
   type CustomerOrg,
 } from "../../data/customerOrgs";
 
@@ -59,6 +63,16 @@ export default function CustomerLoginsSection() {
    * nothing and removes the question.)
    */
   const reload = () => qc.invalidateQueries({ queryKey: CUSTOMER_ORGS_QK });
+
+  /**
+   * The item list is cached per ticked-ledger set, so a save has to drop the
+   * entry for the set it just changed as well as the org list. Without it,
+   * reopening the same customer shows the list as it was before the edit — and
+   * the grid's "Items they can order" column, which comes from the server, would
+   * disagree with it on screen.
+   */
+  const reloadItems = (partyIds: string[]) =>
+    qc.invalidateQueries({ queryKey: orgItemsQueryKey(partyIds) });
 
   const columns: QueueColumn<CustomerOrg>[] = useMemo(
     () => [
@@ -144,9 +158,9 @@ export default function CustomerLoginsSection() {
     <div className="space-y-4">
       <Card className="p-5 space-y-2">
         <p className="text-[12.5px] text-grey">
-          Customers on this list place their own orders on a screen of their own — item, quantity and a
-          remark, nothing else. They never see a billing company, a dispatch site, a dispatch type or any
-          of our internal step names. We fill those in at credit check, exactly as we do today.
+          Customers on this list place their own orders on a screen of their own — which of our companies
+          they are buying from, then item, quantity and a remark. They never see a Tally ledger, a dispatch
+          site, a dispatch type or any of our internal step names; we fill those in at our end.
         </p>
         <div className="pt-1">
           <Button size="sm" onClick={() => setAdding(true)}>Add a customer</Button>
@@ -225,7 +239,6 @@ export default function CustomerLoginsSection() {
   function OrgFields({
     displayName, setDisplayName,
     partyIds, setPartyIds,
-    primaryPartyId, setPrimaryPartyId,
     customerLocation, setCustomerLocation,
     notifyUserIds, setNotifyUserIds,
     defaultLocationId, setDefaultLocationId,
@@ -233,13 +246,6 @@ export default function CustomerLoginsSection() {
     active, setActive,
   }: OrgFieldProps) {
     const { partyOptions, notifyOptions } = useOrgFormOptions();
-
-    // The main ledger must be one of the ticked ones — so it is chosen FROM them,
-    // rather than from all 1,850 and validated afterwards.
-    const primaryOptions = useMemo(
-      () => partyOptions.filter((o) => partyIds.includes(o.value)),
-      [partyOptions, partyIds],
-    );
 
     /**
      * The optional dispatch-site pre-fill, offered across every ticked ledger's
@@ -293,26 +299,14 @@ export default function CustomerLoginsSection() {
         <FieldLabel
           label="Their ledgers"
           required
-          hint="Every Tally ledger that IS this customer. One per company book — leave out machine and old-machine ledgers."
+          hint="Every Tally ledger that IS this customer. One per company book — leave out machine and old-machine ledgers. These are the companies they may order from."
         >
           <MultiSelect
             values={partyIds}
-            onChange={(v) => {
-              setPartyIds(v);
-              if (primaryPartyId && !v.includes(primaryPartyId)) setPrimaryPartyId(null);
-            }}
+            onChange={setPartyIds}
             options={partyOptions}
             placeholder="Tick their ledgers"
             searchable
-          />
-        </FieldLabel>
-
-        <FieldLabel label="Main ledger" required hint="The one an order is raised against until credit check picks the billing book.">
-          <Combobox
-            value={primaryPartyId ?? ""}
-            onChange={(v) => setPrimaryPartyId(v || null)}
-            options={primaryOptions}
-            placeholder={partyIds.length ? "Choose one of the ticked ledgers" : "Tick their ledgers first"}
           />
         </FieldLabel>
 
@@ -370,20 +364,32 @@ export default function CustomerLoginsSection() {
   function OrgModal({ org, onClose, onSaved }: { org: CustomerOrg; onClose: () => void; onSaved: () => Promise<void> }) {
     const [displayName, setDisplayName] = useState(org.displayName);
     const [partyIds, setPartyIds] = useState<string[]>(org.partyIds);
-    const [primaryPartyId, setPrimaryPartyId] = useState<string | null>(org.primaryPartyId);
     const [customerLocation, setCustomerLocation] = useState(org.customerLocation ?? "");
     const [notifyUserIds, setNotifyUserIds] = useState<string[]>(org.notifyUserIds);
     const [defaultLocationId, setDefaultLocationId] = useState<string | null>(org.defaultLocationId);
     const [defaultDispatchType, setDefaultDispatchType] = useState<"local" | "transport" | null>(org.defaultDispatchType);
     const [active, setActive] = useState(org.active);
+    const [itemEdits, setItemEdits] = useState<OrgItemEdits>(NO_ITEM_EDITS);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
     const save = async () => {
       setBusy(true); setErr(null);
       try {
+        /*
+          ⚠ ITEMS BEFORE THE ORG, and it is not a matter of taste.
+            `fms_dispatch_save_customer_org` runs the readiness check whenever
+            `active` is true, and one of its arms is "no items mapped". An admin
+            who ticks the first item and switches the customer on in the same save
+            would otherwise be refused on a condition this dialog had just met.
+        */
+        if (itemEdits.add.length || itemEdits.remove.length) {
+          await setCustomerOrgItems(partyIds, itemEdits.add, itemEdits.remove);
+          setItemEdits(NO_ITEM_EDITS);
+          await reloadItems(partyIds);
+        }
         await saveCustomerOrg({
-          id: org.id, displayName, partyIds, primaryPartyId,
+          id: org.id, displayName, partyIds,
           customerLocation: customerLocation.trim() || null,
           notifyUserIds, defaultLocationId, defaultDispatchType, active,
         });
@@ -410,12 +416,15 @@ export default function CustomerLoginsSection() {
           </div>
         }
       >
-        <OrgFields
-          {...{ displayName, setDisplayName, partyIds, setPartyIds, primaryPartyId, setPrimaryPartyId,
-                customerLocation, setCustomerLocation, notifyUserIds, setNotifyUserIds,
-                defaultLocationId, setDefaultLocationId, defaultDispatchType, setDefaultDispatchType,
-                active, setActive }}
-        />
+        <div className="space-y-5">
+          <OrgFields
+            {...{ displayName, setDisplayName, partyIds, setPartyIds,
+                  customerLocation, setCustomerLocation, notifyUserIds, setNotifyUserIds,
+                  defaultLocationId, setDefaultLocationId, defaultDispatchType, setDefaultDispatchType,
+                  active, setActive }}
+          />
+          <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
+        </div>
       </Modal>
     );
   }
@@ -423,7 +432,6 @@ export default function CustomerLoginsSection() {
   function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
     const [displayName, setDisplayName] = useState("");
     const [partyIds, setPartyIds] = useState<string[]>([]);
-    const [primaryPartyId, setPrimaryPartyId] = useState<string | null>(null);
     const [customerLocation, setCustomerLocation] = useState("");
     const [notifyUserIds, setNotifyUserIds] = useState<string[]>([]);
     const [defaultLocationId, setDefaultLocationId] = useState<string | null>(null);
@@ -432,20 +440,28 @@ export default function CustomerLoginsSection() {
     const [loginName, setLoginName] = useState("");
     const [loginEmail, setLoginEmail] = useState("");
     const [loginPassword, setLoginPassword] = useState("");
+    const [itemEdits, setItemEdits] = useState<OrgItemEdits>(NO_ITEM_EDITS);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
     const save = async () => {
       setBusy(true); setErr(null);
       try {
+        // `addCustomer` maps the items FIRST — see the ordering note there. It is
+        // the same readiness trap the edit path has, and worse here: the very
+        // first save of a new customer is always a switch-on.
         await addCustomer({
-          displayName, partyIds, primaryPartyId,
+          displayName, partyIds,
           customerLocation: customerLocation.trim() || null,
           notifyUserIds, defaultLocationId, defaultDispatchType, active,
           loginName: loginName.trim() || displayName.trim(),
           loginEmail: loginEmail.trim(),
           loginPassword,
+          addItems: itemEdits.add,
+          removeItems: itemEdits.remove,
         });
+        setItemEdits(NO_ITEM_EDITS);
+        await reloadItems(partyIds);
         await onSaved();
       } catch (e) {
         setErr((e as Error).message);
@@ -471,11 +487,12 @@ export default function CustomerLoginsSection() {
       >
         <div className="space-y-5">
           <OrgFields
-            {...{ displayName, setDisplayName, partyIds, setPartyIds, primaryPartyId, setPrimaryPartyId,
+            {...{ displayName, setDisplayName, partyIds, setPartyIds,
                   customerLocation, setCustomerLocation, notifyUserIds, setNotifyUserIds,
                   defaultLocationId, setDefaultLocationId, defaultDispatchType, setDefaultDispatchType,
                   active, setActive }}
           />
+          <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
           <div className="border-t border-line pt-4 space-y-4">
             <div className="text-[13px] font-semibold text-navy">Their login</div>
             <p className="text-[12px] text-grey-2">
@@ -539,7 +556,6 @@ export default function CustomerLoginsSection() {
 interface OrgFieldProps {
   displayName: string; setDisplayName: (v: string) => void;
   partyIds: string[]; setPartyIds: (v: string[]) => void;
-  primaryPartyId: string | null; setPrimaryPartyId: (v: string | null) => void;
   customerLocation: string; setCustomerLocation: (v: string) => void;
   notifyUserIds: string[]; setNotifyUserIds: (v: string[]) => void;
   defaultLocationId: string | null; setDefaultLocationId: (v: string | null) => void;

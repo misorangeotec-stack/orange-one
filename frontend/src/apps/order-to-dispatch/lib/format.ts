@@ -16,6 +16,7 @@ import type { QueueStep } from "./queues";
 export type Tone = "grey" | "blue" | "orange" | "green" | "red" | "yellow";
 
 export const STATUS_LABEL: Record<DispatchStatus, string> = {
+  awaiting_order_completion: "Awaiting details",
   awaiting_credit_check: "Awaiting credit",
   awaiting_material_status: "Awaiting stock check",
   awaiting_sales_bill: "Awaiting sales bill",
@@ -28,6 +29,9 @@ export const STATUS_LABEL: Record<DispatchStatus, string> = {
 };
 
 export const STATUS_TONE: Record<DispatchStatus, Tone> = {
+  // Same blue as the other "somebody owes this a decision" states. Not red: a
+  // customer order waiting to be written up is the system working, not a fault.
+  awaiting_order_completion: "blue",
   awaiting_credit_check: "blue",
   awaiting_material_status: "blue",
   awaiting_sales_bill: "orange",

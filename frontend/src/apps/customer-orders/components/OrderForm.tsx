@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput, TextArea } from "@/shared/components/ui/Form";
-import type { DeskItem, DeskLineInput } from "../data/orderDesk";
+import type { DeskCompany, DeskItem, DeskLineInput } from "../data/orderDesk";
 import { customerItemType } from "../lib/customerLabels";
 
 /**
@@ -69,6 +69,10 @@ const RETIRED_GROUP = "No longer on your list";
 export default function OrderForm({
   items,
   retired,
+  companies,
+  companyId,
+  onCompanyChange,
+  companyLabel,
   initialLines,
   initialRemarks,
   submitLabel,
@@ -79,6 +83,15 @@ export default function OrderForm({
 }: {
   items: DeskItem[];
   retired?: RetiredItem[];
+  /**
+   * Which of ours they may buy from. Passed only when placing — an order that
+   * already exists is committed to a book and cannot move to another.
+   */
+  companies?: DeskCompany[];
+  companyId?: string;
+  onCompanyChange?: (id: string) => void;
+  /** Shown instead of the picker when changing an existing order. */
+  companyLabel?: string | null;
   initialLines?: DeskLineInput[];
   initialRemarks?: string;
   submitLabel: string;
@@ -108,6 +121,46 @@ export default function OrderForm({
 
   const setLine = (idx: number, patch: Partial<DeskLineInput>) =>
     setLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+
+  /*
+    TAB-WALK — the order runs item → quantity → note → next line, and nothing in
+    it is a dead end.
+
+    ⚠ THE JUMP AFTER PICKING AN ITEM IS NOT A CONVENIENCE, IT IS A CORRECTION.
+      `Combobox` returns focus to its own trigger when it closes, which is the
+      right thing for a lone field and the wrong thing here: the customer picks
+      their ink and the cursor sits back on the ink box, so the next thing they
+      type goes into a search instead of the quantity. One line, one item, one
+      quantity — the quantity is always where they are going next.
+
+    ⚠ ENTER IS THE FAST PATH, TAB IS THE COMPLETE ONE. Enter from the quantity or
+      the note jumps straight to the next line's item, adding a line if this was
+      the last — that is the repeat-entry rhythm. Tab still walks every field in
+      turn, INCLUDING the note and the remove button, because skipping them to
+      make Enter's shortcut the only route would leave a keyboard user unable to
+      reach a control that is plainly on the screen.
+
+    Focus is taken on the next frame because the row being focused may not exist
+    yet: `setLines` has to render before its input can be found.
+  */
+  const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const qtyRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  const focusQty = (idx: number) =>
+    requestAnimationFrame(() => qtyRefs.current[idx]?.focus());
+
+  const focusItem = (idx: number) =>
+    requestAnimationFrame(() =>
+      rowRefs.current[idx]?.querySelector<HTMLElement>("[data-item] button")?.focus(),
+    );
+
+  /** Enter anywhere in a line moves to the next line, making one if needed. */
+  const onLineEnter = (idx: number) => (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (idx === lines.length - 1) setLines((ls) => [...ls, blankLine()]);
+    focusItem(idx + 1);
+  };
 
   /**
    * The same item on two lines.
@@ -149,8 +202,65 @@ export default function OrderForm({
     }
   };
 
+  /*
+    WHO THEY ARE BUYING FROM, ABOVE THE ITEMS AND NOT BESIDE THEM.
+
+    It is not one field among several — it decides what the list underneath can
+    contain, so it has to be answered first and has to look like it was. Placed
+    beside the lines it reads as an afterthought, and a customer who changes it
+    after typing six lines loses them.
+
+    ⚠ ONE PICKER, OR NONE AT ALL. Most customers buy from exactly one of our
+      companies, and a required dropdown with a single option is a question with
+      one answer — so it prints as a sentence instead. The picker appears only
+      where there is a real choice to make.
+  */
+  const companyPicker = (() => {
+    if (companyLabel) {
+      return (
+        <p className="text-[13.5px] text-grey">
+          Ordering from <span className="font-semibold text-ink">{companyLabel}</span>
+        </p>
+      );
+    }
+    if (!companies || companies.length === 0) return null;
+    if (companies.length === 1) {
+      return (
+        <p className="text-[13.5px] text-grey">
+          Ordering from <span className="font-semibold text-ink">{companies[0].label}</span>
+        </p>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        <label className="block text-[13px] font-semibold text-ink">Who are you buying from?</label>
+        <div className="max-w-md">
+          <Combobox
+            value={companyId ?? ""}
+            onChange={(v) => onCompanyChange?.(v)}
+            options={companies.map((c) => ({
+              value: c.companyId,
+              label: c.label,
+              sublabel: `${c.itemCount} ${c.itemCount === 1 ? "item" : "items"}`,
+            }))}
+            placeholder="Choose one of ours"
+          />
+        </div>
+        {/* Says the quiet part out loud, so "where is my usual ink?" has an
+            answer on the screen rather than on the phone. */}
+        <p className="text-[12.5px] text-grey-2">
+          One order goes to one of our companies, and each sells a different list.
+          If something you buy is not below, it may be sold by another of ours.
+        </p>
+      </div>
+    );
+  })();
+
   return (
     <div className="space-y-5">
+      {companyPicker && (
+        <div className="rounded-2xl border border-line bg-white px-5 py-4">{companyPicker}</div>
+      )}
       <div className="rounded-2xl border border-line bg-white overflow-hidden">
         <div className="hidden sm:grid grid-cols-[1fr_130px_90px_1fr_40px] gap-3 px-5 py-3 border-b border-line bg-[#FBFCFE] text-[12px] font-semibold text-grey uppercase tracking-wide">
           <span>Item</span>
@@ -166,13 +276,37 @@ export default function OrderForm({
             const dupAt = duplicateOf(idx);
             const qtyBad = touched && !!line.itemId && !(Number(line.quantity) > 0);
             return (
-              <div key={idx} className="px-5 py-4">
+              <div key={idx} className="px-5 py-4" ref={(el) => { rowRefs.current[idx] = el; }}>
+                {/*
+                  ⚠ MOBILE ONLY, AND ONLY ONCE THERE IS MORE THAN ONE LINE. On a phone
+                    the row stops being a row: every field stacks, so two items read as
+                    one long column of identical labels with a hairline somewhere in the
+                    middle. Numbering them is what says where one ends.
+
+                  ⚠ AND THE REMOVE CONTROL GETS WORDS HERE. The desktop × sits at the end
+                    of its row, where the row is the thing it plainly belongs to. Stacked,
+                    it lands under "Anything to note" and reads as if it clears the note.
+                */}
+                {lines.length > 1 && (
+                  <div className="sm:hidden flex items-center justify-between mb-2">
+                    <span className="text-[12px] font-semibold text-grey-2">Item {idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => setLines((ls) => ls.filter((_, i) => i !== idx))}
+                      className="text-[12.5px] font-semibold text-[#B3282C]"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
                 <div className="grid sm:grid-cols-[1fr_130px_90px_1fr_40px] gap-3 items-start">
-                  <div>
-                    <span className="sm:hidden block text-[12px] font-semibold text-grey mb-1">Item</span>
+                  <div data-item>
+                    {lines.length === 1 && (
+                      <span className="sm:hidden block text-[12px] font-semibold text-grey mb-1">Item</span>
+                    )}
                     <Combobox
                       value={line.itemId}
-                      onChange={(v) => setLine(idx, { itemId: v })}
+                      onChange={(v) => { setLine(idx, { itemId: v }); focusQty(idx); }}
                       options={options}
                       placeholder="Search your items…"
                     />
@@ -180,9 +314,11 @@ export default function OrderForm({
                   <div>
                     <span className="sm:hidden block text-[12px] font-semibold text-grey mb-1">Quantity</span>
                     <TextInput
+                      ref={(el) => { qtyRefs.current[idx] = el; }}
                       value={line.quantity}
                       inputMode="decimal"
                       onChange={(e) => setLine(idx, { quantity: e.target.value.replace(/[^\d.]/g, "") })}
+                      onKeyDown={onLineEnter(idx)}
                       placeholder="0"
                       className={qtyBad ? "border-[#e5484d]" : undefined}
                     />
@@ -196,12 +332,15 @@ export default function OrderForm({
                     <TextInput
                       value={line.lineRemark}
                       onChange={(e) => setLine(idx, { lineRemark: e.target.value })}
+                      onKeyDown={onLineEnter(idx)}
                       placeholder="Optional"
                     />
                   </div>
-                  <div className="sm:pt-2 flex sm:justify-end">
+                  {/* Hidden on mobile: the labelled Remove in the line header does this. */}
+                  <div className="hidden sm:flex sm:pt-2 sm:justify-end">
                     {lines.length > 1 ? (
                       <button
+                        type="button"
                         onClick={() => setLines((ls) => ls.filter((_, i) => i !== idx))}
                         aria-label={`Remove line ${idx + 1}`}
                         className="text-grey-2 hover:text-[#B3282C] transition p-1.5 rounded-lg hover:bg-[#FDECEC]"
@@ -230,7 +369,8 @@ export default function OrderForm({
 
         <div className="px-5 py-3 border-t border-line bg-[#FBFCFE]">
           <button
-            onClick={() => setLines((ls) => [...ls, blankLine()])}
+            type="button"
+            onClick={() => { setLines((ls) => [...ls, blankLine()]); focusItem(lines.length); }}
             className="text-[13.5px] font-semibold text-orange hover:text-orange-2 transition"
           >
             + Add another item

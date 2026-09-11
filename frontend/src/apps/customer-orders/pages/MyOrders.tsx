@@ -7,6 +7,7 @@ import OrderDeskShell from "../components/OrderDeskShell";
 import { useCustomer } from "../CustomerOrdersApp";
 import { customerStatus, callUs, type CustomerStatusKey } from "../lib/customerLabels";
 import { fetchDeskOrders, ORDERS_QK, type DeskOrder } from "../data/orderDesk";
+import { deskPaths } from "../lib/paths";
 
 /**
  * My orders.
@@ -109,8 +110,7 @@ export default function MyOrders() {
             Everything you order will be listed here, with where it has got to.
           </p>
           <Link
-            to=".."
-            relative="path"
+            to={deskPaths.place}
             className="inline-block mt-5 text-[14px] font-semibold text-white bg-orange-grad shadow-cta rounded-xl px-5 py-2.5"
           >
             Place an order
@@ -163,7 +163,7 @@ export default function MyOrders() {
               {shown.map((o) => (
                 <Link
                   key={o.id}
-                  to={o.id}
+                  to={deskPaths.order(o.id)}
                   className="block rounded-2xl border border-line bg-white p-5 hover:border-[#d9e2f0] hover:shadow-soft transition"
                 >
                   <div className="flex items-start justify-between gap-4">

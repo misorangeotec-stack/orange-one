@@ -36,6 +36,7 @@ import {
   submitOrder as submitOrderWrite,
   updateMaster as updateMasterWrite,
   updateOrder as updateOrderWrite,
+  completeCustomerOrder as completeCustomerOrderWrite,
   updateSalesReturn as updateSalesReturnWrite,
   updateStep as updateStepWrite,
   uploadStepDocument as uploadStepDocumentWrite,
@@ -138,6 +139,26 @@ export interface DispatchStoreValue {
   reassignPoolUserIds: string[];
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (step: OwnerStepKey) => boolean;
+  /**
+   * The New Customer Orders queue (OD-14).
+   *
+   * ⚠ NOT `canSeeQueue("sales_order")`, and the difference is the whole point.
+   *   That would resolve to the four people who own the origin step, and they
+   *   would open an EMPTY queue: a customer order has `location_id` null until it
+   *   is written up, and `fms_dispatch_can_see_order`'s owner arm matches only
+   *   `location_id is null or location_id = <the order's>` — which on a null
+   *   location leaves just the fallback owner-set, and that set holds zero people
+   *   (checked live for `sales_order` and `credit_check` alike). RLS would hand
+   *   them no rows. `canSeeQueue`'s own note calls that failure out by name.
+   *
+   *   (`fms_dispatch_can_act` is more generous — passing a null location asks
+   *   "owns this step anywhere", so an owner passes it. It makes no difference:
+   *   they cannot read the order to act on it. The two are worth not confusing.)
+   *
+   *   The audience is the people Setup named per customer under "who we tell when
+   *   they order" (Q8), plus admins, coordinators and viewers.
+   */
+  canSeeCustomerOrders: boolean;
   canEditOrder: (order: DispatchOrder) => boolean;
   /** Omit the location to ask "owns this step anywhere". */
   isStepOwner: (stepKey: OwnerStepKey, locationId?: string | null) => boolean;
@@ -338,6 +359,28 @@ export interface DispatchStoreValue {
   salesReturnPending: DispatchOrder[];
   salesReturnCompleted: DispatchOrder[];
 
+  /**
+   * NEW CUSTOMER ORDERS — placed by a customer, not yet written up (OD-14).
+   *
+   * ⚠ OFF THE CHAIN, for the same reasons as Sales Return above. These are not
+   *   `QueueEntry`s and never pass through `buildQueueEntries`, because the write-up
+   *   is not a `StepModal` step: it has its own page, its own RPC, no `RECORD_RPC`,
+   *   no `LOCK` arm and no `STEP_CONFIG`.
+   *
+   * ⚠ SCOPED BY `canActOn("sales_order", …)`, WHICH IS NOT THE STEP-OWNER RULE HERE.
+   *   A customer order has `location_id` null until it is completed, and the
+   *   null-location fallback owner-set holds zero people — so a step-owner test
+   *   alone would show this queue to nobody. What actually matches is the
+   *   customer-recipient arm: the people Setup named under "who we tell when they
+   *   order" (decision Q8), plus admins and coordinators. That is the same rule the
+   *   server's `fms_dispatch_complete_customer_order` enforces.
+   */
+  customerOrdersPending: DispatchOrder[];
+  /** Written up, and not yet past credit check — still reopenable. */
+  customerOrdersCompleted: DispatchOrder[];
+  /** May this person write up (or reopen) this customer order? */
+  canCompleteCustomerOrder: (o: DispatchOrder) => boolean;
+
   // master governance
   masterManagers: MasterManager[];
   masterRequests: DispatchMasterRequest[];
@@ -358,6 +401,8 @@ export interface DispatchStoreValue {
   // actions
   submitOrder: (input: OrderInput) => Promise<string>;
   updateOrder: (orderId: string, input: OrderInput) => Promise<void>;
+  /** Write up a customer order and send it on to credit check (OD-14). */
+  completeCustomerOrder: (orderId: string, input: OrderInput) => Promise<void>;
   recordStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   updateStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   holdOrder: (orderId: string, hold: boolean, reason: string) => Promise<void>;
@@ -718,6 +763,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     for (const a of customerActors ?? []) customerRecipientsByRaiser.set(a.profileId, a.notifyUserIds);
     const isCustomerRecipientOf = (raisedBy: string | null): boolean =>
       !!raisedBy && (customerRecipientsByRaiser.get(raisedBy)?.includes(uid) ?? false);
+    /** Named against ANY customer — what decides whether the New Customer Orders nav shows. */
+    const isCustomerRecipientOfAny = [...customerRecipientsByRaiser.values()].some((ids) =>
+      ids.includes(uid),
+    );
     /** Empty for every staff-raised order. Used to name who really owns a customer order. */
     const customerRecipientIdsOf = (raisedBy: string | null): string[] =>
       (raisedBy ? customerRecipientsByRaiser.get(raisedBy) : undefined) ?? [];
@@ -848,6 +897,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       o.status === "awaiting_credit_check" &&
       o.ccAt == null &&
       o.rounds.length === 0;
+
+    /**
+     * Mirrors `fms_dispatch_complete_customer_order`'s authz and its refusals.
+     *
+     * ⚠ IT IS NOT `canEditOrder`, AND THAT IS THE WHOLE POINT. `canEditOrder`
+     *   requires raiser / admin / coordinator, and on a customer order THE RAISER
+     *   IS THE CUSTOMER — so the named recipient this work belongs to fails it and
+     *   never sees the button. `canActOn("sales_order", …)` is what carries the
+     *   customer-recipient arm.
+     *
+     * ⚠ THE SECOND ARM IS "REOPEN DETAILS", not a second way to complete. Once
+     *   written up the order sits at credit check, and the clerk there may still
+     *   need to move it to another billing book for a credit reason — the choice
+     *   they lost when the customer started making it. It closes the moment the
+     *   verdict is recorded or anything dispatches, which is what `ccDecidedAt`
+     *   and `rounds.length` test.
+     */
+    const canCompleteCustomerOrder = (o: DispatchOrder): boolean =>
+      canEdit &&
+      o.intakeSource === "customer" &&
+      o.rounds.length === 0 &&
+      (o.status === "awaiting_order_completion" ||
+        (o.status === "awaiting_credit_check" && o.ccDecidedAt == null)) &&
+      canActOn("sales_order", o);
 
     /**
      * Mirrors fms_dispatch_cancel_order's authz and its refusals.
@@ -1179,6 +1252,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       isModuleViewer,
       canActOn,
       canSeeQueue,
+      canSeeCustomerOrders: isModuleViewer || isProcessCoordinator || isCustomerRecipientOfAny,
       canEditOrder,
       canCancelOrder,
       canWithdrawCancel,
@@ -1285,6 +1359,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       salesReturnPending: orders.filter((o) => isSalesReturnPending(o) && canActOn("sales_return", o)),
       salesReturnCompleted: orders.filter((o) => isSalesReturnDone(o) && canActOn("sales_return", o)),
 
+      // New Customer Orders. Same shape and the same reasoning as Sales Return
+      // just above: plain filters over `orders`, never `buildQueueEntries`.
+      customerOrdersPending: orders.filter(
+        (o) => o.status === "awaiting_order_completion" && canActOn("sales_order", o),
+      ),
+      customerOrdersCompleted: orders.filter(
+        (o) =>
+          o.intakeSource === "customer" &&
+          !!o.intakeCompletedAt &&
+          o.status === "awaiting_credit_check" &&
+          canActOn("sales_order", o),
+      ),
+      canCompleteCustomerOrder,
+
       masterManagers,
       masterRequests,
       myMasterRequests,
@@ -1305,6 +1393,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       updateOrder: async (orderId, input) => {
         await updateOrderWrite(orderId, input);
+        invalidate();
+      },
+      completeCustomerOrder: async (orderId, input) => {
+        await completeCustomerOrderWrite(orderId, input);
         invalidate();
       },
       recordStep: async (step, orderId, payload) => {

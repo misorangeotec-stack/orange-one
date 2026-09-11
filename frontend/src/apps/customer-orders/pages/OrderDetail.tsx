@@ -10,8 +10,9 @@ import { StatusPill, orderDate } from "./MyOrders";
 import { customerStatus, callUs, WINDOW_SHUT } from "../lib/customerLabels";
 import {
   fetchDeskOrders, fetchDeskItems, updateDeskOrder, cancelDeskOrder,
-  ORDERS_QK, ITEMS_QK, type DeskLineInput,
+  ORDERS_QK, itemsQueryKey, type DeskLineInput,
 } from "../data/orderDesk";
+import { deskPaths } from "../lib/paths";
 
 /**
  * One order.
@@ -42,12 +43,26 @@ export default function OrderDetail() {
   const { data: orders, isLoading } = useQuery({
     queryKey: ORDERS_QK, queryFn: fetchDeskOrders, staleTime: 30_000,
   });
-  // Only needed once they press Change; the picker cannot open before that.
-  const { data: items } = useQuery({
-    queryKey: ITEMS_QK, queryFn: fetchDeskItems, staleTime: 10 * 60_000, enabled: editing,
-  });
-
   const order = (orders ?? []).find((o) => o.id === id);
+
+  /**
+   * Only needed once they press Change; the picker cannot open before that.
+   *
+   * ⚠ SCOPED TO THE ORDER'S OWN BOOK (OD-14). An order is committed to one of our
+   *   companies the moment it is placed, and only that book can supply it — so the
+   *   picker on a change has to be that book's list, not the union across all of
+   *   them. Passing null here would quietly let a customer add a line the billing
+   *   company cannot fulfil, which is the whole failure OD-14 removed.
+   *
+   *   An order placed before OD-14 has no company yet; those fall back to the union,
+   *   which is exactly the behaviour they were placed under.
+   */
+  const { data: items } = useQuery({
+    queryKey: itemsQueryKey(order?.companyId ?? null),
+    queryFn: () => fetchDeskItems(order?.companyId ?? null),
+    staleTime: 10 * 60_000,
+    enabled: editing && !!order,
+  });
 
   if (isLoading) {
     return (
@@ -66,7 +81,7 @@ export default function OrderDetail() {
             It may have been opened from an old link. {callUs("Please call us")} if you were
             expecting to see it.
           </p>
-          <Link to=".." relative="path" className="inline-block mt-5 text-[14px] font-semibold text-orange">
+          <Link to={deskPaths.orders} className="inline-block mt-5 text-[14px] font-semibold text-orange">
             Back to my orders
           </Link>
         </div>
@@ -89,7 +104,7 @@ export default function OrderDetail() {
       await cancelDeskOrder(order.id, reason);
       await qc.invalidateQueries({ queryKey: ORDERS_QK });
       setCancelling(false);
-      navigate("..", { relative: "path", replace: true });
+      navigate(deskPaths.orders, { replace: true });
     } catch (e) {
       setErr((e as Error).message);
       setBusy(false);
@@ -97,7 +112,7 @@ export default function OrderDetail() {
   };
 
   const subtitle = (
-    <Link to=".." relative="path" className="text-grey hover:text-orange font-medium">
+    <Link to={deskPaths.orders} className="text-grey hover:text-orange font-medium">
       ← My orders
     </Link>
   );
@@ -108,6 +123,8 @@ export default function OrderDetail() {
         {items ? (
           <OrderForm
             items={items}
+            /* Shown, not offered: the book is fixed once the order exists. */
+            companyLabel={order.companyLabel}
             /*
               Anything on the order that is no longer offered. Computed here rather
               than inside the form because only this screen knows both halves — what
