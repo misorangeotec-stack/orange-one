@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import Card from "@/shared/components/ui/Card";
@@ -22,6 +22,8 @@ import {
   groupSales, inLocation, isBankOnlyLocation, purchaseTotal, salesTotals, saleKind, topShare,
   type LocationFilter, type PartyTotal,
 } from "../lib/aggregate";
+import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
+import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
 import { REPORT_LOCATIONS, type BankAccount } from "../types";
 
 /**
@@ -208,6 +210,7 @@ export default function DailyReport() {
     setParams(p, { replace: true });
   };
 
+  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
   const report = useDailyReport(date);
   const accounts = useBankAccounts();
 
@@ -326,6 +329,18 @@ export default function DailyReport() {
     },
   ];
 
+  // ONE input for both exports, built from the same scoped rows the page is
+  // rendering. The workbook and the document must never be able to disagree
+  // with each other, or with what the reader is looking at.
+  const exportInput = (rulesLoaded: boolean) => ({
+    date, loc, sales, money, purchases,
+    accounts: bankCols,
+    balances: balances.data ?? new Map(),
+    dates,
+    mtdSalesLacs: mtdSales,
+    rulesLoaded,
+  });
+
   const loading = report.isLoading;
 
   return (
@@ -350,11 +365,44 @@ export default function DailyReport() {
           <Button variant="ghost" size="sm" onClick={() => setParam("d", addDays(date, 1))} disabled={date >= today} aria-label="Next day">›</Button>
           {date !== today && <Button variant="ghost" size="sm" onClick={() => setParam("d", today)}>Today</Button>}
         </div>
-        <PillToggle<LocationFilter>
-          value={loc}
-          onChange={(v) => setParam("loc", v)}
-          options={LOCATION_OPTIONS}
-        />
+        <div className="flex items-center gap-2">
+          <PillToggle<LocationFilter>
+            value={loc}
+            onChange={(v) => setParam("loc", v)}
+            options={LOCATION_OPTIONS}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!report.data || exporting !== null}
+            onClick={async () => {
+              if (!report.data) return;
+              setExporting("xlsx");
+              try {
+                await exportDailyReportXlsx(exportInput(report.data.rulesLoaded));
+              } finally {
+                setExporting(null);
+              }
+            }}
+          >
+            {exporting === "xlsx" ? "Building…" : "Excel"}
+          </Button>
+          <Button
+            size="sm"
+            disabled={!report.data || exporting !== null}
+            onClick={async () => {
+              if (!report.data) return;
+              setExporting("pdf");
+              try {
+                await downloadDailyReportPdf(exportInput(report.data.rulesLoaded));
+              } finally {
+                setExporting(null);
+              }
+            }}
+          >
+            {exporting === "pdf" ? "Building…" : "Download PDF"}
+          </Button>
+        </div>
       </div>
 
       <p className="text-[11.5px] text-grey-2">{BASIS_NOTE}</p>
