@@ -16,7 +16,7 @@ import {
   fetchMasterParties, fetchMasterPartyCompanies, fetchMasterPartyItems, fetchMasterSyncRuns,
   type ItemType,
   type MasterCompany, type MasterItem, type MasterLocation,
-  type MasterLookup, type MasterParty, type MasterPartyItem,
+  type MasterLookup, type MasterParty, type MasterPartyItem, type MasterSyncRun,
 } from "@/core/platform/liveMasters";
 import {
   deleteCompanyLink, fetchMyMasterManagerTypes, insertMaster, insertMasters, runMastersSync,
@@ -564,21 +564,117 @@ export default function Masters() {
     ];
   }, [parties.data, items.data, partyItems.data, companyOptions, companyLabel]);
 
-  const doSync = async (force: boolean) => {
+  /**
+   * Press, and get the screen back.
+   *
+   * ⚠ THE INVOKE IS DELIBERATELY NOT AWAITED. A pull takes ~26s, and awaiting it
+   *   held this button on "Syncing…" for the whole of it — which is what an admin
+   *   actually complained about. The admin runs the ConnectWave connector first
+   *   and presses this straight afterwards, so they were watching a spinner at the
+   *   one moment the sync is slowest.
+   *
+   * ⚠ BUT THE OUTCOME STILL HAS TO REACH THEM, AND THIS IS THE TRAP. A FAILED sync
+   *   writes no master rows, so PF-17's realtime signal never fires and the screen
+   *   would sit there looking fine having silently failed. So we watch the run log
+   *   instead: it carries status AND the error text, which is everything the old
+   *   blocking version could show and more.
+   *
+   *   `.catch` on the un-awaited promise is not optional — a rejected floating
+   *   promise is an unhandled rejection now that nobody is awaiting it. It is also
+   *   NOT the main error path: an Edge Function that dies mid-run records the
+   *   failure in mst_sync_runs whether or not the HTTP response ever reaches us.
+   */
+  const doSync = (force: boolean) => {
     setSyncing(true);
-    setSyncNote(null);
-    try {
-      const res = await runMastersSync(force);
-      setSyncNote(
-        res.skipped
-          ? "Tally has not synced since the last pull — nothing to bring in."
-          : `Pulled ${res.counts?.parties ?? 0} parties and ${res.counts?.items ?? 0} items.`,
-      );
-      await invalidate();
-    } catch (e) {
-      setSyncNote(`Sync failed: ${(e as Error).message}`);
-    } finally {
+    setSyncNote("Sync started. This page will fill in on its own — you can carry on.");
+
+    /**
+     * ⚠ WHICHEVER ANSWER ARRIVES FIRST WINS, AND EXACTLY ONCE. Three things can
+     *   end this and they race:
+     *     · the function returns `skipped` — Tally has not moved, and NO run row
+     *       is ever created, so the watcher alone would wait three minutes and
+     *       then wrongly report "still running";
+     *     · the call itself fails (403, network) — again no run row, and the
+     *       watcher alone would find the PREVIOUS run sitting at `success` and
+     *       cheerfully report someone else's numbers as ours;
+     *     · a real run finishes, which only the watcher can see.
+     *   Both of the first two were live bugs in the first draft of this, caught in
+     *   a browser. `settled` is what keeps the loser silent.
+     */
+    let settled = false;
+    const finish = (note: string) => {
+      if (settled) return;
+      settled = true;
+      setSyncNote(note);
       setSyncing(false);
+      void invalidate();
+    };
+
+    runMastersSync(force)
+      .then((res) => {
+        // A pull that actually ran is reported by the watcher, which has the
+        // counts and the status; this branch only covers "there was nothing to do".
+        if (res.skipped) finish("Tally has not synced since the last pull — nothing to bring in.");
+      })
+      .catch((e) => finish(`Sync failed: ${(e as Error).message}`));
+
+    void watchSyncRun(finish);
+  };
+
+  /**
+   * Follow the run log until the newest run stops saying "running".
+   *
+   * Polling is right here and a subscription would not be: this is ONE admin on
+   * ONE screen for under a minute, and a sync that dies without writing anything
+   * produces no database change to subscribe to.
+   */
+  const watchSyncRun = async (finish: (note: string) => void) => {
+    const startedAt = Date.now();
+    // Long enough for the worst run ever recorded (90s) plus the retry budget.
+    const GIVE_UP_MS = 180_000;
+
+    /**
+     * ⚠ REMEMBER WHICH RUN WAS NEWEST *BEFORE* OURS. Without this the very first
+     *   poll finds the PREVIOUS run — already `success` — and reports its counts
+     *   as though they were this press's. Ours is the first row whose id differs.
+     */
+    let priorId: string | null = null;
+    try {
+      priorId = (await fetchMasterSyncRuns(1))[0]?.id ?? null;
+    } catch {
+      // Could not read the log; treat every row as possibly ours rather than
+      // silently attributing an old run to this press.
+      priorId = null;
+    }
+
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      let run: MasterSyncRun | undefined;
+      try {
+        run = (await fetchMasterSyncRuns(1))[0];
+      } catch {
+        // A blip reading the log is not a failed sync. Keep watching.
+        run = undefined;
+      }
+
+      const isOurs = !!run && run.id !== priorId;
+      if (isOurs && run!.status !== "running") {
+        const c = run!.counts ?? {};
+        finish(
+          run!.status === "success"
+            ? `Brought in ${c.parties ?? 0} customers and suppliers and ${c.items ?? 0} items`
+              + `${c.read_retries ? `, after ${c.read_retries} retry(s)` : ""}.`
+            : `Sync failed: ${run!.error ?? "no reason recorded"}`,
+        );
+        return;
+      }
+
+      if (Date.now() - startedAt > GIVE_UP_MS) {
+        // Not "it failed" — we stopped looking. The run may still land, and the
+        // masters refresh themselves when it does.
+        finish("Still running after three minutes. Reload later to see how it finished.");
+        return;
+      }
     }
   };
 
