@@ -87,6 +87,14 @@ export function longDate(iso: string): string {
   });
 }
 
+/** "19:42" from a timestamp — for the "rebuilt at" caption. */
+export function timeOfDay(ts: string): string {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 /** Step a yyyy-mm-dd by whole days, forwards or back. */
 export function addDays(iso: string, days: number): string {
   const d = dateOf(iso);

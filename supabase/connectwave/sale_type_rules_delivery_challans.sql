@@ -78,6 +78,43 @@
 -- of work for no change, and it cannot alter an open bill for the reason given above.
 
 
+-- ─── MEASURED BEFORE APPLYING, 11-09-2026, FY2026-27 ───────────────────────────────────────────
+--
+-- Only SOME of the rules below change anything today. The rest are backstops: their voucher types
+-- already resolve through a voucher_no PREFIX rule, and the type rule only starts mattering if a
+-- numbering series changes. Knowing which is which saves the next reader from assuming all
+-- seventeen are load-bearing.
+--
+--   ACTUALLY UNRESOLVED (this file fixes each):
+--     DELIVERY CHALLAN - INK(MACHINE)          981 lines    ₹2.48 L
+--     DELIVERY CHALLAN - HEAD-HANGLORY         108 lines    ₹0.00
+--     DELIVERY CHALLAN-PAPER                    42 lines    ₹1.51 L
+--     GST SALES - SERVICE                       15 lines    ₹4.35 L
+--     GST SERVICE-JOB WORK                       3 lines   ₹10.03 L
+--     DELIVERY CHALLAN - HEAD                    2 lines    ₹0.00
+--     DELIVERY CHALLAN - HEAD(M)HANGLORY         2 lines    ₹0.00
+--
+--   ALREADY RESOLVED by a prefix rule; the type rule is a backstop only:
+--     DELIVERY - INK / - HEAD / - SPARE PARTS, DELIVERY CHALLAN - INK,
+--     DELIVERY CHALLAN - SPARE PARTS, DELIVERY CHALLAN -  SPARE PARTS (MACHINE),
+--     DELIVERY CHALLAN - MACHINE, DELIVERY CHALLAN - PRINT HEAD,
+--     DELIVERY CHALLAN SALES ON APPROVAL - MACHINE / - SPARE PARTS, GST SALES- PAPER
+--
+--   LEFT UNRESOLVED ON PURPOSE — the answer is not in the voucher type:
+--     TRANSFER OF OWNER SHIP                     1 line   ₹215.00 L
+--     DELIVERY CHALLAN SALES ON APPROVAL BASIS  10 lines   ₹66.06 L
+--     GST SALES - AMC                           10 lines   ₹21.20 L
+--     DELIVERY CHALLAN SALES ON APPROVAL        16 lines    ₹8.53 L
+--     GST SALES -  OTHER                         8 lines    ₹1.59 L
+--     DELIVERY CHALLAN                           2 lines    ₹0.05 L
+--   plus the credit notes, debit notes and returns, which are not product lines at all and are
+--   handled by the document TYPE rather than by sale_type.
+--
+-- ⚠ THE BLAST RADIUS IS SMALL, BUT IT IS NOT ZERO. sale_type_rule is shared, so anything that
+--   reports sales BY TYPE (the Outstanding Dashboard's sales views, v_sales_voucher) will move
+--   ₹2.48 L of ink and ₹1.51 L of paper out of Other, and file ₹14.38 L of service income as
+--   non_product. Open bills are untouched: that path passes an empty voucher type.
+
 -- ── Verify 1: RUN THIS FIRST, and copy its output into the values list if anything differs ─────
 -- Every sales-side row it returns must be covered below or listed as deliberately unruled. A new
 -- book, or a rename, can introduce a new spelling at any sync.
@@ -116,6 +153,13 @@ cross join (values
      'Hanglory print heads on a challan. This is the rule the client reference sheet turns on: the 08-09-2026 Surat report counts DC/HG/26-27/81 among its 17 heads. DR-1, 11-09-2026.'),
   ('voucher_type', 'DELIVERY CHALLAN - PRINT HEAD', 'head', 'exact', true, 20,
      'Third spelling of the print-head challan. DR-1, 11-09-2026.'),
+  -- ⚠ (M) MEANS MACHINE, one line below two rules that say head. Same convention
+  --   as 'GST SALES - HEAD -HANGLORY(MACHINE)' (rule 27): a Hanglory head that
+  --   is part of a machine deal is a MACHINE. Found only by reading the live
+  --   unresolved list - it is not in any sample and carries no revenue, so it
+  --   would have gone on reading as unclassified indefinitely.
+  ('voucher_type', 'DELIVERY CHALLAN - HEAD(M)HANGLORY', 'machine', 'exact', true, 20,
+     'A Hanglory head going out on a challan as part of a MACHINE deal - the (M) is the marker, matching rule 27. Not head. DR-1, 11-09-2026.'),
 
   -- ── ink ──────────────────────────────────────────────────────────────────────────────────────
   ('voucher_type', 'DELIVERY - INK', 'ink', 'exact', true, 20,
@@ -234,7 +278,7 @@ select r.voucher_type, count(*) as lines, round(sum(r.revenue) / 100000.0, 2) as
 --        'DELIVERY CHALLAN SALES ON APPROVAL - MACHINE', 'DELIVERY - SPARE PARTS',
 --        'DELIVERY CHALLAN - SPARE PARTS', 'DELIVERY CHALLAN -  SPARE PARTS (MACHINE)',
 --        'DELIVERY CHALLAN SALES ON APPROVAL - SPARE PARTS', 'DELIVERY CHALLAN-PAPER',
---        'GST SALES- PAPER', 'GST SALES - SERVICE', 'GST SERVICE-JOB WORK');
+--        'DELIVERY CHALLAN - HEAD(M)HANGLORY', 'GST SALES- PAPER', 'GST SALES - SERVICE', 'GST SERVICE-JOB WORK');
 --
 -- The frontend needs no matching rollback: every bucket above already exists and stays populated
 -- from the invoice-side rules either way.

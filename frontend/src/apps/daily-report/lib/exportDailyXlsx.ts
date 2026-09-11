@@ -26,6 +26,7 @@ import type { MoneyRow, PurchaseLine } from "../data/dailyReport";
 import { PARTY_KIND_LABEL } from "../data/dailyReport";
 import {
   bandMoney, byParty, cellFor, entityTotal, facilityRows, groupSales, saleKind, salesTotals,
+  tradeTotal,
   type LocationFilter,
 } from "./aggregate";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER } from "./saleType";
@@ -96,10 +97,14 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
     { label: "Sales (net of returns, excludes goods on approval)", value: Number(totals.netLacs.toFixed(2)), note: "₹ lakhs" },
     { label: "  of which returns and credit notes", value: Number(totals.returnsLacs.toFixed(2)), note: "already deducted above" },
     { label: "Goods out on approval (not a sale)", value: Number(totals.approvalLacs.toFixed(2)), note: "shown for completeness" },
-    { label: "Received — all counterparties", value: Number(received.reduce((s, b) => s + b.totalLacs, 0).toFixed(2)), note: "see the Receipts sheet for the split" },
+    // Trade first, because that is the headline the report quotes; the full
+    // figure follows it rather than replacing it.
+    { label: "Received from customers and suppliers", value: Number(tradeTotal(received).toFixed(2)), note: "the basis the old sheet used" },
     ...received.map((b) => ({ label: `  ${PARTY_KIND_LABEL[b.kind]}`, value: Number(b.totalLacs.toFixed(2)), note: "" })),
-    { label: "Paid — all counterparties", value: Number(paid.reduce((s, b) => s + b.totalLacs, 0).toFixed(2)), note: "see the Payments sheet for the split" },
+    { label: "Received — all counterparties", value: Number(received.reduce((s, b) => s + b.totalLacs, 0).toFixed(2)), note: "includes our own transfers and inter-company" },
+    { label: "Paid to suppliers", value: Number(tradeTotal(paid).toFixed(2)), note: "the basis the old sheet used" },
     ...paid.map((b) => ({ label: `  ${PARTY_KIND_LABEL[b.kind]}`, value: Number(b.totalLacs.toFixed(2)), note: "" })),
+    { label: "Paid — all counterparties", value: Number(paid.reduce((s, b) => s + b.totalLacs, 0).toFixed(2)), note: "includes our own transfers and inter-company" },
     { label: "Purchased", value: Number(d.purchases.reduce((s, p) => s + p.amountLacs, 0).toFixed(2)), note: "net of GST" },
     { label: "Month to date — sales", value: Number(d.mtdSalesLacs.toFixed(2)), note: "same rule as the day figure" },
     ...groups.map((g) => ({
@@ -270,7 +275,7 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
       BLANK_NOTE,
       "Outward includes delivery challans, which move goods but are not invoices. The Type column says SALE or DC.",
       "Goods out on approval are listed but NOT counted as sales.",
-      "Receipts and payments cover every counterparty, including transfers between our own bank accounts and inter-company movement. The Counterparty column separates them; the hand-made sheet this replaces showed the customer and supplier bands only.",
+      "The headline received and paid figures count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. Every other counterparty — transfers between our own accounts, inter-company movement, cash and suspense — is listed and totalled separately on the Receipts and Payments sheets.",
       ...(d.rulesLoaded
         ? []
         : ["⚠ The product-line rules could not be read, so every sale is filed under Not yet classified. The amounts are still correct."]),

@@ -13,13 +13,14 @@ import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
 import {
   addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtSmart, isSunday, longDate,
-  shortDay, todayIso,
+  shortDay, timeOfDay, todayIso,
 } from "../lib/format";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "../lib/labels";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType";
 import {
   allBandsTotal, bandMoney, bankColumns, byParty, cellFor, entityTotal, facilityRows,
   groupSales, inLocation, isBankOnlyLocation, purchaseTotal, salesTotals, saleKind, topShare,
+  tradeTotal, TRADE_BANDS,
   type LocationFilter, type PartyTotal,
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
@@ -51,6 +52,20 @@ const LOCATION_OPTIONS: { value: LocationFilter; label: string }[] = [
 
 /** How many days of balance history the bank grid shows. */
 const HISTORY_DAYS = 7;
+
+/**
+ * Trade rows first, then everything else, each half biggest-first.
+ *
+ * The table's own sort still works — this is only the order it OPENS in, so the
+ * rows behind the headline figure are the ones a reader meets before the
+ * inter-company and bank-transfer rows that are not in it.
+ */
+const tradeFirst = (rows: MoneyRow[]): MoneyRow[] =>
+  [...rows].sort((a, b) => {
+    const at = TRADE_BANDS.includes(a.kind) ? 0 : 1;
+    const bt = TRADE_BANDS.includes(b.kind) ? 0 : 1;
+    return at - bt || b.amountLacs - a.amountLacs;
+  });
 
 /* ------------------------------------------------------------- money table */
 
@@ -241,8 +256,17 @@ export default function DailyReport() {
   const returns = useMemo(() => sales.filter((l) => saleKind(l) === "negative"), [sales]);
 
   const purchasedLacs = purchaseTotal(purchases);
-  const receivedLacs = allBandsTotal(received);
-  const paidLacs = allBandsTotal(paid);
+  // ⚠ THE HEADLINE IS TRADE ONLY — customers and suppliers — which is what the
+  //   sheet this replaces has always shown, and what Ritesh Bhai confirmed on
+  //   11-09-2026. Everything else Tally recorded is still on the page, banded
+  //   and totalled separately: on 08-09-2026 that is ₹39.18 L of trade inside a
+  //   ₹1.32 Cr day, the rest being movement on our own cash-credit account, the
+  //   Noida branch, and a suspense posting. Showing the full figure as the
+  //   headline would be true and would read as a fivefold jump in collections.
+  const receivedLacs = tradeTotal(received);
+  const paidLacs = tradeTotal(paid);
+  const receivedAllLacs = allBandsTotal(received);
+  const paidAllLacs = allBandsTotal(paid);
 
   /* ---- bank --------------------------------------------------------- */
   const dates = useMemo(() => daysBetween(historyFrom, date), [historyFrom, date]);
@@ -308,12 +332,12 @@ export default function DailyReport() {
       hint: `Month to date ${fmtSmart(mtdSales)} · median day ${fmtSmart(medianDay)}`,
     },
     bankOnly ? na("Received today", "received") : {
-      key: "received", label: "Received today", value: fmtSmart(receivedLacs),
-      hint: `${received.find((b) => b.kind === "customer")?.rows.length ?? 0} from customers · all counterparties`,
+      key: "received", label: "Received from customers", value: fmtSmart(receivedLacs),
+      hint: `${fmtSmart(receivedAllLacs)} in all, including our own transfers`,
     },
     bankOnly ? na("Paid today", "paid") : {
-      key: "paid", label: "Paid today", value: fmtSmart(paidLacs),
-      hint: `${paid.find((b) => b.kind === "vendor")?.rows.length ?? 0} to suppliers · all counterparties`,
+      key: "paid", label: "Paid to suppliers", value: fmtSmart(paidLacs),
+      hint: `${fmtSmart(paidAllLacs)} in all, including our own transfers`,
     },
     bankOnly ? na("Purchased today", "purchased") : {
       key: "purchased", label: "Purchased today", value: fmtSmart(purchasedLacs),
@@ -340,6 +364,13 @@ export default function DailyReport() {
     mtdSalesLacs: mtdSales,
     rulesLoaded,
   });
+
+  // Sorted oldest-rebuilt first, so the book that is furthest behind is the one
+  // a reader's eye lands on rather than one they have to hunt for.
+  const freshness = useMemo(
+    () => [...(report.data?.freshness ?? [])].sort((a, b) => (a.builtAt ?? "").localeCompare(b.builtAt ?? "")),
+    [report.data],
+  );
 
   const loading = report.isLoading;
 
@@ -405,7 +436,20 @@ export default function DailyReport() {
         </div>
       </div>
 
-      <p className="text-[11.5px] text-grey-2">{BASIS_NOTE}</p>
+      <div className="text-[11.5px] text-grey-2">
+        <p>{BASIS_NOTE}</p>
+        {/* On the current day this is the difference between "no sales" and "no
+            sales YET": the register rebuilds through the evening as the sync
+            runs, and nothing else on the page would say the day is partial. */}
+        {freshness.length > 0 && (
+          <p className="mt-0.5">
+            Tally mirror rebuilt{" "}
+            {freshness
+              .map((f) => `${f.builtAt ? timeOfDay(f.builtAt) : "never"} (${f.label})`)
+              .join(" · ")}
+          </p>
+        )}
+      </div>
 
       {report.isError && (
         <Card className="border-orange/40 p-4 text-[12.5px] text-orange">
@@ -440,14 +484,14 @@ export default function DailyReport() {
           <Section
             title="Received"
             count={`${money.filter((m) => m.direction === "in").length} receipts`}
-            total={fmtSmart(receivedLacs)}
-            note="Every receipt Tally recorded, banded by what the counterparty is. The sheet this replaces lists the customer band only — on 08-09-2026 that was ₹5.36 L of a ₹35.73 L day."
+            total={`${fmtSmart(receivedLacs)} from customers and suppliers`}
+            note={`Every receipt Tally recorded, banded by what the counterparty is. The day total above counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtSmart(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
           >
             {money.filter((m) => m.direction === "in").length === 0 && !loading ? (
               <Nothing date={date} what="receipts" />
             ) : (
               <QueueTable<MoneyRow>
-                rows={money.filter((m) => m.direction === "in")}
+                rows={tradeFirst(money.filter((m) => m.direction === "in"))}
                 rowKey={(r) => r.id}
                 columns={moneyColumns()}
                 loading={loading}
@@ -463,14 +507,14 @@ export default function DailyReport() {
           <Section
             title="Paid"
             count={`${money.filter((m) => m.direction === "out").length} payments`}
-            total={fmtSmart(paidLacs)}
-            note="Includes movement on our own cash-credit accounts and transfers between books, which the hand-made sheet leaves out. The Counterparty column separates them."
+            total={`${fmtSmart(paidLacs)} to suppliers`}
+            note={`The day total above counts suppliers only. All counterparties together come to ${fmtSmart(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. The Counterparty column separates them.`}
           >
             {money.filter((m) => m.direction === "out").length === 0 && !loading ? (
               <Nothing date={date} what="payments" />
             ) : (
               <QueueTable<MoneyRow>
-                rows={money.filter((m) => m.direction === "out")}
+                rows={tradeFirst(money.filter((m) => m.direction === "out"))}
                 rowKey={(r) => r.id}
                 columns={moneyColumns()}
                 loading={loading}

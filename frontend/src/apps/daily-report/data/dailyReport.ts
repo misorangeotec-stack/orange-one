@@ -30,7 +30,9 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import { fetchCompanyMap } from "@hub/lib/companyMap";
-import { loadSalesRegister, type RegisterRow } from "@hub/lib/salesRegister";
+import {
+  loadLastRegisterRefresh, loadRegisterCompanies, loadSalesRegister, type RegisterRow,
+} from "@hub/lib/salesRegister";
 import { loadDayBookMulti, type DayBookData, type DayCompanyRef } from "@hub/lib/dayBook";
 
 import { isoToYmd, toLacs } from "../lib/format";
@@ -119,7 +121,14 @@ export interface DailyReportData {
   dayBook: DayBookData;
   /** False when sale_type_rule could not be read; the page says so out loud. */
   rulesLoaded: boolean;
-  /** When each book's register was last rebuilt — "no sales" versus "no sales YET". */
+  /**
+   * When each book's register was last rebuilt.
+   *
+   * ⚠ THE DIFFERENCE BETWEEN "no sales" AND "no sales YET". The register is
+   *   rebuilt through the evening as the sync runs; a reader opening the page at
+   *   6pm on the current day is looking at a partial day, and nothing else on the
+   *   screen would tell them so. On a past date it is simply reassurance.
+   */
   freshness: { label: string; builtAt: string | null }[];
 }
 
@@ -201,6 +210,8 @@ async function fetchPartyKinds(
   guidByLabel: Map<string, string>,
 ): Promise<Map<string, PartyKind>> {
   const out = new Map<string, PartyKind>();
+  /** Ledger names any book files under Tally's own Suspense group. */
+  const suspenseNames = new Set<string>();
   const unique = [...new Set(names.filter(Boolean))];
   if (unique.length === 0) return out;
 
@@ -223,8 +234,25 @@ async function fetchPartyKinds(
       // split book; the bare GUID is what identifies the company.
       const guid = String(r.tenant_id).split("::")[1]?.split("~")[0] ?? "";
       const key = `${guid}|${r.ledger}`;
-      if (!out.has(key)) out.set(key, classifyParty(r.group_chain as string[] | null));
+      const kind = classifyParty(r.group_chain as string[] | null);
+      if (!out.has(key)) out.set(key, kind);
+      // ⚠ SUSPENSE WINS ACROSS BOOKS, AND NOTHING ELSE DOES.
+      //   Tally files SUSPENSE A/C under its own "Suspense A/c" group in three
+      //   of the five books and under "Sundry Debtors" in the O-tec Surat book.
+      //   Read per book, the Surat one therefore reads as a CUSTOMER — and now
+      //   that the headline counts customers and suppliers only, that put ₹5.85 L
+      //   of undecided money inside the figure a CFO reads as collections.
+      //   A suspense account is not a trade counterparty in any book, so the most
+      //   specific filing Tally itself gives the ledger anywhere is taken as the
+      //   answer everywhere. This is still Tally's classification, just not the
+      //   loosest one; it is NOT a rule keyed on the ledger's name.
+      if (kind === "suspense") suspenseNames.add(r.ledger);
     }
+  }
+
+  for (const [key, kind] of out) {
+    const name = key.slice(key.indexOf("|") + 1);
+    if (kind !== "suspense" && suspenseNames.has(name)) out.set(key, "suspense");
   }
   // Keep the map addressable by label, which is what the caller holds.
   const byLabel = new Map<string, PartyKind>();
@@ -281,6 +309,26 @@ async function fetchPurchases(dateYmd: string, tenants: string[]): Promise<Purch
   });
 }
 
+/**
+ * When each book's register last rebuilt. Never throws: a missing freshness line
+ * is a cosmetic loss, and failing the whole report for it would trade a real
+ * page for a caption.
+ */
+async function loadFreshness(): Promise<{ label: string; builtAt: string | null }[]> {
+  try {
+    const books = await loadRegisterCompanies();
+    return await Promise.all(
+      books.map(async (b) => ({
+        label: b.label,
+        builtAt: (await loadLastRegisterRefresh(b.tenantId))?.ran_at ?? null,
+      })),
+    );
+  } catch (e) {
+    console.warn("[daily-report] could not read when the register last rebuilt.", e);
+    return [];
+  }
+}
+
 export async function loadDailyReport(dateIso: string): Promise<DailyReportData> {
   const dayYmd = isoToYmd(dateIso);
   const monthStartYmd = isoToYmd(`${dateIso.slice(0, 7)}-01`);
@@ -291,11 +339,12 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
     label: `${c.company} — ${c.location}`,
   }));
 
-  const [rules, dayRows, mtdRows, dayBook] = await Promise.all([
+  const [rules, dayRows, mtdRows, dayBook, freshness] = await Promise.all([
     loadSaleTypeRuleset(),
     loadSalesRegister(dayYmd, dayYmd),
     loadSalesRegister(monthStartYmd, dayYmd),
     loadDayBookMulti(companies, dayYmd),
+    loadFreshness(),
   ]);
 
   const toSaleLine = (r: RegisterRow): SaleLine => ({
@@ -371,7 +420,7 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
     mtd: { salesLacs: mtdSalesLacs, dailyNetLacs },
     dayBook,
     rulesLoaded: rules.loaded,
-    freshness: [],
+    freshness,
   };
 }
 

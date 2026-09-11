@@ -28,6 +28,7 @@ import { PARTY_KIND_LABEL } from "../data/dailyReport";
 import type { MoneyRow } from "../data/dailyReport";
 import {
   bandMoney, byParty, cellFor, entityTotal, facilityRows, groupSales, saleKind, salesTotals,
+  tradeTotal,
   type PartyTotal,
 } from "./aggregate";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER } from "./saleType";
@@ -79,8 +80,12 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   const totals = salesTotals(d.sales);
   const received = bandMoney(d.money, "in");
   const paid = bandMoney(d.money, "out");
-  const receivedLacs = received.reduce((s, b) => s + b.totalLacs, 0);
-  const paidLacs = paid.reduce((s, b) => s + b.totalLacs, 0);
+  // Trade only on the cards, matching the screen. The full figure is the card's
+  // own sub-line and every band's subtotal is in the table below.
+  const receivedLacs = tradeTotal(received);
+  const paidLacs = tradeTotal(paid);
+  const receivedAllLacs = received.reduce((s, b) => s + b.totalLacs, 0);
+  const paidAllLacs = paid.reduce((s, b) => s + b.totalLacs, 0);
   const purchasedLacs = d.purchases.reduce((s, p) => s + p.amountLacs, 0);
 
   const byEntity = new Map<string, typeof d.accounts>();
@@ -102,8 +107,8 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
 
   const cards = [
     { label: "Sales today", value: fmtSmart(totals.netLacs), sub: `MTD ${fmtSmart(d.mtdSalesLacs)}` },
-    { label: "Received", value: fmtSmart(receivedLacs), sub: "all counterparties" },
-    { label: "Paid", value: fmtSmart(paidLacs), sub: "all counterparties" },
+    { label: "Received", value: fmtSmart(receivedLacs), sub: `${fmtSmart(receivedAllLacs)} in all` },
+    { label: "Paid", value: fmtSmart(paidLacs), sub: `${fmtSmart(paidAllLacs)} in all` },
     { label: "Purchased", value: fmtSmart(purchasedLacs), sub: "net of GST" },
     {
       label: "Bank balance",
@@ -162,8 +167,8 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
     }) + 14;
   };
 
-  drawMoney("Received", "Money in", received, receivedLacs);
-  drawMoney("Paid", "Money out", paid, paidLacs);
+  drawMoney("Received", "Money in", received, receivedAllLacs);
+  drawMoney("Paid", "Money out", paid, paidAllLacs);
 
   /* ---- sales, one block per product line --------------------------------- */
   const groups = groupSales(d.sales);
@@ -269,7 +274,7 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   const notes = [
     BASIS_NOTE,
     BLANK_NOTE,
-    "Receipts and payments cover every counterparty, including transfers between our own accounts and inter-company movement. The Counterparty column separates them.",
+    "The Received and Paid figures on the cards count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. The tables below list every counterparty, with a subtotal per band and the full figure at the foot.",
     "Goods out on approval are not counted as sales.",
     ...(d.rulesLoaded ? [] : ["The product-line rules could not be read, so sales are filed under Not yet classified. The amounts are still correct."]),
   ];
