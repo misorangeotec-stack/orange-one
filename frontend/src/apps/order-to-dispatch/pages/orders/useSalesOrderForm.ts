@@ -134,6 +134,21 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   */
   const [mapping, setMapping] = useState<{ search: string } | null>(null);
 
+  /*
+    AND NEITHER DOES THE CUSTOMER PICKER, AS OF OD-5. Same shape as `mapping`
+    above and for the same reason: the firm somebody cannot find is almost never
+    missing from Tally, it is merely filed in another company's book — 412 of our
+    1,354 distinct customer names exist in more than one — so this opens a
+    mapping rather than asking anybody for a new ledger.
+
+    ⚠ SEPARATE STATE FROM `mapping`, NOT A SHARED ONE WITH A KIND FLAG. The two
+      modals chain: mapping a company opens the ITEM modal straight afterwards on
+      the customer just mapped, because a freshly mapped customer has no items
+      and stopping there would leave the user exactly as stuck. One piece of
+      state cannot be open twice.
+  */
+  const [companyMapping, setCompanyMapping] = useState<{ search: string } | null>(null);
+
   /**
    * THE ITEM TYPE THE LINES ARE BEING PICKED FROM (OD-10).
    *
@@ -276,6 +291,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     setCustomer, setCompany,
     raise, setRaise, requested, setRequested,
     mapping, setMapping,
+    companyMapping, setCompanyMapping,
     /*
       ⚠ Starts BLANK when editing an existing order, and that is deliberate. A
         saved order's lines are whatever they are — quite possibly two types —
