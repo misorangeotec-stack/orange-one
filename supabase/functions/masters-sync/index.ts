@@ -104,6 +104,105 @@ const clean = (v: unknown): string | null => {
  *  how a sync silently imports exactly 1000 of everything and calls it success. */
 const PAGE = 1000;
 
+/* -------------------------------------------------------------------------- *
+ *  Reading: timeouts, retries, and the clock                                   *
+ * -------------------------------------------------------------------------- */
+
+/**
+ * ⚠ A READ HERE COMPETES WITH ConnectWave's OWN REBUILDS, AND LOSES.
+ *
+ *   Measured over 91 runs on 2026-09-11: every failure — 3 of 3 — started within
+ *   1-2 MINUTES of the mirror's watermark moving; 76 runs that started later were
+ *   clean. The reason is that ConnectWave fires four rebuild jobs of its own every
+ *   five minutes. They do nothing while Tally is quiet, but the moment the
+ *   connector writes they all wake and rebuild whole financial years by DELETE +
+ *   INSERT, with their own statement_timeout set to 30 minutes. One of them
+ *   rebuilds rpt_sales_register, which we read; an hourly job re-runs
+ *   v_ledger_detail, which we page.
+ *
+ *   Our cron used to fire at minutes 0/15/30/45 — every one a multiple of five,
+ *   so we started in the SAME MINUTE as their rebuilds every single time. That is
+ *   fixed on the schedule side (see the migration); this is the safety net for
+ *   when it happens anyway.
+ */
+
+/** Postgres cancels a statement that outruns statement_timeout with SQLSTATE 57014.
+ *  PostgREST hands it back as an ordinary error object, so we match on the code. */
+const isStatementTimeout = (error: unknown): boolean => {
+  const s = JSON.stringify(error ?? "");
+  return s.includes("57014") || /statement timeout/i.test(s);
+};
+
+/**
+ * Backoff between read attempts: 0.5s, 1s, 2s, 4s, capped at 8s.
+ *
+ * ⚠ COPIED FROM THE TALLY CONNECTOR, DELIBERATELY. `connector/internal/cloud/
+ *   supabase.go` already solves this exact problem against this exact database —
+ *   it detects 57014 and backs off on the same curve. Two different answers to
+ *   one problem on one data path is how they drift apart.
+ */
+const retryBackoffMs = (attempt: number) => Math.min(500 * 2 ** (attempt - 1), 8_000);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const MAX_READ_ATTEMPTS = 4;
+
+/**
+ * ⚠ RETRIES ARE BOUNDED BY THE CLOCK, NOT ONLY BY AN ATTEMPT COUNT.
+ *
+ *   Supabase kills an Edge Function at its wall-clock limit — 150s on the free
+ *   plan, 400s on paid — and THAT KILL HAPPENS OUTSIDE OUR try/catch. A run that
+ *   hits it is left marked `running` for ever, invisible to the watermark query
+ *   (which wants `success`) with nothing to reap it. So we design for 150s.
+ *
+ *   Budget: a full pull measured 38.6-43.6s uncontended (2026-09-11, three runs),
+ *   worst ever 90s. A timed-out read burns ~16s before it returns. Refusing to
+ *   START a retry after 75s leaves ~60s of headroom for the retry chain plus the
+ *   writes that follow. Past that we fail honestly and let the next tick have it.
+ */
+const RETRY_DEADLINE_MS = 75_000;
+
+/** Set once per invocation, read by the retry logic. */
+let runStartedAtMs = Date.now();
+let readRetries = 0;
+
+/**
+ * One page, with retry on a statement timeout and on nothing else.
+ *
+ * ⚠ TAKES A FACTORY, NOT A BUILT QUERY. A PostgREST builder is a thenable that
+ *   carries its own result; awaiting the same one twice does not re-issue it. Each
+ *   attempt has to construct a fresh query, which is also why every caller below
+ *   passes `() => ...`.
+ */
+async function readPage<T>(
+  // deno-lint-ignore no-explicit-any
+  build: () => any,
+  label: string,
+): Promise<T[]> {
+  for (let attempt = 1; ; attempt++) {
+    const { data, error } = await build() as { data: T[] | null; error: unknown };
+    if (!error) return data ?? [];
+
+    const elapsed = Date.now() - runStartedAtMs;
+    const mayRetry = isStatementTimeout(error)
+      && attempt < MAX_READ_ATTEMPTS
+      && elapsed < RETRY_DEADLINE_MS;
+
+    if (!mayRetry) {
+      // ⚠ THE LABEL IS THE POINT. This message used to read "mirror read failed"
+      //   for ELEVEN different reads, five of which are against our OWN database,
+      //   and it named no table. Diagnosing one failure took an hour and had to be
+      //   done by checking which rows had been written. Never remove the label.
+      throw new Error(
+        `${label} read failed after ${attempt} attempt(s), ${Math.round(elapsed / 1000)}s into the run: `
+        + JSON.stringify(error),
+      );
+    }
+
+    readRetries++;
+    await sleep(retryBackoffMs(attempt));
+  }
+}
+
 /**
  * ⚠ `orderBy` IS MANDATORY, AND IT IS NOT A TIDINESS ARGUMENT.
  *
@@ -134,18 +233,62 @@ async function fetchAll<T>(
   // deno-lint-ignore no-explicit-any
   build: () => any,
   orderBy: string[],
+  label: string,
 ): Promise<T[]> {
   if (!orderBy.length) throw new Error("fetchAll needs a stable sort key");
   const out: T[] = [];
   for (let from = 0; ; from += PAGE) {
-    let q = build();
-    for (const col of orderBy) q = q.order(col, { ascending: true });
-    const { data, error } = await q.range(from, from + PAGE - 1) as
-      { data: T[] | null; error: unknown };
-    if (error) throw new Error(`mirror read failed: ${JSON.stringify(error)}`);
-    const rows = data ?? [];
+    const rows = await readPage<T>(() => {
+      let q = build();
+      for (const col of orderBy) q = q.order(col, { ascending: true });
+      return q.range(from, from + PAGE - 1);
+    }, `${label} (page from ${from})`);
     out.push(...rows);
     if (rows.length < PAGE) return out;
+  }
+}
+
+/**
+ * SEEK PAGING — "everything after this row", not "skip the first seventeen
+ * thousand".
+ *
+ * ⚠ WHY THIS EXISTS ALONGSIDE fetchAll. `.range(from, from+999)` is LIMIT/OFFSET:
+ *   page N makes the planner produce and discard N x 1000 rows first, so the last
+ *   page of mst_items skipped 14,000 and the cost GREW every month. Seeking on a
+ *   unique key turns the same walk into an index range scan whose cost is flat.
+ *
+ * ⚠ AND IT IS STRICTLY SAFER THAN THE OFFSET PAGER, not merely faster. Read the
+ *   note above fetchAll: unordered offset paging silently dropped ~1,600 ledgers a
+ *   run for months. A seek cannot skip or repeat a row even if the table changes
+ *   underneath it, because the cursor is a value, not a position.
+ *
+ *   `keyCol` MUST be unique within whatever `build()` already filters to. For the
+ *   mirror views that means calling this PER TENANT and seeking on guid, because
+ *   the same ledger guid appears under both the base tenant and its ~YYYYMMDD
+ *   prior-FY twin.
+ */
+async function fetchKeyset<T extends Record<string, unknown>>(
+  // deno-lint-ignore no-explicit-any
+  build: () => any,
+  keyCol: string,
+  label: string,
+): Promise<T[]> {
+  const out: T[] = [];
+  let after: string | null = null;
+  for (;;) {
+    const cursor = after;
+    const rows = await readPage<T>(() => {
+      let q = build().order(keyCol, { ascending: true }).limit(PAGE);
+      if (cursor !== null) q = q.gt(keyCol, cursor);
+      return q;
+    }, `${label}${after === null ? "" : " (after " + after + ")"}`);
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+    const last = rows[rows.length - 1][keyCol];
+    if (last === undefined || last === null) {
+      throw new Error(`${label}: seek key "${keyCol}" is not in the selected columns`);
+    }
+    after = String(last);
   }
 }
 
@@ -181,6 +324,13 @@ Deno.serve(async (req) => {
 
   let runId: string | null = null;
   const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+  // ⚠ RESET PER REQUEST, NOT PER MODULE LOAD. An Edge Function isolate is reused
+  //   across invocations, so module-level state carries over. Left unreset, the
+  //   second run in a warm isolate would measure its deadline from the FIRST
+  //   run's start and refuse to retry at all.
+  runStartedAtMs = Date.now();
+  readRetries = 0;
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -240,13 +390,18 @@ Deno.serve(async (req) => {
     if (wmErr) throw new Error(`mirror watermark unavailable: ${wmErr.message}`);
     const watermark = clean(watermarkRaw);
 
-    const { data: lastRun } = await db
+    // ⚠ THE ERROR IS CHECKED, AND IT WAS NOT BEFORE. Swallowing it meant a
+    //   timeout on THIS read looked like "no previous run", which skips the skip
+    //   and pulls the whole catalogue — the most expensive possible reaction to
+    //   the database being busy, at exactly the moment it is busy.
+    const { data: lastRun, error: lastRunErr } = await db
       .from("mst_sync_runs")
       .select("source_watermark")
       .eq("status", "success")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (lastRunErr) throw new Error(`mst_sync_runs (local) last-success lookup failed: ${lastRunErr.message}`);
 
     // Compared as TEXT. See the header - parsing this string moves it 5.5 hours.
     if (!force && watermark && lastRun?.source_watermark === watermark) {
@@ -262,24 +417,67 @@ Deno.serve(async (req) => {
     runId = runRow.id as string;
 
     // =================================================================== read --
-    const [companyRows, cleanNames, ledgerRows, itemRows] = await Promise.all([
+    //
+    // ⚠ THE TWO BIG VIEWS ARE READ PER TENANT, AND THAT IS THE WHOLE OPTIMISATION.
+    //
+    //   Both sit on ConnectWave's `tally_object`, whose primary key is
+    //   (tenant_id, object_type, guid) and which also carries
+    //   tally_object_live_idx (tenant_id, object_type) WHERE NOT is_deleted.
+    //   `object_type` is a constant inside each view, so `.eq(tenant_id)` +
+    //   `.gt(guid, cursor)` + `.order(guid)` is an index range scan.
+    //
+    //   Read unfiltered — as this did until 2026-09-11 — NOTHING can narrow it:
+    //   every index on that table begins with tenant_id, so the planner scanned a
+    //   2.3 GB TOASTed relation and then threw away the first N rows, once per
+    //   page, 18 pages deep for stock items. That is the read that was timing out.
+    //
+    //   v_company has to land FIRST now, because it is where the tenant list comes
+    //   from. It is seven rows, so this costs nothing; it also means we no longer
+    //   put four concurrent heavy readers on a mirror that is already busy
+    //   rebuilding itself.
+    const [companyRows, cleanNames] = await Promise.all([
       fetchAll<{ tenant_id: string; company_guid: string; company_name: string }>(() =>
         cw.from("v_company").select("tenant_id,company_guid,company_name"),
-        ["tenant_id", "company_guid"]),
+        ["tenant_id", "company_guid"], "v_company (ConnectWave)"),
       fetchAll<{ company_guid: string; company: string; location: string }>(() =>
         cw.from("ext_company_map").select("company_guid,company,location"),
-        ["company_guid"]),
-      fetchAll<{
-        tenant_id: string; guid: string; ledger: string; sub_group: string | null;
-        group_chain: string[] | null; gstin: string | null;
-        credit_limit: number | null; credit_period: string | null;
-      }>(() => cw.from("v_ledger_detail").select(
-        "tenant_id,guid,ledger,sub_group,group_chain,gstin,credit_limit,credit_period"),
-        ["tenant_id", "guid"]),
-      fetchAll<{ tenant_id: string; guid: string; item: string; stock_group: string | null; base_unit: string | null }>(
-        () => cw.from("v_master_stock_item").select("tenant_id,guid,item,stock_group,base_unit"),
-        ["tenant_id", "guid"]),
+        ["company_guid"], "ext_company_map (ConnectWave)"),
     ]);
+
+    /** Every Tally book, INCLUDING the ~YYYYMMDD prior-FY twins — v_company lists
+     *  one row per financial year, and both twins hold rows we must read. */
+    const tenants = [...new Set(companyRows.map((c) => c.tenant_id).filter(Boolean))];
+    if (!tenants.length) throw new Error("v_company (ConnectWave) returned no tenants - refusing to pull");
+
+    type LedgerRow = {
+      tenant_id: string; guid: string; ledger: string; sub_group: string | null;
+      group_chain: string[] | null; gstin: string | null;
+      credit_limit: number | null; credit_period: string | null;
+    };
+    type ItemRow = {
+      tenant_id: string; guid: string; item: string;
+      stock_group: string | null; base_unit: string | null;
+    };
+
+    const ledgerRows: LedgerRow[] = [];
+    const itemRows: ItemRow[] = [];
+    for (const tenant of tenants) {
+      // The two views per book run together; the books run one after another, so
+      // concurrency stays at two rather than at twice the number of books.
+      const [ledgers, items] = await Promise.all([
+        fetchKeyset<LedgerRow>(
+          () => cw.from("v_ledger_detail").select(
+            "tenant_id,guid,ledger,sub_group,group_chain,gstin,credit_limit,credit_period")
+            .eq("tenant_id", tenant),
+          "guid", `v_ledger_detail (ConnectWave, ${tenant})`),
+        fetchKeyset<ItemRow>(
+          () => cw.from("v_master_stock_item").select("tenant_id,guid,item,stock_group,base_unit")
+            .eq("tenant_id", tenant),
+          "guid", `v_master_stock_item (ConnectWave, ${tenant})`),
+      ]);
+      ledgerRows.push(...ledgers);
+      itemRows.push(...items);
+    }
 
     // ============================================================== companies --
     //
@@ -297,8 +495,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: existingCompanies } = await db
+    // ⚠ THE ERROR IS CHECKED, AND IT WAS NOT BEFORE. Swallowed, a timeout here
+    //   produced an EMPTY map, so every company looked new and the run died forty
+    //   seconds later on a duplicate tally_guid — an error about a unique
+    //   constraint, pointing nowhere near the read that actually failed.
+    const { data: existingCompanies, error: existingCompaniesErr } = await db
       .from("mst_companies").select("id,tally_guid").not("tally_guid", "is", null);
+    if (existingCompaniesErr) {
+      throw new Error(`mst_companies (local) existing-guid lookup failed: ${existingCompaniesErr.message}`);
+    }
     const companyIdByGuid = new Map<string, string>(
       (existingCompanies ?? []).map((r: Record<string, string>) => [r.tally_guid, r.id]));
 
@@ -366,8 +571,8 @@ Deno.serve(async (req) => {
       // (coalesce(company_id::text,''), lower(name)) — an expression index
       // PostgREST cannot address. So this inserts and tolerates the duplicate
       // rather than upserting.
-      const existing = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-        () => db.from("mst_item_groups").select("id,name,company_id"), ["id"]);
+      const existing = await fetchKeyset<{ id: string; name: string; company_id: string | null }>(
+        () => db.from("mst_item_groups").select("id,name,company_id"), "id", "mst_item_groups (local)");
       const have = new Set(existing.map((g) => `${g.company_id ?? ""}|${g.name.toLowerCase()}`));
       const missing = [...groupPairs.entries()]
         .filter(([k]) => !have.has(k))
@@ -382,9 +587,10 @@ Deno.serve(async (req) => {
         unitNames.map((name) => ({ name, source: "tally", tally_synced_at: stamp })), "name");
     }
 
-    const groupRows = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-      () => db.from("mst_item_groups").select("id,name,company_id"), ["id"]);
-    const unitRows = await fetchAll<{ id: string; name: string }>(() => db.from("mst_units").select("id,name"), ["id"]);
+    const groupRows = await fetchKeyset<{ id: string; name: string; company_id: string | null }>(
+      () => db.from("mst_item_groups").select("id,name,company_id"), "id", "mst_item_groups (local)");
+    const unitRows = await fetchKeyset<{ id: string; name: string }>(
+      () => db.from("mst_units").select("id,name"), "id", "mst_units (local)");
     // Keyed by company AND name, so an item lands in ITS company's group.
     const groupIdByKey = new Map(groupRows.map((r) => [`${r.company_id ?? ""}|${r.name.toLowerCase()}`, r.id]));
     const unitIdByName = new Map(unitRows.map((r) => [r.name, r.id]));
@@ -457,17 +663,28 @@ Deno.serve(async (req) => {
     //   lines only, but 709 of the register's rows are `kind='ledger'` - a
     //   sale with no stock item, which is still proof of a trading
     //   relationship. Read everything here; the catalogue narrows it itself.
-    const salesRows = await fetchAll<{
-      kind: string; company_guid: string; party: string; particulars: string;
-      vch_date: string; quantity: number;
-    }>(() => cw.from("rpt_sales_register")
-      .select("kind,company_guid,party,particulars,vch_date,quantity"),
-      // One voucher line is (tenant, voucher, line_no) - unique, so no ties.
-      ["tenant_id", "voucher_guid", "line_no"]);
-
-    const purchaseRows = await fetchAll<{ company_guid: string; party: string }>(
-      () => cw.from("rpt_purchase_item").select("company_guid,party"),
-      ["tenant_id", "voucher_guid", "line_no"]);
+    // ⚠ THE TWO REGISTERS RUN TOGETHER. They are independent, and sales alone is
+    //   26 pages; waiting for it before starting purchases spent ~9 pages of wall
+    //   clock for nothing.
+    //
+    // ⚠ AND THEY STAY ON OFFSET PAGING, WHICH IS DELIBERATE. Seeking needs a key
+    //   that is unique inside the filter, and one voucher LINE is
+    //   (tenant, voucher, line_no) - three columns, none unique alone. Neither
+    //   table carries an index behind that sort on the ConnectWave side either, so
+    //   a seek would buy nothing here until that is fixed there. Retry covers them
+    //   instead; see the ConnectWave write-up.
+    const [salesRows, purchaseRows] = await Promise.all([
+      fetchAll<{
+        kind: string; company_guid: string; party: string; particulars: string;
+        vch_date: string; quantity: number;
+      }>(() => cw.from("rpt_sales_register")
+        .select("kind,company_guid,party,particulars,vch_date,quantity"),
+        // One voucher line is (tenant, voucher, line_no) - unique, so no ties.
+        ["tenant_id", "voucher_guid", "line_no"], "rpt_sales_register (ConnectWave)"),
+      fetchAll<{ company_guid: string; party: string }>(
+        () => cw.from("rpt_purchase_item").select("company_guid,party"),
+        ["tenant_id", "voucher_guid", "line_no"], "rpt_purchase_item (ConnectWave)"),
+    ]);
 
     /** Keyed on company GUID, not company_id, so the sets exist before the
      *  parties are written. companyGuidOf() strips both the `acct_orange::`
@@ -520,10 +737,15 @@ Deno.serve(async (req) => {
     // a catalogue row needs an item and a `kind='ledger'` sale has none.
     const saleItemRows = salesRows.filter((s) => s.kind === "item");
 
-    const writtenParties = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-      () => db.from("mst_parties").select("id,name,company_id"), ["id"]);
-    const writtenItems = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-      () => db.from("mst_items").select("id,name,company_id"), ["id"]);
+    // ⚠ SEEK, NOT OFFSET. These two run immediately after the two biggest upserts
+    //   in the function, against tables of 7,948 and 14,441 rows. On offset paging
+    //   the last page of mst_items skipped 14,000 rows, every run.
+    const [writtenParties, writtenItems] = await Promise.all([
+      fetchKeyset<{ id: string; name: string; company_id: string | null }>(
+        () => db.from("mst_parties").select("id,name,company_id"), "id", "mst_parties (local)"),
+      fetchKeyset<{ id: string; name: string; company_id: string | null }>(
+        () => db.from("mst_items").select("id,name,company_id"), "id", "mst_items (local)"),
+    ]);
 
     const nameKey = (companyId: string | null, name: string) =>
       `${companyId ?? ""}|${String(name ?? "").trim().toLowerCase()}`;
@@ -598,6 +820,12 @@ Deno.serve(async (req) => {
       purchase_lines_read: purchaseRows.length,
       unresolved_party: unresolvedParty,
       unresolved_item: unresolvedItem,
+      // How many reads had to be retried after a statement timeout. Zero is the
+      // expected value. A run that succeeds ONLY because it retried still looks
+      // like a plain success in the status column, so this is the one place the
+      // contention shows up before it turns into a failure.
+      read_retries: readRetries,
+      duration_ms: Date.now() - runStartedAtMs,
     };
 
     await db.from("mst_sync_runs")
@@ -606,7 +834,11 @@ Deno.serve(async (req) => {
 
     return json(200, { ok: true, runId, watermark, counts });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const base = e instanceof Error ? e.message : String(e);
+    // Retries and elapsed time ride along on the message, because a failure that
+    // burned three retries first is a different animal from one that failed flat,
+    // and mst_sync_runs.counts is null on an error so there is nowhere else to put it.
+    const message = `${base} [retries=${readRetries}, elapsed=${Math.round((Date.now() - runStartedAtMs) / 1000)}s]`;
     // A failed run must be RECORDED, not just returned - otherwise the watcher
     // sees no successful run, re-pulls every tick, and nobody learns why.
     if (runId) {
