@@ -124,6 +124,42 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   for (let i = 0; i < cards.length; i++) statCard(pdf, MARGIN + i * (cw + gap), y, cw, 52, cards[i]);
   y += 52 + 16;
 
+  /* ---- what sold, in five lines ------------------------------------------ */
+  //
+  // The same summary the screen opens on, and for the same reason: a reader
+  // should have the day's shape before the first party list, not after four of
+  // them. The detail tables still follow.
+  const groupsForSummary = groupSales(d.sales);
+  if (groupsForSummary.length > 0) {
+    type SumRow = { label: string; qty: string; amount: number; total?: boolean; quiet?: boolean };
+    const rows: SumRow[] = groupsForSummary.map((g) => ({
+      label: SALE_TYPE_LABEL[g.saleType],
+      qty: g.saleType === "ink" ? `${Math.round(g.qty).toLocaleString("en-IN")} kg` : `${g.qty} units`,
+      amount: g.revenueLacs,
+    }));
+    if (totals.returnsLacs !== 0) {
+      rows.push({ label: "Returns and credit notes", qty: "", amount: totals.returnsLacs, quiet: true });
+    }
+    if (totals.approvalLacs !== 0) {
+      rows.push({ label: "Out on approval — not a sale", qty: "", amount: totals.approvalLacs, quiet: true });
+    }
+    rows.push({ label: "Total", qty: "", amount: totals.netLacs, total: true });
+
+    y = sectionHeading(pdf, MARGIN, y, fmtSmart(totals.netLacs), "What sold") + 4;
+    y = drawTable<SumRow>(pdf, {
+      x: MARGIN, y, width: CONTENT_W,
+      rows,
+      rowH: 14, bodySize: 8, maxY: PAGE_H - 56, onNewPage: newPage,
+      showHeader: false,
+      rowKind: (r) => (r.total ? "total" : r.quiet ? "muted" : "normal"),
+      columns: [
+        { header: "", width: 3.4, value: (r) => r.label },
+        { header: "", width: 1.4, value: (r) => r.qty },
+        { header: "", width: 1.2, align: "right", value: (r) => fmtLacs(r.amount) },
+      ],
+    }) + 16;
+  }
+
   /* ---- money ------------------------------------------------------------- */
   /** A banded money table row: a real voucher, or a band's subtotal. */
   type MoneyTableRow = MoneyRow | { subtotal: string; amountLacs: number };

@@ -25,6 +25,7 @@ import {
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
+import FactCard, { DetailToggle, type Fact } from "../components/Snapshot";
 import { REPORT_LOCATIONS, type BankAccount } from "../types";
 
 /**
@@ -226,6 +227,9 @@ export default function DailyReport() {
   };
 
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  // Collapsed by default. The page is meant to answer the day in one screen;
+  // the grids are for interrogating it, which is a second, deliberate step.
+  const [showDetail, setShowDetail] = useState(false);
   const report = useDailyReport(date);
   const accounts = useBankAccounts();
 
@@ -372,6 +376,81 @@ export default function DailyReport() {
     [report.data],
   );
 
+  /* ---- the snapshot ------------------------------------------------- */
+
+  /**
+   * What sold, by product line. FIVE rows where the first cut had four separate
+   * tables running to thirty-nine parties between them — and this is the thing a
+   * CFO actually reads first.
+   */
+  const salesFacts: Fact[] = useMemo(() => {
+    const rows: Fact[] = groups.map((g) => ({
+      key: g.saleType,
+      label: SALE_TYPE_LABEL[g.saleType],
+      sub: g.saleType === "ink" ? fmtKg(g.qty) : `${fmtQty(g.qty)} units`,
+      value: fmtLacs(g.revenueLacs),
+    }));
+    if (totals.returnsLacs !== 0) {
+      rows.push({
+        key: "returns", label: "Returns and credit notes", tone: "quiet",
+        value: fmtLacs(totals.returnsLacs),
+      });
+    }
+    if (totals.approvalLacs !== 0) {
+      rows.push({
+        key: "approval", label: "Out on approval", tone: "quiet",
+        sub: "not counted as a sale",
+        value: fmtLacs(totals.approvalLacs),
+      });
+    }
+    rows.push({ key: "total", label: "Total", tone: "rule", value: fmtLacs(totals.netLacs) });
+    return rows;
+  }, [groups, totals]);
+
+  /** Money in or out, by what the counterparty is. Trade leads; the rest is greyed. */
+  const moneyFacts = (bands: ReturnType<typeof bandMoney>, tradeLacs: number, allLacs: number): Fact[] => {
+    const rows: Fact[] = bands.map((b) => ({
+      key: b.kind,
+      label: PARTY_KIND_LABEL[b.kind],
+      sub: `${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"}`,
+      // Greyed for anything outside the headline, so the eye can see at a glance
+      // which bands the quoted figure is made of.
+      tone: TRADE_BANDS.includes(b.kind) ? undefined : "quiet",
+      value: fmtLacs(b.totalLacs),
+    }));
+    rows.push({ key: "trade", label: "Customers and suppliers", tone: "rule", value: fmtLacs(tradeLacs) });
+    rows.push({ key: "all", label: "All counterparties", tone: "quiet", value: fmtLacs(allLacs) });
+    return rows;
+  };
+
+  /** Where the bank stands today, one line per entity. */
+  const bankFacts: Fact[] = useMemo(
+    () =>
+      bankByEntity.map(([alias, rows]) => {
+        const t = entityTotal(rows, balances.data ?? new Map(), date);
+        return {
+          key: alias,
+          label: entityLabel(alias),
+          sub: `${rows.length} ${rows.length === 1 ? "account" : "accounts"}`,
+          // Never a partial sum: a dash, and the tooltip names what is missing.
+          value:
+            t.totalLacs == null
+              ? <span className="text-grey-2" title={`Not entered: ${t.missing.join(", ")}`}>—</span>
+              : fmtLacs(t.totalLacs),
+        };
+      }),
+    [bankByEntity, balances.data, date],
+  );
+
+  // Describes what OPENS, not what was loaded. "176 sales lines" is true and
+  // tells a reader nothing about the tables they are about to see; the party
+  // count is what they will actually be looking down.
+  const detailSummary = [
+    `${money.length} receipts and payments`,
+    `${groups.reduce((n, g) => n + byParty(g.lines).length, 0)} customers across ${groups.length} product ${groups.length === 1 ? "line" : "lines"}`,
+    purchases.length > 0 ? `${purchases.length} purchase lines` : null,
+  ].filter(Boolean).join(" · ");
+
   const loading = report.isLoading;
 
   return (
@@ -478,8 +557,196 @@ export default function DailyReport() {
         </Card>
       )}
 
+      {/* ─────────────────────────────── the snapshot ─────────────────────
+          Four aggregate cards, two per row on a wide screen. This is what the
+          page is FOR: the day answered before any means of interrogating it. */}
       {!bankOnly && (
-        <>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <FactCard
+            title="What sold"
+            headline={fmtSmart(totals.netLacs)}
+            headlineNote="net of GST"
+            facts={salesFacts}
+            footer={
+              sales.length === 0 && !loading
+                ? isSunday(date)
+                  ? `${dmy(date)} is a Sunday — the books are closed.`
+                  : date === todayIso() ? "Nothing booked yet today." : `Nothing was booked on ${dmy(date)}.`
+                : undefined
+            }
+          />
+
+          <FactCard
+            title="Bank, as on this date"
+            headline={todayBankTotal.anyMissing ? "—" : fmtSmart(todayBankTotal.sum)}
+            headlineNote={`${bankEntered} of ${bankCols.length} entered`}
+            facts={bankFacts}
+            footer={
+              bankEntered < bankCols.length ? (
+                <Link to={`/daily-report/bank-balances?d=${date}`} className="font-semibold text-orange">
+                  Enter the balances for {dmy(date)} →
+                </Link>
+              ) : (
+                "Every account recorded."
+              )
+            }
+          />
+
+          <FactCard
+            title="Money in"
+            headline={fmtSmart(receivedLacs)}
+            headlineNote="from customers and suppliers"
+            facts={moneyFacts(received, receivedLacs, receivedAllLacs)}
+            footer={`The headline counts trade only — the same basis as the sheet this replaces. Greyed bands are our own transfers, inter-company movement, cash and suspense.`}
+          />
+
+          <FactCard
+            title="Money out"
+            headline={fmtSmart(paidLacs)}
+            headlineNote="to suppliers"
+            facts={moneyFacts(paid, paidLacs, paidAllLacs)}
+            footer="Same basis. A transfer onto our own cash-credit account is not a payment to anyone."
+          />
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------ bank */}
+      {facility.length > 0 && (
+        <Section title="Bank facility" note="Limits come from the bank account master; utilisation and free limit are computed. A dash means an input is not known — a free limit computed from a missing figure would be confidently wrong.">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
+                <th className="px-2 py-2 font-semibold">Account</th>
+                <th className="px-2 py-2 text-right font-semibold">CC limit</th>
+                <th className="px-2 py-2 text-right font-semibold">Held by bank</th>
+                <th className="px-2 py-2 text-right font-semibold">Available CC</th>
+                <th className="px-2 py-2 text-right font-semibold">LC / BC limit</th>
+                <th className="px-2 py-2 text-right font-semibold">Utilised</th>
+                <th className="px-2 py-2 text-right font-semibold">Free limit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {facility.map((f) => (
+                <tr key={f.account.id} className="border-b border-line/60 last:border-0">
+                  <td className="px-2 py-1.5 font-semibold text-navy">{f.account.name}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.ccLimit)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.heldByBank)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.availableCc)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcLimit)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcUtilised)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.lcBcFree)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      )}
+
+      <Section
+        title="Bank balances"
+        count={`${HISTORY_DAYS} days to ${dmy(date)}`}
+        note={BLANK_NOTE}
+      >
+        {bankCols.length === 0 ? (
+          <p className="px-1 py-6 text-center text-[12.5px] text-grey">
+            No bank accounts for this location.{" "}
+            <Link to="/daily-report/bank-accounts" className="font-semibold text-orange">Add one</Link>.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-[12.5px]">
+              <thead>
+                {/* Two header rows: the entity band above its own accounts. This
+                    is why the grid is hand-built — QueueTable's head is one row
+                    of columns plus a filter row, and cannot span. */}
+                <tr className="text-[11px] uppercase tracking-wide text-grey">
+                  <th className="sticky left-0 z-10 bg-white px-2 py-1.5 text-left font-semibold">Date</th>
+                  {bankByEntity.map(([alias, rows]) => (
+                    <th key={alias} colSpan={rows.length + 1} className="border-l border-line px-2 py-1.5 text-center font-semibold text-navy">
+                      {entityLabel(alias)}
+                    </th>
+                  ))}
+                </tr>
+                <tr className="border-b border-line text-[11px] uppercase tracking-wide text-grey">
+                  <th className="sticky left-0 z-10 bg-white px-2 py-1.5 text-left font-semibold" />
+                  {bankByEntity.map(([alias, rows]) => (
+                    <Fragmentish key={alias}>
+                      {rows.map((a) => (
+                        <th key={a.id} className="whitespace-nowrap px-2 py-1.5 text-right font-semibold">{a.name}</th>
+                      ))}
+                      <th className="whitespace-nowrap border-r border-line px-2 py-1.5 text-right font-semibold text-navy">Total</th>
+                    </Fragmentish>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...dates].reverse().map((d) => {
+                  const sunday = isSunday(d);
+                  return (
+                    <tr key={d} className={sunday ? "bg-page/60" : undefined}>
+                      <td className={`sticky left-0 z-10 whitespace-nowrap px-2 py-1.5 font-semibold ${sunday ? "bg-page/60 text-grey-2" : "bg-white text-navy"}`}>
+                        {shortDay(d)}
+                      </td>
+                      {bankByEntity.map(([alias, rows]) => {
+                        const t = entityTotal(rows, balances.data ?? new Map(), d);
+                        return (
+                          <Fragmentish key={alias}>
+                            {rows.map((a) => {
+                              const cell = cellFor(a, balances.data ?? new Map(), d);
+                              return (
+                                <td key={a.id} className="px-2 py-1.5 text-right tabular-nums">
+                                  {cell.kind === "value" ? (
+                                    fmtLacs(cell.lacs)
+                                  ) : cell.kind === "closed" ? (
+                                    <span className="text-grey-2/60" title="Sunday — books closed">—</span>
+                                  ) : (
+                                    <span className="text-grey-2" title="Not entered">
+                                      — <span className="text-orange">•</span>
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="border-r border-line px-2 py-1.5 text-right tabular-nums font-semibold text-navy">
+                              {/* Never a partial sum: that is a wrong number that
+                                  looks right, and it is the one a CFO quotes. */}
+                              {t.totalLacs == null ? (
+                                <span
+                                  className="text-grey-2"
+                                  title={sunday ? "Sunday — books closed" : `Not entered: ${t.missing.join(", ")}`}
+                                >
+                                  —
+                                </span>
+                              ) : (
+                                fmtLacs(t.totalLacs)
+                              )}
+                            </td>
+                          </Fragmentish>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {/* ─────────────────────────────── the detail ───────────────────────
+          Every grid keeps its sort, its cascading filters and its export. What
+          changed is that they no longer greet a reader who only wanted the
+          day's five numbers. */}
+      {!bankOnly && (
+        <DetailToggle
+          open={showDetail}
+          onToggle={() => setShowDetail((v) => !v)}
+          summary={detailSummary}
+        />
+      )}
+
+      {!bankOnly && showDetail && (
+        <div className="space-y-4">
           {/* ------------------------------------------------------ money */}
           <Section
             title="Received"
@@ -666,135 +933,12 @@ export default function DailyReport() {
               />
             )}
           </Section>
-        </>
-      )}
 
-      {/* ------------------------------------------------------------ bank */}
-      {facility.length > 0 && (
-        <Section title="Bank facility" note="Limits come from the bank account master; utilisation and free limit are computed. A dash means an input is not known — a free limit computed from a missing figure would be confidently wrong.">
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
-                <th className="px-2 py-2 font-semibold">Account</th>
-                <th className="px-2 py-2 text-right font-semibold">CC limit</th>
-                <th className="px-2 py-2 text-right font-semibold">Held by bank</th>
-                <th className="px-2 py-2 text-right font-semibold">Available CC</th>
-                <th className="px-2 py-2 text-right font-semibold">LC / BC limit</th>
-                <th className="px-2 py-2 text-right font-semibold">Utilised</th>
-                <th className="px-2 py-2 text-right font-semibold">Free limit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {facility.map((f) => (
-                <tr key={f.account.id} className="border-b border-line/60 last:border-0">
-                  <td className="px-2 py-1.5 font-semibold text-navy">{f.account.name}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.ccLimit)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.heldByBank)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.availableCc)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcLimit)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcUtilised)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.lcBcFree)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Section>
+        </div>
       )}
-
-      <Section
-        title="Bank balances"
-        count={`${HISTORY_DAYS} days to ${dmy(date)}`}
-        note={BLANK_NOTE}
-      >
-        {bankCols.length === 0 ? (
-          <p className="px-1 py-6 text-center text-[12.5px] text-grey">
-            No bank accounts for this location.{" "}
-            <Link to="/daily-report/bank-accounts" className="font-semibold text-orange">Add one</Link>.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-[12.5px]">
-              <thead>
-                {/* Two header rows: the entity band above its own accounts. This
-                    is why the grid is hand-built — QueueTable's head is one row
-                    of columns plus a filter row, and cannot span. */}
-                <tr className="text-[11px] uppercase tracking-wide text-grey">
-                  <th className="sticky left-0 z-10 bg-white px-2 py-1.5 text-left font-semibold">Date</th>
-                  {bankByEntity.map(([alias, rows]) => (
-                    <th key={alias} colSpan={rows.length + 1} className="border-l border-line px-2 py-1.5 text-center font-semibold text-navy">
-                      {entityLabel(alias)}
-                    </th>
-                  ))}
-                </tr>
-                <tr className="border-b border-line text-[11px] uppercase tracking-wide text-grey">
-                  <th className="sticky left-0 z-10 bg-white px-2 py-1.5 text-left font-semibold" />
-                  {bankByEntity.map(([alias, rows]) => (
-                    <Fragmentish key={alias}>
-                      {rows.map((a) => (
-                        <th key={a.id} className="whitespace-nowrap px-2 py-1.5 text-right font-semibold">{a.name}</th>
-                      ))}
-                      <th className="whitespace-nowrap border-r border-line px-2 py-1.5 text-right font-semibold text-navy">Total</th>
-                    </Fragmentish>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[...dates].reverse().map((d) => {
-                  const sunday = isSunday(d);
-                  return (
-                    <tr key={d} className={sunday ? "bg-page/60" : undefined}>
-                      <td className={`sticky left-0 z-10 whitespace-nowrap px-2 py-1.5 font-semibold ${sunday ? "bg-page/60 text-grey-2" : "bg-white text-navy"}`}>
-                        {shortDay(d)}
-                      </td>
-                      {bankByEntity.map(([alias, rows]) => {
-                        const t = entityTotal(rows, balances.data ?? new Map(), d);
-                        return (
-                          <Fragmentish key={alias}>
-                            {rows.map((a) => {
-                              const cell = cellFor(a, balances.data ?? new Map(), d);
-                              return (
-                                <td key={a.id} className="px-2 py-1.5 text-right tabular-nums">
-                                  {cell.kind === "value" ? (
-                                    fmtLacs(cell.lacs)
-                                  ) : cell.kind === "closed" ? (
-                                    <span className="text-grey-2/60" title="Sunday — books closed">—</span>
-                                  ) : (
-                                    <span className="text-grey-2" title="Not entered">
-                                      — <span className="text-orange">•</span>
-                                    </span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            <td className="border-r border-line px-2 py-1.5 text-right tabular-nums font-semibold text-navy">
-                              {/* Never a partial sum: that is a wrong number that
-                                  looks right, and it is the one a CFO quotes. */}
-                              {t.totalLacs == null ? (
-                                <span
-                                  className="text-grey-2"
-                                  title={sunday ? "Sunday — books closed" : `Not entered: ${t.missing.join(", ")}`}
-                                >
-                                  —
-                                </span>
-                              ) : (
-                                fmtLacs(t.totalLacs)
-                              )}
-                            </td>
-                          </Fragmentish>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
     </div>
   );
 }
-
 /** A keyed fragment, so the two-level bank header can group cells per entity. */
 function Fragmentish({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
