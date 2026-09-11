@@ -20,6 +20,7 @@ import {
   insertMaster as insertMasterWrite,
   insertMasters as insertMastersWrite,
   mapCustomerItems as mapCustomerItemsWrite,
+  mapPartyCompanies as mapPartyCompaniesWrite,
   markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
@@ -41,6 +42,7 @@ import {
   withdrawCancelRequest as withdrawCancelRequestWrite,
   type AmendRoundLine,
   type MapCustomerItemResult,
+  type MapPartyCompanyResult,
   type MasterInput,
   type OrderInput,
   type SalesReturnPayload,
@@ -64,7 +66,7 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
+  CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
 
@@ -178,6 +180,14 @@ export interface DispatchStoreValue {
   customers: Customer[];
   items: Item[];
   customerItems: CustomerItem[];
+  /**
+   * WHICH BOOKS MAY BILL A CUSTOMER beyond their own ledger's (OD-5).
+   *
+   * Raw rows, active and inactive both, because the only screen that reads
+   * them directly — MapCustomerCompanyModal — needs to know a pair EXISTS in
+   * order not to offer it twice. `customersForCompany` does the filtering.
+   */
+  customerCompanies: CustomerCompany[];
   /**
    * The sites a given company dispatches from — ACTIVE only, sorted.
    *
@@ -396,6 +406,22 @@ export interface DispatchStoreValue {
   mapCustomerItems: (
     customerId: string, companyId: string, itemIds: string[],
   ) => Promise<MapCustomerItemResult>;
+  /**
+   * Record which of our companies may bill a customer (OD-5), with no approval
+   * step — the twin of `mapCustomerItems`, and the same shape for the same
+   * reason: RLS on mst_party_companies admits only an admin or a
+   * 'party_company' master manager, which is nobody who raises an order.
+   *
+   * ⚠ THIS GRANTS PERMISSION TO BILL, not a note for somebody to action later.
+   *   The save guard accepts an active row, so the pair is invoiceable the
+   *   moment this returns. Decided 07-09-2026; the Tally ledger is opened by
+   *   people at billing time and the order is not held for it.
+   *
+   * Several companies at once on purpose — see the write wrapper.
+   */
+  mapPartyCompanies: (
+    customerId: string, companyIds: string[],
+  ) => Promise<MapPartyCompanyResult>;
   resolveMasterRequest: (
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
@@ -475,6 +501,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const customers = masters?.customers ?? [];
   const items = masters?.items ?? [];
   const customerItems = masters?.customerItems ?? [];
+  const customerCompanies = masters?.customerCompanies ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
@@ -986,6 +1013,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       }
       return seen;
     })();
+    /**
+     * WHICH CUSTOMERS EACH BOOK MAY BILL BY MAPPING — company id -> party ids.
+     *
+     * Keyed by COMPANY rather than by customer because that is the question the
+     * picker asks: `customersForCompany` runs once per render over ~1,900 rows,
+     * and a per-customer map would turn it into 1,900 lookups of a one-element
+     * array. 779 rows in, five keys out.
+     *
+     * ⚠ ACTIVE ROWS ONLY, and it must match the database exactly. The guard
+     *   `fms_dispatch_assert_customer_of_company` tests `pc.active`, so an
+     *   inactive pair offered here would be a name the picker shows and the save
+     *   refuses.
+     */
+    const mappedBookSets = (() => {
+      const seen = new Map<string, Set<string>>();
+      for (const m of customerCompanies) {
+        if (!m.active) continue;
+        const set = seen.get(m.companyId);
+        if (set) set.add(m.customerId);
+        else seen.set(m.companyId, new Set([m.customerId]));
+      }
+      return seen;
+    })();
+
     const EMPTY_NAMES: ReadonlySet<string> = new Set<string>();
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
@@ -1143,7 +1194,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       designations,
       dispatchUsers: dir.profiles,
 
-      companies, companyLocations, customers, items, customerItems,
+      companies, companyLocations, customers, items, customerItems, customerCompanies,
       activeOf,
       masterList: (mt) => MASTER_LIST[mt],
 
@@ -1151,6 +1202,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       itemName: (id) => nameFrom(items, id),
       customersForCompany: (companyId, includeId) => {
         if (!companyId) return includeId ? customers.filter((c) => c.id === includeId) : [];
+        const mapped = mappedBookSets.get(companyId);
         return activeOf(customers).filter((c) =>
           c.companyId === companyId
           // ⚠ NO COMPANY MEANS EVERY COMPANY, not none. A customer nobody has
@@ -1160,6 +1212,18 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           //   Hiding them would make a newly approved customer unorderable,
           //   which is the exact moment somebody needs to order from them.
           || c.companyId === null
+          // ⚠ AND ANY BOOK MAPPED TO THEM BY HAND (OD-5). A UNION, NEVER A
+          //   REPLACEMENT — this is the one change that must not be made the
+          //   other way round. Most ledgers have no mapping row at all, so
+          //   reading `mappedBookSets` INSTEAD of company_id would cut O-tec
+          //   from 1,232 names to 304. As a union it adds 401 across the five
+          //   books and removes none (measured 11-09-2026).
+          //
+          //   The database agrees with this line, and it has to:
+          //   fms_dispatch_assert_customer_of_company accepts an active
+          //   mst_party_companies row too. Widening one without the other is
+          //   how a user fills a whole order and is thrown out at save.
+          || mapped?.has(c.id)
           || c.id === includeId);
       },
       mappedItemCount: (customerId) => (customerId ? mappedItemNameSets.get(customerId)?.size ?? 0 : 0),
@@ -1390,6 +1454,37 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         invalidateAll();
         return result;
       },
+      mapPartyCompanies: async (customerId, companyIds) => {
+        const result = await mapPartyCompaniesWrite(customerId, companyIds);
+        // Told, not asked — same as the item mapping. There is nothing to
+        // approve, so this never reaches `resolvableRequests` and never bumps
+        // the "To review" badge.
+        //
+        // ⚠ ANNOUNCED TO THE *CUSTOMER* MASTER'S REVIEWERS, not a
+        //   'party_company' one. DispatchMasterType has five members and that is
+        //   not among them; asking for it does not fail at runtime, it fails to
+        //   compile. The customer master is the right audience anyway — this
+        //   widens who may bill one of their rows.
+        if (result.created + result.reactivated > 0) {
+          const n = result.created + result.reactivated;
+          await safeAnnounce({
+            entityType: "master_request",
+            entityId: customerId,
+            type: "master_mapped",
+            text: `${personName(uid)} mapped ${nameFrom(customers, customerId)} to ${n} billing compan${
+              n === 1 ? "y" : "ies"
+            }.`,
+            recipients: masterReviewersFor("customer").filter((id) => id !== uid),
+            meta: { master_type: "customer" },
+          });
+        }
+        // MINTS THE MAPPING THE CUSTOMER PICKER READS. `customersForCompany`
+        // unions mst_party_companies, so without this the user maps the firm and
+        // watches the picker still not offer it for up to thirty minutes — the
+        // exact failure the feature exists to end.
+        invalidateAll();
+        return result;
+      },
       resolveMasterRequest: async (id, approve, payload, note) => {
         await resolveMasterRequestWrite(id, approve, payload, note);
         const req = masterRequests.find((r) => r.id === id);
@@ -1416,6 +1511,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   }, [
     userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
+    customerCompanies,
     masterManagers, masterRequests, orders, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,
     // Load-bearing and invisible to tsc: without these the memo keeps the

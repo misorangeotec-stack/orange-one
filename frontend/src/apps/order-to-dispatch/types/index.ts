@@ -174,6 +174,35 @@ export interface CustomerItem extends NamedMaster {
   itemId: string;
 }
 
+/**
+ * WHICH OF OUR COMPANIES MAY BILL A CUSTOMER — the second answer to that
+ * question, and the reason there are two.
+ *
+ * `mst_parties.company_id` is Tally's filing: the ONE book a ledger sits in. A
+ * firm we trade with from two books is two party rows. This table is ours, and
+ * it says a book may bill a customer whose ledger is filed elsewhere.
+ *
+ * ⚠ IT USED TO BE A FINDER AND IS NOW A PERMISSION, deliberately (OD-5, decided
+ *   07-09-2026). `fms_dispatch_assert_customer_of_company` accepts an active row
+ *   here, so what the picker offers and what the database will save are the same
+ *   set. Read supabase/migrations/20261119120000_od5_map_party_company.sql
+ *   before narrowing either one — this gate has been widened, narrowed and
+ *   widened again, and every argument is on disk.
+ *
+ * ⚠ `source` has THREE values, not two: 'tally' derived from a same-named ledger
+ *   in that book, 'order_history' seeded from an order the company actually
+ *   raised, and 'portal' typed by a person. It gates nothing — it only says
+ *   where the row came from — and there is no CHECK constraint, so do not treat
+ *   it as a boolean.
+ *
+ * It carries no name of its own; it is described by the pair it names.
+ */
+export interface CustomerCompany extends NamedMaster {
+  customerId: string;
+  companyId: string;
+  source: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Master governance                                                          */
 /* -------------------------------------------------------------------------- */

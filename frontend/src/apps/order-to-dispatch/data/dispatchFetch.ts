@@ -7,7 +7,7 @@ const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company, CompanyItem, CompanyLocation, Customer, Designation, DispatchActivity,
-  DispatchMasterRequest, CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder,
+  DispatchMasterRequest, CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder,
   DispatchRound, Item, MasterManager, NamedMaster, OrderLine, RoundItem, StepAssignee, StepDoc, StepOwner,
 } from "../types";
 
@@ -40,6 +40,7 @@ type Tbl =
   | "mst_items"
   | "mst_units"
   | "mst_party_items"
+  | "mst_party_companies"
   | "fms_dispatch_master_managers"
   | "fms_dispatch_master_requests"
   | "fms_dispatch_orders"
@@ -158,6 +159,14 @@ const COLS = {
   locations: "id,name,active,sort_order,created_at",
   companySites: "id,active,sort_order,created_at,location_id,company_id",
   partyItems: "id,active,sort_order,created_at,party_id,item_id",
+  /**
+   * ⚠ NO `name` COLUMN — asking for one is a 400, not an empty field. Same
+   *   trap as partyItems and companySites above: this is a link table and
+   *   PostgREST rejects the whole request rather than returning null.
+   *   `source` earns its place: the Masters column marks the hand-added ones,
+   *   and it is the only way to tell a person's decision from a derived row.
+   */
+  partyCompanies: "id,active,sort_order,created_at,party_id,company_id,source",
   parties: "id,name,active,sort_order,created_at,company_id,code,location,gstin,contact_name,phone,email",
   items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id,item_type",
   units: "id,name,created_at",
@@ -653,6 +662,7 @@ export interface DispatchMasters {
   customers: Customer[];
   items: Item[];
   customerItems: CustomerItem[];
+  customerCompanies: CustomerCompany[];
 }
 
 /**
@@ -675,7 +685,8 @@ export interface DispatchMasters {
  *   — it is what the split exists to prevent.
  */
 export async function fetchDispatchMasters(): Promise<DispatchMasters> {
-  const [companies, locations, companySites, customerItems, customers, units, orderLineItemIds] =
+  const [companies, locations, companySites, customerItems, customers, units, orderLineItemIds,
+         partyCompanies] =
     await Promise.all([
       // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
       // items, where Tally holds thousands and the tick is the only thing making
@@ -693,6 +704,11 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       fetchWhere("mst_parties", (q) => q.eq("is_customer", true), COLS.parties),
       fetchAll("mst_units", "created_at", COLS.units),
       fetchOrderLineItemIds(),
+      // WHICH BOOKS MAY BILL A CUSTOMER BEYOND THEIR OWN (OD-5). 779 rows of
+      // two uuids — one page. Appended at the END of this list on purpose: the
+      // destructure above is positional and every row is `any`, so inserting
+      // in the middle silently rebinds every name after it.
+      fetchAll("mst_party_companies", "created_at", COLS.partyCompanies),
     ]);
 
   const unitNameById = new Map<string, string>(units.map((u: any) => [u.id, u.name]));
@@ -804,6 +820,26 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       .filter((r: any) => customerIds.has(r.party_id) && itemIds.has(r.item_id))
       .map((r: any): CustomerItem => ({
         ...mapMaster(r), name: "", customerId: r.party_id, itemId: r.item_id,
+      })),
+
+    /**
+     * WHICH BOOKS MAY BILL A CUSTOMER, beyond the one their ledger is filed in.
+     *
+     * ⚠ THIS IS ADDITIVE TO `customer.companyId`, NEVER A REPLACEMENT FOR IT.
+     *   `customersForCompany` unions the two. Swapping one for the other would
+     *   SHRINK every picker — O-tec 1,232 offered today would fall to 304 —
+     *   because most ledgers have no row here at all. As a union it adds 401
+     *   across the five books and removes none (measured 11-09-2026).
+     *
+     * ⚠ Filtered to this module's customers for the same reason as the pairs
+     *   above: the table covers every party in the business, and a row whose
+     *   party is not loaded here can only ever be dead weight in the cache.
+     */
+    customerCompanies: partyCompanies
+      .filter((r: any) => customerIds.has(r.party_id))
+      .map((r: any): CustomerCompany => ({
+        ...mapMaster(r), name: "",
+        customerId: r.party_id, companyId: r.company_id, source: r.source ?? "portal",
       })),
 
   };

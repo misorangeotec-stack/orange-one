@@ -574,6 +574,43 @@ export async function mapCustomerItems(
   return { created: r.created ?? 0, reactivated: r.reactivated ?? 0, skipped: r.skipped ?? 0 };
 }
 
+/**
+ * Map a customer to the companies that may bill them, with NO approval step
+ * (OD-5, decided 07-09-2026).
+ *
+ * ⚠ AN RPC RATHER THAN AN INSERT, for the same reason as the item twin above.
+ *   RLS on mst_party_companies is `is_admin(uid) OR
+ *   mst_is_master_manager('party_company', uid)`: a salesperson can READ the
+ *   table and cannot write it, which is exactly backwards for the one person
+ *   who has just discovered the mapping is missing.
+ *
+ * ⚠ SEVERAL COMPANIES AT ONCE, and the plural is the point rather than a
+ *   convenience. A firm that should be billable from Enterprise is usually
+ *   billable from Noida too, and making that two trips through the modal is how
+ *   the second one never gets done. The sales order's own company arrives
+ *   pre-ticked; the rest are the user's to add.
+ *
+ * ⚠ WHAT THIS WRITES IS PERMISSION TO BILL, not a note. The save guard
+ *   `fms_dispatch_assert_customer_of_company` accepts an active row here, so a
+ *   pair written by this call can be invoiced immediately — that is the whole
+ *   decision, and the Tally ledger is opened by people at billing time. See
+ *   supabase/migrations/20261119120000_od5_map_party_company.sql.
+ */
+export type MapPartyCompanyResult = MapCustomerItemResult;
+
+export async function mapPartyCompanies(
+  customerId: string,
+  companyIds: string[],
+): Promise<MapPartyCompanyResult> {
+  const { data, error } = await db.rpc("fms_dispatch_map_party_company", {
+    p_party: customerId,
+    p_companies: companyIds,
+  });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as Partial<MapPartyCompanyResult>;
+  return { created: r.created ?? 0, reactivated: r.reactivated ?? 0, skipped: r.skipped ?? 0 };
+}
+
 /* --------------------------- activity + bell feed ------------------------- */
 
 export async function announce(input: {

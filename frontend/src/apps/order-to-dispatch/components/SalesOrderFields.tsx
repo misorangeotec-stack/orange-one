@@ -7,6 +7,7 @@ import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { masterTypeLabel } from "../lib/masterFields";
 import RequestMasterModal from "./RequestMasterModal";
 import MapCustomerItemModal from "./MapCustomerItemModal";
+import MapCustomerCompanyModal from "./MapCustomerCompanyModal";
 import type { useSalesOrderForm } from "../pages/orders/useSalesOrderForm";
 import type { DispatchType } from "../types";
 
@@ -52,9 +53,14 @@ import type { DispatchType } from "../types";
  *   point (OD-2, OD-9). Ask yourself who OWNS the thing before adding a create
  *   row to a picker here:
  *
- *     · Billing company, Customer — TALLY'S. No create row at all. A ledger
- *       invented here has no Tally guid and no company book, which is the
- *       mechanism behind OD-4. The picker says where to go instead.
+ *     · Billing company — TALLY'S, and there is nothing to ask for. No create
+ *       row at all: there are five companies and they come from Tally.
+ *     · Customer — TALLY'S LEDGER, OURS TO MAP. Still no create row for a new
+ *       ledger: one invented here has no Tally guid and no company book, which
+ *       is the mechanism behind OD-4. But since OD-5 the picker DOES carry a
+ *       create row, and it maps rather than creates — the firm is almost always
+ *       already in Tally, filed in another company's book (412 of our 1,354
+ *       names are in more than one). It opens MapCustomerCompanyModal.
  *     · Dispatch location — OURS. Still requestable, still goes to that master's
  *       owner, exactly as before.
  *     · Customer location — free text, no master, no request.
@@ -230,10 +236,20 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               disabled={!f.form.companyId}
               searchable
               wrapLabel
-              /* ⚠ NO CREATE ROW — a customer ledger is Tally's (OD-2). Asking
-                 for one here created it in Orange One with no Tally guid and no
-                 company, which is the mechanism behind OD-4. The note below says
-                 where to go instead. */
+              /* ⚠ THE CREATE ROW MAPS, IT DOES NOT CREATE (OD-5). A customer
+                 ledger is still Tally's and still cannot be invented here —
+                 OD-2 closed that and OD-4 is why. What this opens is the
+                 MAPPING modal: the firm somebody cannot find is almost always
+                 in Tally already, filed in another company's book, and saying
+                 so is the whole job. Returns nothing on purpose — the customer
+                 is chosen inside the modal, not by this picker.
+
+                 ⚠ STAFF ONLY. If this picker is ever made read-only for a
+                   customer writing up their own order, the create row goes with
+                   it — a customer must never be deciding which of our books may
+                   bill them. */
+              onCreate={(typed) => f.setCompanyMapping({ search: typed })}
+              createLabel={(q) => `Map “${q}” to this company`}
             />
         </FieldLabel>
 
@@ -354,6 +370,58 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               ? `Mapped ${added} item${added === 1 ? "" : "s"} — ${result.reactivated} of them switched back on.`
               : `Mapped ${added} item${added === 1 ? "" : "s"} — orderable now.`,
           });
+        }}
+      />
+
+      {/*
+        THE COMPANY MAPPING (OD-5) — the twin of the modal above, opened from the
+        Customer picker's create row rather than the item grid's.
+
+        ⚠ IT CHAINS INTO THAT MODAL, AND STOPPING SHORT WOULD BE POINTLESS. A
+          customer who has just been mapped to a company has no items mapped to
+          them either — the picker literally says "no items mapped yet" beside
+          their name — so handing them back to the form would leave the person
+          exactly as stuck, one step further along. Setting the customer and then
+          opening the item modal is a prop hand-off, not a second feature.
+
+        ⚠ THE ORDER MATTERS: setCustomer FIRST, then setMapping. The item modal
+          reads `f.form.customerId` as a prop, so opening it before the customer
+          lands would fix it on the previous one — or on nothing.
+
+        ⚠ AND THE GUARD HAD TO MOVE IN THE SAME CHANGE AS THE PICKER.
+          fms_dispatch_map_customer_item calls
+          fms_dispatch_assert_customer_of_company before it writes, so until that
+          accepted a mst_party_companies row this chain could not have worked at
+          all: the customer would be offered, picked, and then refused by the
+          item modal itself. Live since 11-09-2026.
+      */}
+      <MapCustomerCompanyModal
+        open={f.companyMapping !== null}
+        onClose={() => f.setCompanyMapping(null)}
+        companyId={f.form.companyId}
+        initialSearch={f.companyMapping?.search ?? null}
+        /* Switching the book is the RIGHT answer far more often than mapping —
+           see the modal's header. `setCompany` keeps the customer when the new
+           company can still bill them, and here there is no customer chosen yet
+           anyway, so nothing is lost. */
+        onSwitchCompany={(id) => f.setCompany(id)}
+        onMapped={(result, customerId, companyIds) => {
+          const added = result.created + result.reactivated;
+          f.setRequested({
+            from: "header",
+            // Reactivated is called out separately: somebody had switched that
+            // pair OFF, and turning it back on silently would hide a decision.
+            text: result.reactivated > 0
+              ? `Mapped to ${added} compan${added === 1 ? "y" : "ies"} — ${result.reactivated} switched back on.`
+              : `Mapped to ${added} compan${added === 1 ? "y" : "ies"} — orderable now.`,
+          });
+          /* Only when the order's own company was among them. Mapping a firm to
+             Noida alone while raising under Surat is legitimate — a user ticking
+             ahead — but it must not silently repoint THIS order's customer. */
+          if (f.form.companyId && companyIds.includes(f.form.companyId)) {
+            f.setCustomer(customerId);
+            f.setMapping({ search: "" });
+          }
         }}
       />
     </div>
