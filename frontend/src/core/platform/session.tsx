@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { AppRole, ModuleLevel, Profile } from "./types";
 import { useAuth } from "./auth";
 import { useDirectory } from "./store";
+import { useCatalogueVersion } from "./useCatalogueVersion";
 import { isUniversalApp } from "@/apps/universal";
 
 /**
@@ -65,6 +66,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const { profiles } = useDirectory();
   const authId = session?.user.id ?? null;
+
+  /**
+   * PF-17 — the central masters push, mounted here and NOWHERE ELSE.
+   *
+   * ⚠ THIS PROVIDER, NOT HomeLayout. HomeLayout is the element of the `/home`
+   *   route only; every module mounts at its own basePath as a SIBLING, so a
+   *   hook mounted there is unmounted the moment somebody opens Order to
+   *   Dispatch — which is exactly where the stale catalogue hurts. SessionProvider
+   *   is the innermost provider, inside QueryClientProvider and AuthProvider, so
+   *   one subscription covers the launcher, every module and the admin screens,
+   *   and it unmounts on sign-out.
+   */
+  useCatalogueVersion(authId);
 
   const value = useMemo<SessionValue>(() => {
     const user = profiles.find((p) => p.id === authId) ?? null;
