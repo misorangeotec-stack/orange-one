@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import Card from "@/shared/components/ui/Card";
@@ -25,7 +25,7 @@ import {
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
-import FactCard, { DetailToggle, KpiSkeleton, LoadingNote, type Fact } from "../components/Snapshot";
+import FactCard, { KpiSkeleton, LoadingNote, type Fact } from "../components/Snapshot";
 import { REPORT_LOCATIONS, type BankAccount } from "../types";
 
 /**
@@ -169,10 +169,8 @@ const purchaseColumns = (): QueueColumn<PurchaseLine>[] => [
  * deliberately does not.
  */
 function Section({
-  id, title, total, count, children, note,
+  title, total, count, children, note,
 }: {
-  /** Anchor a summary row can scroll to. */
-  id?: string;
   title: string;
   total?: string;
   count?: string;
@@ -180,7 +178,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card id={id} className="scroll-mt-4 p-0">
+    <Card className="p-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-2.5">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-navy">
           {title}
@@ -232,7 +230,10 @@ export default function DailyReport() {
   const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
   // Collapsed by default. The page is meant to answer the day in one screen;
   // the grids are for interrogating it, which is a second, deliberate step.
-  const [showDetail, setShowDetail] = useState(false);
+  // WHICH block is open, or none. Deliberately not a boolean: "all of them at
+  // once" is the state this page is not allowed to be in.
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
   const report = useDailyReport(date);
   const accounts = useBankAccounts();
 
@@ -349,7 +350,7 @@ export default function DailyReport() {
     bankOnly ? na("Purchased today", "purchased") : {
       key: "purchased", label: "Purchased today", value: fmtMoney(purchasedLacs),
       hint: `${purchases.length} ${purchases.length === 1 ? "line" : "lines"} · net of GST`,
-      onSelect: purchases.length > 0 ? () => openDetail("sec-purchases") : undefined,
+      onSelect: purchases.length > 0 ? () => openDetail("purchases") : undefined,
     },
     {
       key: "bank", label: "Bank balance", value: todayBankTotal.anyMissing ? "—" : fmtMoney(todayBankTotal.sum),
@@ -393,7 +394,7 @@ export default function DailyReport() {
       label: SALE_TYPE_LABEL[g.saleType],
       sub: g.saleType === "ink" ? fmtKg(g.qty) : `${fmtQty(g.qty)} units`,
       value: fmtMoney(g.revenueLacs),
-      onSelect: () => openDetail(`sec-${g.saleType}`),
+      onSelect: () => openDetail(`sale-${g.saleType}`),
       action: `See the ${byParty(g.lines).length} customers behind this`,
     }));
     if (totals.returnsLacs !== 0) {
@@ -407,7 +408,7 @@ export default function DailyReport() {
         key: "approval", label: "Out on approval", tone: "quiet",
         sub: "not counted as a sale",
         value: fmtMoney(totals.approvalLacs),
-        onSelect: () => openDetail("sec-approval"),
+        onSelect: () => openDetail("approval"),
         action: "See what went out on approval",
       });
     }
@@ -480,29 +481,30 @@ export default function DailyReport() {
     [bankByEntity, balances.data, date],
   );
 
-  // Describes what OPENS, not what was loaded. "176 sales lines" is true and
-  // tells a reader nothing about the tables they are about to see; the party
-  // count is what they will actually be looking down.
-  const detailSummary = [
-    `${money.length} receipts and payments`,
-    `${groups.reduce((n, g) => n + byParty(g.lines).length, 0)} customers across ${groups.length} product ${groups.length === 1 ? "line" : "lines"}`,
-    purchases.length > 0 ? `${purchases.length} purchase lines` : null,
-  ].filter(Boolean).join(" · ");
-
   /**
-   * Open the detail and go to one section of it.
+   * Open one block, or close it again if it is the one already open.
    *
-   * The scroll is deferred a frame: the grids do not exist in the DOM until
-   * `showDetail` has rendered, so scrolling in the same tick finds nothing and
-   * silently does nothing — which reads as a dead click.
+   * The scroll is deferred two frames: the block does not exist in the DOM until
+   * the state change has rendered, so scrolling in the same tick finds nothing
+   * and silently does nothing — which reads as a dead click.
    */
   const openDetail = (sectionId: string) => {
-    setShowDetail(true);
+    setOpenSection((cur) => (cur === sectionId ? null : sectionId));
     requestAnimationFrame(() =>
       requestAnimationFrame(() =>
-        document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
       ),
     );
+  };
+
+  /** What the open block is called, for the line above it. */
+  const sectionLabel = (id: string): string => {
+    if (id === "received") return "every receipt";
+    if (id === "paid") return "every payment";
+    if (id === "approval") return "goods out on approval";
+    if (id === "purchases") return "purchases";
+    const t = id.replace(/^sale-/, "") as SaleType;
+    return SALE_TYPE_LABEL[t] ? SALE_TYPE_LABEL[t].toLowerCase() : id;
   };
 
   const loading = report.isLoading;
@@ -664,7 +666,7 @@ export default function DailyReport() {
             title="Money in"
             headline={fmtMoney(receivedLacs)}
             headlineNote="customers and suppliers only"
-            facts={moneyFacts(received, receivedLacs, receivedAllLacs, "sec-received")}
+            facts={moneyFacts(received, receivedLacs, receivedAllLacs, "received")}
             loading={loading}
             onRow={(f) => f.onSelect?.()}
             footer="The same basis as the sheet you circulate today. A supplier refunding us counts here too, which is why suppliers appear on both cards."
@@ -674,7 +676,7 @@ export default function DailyReport() {
             title="Money out"
             headline={fmtMoney(paidLacs)}
             headlineNote="customers and suppliers only"
-            facts={moneyFacts(paid, paidLacs, paidAllLacs, "sec-paid")}
+            facts={moneyFacts(paid, paidLacs, paidAllLacs, "paid")}
             loading={loading}
             onRow={(f) => f.onSelect?.()}
             footer="The same basis. Moving money onto our own cash-credit account, or across to another of our books, is not a payment to anyone."
@@ -806,211 +808,204 @@ export default function DailyReport() {
       </Section>
 
       {/* ─────────────────────────────── the detail ───────────────────────
-          Every grid keeps its sort, its cascading filters and its export. What
-          changed is that they no longer greet a reader who only wanted the
-          day's five numbers. */}
-      {!bankOnly && (
-        <DetailToggle
-          open={showDetail}
-          onToggle={() => setShowDetail((v) => !v)}
-          summary={detailSummary}
-        />
-      )}
+          ⚠ ONE BLOCK AT A TIME, AND ONLY WHEN ASKED FOR.
+            The first cut had a single "Show the detail" toggle that opened all
+            twelve grids at once. Ritesh Bhai's word for that was "the dump",
+            and he was right: clicking Print heads to see five customers
+            unrolled thirty-nine ink parties, forty receipts and everything
+            else beneath them. A summary row now opens ITS OWN block and
+            nothing else; clicking the same row again closes it.
 
-      {!bankOnly && showDetail && (
-        <div className="space-y-4">
-          {/* ------------------------------------------------------ money */}
-          <Section
-            id="sec-received"
-            title="Received"
-            count={`${money.filter((m) => m.direction === "in").length} receipts`}
-            total={`${fmtMoney(receivedLacs)} from customers and suppliers`}
-            note={`Every receipt Tally recorded, banded by what the counterparty is. The day total above counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtMoney(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
-          >
-            {money.filter((m) => m.direction === "in").length === 0 && !loading ? (
-              <Nothing date={date} what="receipts" />
-            ) : (
-              <QueueTable<MoneyRow>
-                rows={tradeFirst(money.filter((m) => m.direction === "in"))}
-                rowKey={(r) => r.id}
-                columns={moneyColumns()}
-                loading={loading}
-                rowsLabel="receipts"
-                initialSort={{ key: "amount", dir: "desc" }}
-                exportName={`Daily_Report_Receipts_${date}`}
-                exportTitle={`Receipts — ${dmy(date)}`}
-                readOnly
-              />
-            )}
-          </Section>
+            Every block keeps its sort, its cascading filters and its export —
+            what changed is how many of them a reader has to walk past. */}
+      {!bankOnly && openSection && (
+        <div ref={detailRef} className="scroll-mt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[12px] text-grey">
+              Showing <span className="font-semibold text-navy">{sectionLabel(openSection)}</span> for {dmy(date)}
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setOpenSection(null)}>Close</Button>
+          </div>
 
-          <Section
-            id="sec-paid"
-            title="Paid"
-            count={`${money.filter((m) => m.direction === "out").length} payments`}
-            total={`${fmtMoney(paidLacs)} to suppliers`}
-            note={`The day total above counts suppliers only. All counterparties together come to ${fmtMoney(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. The Counterparty column separates them.`}
-          >
-            {money.filter((m) => m.direction === "out").length === 0 && !loading ? (
-              <Nothing date={date} what="payments" />
-            ) : (
-              <QueueTable<MoneyRow>
-                rows={tradeFirst(money.filter((m) => m.direction === "out"))}
-                rowKey={(r) => r.id}
-                columns={moneyColumns()}
-                loading={loading}
-                rowsLabel="payments"
-                initialSort={{ key: "amount", dir: "desc" }}
-                exportName={`Daily_Report_Payments_${date}`}
-                exportTitle={`Payments — ${dmy(date)}`}
-                readOnly
-              />
-            )}
-          </Section>
 
-          {/* ------------------------------------------------------ sales */}
-          {groups.length === 0 && !loading && (
-            <Section title="Sales"><Nothing date={date} what="sales" /></Section>
+          {openSection === "received" && (
+      <Section
+        title="Received"
+        count={`${money.filter((m) => m.direction === "in").length} receipts`}
+        total={`${fmtMoney(receivedLacs)} from customers and suppliers`}
+        note={`Every receipt Tally recorded, banded by what the counterparty is. The day total above counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtMoney(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
+      >
+        {money.filter((m) => m.direction === "in").length === 0 && !loading ? (
+          <Nothing date={date} what="receipts" />
+        ) : (
+          <QueueTable<MoneyRow>
+            rows={tradeFirst(money.filter((m) => m.direction === "in"))}
+            rowKey={(r) => r.id}
+            columns={moneyColumns()}
+            loading={loading}
+            rowsLabel="receipts"
+            initialSort={{ key: "amount", dir: "desc" }}
+            exportName={`Daily_Report_Receipts_${date}`}
+            exportTitle={`Receipts — ${dmy(date)}`}
+            readOnly
+          />
+        )}
+      </Section>
           )}
 
-          {SALE_TYPE_ORDER.map((t) => {
+          {openSection === "paid" && (
+      <Section
+        title="Paid"
+        count={`${money.filter((m) => m.direction === "out").length} payments`}
+        total={`${fmtMoney(paidLacs)} to suppliers`}
+        note={`The day total above counts suppliers only. All counterparties together come to ${fmtMoney(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. The Counterparty column separates them.`}
+      >
+        {money.filter((m) => m.direction === "out").length === 0 && !loading ? (
+          <Nothing date={date} what="payments" />
+        ) : (
+          <QueueTable<MoneyRow>
+            rows={tradeFirst(money.filter((m) => m.direction === "out"))}
+            rowKey={(r) => r.id}
+            columns={moneyColumns()}
+            loading={loading}
+            rowsLabel="payments"
+            initialSort={{ key: "amount", dir: "desc" }}
+            exportName={`Daily_Report_Payments_${date}`}
+            exportTitle={`Payments — ${dmy(date)}`}
+            readOnly
+          />
+        )}
+      </Section>
+          )}
+
+          {openSection === "approval" && (
+      <Section
+        title="Out on approval"
+        count={`${approvals.length} ${approvals.length === 1 ? "line" : "lines"}`}
+        total={fmtMoney(approvals.reduce((s, l) => s + l.revenueLacs, 0))}
+        note="Goods that have left on approval. NOT counted as a sale above — the client's own sheet excludes them too — but shown here so nothing leaves the building unrecorded."
+      >
+        <table className="w-full text-[12.5px]">
+          <tbody>
+            {approvals.map((l) => (
+              <tr key={l.id} className="border-b border-line/60 last:border-0">
+                <td className="px-2 py-1.5">{l.party}</td>
+                <td className="px-2 py-1.5 text-grey">{l.item}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(l.qty)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(l.revenueLacs)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Section>
+          )}
+
+          {openSection === "purchases" && (
+      <Section
+        title="Purchases"
+        count={`${purchases.length} ${purchases.length === 1 ? "line" : "lines"}`}
+        total={fmtMoney(purchasedLacs)}
+      >
+        {purchases.length === 0 && !loading ? (
+          <Nothing date={date} what="purchases" />
+        ) : (
+          <QueueTable<PurchaseLine>
+            rows={purchases}
+            rowKey={(r) => r.id}
+            columns={purchaseColumns()}
+            loading={loading}
+            rowsLabel="lines"
+            initialSort={{ key: "amount", dir: "desc" }}
+            exportName={`Daily_Report_Purchases_${date}`}
+            exportTitle={`Purchases — ${dmy(date)}`}
+            readOnly
+          />
+        )}
+      </Section>
+          )}
+
+          {/* A product line opens its own customers, and — for heads and
+              machines — the despatch list beside it, because "who bought" and
+              "what physically left" are two different questions about the same
+              goods and the sheet this replaces prints both. */}
+          {SALE_TYPE_ORDER.filter((t) => openSection === `sale-${t}`).map((t) => {
             const g = groups.find((x) => x.saleType === t);
             if (!g) return null;
             const rows = byParty(g.lines);
             const share = topShare(rows);
             const isInk = t === "ink";
+            // Despatch lines for this product line — one row per thing that
+            // physically left, which is a different question from who bought.
+            const outwardLines =
+              t === "head" || t === "machine"
+                ? sales.filter((l) => l.saleType === t && saleKind(l) !== "negative")
+                : [];
             return (
-              <Section
-                key={t}
-                id={`sec-${t}`}
-                title={SALE_TYPE_LABEL[t]}
-                count={`${rows.length} ${rows.length === 1 ? "party" : "parties"} · ${isInk ? fmtKg(g.qty) : fmtQty(g.qty)}`}
-                total={fmtMoney(g.revenueLacs)}
-                note={
-                  t === "other"
-                    ? "These lines carry a voucher type no product-line rule covers yet. They are listed rather than dropped; add a rule on ConnectWave and they move into the section above."
-                    : rows.length > 5
-                      ? `Top 5 customers ${fmtMoney(share.topLacs)} of ${fmtMoney(share.totalLacs)} (${share.pct.toFixed(0)}%).`
-                      : undefined
-                }
-              >
-                <QueueTable<PartyTotal>
-                  rows={rows}
-                  rowKey={(r) => `${r.party}|${r.company}|${r.location}`}
-                  columns={partyColumns(isInk ? "kg" : "qty")}
-                  loading={loading}
-                  rowsLabel="parties"
-                  initialSort={{ key: "amount", dir: "desc" }}
-                  exportName={`Daily_Report_${SALE_TYPE_LABEL[t].replace(/\s+/g, "_")}_${date}`}
-                  exportTitle={`${SALE_TYPE_LABEL[t]} — ${dmy(date)}`}
-                  readOnly
-                />
-              </Section>
+              <div key={t} className="space-y-3">
+        <Section
+          key={t}
+          title={SALE_TYPE_LABEL[t]}
+          count={`${rows.length} ${rows.length === 1 ? "party" : "parties"} · ${isInk ? fmtKg(g.qty) : fmtQty(g.qty)}`}
+          total={fmtMoney(g.revenueLacs)}
+          note={
+            t === "other"
+              ? "These lines carry a voucher type no product-line rule covers yet. They are listed rather than dropped; add a rule on ConnectWave and they move into the section above."
+              : rows.length > 5
+                ? `Top 5 customers ${fmtMoney(share.topLacs)} of ${fmtMoney(share.totalLacs)} (${share.pct.toFixed(0)}%).`
+                : undefined
+          }
+        >
+          <QueueTable<PartyTotal>
+            rows={rows}
+            rowKey={(r) => `${r.party}|${r.company}|${r.location}`}
+            columns={partyColumns(isInk ? "kg" : "qty")}
+            loading={loading}
+            rowsLabel="parties"
+            initialSort={{ key: "amount", dir: "desc" }}
+            exportName={`Daily_Report_${SALE_TYPE_LABEL[t].replace(/\s+/g, "_")}_${date}`}
+            exportTitle={`${SALE_TYPE_LABEL[t]} — ${dmy(date)}`}
+            readOnly
+          />
+        </Section>
+        {outwardLines.length > 0 && (
+        <Section
+          key={`${t}-outward`}
+          title={`${SALE_TYPE_LABEL[t]} outward`}
+          count={`${fmtQty(outwardLines.reduce((n, l) => n + l.qty, 0))} units`}
+          note="What physically left the building, on an invoice (SALE) or on a delivery challan (DC)."
+        >
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
+                <th className="px-2 py-2 font-semibold">Particular</th>
+                <th className="px-2 py-2 font-semibold">Type</th>
+                <th className="px-2 py-2 text-right font-semibold">Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {outwardLines.map((l) => (
+                <tr key={l.id} className="border-b border-line/60 last:border-0">
+                  <td className="px-2 py-1.5">{l.party}_{l.item}</td>
+                  <td className="px-2 py-1.5">
+                    <span className={l.paper === "DC" ? "text-orange" : "text-grey"}>{l.paper}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(l.qty)}</td>
+                </tr>
+              ))}
+              <tr className="font-semibold text-navy">
+                <td className="px-2 py-2">Total</td>
+                <td />
+                <td className="px-2 py-2 text-right tabular-nums">
+                  {fmtQty(outwardLines.reduce((n, l) => n + l.qty, 0))}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </Section>
+        )}
+              </div>
             );
           })}
-
-          {/* Head and machine movement, as the reference sheet prints it: one
-              line per despatch, and whether it left on an invoice or a challan. */}
-          {(["head", "machine"] as SaleType[]).map((t) => {
-            const lines = sales.filter((l) => l.saleType === t && saleKind(l) !== "negative");
-            if (lines.length === 0) return null;
-            return (
-              <Section
-                key={`${t}-outward`}
-                title={`${SALE_TYPE_LABEL[t]} outward`}
-                count={`${fmtQty(lines.reduce((s, l) => s + l.qty, 0))} units`}
-              >
-                <table className="w-full text-[12.5px]">
-                  <thead>
-                    <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
-                      <th className="px-2 py-2 font-semibold">Particular</th>
-                      <th className="px-2 py-2 font-semibold">Type</th>
-                      <th className="px-2 py-2 text-right font-semibold">Qty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((l) => (
-                      <tr key={l.id} className="border-b border-line/60 last:border-0">
-                        <td className="px-2 py-1.5">{l.party}_{l.item}</td>
-                        <td className="px-2 py-1.5">
-                          <span className={l.paper === "DC" ? "text-orange" : "text-grey"}>{l.paper}</span>
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(l.qty)}</td>
-                      </tr>
-                    ))}
-                    <tr className="font-semibold text-navy">
-                      <td className="px-2 py-2">Total</td>
-                      <td />
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {fmtQty(lines.reduce((s, l) => s + l.qty, 0))}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </Section>
-            );
-          })}
-
-          {approvals.length > 0 && (
-            <Section
-              id="sec-approval"
-              title="Out on approval"
-              count={`${approvals.length} ${approvals.length === 1 ? "line" : "lines"}`}
-              total={fmtMoney(approvals.reduce((s, l) => s + l.revenueLacs, 0))}
-              note="Goods that have left on approval. NOT counted as a sale above — the client's own sheet excludes them too — but shown here so nothing leaves the building unrecorded."
-            >
-              <table className="w-full text-[12.5px]">
-                <tbody>
-                  {approvals.map((l) => (
-                    <tr key={l.id} className="border-b border-line/60 last:border-0">
-                      <td className="px-2 py-1.5">{l.party}</td>
-                      <td className="px-2 py-1.5 text-grey">{l.item}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(l.qty)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(l.revenueLacs)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Section>
-          )}
-
-          {/* The reconciliation line. Without it the visible sections sum to
-              slightly less than the headline and nobody can see where the
-              difference went — which is the fastest way to lose a CFO's trust. */}
-          {!loading && sales.length > 0 && (
-            <p className="px-1 text-[12px] text-grey">
-              {groups.map((g) => `${SALE_TYPE_LABEL[g.saleType]} ${fmtLacs(g.revenueLacs)}`).join(" + ")}
-              {returns.length > 0 && ` − returns ${fmtLacs(Math.abs(totals.returnsLacs))}`}
-              {" = "}
-              <span className="font-semibold text-navy">{fmtMoney(totals.netLacs)}</span>
-              {" "}— the Sales today tile.
-            </p>
-          )}
-
-          {/* -------------------------------------------------- purchases */}
-          <Section
-            id="sec-purchases"
-            title="Purchases"
-            count={`${purchases.length} ${purchases.length === 1 ? "line" : "lines"}`}
-            total={fmtMoney(purchasedLacs)}
-          >
-            {purchases.length === 0 && !loading ? (
-              <Nothing date={date} what="purchases" />
-            ) : (
-              <QueueTable<PurchaseLine>
-                rows={purchases}
-                rowKey={(r) => r.id}
-                columns={purchaseColumns()}
-                loading={loading}
-                rowsLabel="lines"
-                initialSort={{ key: "amount", dir: "desc" }}
-                exportName={`Daily_Report_Purchases_${date}`}
-                exportTitle={`Purchases — ${dmy(date)}`}
-                readOnly
-              />
-            )}
-          </Section>
-
         </div>
       )}
     </div>
