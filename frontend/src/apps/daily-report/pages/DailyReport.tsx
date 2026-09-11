@@ -407,19 +407,38 @@ export default function DailyReport() {
     return rows;
   }, [groups, totals]);
 
-  /** Money in or out, by what the counterparty is. Trade leads; the rest is greyed. */
+  /**
+   * Money in or out, by what the counterparty is.
+   *
+   * ⚠ NO "Customers and suppliers" SUBTOTAL ROW. The card's own headline IS that
+   *   figure and says so underneath it, so a subtotal repeated it — and on a day
+   *   with one trade band and nothing else, the card printed the same number
+   *   three times over ("Customer 15.72 / Customers and suppliers 15.72 / All
+   *   counterparties 15.72"). Ritesh Bhai read that as three different things
+   *   and asked what it meant, which was the right question.
+   *
+   *   So: the bands, a captioned divider where the excluded ones begin, and an
+   *   all-counterparties line ONLY when it differs from the headline.
+   */
   const moneyFacts = (bands: ReturnType<typeof bandMoney>, tradeLacs: number, allLacs: number): Fact[] => {
-    const rows: Fact[] = bands.map((b) => ({
+    const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
+    const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));
+    const row = (b: (typeof bands)[number], quiet: boolean): Fact => ({
       key: b.kind,
       label: PARTY_KIND_LABEL[b.kind],
       sub: `${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"}`,
-      // Greyed for anything outside the headline, so the eye can see at a glance
-      // which bands the quoted figure is made of.
-      tone: TRADE_BANDS.includes(b.kind) ? undefined : "quiet",
+      tone: quiet ? "quiet" : undefined,
       value: fmtLacs(b.totalLacs),
-    }));
-    rows.push({ key: "trade", label: "Customers and suppliers", tone: "rule", value: fmtLacs(tradeLacs) });
-    rows.push({ key: "all", label: "All counterparties", tone: "quiet", value: fmtLacs(allLacs) });
+    });
+
+    const rows: Fact[] = trade.map((b) => row(b, false));
+    if (other.length > 0) {
+      rows.push({ key: "sep", label: "Not counted in the figure above", tone: "sep", value: null });
+      rows.push(...other.map((b) => row(b, true)));
+      rows.push({
+        key: "all", label: "Everything Tally recorded", tone: "quiet", value: fmtLacs(allLacs),
+      });
+    }
     return rows;
   };
 
@@ -592,20 +611,24 @@ export default function DailyReport() {
             }
           />
 
+          {/* ⚠ BOTH CARDS STATE THE SAME BASIS IN THE SAME WORDS. They used to
+              say "from customers and suppliers" and "to suppliers", which read
+              as two different rules for what is one rule, and left a reader
+              wondering why a money-OUT card mentioned customers at all. */}
           <FactCard
             title="Money in"
             headline={fmtSmart(receivedLacs)}
-            headlineNote="from customers and suppliers"
+            headlineNote="customers and suppliers only"
             facts={moneyFacts(received, receivedLacs, receivedAllLacs)}
-            footer={`The headline counts trade only — the same basis as the sheet this replaces. Greyed bands are our own transfers, inter-company movement, cash and suspense.`}
+            footer="The same basis as the sheet you circulate today. A supplier refunding us counts here too, which is why suppliers appear on both cards."
           />
 
           <FactCard
             title="Money out"
             headline={fmtSmart(paidLacs)}
-            headlineNote="to suppliers"
+            headlineNote="customers and suppliers only"
             facts={moneyFacts(paid, paidLacs, paidAllLacs)}
-            footer="Same basis. A transfer onto our own cash-credit account is not a payment to anyone."
+            footer="The same basis. Moving money onto our own cash-credit account, or across to another of our books, is not a payment to anyone."
           />
         </div>
       )}

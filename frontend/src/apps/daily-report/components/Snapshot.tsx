@@ -26,10 +26,15 @@ export interface Fact {
   /** Quiet second line under the label — a quantity, a count, a caveat. */
   sub?: string;
   /**
-   * Sets this row apart from the ones above it: `rule` draws a hairline over it
-   * (a total), `quiet` greys it (a band that is NOT in the headline).
+   * Sets this row apart from the ones above it:
+   *   `rule`  — a hairline above: a total.
+   *   `quiet` — smaller and greyer: a band that is NOT in the headline.
+   *   `sep`   — not a row at all, but a captioned divider introducing the quiet
+   *             block. Without it a reader has to infer from the type size
+   *             alone that the greyed lines are excluded, which is asking a lot
+   *             of a colour difference.
    */
-  tone?: "rule" | "quiet";
+  tone?: "rule" | "quiet" | "sep";
   /** Makes the row a link — used to send a reader to the entry screen. */
   href?: string;
 }
@@ -70,7 +75,19 @@ export default function FactCard({
         ) : (
           <table className="w-full text-[12.5px]">
             <tbody>
-              {facts.map((f) => (
+              {facts.map((f) =>
+                f.tone === "sep" ? (
+                  <tr key={f.key}>
+                    <td colSpan={2} className="pb-1 pt-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-grey-2">
+                          {f.label}
+                        </span>
+                        <span className="h-px flex-1 bg-line" />
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
                 <tr
                   key={f.key}
                   className={cn(f.tone === "rule" && "border-t border-line")}
@@ -95,7 +112,8 @@ export default function FactCard({
                     {f.value}
                   </td>
                 </tr>
-              ))}
+                ),
+              )}
             </tbody>
           </table>
         )}
