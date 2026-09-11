@@ -330,9 +330,14 @@ export const DISPATCH_MASTERS_QK = ["dispatchMasters"] as const;
  *
  * ⚠ ITS OWN KEY, and NOT a child of DISPATCH_MASTERS_QK. Nesting it there would
  *   put every book behind `invalidateAll()`, so mapping one item would re-fetch
- *   8,340 rows to learn about the one that changed. Nothing invalidates this:
- *   a company's Tally book changes on the sync's schedule, not on ours, and the
- *   30-minute staleTime is the right granularity for that.
+ *   8,340 rows to learn about the one that changed. That still holds: no WRITE
+ *   path may invalidate this.
+ *
+ * A company's Tally book changes on the SYNC's schedule, not on ours — and since
+ * PF-17 the browser is told when that schedule fires. `useCatalogueVersion`
+ * invalidates the `["dispatchCompanyItems"]` prefix once or twice per pull, which
+ * re-fetches only the book actually on screen. The 30-minute staleTime stays as
+ * the floor for a browser that was closed or asleep.
  */
 export const COMPANY_ITEMS_QK = (companyId: string) =>
   ["dispatchCompanyItems", companyId] as const;
