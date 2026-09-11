@@ -10,6 +10,7 @@ import MyOrders from "./pages/MyOrders";
 import OrderDetail from "./pages/OrderDetail";
 import ChangePassword from "./pages/ChangePassword";
 import { callUs } from "./lib/customerLabels";
+import { deskPaths } from "./lib/paths";
 
 /**
  * Orange Order Desk — the customer's own screen, and the only app in the portal
@@ -135,7 +136,9 @@ export default function CustomerOrdersApp() {
         <Route path="orders/:id" element={<OrderDetail />} />
         <Route path="password" element={<ChangePassword />} />
         {/* Anything else under the base lands on the one screen they came for. */}
-        <Route path="*" element={<Navigate to="" replace />} />
+        {/* Anything unrecognised goes to the index, by ABSOLUTE path — `to=""`
+            resolves against wherever the bad URL happened to match. */}
+        <Route path="*" element={<Navigate to={deskPaths.place} replace />} />
       </Routes>
     </ProfileCtx.Provider>
   );

@@ -111,7 +111,32 @@ const linesFromOrder = (o: DispatchOrder): OrderLineRow[] =>
     lineRemark: l.lineRemark ?? "",
   }));
 
-export function useSalesOrderForm(existing?: DispatchOrder) {
+/**
+ * How this form is being used. `existing` alone used to say it: absent meant new,
+ * present meant edit. OD-14 adds a third that `existing` cannot express — writing
+ * up a CUSTOMER order, which has an existing row but obeys different rules about
+ * where its options come from and who is allowed to save it.
+ */
+export type SalesOrderMode = "new" | "edit" | "complete";
+
+export interface SalesOrderFormOptions {
+  mode?: SalesOrderMode;
+  /**
+   * Complete mode only: the companies this customer may be billed from, straight
+   * from `fms_dispatch_customer_intake_options`.
+   *
+   * ⚠ NOT `s.assignedCompanies`, and the difference is not cosmetic. The server
+   *   accepts only the companies of this customer's ticked ledgers and refuses
+   *   anything else with "That company does not bill this customer". Offering the
+   *   wider list would put thirty companies in front of the clerk of which five
+   *   are allowed.
+   */
+  companyChoices?: { id: string; name: string }[];
+}
+
+export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderFormOptions = {}) {
+  const mode: SalesOrderMode = opts.mode ?? (existing ? "edit" : "new");
+  const completing = mode === "complete";
   const s = useDispatchStore();
   const [form, setForm] = useState<SalesOrderFormState>(() =>
     existing ? stateFromOrder(existing) : seededState(s),
@@ -234,10 +259,28 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
    */
   const setCompany = (id: string) => {
     if (id === form.companyId) return;
-    // The person's OWN sites under that company — the auto-pick has to agree with
-    // the list they are about to be shown, or it fills in a site they cannot see.
-    const sites = s.assignedLocationsForCompany(id, existing?.locationId ?? null);
+    /*
+      The person's OWN sites under that company — the auto-pick has to agree with
+      the list they are about to be shown, or it fills in a site they cannot see.
+
+      ⚠ EXCEPT WHEN COMPLETING A CUSTOMER ORDER, where the site list is the
+        company's own rather than the person's. The order has no location yet, so
+        there is nothing to be "assigned to"; the same widening `CustomerIntakePanel`
+        has always used, and the server checks only that the site belongs to the
+        company.
+    */
+    const sites = completing
+      ? s.locationsForCompany(id)
+      : s.assignedLocationsForCompany(id, existing?.locationId ?? null);
+    /*
+      ⚠ ON A CUSTOMER ORDER THE CUSTOMER NEVER MOVES. It is the same firm whichever
+        of our books bills them — the ledger merely follows the company, and the
+        SERVER resolves that from the ticked list, which never reaches the browser
+        (Q11). So the field is display-only here and the lines must survive a change
+        of company, or writing one up would silently empty the order.
+    */
     const keepsCustomer =
+      completing ||
       !form.customerId ||
       s.customersForCompany(id, existing?.customerId ?? null).some((c) => c.id === form.customerId);
     patch({
@@ -258,7 +301,10 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     // A company nobody has added locations to must not block order entry.
     if (
       !form.locationId &&
-      s.assignedLocationsForCompany(form.companyId, existing?.locationId ?? null).length > 0
+      (completing
+        ? s.locationsForCompany(form.companyId)
+        : s.assignedLocationsForCompany(form.companyId, existing?.locationId ?? null)
+      ).length > 0
     ) {
       return "Choose the location this order dispatches from.";
     }
@@ -304,6 +350,9 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     // The order being edited, if any. `SalesOrderFields` needs it to keep a
     // company / site the editor is not assigned to in its own dropdowns.
     existing: existing ?? null,
+    mode,
+    completing,
+    companyChoices: opts.companyChoices ?? null,
     form, patch, setForm,
     lines, setLines, filledLines,
     setCustomer, setCompany,

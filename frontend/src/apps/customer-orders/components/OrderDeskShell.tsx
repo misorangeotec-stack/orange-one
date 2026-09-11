@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { deskPaths } from "../lib/paths";
 import type { ReactNode } from "react";
 import { useAuth } from "@/core/platform/auth";
 import Logo from "@/shared/components/ui/Logo";
@@ -29,10 +30,20 @@ import { cn } from "@/shared/lib/cn";
  * internal ones; not building a bell means a mistake there has nowhere to surface.
  */
 
+/*
+  ⚠ ABSOLUTE, AND THEY HAVE TO BE. A relative `to` resolves against the current
+    route, so "orders" meant /order-desk/orders from the index, but
+    /order-desk/orders/orders from My orders (which matched `orders/:id` and read
+    "We cannot find that order") and /order-desk/orders/:id/orders from an order
+    (which matched nothing and bounced to Place an order). See lib/paths.ts.
+
+  `end` is true only on Place an order: My orders should stay lit while the
+  customer is reading one of them.
+*/
 const TABS = [
-  { to: "", label: "Place an order", end: true },
-  { to: "orders", label: "My orders", end: false },
-  { to: "password", label: "Password", end: false },
+  { to: deskPaths.place, label: "Place an order", end: true },
+  { to: deskPaths.orders, label: "My orders", end: false },
+  { to: deskPaths.password, label: "Password", end: false },
 ];
 
 export default function OrderDeskShell({

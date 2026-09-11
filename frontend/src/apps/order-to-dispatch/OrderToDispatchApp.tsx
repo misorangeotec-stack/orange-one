@@ -7,6 +7,7 @@ import OrderToDispatchLayout from "./OrderToDispatchLayout";
 import Dashboard from "./pages/Dashboard";
 import NewOrder from "./pages/orders/NewOrder";
 import EditOrder from "./pages/orders/EditOrder";
+import CompleteCustomerOrder from "./pages/orders/CompleteCustomerOrder";
 import MyOrders from "./pages/orders/MyOrders";
 import OrdersList from "./pages/orders/OrdersList";
 import OrderDetail from "./pages/orders/OrderDetail";
@@ -16,6 +17,7 @@ import SalesBillQueue from "./pages/queues/SalesBillQueue";
 import GateOutQueue from "./pages/queues/GateOutQueue";
 import DispatchConfirmQueue from "./pages/queues/DispatchConfirmQueue";
 import SalesReturnQueue from "./pages/queues/SalesReturnQueue";
+import NewCustomerOrders from "./pages/queues/NewCustomerOrders";
 import OrderRegister from "./pages/reports/OrderRegister";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
@@ -123,6 +125,12 @@ function RequireQueue({ step, children }: { step: OwnerStepKey; children: ReactN
   return <>{children}</>;
 }
 
+function RequireCustomerOrders({ children }: { children: ReactNode }) {
+  const { canSeeCustomerOrders } = useDispatchStore();
+  if (!canSeeCustomerOrders) return <AccessDenied />;
+  return <>{children}</>;
+}
+
 /**
  * Root of the Order to Dispatch FMS. Mounted per-user (App.tsx wraps it in
  * RequireModule); what each person sees is decided by the nav, the store's
@@ -139,8 +147,10 @@ export default function OrderToDispatchApp() {
           <Route path="my-orders" element={<MyOrders />} />
           <Route path="master-requests" element={<MasterRequests />} />
           <Route path="orders" element={<OrdersList />} />
-          {/* "orders/:id/edit" must come before ":id" would swallow "edit". */}
+          {/* "orders/:id/edit" must come before ":id" would swallow "edit". Same
+              for "complete". */}
           <Route path="orders/:id/edit" element={<EditOrder />} />
+          <Route path="orders/:id/complete" element={<CompleteCustomerOrder />} />
           <Route path="orders/:id" element={<OrderDetail />} />
           <Route path="queues/credit-check" element={<RequireQueue step="credit_check"><CreditCheckQueue /></RequireQueue>} />
           <Route path="queues/material-status" element={<RequireQueue step="material_status"><MaterialStatusQueue /></RequireQueue>} />
@@ -150,6 +160,10 @@ export default function OrderToDispatchApp() {
           {/* Off the six-step chain, but gated by the same predicate as the rest,
               so the sidebar and the router can never disagree about it. */}
           <Route path="queues/sales-return" element={<RequireQueue step="sales_return"><SalesReturnQueue /></RequireQueue>} />
+          {/* Also off the chain, but gated by its own predicate rather than
+              RequireQueue: the audience is the customers' named recipients, not
+              the owners of a step. See store.canSeeCustomerOrders. */}
+          <Route path="queues/new-customer-orders" element={<RequireCustomerOrders><NewCustomerOrders /></RequireCustomerOrders>} />
           <Route path="reports/register" element={<OrderRegister />} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           {/* MASTERS MOVED TO CENTRAL MASTERS (/admin/masters).

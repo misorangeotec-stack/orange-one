@@ -120,7 +120,18 @@ const ANCHOR_AT: Record<QueueStep, (o: DispatchOrder, v: RoundView | null) => st
   dispatch_confirm: (_o, v) => v?.goAt ?? null,
 };
 
-/** status → the single step an order currently owes. */
+/**
+ * status → the single step an order currently owes.
+ *
+ * ⚠ `awaiting_order_completion` IS DELIBERATELY ABSENT, exactly as
+ *   `awaiting_sales_return` is. A customer order waiting to be written up is not
+ *   in the five-step chain: it is not recorded through `StepModal`, has no
+ *   `RECORD_RPC`, no `LOCK` arm and no `STEP_CONFIG`, and mapping it here would
+ *   push it into `buildQueueEntries` and from there into the Control Center rail,
+ *   the cross-FMS scoreboard and My Work — all of which read that one builder.
+ *   Its queue is hand-built, out of the same shared parts, the way Sales Return's
+ *   is. See lib/steps.ts for the full reasoning about what belongs in the chain.
+ */
 const STATUS_STEP: Partial<Record<DispatchStatus, QueueStep>> = {
   awaiting_credit_check: "credit_check",
   awaiting_material_status: "material_status",

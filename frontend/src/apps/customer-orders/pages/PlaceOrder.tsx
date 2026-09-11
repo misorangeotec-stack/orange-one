@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import OrderDeskShell from "../components/OrderDeskShell";
@@ -6,31 +6,60 @@ import OrderForm from "../components/OrderForm";
 import { useCustomer } from "../CustomerOrdersApp";
 import { callUs } from "../lib/customerLabels";
 import {
-  fetchDeskItems, submitDeskOrder, ITEMS_QK, ORDERS_QK, type DeskLineInput,
+  COMPANIES_QK, fetchDeskCompanies, fetchDeskItems, itemsQueryKey, submitDeskOrder,
+  ORDERS_QK, type DeskLineInput,
 } from "../data/orderDesk";
+import { deskPaths } from "../lib/paths";
 
 /**
  * Place an order — the screen the whole module exists for.
  *
  * Their name and where they take delivery are printed as TEXT, not offered as
- * fields (Q2). The billing company, the site the goods leave from and how they
- * travel are ours to decide and are filled in at our end; none of the three
- * appears here, and the customer is not told they exist.
+ * fields (Q2). The site the goods leave from and how they travel are ours to
+ * decide and are filled in at our end; neither appears here.
+ *
+ * ⚠ WHICH OF OUR COMPANIES THEY ARE BUYING FROM IS THEIRS TO ANSWER (OD-14).
+ *   Decision Q1 sent that question to credit check on the grounds that guessing it
+ *   would be wrong half the time — both named customers split roughly 50/50 across
+ *   two books. Asking the customer is not a guess: they know who invoices them, and
+ *   the answer decides which items can be billed to them at all.
+ *
+ * ⚠ Q11 STILL STANDS. They see our COMPANY names, which are on every invoice we
+ *   send them. The ticked LEDGER list behind those companies never leaves the
+ *   server, and this app still reads no table.
  */
 export default function PlaceOrder() {
   const customer = useCustomer();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [placed, setPlaced] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<string>("");
+
+  const companies = useQuery({
+    queryKey: COMPANIES_QK,
+    queryFn: fetchDeskCompanies,
+    staleTime: 10 * 60_000,
+  });
+
+  /*
+    The richest book leads (the server orders them that way) and is chosen for
+    them, because for most customers it is the only one they ever use and a
+    required field they never change is a required field that should not be asked.
+    They can still change it; it is a default, not a decision made for them.
+  */
+  useEffect(() => {
+    if (!companyId && companies.data?.length) setCompanyId(companies.data[0].companyId);
+  }, [companies.data, companyId]);
 
   const { data: items, isLoading, error } = useQuery({
-    queryKey: ITEMS_QK,
-    queryFn: fetchDeskItems,
+    queryKey: itemsQueryKey(companyId || null),
+    queryFn: () => fetchDeskItems(companyId || null),
+    enabled: !!companyId,
     staleTime: 10 * 60_000,
   });
 
   const place = async (lines: DeskLineInput[], remarks: string) => {
-    await submitDeskOrder({ orderRemarks: remarks, lines });
+    await submitDeskOrder({ companyId, orderRemarks: remarks, lines });
     // Await both: the next screen this customer opens is "My orders", and it must
     // not open on a list that predates the order they just placed.
     await qc.invalidateQueries({ queryKey: ORDERS_QK });
@@ -61,7 +90,7 @@ export default function PlaceOrder() {
           </p>
           <div className="flex gap-3 mt-6">
             <button
-              onClick={() => navigate("orders")}
+              onClick={() => navigate(deskPaths.orders)}
               className="text-[14px] font-semibold text-white bg-orange-grad shadow-cta rounded-xl px-5 py-2.5"
             >
               See my orders
@@ -78,21 +107,22 @@ export default function PlaceOrder() {
     );
   }
 
+  const loadingAnything = companies.isLoading || (!!companyId && isLoading);
+  const failed = companies.error || error;
+  const noCompanies = !companies.isLoading && !companies.error && (companies.data?.length ?? 0) === 0;
+
   return (
     <OrderDeskShell title="Place an order" subtitle={subtitle}>
-      {isLoading ? (
-        <div className="rounded-2xl border border-line bg-white p-8 text-[14px] text-grey">Loading your items…</div>
-      ) : error ? (
+      {failed ? (
         <div className="rounded-2xl border border-[#f6d2d3] bg-[#FDECEC] p-6 text-[14px] text-[#B3282C]">
           We could not load your items just now. Please refresh the page, and {callUs("call us")} if
           it keeps happening.
         </div>
-      ) : !items || items.length === 0 ? (
+      ) : noCompanies ? (
         /*
-          An empty picker is not an empty state to shrug at — it means this customer
-          cannot place an order at all, and no amount of trying will help. Setup
-          refuses to activate a customer with no mapped items for exactly this
-          reason, so reaching here means something changed afterwards.
+          Nothing to order from at all. Setup refuses to switch a customer on
+          without a mapped item, so reaching here means something changed
+          afterwards — it is not a state to shrug at with an empty dropdown.
         */
         <div className="rounded-2xl border border-line bg-white p-8 max-w-2xl">
           <p className="text-[15px] font-semibold">There is nothing on your list yet.</p>
@@ -101,9 +131,14 @@ export default function PlaceOrder() {
             order as soon as they are on.
           </p>
         </div>
+      ) : loadingAnything ? (
+        <div className="rounded-2xl border border-line bg-white p-8 text-[14px] text-grey">Loading your items…</div>
       ) : (
         <OrderForm
-          items={items}
+          items={items ?? []}
+          companies={companies.data ?? []}
+          companyId={companyId}
+          onCompanyChange={setCompanyId}
           submitLabel="Place this order"
           busyLabel="Placing…"
           onSubmit={place}

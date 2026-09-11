@@ -90,10 +90,25 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
     `existing` keeps the value an order was RAISED with, whoever is editing it.
     OUR sites, under the chosen company — empty until a company is picked.
   */
-  const companyOptions: ComboOption[] = opts(s.assignedCompanies(f.existing?.companyId ?? null));
-  const siteOptions: ComboOption[] = opts(
-    s.assignedLocationsForCompany(f.form.companyId || null, f.existing?.locationId ?? null),
-  );
+  /*
+    ⚠ COMPLETING A CUSTOMER ORDER READS TWO DIFFERENT LISTS, AND BOTH MATTER.
+
+      The companies are the ones on that customer's ticked ledgers, handed in by
+      the page from `fms_dispatch_customer_intake_options` — the server refuses
+      anything else with "That company does not bill this customer", so offering
+      `assignedCompanies` would put thirty in front of a clerk of which five work.
+
+      The sites are the COMPANY'S, not the person's. A customer order has no
+      location until this form gives it one, so there is nothing the completer
+      could be "assigned to" yet. The same widening `CustomerIntakePanel` has
+      always used.
+  */
+  const companyOptions: ComboOption[] = f.completing
+    ? opts(f.companyChoices ?? [])
+    : opts(s.assignedCompanies(f.existing?.companyId ?? null));
+  const siteOptions: ComboOption[] = f.completing
+    ? opts(s.locationsForCompany(f.form.companyId || null))
+    : opts(s.assignedLocationsForCompany(f.form.companyId || null, f.existing?.locationId ?? null));
   /*
     Companies EXIST but none is on offer — so this is an assignment gap, and the
     message can say so. Tested against the full list rather than the empty
@@ -178,6 +193,11 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               Setup → Step Owners.
             </p>
           )}
+          {f.completing && (
+            <p className="mt-1 text-[11.5px] text-grey-2">
+              The customer chose this. Change it only if the order has to be billed elsewhere.
+            </p>
+          )}
         </FieldLabel>
 
         {/* ---- row 2: where it leaves from, and who is buying ---- */}
@@ -210,6 +230,22 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
         </FieldLabel>
 
         <FieldLabel label="Customer" required>
+          {/*
+            ⚠ READ-ONLY WHEN COMPLETING, AND NOT MERELY TO SAVE A CLICK. The order
+              belongs to a customer LOGIN; which of our books bills them decides
+              which of their ledgers it is raised against, and the SERVER resolves
+              that from the ticked list — a list this browser has never been sent
+              and must not be (Q11). Offering a picker here would mean shipping it.
+
+              All of a customer's ledgers carry the identical name anyway, so there
+              is nothing for a person to choose between.
+          */}
+          {f.completing ? (
+            <div className="rounded-lg border border-line bg-page px-3 py-2 text-[13.5px] text-navy">
+              {f.existing?.requesterName || s.customerName(f.form.customerId)}
+            </div>
+          ) : (
+            <>
             {/* ⚠ THE COMPANY COMES FIRST, and the picker says so rather than
                 listing all 1,850 ledgers. A firm has a separate ledger in every
                 book it trades with, so "ANUPAM" is four rows and picking between
@@ -251,6 +287,8 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               onCreate={(typed) => f.setCompanyMapping({ search: typed })}
               createLabel={(q) => `Map “${q}” to this company`}
             />
+            </>
+          )}
         </FieldLabel>
 
         <FieldLabel label="Customer location">

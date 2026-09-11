@@ -86,6 +86,46 @@ export async function updateOrder(orderId: string, input: OrderInput): Promise<v
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Write up a customer order on the ordinary sales-order form, and send it on to
+ * credit check (OD-14).
+ *
+ * ⚠ A SEPARATE RPC FROM `updateOrder`, AND IT HAS TO BE. Two things stop the
+ *   staff path working here, and both are fatal rather than awkward:
+ *
+ *   1. `fms_dispatch_update_order` gates on raiser-or-coordinator, and on a
+ *      customer order THE RAISER IS THE CUSTOMER. The named recipient whose job
+ *      this is fails that check.
+ *   2. It writes lines through `fms_dispatch_replace_lines`, which validates the
+ *      exact `mst_party_items(customer_id, item_id)` pair — 36 of 62 possible
+ *      lines on Bishen's primary book and 0 on two others. It would refuse lines
+ *      nobody had touched. The customer sibling validates against the union of
+ *      ticked ledgers, by name.
+ *
+ * `requesterName` is not sent: on a customer order it is the customer's own name
+ * and is not ours to overwrite.
+ */
+export async function completeCustomerOrder(orderId: string, input: OrderInput): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_complete_customer_order", {
+    p_order: orderId,
+    p: {
+      company_id: input.companyId,
+      location_id: input.locationId ?? "",
+      dispatch_type: input.dispatchType,
+      order_date: input.orderDate ?? "",
+      customer_po_no: input.customerPoNo ?? "",
+      order_remarks: input.orderRemarks ?? "",
+      customer_location: input.customerLocation ?? "",
+      lines: input.lines.map((l) => ({
+        item_id: l.itemId ?? "",
+        quantity: l.quantity ?? "",
+        line_remark: l.lineRemark ?? "",
+      })),
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
 /* ----------------------------- workflow steps ----------------------------- */
 
 /**

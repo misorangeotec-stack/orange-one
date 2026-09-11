@@ -404,6 +404,18 @@ export type DispatchType = "local" | "transport";
  * and no earlier step can be edited underneath it.
  */
 export type DispatchStatus =
+  /**
+   * A CUSTOMER ORDER NOBODY HAS WRITTEN UP YET (OD-14).
+   *
+   * ⚠ OD-13 P3 deliberately did NOT make this a status, and was right to: it used
+   *   `intake_source` + `intake_completed_at` because the order was meant to sit IN
+   *   the credit-check queue carrying three extra fields. OD-14 wants it OUT of
+   *   that queue and in one of its own, and a queue is chosen by status.
+   *
+   * Only a customer order ever carries it. A staff order is complete the moment it
+   * is raised, so it starts at `awaiting_credit_check` exactly as before.
+   */
+  | "awaiting_order_completion"
   | "awaiting_credit_check"
   | "awaiting_material_status"
   | "awaiting_sales_bill"
