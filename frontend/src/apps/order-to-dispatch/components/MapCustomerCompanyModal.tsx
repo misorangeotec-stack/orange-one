@@ -144,10 +144,10 @@ export default function MapCustomerCompanyModal({
       ? customerId
       : matches.siblings.length === 1 ? matches.siblings[0]!.id : "";
     setCustomer(chosen);
-    /* ⚠ ONLY TICK THE ORDER'S COMPANY ONCE A CUSTOMER IS KNOWN. The picker
-       below is disabled until one is, and a disabled control showing a chip the
-       reader cannot remove looks like a bug rather than a default. */
-    setPicked(chosen && companyId ? [companyId] : []);
+    /* ⚠ TICKED ON OPEN, NOT AFTER THE CUSTOMER IS CHOSEN. The order already
+       names the company — that is where this modal was opened from — so the
+       form should show it decided rather than ask for it again. */
+    setPicked(companyId ? [companyId] : []);
     // `matches` is derived from the props in this list; adding it would reset
     // the user's own choice on every keystroke upstream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,9 +180,14 @@ export default function MapCustomerCompanyModal({
    *   as the button having done nothing.
    */
   const companyOptions: MultiOption[] = useMemo(() => {
-    const own = s.customers.find((c) => c.id === customer)?.companyId ?? null;
+    /* Before a customer is chosen there is nothing to exclude, so every active
+       company is offered and the order's own arrives ticked. Choosing one then
+       narrows this to the books that are not already theirs. */
+    const own = customer ? s.customers.find((c) => c.id === customer)?.companyId ?? null : null;
     const already = new Set(
-      s.customerCompanies.filter((m) => m.active && m.customerId === customer).map((m) => m.companyId),
+      customer
+        ? s.customerCompanies.filter((m) => m.active && m.customerId === customer).map((m) => m.companyId)
+        : [],
     );
     return s
       .activeOf(s.companies)
@@ -219,9 +224,6 @@ export default function MapCustomerCompanyModal({
       open={open}
       onClose={onClose}
       title="Map a customer to a billing company"
-      /* No "goes to X for approval" line — there is no approval. Say what it
-         does instead, so nobody waits for a confirmation that never comes. */
-      subtitle="Saved straight away — the customer becomes orderable under that company immediately."
       stacked={stacked}
       size="lg"
       footer={
@@ -235,78 +237,77 @@ export default function MapCustomerCompanyModal({
     >
       <div className="space-y-4">
         {/*
-          ⚠ THE SIBLING OFFER COMES FIRST, ABOVE THE FORM. See the file header:
+          ⚠ THE SIBLING OFFER COMES FIRST, ABOVE THE FORM, and it is one line.
             44 of the 46 cross-book pairs the earlier attempt at this newly
             allowed already had a ledger in the billing book, and the right
-            action for every one of them was to use that row instead. Putting
-            this under the form would make mapping the default and the correct
-            answer the afterthought.
+            action for every one of them was to use that row instead. Below the
+            form it would read as a footnote to a decision already taken.
         */}
         {matches.here && (
-          <div className="rounded-lg border border-yellow/40 bg-yellow/10 px-3 py-2.5">
-            <p className="text-[13px] text-navy">
-              <strong>{matches.here.name}</strong> already has a ledger in {companyLabel}’s book, but it
-              is switched off — which is why the picker does not offer it.
-            </p>
-            <p className="mt-1 text-[12.5px] text-grey-2">
-              Mapping another book’s ledger will not help here. Ask an admin to switch that customer
-              back on in Central Masters → Customers.
-            </p>
-          </div>
+          <p className="text-[13px] text-yellow">
+            <strong>{matches.here.name}</strong> is in {companyLabel}’s book already but switched off.
+            Mapping will not help — ask an admin to switch it back on.
+          </p>
         )}
 
         {!matches.here && matches.siblings.length > 0 && (
-          <div className="rounded-lg border border-orange/40 bg-orange/10 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-[13px] text-navy">
               {matches.siblings.length === 1 ? (
                 <>
-                  <strong>{matches.siblings[0]!.name}</strong> has a ledger in{" "}
-                  <strong>{s.masterName("company", matches.siblings[0]!.companyId)}</strong>’s book, not
-                  in {companyLabel}’s.
+                  Already in <strong>{s.masterName("company", matches.siblings[0]!.companyId)}</strong>’s
+                  book, not {companyLabel}’s.
                 </>
               ) : (
+                /* A list cannot take the possessive the singular form uses —
+                   "A, B and C’s book" reads as one book belonging to C. */
                 <>
-                  <strong>{typed}</strong> has a ledger in{" "}
-                  {matches.siblings
-                    .map((x) => s.masterName("company", x.companyId))
-                    .join(", ")}
-                  , but not in {companyLabel}’s.
+                  Already in{" "}
+                  <strong>
+                    {matches.siblings.map((x) => s.masterName("company", x.companyId)).join(", ")}
+                  </strong>
+                  {" "}— not in {companyLabel}.
                 </>
               )}
             </p>
-            <p className="mt-1 text-[12.5px] text-grey-2">
-              {switchTo
-                ? "If this order should be billed from there, switch the company — nothing needs mapping. Map it here only if it genuinely has to be billed by this one."
-                : "Map it here if this order has to be billed by this company. The Tally ledger is opened at billing time."}
-            </p>
             {switchTo && (
-              <div className="mt-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => { onSwitchCompany?.(switchTo.companyId!); onClose(); }}
-                  disabled={busy}
-                >
-                  Bill this order from {s.masterName("company", switchTo.companyId)} instead
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { onSwitchCompany?.(switchTo.companyId!); onClose(); }}
+                disabled={busy}
+              >
+                Bill from {s.masterName("company", switchTo.companyId)} instead
+              </Button>
             )}
           </div>
         )}
 
         {!matches.here && matches.siblings.length === 0 && typed && (
           <p className="text-[13px] text-grey-2">
-            Nothing in Tally is called “{typed}” under any of our companies. Pick the right ledger
-            below if it is spelled differently; if the firm is genuinely new it has to be created in
-            Tally first.
+            No ledger called “{typed}” in any book. Pick the right one below, or create it in Tally.
           </p>
         )}
 
-        <FieldLabel
-          label="Customer"
-          required
-          hint={lockedCustomer ? "From the order you are raising." : "Every ledger we hold, in every company's book."}
-        >
+        {/*
+          ⚠ COMPANY FIRST, AND TICKED BEFORE ANYTHING IS CHOSEN. The order has
+            already named the company; asking for it again after the customer
+            made the one thing the user had already decided look undecided, and
+            left this control greyed out at the moment they opened the form.
+        */}
+        <FieldLabel label="May be billed by" required>
+          <MultiSelect
+            values={picked}
+            onChange={setPicked}
+            options={companyOptions}
+            placeholder={companyOptions.length === 0 ? "already billable by every company" : "Select companies…"}
+            disabled={companyOptions.length === 0}
+            searchable
+            chips
+          />
+        </FieldLabel>
+
+        <FieldLabel label="Customer" required>
           {lockedCustomer ? (
             <div className="rounded-lg border border-line bg-page px-3 py-2 text-[13.5px] text-navy">
               {s.customerName(customer)}
@@ -314,51 +315,14 @@ export default function MapCustomerCompanyModal({
           ) : (
             <Combobox
               value={customer}
-              /* A different customer has a different set of books already, so
-                 the selection below cannot survive the change. */
-              onChange={(id) => { setCustomer(id); setPicked(companyId ? [companyId] : []); }}
+              onChange={(id) => setCustomer(id)}
               options={customerOptions}
-              placeholder="Search every company's customers…"
+              placeholder="Search every company’s customers…"
               searchable
               wrapLabel
             />
           )}
         </FieldLabel>
-
-        <FieldLabel
-          label="May be billed by"
-          required
-          hint="The order's company is ticked. Tick the others now if this firm trades with them too — it saves coming back."
-        >
-          <MultiSelect
-            values={picked}
-            onChange={setPicked}
-            options={companyOptions}
-            placeholder={
-              !customer
-                ? "Pick a customer first"
-                : companyOptions.length === 0
-                  ? "already billable by every company"
-                  : "Select companies…"
-            }
-            disabled={!customer || companyOptions.length === 0}
-            searchable
-            chips
-          />
-        </FieldLabel>
-
-        {/*
-          ⚠ SAY WHAT THIS COMMITS TO. It is not a request and not a note: the
-            save guard accepts the row, so the order can be invoiced under a
-            company whose Tally book has no ledger for this firm yet. That is the
-            decision of 07-09-2026 — the Tally team opens it at billing time and
-            the entry is not paused — but the person clicking Map should be able
-            to read what they are agreeing to.
-        */}
-        <p className="text-[12px] text-grey-2">
-          The customer becomes orderable under those companies at once. If their Tally ledger is not
-          open there yet, the Tally team opens it when the bill is raised.
-        </p>
 
         {error && <p className="text-[13px] font-medium text-ryg-red">{error}</p>}
       </div>
