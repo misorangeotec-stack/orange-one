@@ -33,7 +33,7 @@ import {
 } from "./aggregate";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER } from "./saleType";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "./labels";
-import { dmy, fmtLacs, fmtSmart, isSunday, longDate, shortDay } from "./format";
+import { dmy, fmtLacs, fmtMoney, isSunday, longDate, shortDay } from "./format";
 import type { DailyXlsxInput } from "./exportDailyXlsx";
 
 /** The same input the workbook takes — one shape, one set of figures. */
@@ -106,15 +106,15 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   const entered = d.accounts.filter((a) => d.balances.has(`${a.id}|${d.date}`)).length;
 
   const cards = [
-    { label: "Sales today", value: fmtSmart(totals.netLacs), sub: `MTD ${fmtSmart(d.mtdSalesLacs)}` },
-    { label: "Received", value: fmtSmart(receivedLacs), sub: `${fmtSmart(receivedAllLacs)} in all` },
-    { label: "Paid", value: fmtSmart(paidLacs), sub: `${fmtSmart(paidAllLacs)} in all` },
-    { label: "Purchased", value: fmtSmart(purchasedLacs), sub: "net of GST" },
+    { label: "Sales today", value: fmtMoney(totals.netLacs), sub: `MTD ${fmtMoney(d.mtdSalesLacs)}` },
+    { label: "Received", value: fmtMoney(receivedLacs), sub: `${fmtMoney(receivedAllLacs)} in all` },
+    { label: "Paid", value: fmtMoney(paidLacs), sub: `${fmtMoney(paidAllLacs)} in all` },
+    { label: "Purchased", value: fmtMoney(purchasedLacs), sub: "net of GST" },
     {
       label: "Bank balance",
       // A partial sum is a wrong number that looks right. The dash is the honest
       // answer whenever an account in scope has no figure for the day.
-      value: bankIncomplete ? "—" : fmtSmart(bankSum),
+      value: bankIncomplete ? "—" : fmtMoney(bankSum),
       sub: `${entered} of ${d.accounts.length} entered`,
       alarm: entered < d.accounts.length,
     },
@@ -145,7 +145,7 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
     }
     rows.push({ label: "Total", qty: "", amount: totals.netLacs, total: true });
 
-    y = sectionHeading(pdf, MARGIN, y, fmtSmart(totals.netLacs), "What sold") + 4;
+    y = sectionHeading(pdf, MARGIN, y, fmtMoney(totals.netLacs), "What sold") + 4;
     y = drawTable<SumRow>(pdf, {
       x: MARGIN, y, width: CONTENT_W,
       rows,
@@ -214,7 +214,7 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
     const rows = byParty(g.lines);
     const unit = t === "ink" ? `${Math.round(g.qty).toLocaleString("en-IN")} kg` : `${g.qty} units`;
     if (y > PAGE_H - 150) y = newPage();
-    y = sectionHeading(pdf, MARGIN, y, `${unit} · ${fmtSmart(g.revenueLacs)}`, SALE_TYPE_LABEL[t]) + 4;
+    y = sectionHeading(pdf, MARGIN, y, `${unit} · ${fmtMoney(g.revenueLacs)}`, SALE_TYPE_LABEL[t]) + 4;
 
     type Row = PartyTotal | { total: true; qty: number; revenueLacs: number };
     const body: Row[] = [...rows, { total: true, qty: g.qty, revenueLacs: g.revenueLacs }];
@@ -271,7 +271,7 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   /* ---- purchases ---------------------------------------------------------- */
   if (d.purchases.length > 0) {
     if (y > PAGE_H - 140) y = newPage();
-    y = sectionHeading(pdf, MARGIN, y, fmtSmart(purchasedLacs), "Purchases") + 4;
+    y = sectionHeading(pdf, MARGIN, y, fmtMoney(purchasedLacs), "Purchases") + 4;
     y = drawTable(pdf, {
       x: MARGIN, y, width: CONTENT_W,
       rows: d.purchases,

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -12,7 +12,7 @@ import { useDailyReport, PARTY_KIND_LABEL, type MoneyRow, type PurchaseLine } fr
 import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
 import {
-  addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtSmart, isSunday, longDate,
+  addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
   shortDay, timeOfDay, todayIso,
 } from "../lib/format";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "../lib/labels";
@@ -25,7 +25,7 @@ import {
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
-import FactCard, { DetailToggle, type Fact } from "../components/Snapshot";
+import FactCard, { DetailToggle, KpiSkeleton, LoadingNote, type Fact } from "../components/Snapshot";
 import { REPORT_LOCATIONS, type BankAccount } from "../types";
 
 /**
@@ -169,8 +169,10 @@ const purchaseColumns = (): QueueColumn<PurchaseLine>[] => [
  * deliberately does not.
  */
 function Section({
-  title, total, count, children, note,
+  id, title, total, count, children, note,
 }: {
+  /** Anchor a summary row can scroll to. */
+  id?: string;
   title: string;
   total?: string;
   count?: string;
@@ -178,7 +180,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="p-0">
+    <Card id={id} className="scroll-mt-4 p-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-2.5">
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-navy">
           {title}
@@ -212,6 +214,7 @@ function Nothing({ date, what }: { date: string; what: string }) {
 export default function DailyReport() {
   const today = todayIso();
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // Date and location live in the URL so a link — including the one a future
   // scheduled mail will carry — opens the day it reported on, not today.
@@ -332,23 +335,24 @@ export default function DailyReport() {
 
   const tiles: KpiTile[] = [
     bankOnly ? na("Sales today", "sales") : {
-      key: "sales", label: "Sales today", value: fmtSmart(totals.netLacs),
-      hint: `Month to date ${fmtSmart(mtdSales)} · median day ${fmtSmart(medianDay)}`,
+      key: "sales", label: "Sales today", value: fmtMoney(totals.netLacs),
+      hint: `Month to date ${fmtMoney(mtdSales)} · median day ${fmtMoney(medianDay)}`,
     },
     bankOnly ? na("Received today", "received") : {
-      key: "received", label: "Received from customers", value: fmtSmart(receivedLacs),
-      hint: `${fmtSmart(receivedAllLacs)} in all, including our own transfers`,
+      key: "received", label: "Received from customers", value: fmtMoney(receivedLacs),
+      hint: `${fmtMoney(receivedAllLacs)} in all, including our own transfers`,
     },
     bankOnly ? na("Paid today", "paid") : {
-      key: "paid", label: "Paid to suppliers", value: fmtSmart(paidLacs),
-      hint: `${fmtSmart(paidAllLacs)} in all, including our own transfers`,
+      key: "paid", label: "Paid to suppliers", value: fmtMoney(paidLacs),
+      hint: `${fmtMoney(paidAllLacs)} in all, including our own transfers`,
     },
     bankOnly ? na("Purchased today", "purchased") : {
-      key: "purchased", label: "Purchased today", value: fmtSmart(purchasedLacs),
+      key: "purchased", label: "Purchased today", value: fmtMoney(purchasedLacs),
       hint: `${purchases.length} ${purchases.length === 1 ? "line" : "lines"} · net of GST`,
+      onSelect: purchases.length > 0 ? () => openDetail("sec-purchases") : undefined,
     },
     {
-      key: "bank", label: "Bank balance", value: todayBankTotal.anyMissing ? "—" : fmtSmart(todayBankTotal.sum),
+      key: "bank", label: "Bank balance", value: todayBankTotal.anyMissing ? "—" : fmtMoney(todayBankTotal.sum),
       // Counted over the accounts ON SCREEN, not over all eleven: under a Delhi
       // filter "0 of 11" names ten accounts this page is not showing.
       hint: `${bankEntered} of ${bankCols.length} account${bankCols.length === 1 ? "" : "s"} entered for ${dmy(date)}`,
@@ -388,22 +392,26 @@ export default function DailyReport() {
       key: g.saleType,
       label: SALE_TYPE_LABEL[g.saleType],
       sub: g.saleType === "ink" ? fmtKg(g.qty) : `${fmtQty(g.qty)} units`,
-      value: fmtLacs(g.revenueLacs),
+      value: fmtMoney(g.revenueLacs),
+      onSelect: () => openDetail(`sec-${g.saleType}`),
+      action: `See the ${byParty(g.lines).length} customers behind this`,
     }));
     if (totals.returnsLacs !== 0) {
       rows.push({
         key: "returns", label: "Returns and credit notes", tone: "quiet",
-        value: fmtLacs(totals.returnsLacs),
+        value: fmtMoney(totals.returnsLacs),
       });
     }
     if (totals.approvalLacs !== 0) {
       rows.push({
         key: "approval", label: "Out on approval", tone: "quiet",
         sub: "not counted as a sale",
-        value: fmtLacs(totals.approvalLacs),
+        value: fmtMoney(totals.approvalLacs),
+        onSelect: () => openDetail("sec-approval"),
+        action: "See what went out on approval",
       });
     }
-    rows.push({ key: "total", label: "Total", tone: "rule", value: fmtLacs(totals.netLacs) });
+    rows.push({ key: "total", label: "Total", tone: "rule", value: fmtMoney(totals.netLacs) });
     return rows;
   }, [groups, totals]);
 
@@ -420,7 +428,12 @@ export default function DailyReport() {
    *   So: the bands, a captioned divider where the excluded ones begin, and an
    *   all-counterparties line ONLY when it differs from the headline.
    */
-  const moneyFacts = (bands: ReturnType<typeof bandMoney>, tradeLacs: number, allLacs: number): Fact[] => {
+  const moneyFacts = (
+    bands: ReturnType<typeof bandMoney>,
+    tradeLacs: number,
+    allLacs: number,
+    sectionId: string,
+  ): Fact[] => {
     const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
     const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));
     const row = (b: (typeof bands)[number], quiet: boolean): Fact => ({
@@ -428,7 +441,9 @@ export default function DailyReport() {
       label: PARTY_KIND_LABEL[b.kind],
       sub: `${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"}`,
       tone: quiet ? "quiet" : undefined,
-      value: fmtLacs(b.totalLacs),
+      value: fmtMoney(b.totalLacs),
+      onSelect: () => openDetail(sectionId),
+      action: `See the ${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"} behind this`,
     });
 
     const rows: Fact[] = trade.map((b) => row(b, false));
@@ -436,7 +451,9 @@ export default function DailyReport() {
       rows.push({ key: "sep", label: "Not counted in the figure above", tone: "sep", value: null });
       rows.push(...other.map((b) => row(b, true)));
       rows.push({
-        key: "all", label: "Everything Tally recorded", tone: "quiet", value: fmtLacs(allLacs),
+        key: "all", label: "Everything Tally recorded", tone: "quiet", value: fmtMoney(allLacs),
+        onSelect: () => openDetail(sectionId),
+        action: "See every entry",
       });
     }
     return rows;
@@ -451,11 +468,13 @@ export default function DailyReport() {
           key: alias,
           label: entityLabel(alias),
           sub: `${rows.length} ${rows.length === 1 ? "account" : "accounts"}`,
+          onSelect: () => navigate(`/daily-report/bank-balances?d=${date}`),
+          action: `Enter or correct ${entityLabel(alias)}'s balances for ${dmy(date)}`,
           // Never a partial sum: a dash, and the tooltip names what is missing.
           value:
             t.totalLacs == null
               ? <span className="text-grey-2" title={`Not entered: ${t.missing.join(", ")}`}>—</span>
-              : fmtLacs(t.totalLacs),
+              : fmtMoney(t.totalLacs),
         };
       }),
     [bankByEntity, balances.data, date],
@@ -469,6 +488,22 @@ export default function DailyReport() {
     `${groups.reduce((n, g) => n + byParty(g.lines).length, 0)} customers across ${groups.length} product ${groups.length === 1 ? "line" : "lines"}`,
     purchases.length > 0 ? `${purchases.length} purchase lines` : null,
   ].filter(Boolean).join(" · ");
+
+  /**
+   * Open the detail and go to one section of it.
+   *
+   * The scroll is deferred a frame: the grids do not exist in the DOM until
+   * `showDetail` has rendered, so scrolling in the same tick finds nothing and
+   * silently does nothing — which reads as a dead click.
+   */
+  const openDetail = (sectionId: string) => {
+    setShowDetail(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      ),
+    );
+  };
 
   const loading = report.isLoading;
 
@@ -565,7 +600,13 @@ export default function DailyReport() {
         </Card>
       )}
 
-      <KpiRow tiles={tiles} />
+      {loading ? <KpiSkeleton /> : <KpiRow tiles={tiles} />}
+
+      {loading && (
+        <LoadingNote>
+          Reading the Tally mirror — five company books, a few seconds.
+        </LoadingNote>
+      )}
 
       {bankOnly && (
         <Card className="border-line bg-page p-3 text-[12.5px] text-grey">
@@ -583,9 +624,11 @@ export default function DailyReport() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <FactCard
             title="What sold"
-            headline={fmtSmart(totals.netLacs)}
+            headline={fmtMoney(totals.netLacs)}
             headlineNote="net of GST"
             facts={salesFacts}
+            loading={loading}
+            onRow={(f) => f.onSelect?.()}
             footer={
               sales.length === 0 && !loading
                 ? isSunday(date)
@@ -597,9 +640,11 @@ export default function DailyReport() {
 
           <FactCard
             title="Bank, as on this date"
-            headline={todayBankTotal.anyMissing ? "—" : fmtSmart(todayBankTotal.sum)}
+            headline={todayBankTotal.anyMissing ? "—" : fmtMoney(todayBankTotal.sum)}
             headlineNote={`${bankEntered} of ${bankCols.length} entered`}
             facts={bankFacts}
+            loading={accounts.isLoading}
+            onRow={(f) => f.onSelect?.()}
             footer={
               bankEntered < bankCols.length ? (
                 <Link to={`/daily-report/bank-balances?d=${date}`} className="font-semibold text-orange">
@@ -617,17 +662,21 @@ export default function DailyReport() {
               wondering why a money-OUT card mentioned customers at all. */}
           <FactCard
             title="Money in"
-            headline={fmtSmart(receivedLacs)}
+            headline={fmtMoney(receivedLacs)}
             headlineNote="customers and suppliers only"
-            facts={moneyFacts(received, receivedLacs, receivedAllLacs)}
+            facts={moneyFacts(received, receivedLacs, receivedAllLacs, "sec-received")}
+            loading={loading}
+            onRow={(f) => f.onSelect?.()}
             footer="The same basis as the sheet you circulate today. A supplier refunding us counts here too, which is why suppliers appear on both cards."
           />
 
           <FactCard
             title="Money out"
-            headline={fmtSmart(paidLacs)}
+            headline={fmtMoney(paidLacs)}
             headlineNote="customers and suppliers only"
-            facts={moneyFacts(paid, paidLacs, paidAllLacs)}
+            facts={moneyFacts(paid, paidLacs, paidAllLacs, "sec-paid")}
+            loading={loading}
+            onRow={(f) => f.onSelect?.()}
             footer="The same basis. Moving money onto our own cash-credit account, or across to another of our books, is not a payment to anyone."
           />
         </div>
@@ -772,10 +821,11 @@ export default function DailyReport() {
         <div className="space-y-4">
           {/* ------------------------------------------------------ money */}
           <Section
+            id="sec-received"
             title="Received"
             count={`${money.filter((m) => m.direction === "in").length} receipts`}
-            total={`${fmtSmart(receivedLacs)} from customers and suppliers`}
-            note={`Every receipt Tally recorded, banded by what the counterparty is. The day total above counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtSmart(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
+            total={`${fmtMoney(receivedLacs)} from customers and suppliers`}
+            note={`Every receipt Tally recorded, banded by what the counterparty is. The day total above counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtMoney(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
           >
             {money.filter((m) => m.direction === "in").length === 0 && !loading ? (
               <Nothing date={date} what="receipts" />
@@ -795,10 +845,11 @@ export default function DailyReport() {
           </Section>
 
           <Section
+            id="sec-paid"
             title="Paid"
             count={`${money.filter((m) => m.direction === "out").length} payments`}
-            total={`${fmtSmart(paidLacs)} to suppliers`}
-            note={`The day total above counts suppliers only. All counterparties together come to ${fmtSmart(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. The Counterparty column separates them.`}
+            total={`${fmtMoney(paidLacs)} to suppliers`}
+            note={`The day total above counts suppliers only. All counterparties together come to ${fmtMoney(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. The Counterparty column separates them.`}
           >
             {money.filter((m) => m.direction === "out").length === 0 && !loading ? (
               <Nothing date={date} what="payments" />
@@ -831,14 +882,15 @@ export default function DailyReport() {
             return (
               <Section
                 key={t}
+                id={`sec-${t}`}
                 title={SALE_TYPE_LABEL[t]}
                 count={`${rows.length} ${rows.length === 1 ? "party" : "parties"} · ${isInk ? fmtKg(g.qty) : fmtQty(g.qty)}`}
-                total={fmtSmart(g.revenueLacs)}
+                total={fmtMoney(g.revenueLacs)}
                 note={
                   t === "other"
                     ? "These lines carry a voucher type no product-line rule covers yet. They are listed rather than dropped; add a rule on ConnectWave and they move into the section above."
                     : rows.length > 5
-                      ? `Top 5 customers ${fmtSmart(share.topLacs)} of ${fmtSmart(share.totalLacs)} (${share.pct.toFixed(0)}%).`
+                      ? `Top 5 customers ${fmtMoney(share.topLacs)} of ${fmtMoney(share.totalLacs)} (${share.pct.toFixed(0)}%).`
                       : undefined
                 }
               >
@@ -901,9 +953,10 @@ export default function DailyReport() {
 
           {approvals.length > 0 && (
             <Section
+              id="sec-approval"
               title="Out on approval"
               count={`${approvals.length} ${approvals.length === 1 ? "line" : "lines"}`}
-              total={fmtSmart(approvals.reduce((s, l) => s + l.revenueLacs, 0))}
+              total={fmtMoney(approvals.reduce((s, l) => s + l.revenueLacs, 0))}
               note="Goods that have left on approval. NOT counted as a sale above — the client's own sheet excludes them too — but shown here so nothing leaves the building unrecorded."
             >
               <table className="w-full text-[12.5px]">
@@ -929,16 +982,17 @@ export default function DailyReport() {
               {groups.map((g) => `${SALE_TYPE_LABEL[g.saleType]} ${fmtLacs(g.revenueLacs)}`).join(" + ")}
               {returns.length > 0 && ` − returns ${fmtLacs(Math.abs(totals.returnsLacs))}`}
               {" = "}
-              <span className="font-semibold text-navy">{fmtSmart(totals.netLacs)}</span>
+              <span className="font-semibold text-navy">{fmtMoney(totals.netLacs)}</span>
               {" "}— the Sales today tile.
             </p>
           )}
 
           {/* -------------------------------------------------- purchases */}
           <Section
+            id="sec-purchases"
             title="Purchases"
             count={`${purchases.length} ${purchases.length === 1 ? "line" : "lines"}`}
-            total={fmtSmart(purchasedLacs)}
+            total={fmtMoney(purchasedLacs)}
           >
             {purchases.length === 0 && !loading ? (
               <Nothing date={date} what="purchases" />

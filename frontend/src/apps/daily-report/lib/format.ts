@@ -14,18 +14,34 @@ export function fmtLacs(n: number | null | undefined): string {
 }
 
 /**
- * A KPI headline. Switches to crores above 100 lakhs because "₹312.40 L" is
- * harder to read at a glance than "₹3.12 Cr".
+ * A money figure WITH its unit: "₹78.33 L".
  *
- * ⚠ TILES ONLY. Inside a grid or the balance matrix it is always `fmtLacs`.
+ * ⚠ ALWAYS LAKHS. NEVER CRORES, ANYWHERE ON THIS REPORT.
+ *
+ *   The first cut switched to crores above 100 lakhs for headline figures, on
+ *   the reasoning that "₹1.07 Cr" reads faster than "₹106.69 L". It does — and
+ *   it put BOTH on the same card: the What sold heading said ₹1.07 Cr while the
+ *   Total row three lines below said 106.69. Ritesh Bhai read them as two
+ *   different numbers, which is exactly what they look like.
+ *
+ *   One unit for the whole report, and the unit printed beside the number, is
+ *   worth more than the reading speed of any single figure. A reader should
+ *   never have to work out which scale a number is on.
  */
-export function fmtSmart(lacs: number | null | undefined): string {
+export function fmtMoney(lacs: number | null | undefined): string {
   if (lacs == null || !Number.isFinite(lacs)) return "—";
-  const sign = lacs < 0 ? "-" : "";
-  const abs = Math.abs(lacs);
-  if (abs >= 100) return `${sign}₹${(abs / 100).toFixed(2)} Cr`;
-  return `${sign}₹${abs.toFixed(2)} L`;
+  // The sign goes BEFORE the symbol. Formatting the raw number put it after —
+  // "₹-3.55 L" — which reads as a currency called "₹-" before it reads as a
+  // negative amount.
+  const sign = lacs < 0 ? "−" : "";
+  return `${sign}₹${fmtLacs(Math.abs(lacs))} L`;
 }
+
+/**
+ * @deprecated Kept only so an unconverted caller fails loudly in review rather
+ * than silently mixing scales again. Use `fmtMoney`.
+ */
+export const fmtSmart = fmtMoney;
 
 /** Rupees from ConnectWave to the lakhs this module works in. */
 export const toLacs = (rupees: number | null | undefined): number =>
