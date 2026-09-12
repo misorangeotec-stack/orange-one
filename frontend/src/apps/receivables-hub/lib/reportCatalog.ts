@@ -14,6 +14,7 @@ import {
   Layers,
   LayoutDashboard,
   NotebookText,
+  PackageCheck,
   PackageX,
   Percent as PercentIcon,
   ReceiptText,
@@ -733,6 +734,21 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["register", "sales register", "voucher", "gstin", "particulars", "quantity", "rate", "revenue", "foc", "challan", "credit note", "debit note"],
+  },
+  {
+    id: "soa-sales-register",
+    // Same read path and scoping as the Sales Register — straight off rpt_soa_register through
+    // PostgREST, so the scope goes on the query as .in("party", …).
+    scoping: "party-server",
+    title: "SOA Sales Register",
+    purpose: "Stock sent on approval — billed, returned, or still with the customer. Pending matches Tally's Sales Bills Pending.",
+    category: "tally",
+    subcategory: "books-registers",
+    path: "reports/soa-sales-register",
+    icon: PackageCheck,
+    source: "tally",
+    status: "live",
+    keywords: ["soa", "sales on approval", "approval", "delivery challan", "tracking number", "sales bills pending", "goods delivered bills not made", "pending", "rejected", "converted"],
   },
   {
     id: "group-summary",
