@@ -73,6 +73,8 @@ export function buildSamplingNav(opts: {
   canSampleToLab: boolean;
   canLabProcess: boolean;
   canResultReceived: boolean;
+  canMachineProcess: boolean;
+  canMachineResult: boolean;
   canSend: boolean;
   canConfirm: boolean;
   canTest: boolean;
@@ -123,6 +125,15 @@ export function buildSamplingNav(opts: {
   // The two LEGACY steps, filed here because a pre-lab-gate row is an inward one.
   // Each is shown only while rows are still sitting in it, so both retire themselves.
   if (opts.canTest) lab("Testing", `${B}/queues/testing`, ic.testing);
+
+  // MACHINE TESTING is a TAIL on either inward branch, so its block has no
+  // collect entry: by the time a request reaches it, the sample was collected and
+  // received by the branch that ran before. Three entries, and the first is the
+  // branch's request list — the same shape every other block has.
+  const machine = block(BRANCH_LABEL.machine);
+  if (opts.hasRequests) machine("Machine Requests", `${B}/machine-requests`, ic.list);
+  if (opts.canMachineProcess) machine("Machine Testing Process", `${B}/queues/machine`, ic.testing);
+  if (opts.canMachineResult) machine("Result Received", `${B}/queues/machine-result`, ic.confirm);
 
   const outward = block(BRANCH_LABEL.outward);
   if (opts.hasRequests) outward("Outward Requests", `${B}/outward-requests`, ic.list);

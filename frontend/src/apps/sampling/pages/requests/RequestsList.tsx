@@ -3,8 +3,8 @@ import { Link } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { directionLabel, labTestingLabel, receiveViaLabel, requestSubject } from "../../lib/format";
-import { requestBranch } from "../../lib/queues";
+import { directionLabel, labTestingLabel, machineTestingLabel, receiveViaLabel, requestSubject } from "../../lib/format";
+import { inBranch } from "../../lib/queues";
 import type { StepBranch } from "../../lib/steps";
 import { useSamplingStore } from "../../store";
 import type { SamplingRequest } from "../../types";
@@ -13,7 +13,7 @@ const COPY: Record<StepBranch, { title: string; blurb: string; empty: string }> 
   no_lab: {
     title: "No-Lab Requests",
     blurb: "Samples that skip the lab — collected, handed over and closed on receipt.",
-    empty: "Requests raised with lab testing NOT required will appear here.",
+    empty: "Requests raised with neither lab nor machine testing will appear here.",
   },
   lab: {
     title: "Lab Requests",
@@ -24,6 +24,11 @@ const COPY: Record<StepBranch, { title: string; blurb: string; empty: string }> 
     title: "Outward Requests",
     blurb: "Samples we send out for the other party to test.",
     empty: "Outward requests will appear here.",
+  },
+  machine: {
+    title: "Machine Requests",
+    blurb: "Every inward request that needs machine testing — including the ones still working through the lab.",
+    empty: "Inward requests raised with machine testing required will appear here.",
   },
 };
 
@@ -42,7 +47,9 @@ export default function RequestsList({ branch }: { branch?: StepBranch }) {
   const copy = branch ? COPY[branch] : null;
 
   const rows = useMemo(
-    () => (branch ? s.requests.filter((r) => requestBranch(r) === branch) : s.requests),
+    // `inBranch`, not `requestBranch`: the machine list deliberately includes
+    // requests that have not reached machine testing yet. See lib/queues.ts.
+    () => (branch ? s.requests.filter((r) => inBranch(r, branch)) : s.requests),
     [s.requests, branch],
   );
 
@@ -87,6 +94,13 @@ export default function RequestsList({ branch }: { branch?: StepBranch }) {
             header: "Lab testing",
             cell: (r: SamplingRequest) => <span className="text-grey-2">{labTestingLabel(r.labTestingRequired)}</span>,
             filter: { kind: "select" as const, get: (r: SamplingRequest) => labTestingLabel(r.labTestingRequired) },
+            tdClassName: "whitespace-nowrap",
+          },
+          {
+            key: "machineTesting",
+            header: "Machine testing",
+            cell: (r: SamplingRequest) => <span className="text-grey-2">{machineTestingLabel(r.machineTestingRequired)}</span>,
+            filter: { kind: "select" as const, get: (r: SamplingRequest) => machineTestingLabel(r.machineTestingRequired) },
             tdClassName: "whitespace-nowrap",
           },
         ]),

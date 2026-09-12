@@ -33,13 +33,69 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
 export const isOpenRequest = (r: SamplingRequest): boolean => openStep(r) !== null;
 
 /**
+ * Can the intake form still be edited? Only while the request sits at the step it
+ * ENTERED on and nobody has recorded anything against it. The two skip-collect
+ * statuses are also where a COLLECTED request lands — `collectedAt` tells those apart.
+ *
+ * ⚠ MIRRORS SQL fms_sampling_request_editable (20261116120000). Change both.
+ */
+const ENTRY_STATUSES = new Set(["awaiting_collect", "awaiting_send", "awaiting_sample_to_lab", "awaiting_sample_received"]);
+export const isRequestEditable = (r: SamplingRequest): boolean =>
+  ENTRY_STATUSES.has(r.status) &&
+  [
+    r.collectedAt, r.sentAt, r.labSentAt, r.sampleReceivedAt, r.receivedAt, r.confirmedAt, r.testedAt,
+    r.resultedAt, r.handedOverAt, r.labStartedAt, r.labCompletedAt, r.resultReceivedAt, r.closedAt,
+  ].every((t) => !t);
+
+/**
  * Which branch a request runs on — the request-side twin of `StepDef.branches`.
  *
  * `=== false`, never `!r.labTestingRequired`: on an INWARD request NULL means a
  * legacy row raised before the gate existed, which ran the lab path.
  */
 export const requestBranch = (r: SamplingRequest): StepBranch =>
-  r.direction === "outward" ? "outward" : r.labTestingRequired === false ? "no_lab" : "lab";
+  r.direction === "outward"
+    ? "outward"
+    : isMachineOnly(r) || inMachinePhase(r)
+      ? "machine"
+      : r.labTestingRequired === false
+        ? "no_lab"
+        : "lab";
+
+/**
+ * NO lab testing but machine testing: a MACHINE request from the moment it is
+ * raised, never a no-lab one. Collection hands it straight to machine_process —
+ * the no-lab branch's closing step (sample_received) never runs for it — so it
+ * must not appear in the no-lab bucket at any point in its life.
+ *
+ * ⚠ MIRRORS the routing in SQL record_collect / submit_request (20261117120000).
+ */
+export const isMachineOnly = (r: SamplingRequest): boolean =>
+  r.direction === "inward" && r.labTestingRequired === false && r.machineTestingRequired === true;
+
+/**
+ * Has a LAB request reached its machine tail yet? On that path machine testing
+ * follows result_received, so the request is a lab one until then — which is what
+ * keeps `requestBranch` exclusive and the Dashboard's per-branch counts adding up.
+ */
+export const inMachinePhase = (r: SamplingRequest): boolean =>
+  r.status === "awaiting_machine_process" ||
+  r.status === "awaiting_machine_result" ||
+  !!r.machineStartedAt ||
+  !!r.machineCompletedAt ||
+  !!r.machineResultReceivedAt;
+
+/**
+ * Does a request belong on ONE BRANCH'S LIST? Every branch but `machine` asks
+ * `requestBranch`, which is the exclusive "where is it right now" answer.
+ *
+ * Machine is deliberately different: its list answers "which requests need
+ * machine testing", including the ones still working through the lab, because
+ * that is the question the machine team opens the page with. A lab+machine
+ * request therefore appears on BOTH lists — correctly, since it really is both.
+ */
+export const inBranch = (r: SamplingRequest, branch: StepBranch): boolean =>
+  branch === "machine" ? r.machineTestingRequired === true : requestBranch(r) === branch;
 
 /** The single step a request currently owes, from its status. */
 export function openStep(r: SamplingRequest): StepKey | null {
@@ -69,6 +125,11 @@ export function openStep(r: SamplingRequest): StepKey | null {
       return "lab_process";
     case "awaiting_result_received":
       return "result_received";
+    // Both passes of machine_process share this status, as lab_process does.
+    case "awaiting_machine_process":
+      return "machine_process";
+    case "awaiting_machine_result":
+      return "machine_result";
     default:
       return null;
   }
@@ -96,6 +157,14 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
       return r.labSentAt;
     case "result_received":
       return r.labCompletedAt;
+    // Machine testing starts when the step before it finished: the lab result on
+    // a lab request, the collection on a no-lab one (which never runs
+    // sample_received). Null on a request raised with no collector at all, and
+    // samplingDueIso then falls back to submittedAt.
+    case "machine_process":
+      return r.resultReceivedAt ?? r.collectedAt;
+    case "machine_result":
+      return r.machineCompletedAt;
     case "testing":
       return r.direction === "inward" ? r.receivedAt : r.confirmedAt;
     // Outward dropped `testing`, so the result's clock starts at the receipt
@@ -120,6 +189,8 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
  */
 export function samplingDueIso(snap: SamplingSnapshot, r: SamplingRequest, step: StepKey): string | null {
   if (step === "lab_process" && r.labTentativeDate) return r.labTentativeDate.slice(0, 10);
+  // Same rule for machine testing: once a tentative date is given, THAT is the due date.
+  if (step === "machine_process" && r.machineTentativeDate) return r.machineTentativeDate.slice(0, 10);
   const sla = snap.stepSla[step];
   if (!sla) return null;
   const from = stepAnchorCompletedIso(r, step) ?? r.submittedAt;
@@ -218,7 +289,14 @@ export function handoverLockReason(r: SamplingRequest): string | null {
 export function collectLockReason(r: SamplingRequest): string | null {
   const t = heldOrTerminal(r, "sample collection");
   if (t) return t;
-  if (r.status !== "awaiting_sample_received" && r.status !== "awaiting_sample_to_lab") {
+  // Collection can hand off to three different steps now: the receipt, the lab,
+  // or machine testing (no lab + machine). It stays editable until whichever one
+  // it handed to acts.
+  if (
+    r.status !== "awaiting_sample_received" &&
+    r.status !== "awaiting_sample_to_lab" &&
+    r.status !== "awaiting_machine_process"
+  ) {
     return "The sample has already been received — the collection can no longer be changed.";
   }
   return null;
@@ -263,6 +341,27 @@ export function resultReceivedLockReason(r: SamplingRequest): string | null {
  */
 export function sampleReceivedLockReason(r: SamplingRequest): string | null {
   return heldOrTerminal(r, "sample receipt");
+}
+
+/**
+ * Machine testing, like the lab process, is editable while its own step is open
+ * and stays correctable until the machine result is confirmed received.
+ */
+export function machineProcessLockReason(r: SamplingRequest): string | null {
+  const t = heldOrTerminal(r, "machine testing");
+  if (t) return t;
+  if (r.status !== "awaiting_machine_process" && r.status !== "awaiting_machine_result") {
+    return "The result has already been received — machine testing can no longer be changed.";
+  }
+  return null;
+}
+
+/**
+ * The LAST step of the machine tail, so nothing downstream can lock it — a closed
+ * request's receipt stays editable, mirroring result_received.
+ */
+export function machineResultLockReason(r: SamplingRequest): string | null {
+  return heldOrTerminal(r, "machine result receipt");
 }
 
 const entryOf = (
@@ -342,6 +441,17 @@ export const completedResultReceivedEntries = (data: SamplingSnapshot): StageEnt
   data.requests
     .filter((r) => !!r.resultReceivedAt)
     .map((r) => entryOf("result_received", r, r.resultReceivedBy, r.resultReceivedAt!, resultReceivedLockReason(r)));
+
+/** `machineCompletedAt`, NOT `machineStartedAt` — see the lab twin above. */
+export const completedMachineProcessEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.machineCompletedAt)
+    .map((r) => entryOf("machine_process", r, r.machineCompletedBy, r.machineCompletedAt!, machineProcessLockReason(r)));
+
+export const completedMachineResultEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.machineResultReceivedAt)
+    .map((r) => entryOf("machine_result", r, r.machineResultReceivedBy, r.machineResultReceivedAt!, machineResultLockReason(r)));
 
 /** Every open work-item, one per (current step, request). */
 export function buildQueueEntries(snap: SamplingSnapshot): QueueEntry[] {

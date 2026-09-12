@@ -43,6 +43,15 @@ const LAB_OPTIONS: ComboOption[] = [
   { value: "true", label: "Yes — send for lab testing" },
   { value: "false", label: "No — collect and hand over" },
 ];
+/**
+ * The machine gate. A TAIL on whatever the lab gate chose, never an alternative
+ * to it: answering Yes here sends the request on to machine testing once the
+ * inward work finishes, instead of closing it.
+ */
+const MACHINE_OPTIONS: ComboOption[] = [
+  { value: "true", label: "Yes — send for machine testing" },
+  { value: "false", label: "No — no machine testing" },
+];
 
 /**
  * A titled group of fields on a responsive two-column grid. The heading sits on
@@ -135,6 +144,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
     senderId, setSenderId,
     productDesc, setProductDesc,
     labTestingRequired, setLabTestingRequired,
+    machineTestingRequired, setMachineTestingRequired,
     collectorId, setCollectorId,
     handoverRecipientId, setHandoverRecipientId,
     transportBorne, setTransportBorne,
@@ -290,6 +300,17 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                   options={LAB_OPTIONS}
                   autoAdvance
                   ariaLabel="Lab testing required?"
+                />
+              </FieldLabel>
+              {/* Asked of EVERY inward request, whichever way the lab gate went:
+                  machine testing runs after the inward work either way. */}
+              <FieldLabel label="Machine testing required?" required hint="runs after the lab / receipt step">
+                <ChoiceButtons
+                  value={machineTestingRequired}
+                  onChange={(v) => setMachineTestingRequired(v as typeof machineTestingRequired)}
+                  options={MACHINE_OPTIONS}
+                  autoAdvance
+                  ariaLabel="Machine testing required?"
                 />
               </FieldLabel>
               {/* OPTIONAL — and silent about it: no asterisk, no hint. Left blank

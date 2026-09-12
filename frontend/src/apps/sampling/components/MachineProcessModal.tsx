@@ -7,13 +7,13 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { FieldRow, SectionHeading } from "@/shared/components/ui/Readout";
 import { useSession } from "@/core/platform/session";
 import { useSamplingStore } from "../store";
-import { uploadLabDocument } from "../data/samplingWrites";
-import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
+import { uploadMachineDocument } from "../data/samplingWrites";
+import { stepDateDefault, todayIso, futureDateError } from "../lib/format";
 import StepRecap from "./StepRecap";
 import type { SamplingRequest } from "../types";
 
-/** Opens the stored lab report via a fresh short-lived signed URL. */
-function LabDocLink({ path, name }: { path: string; name: string | null }) {
+/** Opens the stored machine testing report via a fresh short-lived signed URL. */
+function MachineDocLink({ path, name }: { path: string; name: string | null }) {
   const s = useSamplingStore();
   const [busy, setBusy] = useState(false);
   const open = async () => {
@@ -34,28 +34,29 @@ function LabDocLink({ path, name }: { path: string; name: string | null }) {
       className="inline-flex max-w-[240px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60"
     >
       <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : name || "View lab report"}</span>
+      <span className="truncate">{busy ? "Opening…" : name || "View machine report"}</span>
     </button>
   );
 }
 
 /**
- * lab_process — ONE step, TWO passes, so ONE modal with two faces.
+ * machine_process — the TWIN of LabProcessModal: ONE step, TWO passes, so ONE
+ * modal with two faces.
  *
- *   pass 1 (labStartedAt is null): only the tentative result date. Saving it says
- *     "the lab has the sample" and leaves the request exactly where it is — it is
- *     still this step's work.
+ *   pass 1 (machineStartedAt is null): only the tentative result date. Saving it
+ *     says "machine testing has the sample" and leaves the request where it is —
+ *     it is still this step's work.
  *   pass 2: the tick is the completion switch. Left off, saving still only moves
  *     the tentative date. Turned on, comments become required — mirrored by the
- *     RPC — and the request advances to result_received. The lab report is
- *     OPTIONAL since 20261116120000.
+ *     RPC — and the request advances to machine_result. The report is OPTIONAL.
  *
- * Whom the result goes to defaults to the recipient chosen on the request form,
- * with a free-text option for someone off-system (a `free:` sentinel, exactly as
- * CollectModal does it). A free-text name leaves lab_result_to_id null, which
- * routes result_received to that step's owners instead.
+ * Whom the result goes to defaults to whoever the LAB result went to (on a
+ * lab+machine request), else the hand-over recipient, with a free-text option for
+ * someone off-system (a `free:` sentinel, exactly as LabProcessModal does it). A
+ * free-text name leaves machine_result_to_id null, which routes machine_result to
+ * that step's owners instead.
  */
-export default function LabProcessModal({
+export default function MachineProcessModal({
   open,
   onClose,
   request,
@@ -83,20 +84,21 @@ export default function LabProcessModal({
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Pass 2 is reached either by having already completed it (an edit) or by ticking.
-  const started = !!request?.labStartedAt;
-  const completed = !!request?.labCompletedAt;
+  const started = !!request?.machineStartedAt;
+  const completed = !!request?.machineCompletedAt;
 
   useEffect(() => {
     if (open && request) {
-      setTentative(request.labTentativeDate ?? "");
-      setNote(request.labNote ?? "");
-      setDone(!!request.labCompletedAt);
-      setCompletedDate(stepDateDefault(request.labCompletedDate));
-      setComment(request.labComment ?? "");
+      setTentative(request.machineTentativeDate ?? "");
+      setNote(request.machineNote ?? "");
+      setDone(!!request.machineCompletedAt);
+      setCompletedDate(stepDateDefault(request.machineCompletedDate));
+      setComment(request.machineComment ?? "");
       setPick(
-        request.labResultToId ||
-          (request.labResultToName ? `free:${request.labResultToName}` : request.handoverRecipientId || selfId),
+        request.machineResultToId ||
+          (request.machineResultToName
+            ? `free:${request.machineResultToName}`
+            : request.labResultToId || request.handoverRecipientId || selfId),
       );
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
@@ -111,10 +113,16 @@ export default function LabProcessModal({
       ...s.activeRecipients.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
     ];
     if (pick.startsWith("free:")) opts.push({ value: pick, label: pick.slice(5) });
+    // The person the lab result went to need not be in the recipient master.
+    if (pick && !pick.startsWith("free:") && !opts.some((o) => o.value === pick)) {
+      opts.push({ value: pick, label: s.personName(pick) });
+    }
     return opts;
-  }, [s.activeRecipients, selfId, pick]);
+  }, [s, selfId, pick]);
 
-  const existing = request?.labDocPath ? <LabDocLink path={request.labDocPath} name={request.labDocName} /> : null;
+  const existing = request?.machineDocPath ? (
+    <MachineDocLink path={request.machineDocPath} name={request.machineDocName} />
+  ) : null;
 
   const save = async () => {
     if (!request) return;
@@ -128,9 +136,9 @@ export default function LabProcessModal({
       }
       setBusy(true);
       try {
-        const input = { labTentativeDate: tentative, labNote: note.trim() || null };
-        if (started) await s.updateLabStart(request, input);
-        else await s.recordLabStart(request, input);
+        const input = { machineTentativeDate: tentative, machineNote: note.trim() || null };
+        if (started) await s.updateMachineStart(request, input);
+        else await s.recordMachineStart(request, input);
         onClose();
       } catch (e) {
         setErr((e as Error).message);
@@ -142,10 +150,10 @@ export default function LabProcessModal({
 
     // ---- pass 2: completion -----------------------------------------------
     if (!comment.trim()) {
-      setErr("Test comments are required to complete the lab process.");
+      setErr("Test comments are required to complete machine testing.");
       return;
     }
-    // The lab testing attachment is OPTIONAL (20261116120000) — no check here.
+    // The machine testing attachment is OPTIONAL, as the lab report is.
     if (!pick.trim()) {
       setErr("Record whom the result is handed over to.");
       return;
@@ -160,7 +168,7 @@ export default function LabProcessModal({
     try {
       let attach: { docPath?: string | null; docName?: string | null } = {};
       if (file) {
-        const up = await uploadLabDocument(request.id, file);
+        const up = await uploadMachineDocument(request.id, file);
         attach = { docPath: up.path, docName: up.name };
       }
 
@@ -171,21 +179,23 @@ export default function LabProcessModal({
       } else {
         toId = pick;
         toName =
-          pick === selfId ? session.user?.name ?? "Self" : s.activeRecipients.find((r) => r.userId === pick)?.name ?? null;
+          pick === selfId
+            ? session.user?.name ?? "Self"
+            : s.activeRecipients.find((r) => r.userId === pick)?.name ?? s.personName(pick);
       }
 
       const base = {
-        labCompletedDate: completedDate || null,
-        labComment: comment.trim(),
-        labNote: note.trim() || null,
-        labResultToId: toId,
-        labResultToName: toName,
+        machineCompletedDate: completedDate || null,
+        machineComment: comment.trim(),
+        machineNote: note.trim() || null,
+        machineResultToId: toId,
+        machineResultToName: toName,
       };
       if (completed) {
-        // Editing a finished lab process: also allow correcting the tentative date.
-        await s.updateLabComplete(request, { ...base, labTentativeDate: tentative || null, ...attach });
+        // Editing finished machine testing: also allow correcting the tentative date.
+        await s.updateMachineComplete(request, { ...base, machineTentativeDate: tentative || null, ...attach });
       } else {
-        await s.recordLabComplete(request, {
+        await s.recordMachineComplete(request, {
           ...base,
           docPath: attach.docPath ?? null,
           docName: attach.docName ?? null,
@@ -199,8 +209,9 @@ export default function LabProcessModal({
     }
   };
 
-  const heading = editing && !readOnly ? "Edit lab process" : readOnly ? "Lab process" : started ? "Lab process" : "Sample at the lab";
-  const cta = busy ? "Saving…" : done ? (completed ? "Save" : "Complete lab process") : started ? "Save" : "Save — sample at lab";
+  const heading =
+    editing && !readOnly ? "Edit machine testing" : readOnly ? "Machine testing" : started ? "Machine testing" : "Sample for machine testing";
+  const cta = busy ? "Saving…" : done ? (completed ? "Save" : "Complete machine testing") : started ? "Save" : "Save — sample with machine testing";
 
   return (
     <Modal
@@ -209,7 +220,6 @@ export default function LabProcessModal({
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
       size="xl"
-      // No subtitle: the recap below already shows the product / description.
       title={`${heading} — ${request?.reqNo ?? ""}`}
       footer={
         <>
@@ -221,33 +231,28 @@ export default function LabProcessModal({
       <div className="space-y-4">
         {request && <StepRecap request={request} />}
 
-        {/* The reference the lab works from — recorded upstream, so it belongs with
-            the briefing rather than among this step's inputs. */}
-        {request?.internalRef && (
+        {/* What the lab already found, when this request came through the lab —
+            machine testing reads it before it starts, so it belongs with the
+            briefing rather than among this step's inputs. */}
+        {request?.labComment && (
           <div className="rounded-xl bg-page px-4 py-3">
-            <FieldRow label="Internal reference" value={request.internalRef} />
+            <FieldRow label="Lab result" value={<span className="whitespace-pre-wrap">{request.labComment}</span>} />
           </div>
         )}
 
         <div>
-          <SectionHeading>At the lab</SectionHeading>
+          <SectionHeading>Machine testing</SectionHeading>
           <div className="mt-3 space-y-3.5">
             <FieldLabel
-              label="Tentative result date from lab"
+              label="Tentative result date"
               required
-              hint={started ? "the date the lab committed to" : "recording this confirms the lab has the sample"}
+              hint={started ? "the date machine testing committed to" : "recording this confirms machine testing has the sample"}
             >
               {/* Deliberately NOT capped at today: this is a forecast. */}
               <TextInput type="date" value={tentative} onChange={(e) => setTentative(e.target.value)} />
             </FieldLabel>
-            {/* ONE remark for the whole step, so it sits OUTSIDE the pass-2 block:
-                jot it when the sample reaches the lab, correct it when testing ends.
-                Both save branches send it. */}
-            <FieldLabel
-              label="Remarks"
-              hint={done ? "optional — separate from the test comments below" : "optional"}
-            >
-              <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the sample or the lab" />
+            <FieldLabel label="Remarks" hint={done ? "optional — separate from the test comments below" : "optional"}>
+              <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the sample or the machine" />
             </FieldLabel>
           </div>
         </div>
@@ -290,11 +295,11 @@ export default function LabProcessModal({
                     </FieldLabel>
                   </div>
                   <FieldLabel label="Test comments" required>
-                    <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The outcome of the lab testing" />
+                    <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The outcome of the machine testing" />
                   </FieldLabel>
                   <FieldLabel
-                    label="Lab testing attachment"
-                    hint={request?.labDocPath ? "optional — choose a file to replace it" : "optional — the lab report"}
+                    label="Machine testing attachment"
+                    hint={request?.machineDocPath ? "optional — choose a file to replace it" : "optional — the machine testing report"}
                   >
                     <input
                       ref={fileRef}
