@@ -51,6 +51,8 @@ import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
 import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
 import SalesRegister from "@hub/pages/SalesRegister";
 import StockSummary from "@hub/pages/StockSummary";
+import InkMis from "@hub/pages/InkMis";
+import InkShipments from "@hub/pages/InkShipments";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -255,6 +257,11 @@ function HubRoutes() {
                   through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
                   own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
               <Route path="reports/stock-summary" element={<StockSummary />} />
+              {/* Ink MIS. Stock is the same ConnectWave snapshot as Stock Summary, merged
+                  across the four ink books on item code; the ETD/ETA pipeline beside it is
+                  entered by hand and lives in the browser, not the database. */}
+              <Route path="reports/ink-mis" element={<InkMis />} />
+              <Route path="reports/ink-pipeline" element={<InkShipments />} />
             </Route>
           </Route>
           {/* Customer Creation FMS.
