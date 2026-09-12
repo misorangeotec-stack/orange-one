@@ -10093,6 +10093,145 @@ list.** Related: [fms-module-email-is-live] — other modules are already sendin
       earlier note here called cancelling *"staff-only"*; it is not — the RPC already lets the
       **raiser** cancel. The work is NARROWING its window, on the server, not opening it.
 
+### OD-15 · One shipment, several lots — the LOT box holds a split it cannot record  🟢  `[x]`
+*Raised 2026-09-11 · from the client · **BUILT AND VERIFIED the same day.** Migration
+`20261122120000_od15_one_shipment_several_lots.sql` is **APPLIED TO LIVE**; the frontend is built and
+ready to deploy. The rollback was **rehearsed on live data** — applied, tested, rolled back
+byte-identically, re-applied.*
+
+#### What shipped
+
+All eight build steps below are done. Two child tables, one house formatter, three RPCs rewritten,
+one new shared field used by both writers, and no reader changed.
+
+| | |
+|---|---|
+| Tables | `fms_dispatch_order_item_lots` (in-flight) · `fms_dispatch_round_item_lots` (frozen at archive) |
+| Summary | `fms_dispatch_lot_text(lots, qty)` — ONE lot covering the line gives the bare number, so 4,354 single-lot rows and the 26 serial rows stay byte-identical |
+| Normaliser | `fms_dispatch_lots_normalise(lots)` — trim, drop blanks, de-dupe, `seq` from 1; a non-numeric quantity becomes NULL rather than an error |
+| The cell | `components/LotAllocField.tsx` — one multi-select, a quantity row per lot past the first, used by Check Material Status **and** the correction screen |
+| Shared | `lib/lotPicker.ts` — the ConnectWave fetch and the book-naming MOVED out of ShipLinesGrid, not copied |
+| Readers changed | **None.** `lot_no` still carries the answer, now with the quantities in it |
+
+#### 🔴 Three findings that changed the build — read these before touching any of it
+
+**1 · THE LIVE DATABASE WAS AHEAD OF `supabase/migrations/` FOR ALL THREE RPCs.** `bill_qty` is a
+live column on `fms_dispatch_order_items` and `fms_dispatch_round_items` and is written by the live
+`fms_dispatch_amend_round` — yet the string appears in **no migration file in this repo and no row of
+`supabase_migrations.schema_migrations`**. Checked three ways. The same drift shows in the other two
+(live reads `mst_items` where the newest files still read `fms_dispatch_items`), and in
+`fms_dispatch_touch_parent_order`, whose live body carries none of the comments the file shows.
+
+> Every body in the new migration was taken from `pg_proc.prosrc`. Rebuilding from the file would
+> have silently reverted the bill-quantity feature on live dispatch records. The migration asserts
+> both markers are still present, and the rollback asserts `md5(prosrc)` against the four pre-OD-15
+> bodies, so this is now checkable rather than remembered.
+
+**2 · THE ENTRY'S "three RPCs write `fms_dispatch_round_items.lot_no`" WAS HALF RIGHT.**
+`fms_dispatch_apply_ship_lines` writes **`fms_dispatch_ORDER_items.lot_no`** — the in-flight round's
+staging row. A round item does not exist until `fms_dispatch_archive_round` creates it. Hence TWO
+child tables and a copy at archive time; one table hung off round items would have had nowhere to
+hold the split for the entire time the store keeper is typing it.
+
+**3 · `FM999999990.###` ROUNDS TO A WHOLE NUMBER.** `#` is not a digit placeholder in a `to_char`
+numeric template, so the mask names no fractional digits: `to_char(0.5,'FM999999990.###')` is `'1'`.
+The lot formatter therefore uses `rtrim(trim(to_char(q,'FM999999990.999')),'.')`. **The five other
+`###` masks in the file are pre-existing exception messages, left exactly as they were** — they carry
+the same flaw and correcting a user-facing error message is a different decision, on a different day.
+
+#### The eight build steps
+
+1. `[x]` **A child table, not a second column.** Two, per finding 2. `qty` nullable, `seq` ordered,
+   `on delete cascade` matching the existing chain. Six parent-touch triggers so a lot edit reaches
+   the incremental fetch; `fms_dispatch_touch_parent_order` gained two arms.
+2. `[x]` **`lot_no` stays as the rendered summary.** Six readers untouched — the five listed plus
+   `supabase/functions/_shared/workSnapshot.bundle.js`, which the original entry did not list.
+3. `[x]` **No backfill.** Both tables started empty and the migration contains no INSERT outside the
+   functions. The editor never parses a stored string: a line with no children seeds **one** row
+   holding the whole value, so the 8 in-flight typed splits round-trip byte for byte.
+4. `[x]` **One box, a quantity per lot, ONE row by default.** A single lot shows no quantity box at
+   all — it carries 100% of the line and the server fills the figure in.
+5. `[x]` **Running total.** `18 of 30 KGS — 12 short, saved as it is.`
+6. `[x]` **Typing survives; the balance only advises.** Proved on screen with a lot Tally has never
+   heard of, and with a draw above the balance.
+7. `[x]` **The amend path carries the split.** A **presence contract**: `lots` absent keeps the
+   stored split and summary, present replaces both. ⚠ The screen's changed-line filter had to widen
+   too — it sent only lines whose *quantity* changed, so a lots-only correction would have vanished
+   silently on Save.
+8. `[x]` **Browser-tested as the storekeeper**, not as an admin.
+
+#### What was measured, 11-09-2026
+
+| | |
+|---:|---|
+| 4,454 | round-item rows; 117 with no lot; 771 distinct values |
+| 99 | hold a `/` — **26** are print-head serial numbers, **92** are real splits |
+| 52 | spell the quantity with `kg`; 9 separate with a full stop |
+| 8 | in-flight order lines carrying a hand-typed split right now |
+| 11 | server tests passed in rolled-back transactions (split, single lot, stale flat payload, remarks-only save, dropped line, archive freeze, amend keep, amend replace, amend single, cross-round leak) |
+| 1,409 | rows in the Order Register export, 1,300 with a lot — column intact |
+
+#### Verified in the browser, on live data
+
+Signed in as **LALIT SHARMA** (`delhioffice@orangeotec.com`, role `employee`), a real
+material-status owner — **not** an admin. Real lots came back from ConnectWave, so this was not the
+degraded empty state.
+
+- Single-lot line renders exactly as before: one picker, no quantity box, nothing taller.
+- Two lots: the trigger reads **"2 lots"**, not a comma-joined pair; a quantity row each; focus lands
+  on the first blank quantity.
+- `18 + 12 = 30 of 30 KGS`; `18 + 5 = 23 of 30 KGS — 7 short, saved as it is`, **Save still enabled**.
+- A drawn quantity above the Tally balance says so and saves anyway.
+- A lot Tally has never heard of is enterable, is pinned to the top of the list, and survives a
+  second lot joining.
+- The correction screen shows the new LOT column, and the hand-typed `2605941-20/26061087-10` appears
+  as **ONE** lot, unparsed, marked "not in Tally's stock for this item".
+- The order detail page still renders both historic strings unchanged.
+
+**Two faults were found only by looking at the screen, and both are fixed:**
+- `shared/lib/cn.ts` is a plain join with **no tailwind-merge**, so a `w-20` passed to `TextInput`
+  does not replace the `w-full` baked into `fieldBase` — the quantity box ate the whole cell and the
+  lot number wrapped to one character per line. The width now sits on a wrapper.
+- The correction modal was `size="lg"`; with a fourth column every item name wrapped to four lines.
+  Now `3xl`.
+
+#### 🔴 Still open — ONE step, and it needs a decision
+
+**The live end-to-end Save was NOT performed.** Everything upstream and downstream of it is proven,
+but pressing *Record what is going out* on a real order records a dispatch that did not happen and
+advances a client's live order a step. There is **no test order in this module** (checked) and
+`email_module_enabled('order-to-dispatch')` is **false**, so the only cost is the data itself — but
+it is the client's data. Ask before doing it, and let them nominate the order.
+
+#### To settle with the client — built to the recommendation in each case
+
+1. **Must the split add up to the shipped quantity?** → **It warns and saves.** To block, raise in
+   `fms_dispatch_apply_ship_lines` after the insert — and nowhere else.
+2. **May a lot be drawn beyond its Tally balance?** → **Warns and saves**, same reason. ~3.6% of lots
+   do not resolve to a clean balance and a reporting mirror must not stop a real dispatch.
+3. **What should the Order Register column read?** → `26081298 (975), 26081284 (485)`; a single lot
+   stays bare. One function, `fms_dispatch_lot_text`, changes it. ⚠ **Worth putting to them plainly:**
+   that column already joins every ITEM in the round with `", "` — measured above on 1,300 cells — so
+   with quantities inside each summary the cell carries commas at two levels. A separate column is
+   the alternative.
+4. **The print-head serial numbers.** Not scope, and not broken: 26 rows keep working because a typed
+   string with slashes is one lot, so the summary returns it verbatim. Proved in the positive control.
+
+#### ⚠ A configuration gap found while testing, NOT fixed — it is not this task's
+
+**SAMADHAN PATIL** (`samadhanpatil6110@gmail.com`) is a `material_status` step owner for both Surat
+locations but his `app_access` holds **task-management only**. He can never open Order to Dispatch,
+so he can never act on the step he owns. Found by signing in as him. Someone should decide whether he
+gets the app or comes off the step.
+
+**Not part of this.** Production Entry carries its own free-text lot on raw-material consumption
+(`apps/production-entry/components/StepModal.tsx`). It is the same question one module over and it is
+**out of scope** — do not widen this task to reach it.
+
+*(cross-ref: **OD-12** built the picker this extends; its header comment in `ShipLinesGrid.tsx` states
+the two principles item 6 rests on · **OD-12b** is still open and unrelated to this — it is the blank
+godown on the current financial year)*
+
 ---
 
 ## Production Entry

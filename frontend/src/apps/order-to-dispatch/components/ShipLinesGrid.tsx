@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
 import { TextInput } from "@/shared/components/ui/Form";
-import Combobox from "@/shared/components/ui/Combobox";
+import LotAllocField, { rowsFrom, type LotRow } from "./LotAllocField";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
-import { fetchLotsForItem, type LotOption } from "../data/lotFetch";
+import { makeBookOf, useLotsForItems } from "../lib/lotPicker";
 import { creditHeadroomOf, pendingQtyOf } from "../lib/rounds";
 import { qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
@@ -35,19 +34,29 @@ import type { DispatchOrder } from "../types";
  *   or invented and nothing checked it. It is now a picker of the lots Tally actually holds for
  *   that item, with how much of each is left.
  *
- *   ⚠ Typing is deliberately still allowed, via Combobox's `onCreate`. The balance is Tally's
+ *   ⚠ Typing is deliberately still allowed, via the picker's `onCreate`. The balance is Tally's
  *     paper trail, not a physical count, and ~3.6% of lots do not resolve to a clean figure. A
  *     lot in the store keeper's hands that we cannot see — Tally not yet posted, a manual
  *     adjustment — must never block a dispatch. The list HELPS; it does not gate.
  *
  *   ⚠ If ConnectWave is unreachable the fetch returns [] and this degrades to exactly the old
  *     free-text box. Dispatch does not wait on a reporting mirror.
+ *
+ * ONE SHIPMENT CAN DRAW ON SEVERAL LOTS (OD-15).
+ *   The cell is now a multi-select with a quantity against each lot, in `LotAllocField`. Both
+ *   principles above are ITS principles too and neither moved: typing stays possible, and the
+ *   balance still only advises.
+ *
+ *   ⚠ A SINGLE LOT ASKS FOR NOTHING EXTRA — no quantity box, no second row, one line of balance
+ *     text where the dropdown's sublabel used to be. 4,354 of 4,455 shipped lines are single-lot
+ *     and that path must not get slower to type than the plain picker it replaces.
  */
 
 export interface ShipLineValue {
   id: string;
   ship_qty: string;
-  lot_no: string;
+  /** OD-15 · the lots this line draws on. Always at least one row, possibly blank. */
+  lots: LotRow[];
 }
 
 /** Seed from the order's live header — an edit shows what this round already has. */
@@ -55,56 +64,10 @@ export function shipLinesFrom(order: DispatchOrder): ShipLineValue[] {
   return order.lines.map((l) => ({
     id: l.id,
     ship_qty: l.shipQty !== null && l.shipQty !== undefined ? String(l.shipQty) : "",
-    lot_no: l.lotNo ?? "",
+    // `rowsFrom` never parses a stored string — see its note. A line recorded
+    // before OD-15 comes back as ONE row holding the whole value.
+    lots: rowsFrom(l.lots, l.lotNo),
   }));
-}
-
-/**
- * Lots for one line, as Combobox options: the number, then how much is left.
- *
- * `current` is folded in when it is not among them, because a lot typed on an earlier round (or
- * one that has since gone to zero) must still SHOW as the selected value — a picker that silently
- * blanks a stored value is worse than the text box it replaced. It is marked so the difference
- * between "Tally has this" and "somebody typed this" stays visible.
- */
-function lotOptions(
-  list: LotOption[] | undefined,
-  current: string,
-  bookOf: (companyGuid: string) => string | null,
-) {
-  const rows = list ?? [];
-
-  /*
-    A LOT NUMBER IS ONLY UNIQUE WITHIN ONE TALLY BOOK. When the order names a company we ask for
-    that book alone and this never bites — but 8 of 1,259 orders carry no company at all, and those
-    fetch every book, so the same number can legitimately come back twice with different balances.
-    That is what the client saw: `#1453-2606994` listed at 90 KGS and again at 6 KGS.
-
-    Naming the book on the repeats — and ONLY on the repeats, so the common case stays uncluttered —
-    is the difference between two indistinguishable rows and a real choice.
-  */
-  const times = new Map<string, number>();
-  rows.forEach((l) => times.set(l.batchName, (times.get(l.batchName) ?? 0) + 1));
-
-  const opts = rows.map((l) => ({
-    value: l.batchName,
-    label: l.batchName,
-    sublabel: [
-      `${fmtQty(l.balance)}${l.uom ? ` ${l.uom}` : ""} left`,
-      (times.get(l.batchName) ?? 0) > 1 ? bookOf(l.companyGuid) : null,
-      l.lastGodown ?? null,
-    ].filter(Boolean).join(" · "),
-  }));
-  const cur = current.trim();
-  if (cur && !opts.some((o) => o.value === cur)) {
-    opts.unshift({ value: cur, label: cur, sublabel: "not in Tally's stock for this item" });
-  }
-  return opts;
-}
-
-/** Trim trailing zeros — Tally reports 176.0000, and a store keeper wants 176. */
-function fmtQty(n: number): string {
-  return Number(n.toFixed(3)).toLocaleString("en-IN");
 }
 
 export default function ShipLinesGrid({
@@ -118,47 +81,14 @@ export default function ShipLinesGrid({
   const s = useDispatchStore();
   const byId = new Map(values.map((v) => [v.id, v]));
 
-  /**
-   * Lots per line, fetched once per DISTINCT item rather than per row — an order repeating the
-   * same item on two lines must not fire the same lookup twice.
-   */
-  const [lots, setLots] = useState<Record<string, LotOption[]>>({});
-  const companyGuid = s.companies.find((c) => c.id === order.companyId)?.tallyGuid ?? null;
   /*
-    Only consulted when the same lot number comes back from more than one book — see lotOptions.
-    The financial-year tail is trimmed off the company name ("…PVT LTD(F.Y.2026-27)",
-    "…-NOIDA -FY 26-27") because every book carries one, so it is the half that never tells the
-    two apart, and it is what pushes the label past a dropdown's width.
+    The fetch and the book-naming both MOVED to lib/lotPicker when the correction
+    screen gained the same field. One copy, so the NUL-joined dependency key and
+    the financial-year trim cannot drift apart between the two screens.
   */
-  const bookOf = (guid: string) => {
-    const c = s.companies.find((x) => x.tallyGuid === guid);
-    if (!c) return null;
-    return c.name
-      .split("(")[0]
-      .replace(/[-\s]*F\.?Y\.?[\s.]*\d.*$/i, "")
-      .replace(/[-\s]+$/, "")
-      .trim() || c.name;
-  };
-  const itemNames = Array.from(
-    new Set(order.lines.map((l) => s.itemName(l.itemId)).filter(Boolean)),
-    // Joined into a STRING because useEffect compares deps by identity and a fresh array
-    // would refetch on every render. The separator is \u0000 and NOT a space or comma:
-    // item names legitimately contain both ("REACTIVE INK ECO BLACK"), so either would
-    // split one name into several and look up items that do not exist.
-  ).join("\u0000");
-
-  useEffect(() => {
-    const names = itemNames ? itemNames.split("\u0000") : [];
-    if (!names.length) return;
-    let live = true;
-    void Promise.all(names.map((n) => fetchLotsForItem(n, companyGuid))).then((res) => {
-      if (!live) return;
-      const next: Record<string, LotOption[]> = {};
-      names.forEach((n, i) => { next[n] = res[i]; });
-      setLots(next);
-    });
-    return () => { live = false; };
-  }, [itemNames, companyGuid]);
+  const companyGuid = s.companies.find((c) => c.id === order.companyId)?.tallyGuid ?? null;
+  const lots = useLotsForItems(order.lines.map((l) => s.itemName(l.itemId)), companyGuid);
+  const bookOf = makeBookOf(s.companies);
 
   const patch = (id: string, part: Partial<ShipLineValue>) => {
     onChange(values.map((v) => (v.id === id ? { ...v, ...part } : v)));
@@ -184,17 +114,17 @@ export default function ShipLinesGrid({
               <th className="py-2 pr-3 font-semibold text-right">Dispatched so far</th>
               <th className="py-2 pr-3 font-semibold text-right">Pending</th>
               <th className="py-2 pr-3 font-semibold min-w-[120px]">Ship now</th>
-              <th className="py-2 pr-3 font-semibold min-w-[150px]">LOT no.</th>
+              <th className="py-2 pr-3 font-semibold min-w-[230px]">LOT no.</th>
             </tr>
           </thead>
           <tbody>
             {order.lines.map((l) => {
-              const v = byId.get(l.id) ?? { id: l.id, ship_qty: "", lot_no: "" };
+              const v = byId.get(l.id) ?? { id: l.id, ship_qty: "", lots: [{ lot_no: "", qty: "" }] };
               const pending = pendingQtyOf(l);
               const done = pending <= 0;
               const unit = l.unit ?? "";
               return (
-                <tr key={l.id} className="border-b border-line/70 last:border-0">
+                <tr key={l.id} className="border-b border-line/70 last:border-0 align-top">
                   <td className="py-2 pr-3 text-navy">
                     {s.itemName(l.itemId)}
                     {l.lineRemark && <span className="block text-[12px] text-grey-2">{l.lineRemark}</span>}
@@ -224,23 +154,14 @@ export default function ShipLinesGrid({
                     {done ? (
                       <span className="text-[12.5px] text-grey-2">—</span>
                     ) : (
-                      <Combobox
-                        value={v.lot_no}
-                        onChange={(lot) => patch(l.id, { lot_no: lot })}
-                        options={lotOptions(lots[s.itemName(l.itemId)], v.lot_no, bookOf)}
-                        // Accept anything typed, verbatim. This is the escape hatch that keeps a
-                        // lot we cannot see from blocking a real dispatch — see the header note.
-                        onCreate={(typed) => typed.trim()}
-                        createLabel={(q) => `Use “${q}” (not in Tally)`}
-                        searchable
-                        clearable
+                      <LotAllocField
+                        rows={v.lots}
+                        onChange={(lots) => patch(l.id, { lots })}
+                        quantity={v.ship_qty}
+                        unit={unit}
+                        options={lots[s.itemName(l.itemId)] ?? []}
+                        bookOf={bookOf}
                         disabled={readOnly}
-                        /* Says BOTH things on purpose. The old box read "as marked on the stock",
-                           which is still the instruction — but now that a list exists, a store
-                           keeper has to be told the list is not a closed one, or a lot Tally has
-                           not caught up with looks impossible to enter. */
-                        placeholder="pick or type the lot"
-                        triggerClassName="py-1"
                       />
                     )}
                   </td>

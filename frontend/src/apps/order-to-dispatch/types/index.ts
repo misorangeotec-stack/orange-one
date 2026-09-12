@@ -450,6 +450,32 @@ export type CreditStatus = "approved" | "partial" | "credit_hold";
 
 export type DeliveryStatus = "delivered" | "returned";
 
+/**
+ * One lot a consignment line draws on, and how much came from it (OD-15).
+ *
+ * A shipment of 100 KGS that went out as 60 from one lot and 40 from another is
+ * TWO of these, not one string. The store keeper was already writing exactly
+ * that by hand -- 92 dispatch lines on file do -- because the single lot box
+ * would not hold it.
+ *
+ * ⚠ `lots` IS NOT THE ONLY RECORD, AND `lotNo` IS NOT STALE. `lotNo` stays as
+ *   the rendered summary of these rows, written server-side by
+ *   `fms_dispatch_lot_text` on every save. Six readers still take it, and 4,454
+ *   historic lines have no `lots` at all -- they predate OD-15 and their text is
+ *   never parsed. Read `lots` only where the breakdown is what you want; read
+ *   `lotNo` to DISPLAY the lot, and it will be right either way.
+ *
+ * One lot covering the whole line summarises as the bare lot number, so an
+ * ordinary dispatch reads exactly as it always has.
+ */
+export interface LotAllocation {
+  lotNo: string;
+  /** How much of the line came from this lot. Null when nobody said. */
+  qty: number | null;
+  /** 1-based, the order they were picked in. */
+  seq: number;
+}
+
 export interface OrderLine {
   id: string;
   orderId: string;
@@ -480,8 +506,11 @@ export interface OrderLine {
    *   nothing on rows that predate the column.
    */
   billQty: number | null;
-  /** Typed by the store keeper. Free text — there is no LOT master. */
+  /** Typed by the store keeper. Free text — there is no LOT master.
+   *  Since OD-15 this is the RENDERED SUMMARY of `lots` — see LotAllocation. */
   lotNo: string | null;
+  /** The split behind `lotNo`. Empty on every line dispatched before OD-15. */
+  lots: LotAllocation[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -507,7 +536,10 @@ export interface RoundItem {
    * Null only on rounds archived before the column existed; use `billedQtyOf`.
    */
   billQty: number | null;
+  /** The rendered summary of `lots` — see LotAllocation. */
   lotNo: string | null;
+  /** The split behind `lotNo`, frozen with the round. Empty before OD-15. */
+  lots: LotAllocation[];
 }
 
 /**

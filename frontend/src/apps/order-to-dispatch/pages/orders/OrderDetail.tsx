@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -17,6 +17,8 @@ import StatusPill, { OutcomePill } from "../../components/StatusPill";
 import SalesReturnModal from "../../components/SalesReturnModal";
 import ReceiverCopyCapture, { type ReceiverPage } from "../../components/ReceiverCopyCapture";
 import { uploadReceiverPages } from "../../lib/receiverPages";
+import LotAllocField, { rowsFrom, filledLots, type LotRow } from "../../components/LotAllocField";
+import { makeBookOf, useLotsForItems } from "../../lib/lotPicker";
 import type { StepDoc } from "../../types";
 import { allRoundViews, billedQtyOf, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
@@ -728,6 +730,27 @@ function AmendRoundModal({
   const [qty, setQty] = useState<Record<string, string>>(
     () => Object.fromEntries(round.items.map((i) => [i.id, String(billedQtyOf(i))])),
   );
+  /**
+   * OD-15 · the lot split, correctable here too.
+   *
+   * A delivery corrected from 100 down to 90 leaves a 60/40 split that no longer
+   * adds up, and before this there was no door anywhere in the product to fix
+   * it: the correction screen had no LOT control at all, sent a blank one, and
+   * the RPC coalesced it back to whatever was stored.
+   *
+   * ⚠ `seeded` IS WHAT MAKES "OMITTED MEANS KEEP" WORK. Only lines whose split
+   *   actually changed send a `lots` key; every other line sends none, and the
+   *   RPC leaves the stored split and its summary alone.
+   */
+  const [lotRows, setLotRows] = useState<Record<string, LotRow[]>>(
+    () => Object.fromEntries(round.items.map((i) => [i.id, rowsFrom(i.lots, i.lotNo)])),
+  );
+  const seeded = useRef<Record<string, string>>(
+    Object.fromEntries(round.items.map((i) => [i.id, JSON.stringify(rowsFrom(i.lots, i.lotNo))])),
+  );
+  const companyGuid = s.companies.find((c) => c.id === round.companyId)?.tallyGuid ?? null;
+  const lotOptions = useLotsForItems(round.items.map((i) => i.itemName), companyGuid);
+  const bookOf = makeBookOf(s.companies);
   const [reason, setReason] = useState("");
   /**
    * Off by default, and that default is load-bearing: a quantity-only
@@ -767,9 +790,30 @@ function AmendRoundModal({
       await s.amendRound(round.roundId, {
         dcStatus: outcome === "returned" ? "returned" : "delivered",
         reason: reason.trim(),
+        /*
+          ⚠ A LOTS-ONLY CORRECTION IS A CORRECTION. This used to filter on the
+            quantity alone, so fixing a wrong split without touching the figure
+            sent no line at all and the change vanished silently on Save.
+        */
         lines: round.items
-          .filter((i) => qty[i.id] !== String(billedQtyOf(i)))
-          .map((i) => ({ id: i.id, billQty: qty[i.id] })),
+          .filter((i) =>
+            qty[i.id] !== String(billedQtyOf(i))
+            || JSON.stringify(lotRows[i.id] ?? []) !== seeded.current[i.id])
+          .map((i) => {
+            const changed = JSON.stringify(lotRows[i.id] ?? []) !== seeded.current[i.id];
+            return {
+              id: i.id,
+              billQty: qty[i.id],
+              // Omitted unless it actually changed — see the note on the state.
+              ...(changed
+                ? {
+                    lots: filledLots(lotRows[i.id] ?? []).map((r, n) => ({
+                      lot_no: r.lot_no.trim(), qty: r.qty.trim(), seq: n + 1,
+                    })),
+                  }
+                : {}),
+            };
+          }),
         receiver,
       });
       onClose();
@@ -787,7 +831,9 @@ function AmendRoundModal({
       onClose={onClose}
       title={`Correct round ${round.roundNo}`}
       subtitle={`${orderNo} · invoice ${round.sbInvoiceNo ?? "—"}`}
-      size="lg"
+      /* Widened from "lg" when the LOT column arrived: at max-w-lg the item name
+         wrapped to four lines per row and the split had nowhere to sit. */
+      size="3xl"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -819,11 +865,12 @@ function AmendRoundModal({
                 <th className="py-1.5 pr-3 font-semibold">Item</th>
                 <th className="py-1.5 pr-3 font-semibold text-right">Billed</th>
                 <th className="py-1.5 pr-3 font-semibold">Actually delivered</th>
+                <th className="py-1.5 pr-3 font-semibold min-w-[230px]">LOT no.</th>
               </tr>
             </thead>
             <tbody>
               {round.items.map((i) => (
-                <tr key={i.id} className="border-b border-line/70 last:border-0">
+                <tr key={i.id} className="border-b border-line/70 last:border-0 align-top">
                   <td className="py-1.5 pr-3 text-navy">{i.itemName}</td>
                   <td className="py-1.5 pr-3 text-grey text-right tabular-nums">
                     {billedQtyOf(i)} {i.unitName ?? ""}
@@ -834,6 +881,19 @@ function AmendRoundModal({
                       onChange={(e) => setQty((p) => ({ ...p, [i.id]: e.target.value }))}
                       inputMode="decimal"
                       className="w-28 text-right tabular-nums"
+                    />
+                  </td>
+                  {/* Totalled against the CORRECTED quantity, not the one
+                      originally shipped — re-balancing the split is the reason
+                      this column is here. */}
+                  <td className="py-1.5 pr-3">
+                    <LotAllocField
+                      rows={lotRows[i.id] ?? []}
+                      onChange={(rows) => setLotRows((p) => ({ ...p, [i.id]: rows }))}
+                      quantity={qty[i.id] ?? ""}
+                      unit={i.unitName ?? ""}
+                      options={lotOptions[i.itemName] ?? []}
+                      bookOf={bookOf}
                     />
                   </td>
                 </tr>

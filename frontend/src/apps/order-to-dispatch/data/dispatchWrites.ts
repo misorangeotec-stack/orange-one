@@ -207,6 +207,17 @@ export interface AmendRoundLine {
    */
   billQty: string;
   lotNo?: string | null;
+  /**
+   * OD-15 · the corrected lot split.
+   *
+   * ⚠ OMITTED MEANS KEEP, exactly as `receiver` does below, and this is the
+   *   whole safety of the correction path. The RPC presence-tests the key:
+   *   absent, it leaves the stored split and its summary alone; present, it
+   *   replaces both. Sending it unconditionally would flatten a split that was
+   *   recorded correctly on the first quantity-only correction, and nobody
+   *   would see it happen.
+   */
+  lots?: { lot_no: string; qty: string; seq: number }[];
 }
 
 /**
@@ -241,7 +252,13 @@ export async function amendRound(
   if (input.dcStatus) payload.dc_status = input.dcStatus;
   if (input.lines?.length) {
     payload.lines = input.lines.map((l) => ({
-      id: l.id, bill_qty: l.billQty, lot_no: l.lotNo ?? "",
+      id: l.id,
+      bill_qty: l.billQty,
+      lot_no: l.lotNo ?? "",
+      // Spread, so a line with no `lots` sends no key at all — see the note on
+      // the field. `{}` would still add nothing; `lots: undefined` would too,
+      // but this says out loud that absence is the signal.
+      ...(l.lots ? { lots: l.lots } : {}),
     }));
   }
   // All three keys travel together or none of them do — a new primary sent
