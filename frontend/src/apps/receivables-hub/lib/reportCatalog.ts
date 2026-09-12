@@ -5,8 +5,10 @@ import {
   Boxes,
   Calculator,
   CalendarClock,
+  ClipboardList,
   CreditCard,
   Crown,
+  Factory,
   FolderTree,
   Gauge,
   HandCoins,
@@ -91,7 +93,8 @@ export type ReportCategoryId =
   | "collections"
   | "customers"
   | "sales-team"
-  | "tally";
+  | "tally"
+  | "bushra-report";
 
 export interface ReportCategory {
   id: ReportCategoryId;
@@ -231,6 +234,13 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Tally Reports",
     blurb: "Statements laid out the way Tally prints them, for line-by-line cross-verification.",
     icon: BookOpen,
+  },
+  // Bushra's own reports, kept together in one group rather than scattered across the others.
+  {
+    id: "bushra-report",
+    title: "Bushra-Report",
+    blurb: "Bushra's reports — production and batch costing, read straight from the Tally books.",
+    icon: ClipboardList,
   },
 ];
 
@@ -775,6 +785,25 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["bills", "receivables", "due date", "overdue", "pending", "bill-wise"],
+  },
+
+  // ── Bushra-Report ──────────────────────────────────────────────────────────
+  {
+    id: "batch-costing",
+    // Production batches — item grain, no customer on a stock journal.
+    scoping: "none",
+    title: "Batch Costing",
+    purpose: "Every production batch — finished good, scrap and RM consumed, by colour, group and category.",
+    category: "bushra-report",
+    path: "reports/batch-costing",
+    icon: Factory,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "batch costing", "production", "stock journal", "stock journal-production", "consumption",
+      "rm consumption", "finished good", "scrap", "output", "colour", "color", "sublimation",
+      "reactive", "item category", "lot", "batch", "bushra",
+    ],
   },
 ];
 
