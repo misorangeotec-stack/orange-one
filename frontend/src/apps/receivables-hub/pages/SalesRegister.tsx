@@ -10,9 +10,16 @@
  * paginated client-side (project rule: usePagination + <Pagination/>, 25/page). Export in
  * lib/exportSalesRegister.ts reproduces the source workbook.
  *
- * COMPANY / LOCATION come from ext_company_map (resolved in lib/salesRegister.ts), never from the
+ * COMPANY / LOCATION come from ext_company_map (resolved in lib/salesRegister.ts), not from the
  * table's own `company_label` — that column is the counterparty class behind TYPE, not a company.
- * The BRANCH / RELATED distinction it used to leak into this column still reads off TYPE.
+ * The one exception is a Related / Branch line, where COMPANY shows that class ('ORANGE O TEC
+ * RELATED', 'ORANGE ENT BRANCH', …) at finance's request; see the note in lib/salesRegister.ts.
+ *
+ * DESPATCH COLUMNS (Delivery Note No. & Date, Despatch Doc No., Despatch Through, Destination,
+ * Vehicle No.) sit immediately after Voucher No., the position Tally's own Voucher Register puts
+ * them in, so this screen reads in the same order as the report finance reconcile against. They
+ * come from the `rpt_sales_despatch` sidecar merged in lib/salesRegister.ts; a voucher with an
+ * empty despatch block renders them blank, which is the honest reading — Tally holds nothing there.
  */
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -39,6 +46,28 @@ const fmtQty = (n: number) => (n === 0 ? "—" : nf(3).format(n));
 const fmtRate = (n: number) => (n === 0 ? "—" : nf(2).format(n));
 const fmtRev = (n: number) => nf(2).format(n);
 
+/**
+ * A despatch field Tally holds nothing in. It is a real, pickable filter value — "which invoices
+ * went out with no destination recorded?" is the question this screen is most likely to be opened
+ * for — so it gets a label rather than being dropped from the options list.
+ */
+const BLANK = "(blank)";
+const orBlank = (v: string | null) => v ?? BLANK;
+
+/** The filtered columns: a label for the chip, and how to read the value off a row. */
+const FILTERS = {
+  // One entry per book — 'O-tec — Surat', 'Enterprise — Noida' — the same labels the company
+  // picker on every other Tally report offers, and the same ones the Refresh selector lists.
+  company: { label: "Company", get: (r: RegisterRow) => r.company_display },
+  type: { label: "Type", get: (r: RegisterRow) => r.type },
+  through: { label: "Despatch through", get: (r: RegisterRow) => orBlank(r.despatch_through) },
+  destination: { label: "Destination", get: (r: RegisterRow) => orBlank(r.destination) },
+} as const;
+
+type FilterKey = keyof typeof FILTERS;
+const FILTER_KEYS = Object.keys(FILTERS) as FilterKey[];
+const NO_FILTERS: Record<FilterKey, string[]> = { company: [], type: [], through: [], destination: [] };
+
 export default function SalesRegister() {
   const qc = useQueryClient();
   const init = useMemo(() => defaultRange(), []);
@@ -55,7 +84,10 @@ export default function SalesRegister() {
   const scopeKey = scope.kind === "all" ? "all" : scope.parties.join("|");
 
   const { data: rows, isLoading, error } = useQuery<RegisterRow[]>({
-    queryKey: ["salesRegister", "v1", from, to, scopeKey],
+    // v2: rows carry the despatch block. v3: COMPANY shows the Related / Branch class. v4: only
+    // still-pending SOA lines are included. An older entry cached in this session would render under
+    // the previous rules, so the key moves with each change.
+    queryKey: ["salesRegister", "v4", from, to, scopeKey],
     queryFn: () => loadSalesRegister(from, to, scope),
     enabled: validRange && !scopeLoading,
     staleTime: 5 * 60 * 1000,
@@ -63,47 +95,76 @@ export default function SalesRegister() {
   const all = useMemo(() => rows ?? [], [rows]);
 
   /* -------- filters -------- */
-  const [companyFilters, setCompanyFilters] = useState<string[]>([]);
-  const [typeFilters, setTypeFilters] = useState<string[]>([]);
+  // Four filtered columns, each read off the row by one accessor. Keeping them in a map rather than
+  // four parallel useStates is what makes the cascade below a loop instead of four hand-written
+  // special cases — the house rule is that a column's options come from the rows surviving every
+  // OTHER filter, so adding a fifth column must not mean rewriting the other four.
+  const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
   const [search, setSearch] = useState("");
 
-  // One entry per book — 'O-tec — Surat', 'Enterprise — Noida' — the same labels the company
-  // picker on every other Tally report offers, and the same ones the Refresh selector lists.
-  const companyOptions: MultiSelectOption[] = useMemo(
-    () => [...new Set(all.map((r) => r.company_display))].sort().map((v) => ({ value: v, label: v })),
-    [all],
-  );
-  const typeOptions: MultiSelectOption[] = useMemo(
-    () => [...new Set(all.map((r) => r.type))].sort().map((v) => ({ value: v, label: v })),
-    [all],
+  const searched = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((r) =>
+      r.party.toLowerCase().includes(q) ||
+      r.particulars.toLowerCase().includes(q) ||
+      r.voucher_no.toLowerCase().includes(q) ||
+      (r.gstin ?? "").toLowerCase().includes(q) ||
+      (r.delivery_note_no ?? "").toLowerCase().includes(q) ||
+      (r.despatch_doc_no ?? "").toLowerCase().includes(q) ||
+      (r.despatch_through ?? "").toLowerCase().includes(q) ||
+      (r.destination ?? "").toLowerCase().includes(q) ||
+      (r.vehicle_no ?? "").toLowerCase().includes(q));
+  }, [all, search]);
+
+  const filtered = useMemo(
+    () => searched.filter((r) =>
+      FILTER_KEYS.every((k) => !sel[k].length || sel[k].includes(FILTERS[k].get(r)))),
+    [searched, sel],
   );
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return all.filter((r) => {
-      if (companyFilters.length && !companyFilters.includes(r.company_display)) return false;
-      if (typeFilters.length && !typeFilters.includes(r.type)) return false;
-      if (q && !(
-        r.party.toLowerCase().includes(q) ||
-        r.particulars.toLowerCase().includes(q) ||
-        r.voucher_no.toLowerCase().includes(q) ||
-        (r.gstin ?? "").toLowerCase().includes(q)
-      )) return false;
-      return true;
-    });
-  }, [all, companyFilters, typeFilters, search]);
+  /**
+   * Each column's options, read off the rows surviving every OTHER filter (the house cascade rule),
+   * with the column excluded from its own options so narrowing to one value still leaves a way back.
+   *
+   * All four lists are built in ONE pass over the rows rather than one pass each. The window here
+   * runs to ~25k lines, and the dropdowns are rebuilt on every render — four independent scans, each
+   * re-testing all four predicates, was ~400k row-tests per keystroke in the search box.
+   */
+  const options = useMemo(() => {
+    const active = FILTER_KEYS.filter((k) => sel[k].length);
+    const found: Record<FilterKey, Set<string>> =
+      { company: new Set(), type: new Set(), through: new Set(), destination: new Set() };
+    for (const r of searched) {
+      // How many active filters this row fails. 0 → it feeds every column's options; exactly 1 → it
+      // feeds only the column it failed, which is precisely that column's "every other filter" set.
+      let missedKey: FilterKey | null = null;
+      let missed = 0;
+      for (const k of active) {
+        if (!sel[k].includes(FILTERS[k].get(r))) { missed++; missedKey = k; if (missed > 1) break; }
+      }
+      if (missed > 1) continue;
+      for (const k of FILTER_KEYS) if (missed === 0 || k === missedKey) found[k].add(FILTERS[k].get(r));
+    }
+    return Object.fromEntries(
+      FILTER_KEYS.map((k) => [k, [...found[k]].sort().map((v) => ({ value: v, label: v }))]),
+    ) as Record<FilterKey, MultiSelectOption[]>;
+  }, [searched, sel]);
+
+  const setFilter = (key: FilterKey) => (v: string[]) => setSel((s) => ({ ...s, [key]: v }));
 
   const totalRevenue = useMemo(() => filtered.reduce((s, r) => s + r.revenue, 0), [filtered]);
 
   const page = usePagination(filtered, {
-    resetKey: `${from}|${to}|${companyFilters.join(",")}|${typeFilters.join(",")}|${search}`,
+    resetKey: `${from}|${to}|${FILTER_KEYS.map((k) => sel[k].join(",")).join("|")}|${search}`,
   });
 
-  const chips: FilterChip[] = [
-    ...companyFilters.map((v) => ({ label: v, onRemove: () => setCompanyFilters((s) => s.filter((x) => x !== v)) })),
-    ...typeFilters.map((v) => ({ label: v, onRemove: () => setTypeFilters((s) => s.filter((x) => x !== v)) })),
-  ];
-  const clearAll = () => { setCompanyFilters([]); setTypeFilters([]); setSearch(""); };
+  const chips: FilterChip[] = FILTER_KEYS.flatMap((k) =>
+    sel[k].map((v) => ({
+      label: `${FILTERS[k].label}: ${v}`,
+      onRemove: () => setSel((s) => ({ ...s, [k]: s[k].filter((x) => x !== v) })),
+    })));
+  const clearAll = () => { setSel(NO_FILTERS); setSearch(""); };
 
   /* -------- export -------- */
   const onExport = () => {
@@ -168,7 +229,9 @@ export default function SalesRegister() {
             <NotebookText className="h-6 w-6 text-primary" /> Sales Register
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Every sales &amp; daybook voucher line across all companies — location, party, particulars, qty, rate and revenue, as booked.
+            Every sales &amp; daybook voucher line across all companies — location, party, particulars,
+            delivery note, despatch details, qty, rate and revenue, as booked. Sales on approval
+            appear only while still pending; the rest are in the SOA Sales Register.
           </p>
         </div>
         <Button
@@ -193,9 +256,9 @@ export default function SalesRegister() {
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Company</span>
           <MultiSelectFilter
-            options={companyOptions}
-            value={companyFilters}
-            onChange={setCompanyFilters}
+            options={options.company}
+            value={sel.company}
+            onChange={setFilter("company")}
             allLabel="All Companies"
             unit="Companies"
             triggerClassName="w-[200px] h-9 text-sm rounded-input border-border"
@@ -204,11 +267,33 @@ export default function SalesRegister() {
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Type</span>
           <MultiSelectFilter
-            options={typeOptions}
-            value={typeFilters}
-            onChange={setTypeFilters}
+            options={options.type}
+            value={sel.type}
+            onChange={setFilter("type")}
             allLabel="All Types"
             unit="Types"
+            triggerClassName="w-[180px] h-9 text-sm rounded-input border-border"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Despatch through</span>
+          <MultiSelectFilter
+            options={options.through}
+            value={sel.through}
+            onChange={setFilter("through")}
+            allLabel="All Despatch"
+            unit="Despatchers"
+            triggerClassName="w-[180px] h-9 text-sm rounded-input border-border"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Destination</span>
+          <MultiSelectFilter
+            options={options.destination}
+            value={sel.destination}
+            onChange={setFilter("destination")}
+            allLabel="All Destinations"
+            unit="Destinations"
             triggerClassName="w-[180px] h-9 text-sm rounded-input border-border"
           />
         </div>
@@ -219,7 +304,7 @@ export default function SalesRegister() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Party, particulars, voucher no…"
+              placeholder="Party, particulars, voucher / delivery note no…"
               className="pl-9 h-9 w-64 rounded-input"
             />
           </div>
@@ -274,10 +359,16 @@ export default function SalesRegister() {
           </div>
 
           <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]">
-            <table className="w-full border-collapse min-w-[1200px]">
+            <table className="w-full border-collapse min-w-[1800px]">
               <thead>
                 <tr className="border-b-2 border-border bg-muted/50">
-                  {["Location", "Company", "Type", "Date", "Party Name", "Particulars", "Voucher Type", "Voucher No.", "GSTIN/UIN"].map((h) => (
+                  {[
+                    "Location", "Company", "Type", "Date", "Party Name", "Particulars",
+                    "Voucher Type", "Voucher No.",
+                    "Delivery Note No.", "Delivery Note Date", "Despatch Doc No.",
+                    "Despatch Through", "Destination", "Vehicle No.",
+                    "GSTIN/UIN",
+                  ].map((h) => (
                     <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                   {["Quantity", "Rate", "Revenue"].map((h) => (
@@ -287,7 +378,7 @@ export default function SalesRegister() {
               </thead>
               <tbody>
                 {page.pageItems.length === 0 ? (
-                  <tr><td colSpan={12} className="py-10 text-center text-sm text-muted-foreground">No lines match those filters.</td></tr>
+                  <tr><td colSpan={18} className="py-10 text-center text-sm text-muted-foreground">No lines match those filters.</td></tr>
                 ) : (
                   page.pageItems.map((r, i) => (
                     <tr key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">
@@ -299,6 +390,12 @@ export default function SalesRegister() {
                       <td className="py-1.5 px-3 text-sm">{r.particulars}</td>
                       <td className="py-1.5 px-3 text-sm text-muted-foreground whitespace-nowrap">{r.voucher_type}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.voucher_no}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.delivery_note_no ?? ""}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap tabular-nums">{r.delivery_note_date_display ?? ""}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.despatch_doc_no ?? ""}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.despatch_through ?? ""}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.destination ?? ""}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.vehicle_no ?? ""}</td>
                       <td className="py-1.5 px-3 text-sm text-muted-foreground whitespace-nowrap tabular-nums">{r.gstin ?? ""}</td>
                       <td className="py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap">{fmtQty(r.quantity)}</td>
                       <td className="py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap">{fmtRate(r.rate)}</td>
