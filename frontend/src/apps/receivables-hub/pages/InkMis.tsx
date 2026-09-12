@@ -26,9 +26,11 @@
  * All five were reproduced from the planner's own figures before this screen was written, so
  * the numbers here should match the sheet cell for cell given the same inputs.
  *
- * PER-DAY AVERAGE IS NOT THE THREE-MONTH AVERAGE OVER NINETY. The planner sets it per ink
- * from working days, and the ratio varies between 16 and 27 across the sheet. Deriving it
- * would quietly change every reorder level on the page.
+ * BOTH AVERAGES COME FROM THE SALES REGISTER, filled by a button rather than recomputed on
+ * every render, so a planner's override for a launch or a one-off run survives. The rule and
+ * the evidence for it are in lib/inkMis.ts — in short, branch and related sales are the group
+ * moving ink to itself and must be excluded, and the per-day divisor is working days ELAPSED
+ * this month, not the whole month. Per-day is NOT the three-month average over ninety.
  *
  * ETD IS EXCLUDED FROM COVER. Only ETA and AT PORT count towards the total, matching the
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
@@ -46,11 +48,10 @@ import {
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { salesFyOptions } from "@hub/lib/salesReport";
-import { isoToYmd } from "@hub/lib/stockSummary";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
-  loadAliases, loadInkPositions, loadPlans, loadShipments, loadThresholds, saveAliases,
-  savePlans, saveThresholds,
+  loadAliases, loadHolidays, loadInkConsumption, loadInkPositions, loadPlans, loadShipments,
+  loadThresholds, saveAliases, saveHolidays, savePlans, saveThresholds, workingDaysElapsed,
   type InkAliases, type InkBand, type InkPlan, type InkRow, type InkThresholds,
 } from "@hub/lib/inkMis";
 
@@ -74,15 +75,6 @@ const BAND_LABEL: Record<InkBand, string> = {
   none: "Not planned",
 };
 
-/** Three months back from today, as the Tally yyyymmdd the loader expects. */
-function threeMonthWindow(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to);
-  from.setMonth(from.getMonth() - 3);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: isoToYmd(iso(from)), to: isoToYmd(iso(to)) };
-}
-
 export default function InkMis() {
   const fyOptions = useMemo(() => salesFyOptions(), []);
   const fy = fyOptions[0];
@@ -93,6 +85,7 @@ export default function InkMis() {
   const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
   const [aliases, setAliases] = useState<InkAliases>(() => loadAliases());
+  const [holidays, setHolidays] = useState<string[]>(() => loadHolidays());
 
   // Consignments are read once on mount. The entry screen is a separate route, so there is no
   // in-page edit that could leave this stale; arriving back here remounts and re-reads.
@@ -101,6 +94,7 @@ export default function InkMis() {
   useEffect(() => savePlans(plans), [plans]);
   useEffect(() => saveThresholds(thresholds), [thresholds]);
   useEffect(() => saveAliases(aliases), [aliases]);
+  useEffect(() => saveHolidays(holidays), [holidays]);
 
   // Aliases are part of the key: assigning one re-merges the table, which is the whole point.
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -115,28 +109,41 @@ export default function InkMis() {
   /* --------------------------------------------------- fill averages from Tally */
 
   const [filling, setFilling] = useState(false);
+  const [fillNote, setFillNote] = useState<string | null>(null);
 
   /**
-   * Three-month average is the one planner input Tally can actually supply — it is the
-   * outward quantity over the last three months. Offered as a one-click fill rather than a
-   * derived column, because the planner sometimes overrides it for a launch or a one-off run,
-   * and a column that silently recomputed would wipe that judgement.
+   * Fill both averages from the Sales Register, which is where the planner reads them today.
+   *
+   *   three-month average = the three complete months before this one, over 3
+   *   per-day average     = this month so far, over the working days elapsed
+   *
+   * Offered as a button rather than a derived column, because the planner overrides a figure
+   * for a launch or a one-off run and a column that silently recomputed would wipe that.
+   * Only the two averages are touched; lead time and safety factor are left alone.
    */
-  const fillThreeMonth = async () => {
+  const fillAverages = async () => {
     setFilling(true);
+    setFillNote(null);
     try {
-      const { from, to } = threeMonthWindow();
-      const recent = await loadInkPositions(fy, from, to, aliases);
-      const key = tab === "combined" ? null : tab;
+      const map = data?.nameToCode ?? new Map<string, string>();
+      const consumption = await loadInkConsumption(map, new Date(), new Set(holidays));
       setPlans((prev) => {
         const next = { ...prev };
-        for (const p of recent.rows) {
-          const consumed = key ? (p.consumedByCompany[key] ?? 0) : p.consumed;
-          const current = next[p.itemCode] ?? EMPTY_PLAN;
-          next[p.itemCode] = { ...current, threeMonthAvg: Math.round(consumed) };
+        for (const [code, c] of consumption) {
+          next[code] = {
+            ...(next[code] ?? EMPTY_PLAN),
+            threeMonthAvg: c.threeMonthAvg,
+            perDayAvg: c.perDayAvg,
+          };
         }
         return next;
       });
+      setFillNote(
+        `Filled ${consumption.size} inks. Per-day average is this month over ` +
+          `${workingDaysElapsed(new Date(), new Set(holidays))} working days.`,
+      );
+    } catch (e) {
+      setFillNote(e instanceof Error ? e.message : "Could not read the Sales Register.");
     } finally {
       setFilling(false);
     }
@@ -307,9 +314,9 @@ export default function InkMis() {
         >
           <Pencil className="mr-2 h-4 w-4" /> {editing ? "Done editing" : "Edit planning inputs"}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => void fillThreeMonth()} disabled={filling}>
+        <Button variant="outline" size="sm" onClick={() => void fillAverages()} disabled={filling}>
           <Wand2 className="mr-2 h-4 w-4" />
-          {filling ? "Reading Tally…" : "Fill 3-month average from Tally"}
+          {filling ? "Reading the Sales Register…" : "Fill averages from Sales Register"}
         </Button>
         {(["low", "mid", "normal", "excess"] as InkBand[]).map((b) => (
           <span key={b} className={`rounded px-2 py-1 text-xs ${BAND_CLASS[b]}`}>
@@ -317,6 +324,12 @@ export default function InkMis() {
           </span>
         ))}
       </div>
+
+      {fillNote && (
+        <div className="rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900">
+          {fillNote}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
@@ -539,6 +552,52 @@ export default function InkMis() {
           )}
         </Table>
       </ScrollableTable>
+
+      {/* Holidays. Sundays come out automatically; these are the extra closures. Kept visible
+          rather than buried, because every date added raises every per-day average. */}
+      <details className="rounded-md border p-3 text-sm">
+        <summary className="cursor-pointer font-medium">
+          Working days — {workingDaysElapsed(new Date(), new Set(holidays))} so far this month
+        </summary>
+        <div className="mt-3 space-y-3">
+          <p className="text-muted-foreground">
+            Sundays are already excluded. Add public holidays and any other closure here, then
+            fill the averages again. The per-day average divides this month's sales by the
+            working days that have passed, so each date you add raises it.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {holidays.length === 0 && (
+              <span className="text-muted-foreground">No holidays added.</span>
+            )}
+            {[...holidays].sort().map((h) => (
+              <span
+                key={h}
+                className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs"
+              >
+                {`${h.slice(6, 8)}-${h.slice(4, 6)}-${h.slice(0, 4)}`}
+                <button
+                  type="button"
+                  aria-label={`Remove ${h}`}
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setHolidays((prev) => prev.filter((d) => d !== h))}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <Input
+            type="date"
+            className="w-48"
+            onChange={(e) => {
+              const ymd = e.target.value.replace(/-/g, "");
+              if (!ymd) return;
+              setHolidays((prev) => (prev.includes(ymd) ? prev : [...prev, ymd]));
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </details>
 
       {/* Band thresholds. Exposed because the sheet's cut-offs were read off its colouring
           rather than documented, so the planner must be able to correct them. */}
