@@ -1,6 +1,9 @@
 import {
   BarChart3,
   Bell,
+  Factory,
+  LayoutDashboard,
+  Receipt,
   ShieldAlert,
   FileText,
   PackageOpen,
@@ -12,6 +15,7 @@ import {
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { REPORT_CATEGORIES, REPORTS, categoryHref, type ReportCategoryId } from "@hub/lib/reportCatalog";
+import { BUSHRA_DASHBOARDS, dashboardGroupHref, groupPaths } from "@hub/lib/bushraDashboards";
 import { useSession } from "@/core/platform/session";
 
 /**
@@ -62,6 +66,12 @@ export interface ReceivablesMenuChild {
    * sub-nav follows the per-report grants without this file knowing anything about them.
    */
   categoryId?: ReportCategoryId;
+  /**
+   * Page paths this child covers, when its own `url` carries a query (a dashboard GROUP links to
+   * `?group=…`). The sidebar lights the child while the reader is on any of them — without this,
+   * opening a dashboard would leave its own group unhighlighted.
+   */
+  matchPaths?: string[];
 }
 
 export interface ReceivablesMenu {
@@ -139,6 +149,23 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
       url: categoryHref(c.id),
       icon: c.icon,
       categoryId: c.id,
+    })),
+  },
+  // Bushra's dashboards. The sub-nav lists GROUPS, not screens — the same rule the Reports menu
+  // follows, and for the same reason: one row per subject keeps the sidebar short as dashboards are
+  // added. The list is built from lib/bushraDashboards.ts, so a new dashboard appears here on its
+  // own. `matchPaths` is what lights a group up while you are on one of its pages.
+  {
+    key: "bushra-dashboard",
+    title: "Bushra-Dashboard",
+    url: `${BASE}/bushra-dashboard`,
+    icon: LayoutDashboard,
+    children: BUSHRA_DASHBOARDS.map((g) => ({
+      key: `bushra-dashboard:${g.id}`,
+      title: g.title,
+      url: dashboardGroupHref(g.id),
+      icon: g.icon,
+      matchPaths: groupPaths(g),
     })),
   },
   {

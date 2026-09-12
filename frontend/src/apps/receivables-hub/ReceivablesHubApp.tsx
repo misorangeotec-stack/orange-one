@@ -51,6 +51,11 @@ import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
 import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
 import SalesRegister from "@hub/pages/SalesRegister";
 import StockSummary from "@hub/pages/StockSummary";
+import BatchCosting from "@hub/pages/BatchCosting";
+import ProductionBatchCostingDashboard from "@hub/pages/ProductionBatchCostingDashboard";
+import ProductionExpenses from "@hub/pages/ProductionExpenses";
+import BushraDashboards from "@hub/pages/BushraDashboards";
+import PackingMaterial from "@hub/pages/PackingMaterial";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -101,6 +106,20 @@ function HubRoutes() {
               control (see components/RequireHubMenu). */}
           <Route element={<RequireHubMenu menu="alerts" />}>
             <Route path="alerts" element={<AlertsPage />} />
+          </Route>
+          {/* Bushra-Dashboard — its own sidebar menu, guarded by that menu's key like Alerts. The
+              menu's own URL has no page of its own; it lands on the first dashboard. */}
+          <Route element={<RequireHubMenu menu="bushra-dashboard" />}>
+            {/* The landing page lists the dashboard groups (lib/bushraDashboards.ts), the way
+                /reports lists report categories. */}
+            <Route path="bushra-dashboard" element={<BushraDashboards />} />
+            <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
+            {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
+                company, and the full cost of a kilogram once they are absorbed. */}
+            <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
+            {/* The third leg of the cost: caps, cans and stickers, which never touch a
+                production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
+            <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
           </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
           {/* Follow-ups force the pipeline source internally — see pages/Followups.tsx. */}
@@ -255,6 +274,10 @@ function HubRoutes() {
                   through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
                   own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
               <Route path="reports/stock-summary" element={<StockSummary />} />
+              {/* Reports → Bushra-Report. Stock Journal-Production vouchers off ConnectWave
+                  rpt_batch_line, classified per batch (lib/batchCostingRules.ts). Source-agnostic;
+                  own company + FY + period pickers — see FY_PINNED_ROUTES. */}
+              <Route path="reports/batch-costing" element={<BatchCosting />} />
             </Route>
           </Route>
           {/* Customer Creation FMS.
