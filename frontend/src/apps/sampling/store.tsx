@@ -23,6 +23,9 @@ import {
   recordLabComplete as recordLabCompleteWrite,
   recordLabStart as recordLabStartWrite,
   recordResult as recordResultWrite,
+  recordMachineComplete as recordMachineCompleteWrite,
+  recordMachineResultReceived as recordMachineResultReceivedWrite,
+  recordMachineStart as recordMachineStartWrite,
   recordResultReceived as recordResultReceivedWrite,
   recordSampleReceived as recordSampleReceivedWrite,
   recordSampleToLab as recordSampleToLabWrite,
@@ -41,7 +44,11 @@ import {
   updateHandover as updateHandoverWrite,
   updateLabComplete as updateLabCompleteWrite,
   updateLabStart as updateLabStartWrite,
+  updateMachineComplete as updateMachineCompleteWrite,
+  updateMachineResultReceived as updateMachineResultReceivedWrite,
+  updateMachineStart as updateMachineStartWrite,
   updateRecipient as updateRecipientWrite,
+  updateRequest as updateRequestWrite,
   updateResult as updateResultWrite,
   updateResultReceived as updateResultReceivedWrite,
   updateSampleReceived as updateSampleReceivedWrite,
@@ -58,6 +65,9 @@ import {
   type HandoverInput,
   type LabCompleteInput,
   type LabStartInput,
+  type MachineCompleteInput,
+  type MachineResultInput,
+  type MachineStartInput,
   type PersonMasterInput,
   type RequestInput,
   type ResultInput,
@@ -74,6 +84,8 @@ import {
   completedConfirmEntries,
   completedHandoverEntries,
   completedLabProcessEntries,
+  completedMachineProcessEntries,
+  completedMachineResultEntries,
   completedResultEntries,
   completedResultReceivedEntries,
   completedSampleReceivedEntries,
@@ -81,6 +93,7 @@ import {
   completedSendEntries,
   completedTestingEntries,
   isOpenRequest,
+  isRequestEditable,
   samplingDueIso,
   samplingSnapshotFrom,
   type QueueEntry,
@@ -203,6 +216,12 @@ interface SamplingStoreValue {
   requestById: (id: string) => SamplingRequest | undefined;
   myRequests: SamplingRequest[];
   isOpenRequest: (r: SamplingRequest) => boolean;
+  /**
+   * Can THIS person edit the request's intake form right now? The requester, an
+   * admin or a coordinator — and only until the first step is recorded. Mirrors
+   * fms_sampling_update_request's two checks.
+   */
+  canEditRequest: (r: SamplingRequest) => boolean;
 
   // queues
   queueEntries: QueueEntry[];
@@ -224,6 +243,7 @@ interface SamplingStoreValue {
 
   // workflow writes
   submitRequest: (input: RequestInput) => Promise<string>;
+  updateRequest: (r: SamplingRequest, input: RequestInput) => Promise<void>;
   recordSend: (r: SamplingRequest, input: SendInput) => Promise<void>;
   updateSend: (r: SamplingRequest, input: SendInput) => Promise<void>;
   recordConfirm: (r: SamplingRequest, input: ConfirmInput) => Promise<void>;
@@ -238,6 +258,12 @@ interface SamplingStoreValue {
   updateLabStart: (r: SamplingRequest, input: LabStartInput) => Promise<void>;
   recordLabComplete: (r: SamplingRequest, input: LabCompleteInput) => Promise<void>;
   updateLabComplete: (r: SamplingRequest, input: LabCompleteInput) => Promise<void>;
+  recordMachineStart: (r: SamplingRequest, input: MachineStartInput) => Promise<void>;
+  updateMachineStart: (r: SamplingRequest, input: MachineStartInput) => Promise<void>;
+  recordMachineComplete: (r: SamplingRequest, input: MachineCompleteInput) => Promise<void>;
+  updateMachineComplete: (r: SamplingRequest, input: MachineCompleteInput) => Promise<void>;
+  recordMachineResultReceived: (r: SamplingRequest, input: MachineResultInput) => Promise<void>;
+  updateMachineResultReceived: (r: SamplingRequest, input: MachineResultInput) => Promise<void>;
   recordResultReceived: (r: SamplingRequest, input: ResultReceivedInput) => Promise<void>;
   updateResultReceived: (r: SamplingRequest, input: ResultReceivedInput) => Promise<void>;
   recordTesting: (r: SamplingRequest, input: TestingInput) => Promise<void>;
@@ -386,6 +412,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       // Whoever received the sample is the one who sends it on to the lab.
       (stepKey === "sample_to_lab" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
       (stepKey === "result_received" && !!r.labResultToId && r.labResultToId === uid) ||
+      // The machine twin: whoever machine testing handed the result to closes it.
+      (stepKey === "machine_result" && !!r.machineResultToId && r.machineResultToId === uid) ||
       // Outward: the chosen sender dispatches it (the inward collector's twin).
       (stepKey === "send_sample" && !!r.senderId && r.senderId === uid) ||
       // The person the result is being handed over TO owns the handover step —
@@ -448,6 +476,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const sampleToLabEntries = completedSampleToLabEntries(snapshot);
     const labProcessEntries = completedLabProcessEntries(snapshot);
     const resultReceivedEntries = completedResultReceivedEntries(snapshot);
+    const machineProcessEntries = completedMachineProcessEntries(snapshot);
+    const machineResultEntries = completedMachineResultEntries(snapshot);
     const sendEntries = completedSendEntries(snapshot);
     const confirmEntries = completedConfirmEntries(snapshot);
     const testingEntries = completedTestingEntries(snapshot);
@@ -463,6 +493,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       : stepKey === "sample_to_lab" ? sampleToLabEntries
       : stepKey === "lab_process" ? labProcessEntries
       : stepKey === "result_received" ? resultReceivedEntries
+      : stepKey === "machine_process" ? machineProcessEntries
+      : stepKey === "machine_result" ? machineResultEntries
       : stepKey === "send_sample" ? sendEntries
       : stepKey === "confirm_receipt" ? confirmEntries
       : stepKey === "testing" ? testingEntries
@@ -486,6 +518,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const everCollector = !!uid && requests.some((r) => r.collectorId === uid);
     const everHandoverRecipient = !!uid && requests.some((r) => r.handoverRecipientId === uid);
     const everResultRecipient = !!uid && requests.some((r) => r.labResultToId === uid);
+    const everMachineResultRecipient = !!uid && requests.some((r) => r.machineResultToId === uid);
 
     /**
      * May this person see the step's QUEUE at all — the nav link, the route, the page?
@@ -511,6 +544,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       if (stepKey === "sample_collect") return everCollector;
       if (stepKey === "sample_received" || stepKey === "sample_to_lab") return everHandoverRecipient;
       if (stepKey === "result_received") return everResultRecipient;
+      if (stepKey === "machine_result") return everMachineResultRecipient;
       return false;
     };
 
@@ -579,6 +613,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       requestById: (id) => requestMap.get(id),
       myRequests: requests.filter((r) => r.raisedBy === uid),
       isOpenRequest,
+      canEditRequest: (r) =>
+        canEdit && (r.raisedBy === uid || isProcessCoordinator) && isRequestEditable(r),
 
       queueEntries,
       myQueue,
@@ -604,6 +640,10 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         // The RPC already fanned out from its SECURITY DEFINER context.
         await invalidate();
         return id;
+      },
+      updateRequest: async (r, input) => {
+        await updateRequestWrite(r.id, input);
+        await invalidate();
       },
       recordSend: async (r, input) => {
         await recordSendWrite(r.id, input);
@@ -664,6 +704,31 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       },
       updateLabComplete: async (r, input) => {
         await updateLabCompleteWrite(r.id, input);
+        await invalidate();
+      },
+      recordMachineStart: async (r, input) => {
+        await recordMachineStartWrite(r.id, input);
+        await invalidate();
+      },
+      updateMachineStart: async (r, input) => {
+        await updateMachineStartWrite(r.id, input);
+        await invalidate();
+      },
+      recordMachineComplete: async (r, input) => {
+        await recordMachineCompleteWrite(r.id, input);
+        // The RPC already fanned out to whoever the result was handed to.
+        await invalidate();
+      },
+      updateMachineComplete: async (r, input) => {
+        await updateMachineCompleteWrite(r.id, input);
+        await invalidate();
+      },
+      recordMachineResultReceived: async (r, input) => {
+        await recordMachineResultReceivedWrite(r.id, input);
+        await invalidate();
+      },
+      updateMachineResultReceived: async (r, input) => {
+        await updateMachineResultReceivedWrite(r.id, input);
         await invalidate();
       },
       recordResultReceived: async (r, input) => {

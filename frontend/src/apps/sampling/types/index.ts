@@ -49,6 +49,8 @@ export type RequestStatus =
   | "awaiting_sample_to_lab"     // inward, lab required: sample_to_lab
   | "awaiting_lab_process"       // inward, lab required: lab_process — BOTH passes
   | "awaiting_result_received"   // inward, lab required: result_received (closes)
+  | "awaiting_machine_process"   // inward, machine required: machine_process — BOTH passes
+  | "awaiting_machine_result"    // inward, machine required: machine_result (closes)
   | "closed"
   | "on_hold"
   | "cancelled";
@@ -90,6 +92,12 @@ export interface SamplingRequest {
   handoverName: string | null;          // legacy free-text "hand to" name (old rows)
   /** Inward only: true → receive/testing/result flow; false → the short collect→received branch; null on outward. */
   labTestingRequired: boolean | null;
+  /**
+   * Inward only: true → once the inward work finishes the request goes on to
+   * machine testing instead of closing. A TAIL on either inward branch, never a
+   * route of its own. Null on outward and on rows raised before 20261117120000.
+   */
+  machineTestingRequired: boolean | null;
   /** The chosen hand-over recipient (an app user). Null when a free-text name was typed. */
   handoverRecipientId: string | null;
   handoverRecipientName: string | null;
@@ -206,6 +214,30 @@ export interface SamplingRequest {
   resultReceivedNote: string | null;
   resultReceivedAt: string | null;
   resultReceivedBy: string | null;
+
+  // machine_process pass 1 — the machine team acknowledges the sample by dating the result.
+  machineTentativeDate: string | null;
+  /** Free remarks on machine testing — written on either pass. NOT `machineComment`, which is the verdict. */
+  machineNote: string | null;
+  machineStartedAt: string | null;
+  machineStartedBy: string | null;
+
+  // machine_process pass 2 — testing done; comment REQUIRED, attachment optional.
+  machineCompletedDate: string | null;
+  machineComment: string | null;
+  machineDocPath: string | null;
+  machineDocName: string | null;
+  /** Whom the machine result is handed to. Null id + a name = a free-text recipient. */
+  machineResultToId: string | null;
+  machineResultToName: string | null;
+  machineCompletedAt: string | null;
+  machineCompletedBy: string | null;
+
+  // machine_result — closes the request
+  machineResultReceivedDate: string | null;
+  machineResultReceivedNote: string | null;
+  machineResultReceivedAt: string | null;
+  machineResultReceivedBy: string | null;
 
   closedAt: string | null;
 
