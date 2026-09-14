@@ -1,5 +1,5 @@
 import type { OcpiDeal } from "../types";
-import { isUsdDealRow, type DealFacts } from "./fieldSpec";
+import { deliveryPeriodTakesSuffix, isUsdDealRow, type DealFacts } from "./fieldSpec";
 import { resolve } from "./tokens";
 
 /**
@@ -81,6 +81,11 @@ export const CONDITION_HELP: { name: string; means: string }[] = [
     name: "noHeads",
     means:
       "the deal EXPLICITLY excludes print heads — false while the question is unanswered, so it can never assert 'without heads' from silence",
+  },
+  {
+    name: "periodInDays",
+    means:
+      "the delivery period is a number of days, or not answered yet — false only on a worded answer such as \"Immediately\", which must print without the Days suffix",
   },
 ];
 
@@ -407,5 +412,20 @@ export function conditionsFor({ deal, facts }: { deal: OcpiDeal; facts: DealFact
     */
     heads: deal.inclHead === true,
     noHeads: deal.inclHead === false,
+    /*
+      The deck line is `Shipment Terms: {{delivery_days}}[[if periodInDays]] Days
+      from the date of confirmation[[/if]]`. A worded answer ("Immediately")
+      prints alone, the way both PDFs already print it.
+
+      ⚠ AN UNANSWERED PERIOD KEEPS THE SUFFIX, DELIBERATELY. The token then
+        prints a ruled blank, and "________ Days from the date of confirmation"
+        tells the reader what the gap is asking. `deliveryPeriodTakesSuffix` alone
+        is false on an empty value, so it is not used bare here.
+
+      🟢 FAILS SAFE ON A STALE TAB. An old bundle does not know this name, and an
+         unknown name fails open — which prints the suffix, exactly as before.
+    */
+    periodInDays:
+      (deal.deliveryDays ?? "").trim() === "" || deliveryPeriodTakesSuffix(deal.deliveryDays),
   };
 }

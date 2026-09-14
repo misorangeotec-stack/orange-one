@@ -1299,11 +1299,11 @@ export function deliveryPeriodValue(raw: string | null | undefined): string {
  *   takes that suffix into nonsense — "Immediately Days from the date of
  *   confirmation". The papers print such a value ALONE instead.
  *
- * 🔴 THE CONTRACT CANNOT DO THIS. Its suffix is literal text inside 22 deck
- *    bodies, so `{{delivery_days}}` has no way to suppress it. A digitless
- *    answer therefore still reads wrongly on the order confirmation, and the
- *    only fix is for a person to answer the box with a period. Raised with the
- *    client for QT-M0041 (Skymidtown Textiles).
+ * 🟢 THE CONTRACT DOES IT TOO, SINCE 20261124120000. Its suffix is literal text
+ *    in 22 deck bodies, which a token cannot suppress, so the suffix is wrapped
+ *    in `[[if periodInDays]]` and `conditionsFor` answers it from here. Client's
+ *    call on QT-M0041 (Skymidtown Textiles), 14-Sep-2026: the contract prints
+ *    "Shipment Terms: Immediately", matching the invoice.
  */
 export function deliveryPeriodTakesSuffix(raw: string | null | undefined): boolean {
   return /\d/.test(raw ?? "");

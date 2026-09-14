@@ -101,7 +101,9 @@ export default function MachineTemplate() {
   }, [templateText]);
 
   const unknownConditions = useMemo(
-    () => usedConditions.filter((c) => !CONDITION_HELP.some((h) => h.name === c)),
+    // `conditionsUsedIn` lowercases what it reads, so compare lowercased — a
+    // camelCase name (`noHeads`, `periodInDays`) was otherwise always "unknown".
+    () => usedConditions.filter((c) => !CONDITION_HELP.some((h) => h.name.toLowerCase() === c)),
     [usedConditions],
   );
 
