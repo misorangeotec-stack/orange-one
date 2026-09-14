@@ -153,16 +153,22 @@ export const COVERED_APP_IDS = [
   "production-entry",
   "order-to-dispatch",
   "asset-maintenance",
-  "travel-desk",
 ] as const;
 export type CoveredAppId = (typeof COVERED_APP_IDS)[number];
 
 /**
- * Providers that exist on the screen but are deliberately not mailed. Empty
- * today; it exists so that "not wired yet" and "decided against" are different
- * states rather than both looking like an oversight.
+ * Providers that exist on the screen but are deliberately not mailed. It exists so
+ * that "not wired yet" and "decided against" are different states rather than
+ * both looking like an oversight.
  */
-export const DELIBERATELY_UNCOVERED: Record<string, string> = {};
+export const DELIBERATELY_UNCOVERED: Record<string, string> = {
+  // Decided 14-09-2026 by the user when the mail was rebuilt for Sampling's machine
+  // testing: Travel Desk is built but NOT live (go-live waits on HR's H1 rate-card
+  // answer), so its trips must not start appearing in people's morning mail. The
+  // wiring below (fetch, items, SOURCE_APP) is left in place — to mail it, move
+  // "travel-desk" back into COVERED_APP_IDS, rebuild, and redeploy work-snapshot.
+  "travel-desk": "built, not live — excluded from the mail until Travel Desk goes live",
+};
 
 // ── Clock ─────────────────────────────────────────────────────────────────────
 
