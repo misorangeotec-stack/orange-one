@@ -95,7 +95,7 @@ export interface SamplingRequest {
   /**
    * Inward only: true → once the inward work finishes the request goes on to
    * machine testing instead of closing. A TAIL on either inward branch, never a
-   * route of its own. Null on outward and on rows raised before 20261117120000.
+   * route of its own. Null on outward and on rows raised before 20261125130000.
    */
   machineTestingRequired: boolean | null;
   /** The chosen hand-over recipient (an app user). Null when a free-text name was typed. */

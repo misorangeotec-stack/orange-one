@@ -1,8 +1,13 @@
 -- ===========================================================================
--- ROLLBACK for 20261116120000_fms_sampling_edit_request_and_optional_lab_doc.sql
+-- ROLLBACK for 20261125120000_fms_sampling_edit_request_and_optional_lab_doc.sql
 --
--- Restores record_lab_complete exactly as 20260808120100:221 left it (the lab
--- testing attachment required again) and drops the two request-edit functions.
+-- ⚠ RUN 20261125130000's rollback FIRST. The guard below refuses otherwise.
+-- ⚠ APPLYING: send the body WITHOUT the begin; / commit; lines.
+--
+-- Restores record_lab_complete BYTE-IDENTICAL to live pg_proc.prosrc as of
+-- 14-09-2026 (the lab testing attachment required again; generated from
+-- pg_get_functiondef and md5-checked below) and drops the two request-edit
+-- functions.
 --
 -- Rows completed WITHOUT a lab report while the forward migration was live keep
 -- their null lab_doc_path — nothing re-checks a finished step. Edits already
@@ -10,16 +15,25 @@
 -- ===========================================================================
 
 begin;
+set local lock_timeout = '5s';
+
+do $guard$
+begin
+  if (select prosrc from pg_proc where oid = to_regprocedure('public.fms_sampling_update_request(uuid,jsonb)'))
+     like '%machine%' then
+    raise exception 'ABORT: roll back 20261125130000 (machine testing) first';
+  end if;
+end $guard$;
 
 drop function if exists public.fms_sampling_update_request(uuid, jsonb);
 drop function if exists public.fms_sampling_request_editable(uuid);
 
-create or replace function public.fms_sampling_record_lab_complete(p_req uuid, p jsonb)
-returns void
-language plpgsql
-security definer
-set search_path to 'public'
-as $function$
+CREATE OR REPLACE FUNCTION public.fms_sampling_record_lab_complete(p_req uuid, p jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 declare
   v_status text; v_no text; v_uid uuid := auth.uid();
   v_comment text := nullif(trim(p->>'lab_comment'), '');
@@ -68,6 +82,17 @@ begin
       'ctaLabel', 'Open in Sampling'
     ));
 end $function$;
-grant execute on function public.fms_sampling_record_lab_complete(uuid, jsonb) to authenticated;
+
+do $check$
+begin
+  if (select md5(prosrc) from pg_proc where oid = 'public.fms_sampling_record_lab_complete(uuid,jsonb)'::regprocedure)
+     is distinct from '02ff96291ad7b95a524d6b093389fd3c' then
+    raise exception 'ABORT: record_lab_complete was not restored byte-identically';
+  end if;
+  if to_regprocedure('public.fms_sampling_update_request(uuid,jsonb)') is not null
+     or to_regprocedure('public.fms_sampling_request_editable(uuid)') is not null then
+    raise exception 'ABORT: the request-edit functions are still there';
+  end if;
+end $check$;
 
 commit;

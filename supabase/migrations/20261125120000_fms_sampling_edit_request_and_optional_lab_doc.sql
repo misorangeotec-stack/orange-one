@@ -23,9 +23,36 @@
 --
 -- Clone lineage: record_lab_complete from 20260808120100:221 (the last issue of
 -- it); the edit's validation + routing from submit_request at 20260903120000:72.
+--
+-- REVISED 14-09-2026 before it was ever applied (it was 20261116120000, a version
+-- master already used for another migration):
+--   • update_request now also requires module_can_edit(uid, 'sampling'). The
+--     view-only boundary (20260923120000) says every FMS write needs 'edit'; the
+--     requester check alone let a view-only raiser edit.
+--   • lock_timeout, plus a DRIFT GUARD: the live record_lab_complete must still be
+--     the body this file was written against, or the apply aborts instead of
+--     silently reverting whatever changed.
+--
+-- ⚠ APPLYING: send the body WITHOUT the begin; / commit; lines (the apply tool
+--   runs its own transaction), and never through `supabase db push`.
 -- ===========================================================================
 
 begin;
+set local lock_timeout = '5s';
+
+-- Drift guard. The md5 is of pg_proc.prosrc as it stood live on 14-09-2026.
+do $guard$
+begin
+  if (select md5(prosrc) from pg_proc
+       where oid = 'public.fms_sampling_record_lab_complete(uuid,jsonb)'::regprocedure)
+     is distinct from '02ff96291ad7b95a524d6b093389fd3c' then
+    raise exception 'ABORT: fms_sampling_record_lab_complete changed live since this migration was written. Rebuild it from pg_proc.prosrc.';
+  end if;
+  if to_regprocedure('public.fms_sampling_update_request(uuid,jsonb)') is not null
+     or to_regprocedure('public.fms_sampling_request_editable(uuid)') is not null then
+    raise exception 'ABORT: the request-edit functions already exist';
+  end if;
+end $guard$;
 
 -- ---------------------------------------------------------------------------
 -- 1. record_lab_complete — re-issued IN FULL from 20260808120100:221.
@@ -54,7 +81,7 @@ begin
     raise exception 'Not authorized to complete the lab process';
   end if;
   if v_comment is null then raise exception 'Test comments are required to complete the lab process'; end if;
-  -- (removed) the lab testing attachment is OPTIONAL from 20261116120000.
+  -- (removed) the lab testing attachment is OPTIONAL from 20261125120000.
   if v_to is null and v_to_name is null then
     raise exception 'Record whom the result is handed over to';
   end if;
@@ -162,6 +189,12 @@ begin
 
   select * into v_row from public.fms_sampling_requests where id = p_req for update;
   if v_row.id is null then raise exception 'Request not found'; end if;
+  -- View-only is a real boundary (20260923120000): being the requester is not
+  -- enough to write, the module grant must be 'edit' too. Admins pass (module_level
+  -- returns 'edit' for them).
+  if not public.module_can_edit(v_uid, 'sampling') then
+    raise exception 'You have view-only access to Sampling and cannot edit this request';
+  end if;
   -- coalesce: a NULL comparison would make the whole test NULL, which plpgsql
   -- treats as false — and the raise would be skipped.
   if not (coalesce(v_row.raised_by = v_uid, false) or public.is_admin(v_uid) or public.fms_sampling_is_coordinator(v_uid)) then
@@ -304,5 +337,18 @@ begin
   );
 end $$;
 grant execute on function public.fms_sampling_update_request(uuid, jsonb) to authenticated;
+
+-- Did it take? Cheap catalogue reads only.
+do $check$
+begin
+  if to_regprocedure('public.fms_sampling_update_request(uuid,jsonb)') is null
+     or to_regprocedure('public.fms_sampling_request_editable(uuid)') is null then
+    raise exception 'ABORT: the request-edit functions were not created';
+  end if;
+  if (select prosrc from pg_proc where oid = 'public.fms_sampling_record_lab_complete(uuid,jsonb)'::regprocedure)
+     like '%attachment is required%' then
+    raise exception 'ABORT: record_lab_complete still requires the attachment';
+  end if;
+end $check$;
 
 commit;

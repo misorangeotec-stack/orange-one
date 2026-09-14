@@ -37,14 +37,21 @@ export const isOpenRequest = (r: SamplingRequest): boolean => openStep(r) !== nu
  * ENTERED on and nobody has recorded anything against it. The two skip-collect
  * statuses are also where a COLLECTED request lands — `collectedAt` tells those apart.
  *
- * ⚠ MIRRORS SQL fms_sampling_request_editable (20261116120000). Change both.
+ * `awaiting_machine_process` is the fifth entry status: a no-lab + machine request
+ * raised with no collector enters there. Machine pass 1 is then the next step
+ * acting, so `machineStartedAt` closes the window like any other step timestamp.
+ *
+ * ⚠ MIRRORS SQL fms_sampling_request_editable (20261125130000). Change both.
  */
-const ENTRY_STATUSES = new Set(["awaiting_collect", "awaiting_send", "awaiting_sample_to_lab", "awaiting_sample_received"]);
+const ENTRY_STATUSES = new Set([
+  "awaiting_collect", "awaiting_send", "awaiting_sample_to_lab", "awaiting_sample_received", "awaiting_machine_process",
+]);
 export const isRequestEditable = (r: SamplingRequest): boolean =>
   ENTRY_STATUSES.has(r.status) &&
   [
     r.collectedAt, r.sentAt, r.labSentAt, r.sampleReceivedAt, r.receivedAt, r.confirmedAt, r.testedAt,
     r.resultedAt, r.handedOverAt, r.labStartedAt, r.labCompletedAt, r.resultReceivedAt, r.closedAt,
+    r.machineStartedAt, r.machineCompletedAt, r.machineResultReceivedAt,
   ].every((t) => !t);
 
 /**
@@ -68,7 +75,7 @@ export const requestBranch = (r: SamplingRequest): StepBranch =>
  * the no-lab branch's closing step (sample_received) never runs for it — so it
  * must not appear in the no-lab bucket at any point in its life.
  *
- * ⚠ MIRRORS the routing in SQL record_collect / submit_request (20261117120000).
+ * ⚠ MIRRORS the routing in SQL record_collect / submit_request (20261125130000).
  */
 export const isMachineOnly = (r: SamplingRequest): boolean =>
   r.direction === "inward" && r.labTestingRequired === false && r.machineTestingRequired === true;

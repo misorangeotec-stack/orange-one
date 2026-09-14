@@ -39,11 +39,64 @@
 --
 -- Clone lineage: the machine RPCs mirror lab_process / result_received
 -- (20260728120000 + 20260808120100, with the optional attachment of
--- 20261116120000); submit_request is re-issued from 20260903120000:72;
--- update_request from 20261116120000; can_act from 20260806120000.
+-- 20261125120000); submit_request is re-issued from 20260903120000:72;
+-- update_request from 20261125120000; can_act from 20260806120000.
+--
+-- REVISED 14-09-2026 before it was ever applied (it was 20261117120000, a version
+-- master already used for another migration):
+--   • THE VIEW-ONLY GATE IS KEPT. Since 20260923120000 fms_sampling_can_act is a
+--     two-line gate — module_can_edit(uid,'sampling') AND can_act__ungated(...).
+--     The first draft re-issued can_act with the ungated body, which would have
+--     let view-only users record every Sampling step. The machine_result arm now
+--     goes into fms_sampling_can_act__ungated, and the gate is left untouched.
+--   • request_editable is re-issued to admit awaiting_machine_process: a no-lab +
+--     machine request raised with no collector ENTERS there, and was never
+--     editable. isRequestEditable in lib/queues.ts mirrors it.
+--   • update_request keeps the module_can_edit check added in 20261125120000.
+--   • submit_request is create-or-replace only (the old DROP reset its grants).
+--   • lock_timeout, and DRIFT GUARDS on every live body this file replaces.
+--
+-- ⚠ APPLYING: send the body WITHOUT the begin; / commit; lines (the apply tool
+--   runs its own transaction), never through `supabase db push`, and only after
+--   20261125120000.
 -- ===========================================================================
 
 begin;
+set local lock_timeout = '5s';
+
+-- Drift guards — cheap catalogue reads, BEFORE any DDL takes its lock. Each md5 is
+-- of pg_proc.prosrc as it stood live on 14-09-2026. A mismatch means someone
+-- changed the function since; rebuild from prosrc rather than let this revert it.
+do $guard$
+declare
+  v_expect constant jsonb := jsonb_build_object(
+    'public.fms_sampling_can_act(text,uuid,uuid)',            '94e760ed1a017a73ba58cd6d305b3241',
+    'public.fms_sampling_can_act__ungated(text,uuid,uuid)',   '94421540ec4f781ae6a75447054b4998',
+    'public.fms_sampling_submit_request(jsonb)',              '5016f9d5002ae32248b64d3f29216c97',
+    'public.fms_sampling_resume_status(uuid)',                '64465a0712c4c65753f63bf5b922a27e',
+    'public.fms_sampling_record_collect(uuid,jsonb)',         '16192ccd8ec7cd560d06b6324bb2162a',
+    'public.fms_sampling_collect_editable(uuid)',             '044856a69b12326d25a4fad77c87472c',
+    'public.fms_sampling_record_result_received(uuid,jsonb)', '645e9834da7d69350e32d4e166ee56e0',
+    'public.fms_sampling_result_received_editable(uuid)',     '87686d3b70839f7c8d7496ccec82a7c8');
+  k text;
+begin
+  for k in select jsonb_object_keys(v_expect) loop
+    if (select md5(prosrc) from pg_proc where oid = to_regprocedure(k)) is distinct from v_expect->>k then
+      raise exception 'ABORT: % changed live since this migration was written. Rebuild it from pg_proc.prosrc.', k;
+    end if;
+  end loop;
+  if to_regprocedure('public.fms_sampling_update_request(uuid,jsonb)') is null then
+    raise exception 'ABORT: apply 20261125120000 (request edit) first';
+  end if;
+  if (select prosrc from pg_proc where oid = 'public.fms_sampling_update_request(uuid,jsonb)'::regprocedure)
+     not like '%module_can_edit%' then
+    raise exception 'ABORT: fms_sampling_update_request is not the 20261125120000 version';
+  end if;
+  if (select pg_get_constraintdef(oid) from pg_constraint where conname = 'fms_sampling_requests_status_check')
+     like '%machine%' then
+    raise exception 'ABORT: the status CHECK already carries machine statuses';
+  end if;
+end $guard$;
 
 -- ---------------------------------------------------------------------------
 -- 1. Columns.
@@ -72,7 +125,7 @@ alter table public.fms_sampling_requests
   add column if not exists machine_result_received_by   uuid references auth.users on delete set null;
 
 comment on column public.fms_sampling_requests.machine_testing_required is
-  'INWARD only. TRUE = the request runs machine testing. WHERE it joins depends on the lab gate: with lab testing it is a tail after result_received; without lab testing it REPLACES sample_received, so collection hands straight to machine_process and the request never enters the no-lab bucket. NULL on every outward row and on every row raised before 20261117120000 - both read as "not required".';
+  'INWARD only. TRUE = the request runs machine testing. WHERE it joins depends on the lab gate: with lab testing it is a tail after result_received; without lab testing it REPLACES sample_received, so collection hands straight to machine_process and the request never enters the no-lab bucket. NULL on every outward row and on every row raised before 20261125130000 - both read as "not required".';
 
 comment on column public.fms_sampling_requests.machine_result_to_id is
   'Whom the machine-testing result is handed to (an app user). The twin of lab_result_to_id: it is what authorizes that person on the machine_result step. NULL when a free-text name was typed - then machine_result falls to that step''s owners.';
@@ -90,12 +143,17 @@ alter table public.fms_sampling_requests add  constraint fms_sampling_requests_s
                     'closed','on_hold','cancelled'));
 
 -- ---------------------------------------------------------------------------
--- 3. can_act — re-issued IN FULL from 20260806120000, plus ONE arm: the person
---    the machine result is handed to owns the machine_result step, exactly as
---    lab_result_to_id owns result_received. machine_process has no per-request
---    actor — it belongs to its step owners (Setup → Step Owners).
+-- 3. can_act__ungated — the live body (as installed verbatim by 20260923120000),
+--    plus ONE arm: the person the machine result is handed to owns the
+--    machine_result step, exactly as lab_result_to_id owns result_received.
+--    machine_process has no per-request actor — it belongs to its step owners
+--    (Setup → Step Owners).
+--
+--    ⚠ NOT fms_sampling_can_act. That is the view-only gate
+--      (module_can_edit AND __ungated) and is deliberately left untouched —
+--      the post-check at the bottom asserts its md5 did not move.
 -- ---------------------------------------------------------------------------
-create or replace function public.fms_sampling_can_act(p_step_key text, p_req uuid, p_uid uuid)
+create or replace function public.fms_sampling_can_act__ungated(p_step_key text, p_req uuid, p_uid uuid)
 returns boolean
 language sql
 stable
@@ -144,7 +202,6 @@ as $$
                          and c.source = public.fms_sampling_confirmer_source(r.receive_via)
                        where r.id = p_req));
 $$;
-grant execute on function public.fms_sampling_can_act(text, uuid, uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4. submit_request — re-issued IN FULL from 20260903120000:72.
@@ -155,8 +212,8 @@ grant execute on function public.fms_sampling_can_act(text, uuid, uuid) to authe
 -- NOT affect where a request ENTERS — machine testing is a tail, so the entry
 -- routing is untouched. An older client sends no key at all, which stores NULL:
 -- exactly today's behaviour.
+-- create-or-replace only: a DROP first would reset the function's grants.
 -- ---------------------------------------------------------------------------
-drop function if exists public.fms_sampling_submit_request(jsonb);
 create or replace function public.fms_sampling_submit_request(p jsonb)
 returns uuid
 language plpgsql
@@ -337,7 +394,7 @@ end $$;
 grant execute on function public.fms_sampling_submit_request(jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. update_request — re-issued IN FULL from 20261116120000.
+-- 5. update_request — re-issued IN FULL from 20261125120000.
 --    ONE change: the machine gate is editable too, alongside the lab one.
 -- ---------------------------------------------------------------------------
 create or replace function public.fms_sampling_update_request(p_req uuid, p jsonb)
@@ -372,6 +429,10 @@ begin
 
   select * into v_row from public.fms_sampling_requests where id = p_req for update;
   if v_row.id is null then raise exception 'Request not found'; end if;
+  -- View-only is a real boundary (20260923120000) — see 20261125120000.
+  if not public.module_can_edit(v_uid, 'sampling') then
+    raise exception 'You have view-only access to Sampling and cannot edit this request';
+  end if;
   -- coalesce: a NULL comparison would make the whole test NULL, which plpgsql
   -- treats as false — and the raise would be skipped.
   if not (coalesce(v_row.raised_by = v_uid, false) or public.is_admin(v_uid) or public.fms_sampling_is_coordinator(v_uid)) then
@@ -513,6 +574,43 @@ begin
   );
 end $$;
 grant execute on function public.fms_sampling_update_request(uuid, jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 5b. request_editable — re-issued from 20261125120000 with the fifth entry
+--     status. A no-lab + machine request raised with NO collector enters at
+--     awaiting_machine_process (section 4), so without this it could never be
+--     edited, and an edit that re-routed a request there would lock it.
+--     Machine pass 1 is the next step acting on such a request, so its timestamp
+--     closes the window too.
+--
+--     ⚠ MIRRORED by `isRequestEditable` in frontend/src/apps/sampling/lib/queues.ts.
+-- ---------------------------------------------------------------------------
+create or replace function public.fms_sampling_request_editable(p_req uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.fms_sampling_requests r
+     where r.id = p_req
+       and r.status in ('awaiting_collect','awaiting_send','awaiting_sample_to_lab','awaiting_sample_received',
+                        'awaiting_machine_process')
+       and r.collected_at       is null
+       and r.sent_at            is null
+       and r.lab_sent_at        is null
+       and r.sample_received_at is null
+       and r.received_at        is null
+       and r.confirmed_at       is null
+       and r.tested_at          is null
+       and r.resulted_at        is null
+       and r.handed_over_at     is null
+       and r.lab_started_at     is null
+       and r.lab_completed_at   is null
+       and r.result_received_at is null
+       and r.closed_at          is null
+       and r.machine_started_at         is null
+       and r.machine_completed_at       is null
+       and r.machine_result_received_at is null
+  );
+$$;
+grant execute on function public.fms_sampling_request_editable(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6. THE HAND-OFF, and it is the COLLECT step that makes the choice on the
@@ -794,7 +892,7 @@ grant execute on function public.fms_sampling_update_machine_start(uuid, jsonb) 
 
 -- ===========================================================================
 -- RPC — machine_process PASS 2. Testing is done: comments are required, the
--- attachment is OPTIONAL (as on the lab process since 20261116120000), and the
+-- attachment is OPTIONAL (as on the lab process since 20261125120000), and the
 -- request advances to machine_result.
 -- ===========================================================================
 create or replace function public.fms_sampling_record_machine_complete(p_req uuid, p jsonb)
@@ -1044,5 +1142,37 @@ as $function$
   end
   from public.fms_sampling_requests r where r.id = p_req;
 $function$;
+
+-- Did it take — and did the view-only gate survive? Cheap catalogue reads only.
+do $check$
+declare f text;
+begin
+  if (select md5(prosrc) from pg_proc where oid = 'public.fms_sampling_can_act(text,uuid,uuid)'::regprocedure)
+     is distinct from '94e760ed1a017a73ba58cd6d305b3241' then
+    raise exception 'ABORT: the view-only gate fms_sampling_can_act was changed';
+  end if;
+  if (select prosrc from pg_proc where oid = 'public.fms_sampling_can_act__ungated(text,uuid,uuid)'::regprocedure)
+     not like '%machine_result_to_id%' then
+    raise exception 'ABORT: can_act__ungated has no machine_result arm';
+  end if;
+  if (select pg_get_constraintdef(oid) from pg_constraint where conname = 'fms_sampling_requests_status_check')
+     not like '%awaiting_machine_result%' then
+    raise exception 'ABORT: the status CHECK has no machine statuses';
+  end if;
+  if (select prosrc from pg_proc where oid = 'public.fms_sampling_request_editable(uuid)'::regprocedure)
+     not like '%awaiting_machine_process%' then
+    raise exception 'ABORT: request_editable does not admit awaiting_machine_process';
+  end if;
+  foreach f in array array[
+    'public.fms_sampling_record_machine_start(uuid,jsonb)', 'public.fms_sampling_update_machine_start(uuid,jsonb)',
+    'public.fms_sampling_machine_start_editable(uuid)',
+    'public.fms_sampling_record_machine_complete(uuid,jsonb)', 'public.fms_sampling_update_machine_complete(uuid,jsonb)',
+    'public.fms_sampling_machine_complete_editable(uuid)',
+    'public.fms_sampling_record_machine_result_received(uuid,jsonb)',
+    'public.fms_sampling_update_machine_result_received(uuid,jsonb)',
+    'public.fms_sampling_machine_result_received_editable(uuid)'] loop
+    if to_regprocedure(f) is null then raise exception 'ABORT: % was not created', f; end if;
+  end loop;
+end $check$;
 
 commit;
