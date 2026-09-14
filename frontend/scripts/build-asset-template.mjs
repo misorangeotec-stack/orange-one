@@ -69,7 +69,7 @@ const OUT = path.join(HERE, "../../Asset Data Collection Template.xlsx");
 // names the importer rejects.
 // ===========================================================================
 const PICKLISTS = {
-  "Category": ["Vehicle", "Air Conditioner", "Machinery", "Computer & IT", "Electrical", "Furniture", "Safety Equipment", "Building & Property"],
+  "Category": ["Vehicle", "Air Conditioner", "Machinery", "Computer & IT", "Electrical", "Furniture", "Safety Equipment", "Building & Property", "Company Policies"],
   "Make": ["Ather", "Audi", "Hero", "Honda", "Kia", "Mahindra", "Maruti Suzuki", "MG Motor", "Mini", "Royal Enfield", "Skoda", "Volkswagen"],
   "Company": [
     "Orange O Tec Private Limited",
