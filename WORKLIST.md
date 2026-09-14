@@ -10023,11 +10023,12 @@ list.** Related: [fms-module-email-is-live] — other modules are already sendin
       earlier note here called cancelling *"staff-only"*; it is not — the RPC already lets the
       **raiser** cancel. The work is NARROWING its window, on the server, not opening it.
 
-### OD-15 · One shipment, several lots — the LOT box holds a split it cannot record  🟢  `[x]`
-*Raised 2026-09-11 · from the client · **BUILT AND VERIFIED the same day.** Migration
-`20261122120000_od15_one_shipment_several_lots.sql` is **APPLIED TO LIVE**; the frontend is built and
-ready to deploy. The rollback was **rehearsed on live data** — applied, tested, rolled back
-byte-identically, re-applied.*
+### OD-15 · One shipment, several lots — the LOT box holds a split it cannot record  🟢  `[x]` DONE
+*Raised 2026-09-11 · from the client · **DONE AND LIVE.** Migration
+`20261122120000_od15_one_shipment_several_lots.sql` applied to live 11-09-2026, **before** the
+frontend. Frontend deployed to orangeonehub.com — `80c3a5e` on 12-09-2026 and the dropdown follow-up
+`0744e8d` on 14-09-2026, Vercel green on both. The rollback was **rehearsed on live data** — applied,
+tested, rolled back byte-identically, re-applied. Closed with the user 14-09-2026.*
 
 #### What shipped
 
@@ -10042,6 +10043,22 @@ one new shared field used by both writers, and no reader changed.
 | The cell | `components/LotAllocField.tsx` — one multi-select, a quantity row per lot past the first, used by Check Material Status **and** the correction screen |
 | Shared | `lib/lotPicker.ts` — the ConnectWave fetch and the book-naming MOVED out of ShipLinesGrid, not copied |
 | Readers changed | **None.** `lot_no` still carries the answer, now with the quantities in it |
+
+#### Follow-up, 14-09-2026 — the dropdown shows how much each lot holds
+
+Asked for after the first look: the lot list read as bare numbers, so a store keeper had to pick a
+lot before learning whether it could cover the line. Each dropdown row now carries Tally's balance —
+`#1453-2606994 · 90 KGS`, and per book when one lot number spans two
+(`90 KGS Noida, 6 KGS Delhi`). Frontend only, in `LotAllocField.tsx`.
+
+- ⚠ **It sits in the option LABEL**, because `MultiOption` has no `sublabel` and the shared
+  `MultiSelect.tsx` was being edited by another session. So the trigger is pinned to the bare lot
+  number (`triggerLabel`), and the "create" row checks the lot itself, so typing a lot Tally does
+  hold no longer says "(not in Tally)".
+- **Picking a lot bigger than the line is normal and silent.** A 10 KGS line from a 150 KGS lot
+  records 10 KGS from that lot; the other 140 stay in the lot and nothing here changes Tally's
+  balance. The advisory appears only the other way round — drawing MORE than Tally shows — and
+  still saves.
 
 #### 🔴 Three findings that changed the build — read these before touching any of it
 
@@ -10125,13 +10142,14 @@ degraded empty state.
 - The correction modal was `size="lg"`; with a fourth column every item name wrapped to four lines.
   Now `3xl`.
 
-#### 🔴 Still open — ONE step, and it needs a decision
+#### Watch the first real split — not a blocker
 
-**The live end-to-end Save was NOT performed.** Everything upstream and downstream of it is proven,
-but pressing *Record what is going out* on a real order records a dispatch that did not happen and
-advances a client's live order a step. There is **no test order in this module** (checked) and
-`email_module_enabled('order-to-dispatch')` is **false**, so the only cost is the data itself — but
-it is the client's data. Ask before doing it, and let them nominate the order.
+**No real two-lot dispatch had been recorded when this closed.** Pressing *Record what is going
+out* on a client order would have recorded a dispatch that did not happen, so it was deliberately
+not done in testing; everything either side of that button is proven (11 server tests, the screen,
+the correction path, the register export). The first store keeper to split a line is the first live
+run — check that order's LOT column reads like `26081298 (60), 26081284 (40)` and that
+`fms_dispatch_order_item_lots` holds its two rows.
 
 #### To settle with the client — built to the recommendation in each case
 
