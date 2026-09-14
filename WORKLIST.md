@@ -9746,6 +9746,15 @@ no request path at all.
 
 #### ✅ Decided with the client, 04-09-2026
 
+**⚠ SUPERSEDED 10-09-2026 BY OD-14 — the customer picks the company.** Q1 sent this question to
+credit check because *guessing* it would be wrong about half the time, and that reasoning was sound.
+It does not apply to *asking the customer*: they know which Orange company invoices them, and the
+five Tally books read as three names through `mst_companies.alias` + `.location` (O-tec, Enterprise,
+Colorix). The order now arrives WITH a billing company, and the person writing it up may still change
+it — as may credit check, through **Reopen details**. Everything below is kept as the record of why it
+was decided the other way first. **Q11 is NOT superseded:** the customer sees our COMPANY names, which
+are on every invoice we send them, and never the ticked LEDGER list.
+
 **Q1 · The billing company — OPTION C. Locked.** The customer never sees it and never picks it. The
 order arrives with **no billing company**, and **our team fills it in at the credit check step**,
 which is where somebody already looks at every order.
@@ -9904,6 +9913,13 @@ weeks is worse than a call. Decide who owns that.
 the screens. Add a step later and a scattered mapping shows the internal name at exactly the moment
 nobody is looking.
 
+**⚠ SHARPENED 10-09-2026 BY OD-14.** Q7 said the window shuts "when our team touches the order", and
+warned that the moment had to be driven by the real step rather than the status word. There is now a
+step that names it exactly: an order sits at `awaiting_order_completion` until somebody opens it under
+**New Customer Orders**, and `fms_dispatch_customer_window_open` admits that status alongside
+`awaiting_credit_check`. The practical effect is that the window is a little longer and a great deal
+easier to explain.
+
 **Q7 · The customer may edit only until our team touches the order — OPTION A. Locked.** While the
 order still reads **Placed** to them it is theirs to change. The moment credit check is actioned it
 locks, and a change becomes a phone call.
@@ -10019,6 +10035,12 @@ so a free-text box from a customer is a message to staff, not just a field.
 ⚠ **And somebody must be told.** Same problem as **Q8**: a cancel by a customer with no location on
 the order announces to the same empty owner-set. The per-customer recipient from Q8 covers it —
 **use the same setting, do not invent a second one.**
+
+**⚠ STILL STANDS AFTER OD-14, with one line to read carefully.** The customer never sees the ticked
+LEDGER list and still reads no table — their whole screen is RPCs, which is how this is honoured. What
+OD-14 added is a picker of our COMPANIES, which is a different thing: "O-tec — Surat" is on their
+invoices already. The tick list remains a limit on US, and it is what the server uses to resolve which
+ledger a chosen company bills from.
 
 **Q11 · One login per customer, mapped to a TICK LIST of ledgers in Setup. Locked.**
 
