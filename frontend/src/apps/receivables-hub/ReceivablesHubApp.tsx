@@ -50,6 +50,7 @@ import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
 import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
 import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
 import SalesRegister from "@hub/pages/SalesRegister";
+import SOARegister from "@hub/pages/SOARegister";
 import StockSummary from "@hub/pages/StockSummary";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
@@ -251,6 +252,9 @@ function HubRoutes() {
               <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
               {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
               <Route path="reports/sales-register" element={<SalesRegister />} />
+              {/* Sales on approval, split out of the Sales Register — approval stock is not revenue
+                  until it is billed. Reads the precomputed rpt_soa_register snapshot. */}
+              <Route path="reports/soa-sales-register" element={<SOARegister />} />
               {/* Tally Reports → Inventory Books. Reads the precomputed rpt_stock_summary_* snapshot
                   through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
                   own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}

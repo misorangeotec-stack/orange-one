@@ -6,9 +6,15 @@
  * Freeze panes are deliberately omitted: the community xlsx writer ignores `!freeze`, so setting it
  * would be a silent no-op (see the project note on frozen header rows).
  *
- * LOCATION / COMPANY carry the ext_company_map pair ('Surat', 'O-tec') the screen shows, not the
- * table's raw `company_label` counterparty class — see the note in lib/salesRegister.ts. The 12
+ * LOCATION / COMPANY carry exactly what the screen shows — the ext_company_map pair ('Surat', 'O-tec'),
+ * or on a Related / Branch line the class ('ORANGE O TEC RELATED') — see lib/salesRegister.ts. The 12
  * columns and their order are unchanged, so the workbook still drops into the finance template.
+ *
+ * THE SIX DESPATCH COLUMNS ARE APPENDED AFTER REVENUE, NOT INSERTED WHERE THE SCREEN SHOWS THEM.
+ * On screen they sit after Voucher No., where Tally's own Voucher Register puts them. Here they
+ * cannot: Append1 is a template finance paste into, and moving QUANTITY / RATE / REVENUE off
+ * columns J / K / L would break every formula pointed at them. Appending leaves the first twelve
+ * columns byte-identical to what the workbook has always produced and adds the new ones to the right.
  */
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
@@ -18,9 +24,12 @@ import { ymdToIso } from "./salesRegister";
 const COLUMNS = [
   "LOCATION", "COMPANY", "TYPE", "DATE", "PARTY NAME", "PARTICULARS",
   "VOUCHER TYPE", "VOUCHER NO.", "GSTIN/UIN", "QUANTITY", "RATE", "REVENUE",
+  // Appended — see the header note. Never insert above this line.
+  "DELIVERY NOTE NO.", "DELIVERY NOTE DATE", "DESPATCH DOC NO.",
+  "DESPATCH THROUGH", "DESTINATION", "VEHICLE NO.",
 ] as const;
 
-const WIDTHS = [10, 22, 14, 13, 40, 38, 26, 18, 18, 10, 12, 14];
+const WIDTHS = [10, 22, 14, 13, 40, 38, 26, 18, 18, 10, 12, 14, 22, 18, 18, 22, 20, 16];
 const NUM_FMT = "#,##0.00";
 
 /** Navy header band, matching the source workbook (#1F4E79 fill, bold white). */
@@ -36,6 +45,8 @@ export function exportSalesRegisterXlsx(rows: RegisterRow[], meta: { from: strin
     aoa.push([
       r.location_name, r.company, r.type, r.date_display, r.party, r.particulars,
       r.voucher_type, r.voucher_no, r.gstin ?? "", r.quantity, r.rate, r.revenue,
+      r.delivery_note_no ?? "", r.delivery_note_date_display ?? "", r.despatch_doc_no ?? "",
+      r.despatch_through ?? "", r.destination ?? "", r.vehicle_no ?? "",
     ]);
   }
 
