@@ -25,6 +25,7 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useReportAccess } from "@hub/lib/reportAccess";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -72,6 +73,8 @@ type SortKey = "vch_date" | "voucher_no" | "voucher_type" | "item" | "group" | "
 
 export default function PackingMaterial() {
   const fyOptions = useMemo(() => productionFyOptions(salesFyOptions()), []);
+  // The dashboard is granted separately; link back to it only when the viewer holds it.
+  const { canSee } = useReportAccess();
 
   const { data: packRows, isLoading: packLoading, error } = useQuery({
     queryKey: ["packingMaterial", fyOptions.join(",")],
@@ -180,9 +183,11 @@ export default function PackingMaterial() {
             <span className="text-[12px] text-muted-foreground">· {PRODUCTION_COMPANY_LABEL}</span>
           </div>
         </div>
-        <Link to={`${BASE}/bushra-dashboard/production-batch-costing`} className="text-[11px] text-primary hover:underline">
-          Back to the dashboard
-        </Link>
+        {canSee("production-batch-costing") && (
+          <Link to={`${BASE}/bushra-dashboard/production-batch-costing`} className="text-[11px] text-primary hover:underline">
+            Back to the dashboard
+          </Link>
+        )}
       </div>
 
       {/* ── Filters ───────────────────────────────────────────────────────── */}

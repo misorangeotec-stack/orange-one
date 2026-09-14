@@ -7,18 +7,32 @@
  *
  * `?group=` picks the group, exactly as `?cat=` does on Reports — a query, not a route, so the
  * sidebar can link straight to a group without inventing a URL per subject.
+ *
+ * Shows only what the viewer may open. Each screen is granted like a report (see
+ * lib/bushraDashboards.ts), so a group lists only its granted screens, a group with none is left
+ * out, and a viewer holding nothing gets an empty state rather than a list of links that would
+ * each send them back to the hub home.
  */
 import { Link, useSearchParams } from "react-router-dom";
 import { ChevronRight, LayoutDashboard } from "lucide-react";
 import { cn } from "@hub/lib/utils";
+import { useReportAccess } from "@hub/lib/reportAccess";
 import {
-  BUSHRA_DASHBOARDS, dashboardGroupById, dashboardHref, type BushraDashboardGroup,
+  BUSHRA_DASHBOARDS, dashboardHref, groupPageIds, type BushraDashboardGroup,
 } from "@hub/lib/bushraDashboards";
 
 export default function BushraDashboards() {
   const [params, setParams] = useSearchParams();
-  const selected: BushraDashboardGroup =
-    dashboardGroupById(params.get("group")) ?? BUSHRA_DASHBOARDS[0];
+  const { canSee } = useReportAccess();
+
+  // Live screens the viewer holds; a "soon" row stays listed (it is inert) but only inside a group
+  // that has something they can open.
+  const groups: BushraDashboardGroup[] = BUSHRA_DASHBOARDS
+    .filter((g) => groupPageIds(g).some(canSee))
+    .map((g) => ({ ...g, pages: g.pages.filter((p) => p.status !== "live" || canSee(p.id)) }));
+
+  const selected: BushraDashboardGroup | undefined =
+    groups.find((g) => g.id === params.get("group")) ?? groups[0];
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
@@ -31,62 +45,69 @@ export default function BushraDashboards() {
         </p>
       </div>
 
-      <div className="flex flex-col items-start gap-5 lg:flex-row">
-        {/* The rail — one row per GROUP, never per screen. */}
-        <nav className="w-full shrink-0 lg:sticky lg:top-4 lg:w-60">
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
-            {BUSHRA_DASHBOARDS.map((g) => {
-              const active = g.id === selected.id;
-              return (
-                <li key={g.id}>
-                  <button
-                    type="button"
-                    onClick={() => setParams({ group: g.id })}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors",
-                      active ? "bg-primary/10 font-semibold text-primary" : "text-foreground hover:bg-muted/50",
-                    )}
-                  >
-                    <g.icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
-                    <span className="flex-1 truncate">{g.title}</span>
-                    <span className="text-xs text-muted-foreground">{g.pages.length}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+      {!selected ? (
+        <div className="rounded-lg border border-border bg-surface px-6 py-12 text-center">
+          <p className="text-sm font-semibold text-foreground">No dashboards have been assigned to you yet.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Ask an administrator to grant you access.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col items-start gap-5 lg:flex-row">
+          {/* The rail — one row per GROUP, never per screen. */}
+          <nav className="w-full shrink-0 lg:sticky lg:top-4 lg:w-60">
+            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
+              {groups.map((g) => {
+                const active = g.id === selected.id;
+                return (
+                  <li key={g.id}>
+                    <button
+                      type="button"
+                      onClick={() => setParams({ group: g.id })}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors",
+                        active ? "bg-primary/10 font-semibold text-primary" : "text-foreground hover:bg-muted/50",
+                      )}
+                    >
+                      <g.icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+                      <span className="flex-1 truncate">{g.title}</span>
+                      <span className="text-xs text-muted-foreground">{g.pages.length}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
 
-        <div className="w-full min-w-0 flex-1 space-y-2">
-          <p className="text-sm text-muted-foreground">{selected.blurb}</p>
-          <div className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border">
-            {selected.pages.map((p) => {
-              const href = dashboardHref(p);
-              const row = (
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <p.icon className="h-4 w-4 shrink-0 text-primary" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] font-semibold text-foreground">{p.title}</div>
-                    <div className="truncate text-[12px] text-muted-foreground">{p.purpose}</div>
+          <div className="w-full min-w-0 flex-1 space-y-2">
+            <p className="text-sm text-muted-foreground">{selected.blurb}</p>
+            <div className="overflow-hidden rounded-lg border border-border bg-surface divide-y divide-border">
+              {selected.pages.map((p) => {
+                const href = dashboardHref(p);
+                const row = (
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <p.icon className="h-4 w-4 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13.5px] font-semibold text-foreground">{p.title}</div>
+                      <div className="truncate text-[12px] text-muted-foreground">{p.purpose}</div>
+                    </div>
+                    {p.status === "soon" ? (
+                      <span className="rounded-pill bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+                        Soon
+                      </span>
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
                   </div>
-                  {p.status === "soon" ? (
-                    <span className="rounded-pill bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
-                      Soon
-                    </span>
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                </div>
-              );
-              return href ? (
-                <Link key={p.id} to={href} className="block hover:bg-muted/40">{row}</Link>
-              ) : (
-                <div key={p.id} className="opacity-60">{row}</div>
-              );
-            })}
+                );
+                return href ? (
+                  <Link key={p.id} to={href} className="block hover:bg-muted/40">{row}</Link>
+                ) : (
+                  <div key={p.id} className="opacity-60">{row}</div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

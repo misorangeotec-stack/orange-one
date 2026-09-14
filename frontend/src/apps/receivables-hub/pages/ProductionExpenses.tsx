@@ -51,6 +51,7 @@ import {
   loadProductionExpenses, type ExpenseBlock, type ExpenseMonth,
 } from "@hub/lib/productionExpenses";
 import { loadPackingMaterial, packingPerKg, packingTotals } from "@hub/lib/packingMaterial";
+import { useReportAccess } from "@hub/lib/reportAccess";
 
 const BASE = "/outstanding-dashboard";
 const CHART_GRID = "hsl(220 15% 92%)";
@@ -75,6 +76,8 @@ type SortKey = "block" | "group" | "ledger" | "amount" | "share" | "lines";
 
 export default function ProductionExpenses() {
   const fyOptions = useMemo(() => productionFyOptions(salesFyOptions()), []);
+  // Sibling screens are granted separately; link to one only when the viewer holds it.
+  const { canSee } = useReportAccess();
 
   const { data: expenseRows, isLoading: expLoading, error } = useQuery({
     queryKey: ["productionExpenses", fyOptions.join(",")],
@@ -198,9 +201,11 @@ export default function ProductionExpenses() {
             <span className="text-[12px] text-muted-foreground">· {PRODUCTION_COMPANY_LABEL}</span>
           </div>
         </div>
-        <Link to={`${BASE}/bushra-dashboard/production-batch-costing`} className="text-[11px] text-primary hover:underline">
-          Back to the dashboard
-        </Link>
+        {canSee("production-batch-costing") && (
+          <Link to={`${BASE}/bushra-dashboard/production-batch-costing`} className="text-[11px] text-primary hover:underline">
+            Back to the dashboard
+          </Link>
+        )}
       </div>
 
       {/* ── Filters ───────────────────────────────────────────────────────── */}
@@ -350,9 +355,13 @@ export default function ProductionExpenses() {
               Splitting them by product would be an assumption dressed as a number. Purchase Accounts
               are excluded — that is the material, already counted on the batch — and packing counts
               what was consumed, not warehouse → production moves.{" "}
-              <Link to={`${BASE}/bushra-dashboard/packing-material`} className="text-primary hover:underline">
-                Packing material
-              </Link>.
+              {canSee("packing-material") ? (
+                <Link to={`${BASE}/bushra-dashboard/packing-material`} className="text-primary hover:underline">
+                  Packing material
+                </Link>
+              ) : (
+                "Packing material"
+              )}.
             </p>
           </div>
         </SalesPanel>

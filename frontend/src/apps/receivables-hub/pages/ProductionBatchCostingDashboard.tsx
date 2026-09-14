@@ -56,6 +56,7 @@ import {
   EXPENSE_BLOCKS, costPerKg, expenseTotals, loadProductionExpenses, type ExpenseBlock,
 } from "@hub/lib/productionExpenses";
 import { loadPackingMaterial, packingFor, packingTotals } from "@hub/lib/packingMaterial";
+import { useReportAccess } from "@hub/lib/reportAccess";
 
 const BASE = "/outstanding-dashboard";
 const CHART_GRID = "hsl(220 15% 92%)";
@@ -105,6 +106,9 @@ type SortKey = "vch_date" | "voucher_no" | "fg_item" | "item_category" | "colour
 
 export default function ProductionBatchCostingDashboard() {
   const [params, setParams] = useSearchParams();
+  // Links to sibling screens and the register are offered only when the viewer holds them — each
+  // is granted separately, and a link they cannot open would just bounce them to the hub home.
+  const { canSee } = useReportAccess();
   const fyOptions = useMemo(() => productionFyOptions(salesFyOptions()), []);
 
   // EVERY production year in one load. One company books production, so there is no company
@@ -375,8 +379,12 @@ export default function ProductionBatchCostingDashboard() {
         </div>
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
           {latest && <span>Synced to {tallyDate(latest)}</span>}
-          <Link to={`${BASE}/bushra-dashboard/production-expenses`} className="text-primary hover:underline">Expenses</Link>
-          <Link to={`${BASE}/reports/batch-costing`} className="text-primary hover:underline">Register</Link>
+          {canSee("production-expenses") && (
+            <Link to={`${BASE}/bushra-dashboard/production-expenses`} className="text-primary hover:underline">Expenses</Link>
+          )}
+          {canSee("batch-costing") && (
+            <Link to={`${BASE}/reports/batch-costing`} className="text-primary hover:underline">Register</Link>
+          )}
         </div>
       </div>
 
@@ -960,6 +968,7 @@ const CATEGORY_PILL: Record<BatchCostingRow["category"], string> = {
 function BatchSheet({ batch, lines, onClose }: {
   batch: BatchSummary | null; lines: BatchCostingRow[]; onClose: () => void;
 }) {
+  const { canSee } = useReportAccess();
   if (!batch) return null;
   const fg = lines.filter((l) => l.category === "Finished Good");
   const rm = lines.filter((l) => l.category === "RM Consumption");
@@ -1037,12 +1046,14 @@ function BatchSheet({ batch, lines, onClose }: {
           <span>
             {fg.length} output · {rm.length} consumption line{rm.length === 1 ? "" : "s"} · output value equals what the batch consumed
           </span>
-          <Link
-            to={`${BASE}/reports/batch-costing?fy=${batch.fy}&from=${batch.vch_date}&to=${batch.vch_date}&q=${encodeURIComponent(batch.voucher_no)}`}
-            className="text-primary hover:underline"
-          >
-            Open in the register
-          </Link>
+          {canSee("batch-costing") && (
+            <Link
+              to={`${BASE}/reports/batch-costing?fy=${batch.fy}&from=${batch.vch_date}&to=${batch.vch_date}&q=${encodeURIComponent(batch.voucher_no)}`}
+              className="text-primary hover:underline"
+            >
+              Open in the register
+            </Link>
+          )}
         </div>
       </SheetContent>
     </Sheet>

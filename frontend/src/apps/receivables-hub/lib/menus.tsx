@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { REPORT_CATEGORIES, REPORTS, categoryHref, type ReportCategoryId } from "@hub/lib/reportCatalog";
-import { BUSHRA_DASHBOARDS, dashboardGroupHref, groupPaths } from "@hub/lib/bushraDashboards";
+import { BUSHRA_DASHBOARDS, dashboardGroupHref, groupPageIds, groupPaths } from "@hub/lib/bushraDashboards";
 import { useSession } from "@/core/platform/session";
 
 /**
@@ -194,6 +194,10 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
  *     a category that opens on an empty list;
  *   - the Reports menu itself disappears when the viewer holds nothing at all, rather than
  *     inviting them into a page that can only tell them they have no reports.
+ * The Bushra-Dashboard menu follows the same two rules. Its screens are catalogued reports
+ * (see lib/bushraDashboards.ts), so a GROUP the viewer holds no screen in is dropped, and the
+ * menu disappears when they hold none. Its menu key can still hide it further; it can never
+ * grant a screen.
  * Passing `null` means "don't apply report grants" — used by the permission screens, which
  * need the complete menu list to render their matrix.
  */
@@ -203,16 +207,30 @@ export function visibleMenusFor(
   adminKeys: string[] = [],
   allowedReportIds: ReadonlySet<string> | null = null,
 ): ReceivablesMenu[] {
+  const holdsDashboardGroup = (groupId: string) => {
+    const g = BUSHRA_DASHBOARDS.find((x) => x.id === groupId);
+    return !!g && !!allowedReportIds && groupPageIds(g).some((id) => allowedReportIds.has(id));
+  };
+
   const shapeReports = (m: ReceivablesMenu): ReceivablesMenu => {
-    if (m.key !== "reports" || !m.children || !allowedReportIds) return m;
-    return {
-      ...m,
-      children: m.children.filter(
-        (c) =>
-          !c.categoryId ||
-          REPORTS.some((r) => r.category === c.categoryId && allowedReportIds.has(r.id)),
-      ),
-    };
+    if (!m.children || !allowedReportIds) return m;
+    if (m.key === "reports") {
+      return {
+        ...m,
+        children: m.children.filter(
+          (c) =>
+            !c.categoryId ||
+            REPORTS.some((r) => r.category === c.categoryId && allowedReportIds.has(r.id)),
+        ),
+      };
+    }
+    if (m.key === "bushra-dashboard") {
+      return {
+        ...m,
+        children: m.children.filter((c) => holdsDashboardGroup(c.key.slice("bushra-dashboard:".length))),
+      };
+    }
+    return m;
   };
 
   // Admins bypass the deny-list and the full-access tier, but still get the sub-nav shaped —
@@ -229,7 +247,9 @@ export function visibleMenusFor(
       // not merely thinner for an ungranted user — it is absent.
       (!m.fullAccessOnly || elevated.has(m.key)) &&
       // Same reasoning for Reports with no grants: an empty catalogue is not a menu.
-      (m.key !== "reports" || !allowedReportIds || REPORTS.some((r) => allowedReportIds.has(r.id) && !r.governedByMenu)),
+      (m.key !== "reports" || !allowedReportIds || REPORTS.some((r) => allowedReportIds.has(r.id) && !r.governedByMenu)) &&
+      // And for Bushra-Dashboard: no screen granted, no menu.
+      (m.key !== "bushra-dashboard" || !allowedReportIds || BUSHRA_DASHBOARDS.some((g) => holdsDashboardGroup(g.id))),
   ).map(shapeReports);
 }
 

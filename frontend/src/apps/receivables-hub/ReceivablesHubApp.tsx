@@ -107,19 +107,26 @@ function HubRoutes() {
           <Route element={<RequireHubMenu menu="alerts" />}>
             <Route path="alerts" element={<AlertsPage />} />
           </Route>
-          {/* Bushra-Dashboard — its own sidebar menu, guarded by that menu's key like Alerts. The
-              menu's own URL has no page of its own; it lands on the first dashboard. */}
+          {/* Bushra-Dashboard — its own sidebar menu. Two gates, the same pair Reports has:
+                RequireHubMenu       may they see the menu at all?  (receivables_hidden_menus)
+                RequireReportAccess  may they open THIS screen?     (receivables_allowed_reports)
+              Each screen is catalogued as a report (lib/reportCatalog.ts), so it is granted per
+              screen and a URL typed without the grant goes back to the hub home. */}
           <Route element={<RequireHubMenu menu="bushra-dashboard" />}>
             {/* The landing page lists the dashboard groups (lib/bushraDashboards.ts), the way
-                /reports lists report categories. */}
+                /reports lists report categories. Deliberately OUTSIDE RequireReportAccess, like
+                the /reports landing: it shows only the screens the viewer holds, or says there
+                are none. */}
             <Route path="bushra-dashboard" element={<BushraDashboards />} />
-            <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
-            {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
-                company, and the full cost of a kilogram once they are absorbed. */}
-            <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
-            {/* The third leg of the cost: caps, cans and stickers, which never touch a
-                production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
-            <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
+            <Route element={<RequireReportAccess />}>
+              <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
+              {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
+                  company, and the full cost of a kilogram once they are absorbed. */}
+              <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
+              {/* The third leg of the cost: caps, cans and stickers, which never touch a
+                  production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
+              <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
+            </Route>
           </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
           {/* Follow-ups force the pipeline source internally — see pages/Followups.tsx. */}

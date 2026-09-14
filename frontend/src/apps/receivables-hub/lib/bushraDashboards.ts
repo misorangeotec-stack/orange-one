@@ -12,6 +12,12 @@
  *
  * ADDING A DASHBOARD LATER: add a page to an existing group, or a new group with its pages, then
  * add the <Route> in ReceivablesHubApp.tsx. The menu, the landing page and the trail follow.
+ *
+ * PERMISSIONS: EVERY LIVE PAGE IS ALSO A REPORT. Each page has a twin entry in lib/reportCatalog.ts
+ * with the SAME id and path, so it is granted per screen through profiles.receivables_allowed_reports
+ * like any report. The route sits behind RequireReportAccess, and the sidebar and landing page show
+ * only the pages the viewer holds (groupPageIds below). A new page therefore also needs its catalogue
+ * entry, or nobody but an admin can open it.
  */
 import { Factory, LayoutDashboard, Package, Receipt, type LucideIcon } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
@@ -81,6 +87,13 @@ export const dashboardGroupHref = (id: string) => `${BASE}/bushra-dashboard?grou
 
 /** Absolute URL of one dashboard. Empty for a "soon" entry, which is never a link. */
 export const dashboardHref = (p: BushraDashboardPage) => (p.path ? `${BASE}/${p.path}` : "");
+
+/**
+ * The report-catalogue ids that grant a group's live screens. A viewer who holds none of them is
+ * not shown the group — nor the menu, when no group is left.
+ */
+export const groupPageIds = (g: BushraDashboardGroup) =>
+  g.pages.filter((p) => p.status === "live" && p.path).map((p) => p.id);
 
 /** Every page path in a group — what the sidebar lights its entry up for. */
 export const groupPaths = (g: BushraDashboardGroup) =>
