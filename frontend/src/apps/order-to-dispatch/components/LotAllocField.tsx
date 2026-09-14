@@ -168,7 +168,33 @@ export default function LotAllocField({
       NOTHING — no chip, no count, no trigger text — and the field would look
       empty while holding a value. That is worse than the text box it replaced.
   */
-  const opts = Array.from(byLot.keys()).map((lot) => ({ value: lot, label: lot }));
+  /**
+   * The quantity Tally shows, INSIDE the dropdown row, so a store keeper can see
+   * how much each lot holds before picking it. Asked for by the client after
+   * OD-15 shipped: the list read as bare numbers.
+   *
+   * ⚠ IT LIVES IN THE LABEL BECAUSE MultiOption HAS NO `sublabel`, and the shared
+   *   MultiSelect is not this change's to widen. Two consequences, both handled:
+   *   the trigger would otherwise print this whole label for a single pick, so
+   *   `triggerLabel` below pins it to the bare lot number; and MultiSelect offers
+   *   "create" whenever the typed text matches no LABEL exactly, so typing a lot
+   *   number Tally does hold would say "(not in Tally)" — `createLabel` checks the
+   *   lot itself, not the label.
+   *
+   * One book: `#1634-26071185 · 90 KGS`. Several books (only on an order with no
+   * company): `#1453-2606994 · 90 KGS Noida, 6 KGS Delhi`.
+   */
+  const optionLabel = (lot: string): string => {
+    const rows = byLot.get(lot);
+    if (!rows || rows.length === 0) return lot;
+    const uom = rows[0]!.uom ? ` ${rows[0]!.uom}` : "";
+    if (rows.length === 1) return `${lot} · ${fmtQty(rows[0]!.balance)}${uom}`;
+    return `${lot} · ${rows
+      .map((l) => `${fmtQty(l.balance)}${uom} ${bookOf(l.companyGuid) ?? "another book"}`)
+      .join(", ")}`;
+  };
+
+  const opts = Array.from(byLot.keys()).map((lot) => ({ value: lot, label: optionLabel(lot) }));
   const known = new Set(opts.map((o) => o.value));
   for (const v of values) {
     if (!known.has(v)) {
@@ -223,14 +249,14 @@ export default function LotAllocField({
            — which reads as one long lot number in a narrow cell and is exactly
            what the rows below are for. Past one, the trigger says how many and
            the breakdown does the talking. */
-        triggerLabel={multi ? `${values.length} lots` : undefined}
+        triggerLabel={multi ? `${values.length} lots` : values[0] || undefined}
         // Accept anything typed, verbatim. This is the escape hatch that keeps a
         // lot we cannot see from blocking a real dispatch — see the header note.
         onCreate={(typed) => {
           const t = typed.trim();
           if (t && !values.includes(t)) setValues([...values, t]);
         }}
-        createLabel={(q) => `Use “${q}” (not in Tally)`}
+        createLabel={(q) => (byLot.has(q.trim()) ? `Use “${q}”` : `Use “${q}” (not in Tally)`)}
         searchable
         disabled={disabled}
         /* Says BOTH things on purpose. The old box read "as marked on the stock",
