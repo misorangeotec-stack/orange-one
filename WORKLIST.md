@@ -9551,7 +9551,7 @@ twice.
 
 ---
 
-### OD-13 · Let the CUSTOMER punch their own order — a separate, much smaller ordering app  🔴  `[ ]`
+### OD-13 · Let the CUSTOMER punch their own order — a separate, much smaller ordering app  🔴  `[ ]` LIVE — awaiting the first real customer
 *Raised 2026-09-04 · from the client · **High priority** · audited the same day against the code, the
 RLS policies, the live RPCs and the two named customers' real data · **nothing executed**, by
 instruction*
@@ -9707,17 +9707,20 @@ non-recipients unchanged at **0 / 936**, the customer still sees only their own 
 activity / rounds all reading their true counts, cost unchanged at **7 ms** with every arm an
 InitPlan, and the rollback rehearsed on live data rather than read.
 
-**Still to do: P8 only** — the two real logins on explicit go-ahead, then cherry-pick to
-`oo-master`. ⚠ The login email is a **username, not an address**: `order-to-dispatch` email is off,
+✅ **LIVE ON master 11-09-2026** — cherry-picked to `oo-master` together with OD-14 (`623fd13`,
+Vercel green), eight OD-13 commits in order. **Still to do: the real logins only** — add each
+customer in Setup → Customer Logins, where their items are now mapped in the same dialog (OD-14).
+⚠ The login email is a **username, not an address**: `order-to-dispatch` email is off,
 `work-snapshot` skips `is_external`, and `announce` drops the customer from internal notifications, so
 nothing is ever sent to it — the two firms' real addresses are not needed to create the accounts.
 What IS needed is a decision: **who is named on each customer**. 13 staff hold edit on
 `order-to-dispatch`; **2** own the credit-check step — Jayshree Patil (collection@) and LALIT SHARMA
 (delhioffice@). Naming both is what avoids Q8's single point of failure.
 
-⚠ **`ZZ TEST Kalahansh` is a REAL, ACTIVE customer login** (`zz-test-orderdesk@example.com`), kept
-deliberately so P6–P7 have something to test against. Delete on request. Its one order was cancelled
-after testing.
+✅ **ALL TEST DATA DELETED 11-09-2026**, on instruction, because the module is live. Four customer
+records (`ZZ TEST Kalahansh`, `ZZ DEMO Bhoomi Fashion` and two `Bishen Dyeing` seeds), their four
+logins and sign-in accounts, and their 12 orders. **There are now ZERO customers and no test
+login** — create one, marked `ZZ TEST`, before this is browser-tested again.
 
 ---
 
@@ -10302,6 +10305,29 @@ list.** Related: [fms-module-email-is-live] — other modules are already sendin
 - [x] ~~**Can they cancel?**~~ **ANSWERED 04-09: yes**, same window as editing — see Q10. ⚠ The
       earlier note here called cancelling *"staff-only"*; it is not — the RPC already lets the
       **raiser** cancel. The work is NARROWING its window, on the server, not opening it.
+
+### OD-14 · The customer picks the company, and a customer order gets its own queue  🔴  `[x]` DONE
+*Raised 2026-09-10 · from the client, while reviewing OD-13's Add-a-customer form · **DONE AND LIVE.**
+Three migrations applied to live 10-09-2026, before the frontend. Frontend deployed to orangeonehub.com
+with OD-13 — `623fd13` on 11-09-2026, Vercel green. Test data deleted 11-09. The submit fallback was
+removed 14-09 (`20261123120000_od14_submit_refuses_missing_company.sql`).*
+
+#### What shipped
+
+| | |
+|---|---|
+| Items in Setup | Add/Edit customer maps items directly — `components/CustomerOrgItemsSection.tsx`, RPC `fms_dispatch_set_customer_org_items`. The admin never picks a book; the item's own company says which ledger. Removal is soft and sweeps every ticked ledger. Book chips filter the list, multi-select |
+| Main ledger | Removed from the form. The column survives, unread |
+| Customer picks the company | "Who are you buying from?" on the Order Desk, as `alias · location`. The item list narrows to that book, matched by NAME, and `fms_dispatch_replace_customer_lines` validates by name too, so picker and validator agree |
+| New Customer Orders | Status `awaiting_order_completion`, its own queue beside the chain like Sales Return. Completed on the ordinary sales-order form at `orders/:id/complete` via `fms_dispatch_complete_customer_order`. `CustomerIntakePanel` deleted; credit check can still **Reopen details** until its verdict |
+| Who sees it | The customer's named recipients (Q8), admins, coordinators — no permission change |
+| Also fixed | Order Desk tabs were relative, so My orders led to "cannot find that order" or back to Place an order — now absolute. Focus moves to Quantity after picking an item; Enter adds the next line; phone layout numbers each line |
+
+Migrations: `20261117120000_od14_org_items_from_setup` · `…120100_od14_customer_picks_the_book` ·
+`…120200_od14_new_customer_order_step`, each with a rollback. Decisions Q1 (superseded), Q7
+(sharpened) and Q11 (still stands) are annotated under OD-13.
+
+**Nothing left in code.** The first real customer belongs to OD-13.
 
 ### OD-15 · One shipment, several lots — the LOT box holds a split it cannot record  🟢  `[x]` DONE
 *Raised 2026-09-11 · from the client · **DONE AND LIVE.** Migration
