@@ -33,6 +33,8 @@ export default function SamplingLayout() {
   const canSampleToLab = s.canSeeQueue("sample_to_lab");
   const canLabProcess = s.canSeeQueue("lab_process");
   const canResultReceived = s.canSeeQueue("result_received");
+  const canMachineProcess = s.canSeeQueue("machine_process");
+  const canMachineResult = s.canSeeQueue("machine_result");
   const canSend = s.canSeeQueue("send_sample");
   const canConfirm = s.canSeeQueue("confirm_receipt");
   const canResult = s.canSeeQueue("result");
@@ -40,7 +42,8 @@ export default function SamplingLayout() {
   const canMonitor = s.canMonitor;
   const hasRequests =
     s.isModuleViewer || s.requests.length > 0 || s.isProcessCoordinator || canCollect || canSampleReceived ||
-    canSampleToLab || canLabProcess || canResultReceived || canSend || canConfirm || canTest || canResult || canHandover;
+    canSampleToLab || canLabProcess || canResultReceived || canMachineProcess || canMachineResult ||
+    canSend || canConfirm || canTest || canResult || canHandover;
 
   const nav = useMemo(
     () =>
@@ -52,6 +55,8 @@ export default function SamplingLayout() {
         canSampleToLab,
         canLabProcess,
         canResultReceived,
+        canMachineProcess,
+        canMachineResult,
         canSend,
         canConfirm,
         canTest,
@@ -62,7 +67,8 @@ export default function SamplingLayout() {
         hasRequests,
       }),
     [isAdmin, s.canSeeMasters, s.isModuleViewer, canCollect, canSampleReceived, canSampleToLab, canLabProcess,
-     canResultReceived, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, s.canEdit, hasRequests],
+     canResultReceived, canMachineProcess, canMachineResult, canSend, canConfirm, canTest, canResult, canHandover,
+     canMonitor, s.canEdit, hasRequests],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {
