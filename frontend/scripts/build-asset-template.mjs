@@ -63,13 +63,14 @@ const OUT = path.join(HERE, "../../Asset Data Collection Template.xlsx");
 //
 // NOTE: no people. Custodian is free text on purpose — a dropdown would mean
 // committing 60-odd staff email addresses into a tracked file.
-// Snapshot taken 14-Sep-2026, after round one (the vehicles) was loaded. The
-// makes and vendors of the 29-Aug snapshot were seeded placeholders and were
-// deleted that day, so a stale copy would hand out names the importer rejects.
+// Snapshot taken 14-Sep-2026, after round one (the vehicles) and the FY 2026-27
+// insurance summary were loaded. The makes and vendors of the 29-Aug snapshot were
+// seeded placeholders and were deleted that day, so a stale copy would hand out
+// names the importer rejects.
 // ===========================================================================
 const PICKLISTS = {
-  "Category": ["Vehicle", "Air Conditioner", "Machinery", "Computer & IT", "Electrical", "Furniture", "Safety Equipment"],
-  "Make": ["Audi", "Hero", "Kia", "Mahindra", "Maruti Suzuki", "MG Motor", "Mini", "Royal Enfield", "Skoda", "Volkswagen"],
+  "Category": ["Vehicle", "Air Conditioner", "Machinery", "Computer & IT", "Electrical", "Furniture", "Safety Equipment", "Building & Property"],
+  "Make": ["Ather", "Audi", "Hero", "Honda", "Kia", "Mahindra", "Maruti Suzuki", "MG Motor", "Mini", "Royal Enfield", "Skoda", "Volkswagen"],
   "Company": [
     "Orange O Tec Private Limited",
     "Orange O Tec Enterprises Private Limited",
@@ -121,7 +122,7 @@ const COLUMNS = [
   { h: "Serial / registration no.", w: 26, key: true,
     note: "The number stamped on the unit: vehicle registration, machine serial, laptop service tag. MUST be unique - two different assets sharing one number means the second one is silently dropped." },
   { h: "Company", w: 38, list: "Company", strict: true,
-    note: "Which of the three group companies owns it." },
+    note: "Which group company owns it." },
   { h: "Location", w: 18, list: "Location", strict: false,
     note: "Pick from the list. If your site is not there, type it, and add it to the Values we do not have yet box." },
   { h: "Department", w: 22, list: "Department", strict: true,
