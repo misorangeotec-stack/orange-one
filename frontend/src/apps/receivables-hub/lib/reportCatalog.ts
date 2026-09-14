@@ -5,8 +5,10 @@ import {
   Boxes,
   Calculator,
   CalendarClock,
+  ClipboardList,
   CreditCard,
   Crown,
+  Factory,
   FolderTree,
   Gauge,
   HandCoins,
@@ -31,6 +33,9 @@ import {
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
+// The Bushra-Dashboard screens' icons, kept on their own line: master's list above keeps gaining
+// icons, and an addition beside another branch's addition is a merge conflict for no reason.
+import { Package, Receipt } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import type { Crumb } from "@/apps/currentApp";
 
@@ -92,7 +97,8 @@ export type ReportCategoryId =
   | "collections"
   | "customers"
   | "sales-team"
-  | "tally";
+  | "tally"
+  | "bushra-report";
 
 export interface ReportCategory {
   id: ReportCategoryId;
@@ -232,6 +238,13 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Tally Reports",
     blurb: "Statements laid out the way Tally prints them, for line-by-line cross-verification.",
     icon: BookOpen,
+  },
+  // Bushra's own reports, kept together in one group rather than scattered across the others.
+  {
+    id: "bushra-report",
+    title: "Bushra-Report",
+    blurb: "Bushra's reports — production and batch costing, read straight from the Tally books.",
+    icon: ClipboardList,
   },
 ];
 
@@ -791,6 +804,69 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["bills", "receivables", "due date", "overdue", "pending", "bill-wise"],
+  },
+
+  // ── Bushra-Report ──────────────────────────────────────────────────────────
+  {
+    id: "batch-costing",
+    // Production batches — item grain, no customer on a stock journal.
+    scoping: "none",
+    title: "Batch Costing",
+    purpose: "Every production batch — finished good, scrap and RM consumed, by colour, group and category.",
+    category: "bushra-report",
+    path: "reports/batch-costing",
+    icon: Factory,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "batch costing", "production", "stock journal", "stock journal-production", "consumption",
+      "rm consumption", "finished good", "scrap", "output", "colour", "color", "sublimation",
+      "reactive", "item category", "lot", "batch", "bushra",
+    ],
+  },
+
+  // ── Bushra-Dashboard screens ───────────────────────────────────────────────
+  // The three screens under the Bushra-Dashboard MENU are catalogued here so they are granted
+  // per screen, like any report: nobody but an admin opens one until it is ticked for them
+  // (profiles.receivables_allowed_reports). A menu alone is a deny-list and would have shown
+  // production cost per KG to every hub user the day it shipped.
+  // ⚠ Each id and path must equal its page in lib/bushraDashboards.ts. The id is what the route
+  //   guard, the sidebar and the landing page check, so a mismatch silently hides the screen.
+  {
+    id: "production-batch-costing",
+    scoping: "none",
+    title: "Production Dashboard",
+    purpose: "Output, batches, scrap and cost per KG — by year, month, colour, category and batch.",
+    category: "bushra-report",
+    path: "bushra-dashboard/production-batch-costing",
+    icon: LayoutDashboard,
+    source: "tally",
+    status: "live",
+    keywords: ["production", "dashboard", "batch costing", "cost per kg", "output", "scrap", "colour", "bushra"],
+  },
+  {
+    id: "production-expenses",
+    scoping: "none",
+    title: "Expenses",
+    purpose: "Direct & Indirect Expenses as Tally's P&L groups them, and the full cost of a kilogram.",
+    category: "bushra-report",
+    path: "bushra-dashboard/production-expenses",
+    icon: Receipt,
+    source: "tally",
+    status: "live",
+    keywords: ["expenses", "direct expenses", "indirect expenses", "overheads", "cost per kg", "production", "bushra"],
+  },
+  {
+    id: "packing-material",
+    scoping: "none",
+    title: "Packing Material",
+    purpose: "Every outward entry of caps, cans and stickers — production, repacking, warehouse — and what it adds per KG.",
+    category: "bushra-report",
+    path: "bushra-dashboard/packing-material",
+    icon: Package,
+    source: "tally",
+    status: "live",
+    keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
 ];
 

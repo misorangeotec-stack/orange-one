@@ -52,6 +52,11 @@ import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
 import SalesRegister from "@hub/pages/SalesRegister";
 import SOARegister from "@hub/pages/SOARegister";
 import StockSummary from "@hub/pages/StockSummary";
+import BatchCosting from "@hub/pages/BatchCosting";
+import ProductionBatchCostingDashboard from "@hub/pages/ProductionBatchCostingDashboard";
+import ProductionExpenses from "@hub/pages/ProductionExpenses";
+import BushraDashboards from "@hub/pages/BushraDashboards";
+import PackingMaterial from "@hub/pages/PackingMaterial";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -102,6 +107,27 @@ function HubRoutes() {
               control (see components/RequireHubMenu). */}
           <Route element={<RequireHubMenu menu="alerts" />}>
             <Route path="alerts" element={<AlertsPage />} />
+          </Route>
+          {/* Bushra-Dashboard — its own sidebar menu. Two gates, the same pair Reports has:
+                RequireHubMenu       may they see the menu at all?  (receivables_hidden_menus)
+                RequireReportAccess  may they open THIS screen?     (receivables_allowed_reports)
+              Each screen is catalogued as a report (lib/reportCatalog.ts), so it is granted per
+              screen and a URL typed without the grant goes back to the hub home. */}
+          <Route element={<RequireHubMenu menu="bushra-dashboard" />}>
+            {/* The landing page lists the dashboard groups (lib/bushraDashboards.ts), the way
+                /reports lists report categories. Deliberately OUTSIDE RequireReportAccess, like
+                the /reports landing: it shows only the screens the viewer holds, or says there
+                are none. */}
+            <Route path="bushra-dashboard" element={<BushraDashboards />} />
+            <Route element={<RequireReportAccess />}>
+              <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
+              {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
+                  company, and the full cost of a kilogram once they are absorbed. */}
+              <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
+              {/* The third leg of the cost: caps, cans and stickers, which never touch a
+                  production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
+              <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
+            </Route>
           </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
           {/* Follow-ups force the pipeline source internally — see pages/Followups.tsx. */}
@@ -259,6 +285,10 @@ function HubRoutes() {
                   through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
                   own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
               <Route path="reports/stock-summary" element={<StockSummary />} />
+              {/* Reports → Bushra-Report. Stock Journal-Production vouchers off ConnectWave
+                  rpt_batch_line, classified per batch (lib/batchCostingRules.ts). Source-agnostic;
+                  own company + FY + period pickers — see FY_PINNED_ROUTES. */}
+              <Route path="reports/batch-costing" element={<BatchCosting />} />
             </Route>
           </Route>
           {/* Customer Creation FMS.

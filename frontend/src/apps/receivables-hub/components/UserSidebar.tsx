@@ -33,7 +33,7 @@ const LINK_CLASS =
 const ACTIVE_CLASS = "!bg-primary/15 !text-primary font-semibold";
 
 /**
- * A menu with a sub-nav (today: Reports → its categories).
+ * A menu with a sub-nav (Reports → its categories; Bushra-Dashboard → its dashboards).
  *
  * Two things this has to get right that a plain NavLink cannot:
  *
@@ -89,7 +89,14 @@ function CollapsibleMenu({ item }: { item: ReceivablesMenu }) {
               <SidebarMenuSubItem key={child.key}>
                 <SidebarMenuSubButton
                   asChild
-                  isActive={activeCategory === child.key.split(":")[1]}
+                  // A report-category child is lit by the catalogue (see above); a dashboard
+                  // group by any of the pages it holds; a plain page child by its own path.
+                  isActive={child.categoryId
+                    ? activeCategory === child.categoryId
+                    : child.matchPaths
+                      ? child.matchPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+                        (pathname === child.url.split("?")[0] && search === `?${child.url.split("?")[1] ?? ""}`)
+                      : pathname === child.url || pathname.startsWith(`${child.url}/`)}
                   className="text-sidebar-foreground/70 data-[active=true]:!bg-primary/15 data-[active=true]:!text-primary data-[active=true]:font-semibold"
                 >
                   <Link to={child.url}>

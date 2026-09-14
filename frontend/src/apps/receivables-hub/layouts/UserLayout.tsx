@@ -131,6 +131,10 @@ const FY_PINNED_ROUTES = [
   // band ("1-Apr-26 to 31-Mar-27") the way Tally does. A topbar FY selector would be a second,
   // disagreeing control over the same year.
   "/outstanding-dashboard/reports/stock-summary",
+  // Batch Costing — same own company + FY + period pickers as the Stock Summary, same reason.
+  "/outstanding-dashboard/reports/batch-costing",
+  // Bushra-Dashboard → Production Batch Costing Dashboard — own company + FY + period pickers.
+  "/outstanding-dashboard/bushra-dashboard",
 ];
 
 export default function UserLayout() {
