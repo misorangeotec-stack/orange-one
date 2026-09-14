@@ -1,8 +1,9 @@
-# ConnectWave — why the masters read is slow, and the two changes that would fix it at source
+# ConnectWave — the masters read, measured: nothing needs changing there
 
-*Written 11-09-2026, after fixing the Orange One side of the problem. **Nothing in ConnectWave has
-been changed.** This is a proposal for Ritesh Bhai to approve or reject, because that database feeds
-more than Orange One.*
+*First written 11-09-2026. **Corrected 14-09-2026 after checking the live database.** The first
+version of this note recommended two new indexes on ConnectWave. **They already exist.** Do not
+create them — they would be exact duplicates of the primary keys, adding write cost to every rebuild
+and buying nothing. Nothing in ConnectWave has been changed, and nothing needs to be.*
 
 ---
 
@@ -20,104 +21,66 @@ Measured across all 91 runs in `mst_sync_runs`:
 | 6 to 15 minutes | 24 | 0 |
 | Over 15 minutes | 39 | 0 |
 
-Every failure is inside one narrow window, and 76 later-starting runs are clean.
+**The cause was a clock collision, not a missing index.** ConnectWave runs four rebuild jobs on a
+five-minute cron that wake the moment the Tally connector writes and rebuild whole financial years
+with DELETE + INSERT. Orange One's cron fired at minutes 0, 15, 30 and 45 — every one a multiple of
+five — so it started in the same minute as those rebuilds on every tick.
 
-**The collision.** ConnectWave runs four rebuild jobs on a five-minute cron
-(`rpt-sales-register-after-sync`, `rpt-voucher-dispatch-after-sync`, `rpt-batch-refresh-after-sync`,
-`rpt-stock-summary-after-sync`). They no-op while Tally is quiet, but the moment the connector writes
-they all wake and rebuild whole financial years with DELETE + INSERT, carrying
-`statement_timeout = '30min'`. One rebuilds `rpt_sales_register`, which we read. `clevel_refresh_all`
-at :25 past the hour re-runs `v_ledger_detail` in full, which we page.
+## What was done, all on the Orange One side
 
-Orange One's own cron fired at minutes 0, 15, 30 and 45 — every one a multiple of five — so it started
-in the same minute as those rebuilds on every tick.
+- Schedule moved to minutes 3, 8, 13 … 58, and from every 15 minutes to every 5.
+- Retry on 57014 only, bounded by a clock.
+- The two big views read per Tally book and by seek.
 
-## What we already did on our side
-
-Deployed and live, no ConnectWave change involved:
-
-- **Moved our clock to minutes 3, 8, 13 … 58**, so we never start on a multiple of five. Also took the
-  checking interval from 15 minutes to 5.
-- **Read the two big views per Tally book and by seek**, instead of unfiltered with `LIMIT/OFFSET`.
-- **Retry once on 57014**, copying the connector's own backoff curve.
-
-Result: a full pull went from **40.5s to 26.1s** (three runs before, three after, identical row
-counts). That is a 35% cut from our side alone.
+**Result, three days later (11-09 evening to 14-09): 13 scheduled syncs, 0 failures, 0 stuck, and
+the retry was never needed once.** The schedule change alone removed the collisions.
 
 ---
 
-## What is still slow, and why it is yours not ours
+## ⚠ The correction: what the live database actually holds
 
-### 1. `rpt_sales_register` and `rpt_purchase_item` have no index behind the sort we use
+The first version of this note was written from the two repos, and **neither repo contains the DDL for
+`rpt_sales_register` or `rpt_purchase_item`** — both are live-only tables. "No `create index` in the
+repo" was read as "no index". That was wrong. Checked live on 14-09-2026 (`pg_indexes`):
 
-We page both ordered by `(tenant_id, voucher_guid, line_no)`. Neither table appears to carry an index
-on those columns — no `create index` for either exists in the ConnectWave repo or the Orange One repo,
-and no `create table` either, so they are live-only objects. Without one, **every page is a full scan
-plus a full sort**, and the sales register is already 25,943 lines and grows monotonically.
+| Table | Index | Columns |
+|---|---|---|
+| `rpt_sales_register` | `rpt_sales_register_pkey` (unique) | `tenant_id, voucher_guid, line_no` |
+| `rpt_sales_register` | `rpt_sales_register_tenant_date` | `tenant_id, vch_date` |
+| `rpt_sales_register` | `rpt_sales_register_date` | `vch_date` |
+| `rpt_purchase_item` | `rpt_purchase_item_pkey` (unique) | `tenant_id, voucher_guid, line_no` |
+| `rpt_purchase_item` | `rpt_purchase_item_tenant_date_idx` | `tenant_id, vch_date` |
 
-Worth confirming live with `\d rpt_sales_register` before acting. If there is genuinely no index:
+The primary key on each table is **exactly** the sort `masters-sync` pages by, and `EXPLAIN ANALYZE`
+confirms the planner already walks it (`Index Scan using rpt_sales_register_pkey`).
 
-```sql
-create index concurrently if not exists rpt_sales_register_seek_idx
-  on public.rpt_sales_register (tenant_id, voucher_guid, line_no);
+## And the reads are already cheap
 
-create index concurrently if not exists rpt_purchase_item_seek_idx
-  on public.rpt_purchase_item (tenant_id, voucher_guid, line_no);
-```
+`EXPLAIN ANALYZE` on the live mirror, 14-09-2026, the DEEPEST page of each read — the worst case,
+since every earlier page skips fewer rows:
 
-`concurrently` so the rebuild jobs are not blocked while it builds. This would also let us switch
-those two reads from counting-pages to seek-pages, which is the change that stops the cost growing.
+| Read | Cold cache | Warm cache |
+|---|---|---|
+| `rpt_sales_register`, page 26 of 27 (26,300 rows) | 2,186 ms | **39 ms** |
+| `rpt_purchase_item`, page 9 of 10 (9,404 rows) | 775 ms | — |
+| `v_ledger_detail`, one page, largest book | 1,604 ms | **734 ms** |
 
-⚠ The frontend reads the same table on a **different** sort — `(vch_date, tenant_id, voucher_no,
-line_no)` in `salesRegister.ts`. Two sorts, one table; if only one index is added, ours is the one
-that runs unattended five times a day.
+Warm, the whole sales register read is on the order of half a second of database time across all its
+pages. The only slow case is a **cold cache**, and the cache goes cold precisely when ConnectWave's
+rebuild jobs have just rewritten those tables with DELETE + INSERT — which is the collision window the
+schedule change now avoids.
 
-### 2. `v_ledger_detail` cannot use an index for its join, by construction
+**So there is no index to add and no ConnectWave change to make.** The fix was the clock.
 
-It joins to the recursive group walk on a value pulled out of JSON:
+## If it ever needs revisiting
 
-```sql
-left join public.v_group_chain gc
-  on gc.tenant_id = l.tenant_id
- and gc.grp = (l.raw_payload->'PARENT'->>'#text')
-```
+Only worth reopening if `mst_sync_runs` starts showing failures or non-zero `read_retries` again.
+Two things to check first, in this order:
 
-An expression like that cannot be indexed as written, so the recursive CTE over **every Group row in
-every tenant** is re-walked on each page. The function's own comment already measures a page at ~4
-seconds ordered, ~17 unordered.
+1. **Whether the schedule has drifted back onto a multiple of five** —
+   `select jobname, schedule from cron.job where jobname like 'masters-sync%'`.
+2. **Whether ConnectWave's own cron has moved** onto our minutes (3, 8, 13 …). Read its `cron.job`
+   through the management API before assuming anything about its timing.
 
-Two options, in increasing order of effort:
-
-- **An expression index** on the join key, which is cheap and non-breaking:
-  ```sql
-  create index concurrently if not exists tally_object_ledger_parent_idx
-    on public.tally_object ((raw_payload->'PARENT'->>'#text'))
-    where object_type = 'Ledger' and not is_deleted;
-  ```
-- **Materialise the group chain.** `mv_clevel_ledger` already materialises this view's output and is
-  refreshed `concurrently` hourly. If a similar matview served the masters read, the recursive walk
-  would happen once an hour instead of once per page per pull.
-
-### 3. A smaller, free one: stagger the rebuild jobs
-
-All four rebuild pollers fire on the same `*/5`, so they pile onto the instance together. Spreading
-them across different minutes would reduce the peak without changing what any of them does.
-
----
-
-## What I am NOT proposing
-
-- **Touching the connector.** Its retry and binary-split behaviour on 57014 is the pattern I copied,
-  not something to change.
-- **Date-limiting the register reads from our side.** It is the obvious saving, but one of them feeds
-  a lifetime sale count per customer-item pair, so narrowing the window changes what the number means.
-  That needs a decision, not an optimisation.
-- **Raising `statement_timeout`** for the reading role. It would convert a fast failure into a slow
-  one and hide the problem rather than fix it.
-
-## The honest summary
-
-Our side is fixed and measured. The failures should now be prevented by the schedule offset and
-survived by the retry, and both will be confirmed by watching the run log over the coming days. The
-ConnectWave changes above would make the reads genuinely cheap rather than merely well-timed — but
-none of them is urgent, and none should be made without someone who owns that database agreeing.
+Only then look at query cost, and **check `pg_indexes` on the live project before proposing an index**
+— the repos do not hold the DDL for most of the `rpt_*` tables.
