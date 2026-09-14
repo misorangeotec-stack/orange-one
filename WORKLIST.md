@@ -13733,6 +13733,70 @@ Four rules, so the section stays worth reading:
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
 
+### PF-17 · New customers and items reach the order form in seconds, and the Tally sync stopped failing  `[x]`
+*Platform — Order to Dispatch, Customer Orders, OCPI, Admin → Masters · **Live 2026-09-11, 17:22 IST**
+(realtime signal, master `01d4a67`) and **22:06 IST** (sync fixes, master `3496041`) · note corrected
+**2026-09-14, 09:34 IST** (master `6634293`) · raised 2026-09-07 by Ritesh Bhai, his call: high
+priority · **closed 2026-09-14, after three days of the live run log***
+
+**What a reader will now see.**
+
+- **A customer or item added in Tally reaches every open order form within seconds of the sync
+  landing, with no reload.** Before, it took up to 30 minutes and F5 did nothing, because the
+  catalogue was cached for half an hour and kept across reloads. This covers Order to Dispatch,
+  Customer Orders — customer logins included — OCPI, and the Admin → Masters screen.
+- **The Tally sync no longer fails once a day.** From 11-09 evening to 14-09: **13 scheduled syncs, 0
+  failures, 0 stuck, and the retry never had to fire once.** Before, about 1 in 6 failed.
+- **The sync checks every 5 minutes instead of 15**, so the wait from the ConnectWave mirror to the
+  portal falls from **13.9 minutes on average to under 3**.
+- **Each sync is faster**: 40.5 s before, 26.1 s after on a quiet system, and **32 s on average for
+  real scheduled syncs**, which often run while ConnectWave is still busy.
+- **Sync now no longer freezes the screen.** The button frees up in under a second instead of 45–70,
+  and the result still appears on its own — the counts, "nothing to bring in", or the error.
+
+**What was built.**
+
+1. **A live signal from the masters to the browser.** One-row table `mst_catalogue_version`, bumped by
+   statement-level triggers on the six `mst_*` tables and published to realtime. One shared hook,
+   `core/platform/useCatalogueVersion.ts`, mounted once in `SessionProvider`, refreshes six catalogue
+   keys. Every `staleTime` is unchanged: push is the fast path, the timer is still the safety net. One
+   forced sync of ~66 write statements produced **exactly two** browser refreshes, because the hook
+   waits for a 5 s quiet gap and never refreshes twice inside 60 s.
+2. **The sync schedule moved off ConnectWave's.** The failures were a clock collision, not a slow
+   query: all 3 of 3 started within 1–2 minutes of the mirror being written, and 76 later-starting runs
+   were clean. ConnectWave rebuilds whole financial years every five minutes the moment Tally writes,
+   and our sync ran at minutes 0/15/30/45 — all multiples of five — so it started in the same minute
+   every time. It now runs at minutes **3, 8, 13 … 58**.
+3. **A retry on the timeout, capped by the clock**, copying the Tally connector's own backoff.
+4. **Faster reads**: the two big mirror views are read per Tally book and by position instead of
+   skipping ever more rows per page. Every row count came out identical before and after.
+5. **A non-blocking Sync now button** on Admin → Masters that watches the run log for the outcome.
+
+**Traps found by building it, each of which would have shipped silently:**
+
+- ⚠ **The spec's `is_staff()` policy on the signal would have cut out every customer login.** A
+  customer is `is_external`, and a realtime subscription that fails its RLS check gets no event and no
+  error. The policy is `using (true)`; the row holds a timestamp and a table name, nothing to scope.
+  Proved on a seeded external login, deleted afterwards.
+- ⚠ **`HomeLayout` is the `/home` route only**, so the hook would have died the moment anyone opened a
+  module.
+- ⚠ **The trigger function had to be SECURITY DEFINER.** Without it a portal master edit raises
+  SQLSTATE 42501 and the edit itself fails.
+- ⚠ **Two bugs in the first draft of the Sync now button**, both caught in a browser: a skipped sync
+  writes no run row, so the screen waited three minutes; and a call that failed outright also writes
+  none, so the screen reported the PREVIOUS run's counts as a success.
+- ⚠ **The sync's error message named none of the eleven reads it covered**, five of them against our
+  own database. Every read is labelled now.
+
+**Nothing changed on the ConnectWave side, and nothing needs to.** A first note proposed two indexes
+there; checked on the live database, **both already exist** as the report tables' primary keys, and the
+deepest page reads in 39 ms. Details in [CONNECTWAVE-READ-COST.md](CONNECTWAVE-READ-COST.md). Travel
+Desk needed nothing either: it does not read the central masters.
+
+**Migrations**, both applied to `icutjkrqkbzwvmnfbzpr` with rollbacks:
+`20261120120000_pf17_catalogue_version_signal.sql`, `20261121120000_masters_sync_offset_schedule.sql`.
+Edge Function `masters-sync` is at version 11.
+
 ### PD-1 · An approver can hand a requisition to someone else  `[x]`
 *Purchase RM Domestic · **Live 2026-08-27, 18:05 IST** — `25d27aa` on master, deployed by Vercel ·
 raised, built and shipped the same day, straight after **IM-1***
