@@ -15,9 +15,9 @@ import { SCOPE_ALL, isEmptyScope, type PartyScope } from "@hub/lib/scopeParties"
  *
  * WHERE THE NUMBERS COME FROM
  * The precomputed ConnectWave table `rpt_soa_register`, one row per (book, tracking number, item),
- * rebuilt per book by `rpt_soa_register_fill()` ~5 min after each Tally sync. The transform walks
- * two nested jsonb arrays over a book's whole history and cannot be run live — see
- * supabase/connectwave/soa_register.sql.
+ * rebuilt per book by `rpt_soa_register_fill()` a few minutes after each Tally sync, once that
+ * book's batch lines (`rpt_batch_line`) have been rebuilt. It nets a book's whole history, which is
+ * too slow to run live (~11 s for the main book) — see supabase/connectwave/soa_register.sql.
  *
  * PENDING IS TALLY'S OWN NUMBER
  * `pending_qty = issued − billed − rejected` reproduces Tally's **Sales Bills Pending** report

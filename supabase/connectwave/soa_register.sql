@@ -34,12 +34,29 @@
 --      Netting inside the window alone leaves bills and rejections stranded — in FY 26-27 that
 --      showed up as 2 tracking numbers going negative because their issue was in an earlier year.
 --
--- WHY A TABLE, NOT A VIEW
---   The same reason as every other rpt_ table: walking two nested jsonb arrays across a book's full
---   history times out on PostgREST's statement limit. Measured — the all-books version of this
---   query died with 57014 before returning a row.
+-- WHERE THE LINES COME FROM — rpt_batch_line, NOT tally_object (changed 2026-09-14)
+--   The first version walked ALLINVENTORYENTRIES → BATCHALLOCATIONS in tally_object's raw JSON on
+--   every run. For the main Orange O Tec book that is 79,077 vouchers / 1.18 GB, and every
+--   after-sync refresh took 13–16 minutes. rpt_batch_line (supabase/connectwave/rpt_batch_line*.sql,
+--   which must exist first) already holds those same batch allocations flattened — tracking number,
+--   item, qty, rate, party, voucher type/no/date — and is rebuilt after every sync. Reading it gives
+--   the identical ledger in about 11 seconds: verified on 2026-09-14, all 798 rows across every
+--   book, every column, zero differences.
+--   Two things to know:
+--   • RATE — rpt_batch_line prefers the batch's own BATCHRATE and falls back to the line's RATE;
+--     the first version read the line's RATE only. No row differed on the day. It stores a missing
+--     rate as NULL where the first version had 0, hence the coalesce in the fill.
+--   • CLOSED YEARS — the batch refresh rebuilds only the current FY. That loses nothing, because
+--     the connector does not re-sync closed years either (0 of 60,755 prior-FY vouchers touched
+--     since the 07-Sep batch backfill). If a closed FY is ever re-synced, rebuild its batch lines
+--     (rpt_batch_line_rebuild over that window) and this ledger follows on the next poll.
 --
--- Reversal:
+-- WHY A TABLE, NOT A VIEW
+--   The same reason as every other rpt_ table: the first version's walk over two nested jsonb
+--   arrays died with 57014 on the all-books query before returning a row, and even the batch-line
+--   read (~11 s for the main book) is far past anon's 3-second statement limit.
+--
+-- Reversal (the raw-JSON first version is commit 1c779fa of this file):
 --   select cron.unschedule('rpt-soa-register-after-sync');
 --   drop function if exists public.rpt_soa_register_refresh_if_stale();
 --   drop function if exists public.rpt_soa_register_refresh_company(text);
@@ -110,6 +127,12 @@ create table if not exists public.rpt_soa_register_refresh_log (
   source    text
 );
 
+-- Which batch-line rebuild a poll consumed: the rpt_batch_refresh_log.ran_at it read. The poll
+-- compares THIS, not its own ran_at, because every ran_at is a transaction START time — a batch
+-- rebuild that began before a poll but committed after it would otherwise look already consumed.
+-- NULL on manual refreshes and on rows written before 2026-09-14.
+alter table public.rpt_soa_register_refresh_log add column if not exists batch_ran_at timestamptz;
+
 create index if not exists rpt_soa_register_refresh_log_tenant_idx
   on public.rpt_soa_register_refresh_log (tenant_id, ran_at desc);
 
@@ -118,6 +141,8 @@ grant select on public.rpt_soa_register_refresh_log to anon;
 
 -- ------------------------------------------------------------------- the fill --
 -- One book, FULL HISTORY (see note 3 above — no date floor, or the netting strands bills).
+-- Reads rpt_batch_line — see WHERE THE LINES COME FROM above. rpt_batch_line already drops deleted,
+-- cancelled and optional vouchers, exactly the filters the raw-JSON version applied.
 
 create or replace function public.rpt_soa_register_fill(p_tenant text)
 returns integer
@@ -130,41 +155,19 @@ declare n integer;
 begin
   delete from public.rpt_soa_register where tenant_id = p_tenant;
 
-  with v as (
-    select o.raw_payload p,
-           o.raw_payload->>'VOUCHERTYPENAME' vt,
-           o.raw_payload->>'VOUCHERNUMBER'   vno,
-           public.jtext(o.raw_payload->'DATE') vdate,
-           coalesce(o.raw_payload->'PARTYLEDGERNAME'->>'#text',
-                    o.raw_payload->>'PARTYLEDGERNAME') party
-      from public.tally_object o
-     where o.tenant_id = p_tenant
-       and o.object_type = 'Voucher'
-       and not o.is_deleted
-       and coalesce(public.jtext(o.raw_payload->'ISCANCELLED'), 'No') = 'No'
-       and coalesce(public.jtext(o.raw_payload->'ISOPTIONAL'),  'No') = 'No'
-  ),
-  ie as (
-    select v.*, e.el
-      from v cross join lateral jsonb_array_elements(
-        case jsonb_typeof(v.p->'ALLINVENTORYENTRIES.LIST')
-          when 'array'  then v.p->'ALLINVENTORYENTRIES.LIST'
-          when 'object' then jsonb_build_array(v.p->'ALLINVENTORYENTRIES.LIST')
-          else '[]'::jsonb end) as e(el)
-  ),
-  ba as (
-    select ie.vt, ie.vno, ie.vdate, ie.party,
-           coalesce(ie.el->'STOCKITEMNAME'->>'#text', ie.el->>'STOCKITEMNAME') item,
-           -- Tally writes RATE as '460.00/KGS'; the unit is already implied by the quantity.
-           public.amt(split_part(coalesce(ie.el->'RATE'->>'#text', ie.el->>'RATE', '0'), '/', 1)) rate,
-           nullif(btrim(coalesce(b.bl->'TRACKINGNUMBER'->>'#text', b.bl->>'TRACKINGNUMBER', '')), '') trk,
+  with ba as (
+    select bl.voucher_type vt,
+           bl.voucher_no   vno,
+           bl.vch_date     vdate,
+           bl.party,
+           bl.stock_item   item,
+           -- Tally writes RATE as '460.00/KGS'; rpt_batch_line has already taken the amount side.
+           bl.rate,
+           nullif(btrim(coalesce(bl.tracking_number, '')), '') trk,
            -- ACTUALQTY is the physical movement ('80.0000 KGS'); BILLEDQTY can be 0 on a challan.
-           public.amt(split_part(coalesce(b.bl->'ACTUALQTY'->>'#text', b.bl->>'ACTUALQTY', ''), ' ', 1)) qty
-      from ie cross join lateral jsonb_array_elements(
-        case jsonb_typeof(ie.el->'BATCHALLOCATIONS.LIST')
-          when 'array'  then ie.el->'BATCHALLOCATIONS.LIST'
-          when 'object' then jsonb_build_array(ie.el->'BATCHALLOCATIONS.LIST')
-          else '[]'::jsonb end) as b(bl)
+           bl.qty
+      from public.rpt_batch_line bl
+     where bl.tenant_id = p_tenant
   ),
   cls as (
     select *,
@@ -187,7 +190,8 @@ begin
     select trk, item,
            max(party)      filter (where bucket='issued') party,
            min(vdate)      filter (where bucket='issued') soa_date,
-           max(rate)       filter (where bucket='issued') rate,
+           -- rpt_batch_line stores a missing rate as NULL; the ledger has always shown it as 0.
+           coalesce(max(rate) filter (where bucket='issued'), 0) rate,
            max(vt)         filter (where bucket='issued') soa_vt,
            string_agg(distinct vno, ', ') filter (where bucket='issued')   soa_vno,
            string_agg(distinct vno, ', ') filter (where bucket='billed')   billed_vno,
@@ -286,6 +290,15 @@ grant  execute on function public.rpt_soa_register_refresh_company(text) to anon
 
 
 -- ------------------------------------------------------- the after-sync poll --
+-- Follows the BATCH-LINE rebuild, not the sync: the fill reads rpt_batch_line, so refreshing on
+-- last_sync_at could run before that book's batch lines were rebuilt and miss the sync entirely.
+-- A book is due when a successful batch rebuild exists that this poll has not yet consumed —
+-- tracked by batch_ran_at (see the log above), which does not depend on how long anything runs.
+-- A rebuild still in flight is invisible until it commits, so a half-rebuilt book is never read.
+--   • tenant_id IS NULL rows are the nightly batch run, which rebuilds every book — so every book
+--     also gets one cheap SOA rebuild a night, a self-heal.
+--   • Manual refreshes are ignored here: a Refresh click during a batch rebuild must not mark it consumed.
+--   • An error still records batch_ran_at, so a failing book cannot re-run every 5 minutes.
 
 create or replace function public.rpt_soa_register_refresh_if_stale()
 returns text
@@ -303,14 +316,17 @@ begin
   end if;
 
   for r in
-    select s.tenant_id
-      from public.tally_sync_state s
-     where s.tenant_id in (select distinct tenant_id from public.v_company)
-       and s.last_sync_at is not null
-       and s.last_sync_at > coalesce(
-             (select max(l.ran_at) from public.rpt_soa_register_refresh_log l
-               where l.tenant_id = s.tenant_id), '-infinity'::timestamptz)
-     order by s.last_sync_at
+    select c.tenant_id, c.batch_at
+      from (select t.tenant_id,
+                   (select max(b.ran_at) from public.rpt_batch_refresh_log b
+                     where (b.tenant_id = t.tenant_id or b.tenant_id is null)
+                       and b.error is null) batch_at
+              from (select distinct tenant_id from public.v_company) t) c
+     where c.batch_at is not null
+       and c.batch_at > coalesce(
+             (select max(l.batch_ran_at) from public.rpt_soa_register_refresh_log l
+               where l.tenant_id = c.tenant_id and l.source <> 'manual'), '-infinity'::timestamptz)
+     order by c.batch_at
   loop
     t1 := clock_timestamp();
     begin
@@ -318,11 +334,11 @@ begin
       rebuilt := rebuilt + 1; rows_n := rows_n + n;
       books := books || case when books = '' then '' else ', ' end
                      || split_part(split_part(r.tenant_id, '::', 2), '-', 1);
-      insert into public.rpt_soa_register_refresh_log (tenant_id, row_count, seconds, source)
-      values (r.tenant_id, n, round(extract(epoch from (clock_timestamp() - t1))::numeric, 1), 'sync');
+      insert into public.rpt_soa_register_refresh_log (tenant_id, row_count, seconds, source, batch_ran_at)
+      values (r.tenant_id, n, round(extract(epoch from (clock_timestamp() - t1))::numeric, 1), 'sync', r.batch_at);
     exception when others then
-      insert into public.rpt_soa_register_refresh_log (tenant_id, seconds, error, source)
-      values (r.tenant_id, round(extract(epoch from (clock_timestamp() - t1))::numeric, 1), sqlerrm, 'sync');
+      insert into public.rpt_soa_register_refresh_log (tenant_id, seconds, error, source, batch_ran_at)
+      values (r.tenant_id, round(extract(epoch from (clock_timestamp() - t1))::numeric, 1), sqlerrm, 'sync', r.batch_at);
     end;
   end loop;
 
@@ -334,8 +350,8 @@ $function$;
 
 revoke execute on function public.rpt_soa_register_refresh_if_stale() from public, anon, authenticated;
 
--- Offset four minutes off the register's `*/5` and two off the despatch fill, so the three polls
--- never contend for the same book. `cron.schedule` upserts by name, so re-running this is safe.
+-- Offset four minutes off the register's and the batch lines' `*/5` and two off the despatch fill,
+-- so a batch rebuild usually lands before this polls; one that has not is picked up next poll. `cron.schedule` upserts by name, so re-running this is safe.
 select cron.schedule(
   'rpt-soa-register-after-sync',
   '4-59/5 * * * *',
