@@ -73,6 +73,116 @@ comes back. Two kinds of item live here and they are marked differently:
   exact wording is on record if it is ever queried.
 - **`[open]`** — nothing built either way; the answer changes what gets built.
 
+### Daily Report
+
+The report is **live for Ritesh Bhai to audit** against his own evening sheet — orangeonehub.com →
+Control → Daily Report. Use **8 September 2026**: it is the day both reference sheets cover, so every
+figure can be checked line by line. Build details are under **DR-1** in the Daily Report section.
+
+**1. `[open]` 🔴 Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026)*
+
+For Orange O Tec, Surat, on 8 September:
+
+| | Old sheet | Tally, same company and day |
+|---|---|---|
+| Collections | 2 receipts, ₹5.36 L | 6 customer receipts, ₹25.18 L |
+| Payments | 1 payment, ₹34.10 L | 9 supplier payments, ₹35.51 L |
+
+The report shows the Tally figures. The sheet's two receipts and its one payment are among them at
+the same amounts, so this is not a disagreement about numbers — the sheet was listing some rows and
+leaving others out.
+
+⚠ **Tally has changed since this was first checked.** On 11-09-2026 the payments read 7 for ₹35.33 L;
+on 14-09-2026 they read 9 for ₹35.51 L. Two payments of ₹0.14 L and ₹0.04 L that were against the
+*suspense* account on 11 September now name Colorix — the day book was rebuilt from Tally on 13
+September — and Colorix is filed as a supplier, so they moved into the headline (see item 7). The
+other two suspense payments, ₹4.18 L and ₹1.50 L, are unchanged. Audit against what the screen shows
+on the day, not against these notes.
+
+> **The question:** was the sheet deliberately showing only the large items, or were rows being
+> missed? If it was deliberate, what is the cut-off?
+
+**2. `[decided]` The headline counts customers and suppliers only.** *(11-09-2026)*
+
+Transfers between our own bank accounts, inter-company movement, petty cash and suspense are listed
+separately underneath, under *"not counted in the figure above"*. On 8 September that is ₹96 L of the
+₹1.32 Cr Tally recorded as received. Listed to confirm.
+
+**3. `[open]` 🔴 What are the bank limits?**
+
+The facility block — cash credit limit, LC/BC limit, amount held by the bank — is **blank**, because
+none of it is in Tally. It lives in the sanction letters. The sheet shows **44.50 against Axis** but
+does not say lakhs or crores, and it cannot be lakhs: the Axis cash credit account already stands at
+₹7.47 Cr drawn.
+
+> **Needed:** for each cash credit account, the sanctioned limit, the LC/BC limit and the amount held
+> by the bank, in rupees. Typed once into Daily Report → Bank accounts; they only change when the bank
+> changes them.
+
+**4. `[open]` Does anyone track LC/BC utilised each day?**
+
+The one facility figure with no source anywhere. If someone does, it goes in the optional box on the
+evening form and the free limit works itself out. If nobody does, the three LC/BC columns come off
+the report rather than sitting permanently empty.
+
+**5. `[open]` 🔴 Who types the bank balances each evening?**
+
+**None have been entered yet** — the report shows 0 of 11. That person needs **Daily Report at
+`edit`** in Admin → Module Access. A Sunday or a day off stays blank on purpose; only a working day
+nobody typed is flagged.
+
+**6. `[open]` Who reads the report?**
+
+Only admins can see it today. The CFO and management need **Daily Report at `view`** in Admin →
+Module Access. `view` shows everything and lets them export; it does not let them type balances.
+
+**7. `[open]` 🔴 Money between our own companies is being counted as trade, in two places.**
+
+**In "What sold".** A sale from one of our books to another counts as a sale today. On 8 September
+Orange O Tec Surat sold ₹0.23 L of spares to Orange O Tec Noida, and it sits in the spare-parts total.
+There are 1,055 such branch-sale lines this financial year.
+
+**In "Money out".** The report decides what a counterparty is from how Tally files it. Orange O Tec
+Noida is filed under *Branch / Divisions*, so it is correctly kept out of the headline — but **Colorix
+is filed as a supplier** in the Orange O Tec Surat book. On 8 September that puts two payments to
+Colorix, ₹0.18 L, inside "paid to suppliers".
+
+> **The question:** should anything moving between Orange O Tec, Orange O Tec Enterprises and Colorix
+> be kept out of the sales and payment headlines? If yes, the clean fix is to name the three entities
+> once and exclude them by name, rather than rely on how each Tally book happens to file them — the
+> filing is inconsistent between books, which is how Colorix slipped through.
+
+**8. `[open]` The suspense account is filed two ways in Tally.**
+
+`SUSPENSE A/C` sits under *Suspense* in three company books and under *Sundry Debtors* in the Orange O
+Tec Surat book. The report treats it as suspense everywhere, so it never counts as a customer
+collection. Either confirm that, or have the Surat book's filing corrected in Tally.
+
+**9. `[open]` Three kinds of sale have no product line.**
+
+They appear under **"Not yet classified"** rather than being dropped:
+
+| Voucher type | This year |
+|---|---|
+| TRANSFER OF OWNER SHIP | ₹215.00 L |
+| DELIVERY CHALLAN SALES ON APPROVAL BASIS | ₹66.06 L |
+| GST SALES - AMC | ₹21.20 L |
+
+> **The question:** should each be ink, heads, machine, spares — or left out of sales altogether?
+
+**10. `[open]` Three bank accounts could not be matched to Tally with certainty.**
+
+Only affects a future "typed balance against Tally's book balance" check; the report itself is
+unaffected.
+
+- **ICICI 0014** (Orange O Tec, Surat) — matched only because it is the only ICICI ledger in that book.
+- **AXIS 3080** (Enterprise, Noida) — the same account also appears in the Enterprise Surat book.
+- **AXIS 9516** (Colorix) — Colorix's Tally book has no Axis ledger at all.
+
+**11. `[decided]` Colorix is included; sales are net of GST; one report with a location filter.** *(11-09-2026)*
+
+Listed to confirm. Colorix appeared on neither reference sheet.
+
 ### OCPI
 
 **0. `[open]` 🔴 Does the Performa Invoice ever CHARGE for the extras, or only list them?** *(02-09-2026)*
@@ -1433,6 +1543,84 @@ writes into `mst_*`. Read every definition from `pg_get_functiondef()`, never fr
 migration file.
 
 ---
+
+## Daily Report  *(new module)*
+
+### DR-1 · Daily Report — the evening snapshot for management and the CFO  `[~]`
+*Raised 2026-09-10 · Built 2026-09-11 · **Live 14-09-2026**, master `30fad0e` · **Awaiting Ritesh Bhai's
+audit** — the open questions are under [To discuss with Ritesh Bhai → Daily Report](#daily-report).
+Reference sheets: `Misc/Ritesh Bhai/DAILY REPORT-08.09.26.pdf` (Surat) and `Misc/Ritesh Bhai/08.09.2026.pdf` (Noida).*
+
+**What it replaces.** An Excel sheet two people rebuilt by hand every evening, one for Surat and one
+for Noida, circulated as a PDF to management and the CFO. Reconciled against both sheets for
+08-09-2026 before shipping: ink quantities matched to the kilogram and the print-head despatch list
+matched line for line. The sheets were also found to be **incomplete** — one ink customer worth 150 kg
+was missing, and the collection and payment lines listed a fraction of what Tally recorded that day.
+
+**Where it is.** orangeonehub.com → **Control → Daily Report**, base path `/daily-report`. Three screens:
+
+1. **Daily Report** — five KPI tiles and four summary cards: *What sold*, *Bank*, *Money in*, *Money
+   out*. Nothing below the cards is shown until asked for: every summary line opens **only the one
+   table behind it**, and clicking it again closes it. Everything is in **₹ lakhs with the unit
+   printed** — there are no crores anywhere on the report. Location filter (All / Surat / Noida /
+   Delhi). Excel workbook and branded PDF.
+2. **Bank balances** — one form, eleven accounts, typed each evening.
+3. **Bank accounts** — the master of those eleven accounts and their limits.
+
+**Where the numbers come from.**
+
+| Section | Source | Typed by hand? |
+|---|---|---|
+| Sales, heads and machines outward | `rpt_sales_register` on ConnectWave | No |
+| Collections, payments | `rpt_day_book` on ConnectWave | No |
+| Purchases | `rpt_purchase_item` on ConnectWave | No |
+| Counterparty type (customer, supplier, bank…) | `v_ledger_detail.group_chain` | No |
+| Closing bank balances | `daily_report_bank_balances` | **Yes, daily** |
+| Bank limits | `daily_report_bank_accounts` | **Yes, once** |
+
+**Decisions already built in** — confirmed with the user 11-09-2026:
+
+- **Sales and purchases net of GST.** The old sheet was GST-inclusive; that is the whole of the
+  ×1.18 difference between the two.
+- **Headline collections and payments count customers and suppliers only**, as the old sheet did.
+  Our own bank transfers, inter-company movement, cash and suspense are listed underneath under
+  *"not counted in the figure above"*.
+- **Goods out on approval are shown but not counted as sales** — the reference sheet excludes them too.
+- **A bank balance nobody typed stays blank, never zero.** A Sunday, a working day nobody entered and
+  an account that genuinely stood at zero render three different ways, and an entity total prints a
+  dash rather than a partial sum.
+- **Colorix is included**, though neither reference sheet showed it.
+
+**Built, applied and verified.**
+
+- Migrations `20261118120000_dr1_daily_report_banks` and `20261118120100_dr1_seed_bank_accounts`,
+  both applied, **both rollbacks rehearsed against live data** in a rolled-back transaction. Balances
+  are readable only with the module; writes go through `set_bank_daily_balance()` only, which refuses
+  a future date and treats an empty value as *clear*, not zero. Access tested as a real non-admin at
+  no grant, `view` and `edit`.
+- `supabase/connectwave/sale_type_rules_delivery_challans.sql` — **applied on ConnectWave** 11-09-2026.
+  Delivery challans had no product line, so a print head that left on a challan was not counted as a
+  print head. Eighteen rules; the file records which were load-bearing and which are backstops.
+
+**Before anyone but an admin can use it** — see the discussion items for the detail:
+- Grant **Daily Report at `edit`** to whoever types the bank balances. **None have been typed yet.**
+- Grant **Daily Report at `view`** to the CFO and management.
+- Type the **bank limits** into Bank accounts once finance confirms them. The facility block is blank until then.
+
+**Found while building, deliberately NOT fixed here:**
+
+- **The Outstanding Dashboard types some sales wrongly on screen.** Its browser-side sale-type resolver
+  in `apps/receivables-hub/lib/connectwaveFetcher.ts` picks the first matching rule by priority and
+  ignores the longest-match tie-break the database uses — the mechanism by which `HEAD/M/` (a machine)
+  beats `HEAD/` (a head). So a machine deal can read as a head on that screen and as a machine in SQL.
+  The Daily Report has its own correct copy in `apps/daily-report/lib/saleType.ts`. Not changed in the
+  receivables code because it would move live figures on a screen this work did not test.
+- **Inter-company money leaks into the trade headlines** where a Tally book files a sister company as a
+  customer or supplier rather than under Branch / Divisions. Colorix is filed as a supplier in the
+  Orange O Tec Surat book. Raised as a question rather than patched — see discussion item 7.
+
+**Phase 2, not started:** emailing the report every evening. The PDF already exposes a Blob entry
+point (`dailyReportPdfBlob`) so that becomes a backend job rather than a rewrite.
 
 ## OCPI  *(new module)*
 
