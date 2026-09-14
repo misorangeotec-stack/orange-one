@@ -53,6 +53,17 @@ function pick(names: string[], preferred: string): string {
   return hit ?? names[0] ?? "";
 }
 
+/**
+ * pick() without the fallback, for Make and Bought from. Those name a real brand or
+ * dealer, and the first name on the list is almost never the right one — a
+ * "Dell Latitude" sample made by Audi and bought from a car dealer teaches nothing.
+ * A blank is valid (only Asset name is required), so leave it blank until the
+ * masters hold the name the example was written around.
+ */
+function pickOrBlank(names: string[], preferred: string): string {
+  return names.find((n) => n.trim().toLowerCase() === preferred.toLowerCase()) ?? "";
+}
+
 const names = (rows: { name: string }[]): string[] => rows.map((r) => r.name);
 
 /** Column widths, by header. Anything unlisted takes the 18-char default. */
@@ -102,8 +113,8 @@ function sampleRows(ctx: TemplateCtx): Row[] {
   const admin = pick(dept, "Administration");
 
   const veh = {
-    "Asset name": "SAMPLE - Toyota Innova Crysta",
-    "Serial / registration no.": "SAMPLE-MH12KJ0001",
+    "Asset name": "SAMPLE - Mahindra Bolero Pik-Up",
+    "Serial / registration no.": "SAMPLE-GJ05AB0001",
   };
   const laptop = {
     "Asset name": "SAMPLE - Dell Latitude 5440",
@@ -117,13 +128,13 @@ function sampleRows(ctx: TemplateCtx): Row[] {
   return [
     {
       ...veh,
-      Category: pick(cat, "Vehicle"), Make: pick(make, "Toyota"), Model: "Innova Crysta 2.4 ZX",
+      Category: pick(cat, "Vehicle"), Make: pickOrBlank(make, "Mahindra"), Model: "Bolero Maxx Pik-Up HD 1.7L LX",
       Company: company, Location: location, Department: admin,
-      "Purchase date": "12-06-2024", "Purchase cost": "2140000",
-      "Bought from": pick(ven, "Sai Toyota Service"), "Invoice no.": "INV-TOY-4471",
+      "Purchase date": "12-06-2024", "Purchase cost": "983000",
+      "Bought from": pickOrBlank(ven, "PRESIDENT AUTOMOBILES"), "Invoice no.": "INV-PA-4471",
       Condition: inUse, "Usage unit": pick(unit, "KM"),
       "Current reading": "84200", "Reading as on": "20-08-2026",
-      Remarks: "Pool car. Chassis: MBJ11JV600123456 ; Engine: 2GD1234567",
+      Remarks: "Goods pick-up. Chassis: MA1ZN2GHKP1234567 ; Engine: GHP4A123456",
       Track: pick(track, "Insurance"), "Track next due": "04-08-2027",
       "Track repeats every": "1", "Track repeat unit": "years", "Track remind days ahead": "45",
       "Track reference no.": "POL-2027-4471", "Track provider": "ICICI Lombard", "Track amount": "31200",
@@ -146,10 +157,10 @@ function sampleRows(ctx: TemplateCtx): Row[] {
     },
     {
       ...laptop,
-      Category: pick(cat, "Computer & IT"), Make: pick(make, "Dell"), Model: "Latitude 5440",
+      Category: pick(cat, "Computer & IT"), Make: pickOrBlank(make, "Dell"), Model: "Latitude 5440",
       Company: company, Location: location, Department: pick(dept, "AI & tech"),
       "Purchase date": "20-02-2026", "Purchase cost": "82400",
-      "Bought from": pick(ven, "Dell India Services"), "Invoice no.": "INV-DL-7201",
+      "Bought from": pickOrBlank(ven, "Dell India Services"), "Invoice no.": "INV-DL-7201",
       "Warranty months": "36", Condition: inUse,
       Remarks: "Warranty months is filled in, so the Warranty Expiry track is created automatically — note there is no Warranty Expiry row for this asset.",
     },
@@ -161,10 +172,10 @@ function sampleRows(ctx: TemplateCtx): Row[] {
     },
     {
       ...ac,
-      Category: pick(cat, "Air Conditioner"), Make: pick(make, "Voltas"), Model: "185V ADS",
+      Category: pick(cat, "Air Conditioner"), Make: pickOrBlank(make, "Voltas"), Model: "185V ADS",
       Company: company, Location: location, Department: admin,
       "Purchase date": "18-04-2025", "Purchase cost": "42500",
-      "Bought from": pick(ven, "Voltas Authorised Service"), "Invoice no.": "INV-VLT-8821",
+      "Bought from": pickOrBlank(ven, "Voltas Authorised Service"), "Invoice no.": "INV-VLT-8821",
       "Warranty months": "24", Condition: inUse,
       Remarks: "No meter, so Usage unit and Current reading are left blank.",
       Track: pick(track, "Periodic Service"), "Track next due": "18-10-2026",
