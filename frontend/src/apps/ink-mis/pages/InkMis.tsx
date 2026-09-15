@@ -110,57 +110,61 @@ export default function InkMis() {
   const positions = useMemo(() => data?.rows ?? [], [data]);
   const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
-  /* --------------------------------------------------- fill averages from Tally */
-
-  const [filling, setFilling] = useState(false);
-  const [fillNote, setFillNote] = useState<string | null>(null);
+  /* ------------------------------------------------- averages from the Sales Register */
 
   /**
-   * Fill both averages from the Sales Register, which is where the planner reads them today.
+   * BOTH AVERAGES LOAD WITH THE PAGE, from the Sales Register:
    *
-   *   three-month average = the three complete months before this one, over 3
-   *   per-day average     = this month so far, over the working days elapsed
+   *   three-month average = the three complete months before this one, summed, over 3
+   *   per-day average     = this month so far, over the working days elapsed (Sundays out)
    *
-   * Offered as a button rather than a derived column, because the planner overrides a figure
-   * for a launch or a one-off run and a column that silently recomputed would wipe that.
-   * Only the two averages are touched; lead time and safety factor are left alone.
+   * They used to appear only after pressing a button, which is why the columns sat empty: the
+   * report never asked on its own, and a press made before the stock had loaded filled nothing.
+   *
+   * A number the planner types still wins, and is flagged as typed (see InkPlan.manual). Clearing
+   * the box hands that ink back to the live figure.
+   *
+   * Needs the stock load first — the register carries item NAMES, and the name-to-line bridge is
+   * built from the stock rows — hence `enabled`.
    */
-  const fillAverages = async () => {
-    setFilling(true);
-    setFillNote(null);
-    try {
-      const map = data?.nameToCode ?? new Map<string, string>();
-      const consumption = await loadInkConsumption(map, new Date(), new Set(holidays));
-      setPlans((prev) => {
-        const next = { ...prev };
-        for (const [code, c] of consumption) {
-          next[code] = {
-            ...(next[code] ?? EMPTY_PLAN),
-            threeMonthAvg: c.threeMonthAvg,
-            perDayAvg: c.perDayAvg,
-          };
-        }
-        return next;
-      });
-      setFillNote(
-        `Filled ${consumption.size} inks. Per-day average is this month over ` +
-          `${workingDaysElapsed(new Date(), new Set(holidays))} working days.`,
-      );
-    } catch (e) {
-      setFillNote(e instanceof Error ? e.message : "Could not read the Sales Register.");
-    } finally {
-      setFilling(false);
-    }
-  };
+  const nameToCode = data?.nameToCode;
+  const holidayKey = [...holidays].sort().join(",");
+  const consumptionQuery = useQuery({
+    queryKey: ["inkMis", "consumption", fy, overrides, scope, holidayKey],
+    queryFn: () => loadInkConsumption(nameToCode ?? new Map(), new Date(), new Set(holidays)),
+    enabled: Boolean(nameToCode && nameToCode.size),
+    staleTime: 5 * 60 * 1000,
+  });
+  const consumption = consumptionQuery.data;
+  const workingDays = workingDaysElapsed(new Date(), new Set(holidays));
+  const typedCount = Object.values(plans).filter(
+    (p) => p.manual?.threeMonthAvg || p.manual?.perDayAvg,
+  ).length;
+
+  const clearTypedAverages = () =>
+    setPlans((prev) => {
+      const next: Record<string, InkPlan> = {};
+      for (const [k, p] of Object.entries(prev)) next[k] = { ...p, manual: {} };
+      return next;
+    });
 
   /* ------------------------------------------------------------------ the rows */
 
   const companyKey = tab === "combined" ? null : tab;
 
   const rows: InkRow[] = useMemo(() => {
-    const built = positions.map((p) =>
-      deriveInkRow(p, plans[p.key] ?? EMPTY_PLAN, shipments, thresholds, companyKey),
-    );
+    const built = positions.map((p) => {
+      const base = plans[p.key] ?? EMPTY_PLAN;
+      // The company tabs use that book's own sales; Combined uses the group's.
+      const live = consumption?.get(p.key);
+      const src = companyKey ? live?.byCompany[companyKey] : live;
+      const plan: InkPlan = {
+        ...base,
+        threeMonthAvg: base.manual?.threeMonthAvg ? base.threeMonthAvg : (src?.threeMonthAvg ?? 0),
+        perDayAvg: base.manual?.perDayAvg ? base.perDayAvg : (src?.perDayAvg ?? 0),
+      };
+      return deriveInkRow(p, plan, shipments, thresholds, companyKey);
+    });
     // A book only shows the inks it actually carries or expects; the other books' codes would
     // be dead rows. Combined shows everything.
     const scoped = companyKey
@@ -173,7 +177,7 @@ export default function InkMis() {
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
-  }, [positions, plans, shipments, thresholds, companyKey, search]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
 
   /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
   const shipmentCols = useMemo(
@@ -204,6 +208,21 @@ export default function InkMis() {
 
   const setPlan = (code: string, patch: Partial<InkPlan>) =>
     setPlans((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_PLAN), ...patch } }));
+
+  /** Typing an average marks it typed; emptying the box gives the ink back to the live figure. */
+  const setAverage = (code: string, field: "threeMonthAvg" | "perDayAvg", raw: string) =>
+    setPlans((prev) => {
+      const cur = prev[code] ?? EMPTY_PLAN;
+      const typed = raw.trim() !== "";
+      return {
+        ...prev,
+        [code]: {
+          ...cur,
+          [field]: typed ? Number(raw) || 0 : 0,
+          manual: { ...cur.manual, [field]: typed },
+        },
+      };
+    });
 
   /* --------------------------------------------------------------------- export */
 
@@ -334,9 +353,14 @@ export default function InkMis() {
         >
           <Pencil className="mr-2 h-4 w-4" /> {editing ? "Done editing" : "Edit planning inputs"}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => void fillAverages()} disabled={filling}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void consumptionQuery.refetch()}
+          disabled={consumptionQuery.isFetching || !nameToCode}
+        >
           <Wand2 className="mr-2 h-4 w-4" />
-          {filling ? "Reading the Sales Register…" : "Fill averages from Sales Register"}
+          {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
         {(["low", "mid", "normal", "excess"] as InkBand[]).map((b) => (
           <span key={b} className={`rounded px-2 py-1 text-xs ${BAND_CLASS[b]}`}>
@@ -345,11 +369,27 @@ export default function InkMis() {
         ))}
       </div>
 
-      {fillNote && (
-        <div className="rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900">
-          {fillNote}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900">
+        {consumptionQuery.isError ? (
+          <span>
+            Could not read the Sales Register:{" "}
+            {consumptionQuery.error instanceof Error ? consumptionQuery.error.message : "unknown error"}
+          </span>
+        ) : !consumption ? (
+          <span>Reading averages from the Sales Register…</span>
+        ) : (
+          <span>
+            Averages from the Sales Register, branch and related sales excluded, returns netted.
+            3-month average is the last three full months ÷ 3. Per-day average is this month so far ÷{" "}
+            <strong>{workingDays}</strong> working days, Sundays excluded.
+          </span>
+        )}
+        {typedCount > 0 && (
+          <button type="button" className="font-semibold underline" onClick={clearTypedAverages}>
+            {typedCount} ink{typedCount === 1 ? " has" : "s have"} typed averages — use live figures
+          </button>
+        )}
+      </div>
 
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
@@ -462,7 +502,9 @@ export default function InkMis() {
                         className="h-8 w-20 text-right"
                         value={value || ""}
                         onChange={(e) =>
-                          setPlan(r.key, { [field]: Number(e.target.value) || 0 })
+                          field === "threeMonthAvg" || field === "perDayAvg"
+                            ? setAverage(r.key, field, e.target.value)
+                            : setPlan(r.key, { [field]: Number(e.target.value) || 0 })
                         }
                       />
                     ) : (

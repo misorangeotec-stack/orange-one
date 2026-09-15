@@ -357,8 +357,12 @@ export async function loadInkPositions(
  * to fill; every date added raises every per-day average.
  */
 export interface InkConsumption {
+  /** Merged across the four books — what the Combined tab shows. */
   threeMonthAvg: number;
   perDayAvg: number;
+  /** The same two figures for each book on its own, keyed by `InkCompany.key`. The company tabs
+   *  must use these: a book's cover is its own stock against its own sales, not the group's. */
+  byCompany: Record<string, { threeMonthAvg: number; perDayAvg: number }>;
 }
 
 /** Register `type` values that are the group moving ink to itself, not selling it. */
@@ -414,7 +418,12 @@ export async function loadInkConsumption(
       .in("company_guid", INK_COMPANY_GUIDS)
       .gte("vch_date", from)
       .lte("vch_date", to)
+      // A stable order across pages. Ordering by date alone lets the database return tied rows
+      // in a different sequence on each page request, which can skip or repeat lines at page
+      // boundaries — invisible, and it silently moves every average.
       .order("vch_date", { ascending: true })
+      .order("voucher_guid", { ascending: true })
+      .order("line_no", { ascending: true })
       .range(offset, offset + PAGE - 1)
       .returns<typeof rows>();
     if (error) throw new Error(error.message);
@@ -427,8 +436,10 @@ export async function loadInkConsumption(
   const priorMonths = [monthKey(monthStart(today, 1)), monthKey(monthStart(today, 2)), monthKey(monthStart(today, 3))];
   const thisMonth = monthKey(to);
 
+  // Keyed `<mergeKey>` for the group and `<mergeKey>\u0001<companyKey>` for one book (a control character, since item names can contain any printable one).
   const prior = new Map<string, number>();
   const current = new Map<string, number>();
+  const add = (m: Map<string, number>, k: string, q: number) => m.set(k, (m.get(k) ?? 0) + q);
 
   for (const r of rows) {
     const companyKey = byGuid.get(r.company_guid);
@@ -442,17 +453,23 @@ export async function loadInkConsumption(
     // The register's sign is not a reliable direction marker, so magnitude plus the TYPE is.
     const qty = Math.abs(r.quantity ?? 0) * (type.includes("RETURN") ? -1 : 1);
     const month = monthKey(String(r.vch_date));
-    if (month === thisMonth) current.set(code, (current.get(code) ?? 0) + qty);
-    else if (priorMonths.includes(month)) prior.set(code, (prior.get(code) ?? 0) + qty);
+    const target = month === thisMonth ? current : priorMonths.includes(month) ? prior : null;
+    if (!target) continue;
+    add(target, code, qty);
+    add(target, `${code}\u0001${companyKey}`, qty);
   }
 
   const days = workingDaysElapsed(today, holidays);
+  const avg = (k: string) => ({
+    threeMonthAvg: Math.round((prior.get(k) ?? 0) / 3),
+    perDayAvg: Math.round((current.get(k) ?? 0) / days),
+  });
   const out = new Map<string, InkConsumption>();
-  for (const code of new Set([...prior.keys(), ...current.keys()])) {
-    out.set(code, {
-      threeMonthAvg: Math.round((prior.get(code) ?? 0) / 3),
-      perDayAvg: Math.round((current.get(code) ?? 0) / days),
-    });
+  for (const k of new Set([...prior.keys(), ...current.keys()])) {
+    if (k.includes("\u0001")) continue;
+    const byCompany: InkConsumption["byCompany"] = {};
+    for (const c of INK_COMPANIES) byCompany[c.key] = avg(`${k}\u0001${c.key}`);
+    out.set(k, { ...avg(k), byCompany });
   }
   return out;
 }
@@ -502,6 +519,16 @@ export interface InkPlan {
   /** Months of cover to order against. */
   leadTime: number;
   safetyFactor: number;
+  /**
+   * Which averages the planner TYPED. An average without its flag is not a stored value at all —
+   * the dashboard reads it live from the Sales Register every time.
+   *
+   * The flag exists because an older version saved the averages into the browser when a button
+   * was pressed. Stored like that, they froze at the day of the click and then blocked the live
+   * figure forever. Values saved before this flag existed carry no flag, so they are ignored and
+   * the live figure shows — which is the point.
+   */
+  manual?: { threeMonthAvg?: boolean; perDayAvg?: boolean };
 }
 
 export const EMPTY_PLAN: InkPlan = { threeMonthAvg: 0, perDayAvg: 0, leadTime: 0, safetyFactor: 1 };
