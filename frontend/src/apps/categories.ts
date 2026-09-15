@@ -48,6 +48,7 @@ export type AppCategory =
   | "quality"
   | "asset"
   | "purchase"
+  | "ims"
   | "sales"
   | "hr"
   | "control"
@@ -65,6 +66,9 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   { key: "asset", label: "Asset" },
   // ── the commercial chain wrapped around it ─────────────────────────────────
   { key: "purchase", label: "Purchase" },
+  // Inventory planning sheets — stock cover across the books and what to reorder. Placed
+  // straight after Purchase because the decision these sheets serve is the next purchase.
+  { key: "ims", label: "IMS Sheet" },
   // Everything customer-facing, from the lead through onboarding and dispatch to
   // collecting the money. Order to Dispatch and New Customer Onboarding live here
   // rather than in a process group of their own: both are steps in the sales book,

@@ -42,6 +42,14 @@ export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
       <circle cx="17" cy="20" r="1.6" />
     </svg>
   ),
+  // Stacked sheet with a drop — the ink planning sheets.
+  ims: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="3" width="13" height="17" rx="2" />
+      <path d="M8 8h5M8 12h3" />
+      <path d="M17.5 12.5s2.5 2.6 2.5 4.3a2.5 2.5 0 0 1-5 0c0-1.7 2.5-4.3 2.5-4.3Z" />
+    </svg>
+  ),
   // Conical flask — the lab.
   sampling: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

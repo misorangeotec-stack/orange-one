@@ -96,9 +96,8 @@ export const APPS: Record<string, AppInfo> = {
   "ink-mis": {
     name: "Ink IMS",
     basePath: "/ink-mis",
-    // Filed under Purchase because the decision it exists to serve is what to order and when.
-    // There is no inventory category, and inventing one for a single app would be worse.
-    category: "purchase",
+    // Its own menu group, "IMS Sheet", next to Purchase — asked for by the planner.
+    category: "ims",
   },
   "production-entry": {
     name: "Production Entry",
