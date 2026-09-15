@@ -91,6 +91,23 @@ export default function InkMis() {
   const [overrides] = useState<InkOverrides>(() => loadOverrides());
   const [order] = useState<InkOrder>(() => loadOrder());
   const [scope, setScope] = useState<InkScope>("ink");
+  // Four company columns collapse into one group. Remembered per browser; starts collapsed,
+  // because the merged Stock column is the number the planner reads first.
+  const [companiesOpen, setCompaniesOpen] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ink-mis:companies-open") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [showSellingOutOfStock, setShowSellingOutOfStock] = useState(false);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:companies-open", companiesOpen ? "1" : "0");
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }, [companiesOpen]);
   const [holidays, setHolidays] = useState<string[]>(() => loadHolidays());
 
   // Consignments are read once on mount. The entry screen is a separate route, so there is no
@@ -165,11 +182,19 @@ export default function InkMis() {
       };
       return deriveInkRow(p, plan, shipments, thresholds, companyKey);
     });
-    // A book only shows the inks it actually carries or expects; the other books' codes would
-    // be dead rows. Combined shows everything.
-    const scoped = companyKey
-      ? built.filter((r) => r.stock !== 0 || r.incoming !== 0 || r.etd !== 0)
-      : built;
+    // ONLY LINES WITH A VALUE. The item master lists everything; the dashboard shows what is
+    // actually there — stock in the view, or ink on the way. A line with nothing is noise.
+    //
+    // One exception, off by default: an ink with no stock that is still SELLING is the most
+    // urgent line on the sheet, and hiding it would hide exactly the reorder this report exists
+    // for. The toggle brings those back.
+    const scoped = built.filter(
+      (r) =>
+        r.stock !== 0 ||
+        r.incoming !== 0 ||
+        r.etd !== 0 ||
+        (showSellingOutOfStock && (r.plan.threeMonthAvg > 0 || r.plan.perDayAvg > 0)),
+    );
     const q = search.trim().toUpperCase();
     if (!q) return scoped;
     return scoped.filter(
@@ -177,7 +202,7 @@ export default function InkMis() {
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, showSellingOutOfStock]);
 
   /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
   const shipmentCols = useMemo(
@@ -206,6 +231,22 @@ export default function InkMis() {
 
   const reorderCount = rows.filter((r) => r.band === "low" || r.band === "mid").length;
 
+  /** How many out-of-stock inks are still selling — shown on the toggle so it is never a guess. */
+  const sellingOutOfStock = useMemo(
+    () =>
+      positions.filter((p) => {
+        const stock = companyKey ? (p.byCompany[companyKey] ?? 0) : p.stock;
+        if (stock !== 0) return false;
+        const live = consumption?.get(p.key);
+        const src = companyKey ? live?.byCompany[companyKey] : live;
+        return Boolean(src && (src.threeMonthAvg > 0 || src.perDayAvg > 0));
+      }).length,
+    [positions, consumption, companyKey],
+  );
+
+  // The company columns exist only on Combined, and only when the group is open.
+  const showCompanyCols = !companyKey && companiesOpen;
+
   const setPlan = (code: string, patch: Partial<InkPlan>) =>
     setPlans((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_PLAN), ...patch } }));
 
@@ -231,7 +272,7 @@ export default function InkMis() {
       "Group", "Item code", "Description", "Remark",
       "3-month avg", "Per day avg", "Lead time", "Safety factor",
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
-      ...(companyKey ? [] : INK_COMPANIES.map((c) => c.label)),
+      ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
       "ETD", "ETA + at port", "Total",
     ];
@@ -239,7 +280,7 @@ export default function InkMis() {
       r.group, r.itemCode, r.description, r.remark,
       r.plan.threeMonthAvg, r.plan.perDayAvg, r.plan.leadTime, r.plan.safetyFactor,
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
-      ...(companyKey ? [] : INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0)),
+      ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
       r.stock,
       ...shipmentCols.map((s) =>
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
@@ -337,6 +378,14 @@ export default function InkMis() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showSellingOutOfStock}
+            onChange={(e) => setShowSellingOutOfStock(e.target.checked)}
+          />
+          Also show out-of-stock inks still selling ({sellingOutOfStock})
+        </label>
         <select
           className="h-9 rounded-md border bg-background px-2 text-sm"
           value={scope}
@@ -415,6 +464,25 @@ export default function InkMis() {
       <ScrollableTable>
         <Table>
           <TableHeader>
+            {!companyKey && (
+              <TableRow className="hover:bg-transparent">
+                <TableHead colSpan={12} />
+                <TableHead
+                  colSpan={showCompanyCols ? INK_COMPANIES.length : 1}
+                  className="border-x text-center"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCompaniesOpen((v) => !v)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-foreground hover:underline"
+                    title={showCompanyCols ? "Collapse the four companies into one column" : "Show each company's stock"}
+                  >
+                    {showCompanyCols ? "− All four companies" : "+ All four companies"}
+                  </button>
+                </TableHead>
+                <TableHead colSpan={shipmentCols.length + 2} />
+              </TableRow>
+            )}
             <TableRow>
               <TableHead className="min-w-[10rem]">Group</TableHead>
               <TableHead className="min-w-[9rem]">Item code</TableHead>
@@ -428,13 +496,15 @@ export default function InkMis() {
               <TableHead className="text-right">With ETA</TableHead>
               <TableHead className="text-right">Month max</TableHead>
               <TableHead className="text-right">Daily max</TableHead>
-              {!companyKey &&
+              {showCompanyCols &&
                 INK_COMPANIES.map((c) => (
                   <TableHead key={c.key} className="text-right">
                     {c.label}
                   </TableHead>
                 ))}
-              <TableHead className="text-right font-semibold">Stock</TableHead>
+              <TableHead className={`text-right font-semibold ${!companyKey && !showCompanyCols ? "border-x" : ""}`}>
+                {companyKey ? "Stock" : showCompanyCols ? "Total stock" : "Stock (4 companies)"}
+              </TableHead>
               {shipmentCols.map((s) => (
                 <TableHead key={s.id} className="text-right">
                   <div className="text-[10px] uppercase text-muted-foreground">{s.status}</div>
@@ -520,7 +590,7 @@ export default function InkMis() {
                 <TableCell className="text-right tabular-nums">{fmtQty(r.monthMaxLevel)}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtQty(r.dailyMaxLevel)}</TableCell>
 
-                {!companyKey &&
+                {showCompanyCols &&
                   INK_COMPANIES.map((c) => (
                     <TableCell key={c.key} className="text-right tabular-nums">
                       {fmtQty(r.byCompany[c.key])}
@@ -536,7 +606,7 @@ export default function InkMis() {
 
                 {shipmentCols.map((s) => {
                   const q = s.lines
-                    .filter((l) => l.itemCode === r.itemCode)
+                    .filter((l) => r.itemCode && l.itemCode === r.itemCode)
                     .reduce((t, l) => t + l.qty, 0);
                   return (
                     <TableCell key={s.id} className="text-right tabular-nums">
@@ -559,7 +629,7 @@ export default function InkMis() {
                 <TableCell colSpan={12} className="font-semibold">
                   Total — {rows.length} inks
                 </TableCell>
-                {!companyKey &&
+                {showCompanyCols &&
                   INK_COMPANIES.map((c) => (
                     <TableCell key={c.key} className="text-right font-semibold tabular-nums">
                       {fmtQty(rows.reduce((t, r) => t + (r.byCompany[c.key] ?? 0), 0))}

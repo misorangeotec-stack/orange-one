@@ -23,12 +23,12 @@
  * Saved in this browser only, like the rest of the planner's data. The dashboard's export and
  * import carry this table with them.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, LayoutDashboard, ListOrdered, Search,
+  AlertTriangle, ArrowDown, ArrowUp, Download, LayoutDashboard, ListOrdered, Search, Upload,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -40,6 +40,7 @@ import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   INK_COMPANIES, fmtQty, loadInkPositions, loadOrder, loadOverrides, renumber, saveOrder,
@@ -94,6 +95,9 @@ export default function InkItemMaster() {
   const setCol = <K extends keyof ColFilters>(k: K, v: ColFilters[K]) =>
     setF((prev) => ({ ...prev, [k]: v }));
   const [order, setOrder] = useState<InkOrder>(() => loadOrder());
+  const [ioNotice, setIoNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => saveOverrides(overrides), [overrides]);
   useEffect(() => saveOrder(order), [order]);
@@ -177,6 +181,32 @@ export default function InkItemMaster() {
 
   const slim = "py-1.5 px-2.5 text-[12.5px]";
 
+  /**
+   * Import is applied only after the whole file has been read and matched, so a bad file
+   * changes nothing. Unmatched rows are reported with a sample, never silently dropped.
+   */
+  const onImport = async (file: File) => {
+    setImporting(true);
+    setIoNotice(null);
+    try {
+      const res = await importItemMaster(file, master, { overrides, order });
+      setOverrides(res.overrides);
+      setOrder(res.order);
+      const parts = [`Imported ${res.matched} of ${res.rows} rows.`];
+      if (res.unmatched.length) {
+        const sample = res.unmatched.slice(0, 3).map((u) => `${u.book} / ${u.item}`).join("; ");
+        parts.push(`${res.unmatched.length} did not match an item (Book or Item in Tally changed?): ${sample}.`);
+      }
+      if (res.orderClashes) parts.push(`${res.orderClashes} lines had different orders across books; the smallest was kept.`);
+      if (res.badOrders) parts.push(`${res.badOrders} Order cells were not numbers and were skipped.`);
+      setIoNotice({ kind: res.unmatched.length || res.badOrders ? "bad" : "ok", text: parts.join(" ") });
+    } catch (e) {
+      setIoNotice({ kind: "bad", text: e instanceof Error ? e.message : "Could not read that file." });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const patch = (key: string, field: keyof InkOverride, value: string) =>
     setOverrides((prev) => {
       const next = { ...prev, [key]: { ...prev[key], [field]: value } };
@@ -218,6 +248,7 @@ export default function InkItemMaster() {
 
   const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
     <Input
+      key={`${r.key}-${field}-${overrides[r.key]?.[field] ?? ""}`}
       className={`h-8 ${width}`}
       defaultValue={overrides[r.key]?.[field] ?? ""}
       placeholder={fallback || "—"}
@@ -277,6 +308,36 @@ export default function InkItemMaster() {
         <Button
           size="sm"
           variant="outline"
+          disabled={!master.length}
+          title="Download every item in this scope, with its current order, code, group and description"
+          onClick={() => exportItemMaster(master, order)}
+        >
+          <Download className="mr-2 h-4 w-4" /> Export to Excel
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!master.length || importing}
+          title="Upload the edited file to apply its order, codes, groups and descriptions"
+          onClick={() => fileRef.current?.click()}
+        >
+          <Upload className="mr-2 h-4 w-4" /> {importing ? "Importing…" : "Import from Excel"}
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void onImport(file);
+            e.target.value = "";
+          }}
+        />
+
+        <Button
+          size="sm"
+          variant="outline"
           title="Give every line in the current view a number, in the order shown, in steps of ten"
           onClick={() => {
             const lines: string[] = [];
@@ -291,6 +352,18 @@ export default function InkItemMaster() {
         </Button>
 
       </div>
+
+      {ioNotice && (
+        <div
+          className={`rounded-md border p-3 text-sm ${
+            ioNotice.kind === "ok"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+              : "border-amber-300 bg-amber-50 text-amber-900"
+          }`}
+        >
+          {ioNotice.text}
+        </div>
+      )}
 
       <ActiveFilters filters={chips} onClearAll={() => setF(NO_FILTERS)} />
 

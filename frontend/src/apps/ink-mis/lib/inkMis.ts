@@ -151,6 +151,8 @@ export interface InkMasterRow {
   item: string;
   tallyCode: string;
   tallyGroup: string;
+  /** Tally's own name for the item, what Description falls back to. */
+  tallyDescription: string;
   baseUnit: string;
   closingQty: number;
   /** What the report will actually use, after the override is applied. */
@@ -260,6 +262,7 @@ export async function loadInkPositions(
       item: row.item,
       tallyCode,
       tallyGroup,
+      tallyDescription: tallyName,
       baseUnit: row.base_unit || "",
       closingQty: row.closing_qty,
       effectiveCode,
@@ -609,7 +612,10 @@ export function deriveInkRow(
   for (const s of shipments) {
     if (companyKey && s.company !== companyKey) continue;
     for (const line of s.lines) {
-      if (line.itemCode !== pos.itemCode) continue;
+      // An uncoded line has itemCode "", and so does a consignment line with no ink chosen yet.
+      // Without this guard every blank consignment line would count as incoming for EVERY
+      // uncoded item.
+      if (!pos.itemCode || line.itemCode !== pos.itemCode) continue;
       if (s.status === "ETD") etd += line.qty;
       else if (s.status === "ETA") eta += line.qty;
       else atPort += line.qty;
