@@ -89,6 +89,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/sampling",
     category: "sampling",
   },
+  /**
+   * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
+   * in the browser (like Ink IMS); Central Masters itself is never written.
+   */
+  "bushra-central-master": {
+    name: "Bushra Central Master",
+    basePath: "/bushra-central-master",
+    category: "control",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",

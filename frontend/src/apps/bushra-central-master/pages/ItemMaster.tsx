@@ -13,7 +13,7 @@ import {
 import {
   applyBackup, buildBackup, markAllSeen, noteCentralIds, resetAllOverrides, resetOverride,
   saveOverride, useMirrorStore, type EditableKey,
-} from "./bushraCentralMasterStore";
+} from "../lib/store";
 
 /**
  * BUSHRA CENTRAL MASTER — Central Masters' Items, mirrored, with my own
@@ -21,7 +21,7 @@ import {
  *
  * Reads the live central master through the SAME query keys as /admin/masters,
  * so a new central item turns up here on its own. Writes only to this browser —
- * see bushraCentralMasterStore.ts for why, and for the "store only what differs" rule.
+ * see lib/store.ts for why, and for the "store only what differs" rule.
  */
 
 type Filter = "all" | "changed" | "new";
