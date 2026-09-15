@@ -1,75 +1,69 @@
 /**
  * INK IMS — the app shell.
  *
- * A STANDALONE APP. It owns everything under its own base path and shares nothing with the
- * Receivables Hub: no routes inside it, no entry in its report catalogue, no link either way.
- * An earlier version of these screens was mounted inside that app; that was wrong and has been
- * reverted, because the ink planner is a different report owned by different people.
+ * A STANDALONE APP, and it renders inside the SAME AppShell every other module uses: left menu,
+ * header, breadcrumb and the route home. The first version drew its own bare tab strip instead,
+ * which made opening it feel like leaving the portal for a different site. Every module should
+ * open the same way, so this one does too.
  *
- * What it does share is DATA, and only data: the ConnectWave client and the stock loader in
- * `@hub/lib`, which read the same Tally mirror every report reads. That is a read of a common
- * source, not a link between two dashboards — nothing here renders, routes into, or modifies
- * anything belonging to the other app.
+ * It shares nothing with the Receivables Hub: no routes inside it, no entry in its report
+ * catalogue, no link either way. The only thing it takes from that folder is DATA — the
+ * ConnectWave client and the stock loader, plain reads of the shared Tally mirror (see
+ * lib/inkMis.ts).
  *
  * Three screens:
  *   Dashboard     the planning table — stock, cover, and what to order
  *   Item master   every item in the four books, with the planner's own codes, groups and order
- *   Pipeline      the hand-entered ETD / ETA consignments
+ *   ETD / ETA     the hand-entered consignments
+ *
+ * No notifications: nothing in this app raises one, and an empty bell is honest.
  */
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Boxes, ListChecks, Ship } from "lucide-react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import AppShell from "@/shared/components/layout/AppShell";
+import type { NavItem } from "@/shared/components/layout/types";
+import { roleLabel, useSession } from "@/core/platform/session";
 import { appBasePath } from "../appInfo";
 import InkMis from "./pages/InkMis";
 import InkItemMaster from "./pages/InkItemMaster";
 import InkShipments from "./pages/InkShipments";
 
-const BASE = appBasePath("ink-mis");
+const B = appBasePath("ink-mis");
 
-const TABS = [
-  { to: "dashboard", label: "Dashboard", icon: Boxes },
-  { to: "items", label: "Item master", icon: ListChecks },
-  { to: "pipeline", label: "ETD / ETA", icon: Ship },
+// House icon style: 24-box, no fill, currentColor stroke 2, round caps — matches the other apps.
+const ic = {
+  dashboard: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></svg>),
+  items: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13" /><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2" /></svg>),
+  ship: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 4 0 2.4 2.4 0 0 0 4 0 2.4 2.4 0 0 1 4 0 2.4 2.4 0 0 0 2 1" /><path d="M4 18 3 13h18l-2 5" /><path d="M12 13V3l6 5H12" /></svg>),
+};
+
+const NAV: NavItem[] = [
+  { label: "Dashboard", to: `${B}/dashboard`, icon: ic.dashboard, section: "Ink IMS" },
+  { label: "Item master", to: `${B}/items`, icon: ic.items },
+  { label: "ETD / ETA", to: `${B}/pipeline`, icon: ic.ship },
 ];
 
-function InkNav() {
-  const { pathname } = useLocation();
+function InkMisLayout() {
+  const { user, role } = useSession();
   return (
-    <nav className="flex flex-wrap items-center gap-1 border-b bg-card px-4">
-      <span className="mr-4 py-3 text-sm font-semibold">Ink IMS</span>
-      {TABS.map((t) => {
-        const to = `${BASE}/${t.to}`;
-        const active = pathname === to || pathname.startsWith(`${to}/`);
-        const Icon = t.icon;
-        return (
-          <Link
-            key={t.to}
-            to={to}
-            className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm transition-colors ${
-              active
-                ? "border-primary font-semibold text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <AppShell
+      nav={NAV}
+      role={role}
+      user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
+      notifications={[]}
+    />
   );
 }
 
 export default function InkMisApp() {
   return (
-    <div className="min-h-screen bg-background">
-      <InkNav />
-      <Routes>
+    <Routes>
+      <Route element={<InkMisLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<InkMis />} />
         <Route path="items" element={<InkItemMaster />} />
         <Route path="pipeline" element={<InkShipments />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
-      </Routes>
-    </div>
+      </Route>
+    </Routes>
   );
 }

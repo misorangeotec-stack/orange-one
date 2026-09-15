@@ -245,7 +245,7 @@ export default function InkMis() {
   const tabs = [{ key: "combined", label: "Combined" }, ...INK_COMPANIES.map((c) => ({ key: c.key, label: c.label }))];
 
   return (
-    <div className="space-y-5 p-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Ink MIS</h1>

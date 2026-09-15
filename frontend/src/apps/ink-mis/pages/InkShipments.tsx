@@ -21,7 +21,7 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Download, LayoutDashboard, Plus, Trash2, Upload,
+  AlertTriangle, Download, LayoutDashboard, Plus, Trash2, Upload,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -127,15 +127,9 @@ export default function InkShipments() {
     .reduce((sum, s) => sum + s.lines.reduce((t, l) => t + (l.qty || 0), 0), 0);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Link
-            to={`${BASE}/dashboard`}
-            className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back to the ink dashboard
-          </Link>
           <h1 className="text-2xl font-semibold">Ink pipeline — ETD and ETA entry</h1>
           <p className="text-sm text-muted-foreground">
             One card per consignment. Delete a consignment once the goods are received.

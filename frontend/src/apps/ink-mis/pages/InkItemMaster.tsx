@@ -28,7 +28,7 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, LayoutDashboard, ListOrdered, Search,
+  AlertTriangle, ArrowDown, ArrowUp, LayoutDashboard, ListOrdered, Search,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -154,15 +154,9 @@ export default function InkItemMaster() {
   );
 
   return (
-    <div className="space-y-5 p-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link
-            to={`${BASE}/dashboard`}
-            className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back to the ink dashboard
-          </Link>
           <h1 className="text-2xl font-semibold">Item master</h1>
           <p className="text-sm text-muted-foreground">
             Every item in all four books. Fill in the code, group and description you want the
