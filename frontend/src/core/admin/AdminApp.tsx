@@ -10,6 +10,7 @@ import Backup from "./Backup";
 import MasterReportSettings from "./MasterReportSettings";
 import Masters from "./Masters";
 import MastersReconcile from "./MastersReconcile";
+import BushraCentralMaster from "./BushraCentralMaster";
 
 /**
  * Portal Admin area (mounted at /admin, admin-guarded in App.tsx). Owns the
@@ -32,6 +33,7 @@ export default function AdminApp() {
         <Route path="access" element={<ModuleAccess />} />
         <Route path="masters" element={<Masters />} />
         <Route path="masters/reconcile" element={<MastersReconcile />} />
+        <Route path="bushra-central-master" element={<BushraCentralMaster />} />
         <Route path="backup" element={<Backup />} />
         <Route path="master-report" element={<MasterReportSettings />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />

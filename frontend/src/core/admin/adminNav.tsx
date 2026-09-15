@@ -37,6 +37,7 @@ export const adminNav: NavItem[] = [
   { label: "Hierarchy", to: `${B}/hierarchy`, icon: ic.hierarchy },
   { label: "Module Access", to: `${B}/access`, icon: ic.access },
   { label: "Central Masters", to: `${B}/masters`, icon: ic.masters },
+  { label: "Bushra Central Master", to: `${B}/bushra-central-master`, icon: ic.masters },
   { label: "Master Report", to: `${B}/master-report`, icon: ic.report },
   { label: "Backup", to: `${B}/backup`, icon: ic.backup },
 ];
