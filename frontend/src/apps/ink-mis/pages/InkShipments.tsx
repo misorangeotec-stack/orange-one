@@ -29,6 +29,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@hub/components/ui/select";
 import { salesFyOptions } from "@hub/lib/salesReport";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   INK_COMPANIES, SHIPMENT_STATUSES, applyBackup, buildBackup, emptyShipment, fmtQty,
   loadInkPositions, loadShipments, newId, saveShipments,
@@ -38,6 +40,23 @@ import {
 const BASE = appBasePath("ink-mis");
 
 /** Status drives the date's meaning, so the label has to move with it. */
+/**
+ * Filters for the consignment list — the same controls and chips as the item master table.
+ * They only HIDE cards; every edit still goes to the full list, so a filtered-out consignment is
+ * never lost or overwritten. Adding a consignment clears them, or the new blank card would be
+ * created invisible behind a filter it cannot yet match.
+ */
+interface PipeFilters {
+  reference: string;
+  statuses: string[];
+  books: string[];     // InkCompany.key, or "none" for combined-only
+  inks: string[];      // item codes
+  from: string;        // ISO date, inclusive
+  to: string;
+}
+
+const NO_PIPE_FILTERS: PipeFilters = { reference: "", statuses: [], books: [], inks: [], from: "", to: "" };
+
 const DATE_LABEL: Record<ShipmentStatus, string> = {
   ETD: "Expected departure",
   ETA: "Expected arrival",
@@ -47,6 +66,9 @@ const DATE_LABEL: Record<ShipmentStatus, string> = {
 export default function InkShipments() {
   const [shipments, setShipments] = useState<Shipment[]>(() => loadShipments());
   const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
+  const [pf, setPf] = useState<PipeFilters>(NO_PIPE_FILTERS);
+  const setPipe = <K extends keyof PipeFilters>(k: K, v: PipeFilters[K]) =>
+    setPf((prev) => ({ ...prev, [k]: v }));
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,7 +87,10 @@ export default function InkShipments() {
 
   /* ------------------------------------------------------------------ mutators */
 
-  const addShipment = () => setShipments((prev) => [...prev, emptyShipment()]);
+  const addShipment = () => {
+    setPf(NO_PIPE_FILTERS);
+    setShipments((prev) => [...prev, emptyShipment()]);
+  };
 
   const removeShipment = (id: string) =>
     setShipments((prev) => prev.filter((s) => s.id !== id));
@@ -121,6 +146,38 @@ export default function InkShipments() {
   };
 
   /* --------------------------------------------------------------------- view */
+
+  const statusOpts = SHIPMENT_STATUSES.map((st) => ({ value: st, label: st }));
+  const bookOpts = [
+    { value: "none", label: "Combined only" },
+    ...INK_COMPANIES.map((c) => ({ value: c.key, label: c.label })),
+  ];
+  const inkOpts = items.map((it) => ({ value: it.itemCode || it.key, label: `${it.itemCode || "(no code)"} — ${it.description}` }));
+
+  const visibleShipments = useMemo(() => {
+    const ref = pf.reference.trim().toUpperCase();
+    return shipments.filter((s) => {
+      if (ref && !s.reference.toUpperCase().includes(ref) && !s.note.toUpperCase().includes(ref)) return false;
+      if (pf.statuses.length && !pf.statuses.includes(s.status)) return false;
+      if (pf.books.length && !pf.books.includes(s.company || "none")) return false;
+      if (pf.inks.length && !s.lines.some((l) => pf.inks.includes(l.itemCode))) return false;
+      // An undated consignment is kept out of a date filter rather than guessed into it.
+      if ((pf.from || pf.to) && !s.date) return false;
+      if (pf.from && s.date < pf.from) return false;
+      if (pf.to && s.date > pf.to) return false;
+      return true;
+    });
+  }, [shipments, pf]);
+
+  const labelOf = (v: string, opts: { value: string; label: string }[]) => opts.find((o) => o.value === v)?.label ?? v;
+  const chips: ActiveFilter[] = [];
+  if (pf.reference.trim()) chips.push({ key: "ref", label: `Reference: ${pf.reference.trim()}`, onClear: () => setPipe("reference", "") });
+  if (pf.statuses.length) chips.push({ key: "status", label: `Status: ${pf.statuses.join(", ")}`, onClear: () => setPipe("statuses", []) });
+  if (pf.books.length) chips.push({ key: "book", label: `Book: ${pf.books.map((b) => labelOf(b, bookOpts)).join(", ")}`, onClear: () => setPipe("books", []) });
+  if (pf.inks.length) chips.push({ key: "ink", label: `Ink: ${pf.inks.join(", ")}`, onClear: () => setPipe("inks", []) });
+  if (pf.from || pf.to) chips.push({ key: "date", label: `Date: ${pf.from || "…"} to ${pf.to || "…"}`, onClear: () => setPf((prev) => ({ ...prev, from: "", to: "" })) });
+
+  const slim = "py-1.5 px-2.5 text-[12.5px]";
 
   const totalIncoming = shipments
     .filter((s) => s.status !== "ETD")
@@ -192,6 +249,48 @@ export default function InkShipments() {
         </span>
       </div>
 
+      {shipments.length > 0 && (
+        <div className="space-y-3 rounded-lg border bg-card p-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Reference or note</span>
+              <Input className="h-9" placeholder="Contains…" value={pf.reference} onChange={(e) => setPipe("reference", e.target.value)} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Status</span>
+              <MultiSelect values={pf.statuses} onChange={(v) => setPipe("statuses", v)} options={statusOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Landing book</span>
+              <MultiSelect values={pf.books} onChange={(v) => setPipe("books", v)} options={bookOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Ink</span>
+              <MultiSelect values={pf.inks} onChange={(v) => setPipe("inks", v)} options={inkOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
+            </label>
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Date between</span>
+              <div className="flex items-center gap-1">
+                <Input type="date" className="h-9" value={pf.from} onChange={(e) => setPipe("from", e.target.value)} />
+                <Input type="date" className="h-9" value={pf.to} onChange={(e) => setPipe("to", e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <ActiveFilters filters={chips} onClearAll={() => setPf(NO_PIPE_FILTERS)} />
+          {chips.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Showing {visibleShipments.length} of {shipments.length} consignments.
+            </p>
+          )}
+        </div>
+      )}
+
+      {shipments.length > 0 && visibleShipments.length === 0 && (
+        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No consignment matches those filters.
+        </div>
+      )}
+
       {shipments.length === 0 && (
         <div className="rounded-md border border-dashed p-10 text-center">
           <p className="text-sm text-muted-foreground">
@@ -204,7 +303,7 @@ export default function InkShipments() {
       )}
 
       <div className="space-y-4">
-        {shipments.map((s) => {
+        {visibleShipments.map((s) => {
           const shipmentQty = s.lines.reduce((t, l) => t + (l.qty || 0), 0);
           return (
             <div key={s.id} className="rounded-lg border bg-card p-4 shadow-sm">

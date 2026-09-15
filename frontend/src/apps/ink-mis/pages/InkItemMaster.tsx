@@ -39,6 +39,8 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { salesFyOptions } from "@hub/lib/salesReport";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   INK_COMPANIES, fmtQty, loadInkPositions, loadOrder, loadOverrides, renumber, saveOrder,
   saveOverrides,
@@ -47,15 +49,50 @@ import {
 
 const BASE = appBasePath("ink-mis");
 
-type Filter = "all" | "needs-code" | "edited";
+/**
+ * Column filters, one per column, in a filter row under the header — the same pattern as the
+ * other Hub tables. Multi-selects hold every value a column can take; the two free-text columns
+ * take a "contains" match. An empty selection means "no filter", never "match nothing".
+ */
+interface ColFilters {
+  order: string[];     // "placed" | "unplaced"
+  books: string[];     // InkCompany.key
+  item: string;
+  closing: string[];   // "positive" | "zero" | "negative"
+  code: string[];      // "has" | "none" | "edited"
+  groups: string[];
+  description: string;
+}
+
+const NO_FILTERS: ColFilters = {
+  order: [], books: [], item: "", closing: [], code: [], groups: [], description: "",
+};
+
+const ORDER_OPTS = [
+  { value: "placed", label: "Has a position" },
+  { value: "unplaced", label: "No position yet" },
+];
+const CLOSING_OPTS = [
+  { value: "positive", label: "In stock" },
+  { value: "zero", label: "Zero" },
+  { value: "negative", label: "Negative" },
+];
+const CODE_OPTS = [
+  { value: "has", label: "Has a code" },
+  { value: "none", label: "Needs a code" },
+  { value: "edited", label: "Edited by you" },
+];
+
+const labelsFor = (values: string[], opts: { value: string; label: string }[]) =>
+  values.map((v) => opts.find((o) => o.value === v)?.label ?? v).join(", ");
 
 export default function InkItemMaster() {
   const fy = useMemo(() => salesFyOptions()[0], []);
   const [overrides, setOverrides] = useState<InkOverrides>(() => loadOverrides());
   const [scope, setScope] = useState<InkScope>("ink");
-  const [company, setCompany] = useState<string>("all");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [search, setSearch] = useState("");
+  const [f, setF] = useState<ColFilters>(NO_FILTERS);
+  const setCol = <K extends keyof ColFilters>(k: K, v: ColFilters[K]) =>
+    setF((prev) => ({ ...prev, [k]: v }));
   const [order, setOrder] = useState<InkOrder>(() => loadOrder());
 
   useEffect(() => saveOverrides(overrides), [overrides]);
@@ -70,17 +107,30 @@ export default function InkItemMaster() {
   const master = useMemo(() => data?.master ?? [], [data]);
 
   const rows = useMemo(() => {
-    const q = search.trim().toUpperCase();
+    const itemQ = f.item.trim().toUpperCase();
+    const descQ = f.description.trim().toUpperCase();
     const filtered = master.filter((r) => {
-      if (company !== "all" && r.companyKey !== company) return false;
-      if (filter === "needs-code" && !r.needsCode) return false;
-      if (filter === "edited" && !overrides[r.key]) return false;
-      if (!q) return true;
-      return (
-        r.item.toUpperCase().includes(q) ||
-        r.effectiveCode.includes(q) ||
-        r.effectiveGroup.toUpperCase().includes(q)
-      );
+      if (f.books.length && !f.books.includes(r.companyKey)) return false;
+      if (f.order.length) {
+        const placed = order[r.mergeKey] !== undefined;
+        if (!f.order.includes(placed ? "placed" : "unplaced")) return false;
+      }
+      if (f.closing.length) {
+        const band = r.closingQty > 0 ? "positive" : r.closingQty < 0 ? "negative" : "zero";
+        if (!f.closing.includes(band)) return false;
+      }
+      if (f.code.length) {
+        // Ticked states are alternatives: "Needs a code" OR "Edited by you", not both at once.
+        const hit =
+          (f.code.includes("has") && !r.needsCode) ||
+          (f.code.includes("none") && r.needsCode) ||
+          (f.code.includes("edited") && Boolean(overrides[r.key]));
+        if (!hit) return false;
+      }
+      if (f.groups.length && !f.groups.includes(r.effectiveGroup)) return false;
+      if (itemQ && !r.item.toUpperCase().includes(itemQ) && !r.effectiveCode.includes(itemQ)) return false;
+      if (descQ && !r.effectiveDescription.toUpperCase().includes(descQ)) return false;
+      return true;
     });
     // Same order as the dashboard, so a line moved here is seen to move there. Rows sharing a
     // merge key stay together, since they are one printed line fed by several books.
@@ -95,15 +145,37 @@ export default function InkItemMaster() {
         a.company.localeCompare(b.company)
       );
     });
-  }, [master, company, filter, search, overrides, order]);
+  }, [master, f, overrides, order]);
 
   // The hook resets to page 1 when resetKey changes, so a narrower filter never strands you on
   // a page that no longer exists.
-  const pg = usePagination(rows, { resetKey: `${company}|${filter}|${search}|${scope}` });
+  const pg = usePagination(rows, { resetKey: `${JSON.stringify(f)}|${scope}` });
   const visible = pg.pageItems;
 
   const needsCode = master.filter((r) => r.needsCode).length;
   const edited = Object.keys(overrides).length;
+
+  // Group options come from the LOADED rows, not the filtered ones, so choices do not vanish
+  // from the list while you are still picking.
+  const groupOpts = useMemo(
+    () =>
+      [...new Set(master.map((r) => r.effectiveGroup).filter(Boolean))]
+        .sort()
+        .map((g) => ({ value: g, label: g })),
+    [master],
+  );
+  const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
+
+  const chips: ActiveFilter[] = [];
+  if (f.order.length) chips.push({ key: "order", label: `Order: ${labelsFor(f.order, ORDER_OPTS)}`, onClear: () => setCol("order", []) });
+  if (f.books.length) chips.push({ key: "books", label: `Book: ${labelsFor(f.books, bookOpts)}`, onClear: () => setCol("books", []) });
+  if (f.item.trim()) chips.push({ key: "item", label: `Item: ${f.item.trim()}`, onClear: () => setCol("item", "") });
+  if (f.closing.length) chips.push({ key: "closing", label: `Closing: ${labelsFor(f.closing, CLOSING_OPTS)}`, onClear: () => setCol("closing", []) });
+  if (f.code.length) chips.push({ key: "code", label: `Code: ${labelsFor(f.code, CODE_OPTS)}`, onClear: () => setCol("code", []) });
+  if (f.groups.length) chips.push({ key: "groups", label: `Group: ${f.groups.join(", ")}`, onClear: () => setCol("groups", []) });
+  if (f.description.trim()) chips.push({ key: "desc", label: `Description: ${f.description.trim()}`, onClear: () => setCol("description", "") });
+
+  const slim = "py-1.5 px-2.5 text-[12.5px]";
 
   const patch = (key: string, field: keyof InkOverride, value: string) =>
     setOverrides((prev) => {
@@ -193,29 +265,6 @@ export default function InkItemMaster() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="w-72 pl-8"
-            placeholder="Search item, code or group"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <select
-          className="h-9 rounded-md border bg-background px-2 text-sm"
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
-        >
-          <option value="all">All four books</option>
-          {INK_COMPANIES.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-
         <select
           className="h-9 rounded-md border bg-background px-2 text-sm"
           value={scope}
@@ -241,17 +290,9 @@ export default function InkItemMaster() {
           Clear order
         </Button>
 
-        {(["all", "needs-code", "edited"] as Filter[]).map((f) => (
-          <Button
-            key={f}
-            size="sm"
-            variant={filter === f ? "default" : "outline"}
-            onClick={() => setFilter(f)}
-          >
-            {f === "all" ? "All" : f === "needs-code" ? `Needs a code (${needsCode})` : `Edited (${edited})`}
-          </Button>
-        ))}
       </div>
+
+      <ActiveFilters filters={chips} onClearAll={() => setF(NO_FILTERS)} />
 
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
@@ -270,6 +311,29 @@ export default function InkItemMaster() {
               <TableHead className="min-w-[12rem]">Item code</TableHead>
               <TableHead className="min-w-[12rem]">Group</TableHead>
               <TableHead className="min-w-[18rem]">Description</TableHead>
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.order} onChange={(v) => setCol("order", v)} options={ORDER_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.books} onChange={(v) => setCol("books", v)} options={bookOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <Input className="h-8" placeholder="Contains…" value={f.item} onChange={(e) => setCol("item", e.target.value)} />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.closing} onChange={(v) => setCol("closing", v)} options={CLOSING_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.code} onChange={(v) => setCol("code", v)} options={CODE_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.groups} onChange={(v) => setCol("groups", v)} options={groupOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <Input className="h-8" placeholder="Contains…" value={f.description} onChange={(e) => setCol("description", e.target.value)} />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
