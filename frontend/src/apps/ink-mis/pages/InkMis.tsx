@@ -37,9 +37,10 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Download, Pencil, RefreshCw, Search, Ship, Wand2,
+  AlertTriangle, Download, ListChecks, Pencil, RefreshCw, Search, Ship, Wand2,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -50,12 +51,13 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
-  loadAliases, loadHolidays, loadInkConsumption, loadInkPositions, loadPlans, loadShipments,
-  loadThresholds, saveAliases, saveHolidays, savePlans, saveThresholds, workingDaysElapsed,
-  type InkAliases, type InkBand, type InkPlan, type InkRow, type InkThresholds,
-} from "@hub/lib/inkMis";
+  loadHolidays, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
+  loadShipments, loadThresholds, saveHolidays, savePlans, saveThresholds, workingDaysElapsed,
+  type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
+  type InkThresholds,
+} from "../lib/inkMis";
 
-const BASE = "/outstanding-dashboard";
+const BASE = appBasePath("ink-mis");
 
 /** The sheet's conditional formatting, kept close to the original so the screen reads the
  *  same way at a glance: red is a shortage, purple is money sitting still. */
@@ -84,7 +86,11 @@ export default function InkMis() {
   const [editing, setEditing] = useState(false);
   const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
-  const [aliases, setAliases] = useState<InkAliases>(() => loadAliases());
+  // The item master and the row order are OWNED BY THE ITEM MASTER SCREEN. Read here, never
+  // written, so there is one place that edits them and no chance of two screens disagreeing.
+  const [overrides] = useState<InkOverrides>(() => loadOverrides());
+  const [order] = useState<InkOrder>(() => loadOrder());
+  const [scope, setScope] = useState<InkScope>("ink");
   const [holidays, setHolidays] = useState<string[]>(() => loadHolidays());
 
   // Consignments are read once on mount. The entry screen is a separate route, so there is no
@@ -93,18 +99,16 @@ export default function InkMis() {
 
   useEffect(() => savePlans(plans), [plans]);
   useEffect(() => saveThresholds(thresholds), [thresholds]);
-  useEffect(() => saveAliases(aliases), [aliases]);
   useEffect(() => saveHolidays(holidays), [holidays]);
 
-  // Aliases are part of the key: assigning one re-merges the table, which is the whole point.
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["inkMis", "positions", fy, aliases],
-    queryFn: () => loadInkPositions(fy, undefined, undefined, aliases),
+    queryKey: ["inkMis", "positions", fy, overrides, scope, order],
+    queryFn: () => loadInkPositions(fy, undefined, undefined, overrides, scope, order),
     staleTime: 5 * 60 * 1000,
   });
 
   const positions = useMemo(() => data?.rows ?? [], [data]);
-  const unmapped = data?.unmapped ?? [];
+  const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
   /* --------------------------------------------------- fill averages from Tally */
 
@@ -155,7 +159,7 @@ export default function InkMis() {
 
   const rows: InkRow[] = useMemo(() => {
     const built = positions.map((p) =>
-      deriveInkRow(p, plans[p.itemCode] ?? EMPTY_PLAN, shipments, thresholds, companyKey),
+      deriveInkRow(p, plans[p.key] ?? EMPTY_PLAN, shipments, thresholds, companyKey),
     );
     // A book only shows the inks it actually carries or expects; the other books' codes would
     // be dead rows. Combined shows everything.
@@ -167,6 +171,8 @@ export default function InkMis() {
     return scoped.filter(
       (r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q),
     );
+    // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
+    // sorting again would throw it away.
   }, [positions, plans, shipments, thresholds, companyKey, search]);
 
   /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
@@ -255,8 +261,13 @@ export default function InkMis() {
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
             <Download className="mr-2 h-4 w-4" /> Export
           </Button>
+          <Button size="sm" variant="secondary" asChild>
+            <Link to={`${BASE}/items`}>
+              <ListChecks className="mr-2 h-4 w-4" /> Item master
+            </Link>
+          </Button>
           <Button size="sm" asChild>
-            <Link to={`${BASE}/reports/ink-pipeline`}>
+            <Link to={`${BASE}/pipeline`}>
               <Ship className="mr-2 h-4 w-4" /> ETD / ETA entry
             </Link>
           </Button>
@@ -307,6 +318,15 @@ export default function InkMis() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <select
+          className="h-9 rounded-md border bg-background px-2 text-sm"
+          value={scope}
+          onChange={(e) => setScope(e.target.value as InkScope)}
+          title="Which items this report lists"
+        >
+          <option value="ink">Ink groups only</option>
+          <option value="all">Every stock group</option>
+        </select>
         <Button
           variant={editing ? "default" : "outline"}
           size="sm"
@@ -337,49 +357,19 @@ export default function InkMis() {
         </div>
       )}
 
-      {unmapped.length > 0 && (
-        <details className="rounded-md border border-amber-300 bg-amber-50 text-sm text-amber-900">
-          <summary className="flex cursor-pointer items-center gap-2 p-3">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>
-              <strong>{unmapped.length}</strong> stock line
-              {unmapped.length === 1 ? "" : "s"} carry no item code in Tally and are missing from
-              the table. Open to map them.
-            </span>
-          </summary>
-          <div className="space-y-3 border-t border-amber-300 p-3">
-            <p>
-              Give one of these a code and it joins that line immediately. This mapping is saved
-              in this browser only. Adding the code to the item master in Tally is the real fix
-              and helps everyone.
-            </p>
-            <div className="max-h-80 space-y-1 overflow-y-auto">
-              {unmapped.map((u) => (
-                <div key={u.key} className="flex flex-wrap items-center gap-2">
-                  <span className="min-w-[20rem] flex-1 truncate" title={u.item}>
-                    {u.item}
-                  </span>
-                  <span className="w-36 shrink-0 text-xs">{u.company}</span>
-                  <span className="w-20 shrink-0 text-right tabular-nums">{fmtQty(u.qty)}</span>
-                  <Input
-                    className="h-8 w-52 bg-background"
-                    placeholder="Map to item code"
-                    defaultValue={aliases[u.key] ?? ""}
-                    onBlur={(e) => {
-                      const code = e.target.value.trim().toUpperCase();
-                      setAliases((prev) => {
-                        const next = { ...prev };
-                        if (code) next[u.key] = code;
-                        else delete next[u.key];
-                        return next;
-                      });
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </details>
+      {needsCode > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{needsCode}</strong> line{needsCode === 1 ? "" : "s"} have no item code, so
+            the same ink in two books is still showing as two lines.
+          </span>
+          <Button size="sm" variant="outline" asChild className="ml-auto">
+            <Link to={`${BASE}/items`}>
+              <ListChecks className="mr-2 h-4 w-4" /> Fill codes in the item master
+            </Link>
+          </Button>
+        </div>
       )}
 
       <ScrollableTable>
@@ -437,7 +427,7 @@ export default function InkMis() {
             )}
 
             {rows.map((r) => (
-              <TableRow key={r.itemCode}>
+              <TableRow key={r.key}>
                 <TableCell className="text-xs">{r.group}</TableCell>
                 <TableCell className="font-medium">{r.itemCode}</TableCell>
                 <TableCell>{r.description}</TableCell>
@@ -472,7 +462,7 @@ export default function InkMis() {
                         className="h-8 w-20 text-right"
                         value={value || ""}
                         onChange={(e) =>
-                          setPlan(r.itemCode, { [field]: Number(e.target.value) || 0 })
+                          setPlan(r.key, { [field]: Number(e.target.value) || 0 })
                         }
                       />
                     ) : (

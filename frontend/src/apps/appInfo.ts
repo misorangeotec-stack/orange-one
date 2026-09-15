@@ -89,6 +89,17 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/sampling",
     category: "sampling",
   },
+  /**
+   * INK IMS — ink inventory planning. Its own module, filed under inventory.
+   * Deliberately NOT part of the Receivables Hub: different report, different owners.
+   */
+  "ink-mis": {
+    name: "Ink IMS",
+    basePath: "/ink-mis",
+    // Filed under Purchase because the decision it exists to serve is what to order and when.
+    // There is no inventory category, and inventing one for a single app would be worse.
+    category: "purchase",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",

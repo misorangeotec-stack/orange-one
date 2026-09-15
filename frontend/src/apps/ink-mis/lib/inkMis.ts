@@ -44,8 +44,15 @@
  *     movements but no per-godown opening. Company level ties to the planner's sheet where
  *     godown netting does not (Light Magenta: 280 company, 297 netted, 280 on the sheet).
  */
-import { loadStockSummary, type StockSummaryRow } from "./stockSummary";
-import { getConnectwaveSupabase } from "./connectwaveSupabase";
+/*
+ * The ONLY things this app takes from the Receivables Hub are these two DATA helpers: the
+ * ConnectWave client and the stock loader. Both are plain reads of the shared Tally mirror that
+ * every report reads. No UI, no routes, no state crosses between the two apps, and nothing here
+ * writes to anything the Hub owns. Copying them instead would fork the stock-summary rules and
+ * let the two drift apart silently, which is worse than a read-only import.
+ */
+import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
+import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
 /* ------------------------------------------------------------------- the books */
 
@@ -92,7 +99,14 @@ const BY_GUID = new Map(INK_COMPANIES.map((c) => [c.guid, c]));
 
 /** One ink, merged across the four books. Quantities only — ink is bought and sold in KGS. */
 export interface InkPosition {
+  /** Merge key: the item code where one exists, else a per-book synthetic key. */
+  key: string;
+  /** Displayed in the Item Code column. Empty when nothing supplies one yet. */
   itemCode: string;
+  /** False when no code exists anywhere, so this line cannot merge across books. */
+  coded: boolean;
+  /** Which book/item rows fed this line — the link back to the item master. */
+  sources: { companyKey: string; item: string }[];
   /** Longest name seen across the books; the sheet's "New Description". */
   description: string;
   /** Leaf stock group, for the sheet's "Group" column. */
@@ -107,22 +121,56 @@ export interface InkPosition {
   consumed: number;
 }
 
-/** An uncoded Tally item, offered for mapping. `key` is what `InkAliases` is keyed on. */
-export interface UnmappedItem {
+/**
+ * The planner's own item master, keyed `<companyKey>|<TALLY ITEM NAME>`.
+ *
+ * Tally's item master is incomplete — most items carry no code, and the group is whatever the
+ * book happens to file them under. Rather than wait for Tally to be tidied, the planner keeps
+ * the corrections here and they win over Tally on the report.
+ *
+ * Keyed per book, not globally: the same name can be a different ink in a different company,
+ * and one shared key would merge two things that are not the same.
+ *
+ * Any blank field falls through to Tally's own value. An override is a correction, not a
+ * replacement, so clearing a box restores what Tally says instead of blanking the column.
+ */
+export interface InkOverride {
+  code: string;
+  group: string;
+  description: string;
+}
+
+export type InkOverrides = Record<string, Partial<InkOverride>>;
+
+/** One book's view of an item, as the item master lists it. */
+export interface InkMasterRow {
   key: string;
   companyKey: string;
   company: string;
+  /** Tally's item name — the identity, and not editable. */
   item: string;
-  qty: number;
+  tallyCode: string;
+  tallyGroup: string;
+  baseUnit: string;
+  closingQty: number;
+  /** What the report will actually use, after the override is applied. */
+  effectiveCode: string;
+  effectiveGroup: string;
+  effectiveDescription: string;
+  /** True when nothing anywhere supplies a code, so this item cannot merge across books. */
+  needsCode: boolean;
+  /** The dashboard line this row feeds. Ordering is keyed on THIS, not on the row, because
+   *  several books' rows share one printed line and must share its position. */
+  mergeKey: string;
 }
 
 export interface InkPositionsResult {
   rows: InkPosition[];
-  /** Ink rows carrying no item code and no alias, so unable to join. Never swallowed. */
-  unmapped: UnmappedItem[];
+  /** Every item in every book, whether coded or not — what the item master edits. */
+  master: InkMasterRow[];
   /** Newest mirror build time across the four books. */
   builtAt: string | null;
-  /** `<companyKey>|<ITEM NAME>` → item code. The Sales Register carries names, not codes,
+  /** `<companyKey>|<ITEM NAME>` → merge key. The Sales Register carries names, not codes,
    *  so this is the bridge `loadInkConsumption` joins on. Per book, because the same name
    *  can be a different code in a different company. */
   nameToCode: Map<string, string>;
@@ -130,14 +178,29 @@ export interface InkPositionsResult {
 
 const norm = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
 
-/**
- * Planner-supplied item codes for Tally items that have none, keyed by book and item name.
- * Scoped per book on purpose: the same name can be a different ink in a different company,
- * and a global map would merge two things that are not the same.
- */
-export type InkAliases = Record<string, string>;
+export const masterKey = (companyKey: string, item: string) => `${companyKey}|${norm(item)}`;
 
-export const aliasKey = (companyKey: string, item: string) => `${companyKey}|${norm(item)}`;
+/**
+ * Merge key for an item with no code anywhere.
+ *
+ * An uncoded item still gets a line — it is real stock and hiding it was the old behaviour
+ * the planner rejected. It simply cannot merge with the same ink in another book until a code
+ * exists, so it is keyed by book and name and stands alone. The `~` prefix cannot collide with
+ * a real code and sorts these to the end.
+ */
+const soloKey = (companyKey: string, item: string) => `~${companyKey}|${norm(item)}`;
+
+/** Which items the dashboard lists. "ink" is the planner's four ink groups; "all" is the lot. */
+export type InkScope = "ink" | "all";
+
+/**
+ * The planner's row order, merge key → position. Sparse on purpose: only the lines they have
+ * deliberately placed appear, and everything else falls in behind them.
+ *
+ * Keyed on the MERGE key rather than the master row, because one printed line can be fed by
+ * four books and they cannot sit in four different places.
+ */
+export type InkOrder = Record<string, number>;
 
 function isInk(row: StockSummaryRow): boolean {
   const company = BY_GUID.get(row.company_guid);
@@ -146,65 +209,93 @@ function isInk(row: StockSummaryRow): boolean {
 }
 
 /**
- * Load and merge. `from`/`to` narrow the window for the consumption figures; closing stock is
- * as at `to`. Pass the whole financial year to get Tally's own closing rather than a walked one.
+ * Load every item in the four books, apply the planner's item master, and merge.
+ *
+ * NOTHING IS DROPPED FOR WANT OF A CODE. An item with no code still gets its own line, keyed
+ * by book and name; it merges with the same ink elsewhere the moment a code exists. Hiding
+ * uncoded stock was the earlier behaviour and it hid real kilos.
+ *
+ * `scope` decides what the dashboard lists. Both scopes cost the same: the loader already
+ * fetches every row and the ink filter is applied here, in the browser.
  */
 export async function loadInkPositions(
   fy: string,
   from?: string,
   to?: string,
-  aliases: InkAliases = {},
+  overrides: InkOverrides = {},
+  scope: InkScope = "ink",
+  order: InkOrder = {},
 ): Promise<InkPositionsResult> {
   const raw = await loadStockSummary(INK_COMPANY_GUIDS, fy, from, to);
-  const ink = raw.filter(isInk);
+  const inScope = scope === "all" ? raw.filter((r) => BY_GUID.has(r.company_guid)) : raw.filter(isInk);
 
   const merged = new Map<string, InkPosition>();
-  const unmapped: InkPositionsResult["unmapped"] = [];
+  const master: InkMasterRow[] = [];
   const nameToCode = new Map<string, string>();
   let builtAt: string | null = null;
 
-  for (const row of ink) {
+  for (const row of inScope) {
     if (row.built_at && (!builtAt || row.built_at > builtAt)) builtAt = row.built_at;
 
     const company = BY_GUID.get(row.company_guid);
     if (!company) continue;
 
-    // Tally's own code wins; the planner's alias only fills a blank, never overrides.
-    const code = norm(row.item_code) || norm(aliases[aliasKey(company.key, row.item)]);
-    if (!code) {
-      // No code, no join. Only worth reporting when the row actually holds something.
-      if (row.closing_qty) {
-        unmapped.push({
-          key: aliasKey(company.key, row.item),
-          companyKey: company.key,
-          company: company.label,
-          item: row.item,
-          qty: row.closing_qty,
-        });
-      }
-      continue;
-    }
+    const key = masterKey(company.key, row.item);
+    const ov = overrides[key] ?? {};
 
-    nameToCode.set(`${company.key}|${norm(row.item)}`, code);
+    // The planner's master wins over Tally, and a blank falls through to Tally's own value.
+    const tallyCode = norm(row.item_code);
+    const tallyGroup = row.stock_group || row.primary_group || "";
+    const tallyName = row.item_name || row.item || "";
 
-    let pos = merged.get(code);
+    const effectiveCode = norm(ov.code) || tallyCode;
+    const effectiveGroup = (ov.group ?? "").trim() || tallyGroup;
+    const effectiveDescription = (ov.description ?? "").trim() || tallyName;
+
+    master.push({
+      key,
+      mergeKey: effectiveCode || soloKey(company.key, row.item),
+      companyKey: company.key,
+      company: company.label,
+      item: row.item,
+      tallyCode,
+      tallyGroup,
+      baseUnit: row.base_unit || "",
+      closingQty: row.closing_qty,
+      effectiveCode,
+      effectiveGroup,
+      effectiveDescription,
+      needsCode: !effectiveCode,
+    });
+
+    const mergeKey = effectiveCode || soloKey(company.key, row.item);
+    nameToCode.set(key, mergeKey);
+
+    let pos = merged.get(mergeKey);
     if (!pos) {
       pos = {
-        itemCode: code,
-        description: row.item_name || row.item || code,
-        group: row.stock_group || row.primary_group || "",
+        key: mergeKey,
+        itemCode: effectiveCode,
+        coded: Boolean(effectiveCode),
+        sources: [],
+        description: effectiveDescription || row.item,
+        group: effectiveGroup,
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
         consumedByCompany: {},
         consumed: 0,
       };
-      merged.set(code, pos);
+      merged.set(mergeKey, pos);
     }
 
-    // Books disagree on how fully an item is named; keep the most descriptive one.
-    const name = row.item_name || row.item || "";
-    if (name.length > pos.description.length) pos.description = name;
+    pos.sources.push({ companyKey: company.key, item: row.item });
+
+    // Books disagree on how fully an item is named; keep the most descriptive one. A description
+    // the planner typed always wins, whatever its length.
+    if (ov.description?.trim()) pos.description = ov.description.trim();
+    else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
+    if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
 
     pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + row.closing_qty;
     pos.stock += row.closing_qty;
@@ -213,9 +304,23 @@ export async function loadInkPositions(
     pos.consumed += row.outward_qty;
   }
 
-  const rows = [...merged.values()].sort((a, b) => a.itemCode.localeCompare(b.itemCode));
-  unmapped.sort((a, b) => Math.abs(b.qty) - Math.abs(a.qty));
-  return { rows, unmapped, builtAt, nameToCode };
+  // THE PLANNER'S ORDER WINS. Their sheet is not alphabetical — it runs Eco, then E-series, then
+  // H-series and so on, the order they actually work in — so a positioned line sits exactly where
+  // they put it. Anything unpositioned falls in behind, coded first and then alphabetically, which
+  // is only a starting arrangement for items they have not placed yet.
+  const rows = [...merged.values()].sort((a, b) => {
+    const pa = order[a.key];
+    const pb = order[b.key];
+    if (pa !== undefined && pb !== undefined) return pa - pb;
+    if (pa !== undefined) return -1;
+    if (pb !== undefined) return 1;
+    if (a.coded !== b.coded) return a.coded ? -1 : 1;
+    return (a.itemCode || a.description).localeCompare(b.itemCode || b.description);
+  });
+  master.sort(
+    (a, b) => a.company.localeCompare(b.company) || a.item.localeCompare(b.item),
+  );
+  return { rows, master, builtAt, nameToCode };
 }
 
 /* ---------------------------------------------------------------- consumption */
@@ -529,7 +634,9 @@ export function deriveInkRow(
 const KEY_PLANS = "ink-mis:plans:v1";
 const KEY_SHIPMENTS = "ink-mis:shipments:v1";
 const KEY_THRESHOLDS = "ink-mis:thresholds:v1";
-const KEY_ALIASES = "ink-mis:aliases:v1";
+const KEY_ALIASES = "ink-mis:aliases:v1";     // superseded by KEY_OVERRIDES; read once, to migrate
+const KEY_OVERRIDES = "ink-mis:items:v1";
+const KEY_ORDER = "ink-mis:order:v1";
 const KEY_HOLIDAYS = "ink-mis:holidays:v1";
 
 function readJson<T>(key: string, fallback: T): T {
@@ -567,8 +674,56 @@ export const loadThresholds = (): InkThresholds => ({
 });
 export const saveThresholds = (t: InkThresholds) => writeJson(KEY_THRESHOLDS, t);
 
-export const loadAliases = (): InkAliases => readJson<InkAliases>(KEY_ALIASES, {});
-export const saveAliases = (a: InkAliases) => writeJson(KEY_ALIASES, a);
+/**
+ * The item master. Reads the superseded alias store once and folds it in, so the codes the
+ * planner already typed are not lost to a rename of the storage key.
+ */
+export const loadOverrides = (): InkOverrides => {
+  const current = readJson<InkOverrides>(KEY_OVERRIDES, {});
+  const legacy = readJson<Record<string, string>>(KEY_ALIASES, {});
+  if (!Object.keys(legacy).length) return current;
+  const merged: InkOverrides = { ...current };
+  for (const [k, code] of Object.entries(legacy)) {
+    if (!merged[k]?.code && typeof code === "string" && code.trim()) {
+      merged[k] = { ...merged[k], code: code.trim().toUpperCase() };
+    }
+  }
+  return merged;
+};
+
+/** Empty fields are dropped rather than stored, so "cleared" and "never set" stay the same
+ *  thing — both fall through to Tally. */
+export const saveOverrides = (o: InkOverrides) => {
+  const clean: InkOverrides = {};
+  for (const [k, v] of Object.entries(o)) {
+    const row: Partial<InkOverride> = {};
+    if (v.code?.trim()) row.code = v.code.trim().toUpperCase();
+    if (v.group?.trim()) row.group = v.group.trim();
+    if (v.description?.trim()) row.description = v.description.trim();
+    if (Object.keys(row).length) clean[k] = row;
+  }
+  writeJson(KEY_OVERRIDES, clean);
+};
+
+export const loadOrder = (): InkOrder => {
+  const raw = readJson<InkOrder>(KEY_ORDER, {});
+  const out: InkOrder = {};
+  for (const [k, v] of Object.entries(raw)) if (Number.isFinite(v)) out[k] = Number(v);
+  return out;
+};
+export const saveOrder = (o: InkOrder) => writeJson(KEY_ORDER, o);
+
+/**
+ * Renumber in steps of ten, in the order given. The gaps are the point: they leave room to drop
+ * a line between two others by typing a number, without renumbering the whole sheet.
+ */
+export function renumber(keysInOrder: string[]): InkOrder {
+  const out: InkOrder = {};
+  keysInOrder.forEach((k, i) => {
+    out[k] = (i + 1) * 10;
+  });
+  return out;
+}
 
 /** Extra non-working days, yyyymmdd. Sundays are excluded already and are not listed here. */
 export const loadHolidays = (): string[] => {
@@ -603,7 +758,8 @@ export interface InkBackup {
   plans: Record<string, InkPlan>;
   shipments: Shipment[];
   thresholds: InkThresholds;
-  aliases: InkAliases;
+  overrides: InkOverrides;
+  order: InkOrder;
   holidays: string[];
 }
 
@@ -615,7 +771,8 @@ export function buildBackup(): InkBackup {
     plans: loadPlans(),
     shipments: loadShipments(),
     thresholds: loadThresholds(),
-    aliases: loadAliases(),
+    overrides: loadOverrides(),
+    order: loadOrder(),
     holidays: loadHolidays(),
   };
 }
@@ -635,7 +792,8 @@ export function applyBackup(text: string): InkBackup {
   savePlans(b.plans ?? {});
   saveShipments(Array.isArray(b.shipments) ? b.shipments : []);
   saveThresholds({ ...DEFAULT_THRESHOLDS, ...(b.thresholds ?? {}) });
-  saveAliases(b.aliases ?? {});
+  saveOverrides(b.overrides ?? {});
+  saveOrder(b.order ?? {});
   saveHolidays(Array.isArray(b.holidays) ? b.holidays : []);
   return b as InkBackup;
 }

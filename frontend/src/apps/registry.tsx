@@ -11,6 +11,7 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
+import { inkMisApp } from "./ink-mis/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -66,6 +67,9 @@ export const apps: AppManifest[] = [
   // Production Entry FMS — separate module (own fms_production_* tables), granted per
   // user to the production team (not universal). Ink production job-card tracker.
   productionEntryApp,
+  // INK IMS — ink inventory planning across the four ink books. Its own module on purpose:
+  // it is not part of the Receivables Hub and must not be folded back into it.
+  inkMisApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.

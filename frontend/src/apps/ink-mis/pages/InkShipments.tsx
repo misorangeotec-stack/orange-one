@@ -18,6 +18,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, Download, LayoutDashboard, Plus, Trash2, Upload,
@@ -32,9 +33,9 @@ import {
   INK_COMPANIES, SHIPMENT_STATUSES, applyBackup, buildBackup, emptyShipment, fmtQty,
   loadInkPositions, loadShipments, newId, saveShipments,
   type Shipment, type ShipmentStatus,
-} from "@hub/lib/inkMis";
+} from "../lib/inkMis";
 
-const BASE = "/outstanding-dashboard";
+const BASE = appBasePath("ink-mis");
 
 /** Status drives the date's meaning, so the label has to move with it. */
 const DATE_LABEL: Record<ShipmentStatus, string> = {
@@ -130,7 +131,7 @@ export default function InkShipments() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link
-            to={`${BASE}/reports/ink-mis`}
+            to={`${BASE}/dashboard`}
             className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" /> Back to the ink dashboard
@@ -159,7 +160,7 @@ export default function InkShipments() {
             }}
           />
           <Button size="sm" asChild variant="secondary">
-            <Link to={`${BASE}/reports/ink-mis`}>
+            <Link to={`${BASE}/dashboard`}>
               <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
             </Link>
           </Button>
