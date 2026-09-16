@@ -17,14 +17,14 @@ export function ClearStatusBadge({ row }: { row: ClearFields }) {
   return row.cleared ? (
     <span
       title={title}
-      className="inline-flex items-center gap-1 rounded-full border border-emerald-600/30 bg-emerald-600/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400"
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-600/30 bg-emerald-600/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400"
     >
       <CheckCircle2 className="h-3 w-3" /> Cleared
     </span>
   ) : (
     <span
       title={title}
-      className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
     >
       <ShieldAlert className="h-3 w-3" /> Red Mark
     </span>

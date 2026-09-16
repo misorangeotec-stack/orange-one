@@ -78,6 +78,26 @@ const fmt = (n: number) => {
 /** Below this (₹) a month's figure is rounding, not activity. Same epsilon the engine uses. */
 const ACTIVITY_EPS = 0.5;
 
+/*
+ * Cell classes for the 22-column grid. Compact on purpose: the shadcn defaults (h-12 headers,
+ * p-4 cells) made every row several lines tall once 22 columns shared a screen. `whitespace-nowrap`
+ * everywhere, so an amount never breaks into "₹30.00" / "L" and a header never stacks "Rcv / Jul- / 26".
+ * The hub's `cn` runs tailwind-merge, so these REPLACE the defaults rather than competing with them.
+ */
+const TH = "h-8 px-2.5 text-[11px] whitespace-nowrap";
+const TD = "px-2.5 py-1.5 text-xs whitespace-nowrap";
+const NUM = "text-right font-mono tabular-nums";
+/**
+ * Customer stays put while the rest scrolls. Two details make that work:
+ *  · a SOLID background, or the columns scrolling underneath show through the name;
+ *  · the divider is a box-shadow, not a border — a border on a sticky cell stays behind with the
+ *    table's collapsed borders and the column edge disappears the moment you scroll.
+ */
+const STICKY_EDGE = "shadow-[1px_0_0_0_hsl(var(--border))]";
+const STICKY_HEAD = `sticky left-0 z-[2] bg-muted ${STICKY_EDGE}`;
+const STICKY_BODY = `sticky left-0 z-[1] bg-surface ${STICKY_EDGE}`;
+const STICKY_TOTAL = `sticky left-0 z-[1] bg-muted ${STICKY_EDGE}`;
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, "all"] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
@@ -509,47 +529,72 @@ function RedMarkCustomersInner() {
             </div>
           ) : (
             <ScrollableTable>
-              <Table>
+              {/*
+                22 columns do not fit a screen, so this table is built to be SCANNED, not to fit:
+                  · one line per row — nothing wraps, names truncate with the full name on hover;
+                  · compact cells (the shadcn default p-4 made every row four lines tall);
+                  · the month columns sit under "Received" / "Sales billed" group headers, so each
+                    header is just the month instead of nine near-identical "Rcv Jul-26" labels;
+                  · Customer is STICKY, so the row is still identifiable after scrolling right to
+                    the sales flag and the Clear button.
+                The sticky cells need a SOLID background (bg-muted / bg-surface), or the columns
+                scrolling underneath show through.
+              */}
+              <Table className="text-xs">
                 <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <SortHead label="Customer" className="text-xs" dir={grid.sortDir("customer")} onToggle={() => grid.toggleSort("customer")} />
-                    <SortHead label="Sales Person" className="text-xs" dir={grid.sortDir("salesPerson")} onToggle={() => grid.toggleSort("salesPerson")} />
-                    <SortHead label="Collection Team" className="text-xs" dir={grid.sortDir("collectionTeam")} onToggle={() => grid.toggleSort("collectionTeam")} />
-                    <SortHead label="Company" className="text-xs" dir={grid.sortDir("company")} onToggle={() => grid.toggleSort("company")} />
-                    <SortHead label="Location" className="text-xs" dir={grid.sortDir("location")} onToggle={() => grid.toggleSort("location")} />
-                    <SortHead label="Category" className="text-xs" dir={grid.sortDir("category")} onToggle={() => grid.toggleSort("category")} />
-                    <SortHead label="Outstanding" className="text-xs text-right" dir={grid.sortDir("outstanding")} onToggle={() => grid.toggleSort("outstanding")} />
-                    <SortHead label="Due" className="text-xs text-right" dir={grid.sortDir("due")} onToggle={() => grid.toggleSort("due")} />
-                    <SortHead label="Max OD" className="text-xs text-right" dir={grid.sortDir("maxOd")} onToggle={() => grid.toggleSort("maxOd")} />
-                    <SortHead label={`Rcv ${months[0]}`} className="text-xs text-right" dir={grid.sortDir("rcv0")} onToggle={() => grid.toggleSort("rcv0")} />
-                    <SortHead label={`Rcv ${months[1]}`} className="text-xs text-right" dir={grid.sortDir("rcv1")} onToggle={() => grid.toggleSort("rcv1")} />
-                    <SortHead label={`Rcv ${months[2]}`} className="text-xs text-right" dir={grid.sortDir("rcv2")} onToggle={() => grid.toggleSort("rcv2")} />
-                    <SortHead label="Received 3 mo" className="text-xs text-right" dir={grid.sortDir("rcvTot")} onToggle={() => grid.toggleSort("rcvTot")} />
-                    <SortHead label="Bounced CHQ.R" className="text-xs text-right" dir={grid.sortDir("bounced")} onToggle={() => grid.toggleSort("bounced")} />
-                    <SortHead label="Received ÷ Due" className="text-xs text-right" dir={grid.sortDir("pct")} onToggle={() => grid.toggleSort("pct")} />
-                    <SortHead label={`Sales ${months[0]}`} className="text-xs text-right" dir={grid.sortDir("sal0")} onToggle={() => grid.toggleSort("sal0")} />
-                    <SortHead label={`Sales ${months[1]}`} className="text-xs text-right" dir={grid.sortDir("sal1")} onToggle={() => grid.toggleSort("sal1")} />
-                    <SortHead label={`Sales ${months[2]}`} className="text-xs text-right" dir={grid.sortDir("sal2")} onToggle={() => grid.toggleSort("sal2")} />
-                    <SortHead label="Billed" className="text-xs" dir={grid.sortDir("billed")} onToggle={() => grid.toggleSort("billed")} />
-                    <SortHead label="Clear status" className="text-xs" dir={grid.sortDir("clear")} onToggle={() => grid.toggleSort("clear")} />
-                    <SortHead label="Reason" className="text-xs" dir={grid.sortDir("reason")} onToggle={() => grid.toggleSort("reason")} />
-                    <TableHead className="text-xs text-right">Actions</TableHead>
+                  {/* Group row. Column count: 1 + 8 + 5 + 1 + 3 + 4 = 22. */}
+                  <TableRow className="bg-muted hover:bg-muted border-b-0">
+                    <TableHead className={`${TH} ${STICKY_HEAD} h-6`} />
+                    <TableHead className={`${TH} h-6`} colSpan={8} />
+                    <TableHead className={`${TH} h-6 text-center text-foreground border-x border-border`} colSpan={5}>
+                      Received (gross)
+                    </TableHead>
+                    <TableHead className={`${TH} h-6`} />
+                    <TableHead className={`${TH} h-6 text-center text-foreground border-x border-border`} colSpan={3}>
+                      Sales billed
+                    </TableHead>
+                    <TableHead className={`${TH} h-6`} colSpan={4} />
                   </TableRow>
-                  <TableRow className="bg-muted/30 hover:bg-transparent">
-                    <TableHead className="py-1">{filterCell("customer")}</TableHead>
-                    <TableHead className="py-1">{filterCell("salesPerson")}</TableHead>
-                    <TableHead className="py-1">{filterCell("collectionTeam")}</TableHead>
-                    <TableHead className="py-1">{filterCell("company")}</TableHead>
-                    <TableHead className="py-1">{filterCell("location")}</TableHead>
-                    <TableHead className="py-1">{filterCell("category")}</TableHead>
-                    {/* Money columns carry no filter: every value is unique, so a dropdown would
-                        only restate the table. They still sort. */}
-                    <TableHead className="py-1" colSpan={9} />
-                    <TableHead className="py-1" colSpan={3} />
-                    <TableHead className="py-1">{filterCell("billed")}</TableHead>
-                    <TableHead className="py-1">{filterCell("clear")}</TableHead>
-                    <TableHead className="py-1">{filterCell("reason")}</TableHead>
-                    <TableHead className="py-1" />
+                  <TableRow className="bg-muted hover:bg-muted">
+                    <SortHead label="Customer" className={`${TH} ${STICKY_HEAD} min-w-[220px]`} dir={grid.sortDir("customer")} onToggle={() => grid.toggleSort("customer")} />
+                    <SortHead label="Salesperson" className={TH} dir={grid.sortDir("salesPerson")} onToggle={() => grid.toggleSort("salesPerson")} />
+                    <SortHead label="Team" className={TH} dir={grid.sortDir("collectionTeam")} onToggle={() => grid.toggleSort("collectionTeam")} />
+                    <SortHead label="Company" className={TH} dir={grid.sortDir("company")} onToggle={() => grid.toggleSort("company")} />
+                    <SortHead label="Location" className={TH} dir={grid.sortDir("location")} onToggle={() => grid.toggleSort("location")} />
+                    <SortHead label="Cat." className={TH} dir={grid.sortDir("category")} onToggle={() => grid.toggleSort("category")} />
+                    <SortHead label="Outstanding" className={`${TH} text-right`} dir={grid.sortDir("outstanding")} onToggle={() => grid.toggleSort("outstanding")} />
+                    <SortHead label="Due" className={`${TH} text-right`} dir={grid.sortDir("due")} onToggle={() => grid.toggleSort("due")} />
+                    <SortHead label="Max OD" className={`${TH} text-right`} dir={grid.sortDir("maxOd")} onToggle={() => grid.toggleSort("maxOd")} />
+                    <SortHead label={months[0]} className={`${TH} text-right border-l border-border`} dir={grid.sortDir("rcv0")} onToggle={() => grid.toggleSort("rcv0")} />
+                    <SortHead label={months[1]} className={`${TH} text-right`} dir={grid.sortDir("rcv1")} onToggle={() => grid.toggleSort("rcv1")} />
+                    <SortHead label={months[2]} className={`${TH} text-right`} dir={grid.sortDir("rcv2")} onToggle={() => grid.toggleSort("rcv2")} />
+                    <SortHead label="3 mo" className={`${TH} text-right`} dir={grid.sortDir("rcvTot")} onToggle={() => grid.toggleSort("rcvTot")} />
+                    <SortHead label="Bounced" className={`${TH} text-right border-r border-border`} dir={grid.sortDir("bounced")} onToggle={() => grid.toggleSort("bounced")} />
+                    <SortHead label="Rcvd ÷ Due" className={`${TH} text-right`} dir={grid.sortDir("pct")} onToggle={() => grid.toggleSort("pct")} />
+                    <SortHead label={months[0]} className={`${TH} text-right border-l border-border`} dir={grid.sortDir("sal0")} onToggle={() => grid.toggleSort("sal0")} />
+                    <SortHead label={months[1]} className={`${TH} text-right`} dir={grid.sortDir("sal1")} onToggle={() => grid.toggleSort("sal1")} />
+                    <SortHead label={months[2]} className={`${TH} text-right border-r border-border`} dir={grid.sortDir("sal2")} onToggle={() => grid.toggleSort("sal2")} />
+                    <SortHead label="Billed" className={TH} dir={grid.sortDir("billed")} onToggle={() => grid.toggleSort("billed")} />
+                    <SortHead label="Clear status" className={TH} dir={grid.sortDir("clear")} onToggle={() => grid.toggleSort("clear")} />
+                    <SortHead label="Reason" className={TH} dir={grid.sortDir("reason")} onToggle={() => grid.toggleSort("reason")} />
+                    <TableHead className={`${TH} text-right`}>Actions</TableHead>
+                  </TableRow>
+                  {/* Filter row. 1 + 5 + 9 + 3 + 1 + 1 + 1 + 1 = 22. */}
+                  <TableRow className="bg-muted hover:bg-muted">
+                    <TableHead className={`${TH} ${STICKY_HEAD} py-1`}>{filterCell("customer")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("salesPerson")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("collectionTeam")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("company")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("location")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("category")}</TableHead>
+                    {/* Money columns carry no filter: every value is unique, so a dropdown would only
+                        restate the table. They still sort. */}
+                    <TableHead className={`${TH} py-1`} colSpan={9} />
+                    <TableHead className={`${TH} py-1`} colSpan={3} />
+                    <TableHead className={`${TH} py-1`}>{filterCell("billed")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("clear")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("reason")}</TableHead>
+                    <TableHead className={`${TH} py-1`} />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -560,40 +605,46 @@ function RedMarkCustomersInner() {
                     const shout = r.billedThisMonth && !r.cleared;
                     return (
                       <TableRow key={r.id} className={`hover:bg-muted/20 ${r.cleared ? "opacity-70" : ""}`}>
-                        <TableCell className="text-xs font-medium">{r.customer}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.salesPerson || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.collectionTeam || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.company}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.location}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.category || "—"}</TableCell>
-                        <TableCell className="text-xs text-right font-mono font-semibold">{fmt(r.outstanding)}</TableCell>
-                        <TableCell className={`text-xs text-right font-mono ${r.due > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{fmt(r.due)}</TableCell>
-                        <TableCell className="text-xs text-right font-mono text-muted-foreground">{r.maxOverdueDays > 0 ? r.maxOverdueDays : "—"}</TableCell>
+                        <TableCell className={`${TD} ${STICKY_BODY} font-medium`}>
+                          <div className="max-w-[240px] truncate" title={r.customer}>{r.customer}</div>
+                        </TableCell>
+                        <TableCell className={`${TD} text-muted-foreground`}>
+                          <div className="max-w-[130px] truncate" title={r.salesPerson}>{r.salesPerson || "—"}</div>
+                        </TableCell>
+                        <TableCell className={`${TD} text-muted-foreground`}>{r.collectionTeam || "—"}</TableCell>
+                        <TableCell className={`${TD} text-muted-foreground`}>{r.company}</TableCell>
+                        <TableCell className={`${TD} text-muted-foreground`}>{r.location}</TableCell>
+                        <TableCell className={`${TD} text-muted-foreground`}>{r.category || "—"}</TableCell>
+                        <TableCell className={`${TD} ${NUM} font-semibold`}>{fmt(r.outstanding)}</TableCell>
+                        <TableCell className={`${TD} ${NUM} ${r.due > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{fmt(r.due)}</TableCell>
+                        <TableCell className={`${TD} ${NUM} text-muted-foreground`}>{r.maxOverdueDays > 0 ? r.maxOverdueDays : "—"}</TableCell>
                         {r.received.map((v, i) => (
-                          <TableCell key={i} className={`text-xs text-right font-mono ${v > ACTIVITY_EPS ? "" : "text-muted-foreground"}`}>
+                          <TableCell
+                            key={i}
+                            className={`${TD} ${NUM} ${i === 0 ? "border-l border-border" : ""} ${v > ACTIVITY_EPS ? "" : "text-muted-foreground"}`}
+                          >
                             {v > ACTIVITY_EPS ? fmt(v) : "—"}
                           </TableCell>
                         ))}
-                        <TableCell className="text-xs text-right font-mono font-semibold">{r.receivedTotal > ACTIVITY_EPS ? fmt(r.receivedTotal) : "—"}</TableCell>
+                        <TableCell className={`${TD} ${NUM} font-semibold`}>{r.receivedTotal > ACTIVITY_EPS ? fmt(r.receivedTotal) : "—"}</TableCell>
                         <TableCell
-                          className={`text-xs text-right font-mono ${r.bounced > ACTIVITY_EPS ? "text-destructive" : "text-muted-foreground"}`}
+                          className={`${TD} ${NUM} border-r border-border ${r.bounced > ACTIVITY_EPS ? "text-destructive font-semibold" : "text-muted-foreground"}`}
                           title="Bounced cheques (Payment vouchers named CHQ.R) over the same three months. Not deducted from Received."
                         >
                           {bounced.isLoading ? "…" : r.bounced > ACTIVITY_EPS ? fmt(r.bounced) : "—"}
                         </TableCell>
                         <TableCell
-                          className="text-xs text-right font-mono"
+                          className={`${TD} ${NUM}`}
                           title={`Three months of receipts (gross) ÷ Due as on ${asOnLabel}. Bounced cheques are not deducted.`}
                         >
                           {pct === null ? "—" : `${pct.toFixed(0)}%`}
                         </TableCell>
                         {r.sales.map((v, i) => {
-                          const isCurrent = i === 2;
-                          const alarm = isCurrent && shout;
+                          const alarm = i === 2 && shout;
                           return (
                             <TableCell
                               key={i}
-                              className={`text-xs text-right font-mono ${
+                              className={`${TD} ${NUM} ${i === 0 ? "border-l border-border" : ""} ${i === 2 ? "border-r border-border" : ""} ${
                                 alarm ? "text-destructive font-bold bg-destructive/10" : v > ACTIVITY_EPS ? "" : "text-muted-foreground"
                               }`}
                               title={alarm ? "We billed this red-marked customer this month" : undefined}
@@ -602,7 +653,7 @@ function RedMarkCustomersInner() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className="text-xs">
+                        <TableCell className={TD}>
                           {shout ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
                               <AlertTriangle className="h-3 w-3" /> Billed
@@ -611,14 +662,14 @@ function RedMarkCustomersInner() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell><ClearStatusBadge row={r} /></TableCell>
-                        <TableCell className="text-[11px] text-muted-foreground max-w-[220px] truncate" title={r.cleared ? describeClear(r) : r.reason}>
-                          {r.reason || "—"}
+                        <TableCell className={TD}><ClearStatusBadge row={r} /></TableCell>
+                        <TableCell className={`${TD} text-[11px] text-muted-foreground`} title={r.cleared ? describeClear(r) : r.reason}>
+                          <div className="max-w-[200px] truncate">{r.reason || "—"}</div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className={`${TD} text-right`}>
                           <Button
                             size="sm" variant="outline"
-                            className="h-7 gap-1 px-2 text-[11px] border-emerald-600/40 text-emerald-700 hover:text-emerald-700 dark:text-emerald-400"
+                            className="h-6 gap-1 px-2 text-[11px] border-emerald-600/40 text-emerald-700 hover:text-emerald-700 dark:text-emerald-400"
                             disabled={!mayClear}
                             title={mayClear
                               ? (r.cleared ? "Reopen this case" : "Clear — the case is settled; the record stays")
@@ -651,18 +702,20 @@ function RedMarkCustomersInner() {
                   )}
 
                   {filteredRows.length > 0 && (
-                    <TableRow className="bg-muted/50 font-semibold border-t border-border">
-                      <TableCell className="text-xs font-bold" colSpan={6}>
+                    /* 1 + 5 + 1 + 1 + 1 + 3 + 1 + 5 + 1 + 3 = 22 */
+                    <TableRow className="bg-muted hover:bg-muted font-semibold border-t border-border">
+                      <TableCell className={`${TD} ${STICKY_TOTAL} font-bold`}>
                         Total ({filteredRows.length} row{filteredRows.length === 1 ? "" : "s"})
                       </TableCell>
-                      <TableCell className="text-xs text-right font-mono font-bold">{fmt(totalOutstanding)}</TableCell>
-                      <TableCell className="text-xs text-right font-mono font-bold text-destructive">{fmt(totalDue)}</TableCell>
-                      <TableCell />
-                      <TableCell colSpan={3} />
-                      <TableCell className="text-xs text-right font-mono font-bold">{fmt(totalReceived)}</TableCell>
-                      <TableCell colSpan={5} />
-                      <TableCell className="text-xs font-bold text-destructive">{billedCount}</TableCell>
-                      <TableCell colSpan={3} />
+                      <TableCell className={TD} colSpan={5} />
+                      <TableCell className={`${TD} ${NUM} font-bold`}>{fmt(totalOutstanding)}</TableCell>
+                      <TableCell className={`${TD} ${NUM} font-bold text-destructive`}>{fmt(totalDue)}</TableCell>
+                      <TableCell className={TD} />
+                      <TableCell className={`${TD} border-l border-border`} colSpan={3} />
+                      <TableCell className={`${TD} ${NUM} font-bold`}>{fmt(totalReceived)}</TableCell>
+                      <TableCell className={TD} colSpan={5} />
+                      <TableCell className={`${TD} font-bold text-destructive`}>{billedCount} billed</TableCell>
+                      <TableCell className={TD} colSpan={3} />
                     </TableRow>
                   )}
                 </TableBody>
