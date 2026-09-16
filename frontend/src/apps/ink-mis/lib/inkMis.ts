@@ -107,8 +107,20 @@ export interface InkPosition {
   coded: boolean;
   /** Which book/item rows fed this line — the link back to the item master. */
   sources: { companyKey: string; item: string }[];
-  /** Longest name seen across the books; the sheet's "New Description". */
+  /** Longest name seen across the books — Tally's wording. Used by the item master, NOT by the
+   *  dashboard. */
   description: string;
+  /**
+   * The planner's own description from the item master, and nothing else.
+   *
+   * The dashboard prints THIS. Tally's item names are warehouse names — "278EVRC4LC AMTHYST EVO
+   * RC LT BLACK :ELM3" — and the planning sheet has always run on the planner's own wording.
+   * Empty when they have not written one, and the dashboard says so rather than quietly
+   * substituting Tally's, which would make a line look named when nobody has named it.
+   *
+   * First non-empty one wins where several books feed one line; they are describing one ink.
+   */
+  customDescription: string;
   /** Leaf stock group, for the sheet's "Group" column. */
   group: string;
   baseUnit: string;
@@ -282,6 +294,7 @@ export async function loadInkPositions(
         coded: Boolean(effectiveCode),
         sources: [],
         description: effectiveDescription || row.item,
+        customDescription: (ov.description ?? "").trim(),
         group: effectiveGroup,
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
@@ -298,6 +311,7 @@ export async function loadInkPositions(
     // the planner typed always wins, whatever its length.
     if (ov.description?.trim()) pos.description = ov.description.trim();
     else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
+    if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
     if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
 
     pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + row.closing_qty;
