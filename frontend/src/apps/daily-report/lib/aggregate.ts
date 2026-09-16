@@ -15,9 +15,10 @@
 //   dependency runs one way only: data -> lib.
 import type { MoneyRow, PartyKind, PurchaseLine, SaleLine } from "../data/dailyReport";
 import type { SaleType } from "./saleType";
-import type { BankAccount, BankBalance, ReportLocation } from "../types";
+import type { BankAccount, BankBalance, CcLimit, FacilityFigures, ReportLocation } from "../types";
 import { balanceKey } from "../data/bankBalances";
 import { bankCell, type BankCellState } from "./format";
+import { entityRank } from "./labels";
 
 /* --------------------------------------------------------------- location */
 
@@ -274,50 +275,123 @@ export function cellFor(
 
 /* --------------------------------------------------------------- facility */
 
+/**
+ * WHICH ACCOUNTS MAKE UP A COMPANY'S "AVAILABLE BALANCE" — the one place that says.
+ *
+ * Today: every account of the company, i.e. the same accounts as the company
+ * total on the entry screen and in the balance grid. That is what DR-1 asked for
+ * ("fill itself from that company's bank total"), and on the client's 08-09-2026
+ * sheet the figure (2.45) is exactly its own Orange O Tec bank total.
+ *
+ * ⚠ UNCONFIRMED, AND PROBABLY NOT THE SAME SET. The sheet's Orange O Tec bank
+ *   table sums TWO columns, AXIS-ST and NOIDA. This entity holds FIVE accounts:
+ *   it adds the ICICI 0014 cash-credit account and the Delhi account, and it is
+ *   not known which Axis account "AXIS-ST" is. A cash-credit balance is borrowing,
+ *   so adding it into an available balance may be wrong in sign as well as in
+ *   scope. It cannot be checked against data — no balance had been saved when
+ *   this was written. Ask Ritesh Bhai before trusting the figure; if the answer
+ *   is a narrower set, change THIS function and FACILITY_BALANCE_NOTE, and every
+ *   render follows.
+ */
+export function facilityBalanceAccounts(entityAccounts: BankAccount[]): BankAccount[] {
+  return entityAccounts;
+}
+
+/** What `facilityBalanceAccounts` counts, in words, for every render to print. */
+export const FACILITY_BALANCE_NOTE =
+  "Available balance is the company's bank total for the day, across all its accounts, and stays blank until every one of them is entered.";
+
 export interface FacilityRow {
-  account: BankAccount;
+  /** mst_companies.alias. The block is per COMPANY, never per book or location. */
+  entityAlias: string;
+  bank: string;
   /** Everything below is ₹ lakhs, and null means genuinely unknown. */
   ccLimit: number | null;
-  heldByBank: number | null;
-  availableCc: number | null;
+  /** Derived — the company's bank total. See `facilityBalanceAccounts`. */
+  availableBalance: number | null;
+  /** The accounts still without a figure, which is why availableBalance is null. */
+  balanceMissing: string[];
   lcBcLimit: number | null;
   lcBcUtilised: number | null;
+  /** Derived — LC/BC limit − utilised. */
   lcBcFree: number | null;
-  closing: number | null;
+  heldByBank: number | null;
+  /** Derived — CC limit − held by bank. */
+  availableCc: number | null;
 }
 
 /**
- * The upper-right block of the reference sheet, recomputed.
+ * One company's credit-limit block, from its four typed figures and its accounts.
  *
- * Two of its seven measures are arithmetic rather than data, and both reproduce
- * the 08-09-2026 sheet exactly:
- *   available CC limit = CC limit − held by bank      (44.50 − 4.50 = 40.00)
- *   LC/BC free limit   = LC/BC limit − utilised       ( 5.00 − 4.78 =  0.22)
+ * The upper-right block of the reference sheet. Three of its seven measures are
+ * arithmetic rather than data, and all three reproduce the 08-09-2026 sheet:
+ *   available balance  = the company's bank total    (2.37 + 0.08 = 2.45)
+ *   LC/BC free limit   = LC/BC limit − utilised      (5.00 − 4.78 = 0.22)
+ *   available CC limit = CC limit − held by bank     (44.50 − 4.50 = 40.00)
+ *
+ * Called with STORED figures by the report page, the PDF and the workbook, and
+ * with the figures still being TYPED by the entry screen — one piece of
+ * arithmetic, so the form cannot preview a number the report then disagrees with.
  *
  * ⚠ AN UNKNOWN INPUT YIELDS NULL, NOT A NUMBER. A free limit computed from a
- *   missing utilised figure is confidently wrong, which is worse than blank —
- *   and LC/BC utilised is the one figure on this report with no source at all
- *   until somebody types it.
+ *   missing utilised figure is confidently wrong, which is worse than blank.
+ *
+ * ⚠ A COMPANY WITH NO ACCOUNTS HAS NO BALANCE, NOT A ZERO ONE. `entityTotal` of
+ *   an empty list is a clean 0 with nothing missing, so it is guarded here.
+ */
+export function facilityFor(
+  entityAlias: string,
+  bank: string,
+  entityAccounts: BankAccount[],
+  balances: Map<string, BankBalance>,
+  figures: FacilityFigures | undefined,
+  iso: string,
+): FacilityRow {
+  const sub = (a: number | null, b: number | null) => (a == null || b == null ? null : a - b);
+  const counted = facilityBalanceAccounts(entityAccounts);
+  const total = counted.length > 0 ? entityTotal(counted, balances, iso) : { totalLacs: null, missing: [] };
+  const f: FacilityFigures = figures ?? {
+    ccLimitLacs: null, lcBcLimitLacs: null, lcBcUtilisedLacs: null, holdByBankLacs: null,
+  };
+  return {
+    entityAlias,
+    bank,
+    ccLimit: f.ccLimitLacs,
+    availableBalance: total.totalLacs,
+    balanceMissing: total.missing,
+    lcBcLimit: f.lcBcLimitLacs,
+    lcBcUtilised: f.lcBcUtilisedLacs,
+    lcBcFree: sub(f.lcBcLimitLacs, f.lcBcUtilisedLacs),
+    heldByBank: f.holdByBankLacs,
+    availableCc: sub(f.ccLimitLacs, f.holdByBankLacs),
+  };
+}
+
+/**
+ * Every company block RECORDED for a day — the report's Bank facility section.
+ *
+ * One row per stored company + bank. A company nobody typed a block for has NO
+ * row, never a row of zeros; that is also why Colorix, which has no block on the
+ * client's sheet, appears only once somebody enters one.
+ *
+ * ⚠ PASS EVERY ACCOUNT, NOT THE LOCATION-FILTERED ONES. A facility is sanctioned
+ *   to a company. Handing this a Surat-only account list would make Orange O
+ *   Tec's available balance its Surat cash and call it the company's.
  */
 export function facilityRows(
   accounts: BankAccount[],
   balances: Map<string, BankBalance>,
+  limits: Map<string, CcLimit>,
   iso: string,
 ): FacilityRow[] {
-  const sub = (a: number | null, b: number | null) => (a == null || b == null ? null : a - b);
-  return accounts
-    .filter((a) => a.ccLimitLacs != null || a.lcBcLimitLacs != null)
-    .map((account) => {
-      const bal = balances.get(balanceKey(account.id, iso));
-      return {
-        account,
-        ccLimit: account.ccLimitLacs,
-        heldByBank: account.holdByBankLacs,
-        availableCc: sub(account.ccLimitLacs, account.holdByBankLacs),
-        lcBcLimit: account.lcBcLimitLacs,
-        lcBcUtilised: bal?.lcBcUtilisedLacs ?? null,
-        lcBcFree: sub(account.lcBcLimitLacs, bal?.lcBcUtilisedLacs ?? null),
-        closing: bal?.closingLacs ?? null,
-      };
-    });
+  const byEntity = new Map<string, BankAccount[]>();
+  for (const a of accounts) {
+    const list = byEntity.get(a.entityAlias) ?? [];
+    list.push(a);
+    byEntity.set(a.entityAlias, list);
+  }
+  return [...limits.values()]
+    .filter((l) => l.date === iso)
+    .sort((x, y) => entityRank(x.entityAlias) - entityRank(y.entityAlias) || x.bank.localeCompare(y.bank))
+    .map((l) => facilityFor(l.entityAlias, l.bank, byEntity.get(l.entityAlias) ?? [], balances, l, iso));
 }
