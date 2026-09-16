@@ -36,7 +36,9 @@ import {
 // The Bushra-Dashboard screens' icons, kept on their own line: master's list above keeps gaining
 // icons, and an addition beside another branch's addition is a merge conflict for no reason.
 import { Package, Receipt } from "lucide-react";
+import { Truck } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 import type { Crumb } from "@/apps/currentApp";
 
 /**
@@ -824,6 +826,22 @@ export const REPORTS: ReportEntry[] = [
       "reactive", "item category", "lot", "batch", "bushra",
     ],
   },
+  {
+    id: "bushra-purchase-register",
+    // Vendors, not customers — the salesperson scope does not apply.
+    scoping: "none",
+    title: "Purchase Register",
+    purpose: "Every purchase, purchase return and purchase debit note line, with purchase-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-purchase-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "purchase register", "purchase", "purchase return", "debit note", "inward service", "vendor",
+      "colour", "color", "item group", "item category", "bushra",
+    ],
+  },
 
   // ── Bushra-Dashboard screens ───────────────────────────────────────────────
   // The three screens under the Bushra-Dashboard MENU are catalogued here so they are granted
@@ -868,6 +886,20 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
+  // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
+  // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
+  ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "none",
+    title: p.id === "bushra-purchase-dashboard" ? p.title : `Purchase — ${purchaseDashboardTitle(p)}`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: Truck,
+    source: "tally",
+    status: "live",
+    keywords: ["purchase dashboard", p.title.toLowerCase(), "purchase type", "category", "vendor", "bushra"],
+  })),
 ];
 
 /** Absolute URL for a report. Empty for a "soon" entry, which is never a link. */

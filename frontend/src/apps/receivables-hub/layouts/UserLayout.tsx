@@ -133,6 +133,8 @@ const FY_PINNED_ROUTES = [
   "/outstanding-dashboard/reports/stock-summary",
   // Batch Costing — same own company + FY + period pickers as the Stock Summary, same reason.
   "/outstanding-dashboard/reports/batch-costing",
+  // Bushra-Report → Purchase Register — its own From/To window.
+  "/outstanding-dashboard/reports/bushra-purchase-register",
   // Bushra-Dashboard → Production Batch Costing Dashboard — own company + FY + period pickers.
   "/outstanding-dashboard/bushra-dashboard",
 ];

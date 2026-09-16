@@ -26,10 +26,13 @@ export type LineType = "Output" | "Consumption";
 export type LineCategory = "Finished Good" | "Scrap" | "RM Consumption";
 export type ItemGroup = "Sublimation" | "Reactive" | "Others";
 
-/** Colour words, in the order they are tried. GRAY is normalised to GREY. */
+/**
+ * Colour words, in the order they are tried. GRAY is normalised to GREY. Also used by the Bushra
+ * Sales Register (lib/bushraSalesRegister.ts) — TURQUOISE is there for its dye names.
+ */
 export const COLOURS = [
   "BLACK", "CYAN", "MAGENTA", "YELLOW", "GREY", "GRAY", "PINK", "RED", "ORANGE", "GREEN", "BLUE",
-  "VIOLET", "PURPLE", "BROWN", "WHITE",
+  "VIOLET", "PURPLE", "BROWN", "WHITE", "TURQUOISE",
 ] as const;
 
 interface CategoryRule {

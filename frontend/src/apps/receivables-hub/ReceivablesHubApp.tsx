@@ -53,6 +53,9 @@ import SalesRegister from "@hub/pages/SalesRegister";
 import SOARegister from "@hub/pages/SOARegister";
 import StockSummary from "@hub/pages/StockSummary";
 import BatchCosting from "@hub/pages/BatchCosting";
+import BushraPurchaseRegister from "@hub/pages/BushraPurchaseRegister";
+import BushraPurchaseDashboard from "@hub/pages/BushraPurchaseDashboard";
+import { PURCHASE_DASHBOARDS } from "@hub/lib/bushraPurchaseDashboards";
 import ProductionBatchCostingDashboard from "@hub/pages/ProductionBatchCostingDashboard";
 import ProductionExpenses from "@hub/pages/ProductionExpenses";
 import BushraDashboards from "@hub/pages/BushraDashboards";
@@ -127,6 +130,11 @@ function HubRoutes() {
               {/* The third leg of the cost: caps, cans and stickers, which never touch a
                   production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
               <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
+              {/* Purchase → Purchase, Machines, Spare Parts, Service, Other: one screen, a preset per
+                  route (lib/bushraPurchaseDashboards.ts). The key resets the filters between them. */}
+              {PURCHASE_DASHBOARDS.map((p) => (
+                <Route key={p.id} path={p.path} element={<BushraPurchaseDashboard key={p.id} presetId={p.id} />} />
+              ))}
             </Route>
           </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
@@ -289,6 +297,9 @@ function HubRoutes() {
                   rpt_batch_line, classified per batch (lib/batchCostingRules.ts). Source-agnostic;
                   own company + FY + period pickers — see FY_PINNED_ROUTES. */}
               <Route path="reports/batch-costing" element={<BatchCosting />} />
+              {/* Reports → Bushra-Report → Purchase Register. Purchases, returns and purchase debit
+                  notes with Purchase-Type, Group, Category and Colour (lib/bushraPurchaseRegister.ts). */}
+              <Route path="reports/bushra-purchase-register" element={<BushraPurchaseRegister />} />
             </Route>
           </Route>
           {/* Customer Creation FMS.
