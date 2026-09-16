@@ -79,6 +79,10 @@ The report is **live for Ritesh Bhai to audit** against his own evening sheet �
 Control → Daily Report. Use **8 September 2026**: it is the day both reference sheets cover, so every
 figure can be checked line by line. Build details are under **DR-1** in the Daily Report section.
 
+**For the credit-limit block (built and live 17-09-2026), four questions — items 3, 5, 12 and 13:**
+lakhs or crores · who types the figures each evening · which accounts make up "available balance" ·
+do Enterprises and Colorix have a facility. **Ask item 3 before any real figure is typed.**
+
 **1. `[open]` 🔴 Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026)*
 
 For Orange O Tec, Surat, on 8 September:
@@ -134,7 +138,8 @@ free limit works itself out. If nobody does, the LC/BC columns show a dash rathe
 
 **5. `[open]` 🔴 Who types the bank balances each evening?**
 
-**None have been entered yet** — the report shows 0 of 11. That person needs **Daily Report at
+**None have been entered yet** — the report shows 0 of 11. The same person types each company's
+**credit facility** on that screen. That person needs **Daily Report at
 `edit`** in Admin → Module Access. A Sunday or a day off stays blank on purpose; only a working day
 nobody typed is flagged.
 
@@ -203,8 +208,13 @@ figures: no balance had ever been saved.
 > function (`facilityBalanceAccounts` in `apps/daily-report/lib/aggregate.ts`); every screen and
 > export follows.
 
-Also to confirm: **does Enterprises or Colorix have a facility?** The sheet shows only Orange O Tec.
-Both get the inputs; neither shows a row on the report until something is typed.
+**13. `[open]` Do Orange O Tec Enterprises and Colorix have a credit facility?** *(17-09-2026)*
+
+The old sheet shows a CC row for Orange O Tec only. Both other companies get the same inputs on Bank
+balances; neither shows a row on the report until something is typed, so nothing needs changing if
+the answer is no.
+
+> **The question:** does either hold a CC or LC/BC limit, and at which bank?
 
 ### OCPI
 
@@ -1632,7 +1642,8 @@ was missing, and the collection and payment lines listed a fraction of what Tall
 - Type the **credit facility** under each company on Bank balances once finance confirms the limits
   **and the units** (discussion items 3 and 12). The facility block says "not recorded" until then.
 
-**Credit-limit block — built 17-09-2026, live on master `c8498f3`.**
+**✅ Credit-limit block — COMPLETE for now. Built 17-09-2026, live on master `c8498f3`.** Nothing left
+to build; waiting only on Ritesh Bhai's answers (discussion items 3, 5, 12, 13).
 
 The client's top-right CC block had never shown anything: it was modelled per *account*, on static
 master columns, and all were blank. It is per *company* and two of its figures change daily.
