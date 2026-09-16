@@ -53,8 +53,9 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
-  loadHolidays, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
-  loadShipments, loadThresholds, saveHolidays, savePlans, saveThresholds, workingDaysElapsed,
+  INK_SOURCES, loadHolidays, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides,
+  loadPlans, loadShipments, loadThresholds, saveHolidays, savePlans, saveThresholds, sourceLabel,
+  workingDaysElapsed,
   type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
   type InkThresholds,
 } from "../lib/inkMis";
@@ -85,6 +86,14 @@ export default function InkMis() {
 
   const [tab, setTab] = useState<string>("combined");
   const [search, setSearch] = useState("");
+  /**
+   * Group, Category and Import/Plant, as page filters AND as the table's own filter row — the
+   * same state behind both, so whichever the planner reaches for, the other shows what is on.
+   * An empty selection means "no filter", never "match nothing".
+   */
+  const [groupsF, setGroupsF] = useState<string[]>([]);
+  const [categoriesF, setCategoriesF] = useState<string[]>([]);
+  const [sourcesF, setSourcesF] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
   const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
@@ -202,13 +211,19 @@ export default function InkMis() {
     // to watch — so no stock filter second-guesses it. `positions` is already numbered-only.
     const scoped = built;
     const q = search.trim().toUpperCase();
-    if (!q) return scoped;
-    return scoped.filter(
+    const narrowed = scoped.filter((r) => {
+      if (groupsF.length && !groupsF.includes(r.group || "(none)")) return false;
+      if (categoriesF.length && !categoriesF.includes(r.category || "(none)")) return false;
+      if (sourcesF.length && !sourcesF.includes(r.source || "(none)")) return false;
+      return true;
+    });
+    if (!q) return narrowed;
+    return narrowed.filter(
       (r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q),
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, groupsF, categoriesF, sourcesF]);
 
   /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
   const shipmentCols = useMemo(
@@ -237,6 +252,24 @@ export default function InkMis() {
 
   const reorderCount = rows.filter((r) => r.band === "low" || r.band === "mid").length;
 
+
+  const optionsFrom = (pick: (p: (typeof positions)[number]) => string) =>
+    [
+      { value: "(none)", label: "Not set" },
+      ...[...new Set(positions.map(pick).filter(Boolean))].sort().map((v) => ({ value: v, label: v })),
+    ];
+  const groupOpts = useMemo(() => optionsFrom((p) => p.group), [positions]);
+  const categoryOpts = useMemo(() => optionsFrom((p) => p.category), [positions]);
+  const sourceOpts = [
+    { value: "(none)", label: "Not set" },
+    ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),
+  ];
+  const filtersOn = groupsF.length + categoriesF.length + sourcesF.length > 0;
+  const clearFilters = () => {
+    setGroupsF([]);
+    setCategoriesF([]);
+    setSourcesF([]);
+  };
 
   // The company columns exist only on Combined, and only when the group is open.
   const cols = useTableColumns("dashboard");
@@ -268,6 +301,8 @@ export default function InkMis() {
     { value: "companies", label: "Stock by company" },
     { value: "shipments", label: "Consignment columns" },
     { value: "incoming", label: "ETA + at port" },
+    { value: "category", label: "Category" },
+    { value: "source", label: "Import/Plant" },
   ];
   const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
@@ -298,7 +333,7 @@ export default function InkMis() {
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
-      "ETD", "ETA + at port", "Total",
+      "ETD", "ETA + at port", "Total", "Category", "Import/Plant",
     ];
     const body = rows.map((r) => [
       r.group, r.itemCode, r.description, r.remark,
@@ -309,7 +344,7 @@ export default function InkMis() {
       ...shipmentCols.map((s) =>
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
-      r.etd, r.incoming, r.total,
+      r.etd, r.incoming, r.total, r.category, sourceLabel(r.source),
     ]);
     const esc = (v: unknown) => {
       const s = String(v ?? "");
@@ -427,6 +462,34 @@ export default function InkMis() {
           <Wand2 className="mr-2 h-4 w-4" />
           {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
+        <MultiSelect
+          values={groupsF}
+          onChange={setGroupsF}
+          options={groupOpts}
+          triggerLabel="Group"
+          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+          searchable
+        />
+        <MultiSelect
+          values={categoriesF}
+          onChange={setCategoriesF}
+          options={categoryOpts}
+          triggerLabel="Category"
+          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+          searchable
+        />
+        <MultiSelect
+          values={sourcesF}
+          onChange={setSourcesF}
+          options={sourceOpts}
+          triggerLabel="Import/Plant"
+          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+        />
+        {filtersOn && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        )}
         <MultiSelect
           values={visibleColumnIds}
           onChange={(v) => cols.setHidden(columnOptions.map((o) => o.value).filter((id) => !v.includes(id)))}
@@ -555,6 +618,36 @@ export default function InkMis() {
                 <ResizableHead id="incoming" cols={cols} className="text-right">ETA + at port</ResizableHead>
               )}
               <ResizableHead id="total" cols={cols} className="text-right font-semibold">Total</ResizableHead>
+              {cols.isVisible("category") && (
+                <ResizableHead id="category" cols={cols} className="min-w-[10rem]">Category</ResizableHead>
+              )}
+              {cols.isVisible("source") && (
+                <ResizableHead id="source" cols={cols} className="min-w-[9rem]">Import/Plant</ResizableHead>
+              )}
+            </TableRow>
+            {/* The table's own filter row. Same state as the bar above it. */}
+            <TableRow className="hover:bg-transparent">
+              {on("group") && (
+                <TableHead className="py-2 font-normal">
+                  <MultiSelect values={groupsF} onChange={setGroupsF} options={groupOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
+                </TableHead>
+              )}
+              <TableHead colSpan={leadVisible.length - (on("group") ? 1 : 0)} />
+              {showCompanyCols && <TableHead colSpan={INK_COMPANIES.length} />}
+              <TableHead />
+              {showShipmentCols && shipmentCols.length > 0 && <TableHead colSpan={shipmentCols.length} />}
+              {cols.isVisible("incoming") && <TableHead />}
+              <TableHead />
+              {cols.isVisible("category") && (
+                <TableHead className="py-2 font-normal">
+                  <MultiSelect values={categoriesF} onChange={setCategoriesF} options={categoryOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
+                </TableHead>
+              )}
+              {cols.isVisible("source") && (
+                <TableHead className="py-2 font-normal">
+                  <MultiSelect values={sourcesF} onChange={setSourcesF} options={sourceOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" />
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
 
@@ -657,6 +750,12 @@ export default function InkMis() {
 
                 {cols.isVisible("incoming") && <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>}
                 <TableCell className="text-right font-semibold tabular-nums">{fmtQty(r.total)}</TableCell>
+                {cols.isVisible("category") && (
+                  <TableCell className="text-xs">{r.category}</TableCell>
+                )}
+                {cols.isVisible("source") && (
+                  <TableCell className="text-xs">{sourceLabel(r.source)}</TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -684,6 +783,8 @@ export default function InkMis() {
                   <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.eta + totals.atPort)}</TableCell>
                 )}
                 <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.total)}</TableCell>
+                {cols.isVisible("category") && <TableCell />}
+                {cols.isVisible("source") && <TableCell />}
               </TableRow>
             </TableFooter>
           )}

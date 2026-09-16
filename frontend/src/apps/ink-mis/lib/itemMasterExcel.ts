@@ -30,7 +30,7 @@ import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
 import {
-  EMPTY_PLAN, INK_COMPANIES, masterKey,
+  EMPTY_PLAN, INK_COMPANIES, INK_SOURCES, masterKey, sourceLabel,
   type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
 } from "./inkMis";
 
@@ -38,11 +38,13 @@ const SHEET = "Item master";
 
 const COLS = [
   "Book", "Item in Tally", "Unit", "Closing", "Tally code",
-  "Order", "Lead time", "Item code", "Group", "Description",
+  "Order", "Lead time", "Item code", "Group", "Description", "Category", "Import/Plant",
 ] as const;
 
 /** The columns the planner may change. Everything else is identity or context. */
-const EDITABLE = new Set(["Order", "Lead time", "Item code", "Group", "Description"]);
+const EDITABLE = new Set([
+  "Order", "Lead time", "Item code", "Group", "Description", "Category", "Import/Plant",
+]);
 
 const norm = (v: unknown) => String(v ?? "").trim();
 const up = (v: unknown) => norm(v).toUpperCase();
@@ -68,6 +70,8 @@ export function exportItemMaster(
     r.effectiveCode,
     r.effectiveGroup,
     r.effectiveDescription,
+    r.category,
+    sourceLabel(r.source),
   ]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
 
@@ -85,7 +89,7 @@ export function exportItemMaster(
       if (ws[cell]) ws[cell].s = { fill: { fgColor: { rgb: "F3F4F6" } } };
     }
   });
-  ws["!cols"] = [18, 46, 7, 12, 18, 8, 10, 22, 26, 46].map((wch) => ({ wch }));
+  ws["!cols"] = [18, 46, 7, 12, 18, 8, 10, 22, 26, 46, 18, 14].map((wch) => ({ wch }));
   ws["!freeze"] = { xSplit: 2, ySplit: 1 };
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: body.length, c: COLS.length - 1 } }) };
 
@@ -97,6 +101,8 @@ export function exportItemMaster(
     ["Order: any number. Lines are shown smallest first. Leave blank for no position."],
     ["Lead time: months of cover to order against. One value per line, shared by every book."],
     ["Item code, Group, Description: leave blank, or equal to Tally's value, to keep Tally's."],
+    ["Category: your own wording, anything you like."],
+    ["Import/Plant: one of Import, Domestic or Plant. Anything else is ignored."],
     ["The same code in two books merges them into one line on the dashboard."],
     ["Save as .xlsx and use Import on the Item master screen."],
   ]);
@@ -121,6 +127,8 @@ export interface ItemMasterImportResult {
   unmatched: { book: string; item: string }[];
   orderClashes: number;
   badOrders: number;
+  /** Import/Plant cells that were not Import, Domestic or Plant. */
+  badSources: number;
 }
 
 /**
@@ -158,6 +166,7 @@ export async function importItemMaster(
   let matched = 0;
   let orderClashes = 0;
   let badOrders = 0;
+  let badSources = 0;
 
   for (const row of raw) {
     const book = norm(row["Book"]);
@@ -181,6 +190,14 @@ export async function importItemMaster(
     if (code && code !== up(m.tallyCode)) next.code = code;
     if (group && group !== norm(m.tallyGroup)) next.group = group;
     if (desc && desc !== norm(m.tallyDescription)) next.description = desc;
+
+    // Planner-only fields: no Tally value to compare against, so whatever is in the cell stands.
+    const category = norm(row["Category"]);
+    if (category) next.category = category;
+    const srcCell = up(row["Import/Plant"]);
+    const src = INK_SOURCES.find((o) => o.value.toUpperCase() === srcCell || o.label.toUpperCase() === srcCell);
+    if (src) next.source = src.value;
+    else if (srcCell) badSources++;
     if (Object.keys(next).length) overrides[key] = next;
     else delete overrides[key];
 
@@ -221,5 +238,6 @@ export async function importItemMaster(
     unmatched,
     orderClashes,
     badOrders,
+    badSources,
   };
 }

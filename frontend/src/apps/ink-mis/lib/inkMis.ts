@@ -124,6 +124,10 @@ export interface InkPosition {
   customDescription: string;
   /** Leaf stock group, for the sheet's "Group" column. */
   group: string;
+  /** The planner's category and source, from the item master. Empty until they set them.
+   *  First non-empty wins where several books feed one line — it is one ink. */
+  category: string;
+  source: string;
   baseUnit: string;
   /** Closing quantity per book, keyed by `InkCompany.key`. Absent book means zero. */
   byCompany: Record<string, number>;
@@ -151,7 +155,24 @@ export interface InkOverride {
   code: string;
   group: string;
   description: string;
+  /** The planner's own category. Free text: their vocabulary, not Tally's. */
+  category: string;
+  /** Where the ink comes from — see INK_SOURCES. */
+  source: string;
 }
+
+/**
+ * How an ink reaches the shelf. Three values, because they are three different lead times and
+ * three different people to chase, which is the whole reason the planner wants to filter on it.
+ */
+export const INK_SOURCES = [
+  { value: "import", label: "Import" },
+  { value: "domestic", label: "Domestic" },
+  { value: "plant", label: "Plant" },
+] as const;
+
+export const sourceLabel = (v: string) =>
+  INK_SOURCES.find((s) => s.value === v)?.label ?? "";
 
 export type InkOverrides = Record<string, Partial<InkOverride>>;
 
@@ -171,6 +192,9 @@ export interface InkMasterRow {
   /** What the report will actually use, after the override is applied. */
   effectiveCode: string;
   effectiveGroup: string;
+  /** Planner-only fields: Tally has no equivalent, so there is nothing to fall back to. */
+  category: string;
+  source: string;
   effectiveDescription: string;
   /** True when nothing anywhere supplies a code, so this item cannot merge across books. */
   needsCode: boolean;
@@ -280,6 +304,8 @@ export async function loadInkPositions(
       closingQty: row.closing_qty,
       effectiveCode,
       effectiveGroup,
+      category: (ov.category ?? "").trim(),
+      source: (ov.source ?? "").trim(),
       effectiveDescription,
       needsCode: !effectiveCode,
     });
@@ -297,6 +323,8 @@ export async function loadInkPositions(
         description: effectiveDescription || row.item,
         customDescription: (ov.description ?? "").trim(),
         group: effectiveGroup,
+        category: (ov.category ?? "").trim(),
+        source: (ov.source ?? "").trim(),
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
@@ -314,6 +342,8 @@ export async function loadInkPositions(
     else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
     if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
     if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
+    if (!pos.category && ov.category?.trim()) pos.category = ov.category.trim();
+    if (!pos.source && ov.source?.trim()) pos.source = ov.source.trim();
 
     pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + row.closing_qty;
     pos.stock += row.closing_qty;
@@ -748,6 +778,8 @@ export const saveOverrides = (o: InkOverrides) => {
     if (v.code?.trim()) row.code = v.code.trim().toUpperCase();
     if (v.group?.trim()) row.group = v.group.trim();
     if (v.description?.trim()) row.description = v.description.trim();
+    if (v.category?.trim()) row.category = v.category.trim();
+    if (v.source?.trim()) row.source = v.source.trim();
     if (Object.keys(row).length) clean[k] = row;
   }
   writeJson(KEY_OVERRIDES, clean);

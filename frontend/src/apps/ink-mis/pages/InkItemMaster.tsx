@@ -44,8 +44,8 @@ import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
-  EMPTY_PLAN, INK_COMPANIES, fmtQty, loadInkPositions, loadOrder, loadOverrides, loadPlans,
-  renumber, savePlans, saveOrder, saveOverrides,
+  EMPTY_PLAN, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder, loadOverrides,
+  loadPlans, renumber, savePlans, saveOrder, saveOverrides, sourceLabel,
   type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
   type InkScope,
 } from "../lib/inkMis";
@@ -64,11 +64,14 @@ interface ColFilters {
   closing: string[];   // "positive" | "zero" | "negative"
   code: string[];      // "has" | "none" | "edited"
   groups: string[];
+  categories: string[];
+  sources: string[];   // INK_SOURCES values
   description: string;
 }
 
 const NO_FILTERS: ColFilters = {
-  order: [], books: [], item: "", closing: [], code: [], groups: [], description: "",
+  order: [], books: [], item: "", closing: [], code: [], groups: [], categories: [], sources: [],
+  description: "",
 };
 
 const ORDER_OPTS = [
@@ -193,6 +196,9 @@ export default function InkItemMaster() {
         if (!hit) return false;
       }
       if (f.groups.length && !f.groups.includes(r.effectiveGroup)) return false;
+      // "(none)" is a real choice: finding what is not categorised yet is the point of the filter.
+      if (f.categories.length && !f.categories.includes(r.category || "(none)")) return false;
+      if (f.sources.length && !f.sources.includes(r.source || "(none)")) return false;
       if (itemQ && !r.item.toUpperCase().includes(itemQ) && !r.effectiveCode.includes(itemQ)) return false;
       if (descQ && !r.effectiveDescription.toUpperCase().includes(descQ)) return false;
       return true;
@@ -223,6 +229,16 @@ export default function InkItemMaster() {
    * Lines without a number, counted the way the dashboard counts lines — one per merged line,
    * not one per book's row, or an ink in four books would count four times.
    */
+  /**
+   * The highest number in use and the first free one after it, so the planner does not have to
+   * scroll to the end to find where to carry on. Taken from the DRAFT, so it answers the number
+   * they are about to type, not the one they last saved.
+   */
+  const highest = useMemo(() => {
+    const used = Object.values(order);
+    return used.length ? Math.max(...used) : 0;
+  }, [order]);
+
   const unnumbered = useMemo(() => {
     const lines = new Set(master.map((r) => r.mergeKey));
     let n = 0;
@@ -241,6 +257,17 @@ export default function InkItemMaster() {
     [master],
   );
   const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
+  const categoryOpts = useMemo(
+    () => [
+      { value: "(none)", label: "Not set" },
+      ...[...new Set(master.map((r) => r.category).filter(Boolean))].sort().map((c) => ({ value: c, label: c })),
+    ],
+    [master],
+  );
+  const sourceOpts = [
+    { value: "(none)", label: "Not set" },
+    ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),
+  ];
 
   const chips: ActiveFilter[] = [];
   if (f.order.length) chips.push({ key: "order", label: `Order: ${labelsFor(f.order, ORDER_OPTS)}`, onClear: () => setCol("order", []) });
@@ -249,6 +276,8 @@ export default function InkItemMaster() {
   if (f.closing.length) chips.push({ key: "closing", label: `Closing: ${labelsFor(f.closing, CLOSING_OPTS)}`, onClear: () => setCol("closing", []) });
   if (f.code.length) chips.push({ key: "code", label: `Code: ${labelsFor(f.code, CODE_OPTS)}`, onClear: () => setCol("code", []) });
   if (f.groups.length) chips.push({ key: "groups", label: `Group: ${f.groups.join(", ")}`, onClear: () => setCol("groups", []) });
+  if (f.categories.length) chips.push({ key: "categories", label: `Category: ${f.categories.join(", ")}`, onClear: () => setCol("categories", []) });
+  if (f.sources.length) chips.push({ key: "sources", label: `Import/Plant: ${labelsFor(f.sources, sourceOpts)}`, onClear: () => setCol("sources", []) });
   if (f.description.trim()) chips.push({ key: "desc", label: `Description: ${f.description.trim()}`, onClear: () => setCol("description", "") });
 
   const slim = "py-1.5 px-2.5 text-[12.5px]";
@@ -278,7 +307,8 @@ export default function InkItemMaster() {
       }
       if (res.orderClashes) parts.push(`${res.orderClashes} lines had different orders across books; the smallest was kept.`);
       if (res.badOrders) parts.push(`${res.badOrders} Order cells were not numbers and were skipped.`);
-      setIoNotice({ kind: res.unmatched.length || res.badOrders ? "bad" : "ok", text: parts.join(" ") });
+      if (res.badSources) parts.push(`${res.badSources} Import/Plant cells were not Import, Domestic or Plant and were skipped.`);
+      setIoNotice({ kind: res.unmatched.length || res.badOrders || res.badSources ? "bad" : "ok", text: parts.join(" ") });
     } catch (e) {
       setIoNotice({ kind: "bad", text: e instanceof Error ? e.message : "Could not read that file." });
     } finally {
@@ -400,12 +430,16 @@ export default function InkItemMaster() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
           { label: "Items listed", value: String(master.length) },
           { label: "Not numbered, so off the dashboard", value: String(unnumbered) },
           { label: "Still without a code", value: String(needsCode) },
           { label: "You have edited", value: String(edited) },
+          {
+            label: highest ? "Last number used — next free" : "No numbers yet",
+            value: highest ? `${highest} — use ${highest + 1}` : "start at 1",
+          },
         ].map((c) => (
           <div key={c.label} className="rounded-lg border bg-card p-3">
             <div className="text-xs text-muted-foreground">{c.label}</div>
@@ -545,6 +579,8 @@ export default function InkItemMaster() {
               <ResizableHead id="code" cols={cols} className="min-w-[12rem]">Item code</ResizableHead>
               <ResizableHead id="group" cols={cols} className="min-w-[12rem]">Group</ResizableHead>
               <ResizableHead id="description" cols={cols} className="min-w-[18rem]">Description</ResizableHead>
+              <ResizableHead id="category" cols={cols} className="min-w-[11rem]">Category</ResizableHead>
+              <ResizableHead id="source" cols={cols} className="min-w-[10rem]">Import/Plant</ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-2 font-normal">
@@ -569,19 +605,25 @@ export default function InkItemMaster() {
               <TableHead className="py-2 font-normal">
                 <Input className="h-8" placeholder="Contains…" value={f.description} onChange={(e) => setCol("description", e.target.value)} />
               </TableHead>
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.categories} onChange={(v) => setCol("categories", v)} options={categoryOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
+              </TableHead>
+              <TableHead className="py-2 font-normal">
+                <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                   Loading every item from the four books…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                   Nothing matches those filters.
                 </TableCell>
               </TableRow>
@@ -651,6 +693,21 @@ export default function InkItemMaster() {
                 <TableCell>{cell(r, "code", r.tallyCode, "w-44")}</TableCell>
                 <TableCell>{cell(r, "group", r.tallyGroup, "w-44")}</TableCell>
                 <TableCell>{cell(r, "description", r.item, "w-72")}</TableCell>
+                <TableCell>{cell(r, "category", "", "w-40")}</TableCell>
+                <TableCell>
+                  <select
+                    className="h-8 w-36 rounded-md border bg-background px-2 text-sm"
+                    value={overrides[r.key]?.source ?? ""}
+                    onChange={(e) => patch(r.key, "source", e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {INK_SOURCES.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
