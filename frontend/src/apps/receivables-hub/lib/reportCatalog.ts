@@ -30,6 +30,8 @@ import {
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
+// RC-13's icon, on its own line so it never collides with edits to the list above.
+import { FileWarning } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import type { Crumb } from "@/apps/currentApp";
 
@@ -614,6 +616,20 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["red mark", "blocked", "flag", "watchlist"],
+  },
+  {
+    // RC-13. Scoped in the browser through allCustomers, like Red Mark: a dispute on a customer the
+    // viewer cannot see is never drawn.
+    id: "disputed-bills",
+    scoping: "party-client",
+    title: "Disputed Bills",
+    purpose: "Bills under dispute (managed in Masters), with live amount, pending and settled; clear once settled.",
+    category: "customers",
+    path: "reports/disputed-bills",
+    icon: FileWarning,
+    source: "tally",
+    status: "live",
+    keywords: ["dispute", "disputed", "remark", "rate difference", "credit note", "clear"],
   },
 
   // ── Sales & Team ───────────────────────────────────────────────────────────

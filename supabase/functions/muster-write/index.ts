@@ -14,9 +14,10 @@
 // 'settings'). Both are read with the identity service role, never taken from the
 // request — see the authorize step in the handler.
 //
-// ONE EXCEPTION, added by RC-12: clear_redmark / reopen_redmark. They are handled BEFORE that
-// check and answer to their own, narrower rule so the collection team can close their own cases
-// without being given the keys to every muster. Nothing else moved.
+// ONE EXCEPTION, added by RC-12: clear_redmark / reopen_redmark — and, since RC-13, clear_dispute /
+// reopen_dispute. They are handled BEFORE that check and answer to their own, narrower rule so the
+// collection team can close their own cases without being given the keys to every muster. Nothing
+// else moved.
 //
 //   POST body { action: "update_tag",  ledger_id, salesperson, category, checked }  -> { ok: true }
 //   POST body { action: "update_group", ledger_id, group_name, collection_team, checked } -> { ok: true }
@@ -44,6 +45,16 @@
 //         collectors are plain employees with no Settings grant, so anything behind that gate would
 //         have been unreachable for the people the feature is for. That path may write ONLY the
 //         four clear columns; see authorizeClear / handleClear.)
+//   POST body { action: "insert_dispute", ledger_id, tally_name, bill_refs: string[], remarks,
+//               item_description }                               -> { ok: true, rows }
+//   POST body { action: "update_dispute", id, remarks?, item_description?, checked? } -> { ok: true, row }
+//   POST body { action: "delete_dispute", id }                   -> { ok: true }
+//   POST body { action: "clear_dispute",  id, clear_note }       -> { ok: true, row }
+//   POST body { action: "reopen_dispute", id }                   -> { ok: true, row }
+//     (RC-13. ext_dispute is per-BILL — one row per (ledger_id, bill_ref), addressed by its bigint id —
+//      and stores only what a human types; the money is joined live by the report. Add / edit /
+//      delete sit behind the admin gate like every muster write. Clear / reopen take the same
+//      per-ledger door as Red Mark: the row names the ledger, and the ledger decides.)
 //   POST body { action: "add_list_value",        list, name, note }        -> { ok: true }
 //   POST body { action: "set_list_value_active", list, name, is_active }   -> { ok: true }
 //   POST body { action: "rename_list_value",     list, from, to }          -> { ok: true, counts }
@@ -254,13 +265,46 @@ function parseRedmark(body: Record<string, unknown>): { row: Record<string, unkn
 //   "allowed": a check that quietly becomes a no-op is worse than no check, because the screen
 //   still says it was made.
 //
-// RC-13 (disputed bills) reuses this: add its table to CLEARABLE and route clear_dispute /
-// reopen_dispute to the same two functions. The authorisation is per LEDGER, which a dispute row
-// carries too, so only the row lookup differs.
-type ClearableKind = "redmark";
+// ── RC-13 (disputed bills) reuses it, and that needed more than a line in CLEARABLE ──
+// 🔴 THE ROW KEY AND THE AUTHORISATION KEY ARE TWO DIFFERENT THINGS. Red Mark is one row per LEDGER,
+//    so the ledger that decides who may clear is also the key that finds the row. A dispute is one row
+//    per BILL and a customer can have several. Looked up by ledger_id, `.maybeSingle()` errors the
+//    moment a customer has two disputes — and an update `.eq("ledger_id", …)` would clear EVERY dispute
+//    on that customer at once. So a clearable master now says how its row is addressed (`rowKey`) and
+//    whether that key already IS the ledger (`keyIsLedger`); a dispute is found by its id, and the
+//    authorisation is decided on the ledger_id read off that row.
+type ClearableKind = "redmark" | "dispute";
 
-const CLEARABLE: Record<ClearableKind, { table: string; keyCol: string; label: string }> = {
-  redmark: { table: "ext_redmark", keyCol: "ledger_id", label: "red mark" },
+interface Clearable {
+  table: string;
+  /** The column that addresses exactly ONE row. */
+  rowKey: string;
+  /** The request-body field carrying that key (named in the 400). */
+  keyField: string;
+  /** The key from the body, or null when absent/garbage. */
+  keyOf: (body: Record<string, unknown>) => string | number | null;
+  /** True when the row key is itself the ledger GUID, so authorisation can run before the row is read. */
+  keyIsLedger: boolean;
+  label: string;
+}
+
+const CLEARABLE: Record<ClearableKind, Clearable> = {
+  redmark: {
+    table: "ext_redmark", rowKey: "ledger_id", keyField: "ledger_id",
+    keyOf: (b) => clean(b.ledger_id), keyIsLedger: true, label: "red mark",
+  },
+  dispute: {
+    table: "ext_dispute", rowKey: "id", keyField: "id",
+    keyOf: (b) => rowId(b.id), keyIsLedger: false, label: "dispute",
+  },
+};
+
+/** The clear/reopen actions, all routed ahead of the admin gate. */
+const CLEAR_ACTIONS: Record<string, { kind: ClearableKind; mode: "clear" | "reopen" }> = {
+  clear_redmark: { kind: "redmark", mode: "clear" },
+  reopen_redmark: { kind: "redmark", mode: "reopen" },
+  clear_dispute: { kind: "dispute", mode: "clear" },
+  reopen_dispute: { kind: "dispute", mode: "reopen" },
 };
 
 /** Null when this caller may clear/reopen this ledger; otherwise the status + message to return. */
@@ -333,34 +377,53 @@ async function authorizeClear(
   return null;
 }
 
-/** clear_redmark / reopen_redmark. Writes ONLY the clear columns. */
+/** clear_* / reopen_* for any CLEARABLE master. Writes ONLY the clear columns, on ONE row. */
 async function handleClear(
   idAdmin: ReturnType<typeof createClient>,
   cw: ReturnType<typeof createClient>,
   user: { id: string },
   body: Record<string, unknown>,
   updated_by: string,
+  kind: ClearableKind,
   mode: "clear" | "reopen",
 ): Promise<Response> {
-  const { table, keyCol, label } = CLEARABLE.redmark;
+  const { table, rowKey, keyField, keyOf, keyIsLedger, label } = CLEARABLE[kind];
 
-  const ledger_id = clean(body.ledger_id);
-  if (!ledger_id) return json(400, { error: "ledger_id required" });
+  const key = keyOf(body);
+  if (key === null) return json(400, { error: `${keyField} required` });
 
-  // Authorise BEFORE reading the row: "not yours" is the answer whether or not it exists.
-  const refusal = await authorizeClear(idAdmin, cw, user.id, ledger_id);
-  if (refusal) return json(refusal.status, { error: refusal.error });
+  // `unknown`, and compared with `=== true` below: an untyped client, so never trust the shape.
+  let cur: { cleared: unknown } | null;
+  if (keyIsLedger) {
+    // Red Mark. Authorise BEFORE reading the row: "not yours" is the answer whether or not it exists.
+    const refusal = await authorizeClear(idAdmin, cw, user.id, String(key));
+    if (refusal) return json(refusal.status, { error: refusal.error });
 
-  const { data: cur, error: curErr } = await cw
-    .from(table).select("cleared").eq(keyCol, ledger_id).maybeSingle();
-  if (curErr) return json(400, { error: curErr.message });
-  if (!cur) return json(404, { error: `${label} ${ledger_id} not found` });
+    const { data, error: curErr } = await cw
+      .from(table).select("cleared").eq(rowKey, key).maybeSingle();
+    if (curErr) return json(400, { error: curErr.message });
+    cur = data;
+  } else {
+    // A dispute. The ledger lives ON the row, so the row has to be read before anyone can say whose it
+    // is. A missing id therefore answers 404 ahead of the authorisation — which reveals nothing, since
+    // the table is read-open to every signed-in browser anyway.
+    const { data, error: curErr } = await cw
+      .from(table).select("cleared,ledger_id").eq(rowKey, key).maybeSingle();
+    if (curErr) return json(400, { error: curErr.message });
+    if (data) {
+      const refusal = await authorizeClear(idAdmin, cw, user.id, String(data.ledger_id));
+      if (refusal) return json(refusal.status, { error: refusal.error });
+    }
+    cur = data;
+  }
+  if (!cur) return json(404, { error: `${label} ${key} not found` });
 
   if (mode === "clear") {
     if (cur.cleared === true) {
       return json(409, { error: "this case is already cleared. Reopen it first if it is live again." });
     }
-    // Required, and required in the database too (ext_redmark_cleared_needs_who_when_note). A
+    // Required, and required in the database too (ext_redmark_cleared_needs_who_when_note, and
+    // ext_dispute_cleared_needs_who_when_note). A
     // partly-paid case may always be cleared, so the note is the only thing that explains a cleared
     // row with money still owed against it.
     const clear_note = clean(body.clear_note);
@@ -378,7 +441,8 @@ async function handleClear(
         clear_note,
         updated_by,
       })
-      .eq(keyCol, ledger_id)
+      // One row: the ledger for a red mark, the id for a dispute — never "every dispute on a ledger".
+      .eq(rowKey, key)
       .eq("cleared", false)
       .select();
     if (error) return json(400, { error: error.message });
@@ -391,11 +455,11 @@ async function handleClear(
   }
   // Reopening KEEPS cleared_at / cleared_by / clear_note: they are the record of how the case was
   // closed last time, which is the history this master exists to build. Who reopened it, and when,
-  // is `updated_by` plus the ext_redmark_touch trigger's `updated_at`.
+  // is `updated_by` plus the table's touch trigger's `updated_at`.
   const { data, error } = await cw
     .from(table)
     .update({ cleared: false, updated_by })
-    .eq(keyCol, ledger_id)
+    .eq(rowKey, key)
     .eq("cleared", true)
     .select();
   if (error) return json(400, { error: error.message });
@@ -436,14 +500,14 @@ Deno.serve(async (req) => {
   // ConnectWave service client — bypasses ConnectWave RLS to write the musters.
   const cw = createClient(CW_URL, CW_SERVICE_KEY, { auth: { persistSession: false } });
 
-  // ---- clear_redmark / reopen_redmark (RC-12) ----
+  // ---- clear_* / reopen_* — Red Mark (RC-12) and disputed bills (RC-13) ----
   // Handled here, ahead of the gate below, because the collection team must reach it and holds no
   // Settings grant. It may write only the four clear columns. See the header on handleClear.
-  if (body.action === "clear_redmark" || body.action === "reopen_redmark") {
-    return await handleClear(
-      idAdmin, cw, user, body, updated_by,
-      body.action === "clear_redmark" ? "clear" : "reopen",
-    );
+  const clearAction = typeof body.action === "string" && Object.hasOwn(CLEAR_ACTIONS, body.action)
+    ? CLEAR_ACTIONS[body.action]
+    : null;
+  if (clearAction) {
+    return await handleClear(idAdmin, cw, user, body, updated_by, clearAction.kind, clearAction.mode);
   }
 
   // 3) Authorize with the identity service role: the caller must be an admin, OR a user an
@@ -456,7 +520,8 @@ Deno.serve(async (req) => {
   //
   //    ⚠ UNCHANGED BY RC-12, DELIBERATELY. Clearing got its own narrower door above rather than a
   //      widening of this one, so update_redmark / delete_redmark / every muster write still
-  //      require exactly what they always did.
+  //      require exactly what they always did. RC-13's insert / update / delete_dispute sit here too:
+  //      a collector may clear their own customers' disputes, never add, edit or delete one.
   const { data: roleRows, error: roleErr } = await idAdmin.from("user_roles").select("role").eq("user_id", user.id);
   if (roleErr) return json(500, { error: roleErr.message });
   let authorized = (roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin");
@@ -663,6 +728,107 @@ Deno.serve(async (req) => {
       .select("ledger_id");
     if (error) return json(400, { error: error.message });
     if (!data?.length) return json(404, { error: `red mark ${ledger_id} not found` });
+    return json(200, { ok: true });
+  }
+
+  // ---- ext_dispute (RC-13: per-BILL, addressed by the bigint id PK) ----
+  // A customer bill under dispute. The row holds only what a human types — remark, item description,
+  // the clear status — and names its bill by (ledger_id, bill_ref); the report joins the money live.
+  // Clear / reopen are NOT here: they are routed ahead of the admin gate (CLEAR_ACTIONS).
+
+  if (body.action === "insert_dispute") {
+    const ledger_id = clean(body.ledger_id);
+    if (!ledger_id) return json(400, { error: "ledger_id required (pick a customer)" });
+    // ⚠ Bill references are NOT trimmed. They must equal the snapshot's own spelling byte for byte, or
+    //   the report can never find the bill again and the dispute reads "no longer open" on day one.
+    const bill_refs = [...new Set(
+      (Array.isArray(body.bill_refs) ? body.bill_refs : [])
+        .filter((v): v is string => typeof v === "string" && v.trim() !== ""),
+    )];
+    if (!bill_refs.length) return json(400, { error: "tick at least one bill" });
+
+    // Only an OPEN bill of THIS customer may be put in dispute. The dialog only offers those; this is
+    // the constraint, so a direct call cannot type a bill number the screens would never find.
+    // Fails closed: if the snapshot cannot be read, nothing is saved.
+    const { data: open, error: openErr } = await cw
+      .from("collection_invoice_snapshot").select("bill_ref")
+      .eq("ledger_id", ledger_id).in("bill_ref", bill_refs);
+    if (openErr) {
+      return json(500, { error: `could not check the bills against Tally, so nothing was saved: ${openErr.message}` });
+    }
+    const openSet = new Set((open ?? []).map((r: { bill_ref: string }) => r.bill_ref));
+    const notOpen = bill_refs.filter((b) => !openSet.has(b));
+    if (notOpen.length) {
+      return json(400, {
+        error: `${notOpen.join(", ")} ${notOpen.length === 1 ? "is not an open bill" : "are not open bills"} ` +
+               `of this customer in Tally, so nothing was saved.`,
+      });
+    }
+
+    // Already on the list — say which, and whether it is open or cleared, rather than surfacing the
+    // raw unique-constraint text. A CLEARED one is reopened, not added again: re-adding would lose the
+    // record of how the last dispute on that bill ended.
+    const { data: dupes, error: dupErr } = await cw
+      .from("ext_dispute").select("bill_ref,cleared")
+      .eq("ledger_id", ledger_id).in("bill_ref", bill_refs);
+    if (dupErr) return json(400, { error: dupErr.message });
+    if (dupes?.length) {
+      const list = (dupes as { bill_ref: string; cleared: boolean }[])
+        .map((d) => `${d.bill_ref}${d.cleared ? " (cleared — reopen it instead)" : ""}`).join(", ");
+      return json(409, { error: `already on the disputed bills list: ${list}. Nothing was saved.` });
+    }
+
+    // ⚠ `cleared: false` IS SET EXPLICITLY, as insert_redmark learned (RC-12): a write that leaves the
+    //   clear columns to chance is how a re-added case came back cleared and invisible.
+    const rows = bill_refs.map((bill_ref) => ({
+      ledger_id,
+      bill_ref,
+      tally_name: clean(body.tally_name),
+      remarks: clean(body.remarks),
+      item_description: clean(body.item_description),
+      cleared: false,
+      checked: true,
+      match_status: "guid_matched",
+      source: "muster",
+      updated_by,
+    }));
+    // One statement, so several ticked bills land together or not at all.
+    const { data, error } = await cw.from("ext_dispute").insert(rows).select();
+    if (error) {
+      if (error.code === "23505") {
+        return json(409, { error: "somebody put one of these bills on the list a moment ago. Nothing was saved — reload and try again." });
+      }
+      return json(400, { error: error.message });
+    }
+    return json(200, { ok: true, rows: data });
+  }
+
+  if (body.action === "update_dispute") {
+    const id = rowId(body.id);
+    if (id === null) return json(400, { error: "id required" });
+    // Only the fields SENT are written. The report edits the remark alone; sending the rest back from
+    // a screen loaded minutes ago would quietly overwrite a colleague's item description.
+    const patch: Record<string, unknown> = { updated_by };
+    if ("remarks" in body) patch.remarks = clean(body.remarks);
+    if ("item_description" in body) patch.item_description = clean(body.item_description);
+    if ("checked" in body) patch.checked = body.checked !== false;
+    if (Object.keys(patch).length === 1) {
+      return json(400, { error: "nothing to update — send remarks, item_description or checked" });
+    }
+    // .select() so a zero-row match is a 404, not a silent ok:true.
+    const { data, error } = await cw.from("ext_dispute").update(patch).eq("id", id).select();
+    if (error) return json(400, { error: error.message });
+    if (!data?.length) return json(404, { error: `dispute ${id} not found` });
+    return json(200, { ok: true, row: data[0] });
+  }
+
+  if (body.action === "delete_dispute") {
+    // Delete is for a row entered by MISTAKE. A settled dispute is cleared, and the record stays.
+    const id = rowId(body.id);
+    if (id === null) return json(400, { error: "id required" });
+    const { data, error } = await cw.from("ext_dispute").delete().eq("id", id).select("id");
+    if (error) return json(400, { error: error.message });
+    if (!data?.length) return json(404, { error: `dispute ${id} not found` });
     return json(200, { ok: true });
   }
 

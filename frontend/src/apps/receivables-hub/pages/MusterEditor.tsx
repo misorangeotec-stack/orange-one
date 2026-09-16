@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardCheck, Save, RefreshCw, Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronDown,
   Plus, Trash2, Check, CheckCircle2, RotateCcw,
@@ -34,8 +35,9 @@ import {
   saveTag, saveGroup, saveCompanyMap,
   insertOtherPayment, saveOtherPayment, deleteOtherPayment,
   insertRedMark, saveRedMark, deleteRedMark, clearRedMark, reopenRedMark,
+  fetchDisputeRows, fetchOpenBills, saveDispute, deleteDispute, clearDispute, reopenDispute, disputeKey,
   type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type OtherPaymentInput,
-  type RedMarkRow,
+  type RedMarkRow, type DisputeRow, type OpenBillRow,
 } from "@hub/lib/musterApi";
 import { fetchCompanyMap, makeCompanyResolver, companyGuidOf, type CompanyMapRow } from "@hub/lib/companyMap";
 import {
@@ -46,12 +48,13 @@ import MasterValueCell from "@hub/components/MasterValueCell";
 import NameMasterTab, { type NameMasterUsage } from "./NameMasterTab";
 import { formatDateDMY } from "@hub/lib/utils";
 import { MasterIoBar } from "@hub/pages/MusterIoBar";
-import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo } from "@hub/lib/musterIo";
+import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo, disputeIo } from "@hub/lib/musterIo";
 import { ClearStatusToggle } from "@hub/components/ClearStatusToggle";
 import { ClearStatusBadge } from "@hub/components/ClearStatusBadge";
 import { ClearNoteDialog } from "@hub/components/ClearNoteDialog";
+import { AddDisputeDialog, type DisputeBill, type DisputeCustomer } from "@hub/components/AddDisputeDialog";
 import {
-  CLEAR_VIEW_DEFAULT, countByClearView, describeClear, matchesClearView, useCanClear,
+  CLEAR_VIEW_DEFAULT, DISPUTE_COPY, countByClearView, describeClear, matchesClearView, useCanClear,
   type ClearView,
 } from "@hub/lib/clearStatus";
 import { ColumnFilter, SortHead } from "@hub/components/gridColumns";
@@ -1657,6 +1660,436 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
   );
 }
 
+// ── Disputed bills master (RC-13) ─────────────────────────────────────────────────────────────
+// One row per disputed BILL, addressed by its id and keyed (ledger_id, bill_ref). Stores what a
+// human typed; the money lives on the Disputed Bills report, where it matches every other screen.
+// Loads its own data (the disputes and the open bills) so the rest of the panel does not pay for a
+// 6,000-row read nobody on the other tabs needs.
+
+type DsDraft = { remarks: string; item: string; checked: boolean };
+const dsDraftOf = (r: DisputeRow): DsDraft => ({
+  remarks: r.remarks ?? "", item: r.item_description ?? "", checked: r.checked,
+});
+
+/** yyyymmdd (the snapshot's storage form) → yyyy-mm-dd; "" when it is not one. */
+const ymdIso = (s: string | null) => (s && /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : "");
+
+function DisputeMuster({ snap, snapByGuid, teamByGuid }: {
+  snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
+  /** ledger_id → collection team: the who-may-clear test, exactly as on the Red Mark tab. */
+  teamByGuid: Map<string, string>;
+}) {
+  const { toast } = useToast();
+  const canClear = useCanClear();
+  // Same keys as the report, so a write here is seen there without a second fetch.
+  const disputes = useQuery({ queryKey: ["disputeRows"], queryFn: fetchDisputeRows, staleTime: 60 * 1000 });
+  const openBills = useQuery({ queryKey: ["openBills"], queryFn: fetchOpenBills, staleTime: 5 * 60 * 1000 });
+  const rows = useMemo(() => disputes.data ?? [], [disputes.data]);
+
+  const [draft, setDraft] = useState<Record<number, DsDraft>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<DisputeRow | null>(null);
+  const [clearing, setClearing] = useState<{ row: DisputeRow; mode: "clear" | "reopen" } | null>(null);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  /** Every open (ledger, bill) — "is this dispute's bill still open?" — and the bills per customer. */
+  const { openKeys, billsByLedger } = useMemo(() => {
+    const keys = new Set<string>();
+    const by = new Map<string, OpenBillRow[]>();
+    for (const b of openBills.data ?? []) {
+      keys.add(disputeKey(b.ledger_id, b.bill_ref));
+      const list = by.get(b.ledger_id);
+      if (list) list.push(b); else by.set(b.ledger_id, [b]);
+    }
+    return { openKeys: keys, billsByLedger: by };
+  }, [openBills.data]);
+
+  const reload = () => { void disputes.refetch(); void openBills.refetch(); };
+
+  const cur = (r: DisputeRow): DsDraft => draft[r.id] ?? dsDraftOf(r);
+  const isDirty = (r: DisputeRow) => {
+    const d = draft[r.id];
+    if (!d) return false;
+    const o = dsDraftOf(r);
+    return (Object.keys(o) as (keyof DsDraft)[]).some((k) => d[k] !== o[k]);
+  };
+  const patch = (r: DisputeRow, p: Partial<DsDraft>) =>
+    setDraft((prev) => ({ ...prev, [r.id]: { ...cur(r), ...p } }));
+
+  const nameOf = (r: DisputeRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
+  /** The customer's ledger has left the snapshot altogether — rarer than a settled bill. */
+  const isOrphan = (r: DisputeRow) => !snapByGuid.has(r.ledger_id);
+  /** Still open in Tally? Unknown (true) until the bills have loaded, so nothing flashes "gone". */
+  const billOpen = (r: DisputeRow) => !openBills.data || openKeys.has(disputeKey(r.ledger_id, r.bill_ref));
+
+  const columns = useMemo<GridColumn<DisputeRow>[]>(() => [
+    { key: "customer", value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "" },
+    { key: "company", value: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim() },
+    { key: "location", value: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim() },
+    { key: "bill", value: (r) => r.bill_ref },
+    { key: "open", value: (r) => (!openBills.data || openKeys.has(disputeKey(r.ledger_id, r.bill_ref)) ? "Open" : "No longer open") },
+    { key: "remarks", value: (r) => r.remarks ?? "" },
+    { key: "item", value: (r) => r.item_description ?? "" },
+    { key: "status", value: (r) => (r.checked ? "Verified" : "Unchecked") },
+    { key: "clear", value: (r) => (r.cleared ? "Cleared" : DISPUTE_COPY.openLabel) },
+    { key: "clearedBy", value: (r) => (r.cleared ? r.cleared_by ?? "" : "") },
+    { key: "checked", value: (r) => (r.checked ? "Yes" : "No") },
+  ], [snapByGuid, openKeys, openBills.data]);
+
+  const prefilter = useCallback((r: DisputeRow) => {
+    if (!matchesClearView(r, clearView)) return false;
+    const q = search.trim().toUpperCase();
+    if (!q) return true;
+    const name = snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+    return `${name} ${r.bill_ref} ${r.remarks ?? ""} ${r.item_description ?? ""} ${r.clear_note ?? ""}`
+      .toUpperCase().includes(q);
+  }, [search, clearView, snapByGuid]);
+
+  const grid = useColumnGrid(rows, columns, prefilter);
+  const view = grid.rows;
+  const counts = useMemo(() => countByClearView(rows), [rows]);
+  const goneCount = openBills.data ? rows.filter((r) => !r.cleared && !billOpen(r)).length : 0;
+
+  useEffect(() => { setPage(1); }, [search, clearView, grid.anyFilter]);
+
+  const total = view.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  /** Only the fields that changed are sent, so this never overwrites a colleague's other edit. */
+  const save = async (r: DisputeRow) => {
+    const d = cur(r);
+    const o = dsDraftOf(r);
+    setSavingId(r.id);
+    try {
+      const { row } = await saveDispute({
+        id: r.id,
+        ...(d.remarks !== o.remarks ? { remarks: d.remarks.trim() || null } : {}),
+        ...(d.item !== o.item ? { item_description: d.item.trim() || null } : {}),
+        ...(d.checked !== o.checked ? { checked: d.checked } : {}),
+      });
+      Object.assign(r, row);
+      setDraft((prev) => { const { [r.id]: _omit, ...rest } = prev; return rest; });
+      toast({ title: "Saved", description: `${nameOf(r)} · ${r.bill_ref}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Save failed", description: (e as Error).message });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const doDelete = async (r: DisputeRow) => {
+    try {
+      await deleteDispute(r.id);
+      setConfirmDelete(null);
+      toast({ title: "Removed", description: `${nameOf(r)} · ${r.bill_ref}` });
+      reload();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Remove failed", description: (e as Error).message });
+    }
+  };
+
+  const doClear = async (note: string) => {
+    if (!clearing) return;
+    const { row, mode } = clearing;
+    setClearBusy(true);
+    try {
+      const { row: saved } = mode === "clear" ? await clearDispute(row.id, note) : await reopenDispute(row.id);
+      Object.assign(row, saved);
+      setClearing(null);
+      toast({ title: mode === "clear" ? "Dispute cleared" : "Dispute reopened", description: `${nameOf(row)} · ${row.bill_ref}` });
+      reload();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: mode === "clear" ? "Couldn't clear" : "Couldn't reopen",
+        description: (e as Error).message,
+      });
+    } finally {
+      setClearBusy(false);
+    }
+  };
+
+  const filterCell = (key: string) => (
+    <ColumnFilter
+      label="All"
+      options={grid.optionsFor(key)}
+      selected={grid.selected(key)}
+      onChange={(v) => grid.setSelected(key, v)}
+      labelOf={grid.optionLabel}
+    />
+  );
+
+  // The add dialog reads the raw snapshot here, like every other muster tab (see OpenBillRow).
+  const dialogCustomers = useMemo<DisputeCustomer[]>(
+    () => snap.map((s) => ({
+      ledgerId: s.ledger_id, name: s.name ?? "", company: (s.company ?? "").trim(), location: (s.location ?? "").trim(),
+    })),
+    [snap],
+  );
+  const billsOf = useCallback((ledgerId: string): DisputeBill[] =>
+    (billsByLedger.get(ledgerId) ?? []).map((b) => ({
+      billRef: b.bill_ref,
+      date: ymdIso(b.bill_date),
+      dueDate: ymdIso(b.due_date),
+      amount: Number(b.amount) || 0,
+      pending: Number(b.pending) || 0,
+      overdueDays: Number(b.overdue_days) || 0,
+      saleType: b.sale_type ?? "other",
+    })), [billsByLedger]);
+
+  if (disputes.error || openBills.error) {
+    return (
+      <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-md p-3">
+        Could not load the disputed bills: {((disputes.error ?? openBills.error) as Error).message}
+      </div>
+    );
+  }
+  if (disputes.isLoading) return <p className="text-sm text-muted-foreground py-8 text-center">Loading disputed bills…</p>;
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customer / bill / remark / item…" className="pl-8" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ClearStatusToggle value={clearView} onChange={setClearView} counts={counts} />
+            <MasterIoBar io={disputeIo(snapByGuid, openKeys)} exportRows={view} existingRows={rows}
+              activeFilters={describeFilters({ search, clearView })} onReload={reload} />
+            <Button size="sm" onClick={() => setAddOpen(true)} disabled={!openBills.data} className="gap-1.5">
+              <Plus className="h-4 w-4" />Add disputed bills
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{total}</span> disputed bill{total === 1 ? "" : "s"} shown
+          {goneCount > 0 && (
+            <>
+              {" · "}
+              <button
+                className="underline text-warning-foreground"
+                onClick={() => { grid.setSelected("open", ["No longer open"]); setClearView("uncleared"); }}
+              >
+                {goneCount} open dispute{goneCount === 1 ? "" : "s"} on a bill no longer open in Tally
+              </button>
+            </>
+          )}
+        </p>
+      </div>
+
+      <ScrollableTable className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <SortHead label="Customer" className="min-w-[220px]" dir={grid.sortDir("customer")} onToggle={() => grid.toggleSort("customer")} />
+              <SortHead label="Company" className="w-28" dir={grid.sortDir("company")} onToggle={() => grid.toggleSort("company")} />
+              <SortHead label="Location" className="w-24" dir={grid.sortDir("location")} onToggle={() => grid.toggleSort("location")} />
+              <SortHead label="Bill ref" className="w-36" dir={grid.sortDir("bill")} onToggle={() => grid.toggleSort("bill")} />
+              <SortHead label="Bill" className="w-32" dir={grid.sortDir("open")} onToggle={() => grid.toggleSort("open")} />
+              <SortHead label="Remark" className="min-w-[240px]" dir={grid.sortDir("remarks")} onToggle={() => grid.toggleSort("remarks")} />
+              <SortHead label="Item" className="min-w-[160px]" dir={grid.sortDir("item")} onToggle={() => grid.toggleSort("item")} />
+              <SortHead label="Status" className="w-24" dir={grid.sortDir("status")} onToggle={() => grid.toggleSort("status")} />
+              <SortHead label="Clear status" className="w-32" dir={grid.sortDir("clear")} onToggle={() => grid.toggleSort("clear")} />
+              <SortHead label="Cleared by" className="w-36" dir={grid.sortDir("clearedBy")} onToggle={() => grid.toggleSort("clearedBy")} />
+              <SortHead label="Checked" className="w-20 text-center" dir={grid.sortDir("checked")} onToggle={() => grid.toggleSort("checked")} />
+              <TableHead className="w-44 text-right">Actions</TableHead>
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="py-1">{filterCell("customer")}</TableHead>
+              <TableHead className="py-1">{filterCell("company")}</TableHead>
+              <TableHead className="py-1">{filterCell("location")}</TableHead>
+              <TableHead className="py-1">{filterCell("bill")}</TableHead>
+              <TableHead className="py-1">{filterCell("open")}</TableHead>
+              <TableHead className="py-1">{filterCell("remarks")}</TableHead>
+              <TableHead className="py-1">{filterCell("item")}</TableHead>
+              <TableHead className="py-1">{filterCell("status")}</TableHead>
+              <TableHead className="py-1">{filterCell("clear")}</TableHead>
+              <TableHead className="py-1">{filterCell("clearedBy")}</TableHead>
+              <TableHead className="py-1">{filterCell("checked")}</TableHead>
+              <TableHead className="py-1" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pageRows.map((r) => {
+              const d = cur(r);
+              const dirty = isDirty(r);
+              const mayClear = canClear(teamByGuid.get(r.ledger_id));
+              const open = billOpen(r);
+              return (
+                <TableRow key={r.id} className={r.cleared ? "opacity-70" : undefined}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{nameOf(r)}</span>
+                      {isOrphan(r) && (
+                        <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{(snapByGuid.get(r.ledger_id)?.company ?? "").trim() || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{(snapByGuid.get(r.ledger_id)?.location ?? "").trim() || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs whitespace-nowrap">{r.bill_ref}</TableCell>
+                  <TableCell>
+                    {open ? (
+                      <span className="text-xs text-muted-foreground">Open</span>
+                    ) : (
+                      // The normal way a dispute ends: Tally knocked the bill off. Shown, and asked to be
+                      // cleared — never dropped.
+                      <Badge
+                        variant="outline"
+                        className={`whitespace-nowrap ${r.cleared ? "text-muted-foreground" : "border-warning/50 bg-warning/10 text-warning-foreground"}`}
+                        title={r.cleared
+                          ? "Tally no longer lists this bill as open."
+                          : "Tally no longer lists this bill as open — most likely settled. Check, then clear the dispute."}
+                      >
+                        No longer open
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.remarks} className="h-8 min-w-[240px]"
+                      onChange={(e) => patch(r, { remarks: e.target.value })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.item} className="h-8 min-w-[160px]"
+                      onChange={(e) => patch(r, { item: e.target.value })} />
+                  </TableCell>
+                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
+                  <TableCell><ClearStatusBadge row={r} copy={DISPUTE_COPY} /></TableCell>
+                  <TableCell className="text-[11px] text-muted-foreground truncate" title={describeClear(r)}>
+                    {r.cleared ? (r.cleared_by ?? "—") : "—"}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || savingId === r.id}
+                        onClick={() => save(r)} className="gap-1" title="Save this row">
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        className={`h-8 gap-1 px-2 text-[11px] border-emerald-600/40 text-emerald-700 hover:text-emerald-700 dark:text-emerald-400 ${
+                          !open && !r.cleared && mayClear ? "ring-1 ring-warning" : ""
+                        }`}
+                        disabled={!mayClear}
+                        title={mayClear
+                          ? (r.cleared ? "Reopen this dispute" : "Clear — the dispute is settled; the record stays")
+                          : "Only this customer's collection team, or an administrator, can clear it"}
+                        onClick={() => setClearing({ row: r, mode: r.cleared ? "reopen" : "clear" })}
+                      >
+                        {r.cleared
+                          ? <><RotateCcw className="h-3.5 w-3.5" />Reopen</>
+                          : <><CheckCircle2 className="h-3.5 w-3.5" />Clear</>}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
+                        className="text-destructive hover:text-destructive"
+                        title="Delete — only if this bill was put in dispute by mistake">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {pageRows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                  {rows.length === 0 ? (
+                    "No disputed bills yet."
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <span>
+                        No disputed bills match the current filters
+                        {clearView !== "all" ? ` in the ${clearView} view` : ""}.
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        grid.clearFilters(); setSearch(""); setClearView("all");
+                      }}>
+                        Clear filters
+                      </Button>
+                    </div>
+                  )}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </ScrollableTable>
+
+      <PagerBar
+        page={page} totalPages={totalPages}
+        rangeStart={(page - 1) * PAGE_SIZE + 1} rangeEnd={Math.min(page * PAGE_SIZE, total)}
+        total={total} noun="disputed bills" onPage={setPage}
+      />
+
+      <p className="text-xs text-muted-foreground pt-2">
+        Customer bills under dispute, one row per bill. Amounts are not kept here — the{" "}
+        <span className="font-medium">Disputed Bills report</span> shows each bill's live figures.{" "}
+        <span className="font-medium">No longer open</span> means Tally has knocked the bill off, usually
+        because it was settled: check it, then clear the dispute.{" "}
+        <span className="font-medium">Clear</span> closes a settled dispute and keeps the record;{" "}
+        <span className="font-medium">Delete</span> is only for a bill added by mistake.
+      </p>
+
+      <AddDisputeDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        customers={dialogCustomers}
+        billsOf={billsOf}
+        existing={rows}
+        onAdded={() => reload()}
+      />
+
+      <ClearNoteDialog
+        mode={clearing?.mode ?? null}
+        subject={clearing ? `${clearing.row.bill_ref} · ${nameOf(clearing.row)}` : ""}
+        row={clearing?.row ?? null}
+        busy={clearBusy}
+        onCancel={() => setClearing(null)}
+        onConfirm={(note) => void doClear(note)}
+        copy={DISPUTE_COPY}
+      />
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this disputed bill?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete && (
+                <>
+                  {confirmDelete.bill_ref} on {nameOf(confirmDelete)} comes off the list, and its remark and
+                  history are thrown away.
+                  <br /><br />
+                  <span className="font-medium">If the dispute was settled, use Clear instead</span> — that
+                  keeps the remark, who cleared it and how. Delete is for a bill added by mistake.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => confirmDelete && doDelete(confirmDelete)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 /**
  * The Master panel — a self-contained governance section (rendered INSIDE Settings). Reads
  * the ConnectWave musters + snapshot directly; writes go through the muster-write Edge
@@ -1685,10 +2118,14 @@ export function MusterPanel() {
   const [teamMaster, setTeamMaster] = useState<NameMasterRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
 
   const load = () => {
     setLoading(true);
     setError(null);
+    // The Disputed Bills tab loads its own data through react-query; Reload has to mean that too.
+    void queryClient.invalidateQueries({ queryKey: ["disputeRows"] });
+    void queryClient.invalidateQueries({ queryKey: ["openBills"] });
     Promise.all([
       fetchTagRows(), fetchGroupRows(), fetchSnapshot(), fetchCompanyMap(),
       fetchOtherPaymentRows(), fetchRedMarkRows(),
@@ -1827,6 +2264,7 @@ export function MusterPanel() {
               <TabsTrigger value="companies">Companies &amp; Locations</TabsTrigger>
               <TabsTrigger value="other-payments">Other Payments</TabsTrigger>
               <TabsTrigger value="redmark">Red Mark</TabsTrigger>
+              <TabsTrigger value="disputes">Disputed Bills</TabsTrigger>
               <TabsTrigger value="salesperson-list">Salespersons</TabsTrigger>
               <TabsTrigger value="team-list">Collection Teams</TabsTrigger>
             </TabsList>
@@ -1859,6 +2297,9 @@ export function MusterPanel() {
                 teamByGuid={teamByGuid}
                 master={salespersonMaster ?? []} knownNames={knownSalespersons} onReload={load}
               />
+            </TabsContent>
+            <TabsContent value="disputes" className="mt-4">
+              <DisputeMuster snap={snap ?? []} snapByGuid={snapByGuid} teamByGuid={teamByGuid} />
             </TabsContent>
             <TabsContent value="salesperson-list" className="mt-4">
               <NameMasterTab
