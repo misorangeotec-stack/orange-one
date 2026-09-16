@@ -311,13 +311,46 @@ export default function InkItemMaster() {
     setOrder((prev) => ({ ...prev, ...renumber(lines) }));
   };
 
-  /** Type a position directly — the only practical way to move a line across pages. */
+  /**
+   * Type a position directly — the only practical way to move a line across pages.
+   *
+   * TYPING A NUMBER THAT IS TAKEN INSERTS THE LINE THERE and pushes the old occupant down, the
+   * way a spreadsheet row is inserted. Remembering an ink belongs at 13 when 13 is already used
+   * is the normal case, not a mistake, and leaving two 13s would make the order ambiguous.
+   *
+   * The push STOPS AT THE FIRST GAP. With 10, 20, 30 spacing, typing 20 moves the old 20 to 21
+   * and leaves 30 alone; with 13, 14, 15 it walks the whole run up by one. Only the lines that
+   * actually collide move, so numbering the planner has deliberately spaced out survives.
+   */
   const setPosition = (mergeKey: string, value: string) =>
     setOrder((prev) => {
       const next = { ...prev };
-      const n = Number(value);
+      const n = Math.round(Number(value));
       if (!value.trim() || !Number.isFinite(n)) delete next[mergeKey];
       else next[mergeKey] = n;
+      return next;
+    });
+
+  /**
+   * Run the insert when the box is LEFT, not on every keystroke. Typing "13" passes through "1",
+   * and cascading on that would shove the whole list down before the 3 arrived.
+   */
+  const commitPosition = (mergeKey: string) =>
+    setOrder((prev) => {
+      const n = prev[mergeKey];
+      if (n === undefined) return prev;
+      const next = { ...prev };
+
+      const others = Object.entries(next)
+        .filter(([k]) => k !== mergeKey)
+        .sort((a, b) => a[1] - b[1]);
+      let blocked = n;
+      for (const [k, v] of others) {
+        if (v < n) continue;
+        if (v !== blocked) break; // a free number: everything above it can stay where it is
+        next[k] = v + 1;
+        blocked = v + 1;
+      }
       return next;
     });
 
@@ -529,14 +562,14 @@ export default function InkItemMaster() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   Loading every item from the four books…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   Nothing matches those filters.
                 </TableCell>
               </TableRow>
@@ -549,7 +582,9 @@ export default function InkItemMaster() {
                       className="h-8 w-14 px-1 text-center tabular-nums"
                       value={order[r.mergeKey] ?? ""}
                       placeholder="–"
+                      title="Type a number to place this line. A number already in use inserts here and pushes the rest down."
                       onChange={(e) => setPosition(r.mergeKey, e.target.value)}
+                      onBlur={() => commitPosition(r.mergeKey)}
                     />
                     <div className="flex flex-col">
                       <button
