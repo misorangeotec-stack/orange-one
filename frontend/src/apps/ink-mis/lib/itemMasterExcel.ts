@@ -30,19 +30,19 @@ import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
 import {
-  INK_COMPANIES, masterKey,
-  type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides,
+  EMPTY_PLAN, INK_COMPANIES, masterKey,
+  type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
 } from "./inkMis";
 
 const SHEET = "Item master";
 
 const COLS = [
   "Book", "Item in Tally", "Unit", "Closing", "Tally code",
-  "Order", "Item code", "Group", "Description",
+  "Order", "Lead time", "Item code", "Group", "Description",
 ] as const;
 
 /** The columns the planner may change. Everything else is identity or context. */
-const EDITABLE = new Set(["Order", "Item code", "Group", "Description"]);
+const EDITABLE = new Set(["Order", "Lead time", "Item code", "Group", "Description"]);
 
 const norm = (v: unknown) => String(v ?? "").trim();
 const up = (v: unknown) => norm(v).toUpperCase();
@@ -51,7 +51,11 @@ const up = (v: unknown) => norm(v).toUpperCase();
 const lineKey = (companyKey: string, item: string, code: string) =>
   code ? code : `~${companyKey}|${up(item)}`;
 
-export function exportItemMaster(master: InkMasterRow[], order: InkOrder): void {
+export function exportItemMaster(
+  master: InkMasterRow[],
+  order: InkOrder,
+  plans: Record<string, InkPlan> = {},
+): void {
   const header = [...COLS];
   const body = master.map((r) => [
     r.company,
@@ -60,6 +64,7 @@ export function exportItemMaster(master: InkMasterRow[], order: InkOrder): void 
     r.closingQty,
     r.tallyCode,
     order[r.mergeKey] ?? "",
+    plans[r.mergeKey]?.leadTime || "",
     r.effectiveCode,
     r.effectiveGroup,
     r.effectiveDescription,
@@ -80,16 +85,17 @@ export function exportItemMaster(master: InkMasterRow[], order: InkOrder): void 
       if (ws[cell]) ws[cell].s = { fill: { fgColor: { rgb: "F3F4F6" } } };
     }
   });
-  ws["!cols"] = [18, 46, 7, 12, 18, 8, 22, 26, 46].map((wch) => ({ wch }));
+  ws["!cols"] = [18, 46, 7, 12, 18, 8, 10, 22, 26, 46].map((wch) => ({ wch }));
   ws["!freeze"] = { xSplit: 2, ySplit: 1 };
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: body.length, c: COLS.length - 1 } }) };
 
   const about = XLSX.utils.aoa_to_sheet([
     ["How to use this file"],
     [""],
-    ["Fill the orange columns: Order, Item code, Group, Description."],
+    ["Fill the orange columns: Order, Lead time, Item code, Group, Description."],
     ["Do not change Book or Item in Tally — they are how each row finds its item on import."],
     ["Order: any number. Lines are shown smallest first. Leave blank for no position."],
+    ["Lead time: months of cover to order against. One value per line, shared by every book."],
     ["Item code, Group, Description: leave blank, or equal to Tally's value, to keep Tally's."],
     ["The same code in two books merges them into one line on the dashboard."],
     ["Save as .xlsx and use Import on the Item master screen."],
@@ -108,6 +114,8 @@ export function exportItemMaster(master: InkMasterRow[], order: InkOrder): void 
 export interface ItemMasterImportResult {
   overrides: InkOverrides;
   order: InkOrder;
+  /** Only present when the file carries a Lead time column. */
+  plans?: Record<string, InkPlan>;
   rows: number;
   matched: number;
   unmatched: { book: string; item: string }[];
@@ -124,7 +132,7 @@ export interface ItemMasterImportResult {
 export async function importItemMaster(
   file: File,
   master: InkMasterRow[],
-  current: { overrides: InkOverrides; order: InkOrder },
+  current: { overrides: InkOverrides; order: InkOrder; plans?: Record<string, InkPlan> },
 ): Promise<ItemMasterImportResult> {
   const raw = await parseXlsxRows(file);
   if (!raw.length) throw new Error("The file has no rows.");
@@ -142,6 +150,10 @@ export async function importItemMaster(
   // Positions for lines in this file are rebuilt from the file; lines not in it keep theirs.
   const order: InkOrder = { ...current.order };
   const touchedLines = new Set<string>();
+  // Lead time is only touched when the file actually has the column: an older export must not
+  // wipe lead times just because it predates them.
+  const hasLead = "Lead time" in first;
+  const plans: Record<string, InkPlan> = { ...(current.plans ?? {}) };
   const unmatched: ItemMasterImportResult["unmatched"] = [];
   let matched = 0;
   let orderClashes = 0;
@@ -178,6 +190,13 @@ export async function importItemMaster(
       delete order[line];
       touchedLines.add(line);
     }
+    if (hasLead) {
+      const lead = norm(row["Lead time"]);
+      const n = Number(lead);
+      const cur = plans[line] ?? EMPTY_PLAN;
+      plans[line] = { ...cur, leadTime: lead === "" || !Number.isFinite(n) ? 0 : n };
+    }
+
     const cell = norm(row["Order"]);
     if (!cell) continue;
     const n = Number(cell);
@@ -193,5 +212,14 @@ export async function importItemMaster(
     }
   }
 
-  return { overrides, order, rows: raw.length, matched, unmatched, orderClashes, badOrders };
+  return {
+    overrides,
+    order,
+    ...(hasLead ? { plans } : {}),
+    rows: raw.length,
+    matched,
+    unmatched,
+    orderClashes,
+    badOrders,
+  };
 }

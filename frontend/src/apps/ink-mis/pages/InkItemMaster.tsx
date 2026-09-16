@@ -28,7 +28,7 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Download, LayoutDashboard, ListOrdered, Search, Upload,
+  AlertTriangle, ArrowDown, ArrowUp, Download, LayoutDashboard, ListOrdered, Save, Search, Upload,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -44,9 +44,10 @@ import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
-  INK_COMPANIES, fmtQty, loadInkPositions, loadOrder, loadOverrides, renumber, saveOrder,
-  saveOverrides,
-  type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkScope,
+  EMPTY_PLAN, INK_COMPANIES, fmtQty, loadInkPositions, loadOrder, loadOverrides, loadPlans,
+  renumber, savePlans, saveOrder, saveOverrides,
+  type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
+  type InkScope,
 } from "../lib/inkMis";
 
 const BASE = appBasePath("ink-mis");
@@ -90,22 +91,81 @@ const labelsFor = (values: string[], opts: { value: string; label: string }[]) =
 
 export default function InkItemMaster() {
   const fy = useMemo(() => salesFyOptions()[0], []);
-  const [overrides, setOverrides] = useState<InkOverrides>(() => loadOverrides());
+  /**
+   * EDITS ARE A DRAFT UNTIL SAVED.
+   *
+   * `overrides` / `order` are what the boxes show and edit. `savedOverrides` / `savedOrder` are
+   * what is stored and what the table's data query is keyed on.
+   *
+   * They are separate because they used to be one. Every keystroke changed the query key, so the
+   * whole table reloaded and blanked for a moment on each edit — unusable for filling in a column
+   * of several hundred items. Now typing touches nothing but the draft, and Save commits the lot
+   * in one go, which reloads once.
+   */
+  const [savedOverrides, setSavedOverrides] = useState<InkOverrides>(() => loadOverrides());
+  const [overrides, setOverrides] = useState<InkOverrides>(savedOverrides);
   const [scope, setScope] = useState<InkScope>("ink");
   const [f, setF] = useState<ColFilters>(NO_FILTERS);
   const setCol = <K extends keyof ColFilters>(k: K, v: ColFilters[K]) =>
     setF((prev) => ({ ...prev, [k]: v }));
-  const [order, setOrder] = useState<InkOrder>(() => loadOrder());
+  const [savedOrder, setSavedOrder] = useState<InkOrder>(() => loadOrder());
+  const [order, setOrder] = useState<InkOrder>(savedOrder);
+  /**
+   * Lead time lives with the planning inputs, not with the overrides, because the dashboard's own
+   * edit mode writes the same store. Kept here as a draft like everything else on this screen.
+   *
+   * It belongs to the PRINTED LINE (the merge key), not to one book's row: the same ink bought on
+   * one lead time cannot have four of them. Every row of a line therefore shows and edits the one
+   * value.
+   */
+  const [savedPlans, setSavedPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
+  const [plans, setPlans] = useState<Record<string, InkPlan>>(savedPlans);
   const [ioNotice, setIoNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => saveOverrides(overrides), [overrides]);
-  useEffect(() => saveOrder(order), [order]);
+  // Only what has been saved reaches storage, and so the dashboard.
+  useEffect(() => saveOverrides(savedOverrides), [savedOverrides]);
+  useEffect(() => saveOrder(savedOrder), [savedOrder]);
+  useEffect(() => savePlans(savedPlans), [savedPlans]);
+
+  const dirty =
+    JSON.stringify(overrides) !== JSON.stringify(savedOverrides) ||
+    JSON.stringify(order) !== JSON.stringify(savedOrder) ||
+    JSON.stringify(plans) !== JSON.stringify(savedPlans);
+
+  const save = () => {
+    setSavedOverrides(overrides);
+    setSavedOrder(order);
+    setSavedPlans(plans);
+  };
+  const discard = () => {
+    setOverrides(savedOverrides);
+    setOrder(savedOrder);
+    setPlans(savedPlans);
+  };
+
+  /** Lead time in months, against the printed line. Blank clears it. */
+  const setLeadTime = (mergeKey: string, raw: string) =>
+    setPlans((prev) => {
+      const cur = prev[mergeKey] ?? EMPTY_PLAN;
+      return { ...prev, [mergeKey]: { ...cur, leadTime: raw.trim() === "" ? 0 : Number(raw) || 0 } };
+    });
+
+  // The browser's own warning is the only one that can stop a tab closing on unsaved work.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["inkMis", "positions", fy, overrides, scope, order],
-    queryFn: () => loadInkPositions(fy, undefined, undefined, overrides, scope, order),
+    queryKey: ["inkMis", "positions", fy, savedOverrides, scope, savedOrder],
+    queryFn: () => loadInkPositions(fy, undefined, undefined, savedOverrides, scope, savedOrder),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -191,9 +251,15 @@ export default function InkItemMaster() {
     setImporting(true);
     setIoNotice(null);
     try {
-      const res = await importItemMaster(file, master, { overrides, order });
+      const res = await importItemMaster(file, master, { overrides, order, plans });
       setOverrides(res.overrides);
       setOrder(res.order);
+      setSavedOverrides(res.overrides);
+      setSavedOrder(res.order);
+      if (res.plans) {
+        setPlans(res.plans);
+        setSavedPlans(res.plans);
+      }
       const parts = [`Imported ${res.matched} of ${res.rows} rows.`];
       if (res.unmatched.length) {
         const sample = res.unmatched.slice(0, 3).map((u) => `${u.book} / ${u.item}`).join("; ");
@@ -257,11 +323,10 @@ export default function InkItemMaster() {
 
   const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
     <Input
-      key={`${r.key}-${field}-${overrides[r.key]?.[field] ?? ""}`}
       className={`h-8 ${width}`}
-      defaultValue={overrides[r.key]?.[field] ?? ""}
+      value={overrides[r.key]?.[field] ?? ""}
       placeholder={fallback || "—"}
-      onBlur={(e) => patch(r.key, field, e.target.value)}
+      onChange={(e) => patch(r.key, field, e.target.value)}
     />
   );
 
@@ -271,8 +336,8 @@ export default function InkItemMaster() {
         <div>
           <h1 className="text-2xl font-semibold">Item master</h1>
           <p className="text-sm text-muted-foreground">
-            Every item in all four books. Fill in the code, group and description you want the
-            report to use. Leave a box empty to keep what Tally says.
+            Every item in all four books. Fill in the number, code, group and description you want
+            the report to use, then press Save. Leave a box empty to keep what Tally says.
           </p>
         </div>
         <Button size="sm" asChild variant="secondary">
@@ -319,7 +384,7 @@ export default function InkItemMaster() {
           variant="outline"
           disabled={!master.length}
           title="Download every item in this scope, with its current order, code, group and description"
-          onClick={() => exportItemMaster(master, order)}
+          onClick={() => exportItemMaster(master, order, plans)}
         >
           <Download className="mr-2 h-4 w-4" /> Export to Excel
         </Button>
@@ -378,6 +443,31 @@ export default function InkItemMaster() {
 
       </div>
 
+      <div
+        className={`sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm ${
+          dirty ? "border-orange-300 bg-orange-50 text-orange-900" : "border-transparent bg-muted/40 text-muted-foreground"
+        }`}
+      >
+        {dirty ? (
+          <>
+            <span>
+              <strong>Unsaved changes.</strong> Edit as many lines as you like, then save once.
+              Nothing reaches the dashboard until you do.
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={discard}>
+                Discard
+              </Button>
+              <Button size="sm" onClick={save}>
+                <Save className="mr-2 h-4 w-4" /> Save changes
+              </Button>
+            </div>
+          </>
+        ) : (
+          <span>All changes saved.</span>
+        )}
+      </div>
+
       {ioNotice && (
         <div
           className={`rounded-md border p-3 text-sm ${
@@ -406,6 +496,7 @@ export default function InkItemMaster() {
               <ResizableHead id="book" cols={cols} className="min-w-[9rem]">Book</ResizableHead>
               <ResizableHead id="item" cols={cols} className="min-w-[20rem]">Item in Tally</ResizableHead>
               <ResizableHead id="closing" cols={cols} className="text-right">Closing</ResizableHead>
+              <ResizableHead id="lead" cols={cols} className="w-[7rem] text-right">Lead time</ResizableHead>
               <ResizableHead id="code" cols={cols} className="min-w-[12rem]">Item code</ResizableHead>
               <ResizableHead id="group" cols={cols} className="min-w-[12rem]">Group</ResizableHead>
               <ResizableHead id="description" cols={cols} className="min-w-[18rem]">Description</ResizableHead>
@@ -423,6 +514,7 @@ export default function InkItemMaster() {
               <TableHead className="py-2 font-normal">
                 <MultiSelect values={f.closing} onChange={(v) => setCol("closing", v)} options={CLOSING_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
               </TableHead>
+              <TableHead className="py-2 font-normal" />
               <TableHead className="py-2 font-normal">
                 <MultiSelect values={f.code} onChange={(v) => setCol("code", v)} options={CODE_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
               </TableHead>
@@ -455,10 +547,9 @@ export default function InkItemMaster() {
                   <div className="flex items-center gap-1">
                     <Input
                       className="h-8 w-14 px-1 text-center tabular-nums"
-                      defaultValue={order[r.mergeKey] ?? ""}
+                      value={order[r.mergeKey] ?? ""}
                       placeholder="–"
-                      key={`${r.mergeKey}-${order[r.mergeKey] ?? "x"}`}
-                      onBlur={(e) => setPosition(r.mergeKey, e.target.value)}
+                      onChange={(e) => setPosition(r.mergeKey, e.target.value)}
                     />
                     <div className="flex flex-col">
                       <button
@@ -498,6 +589,17 @@ export default function InkItemMaster() {
                   {r.baseUnit && (
                     <span className="ml-1 text-[10px] text-muted-foreground">{r.baseUnit}</span>
                   )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    className="h-8 w-20 text-right"
+                    value={plans[r.mergeKey]?.leadTime || ""}
+                    placeholder="–"
+                    title="Months of cover to order against. Shared by every book on this line."
+                    onChange={(e) => setLeadTime(r.mergeKey, e.target.value)}
+                  />
                 </TableCell>
                 <TableCell>{cell(r, "code", r.tallyCode, "w-44")}</TableCell>
                 <TableCell>{cell(r, "group", r.tallyGroup, "w-44")}</TableCell>
