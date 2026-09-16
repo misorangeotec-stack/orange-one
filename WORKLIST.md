@@ -12284,7 +12284,154 @@ browser never holds write access. New master writes go the same way; do not add 
 
 ---
 
-### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[ ]`
+### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[x]`
+🟢 **SHIPPED 17-09-2026** (master `082958d`, taken by content from daily-reports `1452894`). Seeded with
+**26** disputes from Jayshree's sheet, every remark and item byte-identical. Tested as Nitesh on a session
+minted server-side (no password), then revoked.
+
+| Deploy step | When (IST) | State |
+|---|---|---|
+| ConnectWave SQL `supabase/connectwave/disputed_bills.sql` | 17-09 02:21 | applied → **rollback rehearsed on live** (table gone, `ext_redmark` 54 rows / 0 cleared / its constraint intact) → re-applied. Check constraint proven to refuse a note-less clear (23514) |
+| `muster-write` Edge Function | 17-09 02:24 | **v12** live. v11 was diffed first: identical to the repo once line endings are normalised (md5 `504ef616…`), so nobody's change was dropped or shipped by accident |
+| Seed load | 17-09 02:53 | **26 rows**, all uncleared, source `dispute_sheet`, in one statement that writes nothing unless all 26 bills are still open |
+| Frontend | 17-09 02:56 | master `082958d`. `reportCatalog.ts`, `ReceivablesHubApp.tsx`, `UserLayout.tsx` and `menus.tsx` applied as hunks onto master's newer copies |
+| Report grant | 17-09 03:00 | `disputed-bills` added for Jayshree Patil, Nitesh Prajapati, BENI MADHAV MOHTA, VIJAY (approved by the user 17-09-2026). Granted AFTER Vercel reported the frontend live (02:59), so no Permissions screen still running the old bundle could drop an id it did not know yet. Existing grants untouched |
+
+**What it does now**
+- **`ext_dispute`** (ConnectWave): one row per bill, `unique (ledger_id, bill_ref)`. It stores only what a
+  human types: remark, item description, the clear status, stewardship `checked`. `tally_name` is a display
+  fallback. RLS is on with one read policy, and anon/authenticated have **select only** (Supabase's default
+  grants were revoked, because RLS does not govern TRUNCATE).
+- **Disputed Bills report** (Reports → Customers → `reports/disputed-bills`), scoped through `allCustomers`
+  like Red Mark:
+  - **Columns:** customer · company · location · team · salesperson · bill ref · Bill (Open / *No longer
+    open*) · date · overdue · sale type · amount · pending · **Settled** · item · remark · clear status.
+  - **Settled = Amount − Pending**, with the split on hover (see findings).
+  - A **Bill no longer open** tile opens exactly those rows.
+  - **Default view Uncleared**, with the shared toggle. Clear / Reopen uses the shared note dialog, with the
+    dispute's own wording.
+  - **Admins / Settings full access** also get *Add disputed bills* and an inline remark edit. The edit
+    writes **only the remark**.
+  - The Excel export carries the as-on date and the bill-wise note. Pinned to Both FYs.
+- **Settings → Masters → Disputed Bills** (beside Red Mark):
+  - Remark, item and checked are edited inline. Only the changed fields are sent.
+  - Clear / Reopen, and Delete (for mistakes; the dialog says to use Clear if the dispute was settled).
+  - Export / Import follows the Red Mark contract: import edits details and can clear with a note, but never
+    adds, removes or reopens.
+  - The tab loads its own data, so the other tabs don't pay for the 6,000-row read.
+  - It shows no money, on purpose (raw snapshot vs the dashboard's netted figures). The money is on the
+    report.
+- **Add a bill** (the same dialog on both screens):
+  1. Pick a customer. Only customers with an open bill are listed.
+  2. Their open bills are shown, overdue first; focus moves to the first bill.
+  3. Tick one or more bills (bills already on the list are **greyed out**, cleared ones say *reopen it
+     there*), type a remark, save.
+  - Nothing about money or dates is typed.
+  - The server re-checks that each bill is open **for that customer** (400 otherwise) and refuses a
+    duplicate with a readable 409.
+  - Several bills are inserted in one statement: all land or none.
+- **`muster-write`:** `CLEARABLE` now separates the **row key** from the **authorisation key**. A dispute
+  is found by `id`, and the ledger read off that row decides who may clear it. Red Mark still authorises
+  before reading, exactly as before.
+  - `insert/update/delete_dispute` sit behind the admin gate.
+  - `clear/reopen_dispute` go through `authorizeClear` ahead of it.
+- **Shared components:** `ClearNoteDialog` and `ClearStatusBadge` take a `copy` prop (`RED_MARK_COPY` /
+  `DISPUTE_COPY` in `lib/clearStatus.ts`) and default to Red Mark's. Red Mark's dialog was checked word for
+  word against HEAD. The dispute wording does not claim anything moves "everywhere", because a cleared
+  dispute moves no other screen.
+
+**Verified** (17-09-2026)
+- **API, 38/38**, as Nitesh (collector) and the admin test account:
+  - Own-team `clear_dispute` 200; another team's 403; no note 400; double clear / double reopen 409;
+    missing id 404.
+  - `insert/update/delete_dispute` as Nitesh 403.
+  - Duplicate add 409; a bill that is not open, or another customer's bill, 400.
+  - The anon key reads the table but cannot write it (42501).
+  - Red Mark: own clear 200 then reopen 200, other team 403, `update/delete_redmark` 403.
+- **Clearing one of two disputes on N.H.H. TEXTILE PROCESSORS left the other untouched**, confirmed by
+  reading ConnectWave back: `cleared_by` / `updated_by` = the caller.
+- **Browser, as admin:**
+  - Added 2 bills through the dialog; re-opening the dialog showed both disabled.
+  - Inline remark edit changed only `remarks`.
+  - Settled = Amount − Pending on every row (AJANTA DIGITAL INDUSTRIES INK/26-27/730: ₹70,800 − ₹14,160 =
+    ₹56,640).
+  - A dispute on a bill Tally no longer holds read *No longer open* under the tile, and was not dropped.
+  - Masters export/import: 2 written, 1 refused for a missing clear note.
+  - Delete through the Masters tab.
+- **Browser, as Nitesh** (the report grant injected in the browser only):
+  - Only his team's 4 test disputes; Vijay's JAY MATAJI hidden.
+  - No Add, no remark edit, Clear enabled.
+  - Clear → reopen through the dialog.
+- **Clean-up:** every test dispute deleted (table back to 0 before the seed). Red Mark's 54 rows are
+  **identical to the pre-test backup** (table md5 `ed2c1dd9…`), including EVOKE FASHION, which was cleared
+  and reopened in the API test and then restored with its triggers held.
+
+**The seed — Jayshree's DISPUTE tab, re-measured 17-09-2026**
+- **38 rows → 26 loaded, 12 not loaded, 0 ambiguous.** Matching was exact on customer name → ledger plus
+  the bill reference, and every match was unique.
+- **Remarks: sheet 20 = 11 on the 26 loaded + 9 on the 12 not loaded.** Table after load: **11 remarks, 11
+  items**, compared **row by row by string and md5: 26/26 identical**. Row 17's curly apostrophe survived.
+- By collection team: Jayshree 12 · Vijay 7 · Nitesh 4 · Mohta ji 3.
+- **Two loaded remarks already read as settled**, and were loaded uncleared on the user's decision, for
+  Jayshree to clear with her own note:
+  - ANISHA THE COLOUR CO. SPARE/25-26/1420 — *"NO DISPUTE"*
+  - RAJIV SILK MILLS HEAD/25-26/211 — *"Dispute resolved. The customer will make the payment by the 20th."*
+- Four loaded bills have been part-paid since the sheet (SWASTIK SPARE/25-26/2022 ₹88,300 → ₹19,116;
+  CLOTHERA INK/25-26/7367 ₹15,222 → ₹472, INK/25-26/8189 ₹41,536 → ₹5,192; NITIN INK/N/24-25/659 ₹53,808 →
+  ₹43,808).
+- **The 12 NOT loaded** (bill no longer open in Tally, most likely settled since 02-09), recorded here so
+  their remarks are not lost:
+
+  | Row | Salesperson | Customer | Bill | Date | Pending in sheet | Remark |
+  |---|---|---|---|---|---|---|
+  | 3 | AAYUSH SIR | SWASTIK DIGITAL | HD/HG/25-26/286 | 18-12-2025 | ₹2,65,500 | 50K DIS cn DONE |
+  | 5 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/25-26/2494 | 17-03-2026 | ₹5,534 | 10% DIS DN |
+  | 6 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/51 | 04-04-2026 | ₹2,697 | 10% DIS DN |
+  | 7 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/108 | 15-04-2026 | ₹2,643 | 10% DIS DN |
+  | 8 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/109 | 15-04-2026 | ₹12,390 | 10% DIS DN |
+  | 9 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/110 | 15-04-2026 | ₹34,152 | 10% DIS DN |
+  | 10 | NAKUL JI | PANORAMMA PRINT | SPARE/26-27/110 | 28-06-2025 | ₹6,55,490 | CLEAR |
+  | 13 | NAKUL JI | VISHNU HARI DIGITAL CREATION | INK/24-25/7727 | 31-01-2025 | ₹23,010 | customer will issue payment this week |
+  | 19 | NAKUL JI | S K ENTERPRISE | INK/25-26/152 | 05-04-2025 | ₹1,21,540 | NAKUL JI WILL CLEAR THIS MATTER NEXT WEEK |
+  | 28 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8163 | 30-01-2026 | ₹1,416 | — |
+  | 29 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8188 | 31-01-2026 | ₹15,399 | — |
+  | 31 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8483 | 14-02-2026 | ₹71,656 | — |
+
+**Decisions, as built** (the brief's recommended answers; items 4 and 5 confirmed by the user 17-09-2026)
+1. **Where the screen lives: both** — a report for daily work, a Masters tab for bulk edits. Collectors
+   cannot open Settings, so the report is the only place they can clear.
+2. **Who adds a dispute and edits a remark: admins and Settings full access**, like Red Mark; collectors
+   clear and reopen their own customers' disputes. *Alternative if the client wants collectors editing
+   remarks:* a second narrow door that writes only `remarks`, authorised per ledger.
+3. **The sheet's `type` is an item description**, so `item_description` is its own nullable column; sale
+   type is shown live beside it. *Alternative:* fold it into the remark.
+4. **The 12 bills no longer open were not loaded**; they are listed above.
+5. **Report access is a live permission change**. See the Report grant row in the deploy table.
+
+**Findings worth keeping**
+- 🔴 **The brief's "five numbers" trap does not hold on Live.** `connectwaveFetcher` sets `receiptAdj`,
+  `creditNoteAdj`, `debitNoteAdj` and `journalAdj` to **0 on every bill**. The invoice snapshot nets them per
+  bill and does not split them, and only `otherPaymentAdj` is ever filled. So a five-way breakdown would have
+  shown four zeros. The report shows **one Settled figure = Amount − Pending**, which reconciles by
+  construction, with *In Tally* vs *manual Other Payments* on hover. No open bill has an Other Payment
+  against it today.
+- 🟡 **On an opening bill (`is_opening`), Amount is what was still owed when the books began**, not the
+  invoice value, so Settled counts only what came in since. The hover says so.
+- 🟡 **The same bill can read differently in Masters and on the report.** The dashboard nets manual Other
+  Payments into `pending` and drops a few cash-voucher "bills" (`liveNonBillRefs`); the raw snapshot does
+  neither. That is why the Masters grid carries no money.
+- 🟡 **247 open-bill rows have pending ≤ 0** (advances, unapplied credits). The add dialog offers only bills
+  still owed.
+- 🟡 `fetchAll` in `musterApi.ts` now accepts several order columns: `collection_invoice_snapshot` is unique
+  only on the pair, and paging on one column can repeat a row and drop another.
+
+**Still open — follow-ups, not part of RC-13**
+- [ ] 🟡 **Tell Jayshree two loaded disputes already say they are settled** (ANISHA, RAJIV SILK MILLS HEAD/25-26/211)
+      and that clearing is hers, with a note.
+- [ ] 🟡 **Should a dispute carry an owner or a target date?** Still open (see *To settle*); almost every
+      remark names a person and a deadline.
+- [ ] The Red Mark remarks that were never loaded remain an RC-12 follow-up.
+
 *Raised 2026-09-03 · Audited the same day against the code and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **DISPUTE***
 
