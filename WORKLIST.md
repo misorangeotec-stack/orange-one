@@ -108,22 +108,29 @@ Transfers between our own bank accounts, inter-company movement, petty cash and 
 separately underneath, under *"not counted in the figure above"*. On 8 September that is ₹96 L of the
 ₹1.32 Cr Tally recorded as received. Listed to confirm.
 
-**3. `[open]` 🔴 What are the bank limits?**
+**3. `[open]` 🔴 What are the bank limits — and are they in lakhs or crores?**
 
-The facility block — cash credit limit, LC/BC limit, amount held by the bank — is **blank**, because
-none of it is in Tally. It lives in the sanction letters. The sheet shows **44.50 against Axis** but
-does not say lakhs or crores, and it cannot be lakhs: the Axis cash credit account already stands at
-₹7.47 Cr drawn.
+*Updated 17-09-2026 — the block is now built (see DR-1 → Credit-limit block).* It is typed **per
+company, on Bank balances, under each company's total** — no longer once per account on Bank
+accounts. CC limit and LC/BC limit carry forward from the last recorded day; utilised and held by
+bank are typed each evening. None of it is in Tally; it lives in the sanction letters.
 
-> **Needed:** for each cash credit account, the sanctioned limit, the LC/BC limit and the amount held
-> by the bank, in rupees. Typed once into Daily Report → Bank accounts; they only change when the bank
-> changes them.
+🔴 **Units are the open risk.** Every box is labelled **₹ L** and the whole report is in lakhs. The
+sheet prints `(IN CR.)` under its available-balance column, yet that column's 2.45 is exactly its
+own lakh bank total — while this note found on 14-09 that the **CC limit 44.50 cannot be lakhs**, the
+Axis cash credit account already standing at ₹7.47 Cr drawn. So the sheet most likely mixes units:
+limits in crores, available balance in lakhs. The report still works if the limits are typed **in
+lakhs** (44.50 Cr = 4,450.00) — the danger is only someone typing crore figures into lakh boxes.
+
+> **Needed:** for each company with a facility, the sanctioned CC limit, the LC/BC limit and the
+> amount held by the bank, **stated in rupees**, and confirmation of which columns on the old sheet
+> were in crores. Do not type the first real evening until this is answered.
 
 **4. `[open]` Does anyone track LC/BC utilised each day?**
 
-The one facility figure with no source anywhere. If someone does, it goes in the optional box on the
-evening form and the free limit works itself out. If nobody does, the three LC/BC columns come off
-the report rather than sitting permanently empty.
+The one facility figure with no source anywhere. If someone does, it goes in the **Utilised** box of
+the company's credit facility on Bank balances (the old per-account optional box is gone) and the
+free limit works itself out. If nobody does, the LC/BC columns show a dash rather than a made-up zero.
 
 **5. `[open]` 🔴 Who types the bank balances each evening?**
 
@@ -182,6 +189,22 @@ unaffected.
 **11. `[decided]` Colorix is included; sales are net of GST; one report with a location filter.** *(11-09-2026)*
 
 Listed to confirm. Colorix appeared on neither reference sheet.
+
+**12. `[open]` 🔴 Which accounts make up the credit facility's "available balance"?** *(17-09-2026)*
+
+Built as the **whole company's bank total** — all five Orange O Tec accounts — because that is what
+was asked, and on 8 September the sheet's 2.45 equals its own Orange O Tec bank total. But the
+sheet's bank table sums only **two** columns, AXIS-ST and NOIDA. The report's Orange O Tec also holds
+the **ICICI 0014 cash credit** account and the **Delhi** account, and a cash-credit balance is money
+owed, so adding it in may be wrong in sign as well as in scope. It could not be checked against real
+figures: no balance had ever been saved.
+
+> **The question:** which accounts should "available balance / lien amt" add up? Changing it is one
+> function (`facilityBalanceAccounts` in `apps/daily-report/lib/aggregate.ts`); every screen and
+> export follows.
+
+Also to confirm: **does Enterprises or Colorix have a facility?** The sheet shows only Orange O Tec.
+Both get the inputs; neither shows a row on the report until something is typed.
 
 ### OCPI
 
@@ -1564,8 +1587,9 @@ was missing, and the collection and payment lines listed a fraction of what Tall
    table behind it**, and clicking it again closes it. Everything is in **₹ lakhs with the unit
    printed** — there are no crores anywhere on the report. Location filter (All / Surat / Noida /
    Delhi). Excel workbook and branded PDF.
-2. **Bank balances** — one form, eleven accounts, typed each evening.
-3. **Bank accounts** — the master of those eleven accounts and their limits.
+2. **Bank balances** — one form, eleven accounts, typed each evening; each company's card ends with
+   its total and its **credit facility** (added 17-09-2026, see below).
+3. **Bank accounts** — the master of those eleven accounts. *(Limits are no longer here.)*
 
 **Where the numbers come from.**
 
@@ -1576,7 +1600,7 @@ was missing, and the collection and payment lines listed a fraction of what Tall
 | Purchases | `rpt_purchase_item` on ConnectWave | No |
 | Counterparty type (customer, supplier, bank…) | `v_ledger_detail.group_chain` | No |
 | Closing bank balances | `daily_report_bank_balances` | **Yes, daily** |
-| Bank limits | `daily_report_bank_accounts` | **Yes, once** |
+| Credit facility (CC limit, LC/BC limit, utilised, held) | `daily_report_cc_limits` | **Yes — limits carry forward, utilised and held daily** |
 
 **Decisions already built in** — confirmed with the user 11-09-2026:
 
@@ -1605,7 +1629,34 @@ was missing, and the collection and payment lines listed a fraction of what Tall
 **Before anyone but an admin can use it** — see the discussion items for the detail:
 - Grant **Daily Report at `edit`** to whoever types the bank balances. **None have been typed yet.**
 - Grant **Daily Report at `view`** to the CFO and management.
-- Type the **bank limits** into Bank accounts once finance confirms them. The facility block is blank until then.
+- Type the **credit facility** under each company on Bank balances once finance confirms the limits
+  **and the units** (discussion items 3 and 12). The facility block says "not recorded" until then.
+
+**Credit-limit block — built 17-09-2026, live on master `c8498f3`.**
+
+The client's top-right CC block had never shown anything: it was modelled per *account*, on static
+master columns, and all were blank. It is per *company* and two of its figures change daily.
+
+- **Migration `20261125120000_dr1_cc_limits`** (applied live before the frontend; rollback rehearsed
+  on live — apply, roll back, compare, re-apply). New table `daily_report_cc_limits`, keyed **company
+  alias + bank + day**, bank a real column defaulting to AXIS. Written only through
+  `set_cc_daily_limit()` — same rules as the balances: edit access, IST today, no future dates, and
+  **all four boxes blank deletes the day** rather than storing zeros. `set_daily_report_evening()`
+  saves balances and facilities in one transaction.
+- **Bank balances:** a **company total** row per card (blank until every account is typed, and says
+  which are missing), then **Credit facility · AXIS** in the sheet's column order — CC limit, LC/BC
+  limit, utilised, held typed; available balance, free limit, available CC limit worked out.
+- **One calculation for all three outputs** — the report page, the PDF and the Excel read the same
+  function, per company, whatever the location filter.
+- **Removed from the screens** (database columns kept): the per-account "LC / BC utilised (optional)"
+  box, and the limit fields on Bank accounts — nothing can be typed in two places now.
+- Also fixed: **"Saved at" never appeared** after saving balances.
+- **Verified on orangeonehub.com, 17-09-2026:** the 08-09 sheet reproduces (free limit **0.22**,
+  available CC **40.00**, available balance **2.45**); the next evening opens with the limits carried
+  and saves no copy; the page, PDF and Excel agree under the Surat filter; future dates and direct
+  table writes are refused; clearing deletes. All test figures were removed afterwards — both tables
+  0 rows. Permission gate tested as a non-admin in a rolled-back transaction (**nobody but admins has
+  Daily Report access yet**).
 
 **Found while building, deliberately NOT fixed here:**
 
