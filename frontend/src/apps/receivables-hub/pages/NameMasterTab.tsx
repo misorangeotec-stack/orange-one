@@ -1,13 +1,11 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronsUpDown, Lock, Plus, Search } from "lucide-react";
+import { Lock, Plus, Search } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
-import { Checkbox } from "@hub/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@hub/components/ui/dialog";
 import { Input } from "@hub/components/ui/input";
 import { Label } from "@hub/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@hub/components/ui/popover";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
@@ -17,6 +15,10 @@ import {
   addMasterName, knownNames, renameMasterName, setMasterNameActive,
   type NameMasterKind, type NameMasterRow,
 } from "@hub/lib/nameMasters";
+// Lifted out of this file when the Red Mark master and report needed the same two controls; the
+// behaviour is unchanged (the shared ColumnFilter additionally guards the arrow keys, which matters
+// only inside a ScrollableTable and is harmless here).
+import { ColumnFilter, SortHead, type SortDir } from "@hub/components/gridColumns";
 
 /**
  * The two managed vocabularies, as a Masters tab: Salespersons and Collection Teams (RC-15).
@@ -32,79 +34,6 @@ import {
  *   deliberately no "save the whole list" form seeded from a store value: that shape has twice saved
  *   an empty list over a live permission list when the tab was opened before the fetch landed.
  */
-
-// ── Small local controls ─────────────────────────────────────────────────────
-
-/**
- * A searchable, multi-value column filter.
- *
- * Searchable is not optional — the repo rule is that a table filter is never a bare dropdown, and
- * "Updated by" already runs to every steward who has ever touched a row.
- */
-function ColumnFilter({ label, options, selected, onChange }: {
-  label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void;
-}) {
-  const [q, setQ] = useState("");
-  const shown = options.filter((o) => o.toLowerCase().includes(q.trim().toLowerCase()));
-  const toggle = (o: string) =>
-    onChange(selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o]);
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className={cn(
-            "flex w-full items-center justify-between gap-1 rounded border px-1.5 py-0.5 text-[11px]",
-            selected.length
-              ? "border-primary/40 bg-primary/5 text-foreground"
-              : "border-border bg-background text-muted-foreground",
-          )}
-        >
-          <span className="truncate">
-            {selected.length === 0 ? label : selected.length === 1 ? selected[0] : `${selected.length} selected`}
-          </span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-2" align="start">
-        <div className="relative pb-2">
-          <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-7 pl-7 text-xs" />
-        </div>
-        <div className="flex items-center justify-between px-1 pb-1.5 text-[11px]">
-          <button className="underline text-muted-foreground hover:text-foreground" onClick={() => onChange([...options])}>Select all</button>
-          <button className="underline text-muted-foreground hover:text-foreground" onClick={() => onChange([])}>Clear</button>
-        </div>
-        <div className="max-h-56 space-y-0.5 overflow-auto">
-          {shown.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Nothing matches.</p>}
-          {shown.map((o) => (
-            <label key={o} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted">
-              <Checkbox checked={selected.includes(o)} onCheckedChange={() => toggle(o)} />
-              <span className="truncate" title={o}>{o}</span>
-            </label>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-type SortDir = "asc" | "desc" | null;
-
-function SortHead({ label, dir, onToggle, className }: {
-  label: string; dir: SortDir; onToggle: () => void; className?: string;
-}) {
-  return (
-    <TableHead className={className}>
-      <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={onToggle}>
-        {label}
-        {dir === "asc" ? <ArrowUp className="h-3 w-3" />
-          : dir === "desc" ? <ArrowDown className="h-3 w-3" />
-          : <ChevronsUpDown className="h-3 w-3 opacity-40" />}
-      </button>
-    </TableHead>
-  );
-}
 
 // ── The tab ──────────────────────────────────────────────────────────────────
 

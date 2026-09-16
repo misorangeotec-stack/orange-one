@@ -106,6 +106,10 @@ const FY_PINNED_ROUTES = [
   // between the chosen FY and the one before — a topbar multi-FY selector would make "new" and
   // "non active" meaningless.
   "/outstanding-dashboard/reports/customer-profile",
+  // The Red Mark report's Received / Sales columns are the last three CALENDAR months, which no
+  // financial year can contain: in April a single-FY view would keep the receipts (not FY-windowed)
+  // and silently drop February's and March's sales. Its own nested FYProvider pins it to Both FYs.
+  "/outstanding-dashboard/reports/red-mark",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its

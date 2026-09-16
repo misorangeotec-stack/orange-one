@@ -14,6 +14,10 @@
 // 'settings'). Both are read with the identity service role, never taken from the
 // request — see the authorize step in the handler.
 //
+// ONE EXCEPTION, added by RC-12: clear_redmark / reopen_redmark. They are handled BEFORE that
+// check and answer to their own, narrower rule so the collection team can close their own cases
+// without being given the keys to every muster. Nothing else moved.
+//
 //   POST body { action: "update_tag",  ledger_id, salesperson, category, checked }  -> { ok: true }
 //   POST body { action: "update_group", ledger_id, group_name, collection_team, checked } -> { ok: true }
 //     (both musters are keyed by the Tally ledger GUID, so a rename never orphans a mapping)
@@ -29,6 +33,17 @@
 //      what the Live (Tally) netting groups by.)
 //   POST body { action: "update_segment_config", company_guid, small_max_pct, medium_max_pct }
 //     -> { ok: true }  (the Customer Profile screen's "Edit Segments" bands, per company)
+//   POST body { action: "clear_redmark",  ledger_id, clear_note } -> { ok: true, row }
+//   POST body { action: "reopen_redmark", ledger_id }             -> { ok: true, row }
+//     (RC-12. "Cleared" = the case is settled: the customer stops counting as Red Mark everywhere,
+//      and the record STAYS with who cleared it, when and why. Delete is the other thing — "marked
+//      by mistake" — and both remain.
+//      🔴 THESE TWO DO NOT USE THE ADMIN CHECK BELOW. They carry their own rule: an admin, or a
+//         Settings full-access user, on anyone — or a collector whose receivables_collection_teams
+//         contains that ledger's ext_ledger_group.collection_team, on their own customers only. The
+//         collectors are plain employees with no Settings grant, so anything behind that gate would
+//         have been unreachable for the people the feature is for. That path may write ONLY the
+//         four clear columns; see authorizeClear / handleClear.)
 //   POST body { action: "add_list_value",        list, name, note }        -> { ok: true }
 //   POST body { action: "set_list_value_active", list, name, is_active }   -> { ok: true }
 //   POST body { action: "rename_list_value",     list, from, to }          -> { ok: true, counts }
@@ -217,6 +232,177 @@ function parseRedmark(body: Record<string, unknown>): { row: Record<string, unkn
   };
 }
 
+// ── Clear / reopen a case (RC-12) ────────────────────────────────────────────
+// A Red Mark is cleared when the case is SETTLED: the customer stops counting as red-marked
+// everywhere, and the record stays with who cleared it, when and why. Delete still exists and still
+// means something different — "this should never have been red-marked".
+//
+// 🔴 THIS PAIR HAS ITS OWN AUTHORISATION RULE, AND THAT IS WHY IT IS HANDLED BEFORE THE ADMIN GATE
+//    BELOW. Every other action in this function requires an admin or a Settings full-access user.
+//    Clearing was asked for by the client (03-09-2026) as something the COLLECTION TEAM does on
+//    their own customers — and the three collectors are plain employees with no Settings grant, so
+//    an action placed beside the others would have been unreachable for exactly the people it is
+//    for. The existing check is NOT widened: it is untouched, and this path is a second, narrower
+//    door that may set ONLY the four clear columns.
+//
+// ⚠ EVERY INPUT TO THE DECISION IS READ SERVER-SIDE. The caller's role, their Settings grant, their
+//   module access level and their collection teams come from the identity project with the service
+//   role; the ledger's owning team comes from ConnectWave. Nothing is taken from the request body
+//   except which ledger, and the note.
+//
+// ⚠ AND IT FAILS CLOSED. Any read error refuses the write (500) rather than falling through to
+//   "allowed": a check that quietly becomes a no-op is worse than no check, because the screen
+//   still says it was made.
+//
+// RC-13 (disputed bills) reuses this: add its table to CLEARABLE and route clear_dispute /
+// reopen_dispute to the same two functions. The authorisation is per LEDGER, which a dispute row
+// carries too, so only the row lookup differs.
+type ClearableKind = "redmark";
+
+const CLEARABLE: Record<ClearableKind, { table: string; keyCol: string; label: string }> = {
+  redmark: { table: "ext_redmark", keyCol: "ledger_id", label: "red mark" },
+};
+
+/** Null when this caller may clear/reopen this ledger; otherwise the status + message to return. */
+async function authorizeClear(
+  idAdmin: ReturnType<typeof createClient>,
+  cw: ReturnType<typeof createClient>,
+  userId: string,
+  ledgerId: string,
+): Promise<{ status: number; error: string } | null> {
+  // 1. An Orange One admin may clear anything.
+  const { data: roleRows, error: roleErr } = await idAdmin
+    .from("user_roles").select("role").eq("user_id", userId);
+  if (roleErr) return { status: 500, error: roleErr.message };
+  if ((roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin")) return null;
+
+  const { data: prof, error: profErr } = await idAdmin
+    .from("profiles")
+    .select("receivables_admin_menus,receivables_collection_teams")
+    .eq("id", userId)
+    .maybeSingle();
+  if (profErr) return { status: 500, error: profErr.message };
+
+  // 2. A Settings full-access user is the steward of these musters — same grant the other actions
+  //    require, so they can clear anything too (Jayshree holds this today).
+  if ((prof?.receivables_admin_menus ?? []).includes("settings")) return null;
+
+  // 3. Otherwise: the collection team, on their own customers only.
+  //    The module grant is a CEILING, mirroring useHubMenuAccess().canEdit in the browser — a
+  //    view-only user reads every screen and has no buttons, and must not be able to clear by
+  //    calling this directly. No app is "universal" (frontend/src/apps/universal.ts is empty), so
+  //    an edit row is genuinely required rather than implied.
+  const { data: access, error: accErr } = await idAdmin
+    .from("app_access").select("access_level")
+    .eq("user_id", userId).eq("app_id", "outstanding-dashboard");
+  if (accErr) return { status: 500, error: accErr.message };
+  if (!(access ?? []).some((a: { access_level: string }) => a.access_level === "edit")) {
+    return {
+      status: 403,
+      error: "your access to the Outstanding Dashboard is view-only, so you cannot clear or reopen a case.",
+    };
+  }
+
+  const teams = (prof?.receivables_collection_teams ?? []) as string[];
+  if (teams.length === 0) {
+    return {
+      status: 403,
+      error: "clearing is for the customer's collection team (or an administrator), and you are not " +
+             "tagged to a collection team.",
+    };
+  }
+
+  const { data: grp, error: grpErr } = await cw
+    .from("ext_ledger_group").select("collection_team").eq("ledger_id", ledgerId).maybeSingle();
+  if (grpErr) return { status: 500, error: grpErr.message };
+  const team = String(grp?.collection_team ?? "").trim();
+  if (!team) {
+    return {
+      status: 403,
+      error: "this customer has no collection team set, so only an administrator can clear or reopen it.",
+    };
+  }
+  // Exact, case-sensitive — the same matching every other scope in this system uses. A near-miss is
+  // a refusal, never a silent pass. See the frontend's lib/scopeParties.ts.
+  if (!teams.includes(team)) {
+    return {
+      status: 403,
+      error: `this customer belongs to the "${team}" collection team, so you cannot clear or reopen it.`,
+    };
+  }
+  return null;
+}
+
+/** clear_redmark / reopen_redmark. Writes ONLY the clear columns. */
+async function handleClear(
+  idAdmin: ReturnType<typeof createClient>,
+  cw: ReturnType<typeof createClient>,
+  user: { id: string },
+  body: Record<string, unknown>,
+  updated_by: string,
+  mode: "clear" | "reopen",
+): Promise<Response> {
+  const { table, keyCol, label } = CLEARABLE.redmark;
+
+  const ledger_id = clean(body.ledger_id);
+  if (!ledger_id) return json(400, { error: "ledger_id required" });
+
+  // Authorise BEFORE reading the row: "not yours" is the answer whether or not it exists.
+  const refusal = await authorizeClear(idAdmin, cw, user.id, ledger_id);
+  if (refusal) return json(refusal.status, { error: refusal.error });
+
+  const { data: cur, error: curErr } = await cw
+    .from(table).select("cleared").eq(keyCol, ledger_id).maybeSingle();
+  if (curErr) return json(400, { error: curErr.message });
+  if (!cur) return json(404, { error: `${label} ${ledger_id} not found` });
+
+  if (mode === "clear") {
+    if (cur.cleared === true) {
+      return json(409, { error: "this case is already cleared. Reopen it first if it is live again." });
+    }
+    // Required, and required in the database too (ext_redmark_cleared_needs_who_when_note). A
+    // partly-paid case may always be cleared, so the note is the only thing that explains a cleared
+    // row with money still owed against it.
+    const clear_note = clean(body.clear_note);
+    if (!clear_note) {
+      return json(400, { error: "a clear note is required — say how the case was settled." });
+    }
+    // `.eq("cleared", false)` makes this lose a race rather than overwrite the winner's record, and
+    // `.select()` turns a zero-row match into a 409 instead of the silent ok:true an `update` gives.
+    const { data, error } = await cw
+      .from(table)
+      .update({
+        cleared: true,
+        cleared_at: new Date().toISOString(),
+        cleared_by: updated_by,
+        clear_note,
+        updated_by,
+      })
+      .eq(keyCol, ledger_id)
+      .eq("cleared", false)
+      .select();
+    if (error) return json(400, { error: error.message });
+    if (!data?.length) return json(409, { error: "somebody else cleared this case a moment ago." });
+    return json(200, { ok: true, row: data[0] });
+  }
+
+  if (cur.cleared !== true) {
+    return json(409, { error: "this case is not cleared, so there is nothing to reopen." });
+  }
+  // Reopening KEEPS cleared_at / cleared_by / clear_note: they are the record of how the case was
+  // closed last time, which is the history this master exists to build. Who reopened it, and when,
+  // is `updated_by` plus the ext_redmark_touch trigger's `updated_at`.
+  const { data, error } = await cw
+    .from(table)
+    .update({ cleared: false, updated_by })
+    .eq(keyCol, ledger_id)
+    .eq("cleared", true)
+    .select();
+  if (error) return json(400, { error: error.message });
+  if (!data?.length) return json(409, { error: "somebody else reopened this case a moment ago." });
+  return json(200, { ok: true, row: data[0] });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "method not allowed" });
@@ -231,14 +417,46 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authErr } = await caller.auth.getUser();
   if (authErr || !user) return json(401, { error: "not authenticated" });
 
-  // 2) Authorize with the identity service role: the caller must be an admin, OR a user an
+  // 2) Read the body. It comes BEFORE authorisation because the action decides WHICH rule applies:
+  //    clear_redmark / reopen_redmark carry their own (see authorizeClear), everything else needs
+  //    the admin / Settings grant below. The only visible difference for an unauthorised caller is
+  //    that a malformed body now answers 400 instead of 403.
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return json(400, { error: "invalid JSON body" });
+  }
+
+  // Audit stamp: who made the edit (email preferred, id as fallback).
+  const updated_by = user.email ?? user.id;
+
+  const idAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+  // ConnectWave service client — bypasses ConnectWave RLS to write the musters.
+  const cw = createClient(CW_URL, CW_SERVICE_KEY, { auth: { persistSession: false } });
+
+  // ---- clear_redmark / reopen_redmark (RC-12) ----
+  // Handled here, ahead of the gate below, because the collection team must reach it and holds no
+  // Settings grant. It may write only the four clear columns. See the header on handleClear.
+  if (body.action === "clear_redmark" || body.action === "reopen_redmark") {
+    return await handleClear(
+      idAdmin, cw, user, body, updated_by,
+      body.action === "clear_redmark" ? "clear" : "reopen",
+    );
+  }
+
+  // 3) Authorize with the identity service role: the caller must be an admin, OR a user an
   //    admin granted FULL ACCESS to the Settings menu (profiles.receivables_admin_menus
   //    contains 'settings' — the same grant that renders the Masters tab in the hub).
   //
   //    Read with the SERVICE ROLE, never from the request. The browser decides what to draw;
   //    this decides what may be written. RLS would let a caller read their own profile row,
   //    but not writing that check here would mean trusting a client-supplied claim.
-  const idAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  //
+  //    ⚠ UNCHANGED BY RC-12, DELIBERATELY. Clearing got its own narrower door above rather than a
+  //      widening of this one, so update_redmark / delete_redmark / every muster write still
+  //      require exactly what they always did.
   const { data: roleRows, error: roleErr } = await idAdmin.from("user_roles").select("role").eq("user_id", user.id);
   if (roleErr) return json(500, { error: roleErr.message });
   let authorized = (roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin");
@@ -254,19 +472,6 @@ Deno.serve(async (req) => {
   if (!authorized) {
     return json(403, { error: "you don't have full access to the Outstanding Dashboard settings" });
   }
-
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return json(400, { error: "invalid JSON body" });
-  }
-
-  // Audit stamp: who made the edit (email preferred, id as fallback).
-  const updated_by = user.email ?? user.id;
-
-  // ConnectWave service client — bypasses ConnectWave RLS to write the musters.
-  const cw = createClient(CW_URL, CW_SERVICE_KEY, { auth: { persistSession: false } });
 
   // ---- update_tag (ext_ledger_tags, keyed by Tally GUID) ----
   if (body.action === "update_tag") {
@@ -407,9 +612,14 @@ Deno.serve(async (req) => {
     // An insert always INTRODUCES the value, so there is nothing to grandfather.
     const badSp = await checkListValue(cw, "salesperson", clean(body.salesperson), null);
     if (badSp) return json(400, { error: badSp });
+    // ⚠ `cleared: false` IS LOAD-BEARING (RC-12). The upsert only writes the columns it is given, so
+    //   re-flagging a customer whose case had been CLEARED would otherwise leave cleared = true —
+    //   a row on the master that the dashboard, the risk register and every filter still ignore.
+    //   Re-adding somebody is a new case, so it reopens. The previous clearing's who/when/note stay
+    //   on the row as the record of how the last one ended.
     const { data, error } = await cw
       .from("ext_redmark")
-      .upsert({ ...parsed.row, updated_by }, { onConflict: "ledger_id" })
+      .upsert({ ...parsed.row, cleared: false, updated_by }, { onConflict: "ledger_id" })
       .select()
       .single();
     if (error) return json(400, { error: error.message });

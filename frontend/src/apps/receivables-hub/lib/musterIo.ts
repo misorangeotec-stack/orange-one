@@ -18,11 +18,12 @@
 import type { ExportColumn } from "@/shared/lib/exportXlsx";
 import { readBool } from "@/shared/lib/importXlsx";
 import {
-  saveTag, saveGroup, saveOtherPayment, saveRedMark,
+  saveTag, saveGroup, saveOtherPayment, saveRedMark, clearRedMark,
   type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type RedMarkRow,
 } from "./musterApi";
 import { saveCompanyMap } from "./musterApi";
 import type { CompanyMapRow } from "./companyMap";
+import { formatDateDMY } from "./utils";
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 export interface ImportChange {
@@ -342,6 +343,17 @@ export function otherPaymentIo(snapByGuid: Map<string, SnapRow>): MasterIo<Other
 }
 
 // ── Red Mark (ext_redmark, key = Ledger ID) ───────────────────────────────────
+//
+// ⚠ THE IMPORT CAN CLEAR A CASE, BUT IT CAN NEVER REOPEN, ADD OR REMOVE ONE (RC-12).
+//   Adding and removing were already withheld — a spreadsheet must not be able to flag or unflag
+//   customers wholesale — and clearing-by-import is the safe middle ground: it settles cases that
+//   are already on the list.
+//
+//   Reopening is withheld for a reason worth stating. `readBool` reads a blank cell as "No", and
+//   an export taken this morning says "No" against every row somebody cleared this afternoon. If
+//   "No" meant reopen, importing a stale sheet would silently undo their work — the failure would
+//   look exactly like success. So a No against a Cleared row is REPORTED and skipped, and reopening
+//   is done on screen, one case at a time, by somebody who can see what they are reopening.
 export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: Set<string>): MasterIo<RedMarkRow> {
   const name = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
   const company = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "";
@@ -350,7 +362,19 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
     fileName: "Master_Red_Mark",
     sheetName: "Red Mark",
     title: "Red Mark master",
-    notes: [DO_NOT_EDIT_KEY, UPDATE_ONLY_NOTE, "Editable columns: Salesperson, Reason, Checked. Import cannot add or remove a Red Mark — only edit its details.", MASTER_NOTE("Salesperson")],
+    notes: [
+      DO_NOT_EDIT_KEY,
+      UPDATE_ONLY_NOTE,
+      "Editable columns: Salesperson, Reason, Checked, and Cleared (with Clear note).",
+      "Import cannot add or remove a Red Mark, and cannot REOPEN a cleared case — only edit details " +
+      "and clear settled ones. Reopen on screen instead: a sheet exported before somebody cleared a " +
+      "case still says \"No\" against it, and reopening from that would silently undo their work.",
+      "To clear a case: set Cleared to Yes and write a Clear note saying how it was settled. A row " +
+      "set to Yes with no note is reported and skipped — a cleared case with money still owed " +
+      "against it is unreadable a month later without one.",
+      "Cleared on / Cleared by are stamped by the app and ignored on import.",
+      MASTER_NOTE("Salesperson"),
+    ],
     exportColumns: [
       { header: K_LEDGER, width: 34, value: (r) => r.ledger_id },
       { header: "Customer", width: 30, value: name },
@@ -359,6 +383,10 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
       { header: "Salesperson", width: 22, value: (r) => r.salesperson ?? "" },
       { header: "Reason", width: 30, value: (r) => r.reason ?? "" },
       { header: "Checked", width: 10, value: (r) => yesNo(r.checked) },
+      { header: "Cleared", width: 10, value: (r) => yesNo(r.cleared) },
+      { header: "Clear note", width: 40, value: (r) => r.clear_note ?? "" },
+      { header: "Cleared on", width: 14, value: (r) => (r.cleared_at ? formatDateDMY(r.cleared_at.slice(0, 10)) : "") },
+      { header: "Cleared by", width: 24, value: (r) => r.cleared_by ?? "" },
     ],
     buildPlan(records, existing) {
       const byKey = new Map(existing.map((r) => [r.ledger_id, r]));
@@ -369,19 +397,66 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
         if (!key) { plan.unmatched.push(label); continue; }
         const cur = byKey.get(key);
         if (!cur) { plan.unmatched.push(label); continue; }
+
         const salesperson = cell(rec["Salesperson"]);
         const reason = cell(rec["Reason"]);
         const checked = readBool(rec["Checked"]);
         const badSp = offMaster(salesperson, knownSalespersons, "Salesperson");
         if (badSp) { plan.invalid.push({ label, reason: badSp }); continue; }
+
+        // ⚠ "column absent" IS NOT "cell left empty", and the difference decides whether a sheet can
+        //   un-clear a case. parseXlsxRows reads with defval:"" so every column in the FILE appears
+        //   on every record — so a missing key means the sheet predates this column, and the case
+        //   status is simply not part of that import.
+        const hasClearedCol = Object.prototype.hasOwnProperty.call(rec, "Cleared");
+        const wantCleared = hasClearedCol ? readBool(rec["Cleared"]) : cur.cleared;
+        const clearNote = cell(rec["Clear note"]);
+
+        let doClear = false;
+        if (wantCleared && !cur.cleared) {
+          if (!clearNote) {
+            plan.invalid.push({
+              label,
+              reason: "Set to Cleared with no Clear note — say how the case was settled.",
+            });
+            continue;
+          }
+          doClear = true;
+        } else if (!wantCleared && cur.cleared) {
+          plan.invalid.push({
+            label,
+            reason: "This case was cleared in the app since this sheet was exported. Import never " +
+                    "reopens a case — reopen it on screen if that is what you meant.",
+          });
+          continue;
+        } else if (wantCleared && cur.cleared && clearNote && clearNote !== (cur.clear_note ?? null)) {
+          plan.invalid.push({
+            label,
+            reason: "The Clear note of an already-cleared case can only be changed on screen.",
+          });
+          continue;
+        }
+
         const dSp = salesperson !== (cur.salesperson ?? null);
         const dRs = reason !== (cur.reason ?? null);
         const dChk = checked !== cur.checked;
-        if (!dSp && !dRs && !dChk) { plan.unchanged++; continue; }
+        if (!dSp && !dRs && !dChk && !doClear) { plan.unchanged++; continue; }
         plan.changes.push({
-          key, label: name(cur) || label,
-          fields: changedFields([["Salesperson", dSp], ["Reason", dRs], ["Checked", dChk]]),
-          save: () => saveRedMark({ ledger_id: key, salesperson, reason, checked }),
+          key,
+          label: name(cur) || label,
+          fields: changedFields([
+            ["Salesperson", dSp], ["Reason", dRs], ["Checked", dChk], ["Cleared", doClear],
+          ]),
+          // Two writes, because they are two different doors: the metadata goes through
+          // update_redmark (admin / Settings full access) and the clear through clear_redmark, which
+          // has its own rule. Details first, so a refused clear does not silently drop an edit that
+          // was allowed.
+          save: async () => {
+            if (dSp || dRs || dChk) {
+              await saveRedMark({ ledger_id: key, salesperson, reason, checked });
+            }
+            if (doClear) await clearRedMark(key, clearNote as string);
+          },
         });
       }
       return plan;
