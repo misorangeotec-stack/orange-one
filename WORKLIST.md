@@ -12209,7 +12209,74 @@ column.
       deadline (*"Nakul Sir … by this week"*). Those are two columns that could be filtered and chased
       instead of read.
 
-### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[ ]`
+### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[x]`
+🟢 **SHIPPED AND LIVE 16-09-2026 23:26 IST** (master `3deb91e`, Vercel success). Built from daily-reports
+`d744318` (14:06) + `1914a3c` compact table (23:07) + `44f92a7` as-on date over the balances (23:22).
+Verified on live data and on orangeonehub.com as Nitesh. **The 54 red marks were left exactly as found
+(0 cleared).** Nothing is cleared until somebody clears it.
+
+| Deploy step | When (IST) | State |
+|---|---|---|
+| ConnectWave SQL `supabase/connectwave/redmark_clear_status.sql` | 16-09 13:39 | applied → **rollback rehearsed on live** (54 rows, `checked`/`reason` untouched) → re-applied. Check constraint proven to refuse a note-less clear (23514) |
+| `muster-write` Edge Function | 16-09 13:41 | **v11** live. ⚠ Also carried RC-11's team-rename cascade (`543ddb7`), which v10 never had — approved |
+| Frontend | 16-09 23:26 | master `3deb91e`. `UserLayout.tsx` applied as a hunk onto master's newer copy |
+| Report grant | 16-09 23:28 | `red-mark-customers` added for Nitesh, BENI MADHAV MOHTA, VIJAY; Reports un-hidden for Nitesh (it shows only granted reports) |
+
+**What it does now**
+- **Clear / Reopen** on the Red Mark master (Settings → Masters) AND on the report, because collectors
+  cannot open Settings. Note required on clear (UI, server, and a DB check constraint). Reopen keeps the
+  last clearing's who/when/note as history; who reopened is `updated_by`. Delete stays, for mistakes only,
+  and is visibly different (red icon vs a labelled green Clear).
+- **Who may clear** — its own rule in `muster-write` (`authorizeClear`), handled BEFORE the admin gate,
+  which is untouched: admin or Settings full-access on anyone; otherwise an `edit` module grant AND the
+  ledger's `ext_ledger_group.collection_team` in the caller's `receivables_collection_teams`. Fails closed.
+- **`blocked` = has an UNCLEARED red mark** (`connectwaveFetcher`). Every reader moved with that one line.
+- **The report**: as-on date over Outstanding/Due, three rolling months of receipts and sales, bounced
+  cheques, Rcvd ÷ Due, current-month sales flagged red on uncleared rows, a *Billed this month* tile
+  (**10** on day one), the clear status and toggle, all in the Excel. Pinned to Both FYs. Compact
+  single-line rows with the customer column pinned.
+- **Import** can clear (Yes + a note) but **never reopens**: a sheet exported before somebody cleared a case
+  still says No. A missing Cleared column means no change.
+- **Reusable for RC-13**: `lib/clearStatus.ts` (`useCanClear`, views, `describeClear`), `ClearStatusToggle`,
+  `ClearNoteDialog`, `ClearStatusBadge`, `components/gridColumns.tsx` + `lib/useColumnGrid.ts` (sort +
+  cascading filters, lifted out of NameMasterTab), and the `CLEARABLE` registry in `muster-write`.
+
+**Verified** (16-09-2026)
+- As **Nitesh** (session minted server-side, no password handled, then revoked): own ledger clear 200;
+  another team's 403; `update_redmark` / `delete_redmark` 403; no note 400; double clear / reopen 409.
+- **Every surface moved**: SAMEER ENTERPRISES cleared → Dashboard tile 33 → 32, gone from the Risk
+  Register `?redmark=1` and the Credit Terms badge; reopened → back to 33.
+- **Uncleared wins**: R STUDIO (Ent Surat) cleared while its Otec Surat ledger stayed red — the tile did
+  NOT move and R STUDIO stayed on the Risk Register.
+- **Hand-checked to the rupee**: GOPAL HOME FURNISHING - MACHINE — Rcv Jul ₹30.00 L, Aug ₹3.00 L, Outstanding
+  = Due ₹19.57 L, 538 days — against `collection_customer_snapshot`. Outstanding and Due rebuilt bill by bill
+  for KALAHANSH FASHIONS LLP-MACHINE (₹74.04 L = 12 open bills; ₹30.00 L = the ones past due).
+- **Live as Nitesh** on orangeonehub.com: the report opens, 11 rows (his team only), 11 Clear buttons
+  enabled, *Billed this month* 2, no Settings.
+
+**Findings worth keeping**
+- 🔴 **The scheduled Collection email does NOT move on a clear.** It builds with `defaultFilters()`, where
+  `blockedOnly: false` (`supabase/collectionsreport/reportSpec.ts`). Only a MANUAL send from a screen with
+  *Red Mark only* ticked changes. The brief assumed otherwise.
+- 🔴 **Receipts are gross, and it matters here**: GOPAL - MACHINE reads ₹33 L received / 169% of due while
+  all ₹33 L bounced. The Bounced column exists for exactly this row.
+- 🟡 **Bounced comes from `collection_range_facts`, not `MonthFacts`.** Under Live, `MonthFacts.chequeReturns`
+  is the year's total spread by receipt weight — an estimate. The RPC reads dated vouchers, but counts only
+  Payment vouchers named **CHQ.R** (not refunds or unlabelled bounces), so the column says so.
+- 🟡 **Nobody but admins could open the Red Mark report** before this: every collector's
+  `receivables_allowed_reports` was empty (empty = no reports). Granted as above.
+- 🟡 `insert_redmark` upserted without the clear fields, so re-adding a cleared customer would have left
+  them cleared and invisible. It now sets `cleared: false`.
+
+**Still open — follow-ups, not part of RC-12**
+- [ ] 🔴 **The sheet's ~20 remarks were never loaded** — `reason` is NULL on all 54 rows, so the Reason
+      column is blank everywhere. Source: `Misc/Jayshree/DISPUTE & REDMARK.xlsx`, tab REDMARK. Needs a
+      ledger match with unmatched rows reported; ask the user before loading.
+- [ ] 🟡 **Jayshree still cannot open the report** — `reports` is hidden on her profile. She clears from
+      Settings → Masters, which works. Grant `red-mark-customers` and un-hide Reports if she should see it.
+- [ ] 🟡 **Tell whoever reads the Collection mail** that Red Mark counts can now fall on their own when a
+      case is cleared — on the screens, and on any manual *Red Mark only* send.
+
 *Raised 2026-09-03 · Audited the same day against the code, the live musters and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **REDMARK***
 
@@ -12306,28 +12373,28 @@ column that can never go stale or be forgotten.
 #### What to build
 
 **Part A — the master**
-- [ ] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
-- [ ] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
+- [x] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
+- [x] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
       Uncleared** with All / Cleared / Uncleared beside it.
-- [ ] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
+- [x] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
       correction.
 
 **Part B — export / import**
-- [ ] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
+- [x] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
       batch can be cleared from Excel the way Salesperson/Reason/Checked already are.
-- [ ] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
+- [x] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
       *Cleared* column does not change it, and clearing-by-import is exactly the safe middle
       ground: it settles a case without letting a spreadsheet flag or unflag customers wholesale.
 
 **Part C — the report**
-- [ ] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
+- [x] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
       the **as-on date**, stated on the page and carried into the export — an outstanding figure with
       no date on it is unreadable a week later.
-- [ ] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
+- [x] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
       it, from `MonthFacts.receipts`. The columns roll forward on their own; nobody hand-adds a month
       the way the sheet does with its JUN / JULY / Aug. One number cannot tell a first miss from a
       long silence, which is the whole question on a red-marked customer.
-- [ ] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
+- [x] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
       A red-marked customer should not be being supplied. If we billed them anything this month the
       row must shout — that is a control, not a statistic.
       ✅ The data is already there and the codebase already says why: `MonthFacts.sales` is documented
@@ -12335,9 +12402,9 @@ column that can never go stale or be forgotten.
       unused for exactly this.
       Worth a KPI tile too: **N red-marked customers were billed this month**. That is the number
       management will act on, and nothing in the app can answer it today.
-- [ ] **Percentage = received ÷ due**, computed. Never imported — see To settle.
-- [ ] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
-- [ ] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
+- [x] **Percentage = received ÷ due**, computed. Never imported — see To settle.
+- [x] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
+- [x] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
       (`outstanding` and `overdue`).
 
 #### The traps
@@ -12411,6 +12478,9 @@ behaving differently.
 
 
 ### RC-11 · Collection Team — fill it, filter on it, and scope each collector to their own customers  🔴  `[~]`
+⚠ **Found 14-09-2026: the collection-team rename cascade (`543ddb7`) was committed but never deployed.**
+`muster-write` v10 (09-09) predated it, so renaming a team in Settings → Masters did NOT move users'
+`receivables_collection_teams`. It went live with **RC-12's v11 deploy, 16-09-2026 13:41 IST**.
 🟢 **BUILT, LOADED AND BROWSER-VERIFIED 10-09-2026.** Every customer who owes money now has a
 collection team — **648 owing, 0 unmapped, ₹0.00 unaccounted** — a user can be scoped by team
 instead of by salesperson, and all 13 salesperson filters have a team twin beside them.
