@@ -12272,8 +12272,11 @@ Verified on live data and on orangeonehub.com as Nitesh. **The 54 red marks were
 - [ ] 🔴 **The sheet's ~20 remarks were never loaded** — `reason` is NULL on all 54 rows, so the Reason
       column is blank everywhere. Source: `Misc/Jayshree/DISPUTE & REDMARK.xlsx`, tab REDMARK. Needs a
       ledger match with unmatched rows reported; ask the user before loading.
-- [ ] 🟡 **Jayshree still cannot open the report** — `reports` is hidden on her profile. She clears from
-      Settings → Masters, which works. Grant `red-mark-customers` and un-hide Reports if she should see it.
+- [x] ~~🟡 **Jayshree still cannot open the report**~~ — **granted by the user 16-09-2026 23:54 IST** in
+      Settings → Permissions: `red-mark-customers` (plus `zero-collections`) ticked and the Reports menu
+      switched on. Verified on her profile: Reports no longer hidden, `edit` access, all five teams, so she
+      sees all 54 red marks and can clear any of them. ⚠ On that screen a plain menu is a single on/off
+      tick — there is no "Standard" pill; only Settings carries a Hidden / Full access pair.
 - [ ] 🟡 **Tell whoever reads the Collection mail** that Red Mark counts can now fall on their own when a
       case is cleared — on the screens, and on any manual *Red Mark only* send.
 
