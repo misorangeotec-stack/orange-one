@@ -53,7 +53,7 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
-  INK_CATEGORIES, INK_SOURCES, loadHolidays, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides,
+  INK_CATEGORIES, INK_SOURCES, loadGroupFields, loadHolidays, loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides,
   loadPlans, loadShipments, loadThresholds, saveHolidays, savePlans, saveThresholds, sourceLabel,
   workingDaysElapsed,
   type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
@@ -101,6 +101,8 @@ export default function InkMis() {
   // written, so there is one place that edits them and no chance of two screens disagreeing.
   const [overrides] = useState<InkOverrides>(() => loadOverrides());
   const [order] = useState<InkOrder>(() => loadOrder());
+  const [lineFields] = useState(() => loadLines());
+  const [groupFields] = useState(() => loadGroupFields());
   const [scope, setScope] = useState<InkScope>("ink");
   // Four company columns collapse into one group. Remembered per browser; starts collapsed,
   // because the merged Stock column is the number the planner reads first.
@@ -129,8 +131,9 @@ export default function InkMis() {
   useEffect(() => saveHolidays(holidays), [holidays]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["inkMis", "positions", fy, overrides, scope, order],
-    queryFn: () => loadInkPositions(fy, undefined, undefined, overrides, scope, order),
+    queryKey: ["inkMis", "positions", fy, overrides, scope, order, lineFields, groupFields],
+    queryFn: () =>
+      loadInkPositions(fy, undefined, undefined, overrides, scope, order, lineFields, groupFields),
     staleTime: 5 * 60 * 1000,
   });
 

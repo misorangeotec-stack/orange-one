@@ -155,11 +155,34 @@ export interface InkOverride {
   code: string;
   group: string;
   description: string;
-  /** The planner's own category. Free text: their vocabulary, not Tally's. */
+}
+
+/**
+ * Category and Import/Plant belong to the PRINTED LINE, not to one book's row.
+ *
+ * Code, group and description are per book — the same ink genuinely carries different codes and
+ * sits in different groups in different companies. Chemistry and where it is bought from do not
+ * change between books, so these are keyed on the merge key, exactly like the row number and the
+ * lead time. Set it once on any row and every book's row for that ink shows it.
+ */
+export interface InkLineFields {
   category: string;
-  /** Where the ink comes from — see INK_SOURCES. */
   source: string;
 }
+
+export type InkLines = Record<string, Partial<InkLineFields>>;
+
+/**
+ * The same two fields, set for a whole GROUP.
+ *
+ * Chemistry follows the group: everything in "UV INK" is the same chemistry, bought the same way.
+ * So setting the category on one item sets it for the group, and its siblings fill themselves in
+ * — which is the difference between classifying 1,437 items and classifying a few dozen groups.
+ *
+ * Keyed on the group name, upper-cased, because the same group can be spelled either way in
+ * different books.
+ */
+export type InkGroupFields = Record<string, Partial<InkLineFields>>;
 
 /**
  * The ink chemistries the planner sorts by. OTHERS is theirs to pick; it is never guessed.
@@ -303,6 +326,8 @@ export async function loadInkPositions(
   overrides: InkOverrides = {},
   scope: InkScope = "ink",
   order: InkOrder = {},
+  lines: InkLines = {},
+  groups: InkGroupFields = {},
 ): Promise<InkPositionsResult> {
   const raw = await loadStockSummary(INK_COMPANY_GUIDS, fy, from, to);
   const inScope = scope === "all" ? raw.filter((r) => BY_GUID.has(r.company_guid)) : raw.filter(isInk);
@@ -330,9 +355,23 @@ export async function loadInkPositions(
     const effectiveGroup = (ov.group ?? "").trim() || tallyGroup;
     const effectiveDescription = (ov.description ?? "").trim() || tallyName;
 
+    const mergeKeyForRow = effectiveCode || soloKey(company.key, row.item);
+    const lineOv = lines[mergeKeyForRow] ?? {};
+    const groupOv = groups[norm(effectiveGroup)] ?? {};
+    /*
+     * Three sources, narrowest first: something set on THIS ink beats something set on its whole
+     * group, which beats what the item's own name says. So a group can be classified in one go
+     * and a single odd ink inside it can still be corrected on its own.
+     */
+    const effectiveCategory =
+      (lineOv.category ?? "").trim() ||
+      (groupOv.category ?? "").trim() ||
+      detectCategory(tallyName || row.item);
+    const effectiveSource = (lineOv.source ?? "").trim() || (groupOv.source ?? "").trim();
+
     master.push({
       key,
-      mergeKey: effectiveCode || soloKey(company.key, row.item),
+      mergeKey: mergeKeyForRow,
       companyKey: company.key,
       company: company.label,
       item: row.item,
@@ -343,9 +382,8 @@ export async function loadInkPositions(
       closingQty: row.closing_qty,
       effectiveCode,
       effectiveGroup,
-      // The planner's choice wins; otherwise the name classifies itself where it can.
-      category: (ov.category ?? "").trim() || detectCategory(tallyName || row.item),
-      source: (ov.source ?? "").trim(),
+      category: effectiveCategory,
+      source: effectiveSource,
       effectiveDescription,
       needsCode: !effectiveCode,
     });
@@ -363,8 +401,8 @@ export async function loadInkPositions(
         description: effectiveDescription || row.item,
         customDescription: (ov.description ?? "").trim(),
         group: effectiveGroup,
-        category: (ov.category ?? "").trim() || detectCategory(tallyName || row.item),
-        source: (ov.source ?? "").trim(),
+        category: effectiveCategory,
+        source: effectiveSource,
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
@@ -382,8 +420,8 @@ export async function loadInkPositions(
     else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
     if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
     if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
-    if (!pos.category) pos.category = (ov.category ?? "").trim() || detectCategory(tallyName || row.item);
-    if (!pos.source && ov.source?.trim()) pos.source = ov.source.trim();
+    if (!pos.category) pos.category = effectiveCategory;
+    if (!pos.source) pos.source = effectiveSource;
 
     pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + row.closing_qty;
     pos.stock += row.closing_qty;
@@ -755,6 +793,8 @@ const KEY_THRESHOLDS = "ink-mis:thresholds:v1";
 const KEY_ALIASES = "ink-mis:aliases:v1";     // superseded by KEY_OVERRIDES; read once, to migrate
 const KEY_OVERRIDES = "ink-mis:items:v1";
 const KEY_ORDER = "ink-mis:order:v1";
+const KEY_LINES = "ink-mis:lines:v1";
+const KEY_GROUPS = "ink-mis:groups:v1";
 const KEY_HOLIDAYS = "ink-mis:holidays:v1";
 
 function readJson<T>(key: string, fallback: T): T {
@@ -818,11 +858,35 @@ export const saveOverrides = (o: InkOverrides) => {
     if (v.code?.trim()) row.code = v.code.trim().toUpperCase();
     if (v.group?.trim()) row.group = v.group.trim();
     if (v.description?.trim()) row.description = v.description.trim();
-    if (v.category?.trim()) row.category = v.category.trim();
-    if (v.source?.trim()) row.source = v.source.trim();
     if (Object.keys(row).length) clean[k] = row;
   }
   writeJson(KEY_OVERRIDES, clean);
+};
+
+export const loadLines = (): InkLines => readJson<InkLines>(KEY_LINES, {});
+
+/** Empty fields are dropped, so "cleared" and "never set" stay the same thing. */
+export const saveLines = (l: InkLines) => {
+  const clean: InkLines = {};
+  for (const [k, v] of Object.entries(l)) {
+    const row: Partial<InkLineFields> = {};
+    if (v.category?.trim()) row.category = v.category.trim().toUpperCase();
+    if (v.source?.trim()) row.source = v.source.trim();
+    if (Object.keys(row).length) clean[k] = row;
+  }
+  writeJson(KEY_LINES, clean);
+};
+
+export const loadGroupFields = (): InkGroupFields => readJson<InkGroupFields>(KEY_GROUPS, {});
+export const saveGroupFields = (g: InkGroupFields) => {
+  const clean: InkGroupFields = {};
+  for (const [k, v] of Object.entries(g)) {
+    const row: Partial<InkLineFields> = {};
+    if (v.category?.trim()) row.category = v.category.trim().toUpperCase();
+    if (v.source?.trim()) row.source = v.source.trim();
+    if (Object.keys(row).length) clean[k] = row;
+  }
+  writeJson(KEY_GROUPS, clean);
 };
 
 export const loadOrder = (): InkOrder => {
@@ -880,6 +944,8 @@ export interface InkBackup {
   thresholds: InkThresholds;
   overrides: InkOverrides;
   order: InkOrder;
+  lines: InkLines;
+  groupFields: InkGroupFields;
   holidays: string[];
 }
 
@@ -893,6 +959,8 @@ export function buildBackup(): InkBackup {
     thresholds: loadThresholds(),
     overrides: loadOverrides(),
     order: loadOrder(),
+    lines: loadLines(),
+    groupFields: loadGroupFields(),
     holidays: loadHolidays(),
   };
 }
@@ -914,6 +982,8 @@ export function applyBackup(text: string): InkBackup {
   saveThresholds({ ...DEFAULT_THRESHOLDS, ...(b.thresholds ?? {}) });
   saveOverrides(b.overrides ?? {});
   saveOrder(b.order ?? {});
+  saveLines(b.lines ?? {});
+  saveGroupFields(b.groupFields ?? {});
   saveHolidays(Array.isArray(b.holidays) ? b.holidays : []);
   return b as InkBackup;
 }

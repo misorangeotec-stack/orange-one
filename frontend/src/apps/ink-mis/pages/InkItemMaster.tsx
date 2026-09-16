@@ -45,9 +45,10 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder,
-  loadOverrides, loadPlans, renumber, savePlans, saveOrder, saveOverrides, sourceLabel,
-  type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
-  type InkScope,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, renumber, saveGroupFields, saveLines,
+  savePlans, saveOrder, saveOverrides, sourceLabel,
+  type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
+  type InkOverrides, type InkPlan, type InkScope,
 } from "../lib/inkMis";
 
 const BASE = appBasePath("ink-mis");
@@ -123,6 +124,12 @@ export default function InkItemMaster() {
    */
   const [savedPlans, setSavedPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [plans, setPlans] = useState<Record<string, InkPlan>>(savedPlans);
+  /** Category and Import/Plant, keyed on the printed line like the number and the lead time. */
+  const [savedLines, setSavedLines] = useState<InkLines>(() => loadLines());
+  const [lines, setLines] = useState<InkLines>(savedLines);
+  /** The same two fields at group level — see InkGroupFields. */
+  const [savedGroupFields, setSavedGroupFields] = useState<InkGroupFields>(() => loadGroupFields());
+  const [groupFields, setGroupFields] = useState<InkGroupFields>(savedGroupFields);
   const [ioNotice, setIoNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -131,22 +138,77 @@ export default function InkItemMaster() {
   useEffect(() => saveOverrides(savedOverrides), [savedOverrides]);
   useEffect(() => saveOrder(savedOrder), [savedOrder]);
   useEffect(() => savePlans(savedPlans), [savedPlans]);
+  useEffect(() => saveLines(savedLines), [savedLines]);
+  useEffect(() => saveGroupFields(savedGroupFields), [savedGroupFields]);
 
   const dirty =
     JSON.stringify(overrides) !== JSON.stringify(savedOverrides) ||
     JSON.stringify(order) !== JSON.stringify(savedOrder) ||
-    JSON.stringify(plans) !== JSON.stringify(savedPlans);
+    JSON.stringify(plans) !== JSON.stringify(savedPlans) ||
+    JSON.stringify(lines) !== JSON.stringify(savedLines) ||
+    JSON.stringify(groupFields) !== JSON.stringify(savedGroupFields);
 
   const save = () => {
     setSavedOverrides(overrides);
     setSavedOrder(order);
     setSavedPlans(plans);
+    setSavedLines(lines);
+    setSavedGroupFields(groupFields);
   };
   const discard = () => {
     setOverrides(savedOverrides);
     setOrder(savedOrder);
     setPlans(savedPlans);
+    setLines(savedLines);
+    setGroupFields(savedGroupFields);
   };
+
+  /**
+   * Category and Import/Plant are set for the ITEM'S GROUP, so every ink in that group follows.
+   * An ink with no group of its own falls back to being set on its own line.
+   *
+   * Any single-ink exception previously set on that line is cleared, or it would sit on top of
+   * the group value and the edit would look ignored on that row.
+   */
+  const setGroupField = (r: InkMasterRow, field: keyof InkLineFields, value: string) => {
+    const group = (r.effectiveGroup || "").trim().toUpperCase();
+    if (!group) {
+      setLineField(r.mergeKey, field, value);
+      return;
+    }
+    setGroupFields((prev) => {
+      const next = { ...prev, [group]: { ...prev[group], [field]: value } };
+      if (!value.trim()) {
+        const row = { ...next[group] };
+        delete row[field];
+        if (Object.keys(row).length) next[group] = row;
+        else delete next[group];
+      }
+      return next;
+    });
+    setLines((prev) => {
+      if (!prev[r.mergeKey]?.[field]) return prev;
+      const row = { ...prev[r.mergeKey] };
+      delete row[field];
+      const next = { ...prev };
+      if (Object.keys(row).length) next[r.mergeKey] = row;
+      else delete next[r.mergeKey];
+      return next;
+    });
+  };
+
+  /** Category or Import/Plant, against the printed line: one edit covers every book's row. */
+  const setLineField = (mergeKey: string, field: keyof InkLineFields, value: string) =>
+    setLines((prev) => {
+      const next = { ...prev, [mergeKey]: { ...prev[mergeKey], [field]: value } };
+      if (!value.trim()) {
+        const row = { ...next[mergeKey] };
+        delete row[field];
+        if (Object.keys(row).length) next[mergeKey] = row;
+        else delete next[mergeKey];
+      }
+      return next;
+    });
 
   /** Lead time in months, against the printed line. Blank clears it. */
   const setLeadTime = (mergeKey: string, raw: string) =>
@@ -167,8 +229,11 @@ export default function InkItemMaster() {
   }, [dirty]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["inkMis", "positions", fy, savedOverrides, scope, savedOrder],
-    queryFn: () => loadInkPositions(fy, undefined, undefined, savedOverrides, scope, savedOrder),
+    queryKey: ["inkMis", "positions", fy, savedOverrides, scope, savedOrder, savedLines, savedGroupFields],
+    queryFn: () =>
+      loadInkPositions(
+        fy, undefined, undefined, savedOverrides, scope, savedOrder, savedLines, savedGroupFields,
+      ),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -288,7 +353,7 @@ export default function InkItemMaster() {
     setImporting(true);
     setIoNotice(null);
     try {
-      const res = await importItemMaster(file, master, { overrides, order, plans });
+      const res = await importItemMaster(file, master, { overrides, order, plans, lines });
       setOverrides(res.overrides);
       setOrder(res.order);
       setSavedOverrides(res.overrides);
@@ -296,6 +361,10 @@ export default function InkItemMaster() {
       if (res.plans) {
         setPlans(res.plans);
         setSavedPlans(res.plans);
+      }
+      if (res.lines) {
+        setLines(res.lines);
+        setSavedLines(res.lines);
       }
       const parts = [`Imported ${res.matched} of ${res.rows} rows.`];
       if (res.unmatched.length) {
@@ -393,9 +462,10 @@ export default function InkItemMaster() {
       return next;
     });
 
+  /** `width` is now a hint only: every editor fills its column so resizing actually resizes. */
   const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
     <Input
-      className={`h-8 ${width}`}
+      className={`h-8 w-full min-w-0 ${width}`}
       value={overrides[r.key]?.[field] ?? ""}
       placeholder={fallback || "—"}
       onChange={(e) => patch(r.key, field, e.target.value)}
@@ -577,8 +647,14 @@ export default function InkItemMaster() {
               <ResizableHead id="code" cols={cols} className="min-w-[12rem]">Item code</ResizableHead>
               <ResizableHead id="group" cols={cols} className="min-w-[12rem]">Group</ResizableHead>
               <ResizableHead id="description" cols={cols} className="min-w-[18rem]">Description</ResizableHead>
-              <ResizableHead id="category" cols={cols} className="min-w-[11rem]">Category</ResizableHead>
-              <ResizableHead id="source" cols={cols} className="min-w-[10rem]">Import/Plant</ResizableHead>
+              <ResizableHead id="category" cols={cols} className="min-w-[11rem]">
+                Category
+                <div className="text-[10px] font-normal text-muted-foreground">sets the group</div>
+              </ResizableHead>
+              <ResizableHead id="source" cols={cols} className="min-w-[10rem]">
+                Import/Plant
+                <div className="text-[10px] font-normal text-muted-foreground">sets the group</div>
+              </ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-2 font-normal">
@@ -681,23 +757,28 @@ export default function InkItemMaster() {
                   <Input
                     type="number"
                     inputMode="decimal"
-                    className="h-8 w-20 text-right"
+                    className="h-8 w-full min-w-0 text-right"
                     value={plans[r.mergeKey]?.leadTime || ""}
                     placeholder="–"
                     title="Months of cover to order against. Shared by every book on this line."
                     onChange={(e) => setLeadTime(r.mergeKey, e.target.value)}
                   />
                 </TableCell>
-                <TableCell>{cell(r, "code", r.tallyCode, "w-44")}</TableCell>
-                <TableCell>{cell(r, "group", r.tallyGroup, "w-44")}</TableCell>
-                <TableCell>{cell(r, "description", r.item, "w-72")}</TableCell>
+                <TableCell>{cell(r, "code", r.tallyCode, "")}</TableCell>
+                <TableCell>{cell(r, "group", r.tallyGroup, "")}</TableCell>
+                <TableCell>{cell(r, "description", r.item, "")}</TableCell>
                 <TableCell>
                   {/* Shows the category read from the item's name until the planner picks one;
                       picking writes their choice, which wins from then on. */}
                   <select
-                    className="h-8 w-40 rounded-md border bg-background px-2 text-sm"
-                    value={overrides[r.key]?.category ?? r.category}
-                    onChange={(e) => patch(r.key, "category", e.target.value)}
+                    className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
+                    value={
+                      lines[r.mergeKey]?.category ??
+                      groupFields[(r.effectiveGroup || "").trim().toUpperCase()]?.category ??
+                      r.category
+                    }
+                    title="Sets the category for this item's whole group"
+                    onChange={(e) => setGroupField(r, "category", e.target.value)}
                   >
                     <option value="">—</option>
                     {INK_CATEGORIES.map((c) => (
@@ -709,9 +790,14 @@ export default function InkItemMaster() {
                 </TableCell>
                 <TableCell>
                   <select
-                    className="h-8 w-36 rounded-md border bg-background px-2 text-sm"
-                    value={overrides[r.key]?.source ?? ""}
-                    onChange={(e) => patch(r.key, "source", e.target.value)}
+                    className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
+                    value={
+                      lines[r.mergeKey]?.source ??
+                      groupFields[(r.effectiveGroup || "").trim().toUpperCase()]?.source ??
+                      r.source
+                    }
+                    title="Sets Import/Domestic/Plant for this item's whole group"
+                    onChange={(e) => setGroupField(r, "source", e.target.value)}
                   >
                     <option value="">—</option>
                     {INK_SOURCES.map((o) => (

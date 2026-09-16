@@ -31,7 +31,8 @@ import { saveAs } from "file-saver";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, masterKey, sourceLabel,
-  type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
+  type InkLines, type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides,
+  type InkPlan,
 } from "./inkMis";
 
 const SHEET = "Item master";
@@ -122,6 +123,8 @@ export interface ItemMasterImportResult {
   order: InkOrder;
   /** Only present when the file carries a Lead time column. */
   plans?: Record<string, InkPlan>;
+  /** Category and Import/Plant, per printed line. Present when the file carries those columns. */
+  lines?: InkLines;
   rows: number;
   matched: number;
   unmatched: { book: string; item: string }[];
@@ -142,7 +145,12 @@ export interface ItemMasterImportResult {
 export async function importItemMaster(
   file: File,
   master: InkMasterRow[],
-  current: { overrides: InkOverrides; order: InkOrder; plans?: Record<string, InkPlan> },
+  current: {
+    overrides: InkOverrides;
+    order: InkOrder;
+    plans?: Record<string, InkPlan>;
+    lines?: InkLines;
+  },
 ): Promise<ItemMasterImportResult> {
   const raw = await parseXlsxRows(file);
   if (!raw.length) throw new Error("The file has no rows.");
@@ -164,6 +172,15 @@ export async function importItemMaster(
   // wipe lead times just because it predates them.
   const hasLead = "Lead time" in first;
   const plans: Record<string, InkPlan> = { ...(current.plans ?? {}) };
+  // Category and Import/Plant are per line too. Only touched when the file has those columns.
+  const hasCategory = "Category" in first;
+  const hasSource = "Import/Plant" in first;
+  const lines: InkLines = { ...(current.lines ?? {}) };
+  // A line's first row in THIS file wins and clears what was stored, so an import can change a
+  // category, not merely fill an empty one. Later rows of the same line only fill a gap, which is
+  // what lets one word on one of an ink's four rows stand for all of them.
+  const seenCategory = new Set<string>();
+  const seenSource = new Set<string>();
   const unmatched: ItemMasterImportResult["unmatched"] = [];
   let matched = 0;
   let orderClashes = 0;
@@ -194,14 +211,7 @@ export async function importItemMaster(
     if (group && group !== norm(m.tallyGroup)) next.group = group;
     if (desc && desc !== norm(m.tallyDescription)) next.description = desc;
 
-    // Planner-only fields: no Tally value to compare against, so whatever is in the cell stands.
-    const category = up(row["Category"]);
-    if (INK_CATEGORIES.includes(category as (typeof INK_CATEGORIES)[number])) next.category = category;
-    else if (category) badCategories++;
-    const srcCell = up(row["Import/Plant"]);
-    const src = INK_SOURCES.find((o) => o.value.toUpperCase() === srcCell || o.label.toUpperCase() === srcCell);
-    if (src) next.source = src.value;
-    else if (srcCell) badSources++;
+
     if (Object.keys(next).length) overrides[key] = next;
     else delete overrides[key];
 
@@ -211,6 +221,34 @@ export async function importItemMaster(
       delete order[line];
       touchedLines.add(line);
     }
+    // Planner-only fields, keyed on the line: the first row of a line that carries a value sets
+    // it, so an ink listed in four books does not need the same word typed four times.
+    if (hasCategory) {
+      const category = up(row["Category"]);
+      if (INK_CATEGORIES.includes(category as (typeof INK_CATEGORIES)[number])) {
+        if (!seenCategory.has(line)) {
+          lines[line] = { ...lines[line], category };
+          seenCategory.add(line);
+        } else if (!lines[line]?.category) {
+          lines[line] = { ...lines[line], category };
+        }
+      } else if (category) badCategories++;
+    }
+    if (hasSource) {
+      const srcCell = up(row["Import/Plant"]);
+      const src = INK_SOURCES.find(
+        (o) => o.value.toUpperCase() === srcCell || o.label.toUpperCase() === srcCell,
+      );
+      if (src) {
+        if (!seenSource.has(line)) {
+          lines[line] = { ...lines[line], source: src.value };
+          seenSource.add(line);
+        } else if (!lines[line]?.source) {
+          lines[line] = { ...lines[line], source: src.value };
+        }
+      } else if (srcCell) badSources++;
+    }
+
     if (hasLead) {
       const lead = norm(row["Lead time"]);
       const n = Number(lead);
@@ -237,6 +275,7 @@ export async function importItemMaster(
     overrides,
     order,
     ...(hasLead ? { plans } : {}),
+    ...(hasCategory || hasSource ? { lines } : {}),
     rows: raw.length,
     matched,
     unmatched,
