@@ -48,6 +48,8 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
+import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
@@ -100,7 +102,6 @@ export default function InkMis() {
       return false;
     }
   });
-  const [showSellingOutOfStock, setShowSellingOutOfStock] = useState(false);
   useEffect(() => {
     try {
       window.localStorage.setItem("ink-mis:companies-open", companiesOpen ? "1" : "0");
@@ -124,7 +125,18 @@ export default function InkMis() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const positions = useMemo(() => data?.rows ?? [], [data]);
+  /**
+   * ONLY NUMBERED LINES REACH THE DASHBOARD. The planner gives a line a number in the item
+   * master when they want it on the sheet; a line whose number is blank stays in the item
+   * master (with its closing stock) and nowhere else. Everything below — rows, totals, the
+   * missing-code warning — reads this list, never the unfiltered one.
+   */
+  const allPositions = useMemo(() => data?.rows ?? [], [data]);
+  const positions = useMemo(
+    () => allPositions.filter((p) => order[p.key] !== undefined),
+    [allPositions, order],
+  );
+  const unnumbered = allPositions.length - positions.length;
   const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
   /* ------------------------------------------------- averages from the Sales Register */
@@ -182,19 +194,10 @@ export default function InkMis() {
       };
       return deriveInkRow(p, plan, shipments, thresholds, companyKey);
     });
-    // ONLY LINES WITH A VALUE. The item master lists everything; the dashboard shows what is
-    // actually there — stock in the view, or ink on the way. A line with nothing is noise.
-    //
-    // One exception, off by default: an ink with no stock that is still SELLING is the most
-    // urgent line on the sheet, and hiding it would hide exactly the reorder this report exists
-    // for. The toggle brings those back.
-    const scoped = built.filter(
-      (r) =>
-        r.stock !== 0 ||
-        r.incoming !== 0 ||
-        r.etd !== 0 ||
-        (showSellingOutOfStock && (r.plan.threeMonthAvg > 0 || r.plan.perDayAvg > 0)),
-    );
+    // EVERY NUMBERED LINE SHOWS, stock or not. The number is the planner's decision that a line
+    // belongs on the sheet — an ink at zero stock that they numbered is exactly the one they want
+    // to watch — so no stock filter second-guesses it. `positions` is already numbered-only.
+    const scoped = built;
     const q = search.trim().toUpperCase();
     if (!q) return scoped;
     return scoped.filter(
@@ -202,7 +205,7 @@ export default function InkMis() {
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, showSellingOutOfStock]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
 
   /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
   const shipmentCols = useMemo(
@@ -231,21 +234,39 @@ export default function InkMis() {
 
   const reorderCount = rows.filter((r) => r.band === "low" || r.band === "mid").length;
 
-  /** How many out-of-stock inks are still selling — shown on the toggle so it is never a guess. */
-  const sellingOutOfStock = useMemo(
-    () =>
-      positions.filter((p) => {
-        const stock = companyKey ? (p.byCompany[companyKey] ?? 0) : p.stock;
-        if (stock !== 0) return false;
-        const live = consumption?.get(p.key);
-        const src = companyKey ? live?.byCompany[companyKey] : live;
-        return Boolean(src && (src.threeMonthAvg > 0 || src.perDayAvg > 0));
-      }).length,
-    [positions, consumption, companyKey],
-  );
 
   // The company columns exist only on Combined, and only when the group is open.
-  const showCompanyCols = !companyKey && companiesOpen;
+  const cols = useTableColumns("dashboard");
+  const showCompanyCols = !companyKey && companiesOpen && cols.isVisible("companies");
+  const showShipmentCols = cols.isVisible("shipments");
+
+  /**
+   * The planning block, left of the stock columns. Item code is not hideable: without it a row
+   * cannot be identified. Stock and Total are not hideable either — they are the answer.
+   */
+  const LEAD_COLS = [
+    { id: "group", label: "Group" },
+    { id: "code", label: "Item code", locked: true },
+    { id: "description", label: "Description" },
+    { id: "remark", label: "Remark" },
+    { id: "m3", label: "3-month avg" },
+    { id: "pd", label: "Per day avg" },
+    { id: "lead", label: "Lead time" },
+    { id: "safety", label: "Safety" },
+    { id: "days", label: "Days cover" },
+    { id: "withEta", label: "With ETA" },
+    { id: "monthMax", label: "Month max" },
+    { id: "dailyMax", label: "Daily max" },
+  ];
+  const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+  const on = (id: string) => leadVisible.some((c) => c.id === id);
+  const columnOptions = [
+    ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
+    { value: "companies", label: "Stock by company" },
+    { value: "shipments", label: "Consignment columns" },
+    { value: "incoming", label: "ETA + at port" },
+  ];
+  const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
   const setPlan = (code: string, patch: Partial<InkPlan>) =>
     setPlans((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_PLAN), ...patch } }));
@@ -378,14 +399,6 @@ export default function InkMis() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <label className="inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showSellingOutOfStock}
-            onChange={(e) => setShowSellingOutOfStock(e.target.checked)}
-          />
-          Also show out-of-stock inks still selling ({sellingOutOfStock})
-        </label>
         <select
           className="h-9 rounded-md border bg-background px-2 text-sm"
           value={scope}
@@ -411,6 +424,18 @@ export default function InkMis() {
           <Wand2 className="mr-2 h-4 w-4" />
           {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
+        <MultiSelect
+          values={visibleColumnIds}
+          onChange={(v) => cols.setHidden(columnOptions.map((o) => o.value).filter((id) => !v.includes(id)))}
+          options={columnOptions}
+          triggerLabel="Columns"
+          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+        />
+        {cols.customised && (
+          <Button variant="ghost" size="sm" onClick={cols.reset} title="Show every column at its automatic width">
+            Reset columns
+          </Button>
+        )}
         {(["low", "mid", "normal", "excess"] as InkBand[]).map((b) => (
           <span key={b} className={`rounded px-2 py-1 text-xs ${BAND_CLASS[b]}`}>
             {BAND_LABEL[b]}
@@ -446,6 +471,21 @@ export default function InkMis() {
         </div>
       )}
 
+      {!isLoading && unnumbered > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
+          <span>
+            Showing only items with a number. <strong>{unnumbered}</strong> item
+            {unnumbered === 1 ? "" : "s"} with a blank number {unnumbered === 1 ? "is" : "are"} in the
+            item master only.
+          </span>
+          <Button size="sm" variant="outline" asChild className="ml-auto">
+            <Link to={`${BASE}/items`}>
+              <ListChecks className="mr-2 h-4 w-4" /> Open the item master
+            </Link>
+          </Button>
+        </div>
+      )}
+
       {needsCode > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -461,14 +501,18 @@ export default function InkMis() {
         </div>
       )}
 
+      <p className="text-xs text-muted-foreground">
+        Drag a column's right edge to resize it, double-click the edge to reset it. Use Columns to
+        hide or show columns.
+      </p>
       <ScrollableTable>
         <Table>
           <TableHeader>
-            {!companyKey && (
+            {!companyKey && cols.isVisible("companies") && (
               <TableRow className="hover:bg-transparent">
-                <TableHead colSpan={12} />
+                {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
                 <TableHead
-                  colSpan={showCompanyCols ? INK_COMPANIES.length : 1}
+                  colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1}
                   className="border-x text-center"
                 >
                   <button
@@ -480,49 +524,56 @@ export default function InkMis() {
                     {showCompanyCols ? "− All four companies" : "+ All four companies"}
                   </button>
                 </TableHead>
-                <TableHead colSpan={shipmentCols.length + 2} />
+                <TableHead
+                  colSpan={(showShipmentCols ? shipmentCols.length : 0) + (cols.isVisible("incoming") ? 1 : 0) + 1}
+                />
               </TableRow>
             )}
             <TableRow>
-              <TableHead className="min-w-[10rem]">Group</TableHead>
-              <TableHead className="min-w-[9rem]">Item code</TableHead>
-              <TableHead className="min-w-[16rem]">Description</TableHead>
-              <TableHead className="min-w-[11rem]">Remark</TableHead>
-              <TableHead className="text-right">3-month avg</TableHead>
-              <TableHead className="text-right">Per day avg</TableHead>
-              <TableHead className="text-right">Lead time</TableHead>
-              <TableHead className="text-right">Safety</TableHead>
-              <TableHead className="text-right">Days cover</TableHead>
-              <TableHead className="text-right">With ETA</TableHead>
-              <TableHead className="text-right">Month max</TableHead>
-              <TableHead className="text-right">Daily max</TableHead>
+              {on("group") && <ResizableHead id="group" cols={cols} className="min-w-[10rem]">Group</ResizableHead>}
+              <ResizableHead id="code" cols={cols} className="min-w-[9rem]">Item code</ResizableHead>
+              {on("description") && <ResizableHead id="description" cols={cols} className="min-w-[16rem]">Description</ResizableHead>}
+              {on("remark") && <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">Remark</ResizableHead>}
+              {on("m3") && <ResizableHead id="m3" cols={cols} className="text-right">3-month avg</ResizableHead>}
+              {on("pd") && <ResizableHead id="pd" cols={cols} className="text-right">Per day avg</ResizableHead>}
+              {on("lead") && <ResizableHead id="lead" cols={cols} className="text-right">Lead time</ResizableHead>}
+              {on("safety") && <ResizableHead id="safety" cols={cols} className="text-right">Safety</ResizableHead>}
+              {on("days") && <ResizableHead id="days" cols={cols} className="text-right">Days cover</ResizableHead>}
+              {on("withEta") && <ResizableHead id="withEta" cols={cols} className="text-right">With ETA</ResizableHead>}
+              {on("monthMax") && <ResizableHead id="monthMax" cols={cols} className="text-right">Month max</ResizableHead>}
+              {on("dailyMax") && <ResizableHead id="dailyMax" cols={cols} className="text-right">Daily max</ResizableHead>}
               {showCompanyCols &&
                 INK_COMPANIES.map((c) => (
-                  <TableHead key={c.key} className="text-right">
+                  <ResizableHead key={c.key} id={`co:${c.key}`} cols={cols} className="text-right">
                     {c.label}
-                  </TableHead>
+                  </ResizableHead>
                 ))}
-              <TableHead className={`text-right font-semibold ${!companyKey && !showCompanyCols ? "border-x" : ""}`}>
+              <ResizableHead
+                id="stock"
+                cols={cols}
+                className={`text-right font-semibold ${!companyKey && !showCompanyCols ? "border-x" : ""}`}
+              >
                 {companyKey ? "Stock" : showCompanyCols ? "Total stock" : "Stock (4 companies)"}
-              </TableHead>
-              {shipmentCols.map((s) => (
-                <TableHead key={s.id} className="text-right">
-                  <div className="text-[10px] uppercase text-muted-foreground">{s.status}</div>
-                  <div>{s.reference || "(no ref)"}</div>
-                  <div className="text-[10px] font-normal text-muted-foreground">
-                    {s.date || "no date"}
-                  </div>
-                </TableHead>
-              ))}
-              <TableHead className="text-right">ETA + at port</TableHead>
-              <TableHead className="text-right font-semibold">Total</TableHead>
+              </ResizableHead>
+              {showShipmentCols &&
+                shipmentCols.map((s) => (
+                  <ResizableHead key={s.id} id={`ship:${s.id}`} cols={cols} className="text-right">
+                    <div className="text-[10px] uppercase text-muted-foreground">{s.status}</div>
+                    <div>{s.reference || "(no ref)"}</div>
+                    <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
+                  </ResizableHead>
+                ))}
+              {cols.isVisible("incoming") && (
+                <ResizableHead id="incoming" cols={cols} className="text-right">ETA + at port</ResizableHead>
+              )}
+              <ResizableHead id="total" cols={cols} className="text-right font-semibold">Total</ResizableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={20} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
                   Loading ink stock from ConnectWave…
                 </TableCell>
               </TableRow>
@@ -530,65 +581,67 @@ export default function InkMis() {
 
             {!isLoading && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={20} className="py-10 text-center text-muted-foreground">
-                  No inks to show.
+                <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
+                  {positions.length === 0
+                    ? "No numbered items yet. Give an item a number in the item master to show it here."
+                    : "No inks to show."}
                 </TableCell>
               </TableRow>
             )}
 
             {rows.map((r) => (
               <TableRow key={r.key}>
-                <TableCell className="text-xs">{r.group}</TableCell>
+                {on("group") && <TableCell className="text-xs">{r.group}</TableCell>}
                 <TableCell className="font-medium">{r.itemCode}</TableCell>
-                <TableCell>{r.description}</TableCell>
-                <TableCell>
-                  {r.remark && (
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs ${
-                        r.remark === "EXCESS STOCK"
-                          ? "bg-fuchsia-100 text-fuchsia-900"
-                          : "bg-red-100 text-red-900"
-                      }`}
-                    >
-                      {r.remark}
-                    </span>
-                  )}
-                </TableCell>
+                {on("description") && <TableCell>{r.description}</TableCell>}
+                {on("remark") && (
+                  <TableCell>
+                    {r.remark && (
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          r.remark === "EXCESS STOCK" ? "bg-fuchsia-100 text-fuchsia-900" : "bg-red-100 text-red-900"
+                        }`}
+                      >
+                        {r.remark}
+                      </span>
+                    )}
+                  </TableCell>
+                )}
 
                 {/* Planner inputs — the four editable cells. */}
                 {(
                   [
-                    ["threeMonthAvg", r.plan.threeMonthAvg],
-                    ["perDayAvg", r.plan.perDayAvg],
-                    ["leadTime", r.plan.leadTime],
-                    ["safetyFactor", r.plan.safetyFactor],
-                  ] as [keyof InkPlan, number][]
-                ).map(([field, value]) => (
-                  <TableCell key={field} className="text-right tabular-nums">
-                    {editing ? (
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        className="h-8 w-20 text-right"
-                        value={value || ""}
-                        onChange={(e) =>
-                          field === "threeMonthAvg" || field === "perDayAvg"
-                            ? setAverage(r.key, field, e.target.value)
-                            : setPlan(r.key, { [field]: Number(e.target.value) || 0 })
-                        }
-                      />
-                    ) : (
-                      fmtDays(value || null)
-                    )}
-                  </TableCell>
-                ))}
+                    ["m3", "threeMonthAvg", r.plan.threeMonthAvg],
+                    ["pd", "perDayAvg", r.plan.perDayAvg],
+                    ["lead", "leadTime", r.plan.leadTime],
+                    ["safety", "safetyFactor", r.plan.safetyFactor],
+                  ] as [string, keyof InkPlan, number][]
+                )
+                  .filter(([id]) => on(id))
+                  .map(([id, field, value]) => (
+                    <TableCell key={id} className="text-right tabular-nums">
+                      {editing ? (
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          className="h-8 w-20 text-right"
+                          value={value || ""}
+                          onChange={(e) =>
+                            field === "threeMonthAvg" || field === "perDayAvg"
+                              ? setAverage(r.key, field, e.target.value)
+                              : setPlan(r.key, { [field]: Number(e.target.value) || 0 })
+                          }
+                        />
+                      ) : (
+                        fmtDays(value || null)
+                      )}
+                    </TableCell>
+                  ))}
 
-                <TableCell className="text-right tabular-nums">{fmtDays(r.daysCover)}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {fmtDays(r.daysCoverWithIncoming)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{fmtQty(r.monthMaxLevel)}</TableCell>
-                <TableCell className="text-right tabular-nums">{fmtQty(r.dailyMaxLevel)}</TableCell>
+                {on("days") && <TableCell className="text-right tabular-nums">{fmtDays(r.daysCover)}</TableCell>}
+                {on("withEta") && <TableCell className="text-right tabular-nums">{fmtDays(r.daysCoverWithIncoming)}</TableCell>}
+                {on("monthMax") && <TableCell className="text-right tabular-nums">{fmtQty(r.monthMaxLevel)}</TableCell>}
+                {on("dailyMax") && <TableCell className="text-right tabular-nums">{fmtQty(r.dailyMaxLevel)}</TableCell>}
 
                 {showCompanyCols &&
                   INK_COMPANIES.map((c) => (
@@ -599,26 +652,23 @@ export default function InkMis() {
 
                 <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.band]}`}>
                   {fmtQty(r.stock)}
-                  {r.coverPct !== null && (
-                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>
-                  )}
+                  {r.coverPct !== null && <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>}
                 </TableCell>
 
-                {shipmentCols.map((s) => {
-                  const q = s.lines
-                    .filter((l) => r.itemCode && l.itemCode === r.itemCode)
-                    .reduce((t, l) => t + l.qty, 0);
-                  return (
-                    <TableCell key={s.id} className="text-right tabular-nums">
-                      {q ? fmtQty(q) : ""}
-                    </TableCell>
-                  );
-                })}
+                {showShipmentCols &&
+                  shipmentCols.map((s) => {
+                    const q = s.lines
+                      .filter((l) => r.itemCode && l.itemCode === r.itemCode)
+                      .reduce((t, l) => t + l.qty, 0);
+                    return (
+                      <TableCell key={s.id} className="text-right tabular-nums">
+                        {q ? fmtQty(q) : ""}
+                      </TableCell>
+                    );
+                  })}
 
-                <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">
-                  {fmtQty(r.total)}
-                </TableCell>
+                {cols.isVisible("incoming") && <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>}
+                <TableCell className="text-right font-semibold tabular-nums">{fmtQty(r.total)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -626,7 +676,7 @@ export default function InkMis() {
           {rows.length > 0 && (
             <TableFooter>
               <TableRow>
-                <TableCell colSpan={12} className="font-semibold">
+                <TableCell colSpan={leadVisible.length} className="font-semibold">
                   Total — {rows.length} inks
                 </TableCell>
                 {showCompanyCols &&
@@ -635,20 +685,17 @@ export default function InkMis() {
                       {fmtQty(rows.reduce((t, r) => t + (r.byCompany[c.key] ?? 0), 0))}
                     </TableCell>
                   ))}
-                <TableCell className="text-right font-semibold tabular-nums">
-                  {fmtQty(totals.stock)}
-                </TableCell>
-                {shipmentCols.map((s) => (
-                  <TableCell key={s.id} className="text-right font-semibold tabular-nums">
-                    {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
-                  </TableCell>
-                ))}
-                <TableCell className="text-right font-semibold tabular-nums">
-                  {fmtQty(totals.eta + totals.atPort)}
-                </TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">
-                  {fmtQty(totals.total)}
-                </TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.stock)}</TableCell>
+                {showShipmentCols &&
+                  shipmentCols.map((s) => (
+                    <TableCell key={s.id} className="text-right font-semibold tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
+                {cols.isVisible("incoming") && (
+                  <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.eta + totals.atPort)}</TableCell>
+                )}
+                <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.total)}</TableCell>
               </TableRow>
             </TableFooter>
           )}

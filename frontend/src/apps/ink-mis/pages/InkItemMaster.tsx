@@ -41,6 +41,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
+import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   INK_COMPANIES, fmtQty, loadInkPositions, loadOrder, loadOverrides, renumber, saveOrder,
@@ -180,6 +181,7 @@ export default function InkItemMaster() {
   if (f.description.trim()) chips.push({ key: "desc", label: `Description: ${f.description.trim()}`, onClear: () => setCol("description", "") });
 
   const slim = "py-1.5 px-2.5 text-[12.5px]";
+  const cols = useTableColumns("item-master");
 
   /**
    * Import is applied only after the whole file has been read and matched, so a bad file
@@ -227,8 +229,15 @@ export default function InkItemMaster() {
    * falling in behind everything positioned, and the row would appear to jump the whole list.
    */
   const move = (mergeKey: string, delta: number) => {
+    // ⚠ NUMBERED LINES ONLY. A number is what puts a line on the dashboard, so the arrows must
+    //   never hand one out: renumbering every row in view used to number all of them, and every
+    //   blank line would then have appeared on the dashboard. A blank line gets its number typed.
+    if (order[mergeKey] === undefined) return;
     const lines: string[] = [];
-    for (const r of rows) if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
+    for (const r of rows) {
+      if (order[r.mergeKey] === undefined) continue;
+      if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
+    }
     const at = lines.indexOf(mergeKey);
     const to = at + delta;
     if (at < 0 || to < 0 || to >= lines.length) return;
@@ -338,16 +347,32 @@ export default function InkItemMaster() {
         <Button
           size="sm"
           variant="outline"
-          title="Give every line in the current view a number, in the order shown, in steps of ten"
+          title="Re-space the numbers you have already given, in steps of ten, keeping their order. Blank lines stay blank."
           onClick={() => {
+            // Only lines that ALREADY have a number. Numbering every row in view would put every
+            // blank line on the dashboard, which is exactly what a blank number means not to do.
             const lines: string[] = [];
-            for (const r of rows) if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
+            for (const r of rows) {
+              if (order[r.mergeKey] === undefined) continue;
+              if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
+            }
             setOrder((prev) => ({ ...prev, ...renumber(lines) }));
           }}
         >
-          <ListOrdered className="mr-2 h-4 w-4" /> Number this view
+          <ListOrdered className="mr-2 h-4 w-4" /> Tidy numbers
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => setOrder({})}>
+        {cols.customised && (
+          <Button size="sm" variant="ghost" onClick={cols.reset} title="Put every column back to its automatic width">
+            Reset column widths
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            if (window.confirm("Clear every number? All items will disappear from the dashboard until you number them again.")) setOrder({});
+          }}
+        >
           Clear order
         </Button>
 
@@ -377,13 +402,13 @@ export default function InkItemMaster() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[8.5rem]">Order</TableHead>
-              <TableHead className="min-w-[9rem]">Book</TableHead>
-              <TableHead className="min-w-[20rem]">Item in Tally</TableHead>
-              <TableHead className="text-right">Closing</TableHead>
-              <TableHead className="min-w-[12rem]">Item code</TableHead>
-              <TableHead className="min-w-[12rem]">Group</TableHead>
-              <TableHead className="min-w-[18rem]">Description</TableHead>
+              <ResizableHead id="order" cols={cols} className="w-[8.5rem]">Order</ResizableHead>
+              <ResizableHead id="book" cols={cols} className="min-w-[9rem]">Book</ResizableHead>
+              <ResizableHead id="item" cols={cols} className="min-w-[20rem]">Item in Tally</ResizableHead>
+              <ResizableHead id="closing" cols={cols} className="text-right">Closing</ResizableHead>
+              <ResizableHead id="code" cols={cols} className="min-w-[12rem]">Item code</ResizableHead>
+              <ResizableHead id="group" cols={cols} className="min-w-[12rem]">Group</ResizableHead>
+              <ResizableHead id="description" cols={cols} className="min-w-[18rem]">Description</ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-2 font-normal">
@@ -439,7 +464,9 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move up"
-                        className="text-muted-foreground hover:text-foreground"
+                        disabled={order[r.mergeKey] === undefined}
+                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, -1)}
                       >
                         <ArrowUp className="h-3 w-3" />
@@ -447,7 +474,9 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move down"
-                        className="text-muted-foreground hover:text-foreground"
+                        disabled={order[r.mergeKey] === undefined}
+                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, 1)}
                       >
                         <ArrowDown className="h-3 w-3" />
