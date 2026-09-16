@@ -48,6 +48,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import ReorderChart, { reorderQty } from "../components/ReorderChart";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
@@ -94,6 +95,8 @@ export default function InkMis() {
   const [groupsF, setGroupsF] = useState<string[]>([]);
   const [categoriesF, setCategoriesF] = useState<string[]>([]);
   const [sourcesF, setSourcesF] = useState<string[]>([]);
+  /** Remark is derived, not typed, so it filters on the three states the column can show. */
+  const [remarksF, setRemarksF] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
   const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
@@ -218,6 +221,7 @@ export default function InkMis() {
       if (groupsF.length && !groupsF.includes(r.group || "(none)")) return false;
       if (categoriesF.length && !categoriesF.includes(r.category || "(none)")) return false;
       if (sourcesF.length && !sourcesF.includes(r.source || "(none)")) return false;
+      if (remarksF.length && !remarksF.includes(r.remark || "(none)")) return false;
       return true;
     });
     if (!q) return narrowed;
@@ -226,7 +230,7 @@ export default function InkMis() {
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, groupsF, categoriesF, sourcesF]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, groupsF, categoriesF, sourcesF, remarksF]);
 
   /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
   const shipmentCols = useMemo(
@@ -270,11 +274,17 @@ export default function InkMis() {
     { value: "(none)", label: "Not set" },
     ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),
   ];
-  const filtersOn = groupsF.length + categoriesF.length + sourcesF.length > 0;
+  const REMARK_OPTS = [
+    { value: "NEW ORDER REQUIRED", label: "New order required" },
+    { value: "EXCESS STOCK", label: "Excess stock" },
+    { value: "(none)", label: "No remark" },
+  ];
+  const filtersOn = groupsF.length + categoriesF.length + sourcesF.length + remarksF.length > 0;
   const clearFilters = () => {
     setGroupsF([]);
     setCategoriesF([]);
     setSourcesF([]);
+    setRemarksF([]);
   };
 
   // The company columns exist only on Combined, and only when the group is open.
@@ -339,7 +349,7 @@ export default function InkMis() {
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
-      "ETD", "ETA + at port", "Total", "Category", "Import/Plant",
+      "ETD", "ETA + at port", "Total", "Category", "Import/Plant", "To order",
     ];
     const body = rows.map((r) => [
       r.group, r.itemCode, r.description, r.remark,
@@ -350,7 +360,7 @@ export default function InkMis() {
       ...shipmentCols.map((s) =>
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
-      r.etd, r.incoming, r.total, r.category, sourceLabel(r.source),
+      r.etd, r.incoming, r.total, r.category, sourceLabel(r.source), reorderQty(r),
     ]);
     const esc = (v: unknown) => {
       const s = String(v ?? "");
@@ -491,6 +501,13 @@ export default function InkMis() {
           triggerLabel="Import/Plant"
           triggerClassName="py-1.5 px-2.5 text-[12.5px]"
         />
+        <MultiSelect
+          values={remarksF}
+          onChange={setRemarksF}
+          options={REMARK_OPTS}
+          triggerLabel="Remark"
+          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+        />
         {filtersOn && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
@@ -562,6 +579,8 @@ export default function InkMis() {
         Drag a column's right edge to resize it, double-click the edge to reset it. Use Columns to
         hide or show columns.
       </p>
+      <ReorderChart rows={rows} />
+
       <ScrollableTable>
         <Table>
           <TableHeader>
@@ -638,7 +657,31 @@ export default function InkMis() {
                   <MultiSelect values={groupsF} onChange={setGroupsF} options={groupOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
                 </TableHead>
               )}
-              <TableHead colSpan={leadVisible.length - (on("group") ? 1 : 0)} />
+              {on("code") && (
+                <TableHead className="py-2 font-normal">
+                  <Input
+                    className="h-8"
+                    placeholder="Code or description…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </TableHead>
+              )}
+              {on("description") && <TableHead />}
+              {on("remark") && (
+                <TableHead className="py-2 font-normal">
+                  <MultiSelect values={remarksF} onChange={setRemarksF} options={REMARK_OPTS} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" />
+                </TableHead>
+              )}
+              <TableHead
+                colSpan={
+                  leadVisible.length -
+                  (on("group") ? 1 : 0) -
+                  (on("code") ? 1 : 0) -
+                  (on("description") ? 1 : 0) -
+                  (on("remark") ? 1 : 0)
+                }
+              />
               {showCompanyCols && <TableHead colSpan={INK_COMPANIES.length} />}
               <TableHead />
               {showShipmentCols && shipmentCols.length > 0 && <TableHead colSpan={shipmentCols.length} />}
