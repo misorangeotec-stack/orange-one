@@ -25,14 +25,14 @@ type AnySheet = ExportSheet<any>;
 import type { MoneyRow, PurchaseLine } from "../data/dailyReport";
 import { PARTY_KIND_LABEL } from "../data/dailyReport";
 import {
-  bandMoney, byParty, cellFor, entityTotal, facilityRows, groupSales, saleKind, salesTotals,
-  tradeTotal,
+  bandMoney, byParty, cellFor, entityTotal, FACILITY_BALANCE_NOTE, facilityRows, groupSales,
+  saleKind, salesTotals, tradeTotal,
   type LocationFilter,
 } from "./aggregate";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER } from "./saleType";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "./labels";
 import { dmy, isSunday, longDate } from "./format";
-import type { BankAccount, BankBalance } from "../types";
+import type { BankAccount, BankBalance, CcLimit } from "../types";
 import type { SaleLine } from "../data/dailyReport";
 
 export interface DailyXlsxInput {
@@ -43,6 +43,13 @@ export interface DailyXlsxInput {
   purchases: PurchaseLine[];
   accounts: BankAccount[];
   balances: Map<string, BankBalance>;
+  /**
+   * EVERY account, whatever the location filter — the credit facility is per
+   * company, so its available balance must not shrink to one location's cash.
+   */
+  facilityAccounts: BankAccount[];
+  /** The day's stored credit-limit blocks, sparse. */
+  ccLimits: Map<string, CcLimit>;
   /** Oldest first — the same window the screen's grid shows. */
   dates: string[];
   mtdSalesLacs: number;
@@ -195,21 +202,32 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
   }
 
   /* ---- bank facility ---------------------------------------------------- */
-  const facility = facilityRows(bankCols, d.balances, d.date);
+  // Per company, from every account — never the location-filtered bankCols.
+  const facility = facilityRows(d.facilityAccounts, d.balances, d.ccLimits, d.date);
   if (facility.length > 0) {
+    // A dash, never 0: a blank figure written as zero reads as a withdrawn limit
+    // in a file somebody sums.
     const blank = (n: number | null) => (n == null ? "—" : Number(n.toFixed(2)));
     sheets.push({
       sheetName: "Bank facility",
       rows: facility,
+      // The client's sheet column order.
       columns: [
-        { header: "Account", width: 18, value: (f) => f.account.name },
-        { header: "Entity", width: 34, value: (f) => entityLabel(f.account.entityAlias) },
-        { header: "CC limit", width: 12, value: (f) => blank(f.ccLimit) },
-        { header: "Held by bank", width: 14, value: (f) => blank(f.heldByBank) },
-        { header: "Available CC", width: 14, value: (f) => blank(f.availableCc) },
-        { header: "LC / BC limit", width: 14, value: (f) => blank(f.lcBcLimit) },
-        { header: "Utilised", width: 12, value: (f) => blank(f.lcBcUtilised) },
-        { header: "Free limit", width: 12, value: (f) => blank(f.lcBcFree) },
+        { header: "Company", width: 34, value: (f) => entityLabel(f.entityAlias) },
+        { header: "Bank", width: 10, value: (f) => f.bank },
+        { header: "CC limit (₹ L)", width: 14, value: (f) => blank(f.ccLimit) },
+        { header: "Available balance (₹ L)", width: 22, value: (f) => blank(f.availableBalance) },
+        { header: "LC / BC limit (₹ L)", width: 18, value: (f) => blank(f.lcBcLimit) },
+        { header: "Utilised (₹ L)", width: 14, value: (f) => blank(f.lcBcUtilised) },
+        { header: "Free limit (₹ L)", width: 16, value: (f) => blank(f.lcBcFree) },
+        { header: "Held by bank (₹ L)", width: 18, value: (f) => blank(f.heldByBank) },
+        { header: "Available CC limit (₹ L)", width: 22, value: (f) => blank(f.availableCc) },
+      ],
+      preamble: [
+        [`Bank facility — ${dmy(d.date)}`],
+        ["Per company, whatever the location filter. Free limit = LC / BC limit − utilised. Available CC limit = CC limit − held by bank."],
+        [FACILITY_BALANCE_NOTE],
+        [],
       ],
     });
   }

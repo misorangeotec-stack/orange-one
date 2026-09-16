@@ -27,8 +27,8 @@ import { formatDateTime } from "@/shared/lib/time";
 import { PARTY_KIND_LABEL } from "../data/dailyReport";
 import type { MoneyRow } from "../data/dailyReport";
 import {
-  bandMoney, byParty, cellFor, entityTotal, facilityRows, groupSales, saleKind, salesTotals,
-  tradeTotal,
+  bandMoney, byParty, cellFor, entityTotal, FACILITY_BALANCE_NOTE, facilityRows, groupSales,
+  saleKind, salesTotals, tradeTotal,
   type PartyTotal,
 } from "./aggregate";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER } from "./saleType";
@@ -286,22 +286,28 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   }
 
   /* ---- bank facility ------------------------------------------------------ */
-  const facility = facilityRows(d.accounts, d.balances, d.date);
+  // Per company, from every account — never the location-filtered d.accounts.
+  const facility = facilityRows(d.facilityAccounts, d.balances, d.ccLimits, d.date);
   if (facility.length > 0) {
     if (y > PAGE_H - 140) y = newPage();
-    y = sectionHeading(pdf, MARGIN, y, "limits from the account master", "Bank facility") + 4;
+    y = sectionHeading(pdf, MARGIN, y, "per company · ₹ lakhs", "Bank facility") + 4;
+    // The client's sheet column order. `drawTable` ellipsizes rather than wraps,
+    // so the headings are the short forms and the company is its alias-backed
+    // legal name, which fits its column whole.
     y = drawTable(pdf, {
       x: MARGIN, y, width: CONTENT_W,
       rows: facility,
       rowH: 13, bodySize: 7.2, maxY: PAGE_H - 56, onNewPage: newPage,
       columns: [
-        { header: "Account", width: 1.6, value: (f) => f.account.name },
-        { header: "CC limit", width: 1.0, align: "right", value: (f) => money(f.ccLimit) },
-        { header: "Held", width: 1.0, align: "right", value: (f) => money(f.heldByBank) },
-        { header: "Available", width: 1.1, align: "right", value: (f) => money(f.availableCc) },
-        { header: "LC/BC", width: 1.0, align: "right", value: (f) => money(f.lcBcLimit) },
-        { header: "Utilised", width: 1.0, align: "right", value: (f) => money(f.lcBcUtilised) },
-        { header: "Free", width: 1.0, align: "right", value: (f) => money(f.lcBcFree) },
+        { header: "Company", width: 2.5, value: (f) => entityLabel(f.entityAlias) },
+        { header: "Bank", width: 0.6, value: (f) => f.bank },
+        { header: "CC limit", width: 0.9, align: "right", value: (f) => money(f.ccLimit) },
+        { header: "Avail. bal.", width: 0.9, align: "right", value: (f) => money(f.availableBalance) },
+        { header: "LC/BC limit", width: 0.95, align: "right", value: (f) => money(f.lcBcLimit) },
+        { header: "Utilised", width: 0.9, align: "right", value: (f) => money(f.lcBcUtilised) },
+        { header: "Free limit", width: 0.9, align: "right", value: (f) => money(f.lcBcFree) },
+        { header: "Held", width: 0.8, align: "right", value: (f) => money(f.heldByBank) },
+        { header: "Avail. CC", width: 0.9, align: "right", value: (f) => money(f.availableCc) },
       ],
     }) + 14;
   }
@@ -312,6 +318,9 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
     BLANK_NOTE,
     "The Received and Paid figures on the cards count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. The tables below list every counterparty, with a subtotal per band and the full figure at the foot.",
     "Goods out on approval are not counted as sales.",
+    ...(facility.length > 0
+      ? [`Bank facility is per company, whatever the location. ${FACILITY_BALANCE_NOTE} Free limit is LC/BC limit less utilised; available CC limit is CC limit less held by bank.`]
+      : []),
     ...(d.rulesLoaded ? [] : ["The product-line rules could not be read, so sales are filed under Not yet classified. The amounts are still correct."]),
   ];
   const nh = noteBlockHeight(pdf, CONTENT_W, notes);

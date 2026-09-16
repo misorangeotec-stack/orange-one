@@ -59,7 +59,17 @@ export const ACCOUNT_TYPE_RANK: Record<BankAccountType, number> = {
   cc: 0, od: 1, current: 2, savings: 3,
 };
 
-/** Account types that borrow, and so appear in the facility block. */
+/**
+ * The banks the evening form asks for a credit-limit block at, per company.
+ *
+ * Axis only, because that is the one row on the client's sheet. The table keeps
+ * bank as a real column (Orange O Tec also holds an ICICI cash-credit account),
+ * so a second facility is this list plus data — never a schema change. The
+ * report prints whatever banks have a stored block, listed here or not.
+ */
+export const FACILITY_BANKS: readonly string[] = ["AXIS"];
+
+/** Account types that borrow. */
 export const isFacilityAccount = (t: BankAccountType): boolean => t === "cc" || t === "od";
 
 /**

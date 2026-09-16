@@ -11,6 +11,7 @@ import { TextInput } from "@/shared/components/ui/Form";
 import { useDailyReport, PARTY_KIND_LABEL, type MoneyRow, type PurchaseLine } from "../data/dailyReport";
 import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
+import { useCcLimits } from "../data/ccLimits";
 import {
   addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
   shortDay, timeOfDay, todayIso,
@@ -18,9 +19,9 @@ import {
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "../lib/labels";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType";
 import {
-  allBandsTotal, bandMoney, bankColumns, byParty, cellFor, entityTotal, facilityRows,
-  groupSales, inLocation, isBankOnlyLocation, purchaseTotal, salesTotals, saleKind, topShare,
-  tradeTotal, TRADE_BANDS,
+  allBandsTotal, bandMoney, bankColumns, byParty, cellFor, entityTotal, FACILITY_BALANCE_NOTE,
+  facilityRows, groupSales, inLocation, isBankOnlyLocation, purchaseTotal, salesTotals, saleKind,
+  topShare, tradeTotal, TRADE_BANDS,
   type LocationFilter, type PartyTotal,
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
@@ -239,6 +240,7 @@ export default function DailyReport() {
 
   const historyFrom = addDays(date, -(HISTORY_DAYS - 1));
   const balances = useBankBalances(historyFrom, date);
+  const ccLimits = useCcLimits(date, date);
 
   const bankOnly = isBankOnlyLocation(loc);
 
@@ -303,9 +305,17 @@ export default function DailyReport() {
     return { sum, anyMissing };
   }, [bankByEntity, balances.data, date]);
 
+  // ⚠ EVERY LOCATION, NOT bankCols. A credit facility is sanctioned to a
+  //   company, so its available balance is the whole company's cash; under a
+  //   Surat filter, bankCols would make it Orange O Tec's Surat cash under the
+  //   company's name. The same list goes to both exports.
+  const facilityAccounts = useMemo(
+    () => bankColumns(accounts.data ?? [], balances.data ?? new Map(), [date], "all"),
+    [accounts.data, balances.data, date],
+  );
   const facility = useMemo(
-    () => facilityRows(bankCols, balances.data ?? new Map(), date),
-    [bankCols, balances.data, date],
+    () => facilityRows(facilityAccounts, balances.data ?? new Map(), ccLimits.data ?? new Map(), date),
+    [facilityAccounts, balances.data, ccLimits.data, date],
   );
 
   /* ---- KPI ----------------------------------------------------------- */
@@ -369,6 +379,8 @@ export default function DailyReport() {
     date, loc, sales, money, purchases,
     accounts: bankCols,
     balances: balances.data ?? new Map(),
+    facilityAccounts,
+    ccLimits: ccLimits.data ?? new Map(),
     dates,
     mtdSalesLacs: mtdSales,
     rulesLoaded,
@@ -685,34 +697,66 @@ export default function DailyReport() {
       )}
 
       {/* ------------------------------------------------------------ bank */}
-      {facility.length > 0 && (
-        <Section title="Bank facility" note="Limits come from the bank account master; utilisation and free limit are computed. A dash means an input is not known — a free limit computed from a missing figure would be confidently wrong.">
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
-                <th className="px-2 py-2 font-semibold">Account</th>
-                <th className="px-2 py-2 text-right font-semibold">CC limit</th>
-                <th className="px-2 py-2 text-right font-semibold">Held by bank</th>
-                <th className="px-2 py-2 text-right font-semibold">Available CC</th>
-                <th className="px-2 py-2 text-right font-semibold">LC / BC limit</th>
-                <th className="px-2 py-2 text-right font-semibold">Utilised</th>
-                <th className="px-2 py-2 text-right font-semibold">Free limit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {facility.map((f) => (
-                <tr key={f.account.id} className="border-b border-line/60 last:border-0">
-                  <td className="px-2 py-1.5 font-semibold text-navy">{f.account.name}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.ccLimit)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.heldByBank)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.availableCc)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcLimit)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcUtilised)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.lcBcFree)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Per COMPANY, whatever the location filter, and in the client's sheet
+          column order. Every figure — including the three worked out — comes
+          from facilityRows, which the PDF and the workbook also call. */}
+      {!accounts.isLoading && (
+        <Section
+          title="Bank facility"
+          count="per company · ₹ lakhs"
+          note={`A facility is sanctioned to a company, so this block is the same under every location filter. ${FACILITY_BALANCE_NOTE} Free limit and available CC limit are worked out, and show a dash while an input is missing — a figure computed from a blank would be confidently wrong.`}
+        >
+          {ccLimits.isError ? (
+            <p className="px-1 py-4 text-center text-[12.5px] text-orange">
+              Could not read the credit limits: {String(ccLimits.error)}
+            </p>
+          ) : facility.length === 0 ? (
+            <p className="px-1 py-6 text-center text-[12.5px] text-grey">
+              {isSunday(date) ? `${dmy(date)} is a Sunday — the books are closed. ` : `No credit facility was recorded for ${dmy(date)}. `}
+              <Link to={`/daily-report/bank-balances?d=${date}`} className="font-semibold text-orange">
+                Enter it under each company on Bank balances →
+              </Link>
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
+                    <th className="px-2 py-2 font-semibold">Company</th>
+                    <th className="px-2 py-2 font-semibold">Bank</th>
+                    <th className="px-2 py-2 text-right font-semibold">CC limit</th>
+                    <th className="px-2 py-2 text-right font-semibold">Available balance</th>
+                    <th className="px-2 py-2 text-right font-semibold">LC / BC limit</th>
+                    <th className="px-2 py-2 text-right font-semibold">Utilised</th>
+                    <th className="px-2 py-2 text-right font-semibold">Free limit</th>
+                    <th className="px-2 py-2 text-right font-semibold">Held by bank</th>
+                    <th className="px-2 py-2 text-right font-semibold">Available CC limit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {facility.map((f) => (
+                    <tr key={`${f.entityAlias}|${f.bank}`} className="border-b border-line/60 last:border-0">
+                      <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-navy">{entityLabel(f.entityAlias)}</td>
+                      <td className="px-2 py-1.5 text-grey">{f.bank}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.ccLimit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                        {f.availableBalance == null ? (
+                          <span className="text-grey-2" title={`Not entered: ${f.balanceMissing.join(", ")}`}>—</span>
+                        ) : (
+                          fmtLacs(f.availableBalance)
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcLimit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.lcBcUtilised)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.lcBcFree)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtLacs(f.heldByBank)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtLacs(f.availableCc)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Section>
       )}
 
