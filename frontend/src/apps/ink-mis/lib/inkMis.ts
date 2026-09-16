@@ -162,6 +162,39 @@ export interface InkOverride {
 }
 
 /**
+ * The ink chemistries the planner sorts by. OTHERS is theirs to pick; it is never guessed.
+ */
+export const INK_CATEGORIES = ["REACTIVE", "SUBLIMATION", "PIGMENT", "DISPERSE", "OTHERS"] as const;
+
+/**
+ * Read the category out of the item's own name.
+ *
+ * Tally names carry the chemistry — "REACTIVE INK H-SERIES BLACK", "KY DISPERSE INK ULTRA RED" —
+ * so 651 of the 1,437 ink items classify themselves and the planner only fills the rest.
+ *
+ * Checked against every ink name in the four books on 16-Sep-2026: no name matches two of these
+ * patterns, so there is no precedence question hiding here. Anything unmatched returns "", which
+ * leaves the box empty rather than guessing OTHERS — a wrong category filters an ink out of the
+ * planner's view, which is worse than an empty one they can see and fill.
+ *
+ * DISPERSE is matched as a whole word on purpose: "SUBLIMATION DISPERSION SUPER HD CYAN" is a
+ * sublimation ink, and a loose "DISPERS" would have claimed it.
+ */
+const CATEGORY_RULES: [string, RegExp][] = [
+  ["REACTIVE", /REACTIVE/],
+  ["PIGMENT", /PIGMENT/],
+  ["SUBLIMATION", /SUBLIMATION|SUBLI\b/],
+  ["DISPERSE", /\bDISPERSED?\b/],
+];
+
+export function detectCategory(itemName: string | null | undefined): string {
+  const n = norm(itemName);
+  if (!n) return "";
+  for (const [category, pattern] of CATEGORY_RULES) if (pattern.test(n)) return category;
+  return "";
+}
+
+/**
  * How an ink reaches the shelf. Three values, because they are three different lead times and
  * three different people to chase, which is the whole reason the planner wants to filter on it.
  */
@@ -304,7 +337,8 @@ export async function loadInkPositions(
       closingQty: row.closing_qty,
       effectiveCode,
       effectiveGroup,
-      category: (ov.category ?? "").trim(),
+      // The planner's choice wins; otherwise the name classifies itself where it can.
+      category: (ov.category ?? "").trim() || detectCategory(tallyName || row.item),
       source: (ov.source ?? "").trim(),
       effectiveDescription,
       needsCode: !effectiveCode,
@@ -323,7 +357,7 @@ export async function loadInkPositions(
         description: effectiveDescription || row.item,
         customDescription: (ov.description ?? "").trim(),
         group: effectiveGroup,
-        category: (ov.category ?? "").trim(),
+        category: (ov.category ?? "").trim() || detectCategory(tallyName || row.item),
         source: (ov.source ?? "").trim(),
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
@@ -342,7 +376,7 @@ export async function loadInkPositions(
     else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
     if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
     if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
-    if (!pos.category && ov.category?.trim()) pos.category = ov.category.trim();
+    if (!pos.category) pos.category = (ov.category ?? "").trim() || detectCategory(tallyName || row.item);
     if (!pos.source && ov.source?.trim()) pos.source = ov.source.trim();
 
     pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + row.closing_qty;

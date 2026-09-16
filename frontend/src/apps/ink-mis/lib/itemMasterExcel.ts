@@ -30,7 +30,7 @@ import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
 import {
-  EMPTY_PLAN, INK_COMPANIES, INK_SOURCES, masterKey, sourceLabel,
+  EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, masterKey, sourceLabel,
   type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
 } from "./inkMis";
 
@@ -101,7 +101,7 @@ export function exportItemMaster(
     ["Order: any number. Lines are shown smallest first. Leave blank for no position."],
     ["Lead time: months of cover to order against. One value per line, shared by every book."],
     ["Item code, Group, Description: leave blank, or equal to Tally's value, to keep Tally's."],
-    ["Category: your own wording, anything you like."],
+    ["Category: one of REACTIVE, SUBLIMATION, PIGMENT, DISPERSE, OTHERS. Anything else is ignored."],
     ["Import/Plant: one of Import, Domestic or Plant. Anything else is ignored."],
     ["The same code in two books merges them into one line on the dashboard."],
     ["Save as .xlsx and use Import on the Item master screen."],
@@ -129,6 +129,8 @@ export interface ItemMasterImportResult {
   badOrders: number;
   /** Import/Plant cells that were not Import, Domestic or Plant. */
   badSources: number;
+  /** Category cells that were none of the five categories. */
+  badCategories: number;
 }
 
 /**
@@ -167,6 +169,7 @@ export async function importItemMaster(
   let orderClashes = 0;
   let badOrders = 0;
   let badSources = 0;
+  let badCategories = 0;
 
   for (const row of raw) {
     const book = norm(row["Book"]);
@@ -192,8 +195,9 @@ export async function importItemMaster(
     if (desc && desc !== norm(m.tallyDescription)) next.description = desc;
 
     // Planner-only fields: no Tally value to compare against, so whatever is in the cell stands.
-    const category = norm(row["Category"]);
-    if (category) next.category = category;
+    const category = up(row["Category"]);
+    if (INK_CATEGORIES.includes(category as (typeof INK_CATEGORIES)[number])) next.category = category;
+    else if (category) badCategories++;
     const srcCell = up(row["Import/Plant"]);
     const src = INK_SOURCES.find((o) => o.value.toUpperCase() === srcCell || o.label.toUpperCase() === srcCell);
     if (src) next.source = src.value;
@@ -239,5 +243,6 @@ export async function importItemMaster(
     orderClashes,
     badOrders,
     badSources,
+    badCategories,
   };
 }

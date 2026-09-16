@@ -53,7 +53,7 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
-  INK_SOURCES, loadHolidays, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides,
+  INK_CATEGORIES, INK_SOURCES, loadHolidays, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides,
   loadPlans, loadShipments, loadThresholds, saveHolidays, savePlans, saveThresholds, sourceLabel,
   workingDaysElapsed,
   type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
@@ -259,7 +259,10 @@ export default function InkMis() {
       ...[...new Set(positions.map(pick).filter(Boolean))].sort().map((v) => ({ value: v, label: v })),
     ];
   const groupOpts = useMemo(() => optionsFrom((p) => p.group), [positions]);
-  const categoryOpts = useMemo(() => optionsFrom((p) => p.category), [positions]);
+  const categoryOpts = [
+    { value: "(none)", label: "Not set" },
+    ...INK_CATEGORIES.map((c) => ({ value: c, label: c })),
+  ];
   const sourceOpts = [
     { value: "(none)", label: "Not set" },
     ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),

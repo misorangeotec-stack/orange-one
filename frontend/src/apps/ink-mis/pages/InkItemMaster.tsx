@@ -44,8 +44,8 @@ import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
-  EMPTY_PLAN, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder, loadOverrides,
-  loadPlans, renumber, savePlans, saveOrder, saveOverrides, sourceLabel,
+  EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder,
+  loadOverrides, loadPlans, renumber, savePlans, saveOrder, saveOverrides, sourceLabel,
   type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides, type InkPlan,
   type InkScope,
 } from "../lib/inkMis";
@@ -257,13 +257,10 @@ export default function InkItemMaster() {
     [master],
   );
   const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
-  const categoryOpts = useMemo(
-    () => [
-      { value: "(none)", label: "Not set" },
-      ...[...new Set(master.map((r) => r.category).filter(Boolean))].sort().map((c) => ({ value: c, label: c })),
-    ],
-    [master],
-  );
+  const categoryOpts = [
+    { value: "(none)", label: "Not set" },
+    ...INK_CATEGORIES.map((c) => ({ value: c, label: c })),
+  ];
   const sourceOpts = [
     { value: "(none)", label: "Not set" },
     ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),
@@ -308,7 +305,8 @@ export default function InkItemMaster() {
       if (res.orderClashes) parts.push(`${res.orderClashes} lines had different orders across books; the smallest was kept.`);
       if (res.badOrders) parts.push(`${res.badOrders} Order cells were not numbers and were skipped.`);
       if (res.badSources) parts.push(`${res.badSources} Import/Plant cells were not Import, Domestic or Plant and were skipped.`);
-      setIoNotice({ kind: res.unmatched.length || res.badOrders || res.badSources ? "bad" : "ok", text: parts.join(" ") });
+      if (res.badCategories) parts.push(`${res.badCategories} Category cells were not one of the five categories and were skipped.`);
+      setIoNotice({ kind: res.unmatched.length || res.badOrders || res.badSources || res.badCategories ? "bad" : "ok", text: parts.join(" ") });
     } catch (e) {
       setIoNotice({ kind: "bad", text: e instanceof Error ? e.message : "Could not read that file." });
     } finally {
@@ -693,7 +691,22 @@ export default function InkItemMaster() {
                 <TableCell>{cell(r, "code", r.tallyCode, "w-44")}</TableCell>
                 <TableCell>{cell(r, "group", r.tallyGroup, "w-44")}</TableCell>
                 <TableCell>{cell(r, "description", r.item, "w-72")}</TableCell>
-                <TableCell>{cell(r, "category", "", "w-40")}</TableCell>
+                <TableCell>
+                  {/* Shows the category read from the item's name until the planner picks one;
+                      picking writes their choice, which wins from then on. */}
+                  <select
+                    className="h-8 w-40 rounded-md border bg-background px-2 text-sm"
+                    value={overrides[r.key]?.category ?? r.category}
+                    onChange={(e) => patch(r.key, "category", e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {INK_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </TableCell>
                 <TableCell>
                   <select
                     className="h-8 w-36 rounded-md border bg-background px-2 text-sm"
