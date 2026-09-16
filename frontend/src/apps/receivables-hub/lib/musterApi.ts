@@ -94,6 +94,24 @@ export interface RedMarkRow {
   source: string | null;          // 'redmark_sheet' (seeded) | 'muster' (entered in-app)
   updated_at: string | null;
   updated_by: string | null;
+  /**
+   * RC-12 — the case is settled. The row STAYS; the customer stops counting as Red Mark
+   * everywhere (connectwaveFetcher skips cleared rows when building Customer.blocked).
+   *
+   * ⚠ NOT `checked`, which means "a steward has verified this row" and is true on all 54.
+   */
+  cleared: boolean;
+  cleared_at: string | null;
+  cleared_by: string | null;
+  /**
+   * How it ended. Required on clear (a DB check constraint enforces it, not just the UI) —
+   * a partly-paid case may be cleared, so this is the only thing that explains a cleared row
+   * with money still owed against it.
+   *
+   * ⚠ SURVIVES A REOPEN, deliberately: it is then the record of how the LAST clearing ended.
+   *   Read it together with `cleared`, never on its own.
+   */
+  clear_note: string | null;
 }
 
 /** Fields a caller supplies to add/flag a red-mark customer; server sets match_status/source/updated_by. */
@@ -286,7 +304,7 @@ export function deleteOtherPayment(id: number): Promise<void> {
 export function fetchRedMarkRows(): Promise<RedMarkRow[]> {
   return fetchAll<RedMarkRow>(
     "ext_redmark",
-    "ledger_id,tally_name,company,location,salesperson,reason,checked,match_status,source,updated_at,updated_by",
+    "ledger_id,tally_name,company,location,salesperson,reason,checked,match_status,source,updated_at,updated_by,cleared,cleared_at,cleared_by,clear_note",
     "ledger_id",
   );
 }
@@ -306,7 +324,31 @@ export function saveRedMark(input: {
   return invokeMuster({ action: "update_redmark", ...input });
 }
 
-/** Un-flag a customer (delete the row) by Tally GUID. */
+/**
+ * Un-flag a customer (delete the row) by Tally GUID.
+ *
+ * ⚠ THIS IS NOT "THEY PAID" — that is `clearRedMark`. Delete is for a customer marked by MISTAKE,
+ *   and it destroys the case history. Both actions exist on purpose; see RC-12.
+ */
 export function deleteRedMark(ledger_id: string): Promise<void> {
   return invokeMuster({ action: "delete_redmark", ledger_id });
+}
+
+/**
+ * Close a settled case (RC-12). The row stays, marked cleared, with who / when / why.
+ *
+ * The note is REQUIRED — by the server and by a DB check constraint, not merely by the dialog.
+ *
+ * ⚠ THIS ACTION HAS A DIFFERENT AUTHORISATION RULE FROM EVERY OTHER MUSTER WRITE: the collection
+ *   team may clear THEIR OWN customers, alongside admins and Settings full-access users. Use
+ *   `useCanClear()` (lib/clearStatus.ts) to decide whether to offer it — that hook mirrors the
+ *   server's rule, which is the one that actually decides.
+ */
+export function clearRedMark(ledger_id: string, clear_note: string): Promise<{ row: RedMarkRow }> {
+  return invokeMusterData<{ row: RedMarkRow }>({ action: "clear_redmark", ledger_id, clear_note });
+}
+
+/** Reopen a cleared case. Keeps the previous clearing's who/when/note as history. */
+export function reopenRedMark(ledger_id: string): Promise<{ row: RedMarkRow }> {
+  return invokeMusterData<{ row: RedMarkRow }>({ action: "reopen_redmark", ledger_id });
 }

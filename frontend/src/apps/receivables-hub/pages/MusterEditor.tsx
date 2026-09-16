@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck, Save, RefreshCw, Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronDown,
-  Plus, Trash2, Check,
+  Plus, Trash2, Check, CheckCircle2, RotateCcw,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@hub/components/ui/card";
@@ -33,7 +33,7 @@ import {
   fetchTagRows, fetchGroupRows, fetchSnapshot, fetchOtherPaymentRows, fetchRedMarkRows,
   saveTag, saveGroup, saveCompanyMap,
   insertOtherPayment, saveOtherPayment, deleteOtherPayment,
-  insertRedMark, saveRedMark, deleteRedMark,
+  insertRedMark, saveRedMark, deleteRedMark, clearRedMark, reopenRedMark,
   type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type OtherPaymentInput,
   type RedMarkRow,
 } from "@hub/lib/musterApi";
@@ -47,6 +47,15 @@ import NameMasterTab, { type NameMasterUsage } from "./NameMasterTab";
 import { formatDateDMY } from "@hub/lib/utils";
 import { MasterIoBar } from "@hub/pages/MusterIoBar";
 import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo } from "@hub/lib/musterIo";
+import { ClearStatusToggle } from "@hub/components/ClearStatusToggle";
+import { ClearStatusBadge } from "@hub/components/ClearStatusBadge";
+import { ClearNoteDialog } from "@hub/components/ClearNoteDialog";
+import {
+  CLEAR_VIEW_DEFAULT, countByClearView, describeClear, matchesClearView, useCanClear,
+  type ClearView,
+} from "@hub/lib/clearStatus";
+import { ColumnFilter, SortHead } from "@hub/components/gridColumns";
+import { useColumnGrid, type GridColumn } from "@hub/lib/useColumnGrid";
 
 const PAGE_SIZE = 25;
 type FilterMode = "all" | "unchecked" | "new";
@@ -229,9 +238,14 @@ function Toolbar({
 function describeFilters(o: {
   search?: string; mode?: FilterMode; balanceOnly?: boolean;
   allocs?: string[]; companies?: string[]; locations?: string[]; unassignedTeam?: boolean;
+  clearView?: ClearView;
 }): string[] {
   const out: string[] = [];
   if (o.search?.trim()) out.push(`Search: "${o.search.trim()}"`);
+  // Named on the export even though it is the DEFAULT view: a sheet of 27 rows from a 54-row master
+  // has to say why, or it reads as the whole master.
+  if (o.clearView === "uncleared") out.push("Uncleared cases only");
+  if (o.clearView === "cleared") out.push("Cleared cases only");
   if (o.mode === "unchecked") out.push("Only unchecked");
   if (o.mode === "new") out.push("Only new");
   if (o.balanceOnly) out.push("Only rows with a balance");
@@ -1213,8 +1227,10 @@ const rmDraftOf = (r: RedMarkRow): RmDraft => ({
 });
 
 /** Add-red-mark dialog: pick a customer + optional reason, then flag them. */
-function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
-  open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[]; onAdded: () => void;
+function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
+  open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[];
+  /** The master as it stands, so the dialog can say when this add REOPENS a cleared case. */
+  rows: RedMarkRow[]; onAdded: () => void;
 }) {
   const { toast } = useToast();
   const [ledger, setLedger] = useState<SnapRow | null>(null);
@@ -1223,10 +1239,16 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
 
   useEffect(() => { if (open) { setLedger(null); setReason(""); } }, [open]);
 
+  // Adding a customer whose case was CLEARED is a re-flag, and the server reopens it (the upsert
+  // sends cleared:false). Saying so beats a silent "added" on a row that was already there.
+  const existing = ledger ? rows.find((r) => r.ledger_id === ledger.ledger_id) ?? null : null;
+
   const submit = async () => {
     if (!ledger) return;
     setSaving(true);
     try {
+      // The server also sets cleared:false — re-flagging a settled customer starts a new case
+      // rather than leaving a row every screen ignores.
       await insertRedMark({
         ledger_id: ledger.ledger_id,
         tally_name: ledger.name,
@@ -1238,7 +1260,10 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
       });
       onAdded();
       onOpenChange(false);
-      toast({ title: "Red Mark added", description: `${ledger.name}` });
+      toast({
+        title: existing?.cleared ? "Red Mark reopened" : "Red Mark added",
+        description: `${ledger.name}`,
+      });
     } catch (e) {
       toast({ variant: "destructive", title: "Could not add", description: (e as Error).message });
     } finally {
@@ -1265,6 +1290,13 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
             <span className="text-xs font-medium text-muted-foreground">Reason (optional)</span>
             <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. long overdue, disputed…" />
           </div>
+          {existing && (
+            <p className="text-[11px] text-muted-foreground">
+              {existing.cleared
+                ? "This customer is already on the master with a CLEARED case — adding them reopens it."
+                : "This customer is already flagged; this will update their details."}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -1277,9 +1309,10 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
   );
 }
 
-function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
+function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames, onReload }: {
   rows: RedMarkRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[];
+  /** ledger_id → collection team, from the group muster: the who-may-clear test reads it (RC-12). */
+  teamByGuid: Map<string, string>;
   /** The salesperson master. This tab kept its OWN copy of the salesperson as bare free text with
    *  no suggestions at all, and 6 of its 54 rows had already drifted off the muster vocabulary. */
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
@@ -1289,12 +1322,15 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
   const [savingId, setSavingId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<RedMarkRow | null>(null);
+  // RC-12: closing a settled case. `clearing` carries the row AND which way it is going, because
+  // the dialog asks for a note one way and only confirms the other.
+  const [clearing, setClearing] = useState<{ row: RedMarkRow; mode: "clear" | "reopen" } | null>(null);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
+  const canClear = useCanClear();
 
   const [search, setSearch] = useState("");
-  const [companies, setCompanies] = useState<string[]>([]);
-  const [locations, setLocations] = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [search, companies, locations]);
 
   const cur = (r: RedMarkRow): RmDraft => draft[r.ledger_id] ?? rmDraftOf(r);
   const isDirty = (r: RedMarkRow) => {
@@ -1308,20 +1344,38 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
 
   const nameOf = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
   const isOrphan = (r: RedMarkRow) => !snapByGuid.has(r.ledger_id);
+  const companyOf = (r: RedMarkRow) => (snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "").trim();
+  const locationOf = (r: RedMarkRow) => (snapByGuid.get(r.ledger_id)?.location ?? r.location ?? "").trim();
 
-  const view = useMemo(() => {
+  /**
+   * Sort and filter read the SAVED row, never the draft: a half-typed reason must not make its row
+   * jump out of the list the person is typing into.
+   */
+  const columns = useMemo<GridColumn<RedMarkRow>[]>(() => [
+    { key: "customer", value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "" },
+    { key: "company", value: (r) => (snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "").trim() },
+    { key: "location", value: (r) => (snapByGuid.get(r.ledger_id)?.location ?? r.location ?? "").trim() },
+    { key: "salesperson", value: (r) => r.salesperson ?? "" },
+    { key: "reason", value: (r) => r.reason ?? "" },
+    { key: "status", value: (r) => (r.source === "sync_stub" && !r.checked ? "New" : r.checked ? "Verified" : "Unchecked") },
+    { key: "clear", value: (r) => (r.cleared ? "Cleared" : "Red Mark") },
+    { key: "clearedBy", value: (r) => (r.cleared ? r.cleared_by ?? "" : "") },
+    { key: "checked", value: (r) => (r.checked ? "Yes" : "No") },
+  ], [snapByGuid]);
+
+  const prefilter = useCallback((r: RedMarkRow) => {
+    if (!matchesClearView(r, clearView)) return false;
     const q = search.trim().toUpperCase();
-    return rows
-      .filter((r) => {
-        const s = snapByGuid.get(r.ledger_id);
-        if (q && !`${nameOf(r)} ${r.salesperson ?? ""} ${r.reason ?? ""}`.toUpperCase().includes(q)) return false;
-        if (companies.length && !companies.includes((s?.company ?? r.company ?? "").trim())) return false;
-        if (locations.length && !locations.includes((s?.location ?? r.location ?? "").trim())) return false;
-        return true;
-      })
-      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [rows, search, companies, locations, snapByGuid]);
+    if (!q) return true;
+    const name = snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+    return `${name} ${r.salesperson ?? ""} ${r.reason ?? ""} ${r.clear_note ?? ""}`.toUpperCase().includes(q);
+  }, [search, clearView, snapByGuid]);
+
+  const grid = useColumnGrid(rows, columns, prefilter);
+  const view = grid.rows;
+  const counts = useMemo(() => countByClearView(rows), [rows]);
+
+  useEffect(() => { setPage(1); }, [search, clearView, grid.anyFilter]);
 
   const total = view.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -1360,6 +1414,43 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
     }
   };
 
+  /**
+   * Clear or reopen. The server's answer IS the new row, so it is written back rather than guessed
+   * at — and `onReload` follows so the rest of the screen catches up.
+   */
+  const doClear = async (note: string) => {
+    if (!clearing) return;
+    const { row, mode } = clearing;
+    setClearBusy(true);
+    try {
+      const { row: saved } = mode === "clear"
+        ? await clearRedMark(row.ledger_id, note)
+        : await reopenRedMark(row.ledger_id);
+      Object.assign(row, saved);
+      setClearing(null);
+      toast({ title: mode === "clear" ? "Cleared" : "Reopened", description: nameOf(row) });
+      onReload();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: mode === "clear" ? "Couldn't clear" : "Couldn't reopen",
+        description: (e as Error).message,
+      });
+    } finally {
+      setClearBusy(false);
+    }
+  };
+
+  const filterCell = (key: string) => (
+    <ColumnFilter
+      label="All"
+      options={grid.optionsFor(key)}
+      selected={grid.selected(key)}
+      onChange={(v) => grid.setSelected(key, v)}
+      labelOf={grid.optionLabel}
+    />
+  );
+
   return (
     <div>
       <div className="flex flex-col gap-3 pb-3">
@@ -1367,13 +1458,15 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customer / salesperson / reason…" className="pl-8" />
+              placeholder="Search customer / salesperson / reason / clear note…" className="pl-8" />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
-            <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
+            {/* Company and Location moved into the column filters below, where every other column now
+                has one too — two controls over the same thing would disagree the moment one of them
+                cascades. */}
+            <ClearStatusToggle value={clearView} onChange={setClearView} counts={counts} />
             <MasterIoBar io={redMarkIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
-              activeFilters={describeFilters({ search, companies, locations })} onReload={onReload} />
+              activeFilters={describeFilters({ search, clearView })} onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />Add Red Mark
             </Button>
@@ -1388,23 +1481,39 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[220px]">Customer</TableHead>
-              <TableHead className="w-28">Company</TableHead>
-              <TableHead className="w-24">Location</TableHead>
-              <TableHead className="w-40">Salesperson</TableHead>
-              <TableHead className="min-w-[200px]">Reason</TableHead>
-              <TableHead className="w-24">Status</TableHead>
-              <TableHead className="w-20 text-center">Checked</TableHead>
-              <TableHead className="w-28 text-right">Actions</TableHead>
+              <SortHead label="Customer" className="min-w-[220px]" dir={grid.sortDir("customer")} onToggle={() => grid.toggleSort("customer")} />
+              <SortHead label="Company" className="w-28" dir={grid.sortDir("company")} onToggle={() => grid.toggleSort("company")} />
+              <SortHead label="Location" className="w-24" dir={grid.sortDir("location")} onToggle={() => grid.toggleSort("location")} />
+              <SortHead label="Salesperson" className="w-40" dir={grid.sortDir("salesperson")} onToggle={() => grid.toggleSort("salesperson")} />
+              <SortHead label="Reason" className="min-w-[200px]" dir={grid.sortDir("reason")} onToggle={() => grid.toggleSort("reason")} />
+              <SortHead label="Status" className="w-24" dir={grid.sortDir("status")} onToggle={() => grid.toggleSort("status")} />
+              {/* "Clear status", never just "Status": the column beside it answers a different
+                  question — has a steward verified this row? */}
+              <SortHead label="Clear status" className="w-32" dir={grid.sortDir("clear")} onToggle={() => grid.toggleSort("clear")} />
+              <SortHead label="Cleared by" className="w-36" dir={grid.sortDir("clearedBy")} onToggle={() => grid.toggleSort("clearedBy")} />
+              <SortHead label="Checked" className="w-20 text-center" dir={grid.sortDir("checked")} onToggle={() => grid.toggleSort("checked")} />
+              <TableHead className="w-44 text-right">Actions</TableHead>
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="py-1">{filterCell("customer")}</TableHead>
+              <TableHead className="py-1">{filterCell("company")}</TableHead>
+              <TableHead className="py-1">{filterCell("location")}</TableHead>
+              <TableHead className="py-1">{filterCell("salesperson")}</TableHead>
+              <TableHead className="py-1">{filterCell("reason")}</TableHead>
+              <TableHead className="py-1">{filterCell("status")}</TableHead>
+              <TableHead className="py-1">{filterCell("clear")}</TableHead>
+              <TableHead className="py-1">{filterCell("clearedBy")}</TableHead>
+              <TableHead className="py-1">{filterCell("checked")}</TableHead>
+              <TableHead className="py-1" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {pageRows.map((r) => {
               const d = cur(r);
-              const s = snapByGuid.get(r.ledger_id);
               const dirty = isDirty(r);
+              const mayClear = canClear(teamByGuid.get(r.ledger_id));
               return (
-                <TableRow key={r.ledger_id}>
+                <TableRow key={r.ledger_id} className={r.cleared ? "opacity-70" : undefined}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <span className="truncate">{nameOf(r)}</span>
@@ -1413,8 +1522,8 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{s?.company ?? r.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{s?.location ?? r.location ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{companyOf(r) || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{locationOf(r) || "—"}</TableCell>
                   <TableCell>
                     <MasterValueCell
                       value={d.salesperson} master={master} className="min-w-[140px]"
@@ -1426,17 +1535,37 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
                       onChange={(e) => patch(r, { reason: e.target.value })} />
                   </TableCell>
                   <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
+                  <TableCell><ClearStatusBadge row={r} /></TableCell>
+                  <TableCell className="text-[11px] text-muted-foreground truncate" title={describeClear(r)}>
+                    {r.cleared ? (r.cleared_by ?? "—") : "—"}
+                  </TableCell>
                   <TableCell className="text-center">
                     <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} />
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button size="sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || savingId === r.ledger_id}
-                        onClick={() => save(r)} className="gap-1">
+                        onClick={() => save(r)} className="gap-1" title="Save this row">
                         <Save className="h-3.5 w-3.5" />
                       </Button>
+                      {/* Clear is the ROUTINE action and reads as one — a labelled button, in the
+                          settled-case colour. Delete is a correction and stays an icon. */}
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-8 gap-1 px-2 text-[11px] border-emerald-600/40 text-emerald-700 hover:text-emerald-700 dark:text-emerald-400"
+                        disabled={!mayClear}
+                        title={mayClear
+                          ? (r.cleared ? "Reopen this case" : "Clear — the case is settled; the record stays")
+                          : "Only this customer's collection team, or an administrator, can clear it"}
+                        onClick={() => setClearing({ row: r, mode: r.cleared ? "reopen" : "clear" })}
+                      >
+                        {r.cleared
+                          ? <><RotateCcw className="h-3.5 w-3.5" />Reopen</>
+                          : <><CheckCircle2 className="h-3.5 w-3.5" />Clear</>}
+                      </Button>
                       <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
-                        className="text-destructive hover:text-destructive">
+                        className="text-destructive hover:text-destructive"
+                        title="Delete — only if this customer was marked by mistake">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -1446,8 +1575,24 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
             })}
             {pageRows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  No Red Mark customers {rows.length ? "match the filters" : "yet"}.
+                {/* The table STAYS when a filter matches nothing — swapping in a full-page empty
+                    state would take away the filter row that caused it. */}
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                  {rows.length === 0 ? (
+                    "No Red Mark customers yet."
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <span>
+                        No Red Mark customers match the current filters
+                        {clearView !== "all" ? ` in the ${clearView} view` : ""}.
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        grid.clearFilters(); setSearch(""); setClearView("all");
+                      }}>
+                        Clear filters
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             )}
@@ -1464,20 +1609,35 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
       <p className="text-xs text-muted-foreground pt-2">
         Hand-picked customers flagged <span className="font-medium">Red Mark</span>. The flag shows as a
         red badge, a Dashboard KPI, a filter, and the Red Mark report on the Live (Tally) screens.
-        Keyed by the Tally GUID, so a rename never loses the flag. Delete a row to un-flag the customer.
+        Keyed by the Tally GUID, so a rename never loses the flag.{" "}
+        <span className="font-medium">Clear</span> closes a settled case and keeps the record;{" "}
+        <span className="font-medium">Delete</span> is only for a customer marked by mistake.
       </p>
 
-      <AddRedMarkDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} onAdded={onReload} />
+      <AddRedMarkDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} rows={rows} onAdded={onReload} />
+
+      <ClearNoteDialog
+        mode={clearing?.mode ?? null}
+        subject={clearing ? `${nameOf(clearing.row)}${companyOf(clearing.row) ? ` · ${companyOf(clearing.row)}` : ""}` : ""}
+        row={clearing?.row ?? null}
+        busy={clearBusy}
+        onCancel={() => setClearing(null)}
+        onConfirm={(note) => void doClear(note)}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this Red Mark?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this Red Mark?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmDelete && (
                 <>
-                  {nameOf(confirmDelete)} will no longer be flagged as Red Mark on the Live (Tally) screens.
-                  This cannot be undone (you can re-add them).
+                  {nameOf(confirmDelete)} will no longer be flagged as Red Mark on the Live (Tally) screens,
+                  and the record is thrown away.
+                  <br /><br />
+                  <span className="font-medium">If the case was settled, use Clear instead</span> — that
+                  removes the flag everywhere but keeps who was marked, why, and how it ended. Delete is
+                  for a customer who should never have been marked.
                 </>
               )}
             </AlertDialogDescription>
@@ -1488,7 +1648,7 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => confirmDelete && doDelete(confirmDelete)}
             >
-              Remove
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1600,6 +1760,21 @@ export function MusterPanel() {
     return { counts, inUseAnywhere: anywhere };
   }, [tags, redMarks]);
 
+  /**
+   * ledger_id → collection team, for the Red Mark tab's who-may-clear test (RC-12).
+   *
+   * From the group muster, which this panel already loads — the Red Mark master does not carry the
+   * team, and the server derives it from exactly the same column, so the button and the write agree.
+   * '' and NULL both mean unset, and unset is NOBODY's rather than everybody's: a collector may not
+   * clear a customer with no team, and neither will the server.
+   */
+  const teamByGuid = useMemo(
+    () => new Map(
+      (groups ?? []).map((g) => [g.ledger_id, isUnset(g.collection_team) ? "" : (g.collection_team as string)]),
+    ),
+    [groups],
+  );
+
   const teamUsage = useMemo<NameMasterUsage>(() => {
     const counts = new Map<string, number>();
     (groups ?? []).forEach((g) => {
@@ -1681,7 +1856,7 @@ export function MusterPanel() {
             <TabsContent value="redmark" className="mt-4">
               <RedMarkMuster
                 rows={redMarks ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
-                companyOptions={companyOptions} locationOptions={locationOptions}
+                teamByGuid={teamByGuid}
                 master={salespersonMaster ?? []} knownNames={knownSalespersons} onReload={load}
               />
             </TabsContent>
