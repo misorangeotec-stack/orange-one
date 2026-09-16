@@ -201,7 +201,7 @@ export default function InkMis() {
     const q = search.trim().toUpperCase();
     if (!q) return scoped;
     return scoped.filter(
-      (r) => r.itemCode.includes(q) || r.customDescription.toUpperCase().includes(q),
+      (r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q),
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
@@ -233,7 +233,6 @@ export default function InkMis() {
   );
 
   const reorderCount = rows.filter((r) => r.band === "low" || r.band === "mid").length;
-  const undescribed = rows.filter((r) => !r.customDescription).length;
 
 
   // The company columns exist only on Combined, and only when the group is open.
@@ -299,7 +298,7 @@ export default function InkMis() {
       "ETD", "ETA + at port", "Total",
     ];
     const body = rows.map((r) => [
-      r.group, r.itemCode, r.customDescription, r.remark,
+      r.group, r.itemCode, r.description, r.remark,
       r.plan.threeMonthAvg, r.plan.perDayAvg, r.plan.leadTime, r.plan.safetyFactor,
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
       ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
@@ -487,21 +486,6 @@ export default function InkMis() {
         </div>
       )}
 
-      {!isLoading && undescribed > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
-          <span>
-            <strong>{undescribed}</strong> line{undescribed === 1 ? "" : "s"} have no description of
-            your own. The dashboard prints only what you write in the item master, never Tally's
-            item name.
-          </span>
-          <Button size="sm" variant="outline" asChild className="ml-auto">
-            <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Write descriptions
-            </Link>
-          </Button>
-        </div>
-      )}
-
       {needsCode > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -609,11 +593,7 @@ export default function InkMis() {
               <TableRow key={r.key}>
                 {on("group") && <TableCell className="text-xs">{r.group}</TableCell>}
                 <TableCell className="font-medium">{r.itemCode}</TableCell>
-                {on("description") && (
-                  <TableCell className={r.customDescription ? "" : "text-muted-foreground"}>
-                    {r.customDescription || "— not described yet —"}
-                  </TableCell>
-                )}
+                {on("description") && <TableCell>{r.description}</TableCell>}
                 {on("remark") && (
                   <TableCell>
                     {r.remark && (

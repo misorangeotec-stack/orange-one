@@ -107,16 +107,17 @@ export interface InkPosition {
   coded: boolean;
   /** Which book/item rows fed this line — the link back to the item master. */
   sources: { companyKey: string; item: string }[];
-  /** Longest name seen across the books — Tally's wording. Used by the item master, NOT by the
-   *  dashboard. */
+  /**
+   * What the dashboard prints: the planner's own description where they have written one, and
+   * TALLY'S NAME until then. Never blank — an unnamed line is harder to read than one carrying
+   * Tally's warehouse wording, and the planner renames the ones that matter as they go.
+   */
   description: string;
   /**
-   * The planner's own description from the item master, and nothing else.
+   * The planner's own description from the item master, empty until they write one.
    *
-   * The dashboard prints THIS. Tally's item names are warehouse names — "278EVRC4LC AMTHYST EVO
-   * RC LT BLACK :ELM3" — and the planning sheet has always run on the planner's own wording.
-   * Empty when they have not written one, and the dashboard says so rather than quietly
-   * substituting Tally's, which would make a line look named when nobody has named it.
+   * Kept separate from `description` so a screen can tell "renamed by the planner" from "still
+   * Tally's wording" — the dashboard shows `description` either way.
    *
    * First non-empty one wins where several books feed one line; they are describing one ink.
    */
