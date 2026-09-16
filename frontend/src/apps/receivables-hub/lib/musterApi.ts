@@ -127,16 +127,18 @@ export interface RedMarkInput {
 
 // PostgREST caps a request at 1000 rows; page through until exhausted.
 // Exported for lib/nameMasters.ts, which reads the two vocabulary masters the same way.
-export async function fetchAll<T>(table: string, columns: string, order: string): Promise<T[]> {
+//
+// `order` must be UNIQUE across the table, or the paging can repeat one row and drop another. Pass
+// several columns when only their combination is (collection_invoice_snapshot: ledger + bill).
+export async function fetchAll<T>(table: string, columns: string, order: string | string[]): Promise<T[]> {
   const cw = getConnectwaveSupabase();
   const out: T[] = [];
   const PAGE = 1000;
+  const orderBy = Array.isArray(order) ? order : [order];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await cw
-      .from(table)
-      .select(columns)
-      .order(order, { ascending: true })
-      .range(from, from + PAGE - 1);
+    let q = cw.from(table).select(columns);
+    for (const col of orderBy) q = q.order(col, { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as T[];
     out.push(...rows);
@@ -351,4 +353,130 @@ export function clearRedMark(ledger_id: string, clear_note: string): Promise<{ r
 /** Reopen a cleared case. Keeps the previous clearing's who/when/note as history. */
 export function reopenRedMark(ledger_id: string): Promise<{ row: RedMarkRow }> {
   return invokeMusterData<{ row: RedMarkRow }>({ action: "reopen_redmark", ledger_id });
+}
+
+// ── Disputed bills (RC-13) ───────────────────────────────────────────────────
+
+/**
+ * A customer bill under dispute — ext_dispute. One row per (ledger_id, bill_ref), addressed by `id`.
+ *
+ * ⚠ IT HOLDS ONLY WHAT A HUMAN TYPED. The bill's date, amount, pending and sale type are joined LIVE
+ *   from the invoice snapshot by whoever displays it; nothing here is a copy of Tally.
+ *
+ * ⚠ THE BILL NUMBER ALONE IS NOT A KEY. 982 bill numbers are shared by 2,010 open bills across
+ *   customers; only (ledger_id, bill_ref) is unique, and every lookup must use both.
+ */
+export interface DisputeRow {
+  id: number;
+  ledger_id: string;              // Tally ledger GUID (= Customer.id)
+  bill_ref: string;               // the snapshot's own spelling (= Invoice.billRefName), matched exactly
+  tally_name: string | null;      // customer name when added; display fallback only
+  remarks: string | null;
+  item_description: string | null;
+  checked: boolean;
+  match_status: string | null;
+  source: string | null;          // 'muster' (entered in-app) | 'dispute_sheet' (the seed load)
+  updated_at: string | null;
+  updated_by: string | null;
+  /** Settled. The row STAYS. Same four columns, same meaning, as RedMarkRow. */
+  cleared: boolean;
+  cleared_at: string | null;
+  cleared_by: string | null;
+  /** ⚠ Survives a reopen — it then describes the LAST clearing. Read it with `cleared`. */
+  clear_note: string | null;
+}
+
+/**
+ * One string for a bill's full key, for Sets and Maps. Plain text on purpose, and unambiguous: a Tally
+ * ledger GUID never contains "::", so the ledger half cannot run into the bill half.
+ */
+export const disputeKey = (ledgerId: string, billRef: string) => `${ledgerId}::${billRef}`;
+
+/** Every dispute, cleared or not, ordered by the unique `id` (see fetchOtherPaymentRows on why). */
+export function fetchDisputeRows(): Promise<DisputeRow[]> {
+  return fetchAll<DisputeRow>(
+    "ext_dispute",
+    "id,ledger_id,bill_ref,tally_name,remarks,item_description,checked,match_status,source,updated_at,updated_by,cleared,cleared_at,cleared_by,clear_note",
+    "id",
+  );
+}
+
+/**
+ * Put one or more of a customer's OPEN bills in dispute, with one remark. Resolves to the new rows.
+ *
+ * All or nothing: the server inserts them in one statement, refuses a bill that is not open in Tally
+ * (400) and one already on the list (409, naming it and whether it is cleared).
+ */
+export function insertDisputes(input: {
+  ledger_id: string;
+  tally_name: string | null;
+  bill_refs: string[];
+  remarks: string | null;
+  item_description: string | null;
+}): Promise<{ rows: DisputeRow[] }> {
+  return invokeMusterData<{ rows: DisputeRow[] }>({ action: "insert_dispute", ...input });
+}
+
+/**
+ * Edit a dispute's typed fields. ONLY the fields passed are written — the report edits the remark
+ * alone, and must not send back an item description loaded minutes ago over a colleague's edit.
+ * Admin / Settings full access only.
+ */
+export function saveDispute(input: {
+  id: number;
+  remarks?: string | null;
+  item_description?: string | null;
+  checked?: boolean;
+}): Promise<{ row: DisputeRow }> {
+  return invokeMusterData<{ row: DisputeRow }>({ action: "update_dispute", ...input });
+}
+
+/** ⚠ For a bill put in dispute by MISTAKE. A settled dispute is cleared, and the record stays. */
+export function deleteDispute(id: number): Promise<void> {
+  return invokeMuster({ action: "delete_dispute", id });
+}
+
+/**
+ * Close a settled dispute. The note is required (dialog, server, and a DB check constraint).
+ *
+ * ⚠ THE SAME NARROWER DOOR AS clearRedMark: the customer's collection team may clear it, alongside
+ *   admins and Settings full-access users. Decide whether to offer it with `useCanClear()`.
+ */
+export function clearDispute(id: number, clear_note: string): Promise<{ row: DisputeRow }> {
+  return invokeMusterData<{ row: DisputeRow }>({ action: "clear_dispute", id, clear_note });
+}
+
+/** Reopen a cleared dispute. Keeps the previous clearing's who/when/note as history. */
+export function reopenDispute(id: number): Promise<{ row: DisputeRow }> {
+  return invokeMusterData<{ row: DisputeRow }>({ action: "reopen_dispute", id });
+}
+
+/**
+ * The open bills, straight from collection_invoice_snapshot — for Settings → Masters, which reads
+ * the raw snapshot like every other muster tab rather than the scoped dashboard payload.
+ *
+ * ⚠ RAW TALLY FIGURES. The dashboard's copy of the same bill has manual Other Payments netted into
+ *   `pending` (liveOtherPayments) and a few cash-voucher "bills" removed (liveNonBillRefs); this one
+ *   has neither. That is why the Masters tab shows only whether a bill is still open and leaves the
+ *   money to the Disputed Bills report, where it matches every other screen.
+ */
+export interface OpenBillRow {
+  ledger_id: string;
+  bill_ref: string;
+  bill_date: string | null;       // yyyymmdd, as the snapshot stores it
+  due_date: string | null;
+  amount: number;
+  pending: number;
+  overdue_days: number;
+  sale_type: string | null;
+}
+
+export function fetchOpenBills(): Promise<OpenBillRow[]> {
+  return fetchAll<OpenBillRow>(
+    "collection_invoice_snapshot",
+    "ledger_id,bill_ref,bill_date,due_date,amount,pending,overdue_days,sale_type",
+    // Unique only together (the table's key also carries tenant_id, and ledger GUIDs never repeat
+    // across tenants — 0 duplicate (ledger_id, bill_ref) pairs on 17-09-2026).
+    ["ledger_id", "bill_ref"],
+  );
 }

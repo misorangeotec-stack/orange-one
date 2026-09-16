@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AlertTriangle, ShieldAlert, type LucideIcon } from "lucide-react";
 import { useSession } from "@/core/platform/session";
 import { useHubMenuAccess } from "@hub/lib/menus";
 
@@ -10,12 +11,56 @@ import { useHubMenuAccess } from "@hub/lib/menus";
  * not `checked` (which means "a steward verified this row" — see musterApi.RedMarkRow).
  *
  * ── Why this is a module and not three copies ──
- * RC-13 (disputed bills) was specced to share every one of these decisions: the default view, the
- * three-way toggle, the required note, and who may clear. Implementing them twice is how the two
- * screens end up behaving differently — so the rule, the view vocabulary and the wording live here,
- * and both screens import them. The server mirrors the same rule in supabase/functions/muster-write
- * (authorizeClear), which is the one that actually decides.
+ * RC-13 (disputed bills) shares every one of these decisions: the default view, the three-way
+ * toggle, the required note, and who may clear. Implementing them twice is how the two screens end
+ * up behaving differently — so the rule, the view vocabulary and the wording live here, and both
+ * masters import them; only the nouns differ (`ClearCopy`). The server mirrors the same rule in
+ * supabase/functions/muster-write (authorizeClear), which is the one that actually decides.
  */
+
+/**
+ * The words a clearable master uses for itself — the ONE thing that differs between Red Mark and the
+ * disputed bills (RC-13). The rule, the default view, the toggle and the required note stay shared;
+ * only what the case is called, and what clearing it does, are the master's own.
+ */
+export interface ClearCopy {
+  /** In the dialog title: "Clear this Red Mark?" / "Clear this dispute?". */
+  noun: string;
+  /** The badge on an UNCLEARED row. */
+  openLabel: string;
+  openIcon: LucideIcon;
+  /** Follows the subject in the clear dialog, so it starts with a space. */
+  clearEffect: string;
+  reopenEffect: string;
+  notePlaceholder: string;
+  noteRequired: string;
+}
+
+export const RED_MARK_COPY: ClearCopy = {
+  noun: "Red Mark",
+  openLabel: "Red Mark",
+  openIcon: ShieldAlert,
+  clearEffect:
+    " will stop counting as Red Mark everywhere. The record stays on the master, marked cleared — this is not a delete.",
+  reopenEffect: " will count as Red Mark again across the dashboard, the risk register and the reports.",
+  notePlaceholder: "Paid in full on 12-09 / settled at ₹9L, balance written off / legal settlement",
+  noteRequired: "A note is required — say how the case was settled (paid in full, settled at ₹9L, written off…).",
+};
+
+/**
+ * ⚠ A cleared dispute moves NOTHING else. Unlike Red Mark it drives no flag, tile or filter anywhere
+ *   outside its own screens, so the dialog must not borrow Red Mark's "everywhere" wording.
+ */
+export const DISPUTE_COPY: ClearCopy = {
+  noun: "dispute",
+  openLabel: "Disputed",
+  openIcon: AlertTriangle,
+  clearEffect:
+    " leaves the open disputes. The record stays, marked cleared, with its remark — this is not a delete.",
+  reopenEffect: " goes back on the open disputes.",
+  notePlaceholder: "Credit note issued for the rate difference / customer accepted the bill / paid in full on 18-09",
+  noteRequired: "A note is required — say how the dispute was settled (credit note issued, customer accepted, paid…).",
+};
 
 /** The four columns every clearable master carries. */
 export interface ClearFields {

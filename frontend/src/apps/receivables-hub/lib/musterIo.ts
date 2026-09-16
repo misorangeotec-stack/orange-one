@@ -18,8 +18,8 @@
 import type { ExportColumn } from "@/shared/lib/exportXlsx";
 import { readBool } from "@/shared/lib/importXlsx";
 import {
-  saveTag, saveGroup, saveOtherPayment, saveRedMark, clearRedMark,
-  type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type RedMarkRow,
+  saveTag, saveGroup, saveOtherPayment, saveRedMark, clearRedMark, saveDispute, clearDispute, disputeKey,
+  type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type RedMarkRow, type DisputeRow,
 } from "./musterApi";
 import { saveCompanyMap } from "./musterApi";
 import type { CompanyMapRow } from "./companyMap";
@@ -456,6 +456,120 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
               await saveRedMark({ ledger_id: key, salesperson, reason, checked });
             }
             if (doClear) await clearRedMark(key, clearNote as string);
+          },
+        });
+      }
+      return plan;
+    },
+  };
+}
+
+// ── Disputed bills (ext_dispute, key = Dispute ID) — RC-13 ───────────────────
+// The same contract as Red Mark, decision for decision: import edits the typed details and can CLEAR
+// a settled dispute (with a note), but never adds, removes or REOPENS one — a sheet exported before
+// somebody cleared a dispute still says "No" against it, and reopening from that would silently undo
+// their work. A dispute is put on the list from the screen, where the bill is picked from Tally's
+// open bills rather than typed.
+const K_DISPUTE = "Dispute ID";
+
+export function disputeIo(snapByGuid: Map<string, SnapRow>, openKeys: Set<string>): MasterIo<DisputeRow> {
+  const name = (r: DisputeRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+  const company = (r: DisputeRow) => snapByGuid.get(r.ledger_id)?.company ?? "";
+  const location = (r: DisputeRow) => snapByGuid.get(r.ledger_id)?.location ?? "";
+  const billState = (r: DisputeRow) => (openKeys.has(disputeKey(r.ledger_id, r.bill_ref)) ? "Open" : "No longer open");
+  return {
+    fileName: "Master_Disputed_Bills",
+    sheetName: "Disputed Bills",
+    title: "Disputed bills master",
+    notes: [
+      DO_NOT_EDIT_KEY,
+      UPDATE_ONLY_NOTE,
+      "Editable columns: Remark, Item, Checked, and Cleared (with Clear note).",
+      "Import cannot add or remove a disputed bill, and cannot REOPEN a cleared one — add bills on " +
+      "screen (they are picked from Tally's open bills) and reopen there too: a sheet exported before " +
+      "somebody cleared a dispute still says \"No\" against it, and reopening from that would silently " +
+      "undo their work.",
+      "To clear a dispute: set Cleared to Yes and write a Clear note saying how it was settled. A row " +
+      "set to Yes with no note is reported and skipped.",
+      "Bill says whether Tally still lists the bill as open. \"No longer open\" usually means it was " +
+      "settled — those disputes are waiting to be cleared. Amounts are on the Disputed Bills report, " +
+      "where they match every other screen.",
+      "Customer, Company, Location, Bill reference, Bill, Cleared on and Cleared by are ignored on import.",
+    ],
+    exportColumns: [
+      { header: K_DISPUTE, width: 11, value: (r) => r.id },
+      { header: "Customer", width: 30, value: name },
+      { header: "Company", width: 16, value: company },
+      { header: "Location", width: 12, value: location },
+      { header: "Bill reference", width: 20, value: (r) => r.bill_ref },
+      { header: "Bill", width: 15, value: billState },
+      { header: "Remark", width: 50, value: (r) => r.remarks ?? "" },
+      { header: "Item", width: 30, value: (r) => r.item_description ?? "" },
+      { header: "Checked", width: 10, value: (r) => yesNo(r.checked) },
+      { header: "Cleared", width: 10, value: (r) => yesNo(r.cleared) },
+      { header: "Clear note", width: 40, value: (r) => r.clear_note ?? "" },
+      { header: "Cleared on", width: 14, value: (r) => (r.cleared_at ? formatDateDMY(r.cleared_at.slice(0, 10)) : "") },
+      { header: "Cleared by", width: 24, value: (r) => r.cleared_by ?? "" },
+    ],
+    buildPlan(records, existing) {
+      const byId = new Map(existing.map((r) => [String(r.id), r]));
+      const plan: ImportPlan = { changes: [], unchanged: 0, unmatched: [], invalid: [] };
+      for (const rec of records) {
+        const key = cell(rec[K_DISPUTE]);
+        const label = `${String(rec["Customer"] ?? "")} · ${String(rec["Bill reference"] ?? key ?? "(unknown)")}`;
+        if (!key) { plan.unmatched.push(label); continue; }
+        const cur = byId.get(key);
+        if (!cur) { plan.unmatched.push(label); continue; }
+
+        const remarks = cell(rec["Remark"]);
+        const item = cell(rec["Item"]);
+        const checked = readBool(rec["Checked"]);
+
+        // "Column absent" is not "cell left empty" — see redMarkIo.
+        const hasClearedCol = Object.prototype.hasOwnProperty.call(rec, "Cleared");
+        const wantCleared = hasClearedCol ? readBool(rec["Cleared"]) : cur.cleared;
+        const clearNote = cell(rec["Clear note"]);
+
+        let doClear = false;
+        if (wantCleared && !cur.cleared) {
+          if (!clearNote) {
+            plan.invalid.push({ label, reason: "Set to Cleared with no Clear note — say how the dispute was settled." });
+            continue;
+          }
+          doClear = true;
+        } else if (!wantCleared && cur.cleared) {
+          plan.invalid.push({
+            label,
+            reason: "This dispute was cleared in the app since this sheet was exported. Import never " +
+                    "reopens a dispute — reopen it on screen if that is what you meant.",
+          });
+          continue;
+        } else if (wantCleared && cur.cleared && clearNote && clearNote !== (cur.clear_note ?? null)) {
+          plan.invalid.push({ label, reason: "The Clear note of an already-cleared dispute can only be changed on screen." });
+          continue;
+        }
+
+        const dRem = remarks !== (cur.remarks ?? null);
+        const dItem = item !== (cur.item_description ?? null);
+        const dChk = checked !== cur.checked;
+        if (!dRem && !dItem && !dChk && !doClear) { plan.unchanged++; continue; }
+        const id = cur.id;
+        plan.changes.push({
+          key,
+          label: `${name(cur) || String(rec["Customer"] ?? "")} · ${cur.bill_ref}`,
+          fields: changedFields([["Remark", dRem], ["Item", dItem], ["Checked", dChk], ["Cleared", doClear]]),
+          // Details first, through update_dispute (Settings grade), then the clear through its own door —
+          // so a refused clear never swallows an edit that was allowed. Only the CHANGED fields are sent.
+          save: async () => {
+            if (dRem || dItem || dChk) {
+              await saveDispute({
+                id,
+                ...(dRem ? { remarks } : {}),
+                ...(dItem ? { item_description: item } : {}),
+                ...(dChk ? { checked } : {}),
+              });
+            }
+            if (doClear) await clearDispute(id, clearNote as string);
           },
         });
       }

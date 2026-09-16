@@ -1,5 +1,5 @@
-import { CheckCircle2, ShieldAlert } from "lucide-react";
-import { describeClear, type ClearFields } from "@hub/lib/clearStatus";
+import { CheckCircle2 } from "lucide-react";
+import { describeClear, RED_MARK_COPY, type ClearCopy, type ClearFields } from "@hub/lib/clearStatus";
 
 /**
  * The clear status of one case, as a cell (RC-12).
@@ -12,8 +12,13 @@ import { describeClear, type ClearFields } from "@hub/lib/clearStatus";
  * The date and the note live in the tooltip rather than the cell: on a 54-row master the column has
  * to stay scannable, and the note runs to a sentence.
  */
-export function ClearStatusBadge({ row }: { row: ClearFields }) {
+export function ClearStatusBadge({ row, copy = RED_MARK_COPY }: {
+  row: ClearFields;
+  /** What an UNCLEARED case is called on this master. Defaults to Red Mark's. */
+  copy?: ClearCopy;
+}) {
   const title = describeClear(row);
+  const OpenIcon = copy.openIcon;
   return row.cleared ? (
     <span
       title={title}
@@ -26,7 +31,7 @@ export function ClearStatusBadge({ row }: { row: ClearFields }) {
       title={title}
       className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive"
     >
-      <ShieldAlert className="h-3 w-3" /> Red Mark
+      <OpenIcon className="h-3 w-3" /> {copy.openLabel}
     </span>
   );
 }

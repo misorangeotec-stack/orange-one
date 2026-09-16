@@ -110,6 +110,9 @@ const FY_PINNED_ROUTES = [
   // financial year can contain: in April a single-FY view would keep the receipts (not FY-windowed)
   // and silently drop February's and March's sales. Its own nested FYProvider pins it to Both FYs.
   "/outstanding-dashboard/reports/red-mark",
+  // Disputed Bills (RC-13) reads only open bills, which are not FY-windowed, so a selector here would
+  // change nothing on the page and read as broken. Its own nested FYProvider pins it to Both FYs.
+  "/outstanding-dashboard/reports/disputed-bills",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its

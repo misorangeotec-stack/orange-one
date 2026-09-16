@@ -5,7 +5,7 @@ import {
 } from "@hub/components/ui/dialog";
 import { Label } from "@hub/components/ui/label";
 import { Textarea } from "@hub/components/ui/textarea";
-import { describeClear, type ClearFields } from "@hub/lib/clearStatus";
+import { describeClear, RED_MARK_COPY, type ClearCopy, type ClearFields } from "@hub/lib/clearStatus";
 
 /**
  * Close a settled case, or reopen one (RC-12).
@@ -21,9 +21,10 @@ import { describeClear, type ClearFields } from "@hub/lib/clearStatus";
  * Reopening is rare and usually means "they stopped paying again". The useful thing on screen is
  * how it was closed last time, which is exactly what the row still carries.
  *
- * Shared with RC-13's disputed bills: the wording is parameterised by `subject`, nothing else.
+ * Shared with RC-13's disputed bills. What the case is called and what clearing it does come from
+ * `copy` (lib/clearStatus); left out, the dialog reads exactly as it did for Red Mark.
  */
-export function ClearNoteDialog({ mode, subject, row, busy, onCancel, onConfirm }: {
+export function ClearNoteDialog({ mode, subject, row, busy, onCancel, onConfirm, copy = RED_MARK_COPY }: {
   mode: "clear" | "reopen" | null;
   /** What is being closed, in the user's words — e.g. "SAMEER ENTERPRISES · Otec Surat". */
   subject: string;
@@ -33,6 +34,8 @@ export function ClearNoteDialog({ mode, subject, row, busy, onCancel, onConfirm 
   onCancel: () => void;
   /** Resolves when the write lands; the dialog stays open (and keeps the text) if it throws. */
   onConfirm: (note: string) => void;
+  /** The master's own nouns. Defaults to Red Mark's. */
+  copy?: ClearCopy;
 }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +47,7 @@ export function ClearNoteDialog({ mode, subject, row, busy, onCancel, onConfirm 
 
   const confirm = () => {
     if (mode === "clear" && note.trim() === "") {
-      setError("A note is required — say how the case was settled (paid in full, settled at ₹9L, written off…).");
+      setError(copy.noteRequired);
       return;
     }
     onConfirm(note.trim());
@@ -54,12 +57,10 @@ export function ClearNoteDialog({ mode, subject, row, busy, onCancel, onConfirm 
     <Dialog open={mode !== null} onOpenChange={(o) => { if (!o && !busy) onCancel(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{mode === "reopen" ? "Reopen this Red Mark?" : "Clear this Red Mark?"}</DialogTitle>
+          <DialogTitle>{mode === "reopen" ? `Reopen this ${copy.noun}?` : `Clear this ${copy.noun}?`}</DialogTitle>
           <DialogDescription>
             {subject}
-            {mode === "reopen"
-              ? " will count as Red Mark again across the dashboard, the risk register and the reports."
-              : " will stop counting as Red Mark everywhere. The record stays on the master, marked cleared — this is not a delete."}
+            {mode === "reopen" ? copy.reopenEffect : copy.clearEffect}
           </DialogDescription>
         </DialogHeader>
 
@@ -74,7 +75,7 @@ export function ClearNoteDialog({ mode, subject, row, busy, onCancel, onConfirm 
               value={note}
               disabled={busy}
               onChange={(e) => { setNote(e.target.value); if (error) setError(null); }}
-              placeholder="Paid in full on 12-09 / settled at ₹9L, balance written off / legal settlement"
+              placeholder={copy.notePlaceholder}
               autoFocus
             />
             {error && <p className="text-[11px] text-destructive">{error}</p>}
