@@ -10488,6 +10488,174 @@ godown on the current financial year)*
 
 ---
 
+### OD-16 · 🔴 Stop asking for a quantity the lots already answer — auto-fill when the picked lots fit inside Ship now  🟢  `[x]` DONE
+*Raised 2026-09-16 · Audited the same day against the running code and the live database ·
+**High priority, client-asked** · **Built, browser-verified and shipped to master 16-09-2026**
+(`2e5f5a5` on `daily-reports`) · the three client questions below are still open, and each was built
+to its recommendation*
+
+**✅ BUILT 16-09-2026 — what shipped**
+
+- **`LotAllocField.tsx` gained `autoFill`, and only `ShipLinesGrid` turns it on.** When the picked
+  lots hold no more than Ship now, each box fills with its lot's Tally balance. It asks only when the
+  lots hold more. The boxes are **pre-filled, never hidden or locked**, so the advisory-balance rule
+  and "typing must stay possible" are untouched, the footer reads *"45 of 45 KGS"* by itself, and
+  nothing was removed (no FIX-4 sweep needed). The correction screen is unchanged; one prop opts it in.
+- **A seed needs EVERY picked lot to resolve:** known to Tally, in exactly one book, **the same book as
+  the other lots** (trap 4 widened: two lots from two books are also one dispatch drawing on two
+  books), in the line's unit, and with a balance above zero at 3 dp. Anything less asks, as before.
+- **Re-decided on every Ship now keystroke, and on every lot picked or removed.** A seeded figure is
+  the lot's balance, never derived from Ship now, so whatever Ship now ends on decides. A half-typed
+  "4" on the way to "45" leaves nothing behind.
+- **A typed figure is sacred, and so is the rest of its split.** Each row carries a `seeded` mark;
+  typing into a box drops it. Once any box holds a typed number, the field neither fills nor clears
+  that line. ⚠ This departs from "a seeded value may be cleared when the condition stops holding",
+  on purpose: seeded 6 and 4 for 10, a person corrects the 6 to 5, then lowers Ship now to 9. The lots
+  no longer fit, and clearing the 4 would throw away a figure that was right. A split reloaded from
+  the database carries no mark, so it counts as typed. The mark never reaches the server: both save
+  paths map rows to `{ lot_no, qty, seq }` by hand.
+- **Focus:** when a pick fills every box, the caret moves on to the next field via the shared
+  `advanceFocus` (the next row's Ship now, or Remarks after the last row).
+
+**🔴 Two corrections to the audit below, both proven live:**
+1. **Trap 8 was wrong to say "the way `fmtQty` renders them".** `fmtQty` groups with en-IN commas,
+   and `fms_dispatch_lots_normalise` keeps a lot qty only if it matches `^\d+(\.\d+)?$`; anything else
+   becomes **NULL, silently**. Run live, `"1,021"` came back `qty: null` and the Order Register summary
+   read `L1, L2 (1021)`. The lots on today's queue hold 1,021 · 4,200 · 10,000 · 73,550, so this would
+   have bitten on the first large split. Seeds are written `String(Number(n.toFixed(3)))`.
+2. **Trap 1's "~3.6%" is stale.** `supabase/connectwave/rpt_lot_balance.sql` re-measured negative
+   balances at **~11.4%** on 08-09-2026. `rpt_lots_for_item` never offers them (`p_min 0.0001`), so
+   they read as unknown and the line asks.
+
+**Re-measured 16-09-2026:** 557 dispatched lines carry lots (was 461); 550 single-lot; still **7**
+multi-lot (max 5 lots), all 7 summing exactly to both Ship now and the billed qty. 164 lines in
+flight, none multi-lot. All 367 Tally lots behind the 19 orders awaiting material status are `KGS`,
+matching every line, so the unit guard is a safety net that does not fire today.
+
+**Verified in the browser as the store keeper** (`ink@orangeotec.com`, Amit Sharma, Sub-HOD), on
+**SO-2627-1283 · SUPER HD YELLOW** (lots 20 / 15 / 10), with **nothing saved**:
+lots first, Ship now blank → blank boxes, as before · Ship now "4" → still blank · "45" → **20/15/10,
+"45 of 45 KGS"** · 60 → kept, *"15 short, saved as it is"* · 30 → blank, asks · back to 45 → refilled ·
+typed 18, then Ship now 50 and 30 → **18/15/10 kept both times** · dropped to one lot → quantity
+cleared, no box · a typed `ZZ-NOT-IN-TALLY` → no seeding at all · removing it re-seeded and moved the
+caret to Remarks · **CYAN: Ship now first, then two picks → seeded, caret on YELLOW's Ship now with its
+text selected** · **BLACK 1,021 + 1,015 → boxes read `1021` / `1015`**. The save was **captured, not
+sent**: every write to the project was aborted in the browser. The one request,
+`fms_dispatch_record_material_status`, carried `{lot_no, qty, seq}` only, no mark, seeded qtys `"20"`
+`"15"` `"1"` `"1"`, and the single lot `qty: ""` as before; all survived the live normaliser.
+Afterwards SO-2627-1283 was confirmed untouched (`ms_at` null, `updated_at` still 14-09), with no
+round amended and no mail queued. **Correction screen (admin):** re-picking 6 + 9 against 100
+delivered, then 30, left the boxes blank and asking. Cancelled.
+
+**Not observable live, proven in code only:** reopening a saved multi-lot split (none sits in an
+editable round, and the test did not save one), lots from two books (no order without a company is
+awaiting), and a unit mismatch.
+
+**⚠ Observation for the client:** picking lots before typing Ship now still drops the caret into the
+first box, as before. If the store keeper types a split there, the fill switches off for that line
+(typed wins). Typing Ship now instead fills the boxes. Worth a line in the store keeper's walkthrough.
+
+**The ask.** Picking a second lot always draws a quantity box against every lot and asks the store
+keeper to split by hand. It should only ask when it genuinely has to. If the **stock in the picked
+lots fits inside the Ship-now quantity**, fill each lot with what it holds and ask nothing. Ask only
+when the picked lots hold **more** than Ship now, because that is the only case where a human choice
+exists. And every comparison is against **Ship now**, not Pending.
+
+**🟢 The "Ship now, not Pending" half is already right — this is a clarification, not a defect.**
+Both writers already hand the field the shipped figure, not the pending one:
+`ShipLinesGrid.tsx:160` passes `quantity={v.ship_qty}` and `OrderDetail.tsx:867` passes the
+corrected quantity. `pendingQtyOf` is used for the Pending column and for locking a completed line,
+and it never reaches `LotAllocField`. Nothing needs undoing here; the rule simply has to stay this
+way when the auto-fill is written.
+
+**What the field does today** (`components/LotAllocField.tsx`):
+
+| | |
+|---|---|
+| One lot | **No box at all.** "One lot means 100% of it, and asks for nothing" — the server fills the figure in |
+| Two or more | A quantity box per lot, **all blank**, and the caret jumps to the first empty one |
+| The footer | *"Say how much came from each — 10 KGS in total."* until something is typed, then *"8 of 10 — 2 short, saved as it is."* |
+| Dropping back to one | **Clears the quantity**, deliberately — that row now carries the whole line |
+
+**🟢 The live data says this typing is almost pure ceremony.** Measured 16-09-2026 on
+`fms_dispatch_round_item_lots`:
+
+| | |
+|---|---|
+| Dispatch lines carrying lots since OD-15 | **461** |
+| Single-lot (asks nothing today) | **454** |
+| Multi-lot (asks every time) | **7** |
+| Most lots on one line | **5** — five boxes typed for a 50 KGS shipment |
+| 🟢 Multi-lot lines whose split does **not** sum to Ship now | **0 of 7** |
+
+Every multi-lot allocation on file lands **exactly** on the shipped quantity. Nobody has ever needed
+a split that differed from it, which is the evidence that the question is usually being asked with
+only one possible answer. ⚠ It also means the change touches ~1.5% of lines — small, but it is the
+one path people complain about.
+
+**The rule, stated precisely.** Let `capacity` = the sum of Tally's balance for every picked lot.
+- `capacity ≤ ship_now` → fill each lot with its full balance, draw no boxes.
+- `capacity > ship_now` → ask, exactly as today.
+
+**The traps. Four are blocking.**
+
+1. 🔴 **A lot Tally does not know has a capacity of ZERO, not "unknown".** `totalOf()` sums the
+   matching options and returns 0 for a lot that is absent — and absent is a real, common state:
+   **~3.6% of lots do not resolve to a clean balance**, plus every lot entered through the typing
+   escape hatch, plus everything when ConnectWave is unreachable (the field degrades to a plain box
+   by design). With a zero capacity the rule reads `0 ≤ ship_now` as "it fits" and auto-fills
+   **nothing**, silently under-allocating a line that used to prompt. **Auto-fill only when EVERY
+   picked lot has a known balance; otherwise ask, as today.**
+2. 🔴 **The balance is ADVISORY AND NEVER A GATE**, and the component header says so in capitals,
+   adding that the rule predates it and is "not ours to change" — a lot in the store keeper's hands
+   that Tally has not caught up with must stay enterable, and over-drawing is shown and **saved
+   anyway**. So auto-fill must **seed** the boxes, never lock them: every figure stays editable,
+   including above the balance, and the boxes must come back the moment the condition flips.
+3. 🔴 **Ship now is usually still empty when the lots are picked.** In the client's own screenshot
+   two lots are already ticked while Ship now reads 0 — so a fill computed once, at the moment of
+   selection, would never fire on the normal order of work. It has to **recompute when `ship_qty`
+   changes too**, and `quantity` is documented as moving "exactly as typed", so a half-typed "1" on
+   the way to "10" must not lock in a wrong split.
+4. 🔴 **A lot number is only unique within one Tally book, and `totalOf` sums across books.** A lot
+   showing *"90 in Noida, 6 in Delhi"* totals 96, but a single dispatch cannot draw from two books.
+   Auto-filling 96 would invent stock. **Do not auto-fill a lot that resolves to more than one
+   book** — leave those to the box, which is what OD-12 decided the balance line is for.
+5. ⚠ **"Fits inside" includes being short.** If the lots hold 8 and Ship now is 10, the rule fills 8
+   and leaves a 2 gap. The footer already reports that honestly — *"8 of 10 — 2 short, saved as it
+   is"* — so the recommendation is to fill and show the gap rather than fall back to asking. But it
+   is a choice, because the auto-filled line is then knowingly incomplete. Confirm with the client.
+6. ⚠ **Never overwrite a figure somebody typed.** Once a box has a value, a later change to Ship now
+   must not silently rewrite it. Fill blanks only, or track whether a row has been touched.
+7. ⚠ **Dropping to one lot clears the quantity, on purpose.** Auto-fill must not resurrect a number
+   there: a single lot carries the whole line by definition and the server writes the figure.
+8. ⚠ **Compare with the existing tolerance, not with `>`.** The file already uses `0.0005` for the
+   sum check; a raw comparison makes `10.000000001 > 10` true and asks anyway. And write the seeded
+   values the way `fmtQty` renders them — Tally reports `176.0000` and a store keeper expects `176`.
+9. ⚠ **Focus must still move on.** `setValues` schedules a `requestAnimationFrame` onto the first
+   blank quantity box. When auto-fill leaves no blank box that call finds nothing and the caret
+   stays put, against the house rule that focus moves to the next field after every selection.
+10. ⚠ **One component, two writers.** Check Material Status and the coordinator's correction screen
+    both render it. The correction screen edits an **already-dispatched** line, where Tally's
+    balances have moved on since — auto-filling there can contradict what physically went out.
+    Consider seeding on the entry path only, and decide it deliberately rather than by default.
+11. ⚠ **If the boxes are hidden rather than pre-filled, sweep for orphans.** Hiding a control whose
+    handler survives is the FIX-4 pattern; `noUnusedLocals` is false here, so an unreachable box
+    fails nothing and looks present in the code.
+
+**To discuss with Ritesh Bhai** *(each built to its recommendation 16-09-2026; each alternative is a
+one-line change)*
+- [ ] 🔴 **Short auto-fill:** lots hold 8, Ship now is 10 — fill 8 and show "2 short", or keep
+      asking? (Recommendation: fill and show.) **Built: fill and show.** To ask instead, `fits` in
+      `reseed` becomes `Math.abs(capacity - shipNow) <= QTY_EPS`.
+- [ ] **Should the boxes be hidden, or shown pre-filled and editable?** Pre-filled is safer: the
+      store keeper sees the split that is about to be saved and can correct it. **Built: pre-filled
+      and editable.**
+- [ ] **The correction screen** — same behaviour, or entry-path only? (See trap 10.) **Built: entry
+      path only.** To opt in, add `autoFill` to the `LotAllocField` in `OrderDetail.tsx`.
+
+---
+
+
 ## Production Entry
 
 *(cross-ref: **PF-1** — Save Draft lands here FIRST)*

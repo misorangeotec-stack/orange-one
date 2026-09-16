@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { TextInput } from "@/shared/components/ui/Form";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import { advanceFocus } from "@/shared/lib/advanceFocus";
 import type { LotOption } from "../data/lotFetch";
 
 /**
@@ -37,12 +38,56 @@ import type { LotOption } from "../data/lotFetch";
  * ⚠ MultiOption HAS NO `sublabel`, unlike Combobox. The balance therefore lives
  *   on the line beneath the box rather than inside the dropdown — which is also
  *   where it is most use, sitting beside the quantity it is advising.
+ *
+ * WHEN THE LOTS ALREADY ANSWER, THE BOXES FILL THEMSELVES (OD-16).
+ *
+ * Measured 16-09-2026: 557 dispatched lines carry lots, 7 of them several — and
+ * all 7 split to exactly the Ship now figure. The question was being asked with
+ * one possible answer. So when the picked lots hold NO MORE than Ship now, each
+ * box is filled with what its lot holds; a person is asked only when the lots
+ * hold more, the one case with a real choice. Opt-in through `autoFill`, which
+ * Check Material Status turns on and the correction screen does not: that screen
+ * edits a line that has already gone out, against balances that have moved on.
+ *
+ * ⚠ FILLED, NEVER HIDDEN OR LOCKED. Both rules above stand as they were: every
+ *   box stays on screen and editable, a figure above the balance still saves, and
+ *   the footer reads "10 of 10" by itself.
+ *
+ * ⚠ A LOT TALLY DOES NOT KNOW IS NOT A LOT HOLDING ZERO. `totalOf` gives 0 for
+ *   it, and 0 ≤ Ship now reads as "fits" — filling nothing on a line that used to
+ *   ask. So EVERY picked lot must resolve: in one book, the same book as the rest
+ *   (one dispatch does not draw on two), in the line's own unit, with a balance
+ *   that survives rounding. Anything less asks, as before.
+ *
+ * ⚠ A FIGURE A PERSON TYPED IS NEVER TOUCHED, nor is the rest of that split: once
+ *   any box holds a typed number the field neither fills nor clears anything on
+ *   that line. Clearing its own figures would be wrong there too — seeded 6 and 4
+ *   for 10, a person corrects the 6 to 5, then drops Ship now to 9: the lots no
+ *   longer "fit", and wiping the 4 would throw away a figure that was right. Only
+ *   a box marked `seeded`, on a split nobody has typed into, is the field's own.
+ *   A split reloaded from the database carries no mark, so it counts as typed.
+ *
+ * ⚠ IT FOLLOWS SHIP NOW, NOT ONLY THE PICK. Lots are usually ticked while Ship
+ *   now is still blank, so a fill decided at the pick would never fire. And Ship
+ *   now moves per keystroke — on the way to 10 it reads 1 — so the fill is
+ *   re-decided on every change, from balances rather than from the figure:
+ *   whatever Ship now ends on decides.
+ *
+ * ⚠ A SEED IS WRITTEN "1176", NEVER "1,176". The server keeps a lot quantity only
+ *   if it matches `^\d+(\.\d+)?$` and stores NULL otherwise, without a word — so
+ *   `fmtQty`'s en-IN grouping, right on a label, would blank every lot over 999.
  */
 
 /** As typed: both strings, so a half-entered quantity survives a re-render. */
 export interface LotRow {
   lot_no: string;
   qty: string;
+  /**
+   * OD-16 · the field wrote this figure from Tally's balance; no person did.
+   * Never reaches the server — both save paths map rows to `{ lot_no, qty, seq }`
+   * by hand.
+   */
+  seeded?: true;
 }
 
 /** One blank row. The field is never empty — see `rowsFrom`. */
@@ -85,8 +130,17 @@ function fmtQty(n: number): string {
   return Number(n.toFixed(3)).toLocaleString("en-IN");
 }
 
+/** Two quantities this close are the same quantity. */
+const QTY_EPS = 0.0005;
+
+/**
+ * A balance as a quantity box holds it: 176.0000 → "176", but with no grouping,
+ * because this is sent. See the OD-16 note on why it is not `fmtQty`.
+ */
+const boxQty = (n: number): string => String(Number(n.toFixed(3)));
+
 export default function LotAllocField({
-  rows, onChange, quantity, unit = "", options, bookOf, disabled = false,
+  rows, onChange, quantity, unit = "", options, bookOf, disabled = false, autoFill = false,
 }: {
   rows: LotRow[];
   onChange: (next: LotRow[]) => void;
@@ -98,12 +152,19 @@ export default function LotAllocField({
   /** Names a Tally book, consulted only when one lot number spans two of them. */
   bookOf: (companyGuid: string) => string | null;
   disabled?: boolean;
+  /**
+   * OD-16 · fill the boxes from Tally's balances when the picked lots hold no
+   * more than `quantity`. Off unless asked for — see the header.
+   */
+  autoFill?: boolean;
 }) {
   const qtyRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const picked = filledLots(rows);
   const values = picked.map((r) => r.lot_no);
   const multi = picked.length > 1;
+  const target = Number(quantity) || 0;
 
   /*
     A LOT NUMBER IS ONLY UNIQUE WITHIN ONE TALLY BOOK. When the order names a
@@ -204,43 +265,129 @@ export default function LotAllocField({
   }
 
   /**
+   * OD-16 · decide the figures the field itself puts in the boxes. Null when
+   * nothing would change, so a keystroke that alters nothing writes nothing.
+   *
+   * Every picked lot must resolve before anything is filled — see the header for
+   * why an unknown lot, a second book or another unit each fall back to asking.
+   * The capacity is summed from the ROUNDED figures the boxes will hold, so the
+   * decision and the footer's own sum can never disagree.
+   */
+  const reseed = (current: LotRow[], shipNow: number): LotRow[] | null => {
+    const lots = filledLots(current);
+    if (!autoFill || disabled || lots.length < 2) return null;
+    if (lots.some((r) => !r.seeded && r.qty.trim() !== "")) return null;
+
+    const seedOf = new Map<string, string>();
+    let book: string | null = null;
+    let capacity = 0;
+    for (const r of lots) {
+      const found = byLot.get(r.lot_no);
+      // Absent is unknown, and two entries means two books — neither is a balance.
+      const one = found && found.length === 1 ? found[0]! : null;
+      if (!one) break;
+      const qty = boxQty(one.balance);
+      const sameUnit = !one.uom || !unit || one.uom.trim().toLowerCase() === unit.trim().toLowerCase();
+      if (!(Number(qty) > 0) || !sameUnit || (book !== null && one.companyGuid !== book)) break;
+      book = one.companyGuid;
+      capacity += Number(qty);
+      seedOf.set(r.lot_no, qty);
+    }
+
+    /*
+      ⚠ "FITS" INCLUDES BEING SHORT. Lots holding 8 against a Ship now of 10 fill
+        8, and the footer says "2 short, saved as it is". If the client would
+        rather be asked in that case, this becomes
+        `Math.abs(capacity - shipNow) <= QTY_EPS`.
+    */
+    const fits = seedOf.size === lots.length && shipNow > 0 && capacity <= shipNow + QTY_EPS;
+
+    let changed = false;
+    const next = current.map((r): LotRow => {
+      if (r.lot_no.trim() === "") return r;
+      if (fits) {
+        const qty = seedOf.get(r.lot_no)!;
+        if (r.seeded && r.qty === qty) return r;
+        changed = true;
+        return { lot_no: r.lot_no, qty, seeded: true };
+      }
+      if (!r.seeded) return r;
+      changed = true;
+      return { lot_no: r.lot_no, qty: "" };
+    });
+    return changed ? next : null;
+  };
+
+  /**
    * Reconcile the picker's flat list back onto the rows.
    *
-   * A lot that survives keeps the quantity already typed against it; a new one
-   * arrives blank; the order follows the picker, which is also the stored `seq`.
+   * A lot that survives keeps the row already against it — its quantity, and
+   * whether the field or a person put that there; a new one arrives blank; the
+   * order follows the picker, which is also the stored `seq`.
    *
    * ⚠ DROPPING TO ONE LOT CLEARS ITS QUANTITY. That row now carries the whole
    *   line by definition, so a 60 left over from a split would be recorded as
    *   "60 of the 100 came from here" and say nothing about the other 40.
    */
   const setValues = (next: string[]) => {
-    const byLot = new Map(rows.map((r) => [r.lot_no, r.qty]));
-    const out: LotRow[] = next.map((lot) => ({ lot_no: lot, qty: byLot.get(lot) ?? "" }));
+    const prev = new Map(rows.map((r) => [r.lot_no, r]));
+    const out: LotRow[] = next.map((lot) => prev.get(lot) ?? { lot_no: lot, qty: "" });
     if (out.length <= 1) {
       const one = out[0] ?? emptyLotRow();
       onChange([{ lot_no: one.lot_no, qty: "" }]);
       return;
     }
-    onChange(out);
+    // Decided in the SAME change as the pick, not in an effect after it, so the
+    // parent never holds the unfilled split for a render.
+    const filled = reseed(out, target) ?? out;
+    onChange(filled);
     // The question a second lot raises is "how much from each", so the caret
     // goes to the first box that has no answer. Next frame, because the row
     // being focused does not exist until this render lands.
-    const blank = out.findIndex((r) => r.qty.trim() === "");
-    if (blank >= 0) requestAnimationFrame(() => qtyRefs.current[blank]?.focus());
+    const blank = filled.findIndex((r) => r.qty.trim() === "");
+    if (blank >= 0) {
+      requestAnimationFrame(() => qtyRefs.current[blank]?.focus());
+    } else if (filled.every((r) => r.seeded)) {
+      // Every box answered by the lots themselves: nothing here is waiting on
+      // the store keeper, so the caret moves on to the next field instead.
+      requestAnimationFrame(() => advanceFocus(wrapRef.current));
+    }
   };
 
+  // A figure a person types is theirs, so it drops the `seeded` mark (OD-16).
   const setQty = (i: number, qty: string) =>
-    onChange(rows.map((r, j) => (j === i ? { ...r, qty } : r)));
+    onChange(rows.map((r, j) => (j === i ? { lot_no: r.lot_no, qty } : r)));
 
   const removeAt = (i: number) => setValues(values.filter((_, j) => j !== i));
 
-  const target = Number(quantity) || 0;
+  /*
+    OD-16 · SHIP NOW MOVED UNDER A SPLIT ALREADY PICKED — decide the fill again.
+
+    Keyed on the last quantity SEEN rather than run on mount, so opening a round
+    rewrites nothing, and StrictMode's second mount is a no-op too. No focus moves:
+    the store keeper is typing in Ship now.
+
+    ⚠ `onChange` here is the parent's patch over THIS render's values, so if two
+      lines' Ship now changed in one commit the later patch would carry the
+      earlier line's old rows. Only the step modal's re-seed changes several at
+      once, and it replaces the rows as well — so the worst case is one line that
+      asks for its split, as it did before OD-16.
+  */
+  const lastQuantity = useRef(quantity);
+  useEffect(() => {
+    if (lastQuantity.current === quantity) return;
+    lastQuantity.current = quantity;
+    const next = reseed(rows, target);
+    if (next) onChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantity]);
+
   const sum = picked.reduce((a, r) => a + (Number(r.qty) || 0), 0);
   const anyQty = picked.some((r) => r.qty.trim() !== "");
-  const off = anyQty && target > 0 && Math.abs(sum - target) > 0.0005;
+  const off = anyQty && target > 0 && Math.abs(sum - target) > QTY_EPS;
 
   return (
-    <div className="space-y-1.5">
+    <div ref={wrapRef} className="space-y-1.5">
       <MultiSelect
         values={values}
         onChange={setValues}
@@ -278,7 +425,7 @@ export default function LotAllocField({
           {picked.map((r, i) => {
             const bal = balanceText(r.lot_no);
             const drawn = Number(r.qty) || 0;
-            const overDrawn = byLot.has(r.lot_no) && drawn > totalOf(r.lot_no) + 0.0005;
+            const overDrawn = byLot.has(r.lot_no) && drawn > totalOf(r.lot_no) + QTY_EPS;
             return (
               <div key={`${r.lot_no}-${i}`} className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
