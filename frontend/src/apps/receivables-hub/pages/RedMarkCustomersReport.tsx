@@ -360,11 +360,24 @@ function RedMarkCustomersInner() {
   );
 
   const asOnLabel = asOfIso ? formatDateDMY(asOfIso) : "—";
+  /**
+   * What the balance columns mean, and how fresh they are. `lastUpdated` is the last Tally sync
+   * (IST); the snapshot is rebuilt within 30 minutes of each sync, so it is the honest freshness.
+   */
+  // `lastUpdated` arrives as an IST clock string ("2026-09-16T18:05"); print it the way the rest of
+  // the page prints dates, and leave it out rather than show a raw or unparseable stamp.
+  const syncMatch = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(dashboard?.lastUpdated ?? "");
+  const syncedAt = syncMatch ? `${syncMatch[3]}-${syncMatch[2]}-${syncMatch[1]} ${syncMatch[4]}:${syncMatch[5]}` : "";
+  const balancesNote =
+    `Live Tally balances as on ${asOnLabel}` +
+    (syncedAt ? ` (Tally last synced ${syncedAt})` : "") +
+    ". Outstanding = everything the customer owes today, including bills not yet due. " +
+    "Due = only the bills already past their due date.";
 
   const exportXlsx = () => {
     const header = [
       "Customer", "Sales Person", "Collection Team", "Company", "Location", "Category",
-      "Outstanding", "Due", "Max OD Days",
+      `Outstanding as on ${asOnLabel}`, `Due as on ${asOnLabel}`, "Max OD Days",
       `Received ${months[0]}`, `Received ${months[1]}`, `Received ${months[2]}`,
       "Received (3 mo)", "Bounced cheques CHQ.R (3 mo)", "Received ÷ Due %",
       `Sales ${months[0]}`, `Sales ${months[1]}`, `Sales ${months[2]}`,
@@ -458,7 +471,7 @@ function RedMarkCustomersInner() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: "Red Mark Customers", value: String(counts.uncleared), sub: "uncleared cases" },
-          { label: "Total Outstanding", value: fmt(totalOutstanding), sub: "across the rows shown" },
+          { label: "Total Outstanding", value: fmt(totalOutstanding), sub: `as on ${asOnLabel}, rows shown` },
           { label: "Total Due", value: fmt(totalDue), sub: "overdue as on " + asOnLabel },
         ].map((s) => (
           <Card key={s.label} className="rounded-card border-border bg-surface">
@@ -542,10 +555,20 @@ function RedMarkCustomersInner() {
               */}
               <Table className="text-xs">
                 <TableHeader>
-                  {/* Group row. Column count: 1 + 8 + 5 + 1 + 3 + 4 = 22. */}
+                  {/* Group row. Column count: 1 + 5 + 3 + 5 + 1 + 3 + 4 = 22.
+                      The balances carry their date IN THE HEADER, not just in the page intro: a
+                      screenshot or a scrolled table loses the intro, and "Due" with no date on it is
+                      the column people were misreading. */}
                   <TableRow className="bg-muted hover:bg-muted border-b-0">
                     <TableHead className={`${TH} ${STICKY_HEAD} h-6`} />
-                    <TableHead className={`${TH} h-6`} colSpan={8} />
+                    <TableHead className={`${TH} h-6`} colSpan={5} />
+                    <TableHead
+                      className={`${TH} h-6 text-center text-foreground border-x border-border`}
+                      colSpan={3}
+                      title={balancesNote}
+                    >
+                      As on {asOnLabel}
+                    </TableHead>
                     <TableHead className={`${TH} h-6 text-center text-foreground border-x border-border`} colSpan={5}>
                       Received (gross)
                     </TableHead>
@@ -562,7 +585,7 @@ function RedMarkCustomersInner() {
                     <SortHead label="Company" className={TH} dir={grid.sortDir("company")} onToggle={() => grid.toggleSort("company")} />
                     <SortHead label="Location" className={TH} dir={grid.sortDir("location")} onToggle={() => grid.toggleSort("location")} />
                     <SortHead label="Cat." className={TH} dir={grid.sortDir("category")} onToggle={() => grid.toggleSort("category")} />
-                    <SortHead label="Outstanding" className={`${TH} text-right`} dir={grid.sortDir("outstanding")} onToggle={() => grid.toggleSort("outstanding")} />
+                    <SortHead label="Outstanding" className={`${TH} text-right border-l border-border`} dir={grid.sortDir("outstanding")} onToggle={() => grid.toggleSort("outstanding")} />
                     <SortHead label="Due" className={`${TH} text-right`} dir={grid.sortDir("due")} onToggle={() => grid.toggleSort("due")} />
                     <SortHead label="Max OD" className={`${TH} text-right`} dir={grid.sortDir("maxOd")} onToggle={() => grid.toggleSort("maxOd")} />
                     <SortHead label={months[0]} className={`${TH} text-right border-l border-border`} dir={grid.sortDir("rcv0")} onToggle={() => grid.toggleSort("rcv0")} />
@@ -615,8 +638,8 @@ function RedMarkCustomersInner() {
                         <TableCell className={`${TD} text-muted-foreground`}>{r.company}</TableCell>
                         <TableCell className={`${TD} text-muted-foreground`}>{r.location}</TableCell>
                         <TableCell className={`${TD} text-muted-foreground`}>{r.category || "—"}</TableCell>
-                        <TableCell className={`${TD} ${NUM} font-semibold`}>{fmt(r.outstanding)}</TableCell>
-                        <TableCell className={`${TD} ${NUM} ${r.due > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{fmt(r.due)}</TableCell>
+                        <TableCell className={`${TD} ${NUM} font-semibold border-l border-border`} title={`Everything owed as on ${asOnLabel}, including bills not yet due`}>{fmt(r.outstanding)}</TableCell>
+                        <TableCell className={`${TD} ${NUM} ${r.due > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`} title={`Bills already past their due date as on ${asOnLabel}`}>{fmt(r.due)}</TableCell>
                         <TableCell className={`${TD} ${NUM} text-muted-foreground`}>{r.maxOverdueDays > 0 ? r.maxOverdueDays : "—"}</TableCell>
                         {r.received.map((v, i) => (
                           <TableCell
@@ -708,7 +731,7 @@ function RedMarkCustomersInner() {
                         Total ({filteredRows.length} row{filteredRows.length === 1 ? "" : "s"})
                       </TableCell>
                       <TableCell className={TD} colSpan={5} />
-                      <TableCell className={`${TD} ${NUM} font-bold`}>{fmt(totalOutstanding)}</TableCell>
+                      <TableCell className={`${TD} ${NUM} font-bold border-l border-border`}>{fmt(totalOutstanding)}</TableCell>
                       <TableCell className={`${TD} ${NUM} font-bold text-destructive`}>{fmt(totalDue)}</TableCell>
                       <TableCell className={TD} />
                       <TableCell className={`${TD} border-l border-border`} colSpan={3} />
