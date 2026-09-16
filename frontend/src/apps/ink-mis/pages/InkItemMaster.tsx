@@ -218,6 +218,17 @@ export default function InkItemMaster() {
   const visible = pg.pageItems;
 
   const needsCode = master.filter((r) => r.needsCode).length;
+
+  /**
+   * Lines without a number, counted the way the dashboard counts lines — one per merged line,
+   * not one per book's row, or an ink in four books would count four times.
+   */
+  const unnumbered = useMemo(() => {
+    const lines = new Set(master.map((r) => r.mergeKey));
+    let n = 0;
+    for (const line of lines) if (order[line] === undefined) n++;
+    return n;
+  }, [master, order]);
   const edited = Object.keys(overrides).length;
 
   // Group options come from the LOADED rows, not the filtered ones, so choices do not vanish
@@ -389,9 +400,10 @@ export default function InkItemMaster() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: "Items listed", value: String(master.length) },
+          { label: "Not numbered, so off the dashboard", value: String(unnumbered) },
           { label: "Still without a code", value: String(needsCode) },
           { label: "You have edited", value: String(edited) },
         ].map((c) => (

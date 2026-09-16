@@ -130,13 +130,16 @@ export default function InkMis() {
    * master when they want it on the sheet; a line whose number is blank stays in the item
    * master (with its closing stock) and nowhere else. Everything below — rows, totals, the
    * missing-code warning — reads this list, never the unfiltered one.
+   *
+   * The COUNT of what is left out is shown on the item master, not here. This screen is the
+   * planner's sheet, and a standing notice about items they chose to leave off it is noise on
+   * the one screen that should carry only what they asked for.
    */
   const allPositions = useMemo(() => data?.rows ?? [], [data]);
   const positions = useMemo(
     () => allPositions.filter((p) => order[p.key] !== undefined),
     [allPositions, order],
   );
-  const unnumbered = allPositions.length - positions.length;
   const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
   /* ------------------------------------------------- averages from the Sales Register */
@@ -468,21 +471,6 @@ export default function InkMis() {
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           Could not load stock: {error instanceof Error ? error.message : "unknown error"}
-        </div>
-      )}
-
-      {!isLoading && unnumbered > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
-          <span>
-            Showing only items with a number. <strong>{unnumbered}</strong> item
-            {unnumbered === 1 ? "" : "s"} with a blank number {unnumbered === 1 ? "is" : "are"} in the
-            item master only.
-          </span>
-          <Button size="sm" variant="outline" asChild className="ml-auto">
-            <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Open the item master
-            </Link>
-          </Button>
         </div>
       )}
 
