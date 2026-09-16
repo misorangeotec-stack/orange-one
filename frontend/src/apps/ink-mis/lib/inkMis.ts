@@ -164,16 +164,18 @@ export interface InkOverride {
 /**
  * The ink chemistries the planner sorts by. OTHERS is theirs to pick; it is never guessed.
  */
-export const INK_CATEGORIES = ["REACTIVE", "SUBLIMATION", "PIGMENT", "DISPERSE", "OTHERS"] as const;
+export const INK_CATEGORIES = [
+  "REACTIVE", "SUBLIMATION", "PIGMENT", "DISPERSE", "CHEMICAL", "OTHERS",
+] as const;
 
 /**
  * Read the category out of the item's own name.
  *
  * Tally names carry the chemistry — "REACTIVE INK H-SERIES BLACK", "KY DISPERSE INK ULTRA RED" —
- * so 651 of the 1,437 ink items classify themselves and the planner only fills the rest.
+ * so 742 of the 1,437 ink items classify themselves and the planner only fills the rest.
  *
- * Checked against every ink name in the four books on 16-Sep-2026: no name matches two of these
- * patterns, so there is no precedence question hiding here. Anything unmatched returns "", which
+ * Checked against every ink name in the four books on 16-Sep-2026: the only names matching two
+ * patterns are the four "DIGISTAR SUBLI-SONIC" items, settled above. Anything unmatched returns "", which
  * leaves the box empty rather than guessing OTHERS — a wrong category filters an ink out of the
  * planner's view, which is worse than an empty one they can see and fill.
  *
@@ -181,8 +183,12 @@ export const INK_CATEGORIES = ["REACTIVE", "SUBLIMATION", "PIGMENT", "DISPERSE",
  * sublimation ink, and a loose "DISPERS" would have claimed it.
  */
 const CATEGORY_RULES: [string, RegExp][] = [
-  ["REACTIVE", /REACTIVE/],
+  // DIGISTAR is a reactive range, by the planner's instruction. It leads the list because four
+  // items are named "DIGISTAR SUBLI-SONIC ..." and would otherwise read as sublimation; their
+  // call, and the only names where two rules compete at all.
+  ["REACTIVE", /REACTIVE|DIGISTAR/],
   ["PIGMENT", /PIGMENT/],
+  ["CHEMICAL", /CHEMICAL/],
   ["SUBLIMATION", /SUBLIMATION|SUBLI\b/],
   ["DISPERSE", /\bDISPERSED?\b/],
 ];
