@@ -113,6 +113,8 @@ const FY_PINNED_ROUTES = [
   // Disputed Bills (RC-13) reads only open bills, which are not FY-windowed, so a selector here would
   // change nothing on the page and read as broken. Its own nested FYProvider pins it to Both FYs.
   "/outstanding-dashboard/reports/disputed-bills",
+  // Advances Not Applied (RC-18) reads open bills and ledger balances, neither FY-windowed — same reason.
+  "/outstanding-dashboard/reports/advances",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its

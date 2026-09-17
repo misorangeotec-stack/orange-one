@@ -30,6 +30,8 @@ import {
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
+// RC-18's icon, on its own line for the same reason as RC-13's below.
+import { BadgeIndianRupee } from "lucide-react";
 // RC-13's icon, on its own line so it never collides with edits to the list above.
 import { FileWarning } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
@@ -575,6 +577,20 @@ export const REPORTS: ReportEntry[] = [
     source: "pipeline",
     status: "live",
     keywords: ["on account", "manual"],
+  },
+  {
+    // RC-18. The customer rows are scoped in the browser through allCustomers, like Disputed Bills.
+    // The Suspense block at its foot is NOT scoped: those receipts name no customer to scope by.
+    id: "advances",
+    scoping: "party-client",
+    title: "Advances Not Applied",
+    purpose: "Money received that no open invoice has absorbed, per salesperson, with its receipts and open bills.",
+    category: "collections",
+    path: "reports/advances",
+    icon: BadgeIndianRupee,
+    source: "tally",
+    status: "live",
+    keywords: ["advance", "on account", "unapplied", "unallocated", "suspense", "receipt", "settle"],
   },
 
   // ── Customers ──────────────────────────────────────────────────────────────
