@@ -150,7 +150,25 @@ export default function InkItemMaster() {
 
   const save = () => {
     setSavedOverrides(overrides);
-    setSavedOrder(order);
+    /*
+     * Drop numbers whose line no longer exists, but ONLY with every stock group loaded.
+     * Re-keying a line (typing a description) leaves its old number behind, and a stale number
+     * still counts against "last number used". Pruning while the list is narrowed to ink groups
+     * would delete the numbering of every item outside them, which are simply not on screen.
+     */
+    if (scope === "all") {
+      const live = new Set<string>();
+      for (const r of master) {
+        live.add(r.mergeKey);
+        live.add(r.legacyKey);
+      }
+      const pruned: InkOrder = {};
+      for (const [k, v] of Object.entries(order)) if (live.has(k)) pruned[k] = v;
+      setOrder(pruned);
+      setSavedOrder(pruned);
+    } else {
+      setSavedOrder(order);
+    }
     setSavedPlans(plans);
     setSavedLines(lines);
     setSavedGroupFields(groupFields);
@@ -313,14 +331,26 @@ export default function InkItemMaster() {
    * they are about to type, not the one they last saved.
    */
   const highest = useMemo(() => {
-    const used = Object.values(order);
-    return used.length ? Math.max(...used) : 0;
-  }, [order]);
+    // Counted from the ROWS, not from the stored map. A number can outlive its line — typing a
+    // description re-keys the line and leaves the old key behind — and reading the map straight
+    // reported numbers that no item on screen carries any more. Only a number some row actually
+    // shows can be the last one used.
+    let top = 0;
+    for (const r of master) {
+      const n = order[r.mergeKey] ?? order[r.legacyKey];
+      if (n !== undefined && n > top) top = n;
+    }
+    return top;
+  }, [master, order]);
 
   const unnumbered = useMemo(() => {
-    const lines = new Set(master.map((r) => r.mergeKey));
+    const seen = new Set<string>();
     let n = 0;
-    for (const line of lines) if (order[line] === undefined) n++;
+    for (const r of master) {
+      if (seen.has(r.mergeKey)) continue;
+      seen.add(r.mergeKey);
+      if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) n++;
+    }
     return n;
   }, [master, order]);
   const edited = Object.keys(overrides).length;
