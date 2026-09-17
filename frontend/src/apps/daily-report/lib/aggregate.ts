@@ -221,11 +221,19 @@ export interface PivotCompany {
 }
 
 /**
- * The company columns for a PAGE — every company any of these row sets touches,
+ * The company columns for ONE LIST — only the companies its rows actually touch,
  * in print order.
  *
- * Taken across the whole page rather than per table, so the Ink table and the
- * Print heads table below it put O-tec in the same column.
+ * ⚠ PER LIST, NOT PER PAGE, AND THAT IS THE USER'S CALL (17-09-2026). Colorix
+ *   trades on a handful of days a month (7 sales lines on 3 days from 01-08 to
+ *   17-09-2026, no receipts or payments in September), so a column for it is
+ *   empty almost every day. Columns taken across a page put an empty Colorix
+ *   column into the Ink table whenever Colorix sold a single spare part; taken
+ *   per list, a company appears only where it has a customer. The cost, accepted:
+ *   the Ink and Print heads tables on one page can have different columns.
+ *
+ * Several row sets may still be passed where one sheet holds several lists (the
+ * workbook's Receipts sheet carries every band).
  */
 export function pivotCompanies(...sets: PivotRow[][]): PivotCompany[] {
   const seen = new Set<string>();

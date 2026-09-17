@@ -140,7 +140,7 @@ export interface DailyReportData {
    *   6pm on the current day is looking at a partial day, and nothing else on the
    *   screen would tell them so. On a past date it is simply reassurance.
    */
-  freshness: { label: string; builtAt: string | null }[];
+  freshness: Freshness[];
 }
 
 /* ------------------------------------------------------------- classifying */
@@ -372,17 +372,27 @@ async function fetchPurchases(dateYmd: string, tenants: string[]): Promise<Purch
   });
 }
 
+/** When one book's register last rebuilt. */
+export interface Freshness {
+  label: string;
+  /** The book's company alias, from ext_company_map by GUID — "" when unmapped. */
+  company: string;
+  builtAt: string | null;
+}
+
 /**
  * When each book's register last rebuilt. Never throws: a missing freshness line
  * is a cosmetic loss, and failing the whole report for it would trade a real
  * page for a caption.
  */
-async function loadFreshness(): Promise<{ label: string; builtAt: string | null }[]> {
+async function loadFreshness(companyRows: { company_guid: string; company: string }[]): Promise<Freshness[]> {
   try {
     const books = await loadRegisterCompanies();
+    const companyOf = new Map(companyRows.map((c) => [c.company_guid, c.company]));
     return await Promise.all(
       books.map(async (b) => ({
         label: b.label,
+        company: companyOf.get(companyGuidOf(b.tenantId)) ?? "",
         builtAt: (await loadLastRegisterRefresh(b.tenantId))?.ran_at ?? null,
       })),
     );
@@ -411,7 +421,7 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
     loadSalesRegister(dayYmd, dayYmd),
     loadSalesRegister(monthStartYmd, dayYmd),
     loadDayBookMulti(companies, dayYmd),
-    loadFreshness(),
+    loadFreshness(companyRows),
   ]);
 
   // ⚠ THE COMPANY IS THE BOOK'S OWNER, READ HERE FROM THE BOOK — NEVER `RegisterRow.company`.

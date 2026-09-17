@@ -195,11 +195,13 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
   //   row per customer, the companies across the top — with the TOTAL in the
   //   preamble, where a filter cannot hide it.
   const salePivots = new Map(groups.map((g) => [g.saleType, pivotSales(g.lines)] as const));
-  const saleCompanies = pivotCompanies(...salePivots.values());
   for (const t of SALE_TYPE_ORDER) {
     const g = groups.find((x) => x.saleType === t);
     if (!g) continue;
     const fold = foldList(salePivots.get(t) ?? []);
+    // This sheet's companies only: a company with no customer here gets no column (the user's
+    // call, 17-09-2026 — an empty Colorix column on most days is noise).
+    const companies = pivotCompanies(fold.all);
     const unit = t === "ink" ? "kg" : "Qty";
     sheets.push({
       // Excel caps a tab name at 31 characters.
@@ -207,7 +209,7 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
       rows: fold.all,
       columns: [
         { header: "Customer", width: 46, value: (r: PivotRow) => r.party },
-        ...saleCompanies.flatMap((co) => [
+        ...companies.flatMap((co) => [
           { header: `${companyColumnLabel(co)} ${unit}`, width: 14, value: (r: PivotRow) => r.cells[co.alias]?.qty ?? "" },
           {
             header: `${companyColumnLabel(co)} (₹ L)`, width: 16,

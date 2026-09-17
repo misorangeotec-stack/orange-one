@@ -16,14 +16,14 @@ import {
   addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
   shortDay, timeOfDay, todayIso,
 } from "../lib/format";
-import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank, listNoun } from "../lib/labels";
+import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank, listNoun, SHOWN_ONLY_WHEN_ACTIVE } from "../lib/labels";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType";
 import {
   allBandsTotal, bandMoney, bankColumns, cellFor, companyColumnLabel, entityTotal,
   FACILITY_BALANCE_NOTE, facilityRows, groupSales, inLocation,
   isBankOnlyLocation, pivotCompanies, pivotMoney, pivotSales, purchaseTotal, salesTotals, saleKind,
   tradeTotal, TRADE_BANDS,
-  type LocationFilter, type MoneyBand, type PivotCompany,
+  type LocationFilter, type MoneyBand,
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
@@ -67,12 +67,7 @@ const HISTORY_DAYS = 7;
  *   which is exactly the mixing the headline refuses. The bands that are not in
  *   the headline stay visibly apart, below their own divider.
  */
-function MoneyDetail({
-  bands, companies,
-}: {
-  bands: MoneyBand[];
-  companies: PivotCompany[];
-}) {
+function MoneyDetail({ bands }: { bands: MoneyBand[] }) {
   const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
   const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));
   const band = (b: MoneyBand) => {
@@ -90,7 +85,7 @@ function MoneyDetail({
             band total <span className="tabular-nums font-semibold text-navy">{fmtMoney(b.totalLacs)}</span>
           </span>
         </div>
-        <PivotGrid rows={rows} companies={companies} unit={null} noun={b.kind} />
+        <PivotGrid rows={rows} unit={null} noun={b.kind} />
       </div>
     );
   };
@@ -253,15 +248,15 @@ export default function DailyReport() {
     () => new Map(groups.map((g) => [g.saleType, pivotSales(g.lines)] as const)),
     [groups],
   );
-  const saleCompanies = useMemo(() => pivotCompanies(...salePivots.values()), [salePivots]);
-  const receivedCompanies = useMemo(() => pivotCompanies(...received.map((b) => pivotMoney(b.rows))), [received]);
-  const paidCompanies = useMemo(() => pivotCompanies(...paid.map((b) => pivotMoney(b.rows))), [paid]);
   // A book missing from ext_company_map would otherwise be a column that reads
-  // like a real company. Named once, above the detail, wherever it appears.
+  // like a real company. Named once, above the detail, wherever it appears. (The
+  // columns themselves are chosen per list, inside PivotGrid.)
   const unmapped = useMemo(
-    () => [...new Set([...saleCompanies, ...receivedCompanies, ...paidCompanies]
-      .filter((c) => c.unmapped).map(companyColumnLabel))],
-    [saleCompanies, receivedCompanies, paidCompanies],
+    () => [...new Set(
+      pivotCompanies(...salePivots.values(), ...[...received, ...paid].map((b) => pivotMoney(b.rows)))
+        .filter((c) => c.unmapped).map(companyColumnLabel),
+    )],
+    [salePivots, received, paid],
   );
   const approvals = useMemo(() => sales.filter((l) => saleKind(l) === "approval"), [sales]);
   const returns = useMemo(() => sales.filter((l) => saleKind(l) === "negative"), [sales]);
@@ -388,11 +383,19 @@ export default function DailyReport() {
   });
 
   // Sorted oldest-rebuilt first, so the book that is furthest behind is the one
-  // a reader's eye lands on rather than one they have to hunt for.
-  const freshness = useMemo(
-    () => [...(report.data?.freshness ?? [])].sort((a, b) => (a.builtAt ?? "").localeCompare(b.builtAt ?? "")),
-    [report.data],
-  );
+  // a reader's eye lands on rather than one they have to hunt for. A company that
+  // is only named when it has data that day (Colorix — see SHOWN_ONLY_WHEN_ACTIVE)
+  // is left off on a quiet day.
+  const freshness = useMemo(() => {
+    const active = new Set([
+      ...sales.map((l) => l.company),
+      ...money.map((m) => m.entity),
+      ...purchases.map((p) => p.company),
+    ]);
+    return [...(report.data?.freshness ?? [])]
+      .filter((f) => !SHOWN_ONLY_WHEN_ACTIVE.includes(f.company) || active.has(f.company))
+      .sort((a, b) => (a.builtAt ?? "").localeCompare(b.builtAt ?? ""));
+  }, [report.data, sales, money, purchases]);
 
   /* ---- the snapshot ------------------------------------------------- */
 
@@ -896,7 +899,7 @@ export default function DailyReport() {
         ) : received.length === 0 ? (
           <Nothing date={date} what="receipts" />
         ) : (
-          <MoneyDetail key={`${date}|${loc}`} bands={received} companies={receivedCompanies} />
+          <MoneyDetail key={`${date}|${loc}`} bands={received} />
         )}
       </Section>
           )}
@@ -913,7 +916,7 @@ export default function DailyReport() {
         ) : paid.length === 0 ? (
           <Nothing date={date} what="payments" />
         ) : (
-          <MoneyDetail key={`${date}|${loc}`} bands={paid} companies={paidCompanies} />
+          <MoneyDetail key={`${date}|${loc}`} bands={paid} />
         )}
       </Section>
           )}
@@ -1006,7 +1009,6 @@ export default function DailyReport() {
           <PivotGrid
             key={`${date}|${loc}|${t}`}
             rows={rows}
-            companies={saleCompanies}
             unit={isInk ? "kg" : "qty"}
             noun="sales"
           />
