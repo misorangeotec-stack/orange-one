@@ -83,7 +83,7 @@ figure can be checked line by line. Build details are under **DR-1** in the Dail
 lakhs or crores · who types the figures each evening · which accounts make up "available balance" ·
 do Enterprises and Colorix have a facility. **Ask item 3 before any real figure is typed.**
 
-**1. `[open]` 🔴 Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026)*
+**1. `[decided]` Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026 · answered 17-09-2026 by the fold rule, see DR-2)*
 
 For Orange O Tec, Surat, on 8 September:
 
@@ -105,6 +105,27 @@ on the day, not against these notes.
 
 > **The question:** was the sheet deliberately showing only the large items, or were rows being
 > missed? If it was deliberate, what is the cut-off?
+
+🟢 **Answered 17-09-2026: the fold rule is the cut-off** (built as **DR-2**, live on master `d4c0e5c`). The
+report keeps Tally's figures and every row behind them, and shows the list the way the sheet was
+reaching for:
+
+- A list of **10 or fewer** shows every party.
+- Above 10, it names parties biggest first until they cover **80% of the list's total**, and folds the
+  rest into one **"Remaining N"** line with a **TOTAL** under it, so the list still adds up to the
+  headline.
+- It applies to What sold, Money in and Money out alike, **band by band** on the money pages, so a
+  bank transfer never shares a Remaining line with a customer receipt.
+- **Free-of-charge customers are never folded.**
+- The Excel lists every party, unfolded.
+
+On 8 September no money list is longer than 10, so every receipt and payment shows by name. Folds
+first appear on 14-09 (receipts, 32 customers → 14 named) and 02-09 (payments, 27 suppliers → 4 named).
+
+⚠ **One refinement to confirm with Ritesh Bhai:** when the fold would leave exactly ONE party behind,
+that party is named instead of printing "Remaining 1 customer". That line takes the same space as the
+name, and hides it. It can only happen when a customer with a free-of-charge line sits below the cut.
+Decided by the user 17-09-2026, not by the client.
 
 **2. `[decided]` The headline counts customers and suppliers only.** *(11-09-2026)*
 
@@ -1681,8 +1702,197 @@ master columns, and all were blank. It is per *company* and two of its figures c
   customer or supplier rather than under Branch / Divisions. Colorix is filed as a supplier in the
   Orange O Tec Surat book. Raised as a question rather than patched — see discussion item 7.
 
-**Phase 2, not started:** emailing the report every evening. The PDF already exposes a Blob entry
-point (`dailyReportPdfBlob`) so that becomes a backend job rather than a rewrite.
+**Phase 2 — emailing the report every evening — is its own entry now: see DR-3.** The PDF already
+exposes a Blob entry point (`dailyReportPdfBlob`), so that becomes a backend job rather than a rewrite.
+
+### DR-2 · The Daily Report as a document: a summary page, a page per block, and customer lists that fold  `[x]`
+*Raised 2026-09-16 by Ritesh Bhai · Decided with him 17-09-2026 · **Built, verified and live
+17-09-2026**, master `d4c0e5c` (branch commit `1a6288c`) · The email is NOT part of this — see DR-3*
+
+**The ask.** Make the report read like the zero-collections report:
+- **Page one is only a summary** (including the credit facility), and every figure on it is a link.
+- **One page per block:** What sold · Money in · Money out · Bank.
+- **What sold pivots to one row per customer with the companies as columns.**
+- **Long lists fold** to the customers making up 80%, with the rest in one line.
+
+**Decided with the client, 17-09-2026 — built exactly so:**
+1. **The fold rule.**
+   - A list of **10 or fewer** shows every customer.
+   - Above 10, customers are named biggest first until they cover **80% of that list's total**.
+   - The rest fold into **"Remaining N customers"**, followed by a **TOTAL** that adds up to the figure
+     on page one.
+   - The same rule applies on What sold, Money in and Money out.
+2. **Free of charge is never folded.**
+   - A customer who is only free of charge is named at the foot of its block, below Remaining and
+     above TOTAL.
+   - A customer with a paid AND a free sale keeps its place among the named rows, with FOC marked in
+     that company's cell only.
+3. **One column per company, no location split.** Surat and Noida add together; the location filter
+   still narrows.
+4. **Company columns use the short names:** O-tec · Enterprise · Colorix, in `entityRank` order.
+
+**Decided by default — listed for the user 17-09-2026:**
+5. Section headings, bank cards and the PDF/Excel headings **keep the full legal names**
+   (`entityLabel`); only the new company columns are short.
+6. **Nothing is removed, everything has a page:**
+   - heads and machines outward, goods on approval and *Not yet classified* go on **What sold**;
+   - **Purchases** go on **Money out** under their own heading, never added into payments;
+   - the facility and the balance grid go on **Bank**.
+7. **The Excel carries every customer, unfolded**, in the same company-column shape.
+8. **On screen the lists open folded**, with a *Show all N customers* control.
+
+**Decided by the user while building, 17-09-2026:**
+- **Money now follows the location filter.**
+  - It never did: a voucher carried only its book's label.
+  - Each money row now carries its book's company and location from `ext_company_map`
+    (`toMoneyRows`), so a Surat filter shows Surat's receipts, and Delhi empties by construction like
+    sales.
+- **A remainder of exactly one customer is named, not folded.** This is a refinement of the client's
+  rule, raised in *To discuss* item 1 to confirm. It can only happen when a customer with a
+  free-of-charge line sits below the cut: with more than 10 paid customers, the two smallest can never
+  make up more than 20%.
+- **No one was granted Daily Report access for a view-only test** (see *Still open*).
+
+**Built.**
+- **`lib/aggregate.ts`:**
+  - `pivotSales` / `pivotMoney` (one row per customer, cells per company alias).
+  - `pivotCompanies` (page-wide columns; a book missing from the company map is flagged *Unmapped*,
+    never a silent "—" column).
+  - `foldList` (the rule above, ranked once on the row total across all companies).
+  - `byParty` and `topShare` are gone. The comment on `pivotSales` records that one row per customer
+    reverses the earlier "two lines per entity" decision deliberately.
+- **`shared/components/ui/QueueTable.tsx`:** a new optional `footerRows` prop, rendered in a `<tfoot>`
+  outside sorting, filtering and pagination, so a sort never lifts "Remaining 15 customers" to the top
+  and a filter never hides TOTAL. No existing caller changed.
+- **Screen:**
+  - The four cards and one-block-at-a-time stay.
+  - Each product line and each money band is now a folded pivot, with *Show all*.
+  - Money is folded **band by band**, trade bands first, then *"Not counted in the figure above"*.
+  - A sale block's figure is labelled **"sold, before returns"**, with the net stated beside it.
+- **PDF (`exportDailyPdf.ts`, rewritten on `exportCollectionsPdf.ts`):**
+  - **Page one:** the five cards, the four block summaries two by two, the credit facility and the
+    notes. Every figure is a deferred link (`applyDeferredLinks`).
+  - **What sold · Money in · Money out · Bank** each start a page with *Back to Home*. Bank is last,
+    in landscape. Bookmarks for all five.
+  - Customer-name and line-table columns are measured and **wrap rather than ellipsize** (the longest
+    real name in FY 26-27 is 52 characters).
+- **Excel:**
+  - One sheet per product line and a Receipts / Payments sheet, all in company-column shape with every
+    party, TOTALs in the preamble so the autofilter cannot hide them.
+  - Voucher-level detail kept on *Receipt vouchers* / *Payment vouchers*, now with Company and
+    Location.
+- **What left the screen (views only, no actions):** the money tables' Book, Voucher type and Voucher
+  no. columns, and the sales tables' Location column. The voucher detail is in the Excel, and the
+  voucher numbers are a tooltip on each party.
+
+**🔴 Found while building, and fixed:**
+- **Free-of-charge lines carry value in Tally.**
+  - 1,912 of 1,913 FOC lines in FY 26-27 have a non-zero `revenue`: ink at a nominal ₹1/kg, and a
+    **machine sent free at full value** (GARTEX TEXPROCESS, 30-07-2026, ₹1.28 Cr).
+  - `salesTotals` always left it out of the day's figure. `groupSales` and the party list added it back.
+  - So on 30-07 the Machines row on the card read ₹128.59 L more than the Total counted, and a free
+    machine would have ranked first in any fold.
+  - Now free of charge is **quantity only, everywhere** (`moneyOf`).
+- **Money was not narrowed by location** (above).
+
+**Found, NOT fixed here:**
+- **Month-to-date sales ignore the location filter.** `loadDailyReport` sums every book, so under Surat
+  the "Month to date" hint is still all locations. This was already the case, and it now sits beside
+  day figures that do narrow. A small change to `mtd`, not attempted.
+- **The single-book day-book path cannot be reached from the screen.** `loadDailyReport` always reads
+  every mapped book. `toMoneyRows` handles it anyway, and was tested with a real single-book payload.
+
+**Verified 17-09-2026 against the live mirror** (admin account, dev server, PDF read with pdf.js,
+Excel read back):
+- **08-09, Ink:**
+  - 31 customers fold to **14 named** (13 to 81.2%, plus Shree Nandeshwar), then **Remaining 15**
+    (₹7.22 L), then Grando and Artisan (FOC only), then **TOTAL 6,540 kg (130 FOC), ₹41.11 L** — the
+    card's Ink figure.
+  - Shree Nandeshwar is one row: O-tec 60 kg ₹0.51 L, Enterprise 60 kg **FOC**.
+  - K3 Fabric Hub has values under both companies. Heads (5) and spares (10) show everyone; Peacock's
+    heads read `7 (1 FOC)`.
+- **08-09, money:** every list is 10 parties or fewer (customer receipts 9, supplier payments 7), so
+  nothing folds, and every band adds up to its card row.
+- **Long money lists:**
+  - 14-09 receipts: 32 customers → 14 named + Remaining 18.
+  - 02-09 payments: 27 suppliers → 4 named + Remaining 23.
+  - Both add up in every column.
+- **30-07:** both free machines show as FOC-only, and the Machines row now matches what the Total counts.
+- **Location:**
+  - **Surat 14-09:** money narrows to Surat books only.
+  - **Noida 02-09:** money narrows to Noida books only.
+  - **Delhi:** the business pages print why they are empty.
+- **PDF:**
+  - Page-one links land on What sold / Money in / Money out / Bank, including when a block spills to a
+    second page; every other page links home.
+  - **No ellipsized text on any page** of five documents.
+  - A sort on the screen keeps Remaining and TOTAL at the foot.
+- **The five built-in decisions still hold:** net of GST, trade-only headline, approval not counted, a
+  blank balance never zero, Colorix included.
+
+**Still open:**
+- **View-only check not run.** Nobody holds Daily Report access yet, and the user chose not to grant
+  anyone for the test. Run it as the first real `view` user once one is granted.
+- **Does page one need the previous day's comparison?** Asked on 16-09 and not decided on 17-09;
+  not built.
+- **The email:** DR-3.
+
+### DR-3 · Daily Report — email it every evening  `[ ]`
+*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 so closing DR-2
+did not close this · **The client wants this next***
+
+**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection report
+already goes out.
+
+**🟢 The document is ready.** `lib/exportDailyPdf.ts` exposes `dailyReportPdfBlob`, and DR-2 settled
+its shape. What is missing is everything around it: the runner, the schedule, the recipients and the
+send.
+
+**🟢 Copy the Collection report's delivery — the CURRENT pattern, not the first one.**
+- **Waking.** The waking moved to **pg_cron on 29-08-2026**. The first design ticked GitHub's `schedule`
+  every 30 minutes, and on this repo that decayed from ~40 ticks a day to one, then **missed a Saturday
+  slot outright**. Now a pg_cron job asks the gate RPC and, only when a send is due, fires GitHub's
+  `workflow_dispatch` via `net.http_post`. GitHub's own cron stays only as a backstop, which cannot
+  double-send because the runner re-asks the gate and the send log claims the slot.
+- **Runner.** `.github/workflows/collections-report.yml` checks out, runs `npm ci`, **bundles the app's
+  own TypeScript** (`supabase/collectionsreport/build.mjs`), builds and sends. Needs **Node 22+**.
+- **Modes.** `dry-run` (the default: build, send nothing), `sample`, `scheduled`.
+- **The decision lives in the database** (`collections_report_due()`), so the settings screen and the
+  rule the sender obeys are one object.
+
+**🔴 It does not run in an Edge Function, and that is measured.** Edge Functions allow **~2 seconds of CPU
+per request, cumulative — yielding does not reset it**. Drawing the Collection report is ~40 seconds of
+CPU; this report is smaller, but it is the same shape of work under the same ceiling.
+
+**The traps (each cost real time on the Collection report):**
+- **Dispatch silently does nothing:**
+  - if the body omits `inputs.mode='scheduled'` (the input defaults to `dry-run` and reports success);
+  - if `ref` is not `master`;
+  - if the request has no `User-Agent` (pg_net adds none);
+  - if the token is not `misorangeotec-stack`'s.
+- **The token is borrowed.** `private.collections_report_kick_config.github_pat` holds the `gh` CLI's
+  OAuth token, not a dedicated PAT. Decide whether this report shares it or gets its own.
+- **Secrets go in a `private.*_config` table, not Vault** (Vault holds nothing and is used nowhere).
+- **Every run exits "success".** "Not due" is a successful run, and a dropped tick makes no run at all,
+  so a **watchdog** must alert when a slot passes unserved. A new outbox `kind` also needs its renderer
+  in `send-email`, or it is `markSkipped` silently.
+- **Scheduled workflows run only from the default branch.** GitHub also disables a scheduled workflow
+  after 60 days without a commit.
+- **Do not put cron jobs on `*/5` or `*/15` boundaries.** Those already carry other jobs; the house slots
+  are minutes 3, 8, 13 … 58.
+- **Arming it is a live send.** Build behind the same two-switch gate, prove it with `dry-run`, then
+  `sample`, before a recipient is added.
+- **Every figure must keep coming from `lib/aggregate.ts`**, so the mailed PDF cannot disagree with the
+  screen.
+- **The bank balances and the credit facility are typed by hand each evening** (discussion items 3 and
+  5). An email sent before they are typed will say "0 of 11 entered". Decide whether the send waits
+  for them, or goes regardless and says so.
+
+**To discuss with Ritesh Bhai:**
+- [ ] **When does it send, and to whom?** Management and the CFO — which addresses?
+- [ ] **Does it attach the Excel workbook as well as the PDF?**
+- [ ] **Does it wait for the bank balances to be typed**, or send at a fixed time regardless?
+- [ ] **Which location?** One all-locations report, or separate Surat and Noida copies as the old sheets were?
 
 ## OCPI  *(new module)*
 
