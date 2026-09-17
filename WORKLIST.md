@@ -1830,6 +1830,27 @@ Excel read back):
 - **The five built-in decisions still hold:** net of GST, trade-only headline, approval not counted, a
   blank balance never zero, Colorix included.
 
+**🔴 Follow-up the same day, after the user tested it live — master `d08354e` (branch `1b13c0a`):**
+- **"Unmapped: ORANGE ENT BRANCH" / "Unmapped: ORANGE O TEC BRANCH" columns on 16-09-2026.**
+  - The cause is master's `receivables-hub/lib/salesRegister.ts`, which is AHEAD of `daily-reports`:
+    since 10-09 it fills `company` with the counterparty class on every Branch / Related line.
+  - DR-2 was proved "master not ahead" on its OWN files only, and was tested against the branch's older
+    loader, so the pivot looked clean locally and broke live.
+  - **Fixed:** `data/dailyReport.ts` now takes each sales line's company and location from the book's
+    GUID through `ext_company_map`, whatever the loader displays.
+  - Re-verified on a dev server run from the `oo-master` worktree: its loader does return
+    "ORANGE ENT BRANCH", and the report still shows only O-tec and Enterprise — screen, PDF and Excel.
+- **The lists were hard to read** (roomy rows, names on three lines, headers breaking). They are now
+  drawn as the **Disputed Bills / Red Mark** grid (`components/PivotGrid.tsx`), from the same hub parts:
+  - one 29px line per row, a sticky customer column that truncates with the full name on hover;
+  - each company named once over its `kg | ₹ L` pair;
+  - sort on every column (`useColumnGrid`) and a searchable Customer filter; the figure columns carry no
+    filter (unique values, as on Disputed Bills);
+  - Remaining and TOTAL drawn after the rows, so no sort or filter moves them.
+  - The `QueueTable.footerRows` prop added for the first cut is removed again; nothing else used it.
+  - The per-list Excel buttons went with QueueTable; the page's Excel lists every customer of every list.
+- 08-09 figures unchanged after both fixes (14 named, Remaining 15, TOTAL ₹41.11 L).
+
 **Still open:**
 - **View-only check not run.** Nobody holds Daily Report access yet, and the user chose not to grant
   anyone for the test. Run it as the first real `view` user once one is granted.
