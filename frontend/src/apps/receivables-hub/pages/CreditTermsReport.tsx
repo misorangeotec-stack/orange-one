@@ -31,11 +31,11 @@ import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { fmtINRMoney } from "@hub/lib/utils";
 import type { SaleType } from "@hub/lib/types";
 import { exportCreditTermsXlsx } from "@hub/lib/exportCreditTerms";
-import { fetchFirstSeenAfterBulkLoad, fetchLedgerVoucherDates } from "@hub/lib/creditTermsFacts";
+import { fetchLedgerVoucherDates } from "@hub/lib/creditTermsFacts";
 import {
-  activityOrd, buildBooks, CELL_FIELDS, cellKey, customerColumns, customerSince, isoToDisplay,
+  activityOrd, buildBooks, CELL_FIELDS, cellKey, customerColumns, isoToDisplay,
   lastTransaction, lastTxnTip, pivotCustomers, todayIst,
-  type CustomerRow, type SinceReason, type TxnKind,
+  type CustomerRow, type TxnKind,
 } from "@hub/lib/creditTermsPivot";
 import { useColumnGrid } from "@hub/lib/useColumnGrid";
 import { useScopeDimension } from "@hub/lib/scope";
@@ -108,6 +108,24 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 /** A limit of 0 is blank; a limit of ₹1 is the legacy Tally block flag. Neither is a limit. */
 const hasLimit = (creditLimit: number) => creditLimit > 1;
 const hasDays = (creditPeriod: number) => creditPeriod > 0;
+
+/**
+ * THE DEFAULT VIEW, and both halves of it are the client's call (18-09-2026).
+ *
+ * A reader opening this report is doing credit control, not an audit of dormant ledgers, so the list
+ * starts on the customers who actually owe something and trade in the goods this team chases.
+ *
+ *   · Balance   "nonzero" — 1,131 of 1,882 ledgers sit at exactly zero.
+ *   · Sale type every type EXCEPT Machine and Spare Parts.
+ *
+ * ⚠ A PARTIAL SALE-TYPE SELECTION EXCLUDES LEDGERS WITH NO SALE-TYPE ACTIVITY AT ALL, and that is the
+ *   documented behaviour of this filter (see saleTypeFilterOn below), not a bug in the default. Turning
+ *   the Sale type filter back to All Sale Types brings them back, which is what the control is for.
+ */
+const DEFAULT_BALANCE: BalanceMode = "nonzero";
+const DEFAULT_SALE_TYPES: string[] = SALE_TYPE_OPTIONS
+  .map((o) => o.value)
+  .filter((v) => v !== "machine" && v !== "spare_parts");
 
 /** Filters a caller can ask survives() to ignore. */
 type Skippable = "book" | "status" | "salesPerson" | "collectionTeam" | "saleType";
@@ -188,10 +206,6 @@ interface Row {
   lastActivityMonth: string;
   /** Sorts either form: the date, or the month fallback. */
   lastTxnOrd: number;
-  /** See customerSince() in lib/creditTermsPivot.ts. */
-  sinceIso: string;
-  sinceReason: SinceReason;
-  sinceTip: string;
   redMark: boolean;
   outstanding: number;
   overdue: number;
@@ -247,12 +261,12 @@ const COL_HELP: Record<string, string> = {
   outstanding: "What this customer owes right now, after other payments are applied.",
   overdue: "How much of that is already past its due date.",
   maxOd: "The oldest unpaid bill, in days past due.",
-  lastTransaction: "The most recent entry we hold for this customer: any Tally voucher (sales, receipts, credit notes, journals — settled or not), the last receipt, or the newest open bill. Post-dated entries are not counted until their date. A dash means nothing in the history we hold, which begins April 2024. A bare month (e.g. Aug-26) means turnover that month but no dated document to point at.",
+  lastTransaction: "The most recent entry we hold for this customer, across every book they are open in: any Tally voucher (sales, receipts, credit notes, journals — settled or not), the last receipt, or the newest open bill. Post-dated entries are not counted until their date. A dash means nothing in the history we hold, which begins April 2024. A bare month (e.g. Aug-26) means turnover that month but no dated document to point at.",
   // ── by customer ──
   books: "How many of our company books this customer is open in — its ledger exists there as a debtor. Counts every book, including any you have hidden.",
   days: "Credit days on this book's ledger. Red = open in this book with no credit days. Blue = no days on the ledger, but every open bill carries its own due date, so the customer IS controlled. NA = not open in this book.",
   limit: "Credit limit on this book's ledger. Red = open in this book with no limit, or the ₹1 'blocked' flag (an old Tally marker, not a real limit). NA = not open in this book.",
-  customerSince: "When this customer began in this book. Tally does not export a creation date, so this is the EARLIER of when Orange One first saw the ledger and its first voucher — known only for customers created after 14 Aug 2026. Blank for everyone older. NA = not open in this book.",
+  bookActivity: "The most recent entry on THIS book's ledger: any Tally voucher, the last receipt, or the newest open bill. Blank means nothing in the history we hold, which begins April 2024. NA = not open in this book.",
   bookOutstanding: "This book's balance for the customer, as it stands. A minus is money we hold for them (an advance). Blank = not open in this book.",
 };
 
@@ -301,9 +315,9 @@ export default function CreditTermsReport() {
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  const [saleTypes, setSaleTypes] = useState<string[]>([]);
+  const [saleTypes, setSaleTypes] = useState<string[]>(DEFAULT_SALE_TYPES);
   const [onlyElsewhere, setOnlyElsewhere] = useState(false);
-  const [balanceMode, setBalanceMode] = useState<BalanceMode>("all");
+  const [balanceMode, setBalanceMode] = useState<BalanceMode>(DEFAULT_BALANCE);
   const [sortKey, setSortKey] = useState<SortKey>("outstanding");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -321,20 +335,11 @@ export default function CreditTermsReport() {
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
-  const firstSeenQ = useQuery({
-    queryKey: ["creditTerms", "firstSeen"],
-    queryFn: fetchFirstSeenAfterBulkLoad,
-    enabled: source === "connectwave",
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-  const factsPending = source === "connectwave" && (voucherDatesQ.isPending || firstSeenQ.isPending);
+  const factsPending = source === "connectwave" && voucherDatesQ.isPending;
   const vouchers = voucherDatesQ.data ?? null;
-  const firstSeen = firstSeenQ.data ?? null;
 
   const allRows = useMemo<Row[]>(() => {
     const today = todayIst();
-    const facts = { firstSeen, vouchers };
     // Pass 1: which terms does each customer NAME hold anywhere? Exact-name match, deliberately —
     // "VAIBHAV ENTERPRISES MACHINE" is a separate ledger and a separate decision, so it must not
     // vouch for "VAIBHAV ENTERPRISES".
@@ -377,7 +382,6 @@ export default function CreditTermsReport() {
       const lastActivityMonth = last.iso ? "" :
         (customerDetail[c.id]?.trend ?? []).reduce(
           (m, t) => ((t.sales > 0 || t.receipts > 0) ? t.month : m), "");
-      const since = customerSince(c.id, facts);
       return {
         id: c.id,
         customer: c.name,
@@ -398,16 +402,13 @@ export default function CreditTermsReport() {
         lastTxnKind: last.kind,
         lastActivityMonth,
         lastTxnOrd: activityOrd(last.iso, lastActivityMonth),
-        sinceIso: since.iso,
-        sinceReason: since.reason,
-        sinceTip: since.tip,
         redMark: c.blocked,
         outstanding: c.outstanding,
         overdue: c.overdue,
         maxOverdueDays: c.maxOverdueDays,
       };
     });
-  }, [allCustomers, customerDetail, vouchers, firstSeen]);
+  }, [allCustomers, customerDetail, vouchers]);
 
   /**
    * One predicate for every filter, with the caller naming the ones to SKIP.
@@ -615,7 +616,7 @@ export default function CreditTermsReport() {
     const already = drillActive(book, sts, mode);
     setBooks(already || book === null ? [] : [book]);
     setStatuses(already ? INCOMPLETE : sts);
-    setBalanceMode(already ? "all" : mode);
+    setBalanceMode(already ? DEFAULT_BALANCE : mode);
     resetPage();
   };
 
@@ -623,7 +624,8 @@ export default function CreditTermsReport() {
   //   survived "Clear filters" — a filter narrowing the list that no control on the page could undo.
   const clearAll = () => {
     setSearch(""); setBooks([]); setStatuses([]); setSalesPersons([]); setCollectionTeams([]);
-    setCategories([]); setSaleTypes([]); setOnlyElsewhere(false); setBalanceMode("all"); resetPage();
+    setCategories([]); setSaleTypes(DEFAULT_SALE_TYPES); setOnlyElsewhere(false);
+    setBalanceMode(DEFAULT_BALANCE); resetPage();
   };
   /** The page filters AND the By customer column filters — what "Clear filters" means on either view. */
   const clearEverything = () => { clearAll(); customerGrid.clearFilters(); };
@@ -656,13 +658,18 @@ export default function CreditTermsReport() {
       onRemove: () => { setCategories([]); resetPage(); },
     },
     saleTypeFilterOn && {
-      label: `Sale type: ${saleTypes.map((t) => SALE_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t).join(", ")}`,
+      // The default reads as what it excludes; any other selection names what it includes.
+      label: saleTypes.length === DEFAULT_SALE_TYPES.length && DEFAULT_SALE_TYPES.every((t) => saleTypes.includes(t))
+        ? "Sale type: all except Machine and Spare Parts"
+        : `Sale type: ${saleTypes.map((t) => SALE_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t).join(", ")}`,
       onRemove: () => { setSaleTypes([]); resetPage(); },
     },
     onlyElsewhere && { label: "Set in another company", onRemove: () => { setOnlyElsewhere(false); resetPage(); } },
-    balanceMode !== "all" && {
-      label: balanceMode === "owing" ? "Owes money" : "Has outstanding",
-      onRemove: () => { setBalanceMode("all"); resetPage(); },
+    // No chip for the default: the Has outstanding button already shows it is on, and a chip that
+    // reappears the moment you clear it reads as a filter you cannot remove.
+    balanceMode !== DEFAULT_BALANCE && balanceMode !== "all" && {
+      label: "Owes money",
+      onRemove: () => { setBalanceMode(DEFAULT_BALANCE); resetPage(); },
     },
   ].filter(Boolean) as FilterChip[];
 
@@ -688,7 +695,13 @@ export default function CreditTermsReport() {
       summaryTotal: bookTotal,
       pctSet,
       text: { status: (r) => STATUS_LABEL[r.status], saleTypes: saleTypeText },
-      filters: [...chips.map((c) => c.label), ...columnFilters],
+      // The default balance filter has no chip on screen (the button shows it), so it has to be
+      // named here or the workbook understates what it left out.
+      filters: [
+        ...chips.map((c) => c.label),
+        ...(balanceMode === "nonzero" ? ["Has outstanding: zero balances excluded"] : []),
+        ...columnFilters,
+      ],
       scoped,
     });
   };
@@ -749,7 +762,10 @@ export default function CreditTermsReport() {
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: "Customer records", value: String(bookTotal.customers), sub: "one per ledger per company" },
+          // ⚠ The strip and the panel count what the FILTERS allow, and the view now opens filtered
+          //   (owing, and not machine/spares), so both read smaller than the whole book by design —
+          //   that is what keeps a panel figure and the list you land on the same set of customers.
+          { label: "Customer records", value: String(bookTotal.customers), sub: "one per ledger per company, in the current filters" },
           { label: "Not set up yet", value: String(notSetUp), sub: "missing days, limit or both" },
           { label: "Set on the bills", value: String(bookTotal.billwise), sub: "ledger blank, bills carry due dates" },
           { label: "Neither set", value: String(bookTotal.none), sub: "no credit term at all" },
@@ -918,7 +934,7 @@ export default function CreditTermsReport() {
           variant={balanceMode === "nonzero" ? "default" : "outline"}
           onClick={() => { setBalanceMode((m) => (m === "nonzero" ? "all" : "nonzero")); resetPage(); }}
           className="h-9 rounded-button text-xs"
-          title="Show only ledgers carrying a balance right now, positive or negative. 1,131 of 1,854 sit at exactly zero and are usually not worth chasing."
+          title="On by default. Shows only ledgers carrying a balance right now, positive or negative: 1,131 of 1,882 sit at exactly zero and are usually not worth chasing. Click to include them."
         >
           Has outstanding
         </Button>
@@ -934,11 +950,10 @@ export default function CreditTermsReport() {
 
       <FilterChips chips={chips} onClearAll={clearEverything} />
 
-      {(voucherDatesQ.isError || firstSeenQ.isError) && (
+      {voucherDatesQ.isError && (
         <div className="rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-          {voucherDatesQ.isError ? "Tally voucher dates" : "Orange One's first-seen dates"} could not be loaded, so
-          Customer since reads blank for everyone and Last transaction covers receipts and open bills only.
-          Reload the page to try again.
+          Tally voucher dates could not be loaded, so Last activity covers receipts and open bills only and
+          misses credit notes, journals and settled bills. Reload the page to try again.
         </div>
       )}
 
@@ -987,7 +1002,7 @@ export default function CreditTermsReport() {
                 <span className={`inline-block h-3 w-3 rounded-sm border border-destructive/30 ${FILL_RED}`} /> Open, term not set (or ₹1 blocked)
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className={`inline-block h-3 w-3 rounded-sm border border-sky-500/30 ${FILL_BILLS}`} /> Days set on the bills
+                <span className={`inline-block h-3 w-3 rounded-sm border border-sky-500/30 ${FILL_BILLS}`} /> <span className="font-medium">On bills</span>: days set on the bills, not the ledger
               </span>
               <span><span className="font-medium">NA</span> = not open in that book</span>
             </div>
@@ -1009,16 +1024,20 @@ export default function CreditTermsReport() {
 
       {view === "customer" && (
         <p className="text-[11px] text-muted-foreground max-w-5xl">
+          This list opens on the customers who <span className="font-medium">owe something right now</span>
+          and who buy anything other than machines and spare parts. Both are ordinary filters above: turn off
+          <span className="font-medium"> Has outstanding</span>, or set Sale type back to All Sale Types, to
+          see everyone.{" "}
           <span className="font-medium">NA</span> means no debtor ledger for this customer in that book. The
           balances behind this report hold debtors only, so a customer filed under another group in a book
           also reads NA there
           {scoped ? ", as does a book where the customer is tagged to someone outside your view" : ""}.
-          Each block's Outstanding is that book's balance as it stands; a minus is money held for the
-          customer. <span className="font-medium">Customer since</span> is known only for customers created
-          after 14 Aug 2026 — Tally does not export a creation date, so it is the earlier of when Orange One
-          first saw the ledger and its first voucher. Blank for everyone older, on purpose.{" "}
-          <span className="font-medium">Last transaction</span> is the newest Tally voucher, receipt or open
-          bill across every book, post-dated entries excluded.
+          <span className="font-medium"> On bills</span> means the ledger carries no credit days but every
+          open bill has its own due date, so that customer is controlled and is not a gap.{" "}
+          <span className="font-medium">Last activity</span> in each block is that book's own newest Tally
+          voucher, receipt or open bill; the column on the left is the newest across every book. Post-dated
+          entries are not counted until their date. Each block's Outstanding is that book's balance as it
+          stands; a minus is money held for the customer.
         </p>
       )}
 
@@ -1042,7 +1061,7 @@ export default function CreditTermsReport() {
                   <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.outstanding} onClick={() => toggleSort("outstanding")}>Outstanding <SortIcon k="outstanding" /></TableHead>
                   <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.overdue} onClick={() => toggleSort("overdue")}>Overdue <SortIcon k="overdue" /></TableHead>
                   <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.maxOd} onClick={() => toggleSort("maxOverdueDays")}>Max OD <SortIcon k="maxOverdueDays" /></TableHead>
-                  <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.lastTransaction} onClick={() => toggleSort("lastTransaction")}>Last Transaction <SortIcon k="lastTransaction" /></TableHead>
+                  <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.lastTransaction} onClick={() => toggleSort("lastTransaction")}>Last Activity <SortIcon k="lastTransaction" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

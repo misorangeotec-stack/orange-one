@@ -8,32 +8,22 @@ import { fmtINRMoney } from "@hub/lib/utils";
  * pixel is drawn. The page maps ledgers to rows; this file turns those rows into one line per customer
  * with a block per book, and decides what each cell of a block says.
  *
- * ── Customer since: there is NO creation date in Tally's export ──
- *
- *  Checked in both databases on 17-09-2026. The ledger masters in ConnectWave carry no creation or
- *  alteration date — the connector never asks Tally for one. ⚠ APPLICABLEFROM, nested inside
- *  LEDMAILINGDETAILS.LIST / LEDGSTREGDETAILS.LIST, LOOKS like one and is not: every value is a 1 April
- *  (two are 1 July 2017, GST launch), and ledgers with very low MASTERIDs carry 2025 dates. It records
- *  when the address or GST details were last set. Do not try it again.
- *
- *  What does exist is Orange One's mst_parties.created_at: when the masters sync first SAW a ledger.
- *  The sync bulk-loaded every existing ledger up to 14-08-2026 17:45:24 IST, so for those it is only the
- *  load date and means nothing. For the 42 customers first seen since, it was compared against each
- *  one's first voucher: 29 were first seen within 3 days of (or before) it, 7 had a voucher 1-3 weeks
- *  earlier, and 4 were OLD customers with vouchers 2-5 months earlier. Taking the EARLIER of the two
- *  dates corrects all 11. Everyone older reads blank — never a fabricated date.
- *
- * ── Last transaction ──
+ * ── Last activity, per book and across the customer ──
  *
  *  The newest of the last Tally voucher (rpt_ledger_voucher_dates, which sees credit notes, journals
  *  and settled bills), the last receipt and the newest open bill. Post-dated vouchers are left out
  *  until their day — 24 ledgers carried post-dated bank receipts on 17-09-2026.
+ *
+ * ⚠ THE BLOCKS USED TO CARRY "CUSTOMER SINCE" AND NO LONGER DO (client's call, 18-09-2026).
+ *   Tally exports no ledger creation date, so it could only be filled for customers created after the
+ *   masters sync's bulk load of 14-08-2026 — blank for about 98% of the report, which is a column nobody
+ *   can read. Last activity is known for every ledger that has ever traded, so the fourth column of each
+ *   block is that instead. The finding itself is written up in WORKLIST (RC-19), and getting a real
+ *   creation date for older customers is RC-20: a Tally edit-log probe, a connector FETCH change and a
+ *   full re-pull. ⚠ Do NOT "solve" it with APPLICABLEFROM — nested in LEDMAILINGDETAILS.LIST, it looks
+ *   like a creation date and is not (every value is a 1 April; it records when address/GST details were
+ *   last set) — nor with MASTERID, which is creation ORDER, per book, and wrapped JSON.
  */
-
-/** The last row the masters sync bulk-loaded was created 14-08-2026 17:45:24 IST; the next arrived 17-08. */
-export const MASTERS_BULK_LOAD_END = "2026-08-14T12:15:25Z";
-
-export const BEFORE_LOAD_TIP = "Customer before 14 Aug 2026; creation date not available from Tally";
 
 /* ── Dates ──────────────────────────────────────────────────────────────────────────────────── */
 
@@ -63,7 +53,7 @@ export function isoToDisplay(iso: string): string {
   return m && name ? `${m[3]}-${name}-${m[1].slice(2)}` : "";
 }
 
-/** "2026-08-12" -> "Aug-26" — what the Last transaction filter offers. */
+/** "2026-08-12" -> "Aug-26" — what the Last activity filters offer. */
 export function isoToMonthLabel(iso: string): string {
   const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(iso);
   const name = m ? MONTHS[Number(m[2]) - 1] : undefined;
@@ -79,7 +69,7 @@ export function activityOrd(iso: string, monthLabel = ""): number {
   return m && month ? Number("20" + m[2]) * 10000 + month * 100 : 0;
 }
 
-/* ── Customer since ─────────────────────────────────────────────────────────────────────────── */
+/* ── Voucher dates, from ConnectWave ────────────────────────────────────────────────────────── */
 
 export interface VoucherDates {
   /** ISO dates. `last` is never after the day the table was rebuilt. */
@@ -88,44 +78,7 @@ export interface VoucherDates {
   lastType: string;
 }
 
-export interface SinceFacts {
-  /** Tally GUID -> mst_parties.created_at, for ledgers first seen AFTER the bulk load. null = failed to load. */
-  firstSeen: ReadonlyMap<string, string> | null;
-  /** Tally GUID -> first/last voucher. null = failed to load. */
-  vouchers: ReadonlyMap<string, VoucherDates> | null;
-}
-
-export type SinceReason = "new" | "before-load" | "unavailable";
-
-export interface Since {
-  iso: string;
-  reason: SinceReason;
-  tip: string;
-}
-
-export function customerSince(ledgerId: string, facts: SinceFacts): Since {
-  // Either half missing means no honest answer. First-seen on its own is exactly the trap: wrong for
-  // 11 of the 42 new customers.
-  if (!facts.firstSeen || !facts.vouchers) {
-    return { iso: "", reason: "unavailable", tip: "Could not be loaded — reload the page to try again." };
-  }
-  const seenTs = facts.firstSeen.get(ledgerId);
-  // The loader only asks for rows after the bulk load; the second test keeps this function honest if
-  // it is ever handed the whole table.
-  if (!seenTs || !(new Date(seenTs).getTime() > new Date(MASTERS_BULK_LOAD_END).getTime())) {
-    return { iso: "", reason: "before-load", tip: BEFORE_LOAD_TIP };
-  }
-  const seen = istDateOf(seenTs);
-  const first = facts.vouchers.get(ledgerId)?.first ?? "";
-  const iso = first && first < seen ? first : seen;
-  const tip =
-    `First seen by Orange One ${isoToDisplay(seen)} · ` +
-    (first ? `first voucher ${isoToDisplay(first)}` : "no voucher yet") +
-    ". Customer since is the earlier of the two.";
-  return { iso, reason: "new", tip };
-}
-
-/* ── Last transaction ───────────────────────────────────────────────────────────────────────── */
+/* ── Last activity ──────────────────────────────────────────────────────────────────────────── */
 
 export type TxnKind = "voucher" | "receipt" | "bill";
 
@@ -143,7 +96,7 @@ export const TXN_KIND_LABEL: Record<TxnKind, string> = {
   bill: "open bill",
 };
 
-/** Hover text for a Last transaction cell. */
+/** Hover text for a Last activity cell. */
 export function lastTxnTip(iso: string, kind: TxnKind | "", monthFallback = ""): string {
   if (iso && kind) return `Newest ${TXN_KIND_LABEL[kind]} on record`;
   if (monthFallback) return "Turnover in this month, but no dated document";
@@ -174,11 +127,11 @@ export interface PivotLedger {
   billWiseBills: number;
   outstanding: number;
   redMark: boolean;
-  sinceIso: string;
-  sinceReason: SinceReason;
-  sinceTip: string;
+  /** This ledger's own last activity: newest voucher, receipt or open bill, never in the future. */
   lastTxnIso: string;
   lastTxnKind: TxnKind | "";
+  /** "Aug-26" when a month carries turnover but no dated document exists. */
+  lastActivityMonth: string;
   lastTxnOrd: number;
 }
 
@@ -260,12 +213,12 @@ export function pivotCustomers<L extends PivotLedger>(rows: L[], bookOrder: stri
 
 /* ── The grid's columns ─────────────────────────────────────────────────────────────────────── */
 
-export type CellField = "days" | "limit" | "since" | "outstanding";
-export const CELL_FIELDS: CellField[] = ["days", "limit", "since", "outstanding"];
+export type CellField = "days" | "limit" | "activity" | "outstanding";
+export const CELL_FIELDS: CellField[] = ["days", "limit", "activity", "outstanding"];
 export const FIELD_LABEL: Record<CellField, string> = {
   days: "Days",
   limit: "Limit",
-  since: "Customer since",
+  activity: "Last activity",
   outstanding: "Outstanding",
 };
 
@@ -288,8 +241,9 @@ export function limitText(l: PivotLedger | undefined): string {
   return s === "na" ? "NA" : s === "set" ? fmtINRMoney(l!.creditLimit) : s === "blocked" ? "₹1 blocked" : "";
 }
 
-export function sinceText(l: PivotLedger | undefined): string {
-  return !l ? "NA" : isoToDisplay(l.sinceIso);
+/** What a Last activity cell shows: the date, else the bare month, else nothing. */
+export function activityText(l: PivotLedger | undefined): string {
+  return !l ? "" : isoToDisplay(l.lastTxnIso) || l.lastActivityMonth;
 }
 
 const NA_MONEY = -1e15;
@@ -299,7 +253,7 @@ export function customerColumns<L extends PivotLedger>(shownBooks: string[]): Cu
     { key: "customer", label: "Customer", value: (c) => c.name },
     { key: "books", label: "Books", value: (c) => String(c.bookNames.length), sortValue: (c) => c.bookNames.length },
     {
-      key: "lastTxn", label: "Last transaction",
+      key: "lastTxn", label: "Last activity (any book)",
       value: (c) => isoToMonthLabel(c.lastTxn.iso),
       sortValue: (c) => c.lastTxn.ord,
     },
@@ -326,11 +280,16 @@ export function customerColumns<L extends PivotLedger>(shownBooks: string[]): Cu
         },
       },
       {
-        key: cellKey(book, "since"), label: FIELD_LABEL.since, book, field: "since",
-        value: (c) => sinceText(cell(c)),
+        key: cellKey(book, "activity"), label: FIELD_LABEL.activity, book, field: "activity",
+        // Filters by MONTH, like the customer-level column: a dropdown of 600 distinct dates is a
+        // list, not a filter, while "Aug-26" answers "who has gone quiet in this book?".
+        value: (c) => {
+          const l = cell(c);
+          return !l ? "NA" : isoToMonthLabel(l.lastTxnIso) || l.lastActivityMonth;
+        },
         sortValue: (c) => {
           const l = cell(c);
-          return !l ? -1 : activityOrd(l.sinceIso);
+          return !l ? -1 : l.lastTxnOrd;
         },
       },
       {
