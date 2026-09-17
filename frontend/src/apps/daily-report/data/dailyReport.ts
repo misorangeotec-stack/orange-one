@@ -4,10 +4,12 @@
  * FOUR READS, ALL AGAINST CONNECTWAVE, ALL REUSED RATHER THAN REBUILT:
  *
  *   · `loadSalesRegister`  (@hub/lib/salesRegister) — the day's invoice and
- *     challan LINES: party, item, quantity, revenue net of tax. Already resolves
- *     each row's company and location from ext_company_map by GUID, which is why
- *     this module never reads `company_label` or `location` off the table. Both
- *     are name-derived guesses that Tally re-mints every April.
+ *     challan LINES: party, item, quantity, revenue net of tax. This module takes
+ *     each line's company and location from ext_company_map by the BOOK's GUID
+ *     itself (see toSaleLine), and never reads `company_label` or `location` off
+ *     the table — both are name-derived guesses Tally re-mints every April — nor
+ *     the loader's display `company`, which on a Branch or Related line is the
+ *     counterparty class rather than the book's owner.
  *
  *   · `loadDayBookMulti`   (@hub/lib/dayBook) — the day's MONEY: collection and
  *     payment totals, the voucher list behind them, and the purchase figure.
@@ -29,7 +31,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
-import { fetchCompanyMap } from "@hub/lib/companyMap";
+import { companyGuidOf, fetchCompanyMap } from "@hub/lib/companyMap";
 import {
   loadLastRegisterRefresh, loadRegisterCompanies, loadSalesRegister, type RegisterRow,
 } from "@hub/lib/salesRegister";
@@ -412,10 +414,17 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
     loadFreshness(),
   ]);
 
+  // ⚠ THE COMPANY IS THE BOOK'S OWNER, READ HERE FROM THE BOOK — NEVER `RegisterRow.company`.
+  //   On master, `loadSalesRegister` fills `company` with the counterparty CLASS on a Branch or
+  //   Related line ("ORANGE ENT BRANCH", "ORANGE O TEC RELATED"), because that is how finance reads
+  //   the Sales Register (asked 2026-09-10). This report puts each company in a COLUMN, so those
+  //   lines grew columns of their own — "Unmapped: ORANGE ENT BRANCH" on 16-09-2026 — while the
+  //   sale was plainly Enterprise's. The tenant GUID names the book whatever the display rule is.
+  const bookOf = new Map(companyRows.map((c) => [c.company_guid, c]));
   const toSaleLine = (r: RegisterRow): SaleLine => ({
     id: registerId(r),
-    company: r.company,
-    location: r.location_name,
+    company: bookOf.get(companyGuidOf(r.tenant_id))?.company ?? r.company,
+    location: bookOf.get(companyGuidOf(r.tenant_id))?.location ?? r.location_name,
     party: r.party,
     item: r.particulars,
     type: r.type,
