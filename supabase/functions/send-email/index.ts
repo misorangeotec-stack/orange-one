@@ -374,6 +374,22 @@ function itemList(items: Array<{ name: string; meta?: string; value?: string; su
   </table>`;
 }
 /** Orange-tinted note/reason box. */
+/**
+ * Points, one per LINE, each with its own bullet.
+ *
+ * ⚠ THIS EXISTS BECAUSE A PARAGRAPH IS NOT A LIST. An announcement whose points were joined into one
+ *   escaped paragraph (noteBox collapses newlines, like any HTML) reads as a dump and was rejected by
+ *   the client on 18-09-2026. Anything written as points must arrive as points.
+ */
+function bulletLines(items: string[]): string {
+  if (!items.length) return "";
+  const rows = items.map((t) => `<tr>
+    <td valign="top" style="padding:3px 9px 3px 0;font-family:${FONT};font-size:15px;line-height:1.5;color:${ORANGE};font-weight:700;">&#8226;</td>
+    <td valign="top" style="padding:3px 0;font-family:${FONT};font-size:14.5px;line-height:1.5;color:${NAVY};">${esc(t)}</td>
+  </tr>`).join("");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px;">${rows}</table>`;
+}
+
 function noteBox(label: string, text: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr>
     <td style="background:${ORANGE_SOFT};border-radius:10px;padding:13px 16px;font-family:${FONT};">
@@ -572,12 +588,18 @@ async function compose(row: Row): Promise<Composed | null> {
 
     const headline = str(p.headline, "Your receivables report");
     const body = str(p.body);
+    // Optional, and both are additive: a report SEND carries neither, so it renders exactly as before.
+    // An announcement carries points (one line each) and a button to open the thing being announced.
+    const bullets = (Array.isArray(p.bullets) ? p.bullets : []).filter((b): b is string => typeof b === "string" && !!b);
+    const ctaUrl = str(p.ctaUrl);
     const fileList = files.length
       ? itemList(files.map((f) => ({ name: f.filename, meta: f.mime.includes("pdf") ? "PDF summary" : "Excel workbook" })))
       : "";
     const inner =
       (actorName !== "A colleague" ? actorRow(actorName, "sent you a report") : "") +
-      (body ? noteBox("Message", body) : "") +
+      (body ? (bullets.length ? `<div style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">${esc(body)}</div>` : noteBox("Message", body)) : "") +
+      bulletLines(bullets) +
+      (ctaUrl ? cta(ctaUrl, str(p.ctaLabel, "Open the report")) : "") +
       fileList;
 
     return {
@@ -589,7 +611,8 @@ async function compose(row: Row): Promise<Composed | null> {
         tag: "Outstanding Dashboard",
         footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
       }),
-      text: `${headline}\n\n${body}\n\n${files.map((f) => f.filename).join("\n")}`,
+      text: [headline, body, ...bullets.map((b) => `- ${b}`), ctaUrl, ...files.map((f) => f.filename)]
+        .filter(Boolean).join("\n\n"),
       replyTo,
       files,
     };
