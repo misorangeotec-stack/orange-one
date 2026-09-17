@@ -12465,6 +12465,31 @@ filter row), and Customer since is not shown per ledger there.
 `profiles.receivables_allowed_reports`. **Ritesh Tulsyan was granted it on 17-09-2026** (his list is now
 `{advances, credit-terms}`).
 
+**🔁 REVISED 18-09-2026 on the client's read of the live report (`df932fb`).**
+- 🔴 **"Customer since" is OUT of the blocks.** It could only be filled for customers created after
+  14-08-2026, so it was blank in about 98% of the grid: *"I don't understand why you have shown Customer
+  since... instead of showing it, we should have shown last activity."* Each block's fourth column is now
+  that book's **Last activity** (the newest Tally voucher, receipt or open bill on that ledger), which
+  exists for every ledger that has ever traded. The left-hand column stays as the newest across every
+  book, renamed **Last activity (any book)**; the By ledger column is **Last Activity** again too, so the
+  page has one word for one thing. The creation-date finding is preserved in this entry and in RC-20 —
+  ⚠ the mst_parties read was removed with the column, so restoring it means restoring that fetch.
+- **The report opens filtered**, on the client's instruction: **Has outstanding ON** (1,131 of 1,882
+  ledgers are at exactly zero) and **Sale type = every type except Machine and Spare Parts**. Both are
+  the ordinary controls, so either can be switched off. Counts on the day: 988 customers with a gap →
+  142 once zero balances go → **87** once machine and spares go. ⚠ Clearing filters returns to this
+  DEFAULT view, not to "no filters"; the defaults carry no chip (the button and the Sale type chip show
+  them); and the panel and strip count the same filtered set as the list, which is what keeps a figure
+  you click and the list you land on the same customers.
+- **A blue cell now reads "On bills"** in words, on screen and in the workbook. The first question asked
+  of the live report was what the blue meant, and a coloured blank cannot answer that.
+
+**Related, same day:** `send-email` gained an optional `bullets` array and `ctaUrl`/`ctaLabel` for the
+`receivables_collections_report` kind (deployed v32, commit `5eace03`), because the announcement mail
+had gone out as one escaped paragraph. ⚠ Live matched **master's** copy of that function; the
+`daily-reports` copy carries an unreleased `travel_` renderer, so deploying from that checkout would
+have dropped Complaint's email. Check the deployed bundle before any future deploy.
+
 ---
 
 ### RC-20 · A true creation date for customers from before 14-Aug-2026  🟡  `[ ]`
