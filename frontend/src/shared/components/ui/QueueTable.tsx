@@ -177,6 +177,22 @@ interface QueueTableProps<T> {
    * changes.
    */
   columnRules?: boolean;
+  /**
+   * Rows pinned BELOW the body — a folded remainder, a total — that are not rows
+   * of the data.
+   *
+   * ⚠ OUTSIDE SORTING, FILTERING AND PAGINATION, AND THAT IS THE POINT. The house
+   *   rule is that every grid sorts and filters on every column. A "Remaining 14
+   *   customers" line or a TOTAL placed among the rows would be sorted to the top
+   *   by the first click on Amount and hidden by the first filter. Here they
+   *   stay put, under the last row, on every page.
+   *
+   * The figures are the caller's and are NOT recomputed from the filtered rows:
+   * they are the list's own totals, so the caller should label them as such.
+   * `cells` is keyed by column key; a column with no entry renders empty, and a
+   * column the reader has hidden is simply not drawn.
+   */
+  footerRows?: { key: string; tone?: "muted" | "total"; cells: Partial<Record<string, ReactNode>> }[];
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
@@ -274,6 +290,7 @@ export default function QueueTable<T>({
   hideGroupHeaders,
   columnPicker,
   columnRules,
+  footerRows,
 }: QueueTableProps<T>) {
   // ⚠ Applied HERE, once, rather than at each of the ~80 `actions={...}` call
   //   sites. Everything below — the Actions header, the per-row cell, the
@@ -803,6 +820,27 @@ export default function QueueTable<T>({
                   })
                 )}
               </tbody>
+              {footerRows && footerRows.length > 0 && (
+                <tfoot>
+                  {footerRows.map((fr) => (
+                    <tr
+                      key={fr.key}
+                      className={fr.tone === "total" ? "bg-page font-semibold text-navy" : fr.tone === "muted" ? "text-grey-2" : ""}
+                    >
+                      {selectable && <td className="px-4 py-3 border-b border-line/70" />}
+                      {actions && <td className="px-4 py-3 border-b border-line/70" />}
+                      {shownColumns.map((c, i) => (
+                        <td
+                          key={c.key}
+                          className={`px-4 py-3 border-b border-line/70 ${fr.tone === "total" ? "border-t border-t-line" : ""} ${rule(i)} ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}
+                        >
+                          {fr.cells[c.key] ?? null}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tfoot>
+              )}
             </table>
           </ScrollableTable>
           <Pagination state={pg} rowsLabel={rowsLabel} />

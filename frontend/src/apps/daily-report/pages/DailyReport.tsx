@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import Card from "@/shared/components/ui/Card";
@@ -8,7 +8,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import KpiRow, { type KpiTile } from "@/shared/components/dashboard/KpiRow";
 import { TextInput } from "@/shared/components/ui/Form";
 
-import { useDailyReport, PARTY_KIND_LABEL, type MoneyRow, type PurchaseLine } from "../data/dailyReport";
+import { useDailyReport, PARTY_KIND_LABEL, type PartyKind, type PurchaseLine } from "../data/dailyReport";
 import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
 import { useCcLimits } from "../data/ccLimits";
@@ -16,13 +16,14 @@ import {
   addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
   shortDay, timeOfDay, todayIso,
 } from "../lib/format";
-import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "../lib/labels";
+import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank, listNoun } from "../lib/labels";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType";
 import {
-  allBandsTotal, bandMoney, bankColumns, byParty, cellFor, entityTotal, FACILITY_BALANCE_NOTE,
-  facilityRows, groupSales, inLocation, isBankOnlyLocation, purchaseTotal, salesTotals, saleKind,
-  topShare, tradeTotal, TRADE_BANDS,
-  type LocationFilter, type PartyTotal,
+  allBandsTotal, bandMoney, bankColumns, cellFoc, cellFor, companyColumnLabel, entityTotal,
+  FACILITY_BALANCE_NOTE, FOLD_SHARE, facilityRows, foldList, groupSales, inLocation,
+  isBankOnlyLocation, pivotCompanies, pivotMoney, pivotSales, purchaseTotal, salesTotals, saleKind,
+  tradeTotal, TRADE_BANDS,
+  type LocationFilter, type MoneyBand, type PivotCell, type PivotCompany, type PivotRow,
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
@@ -55,87 +56,266 @@ const LOCATION_OPTIONS: { value: LocationFilter; label: string }[] = [
 /** How many days of balance history the bank grid shows. */
 const HISTORY_DAYS = 7;
 
+/* ------------------------------------------------------------ pivot table */
+
+const FocBadge = () => (
+  <span className="rounded bg-orange/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-orange">FOC</span>
+);
+
 /**
- * Trade rows first, then everything else, each half biggest-first.
+ * One list — a product line's customers, or one money band's parties — with
+ * the companies across the top and the fold rule applied.
  *
- * The table's own sort still works — this is only the order it OPENS in, so the
- * rows behind the headline figure are the ones a reader meets before the
- * inter-company and bank-transfer rows that are not in it.
+ * The rule itself is `foldList` in aggregate.ts; this only draws it.
+ *
+ * ⚠ THE REMAINING LINE AND THE TOTAL ARE `footerRows`, NOT ROWS. They are not
+ *   customers: among the rows, a click on Amount would carry "Remaining 14
+ *   customers" to the top and a filter on Customer would hide the TOTAL. They
+ *   are the LIST's figures and do not move when a reader filters — which is
+ *   why the footer says "TOTAL" and the section heading says "day total".
+ *
+ * Free-of-charge-only customers are real customers and stay in the body, where
+ * they can be sorted; with the table opening biggest first they sit at its foot.
  */
-const tradeFirst = (rows: MoneyRow[]): MoneyRow[] =>
-  [...rows].sort((a, b) => {
-    const at = TRADE_BANDS.includes(a.kind) ? 0 : 1;
-    const bt = TRADE_BANDS.includes(b.kind) ? 0 : 1;
-    return at - bt || b.amountLacs - a.amountLacs;
-  });
+function PivotTable({
+  rows, companies, unit, noun, exportName, exportTitle,
+}: {
+  rows: PivotRow[];
+  companies: PivotCompany[];
+  /** "kg" for ink, "qty" for countable goods, null for money — which has no quantity. */
+  unit: "kg" | "qty" | null;
+  noun: PartyKind | "sales";
+  exportName: string;
+  exportTitle: string;
+}) {
+  // Opens FOLDED (decision 8, 17-09-2026). Reset by the caller's `key` when the
+  // date or location changes, so a new day never opens already expanded.
+  const [showAll, setShowAll] = useState(false);
+  const fold = useMemo(() => foldList(rows), [rows]);
+  const folds = fold.remaining !== null;
+  const expanded = showAll || !folds;
+  const body = expanded ? fold.all : [...fold.named, ...fold.focOnly];
+  const plural = listNoun(noun, 2);
 
-/* ------------------------------------------------------------- money table */
+  const qtyText = (n: number) => (unit === "kg" ? Math.round(n).toLocaleString("en-IN") : fmtQty(n));
 
-const moneyColumns = (): QueueColumn<MoneyRow>[] => [
-  {
-    key: "band", header: "Counterparty", alwaysVisible: true,
-    cell: (r) => (
-      <span
-        className={
-          r.kind === "customer" || r.kind === "vendor"
-            ? "rounded bg-navy/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-navy"
-            : "rounded bg-grey/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-grey"
-        }
-      >
-        {PARTY_KIND_LABEL[r.kind]}
+  const qtyCell = (c: PivotCell | undefined) => {
+    if (!c) return null;
+    const foc = cellFoc(c);
+    return (
+      <span className="tabular-nums">
+        {qtyText(c.qty)}
+        {foc === "part" && <span className="ml-1 text-[11px] text-orange">({qtyText(c.focQty)} FOC)</span>}
       </span>
-    ),
-    // A badge cell renders a component, so both are declared explicitly.
-    sortValue: (r) => PARTY_KIND_LABEL[r.kind],
-    filter: { kind: "select", get: (r) => PARTY_KIND_LABEL[r.kind] },
-  },
-  { key: "party", header: "Party", cell: (r) => r.party, sortValue: (r) => r.party,
-    filter: { kind: "text", get: (r) => r.party } },
-  { key: "company", header: "Book", cell: (r) => r.company ?? "—",
-    sortValue: (r) => r.company ?? "", filter: { kind: "select", get: (r) => r.company ?? "—" } },
-  { key: "voucherType", header: "Voucher type", defaultHidden: true,
-    cell: (r) => r.voucherType ?? "—", sortValue: (r) => r.voucherType ?? "",
-    filter: { kind: "select", get: (r) => r.voucherType ?? "—" } },
-  { key: "voucherNo", header: "Voucher no.", defaultHidden: true,
-    cell: (r) => <span className="tabular-nums">{r.voucherNo ?? "—"}</span>,
-    sortValue: (r) => r.voucherNo ?? "", filter: { kind: "text", get: (r) => r.voucherNo ?? "" } },
-  {
-    key: "amount", header: "Amount (₹ L)", align: "right",
-    cell: (r) => <span className="tabular-nums font-semibold">{fmtLacs(r.amountLacs)}</span>,
-    // "1,200.00" sorts before "9.00" as text — money always declares this.
-    sortValue: (r) => r.amountLacs,
-    filter: { kind: "number", get: (r) => r.amountLacs },
-    exportValue: (r) => r.amountLacs,
-  },
-];
+    );
+  };
+  // A cell that went entirely free carries quantity and no money. A bare 0.00 in
+  // a money column reads as a data fault and somebody reports it, so it says FOC.
+  const amountCell = (c: PivotCell | undefined, strong = true) => {
+    if (!c) return null;
+    if (unit !== null && cellFoc(c) === "all") return <FocBadge />;
+    return <span className={`tabular-nums ${strong ? "font-semibold" : ""}`}>{fmtLacs(c.amountLacs)}</span>;
+  };
+  const rowCell = (r: { qty: number; amountLacs: number; focQty: number }): PivotCell =>
+    ({ qty: r.qty, amountLacs: r.amountLacs, focQty: r.focQty });
 
-/* ------------------------------------------------------------ sales table */
+  const showTotals = companies.length > 1;
+  const unitWord = unit === "kg" ? "kg" : "Qty";
 
-const partyColumns = (unit: "kg" | "qty"): QueueColumn<PartyTotal>[] => [
-  { key: "party", header: "Party", cell: (r) => r.party, sortValue: (r) => r.party,
-    filter: { kind: "text", get: (r) => r.party } },
-  { key: "company", header: "Entity", cell: (r) => entityLabel(r.company),
-    sortValue: (r) => entityRank(r.company), filter: { kind: "select", get: (r) => entityLabel(r.company) } },
-  { key: "location", header: "Location", cell: (r) => r.location, sortValue: (r) => r.location,
-    filter: { kind: "select", get: (r) => r.location } },
-  {
-    key: "qty", header: unit === "kg" ? "Qty (kg)" : "Qty", align: "right",
-    cell: (r) => <span className="tabular-nums">{unit === "kg" ? fmtKg(r.qty) : fmtQty(r.qty)}</span>,
-    sortValue: (r) => r.qty, filter: { kind: "number", get: (r) => r.qty }, exportValue: (r) => r.qty,
-  },
-  {
-    key: "amount", header: "Amount (₹ L)", align: "right",
-    // A free-of-charge line carries quantity and no money. A bare 0.00 in a money
-    // column reads as a data fault and somebody reports it, so it says FOC.
-    cell: (r) =>
-      r.foc
-        ? <span className="rounded bg-orange/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-orange">FOC</span>
-        : <span className="tabular-nums font-semibold">{fmtLacs(r.revenueLacs)}</span>,
-    sortValue: (r) => r.revenueLacs,
-    filter: { kind: "number", get: (r) => r.revenueLacs },
-    exportValue: (r) => r.revenueLacs,
-  },
-];
+  const columns: QueueColumn<PivotRow>[] = [
+    {
+      key: "party",
+      header: noun === "sales" || noun === "customer" ? "Customer" : noun === "vendor" ? "Supplier" : "Party",
+      alwaysVisible: true,
+      cell: (r) => (
+        <span title={r.refs.length ? r.refs.join(", ") : undefined}>
+          {r.party}
+          {unit === null && r.entries > 1 && (
+            <span className="ml-2 text-[11px] text-grey-2">{r.entries} entries</span>
+          )}
+        </span>
+      ),
+      sortValue: (r) => r.party,
+      filter: { kind: "text", get: (r) => r.party },
+      exportValue: (r) => r.party,
+    },
+    ...companies.flatMap((co): QueueColumn<PivotRow>[] => {
+      const label = companyColumnLabel(co);
+      const amount: QueueColumn<PivotRow> = {
+        key: `${co.alias}|amount`, header: `${label} ₹ L`, align: "right",
+        cell: (r) => amountCell(r.cells[co.alias], false),
+        sortValue: (r) => r.cells[co.alias]?.amountLacs ?? 0,
+        filter: { kind: "number", get: (r) => r.cells[co.alias]?.amountLacs ?? 0 },
+        exportValue: (r) => {
+          const c = r.cells[co.alias];
+          return !c ? "" : unit !== null && cellFoc(c) === "all" ? "FOC" : c.amountLacs;
+        },
+      };
+      if (unit === null) return [amount];
+      return [
+        {
+          key: `${co.alias}|qty`, header: `${label} ${unitWord}`, align: "right",
+          cell: (r) => qtyCell(r.cells[co.alias]),
+          sortValue: (r) => r.cells[co.alias]?.qty ?? 0,
+          filter: { kind: "number", get: (r) => r.cells[co.alias]?.qty ?? 0 },
+          exportValue: (r) => r.cells[co.alias]?.qty ?? "",
+        },
+        amount,
+      ];
+    }),
+    ...(showTotals
+      ? [
+          ...(unit === null
+            ? []
+            : [{
+                key: "total|qty", header: `Total ${unitWord}`, align: "right" as const,
+                cell: (r: PivotRow) => qtyCell(rowCell(r)),
+                sortValue: (r: PivotRow) => r.qty,
+                filter: { kind: "number" as const, get: (r: PivotRow) => r.qty },
+                exportValue: (r: PivotRow) => r.qty,
+              }]),
+          {
+            key: "total|amount", header: "Total ₹ L", align: "right" as const,
+            cell: (r: PivotRow) => amountCell(rowCell(r)),
+            sortValue: (r: PivotRow) => r.amountLacs,
+            filter: { kind: "number" as const, get: (r: PivotRow) => r.amountLacs },
+            exportValue: (r: PivotRow) => r.amountLacs,
+          },
+        ]
+      : []),
+  ];
+
+  /** A footer row's cells, from a set of per-company totals. */
+  const footerCells = (label: ReactNode, t: { qty: number; amountLacs: number; focQty: number; cells: Record<string, PivotCell> }) => {
+    const cells: Record<string, ReactNode> = { party: label };
+    for (const co of companies) {
+      const c = t.cells[co.alias];
+      if (unit !== null) cells[`${co.alias}|qty`] = qtyCell(c);
+      cells[`${co.alias}|amount`] = amountCell(c, false);
+    }
+    if (showTotals) {
+      if (unit !== null) cells["total|qty"] = qtyCell(rowCell(t));
+      cells["total|amount"] = amountCell(rowCell(t));
+    }
+    return cells;
+  };
+
+  const footerRows = [
+    ...(!expanded && fold.remaining
+      ? [{
+          key: "remaining", tone: "muted" as const,
+          cells: footerCells(`Remaining ${fold.remaining.count} ${listNoun(noun, fold.remaining.count)}`, fold.remaining),
+        }]
+      : []),
+    { key: "total", tone: "total" as const, cells: footerCells("TOTAL", fold.total) },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {folds && (
+        <p className="flex flex-wrap items-center gap-2 text-[12px] text-grey">
+          {expanded ? (
+            <>Showing all {fold.all.length} {plural}.</>
+          ) : (
+            <>
+              Showing the {fold.named.length} {listNoun(noun, fold.named.length)} that make up{" "}
+              {Math.round(FOLD_SHARE * 100)}% of the total
+              {fold.focOnly.length > 0 && <>, and every free-of-charge {listNoun(noun, 1)}</>}. The other{" "}
+              {fold.remaining?.count} are folded into one line.
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="font-semibold text-orange hover:underline"
+          >
+            {expanded ? `Show the top ${plural} only` : `Show all ${fold.all.length} ${plural}`}
+          </button>
+        </p>
+      )}
+      <QueueTable<PivotRow>
+        rows={body}
+        rowKey={(r) => r.party}
+        columns={columns}
+        rowsLabel={plural}
+        initialSort={{ key: showTotals ? "total|amount" : `${companies[0]?.alias ?? ""}|amount`, dir: "desc" }}
+        exportName={exportName}
+        exportTitle={exportTitle}
+        exportNotes={
+          expanded
+            ? [`Every ${listNoun(noun, 1)} on the list.`]
+            : [
+                `Folded list: the ${plural} making up ${Math.round(FOLD_SHARE * 100)}% of the total, plus every free-of-charge ${listNoun(noun, 1)}. The ${fold.remaining?.count ?? 0} in the Remaining line are not listed — use "Show all", or the Excel button at the top of the page, which lists every ${listNoun(noun, 1)}.`,
+              ]
+        }
+        footerRows={footerRows}
+        readOnly
+      />
+    </div>
+  );
+}
+
+/**
+ * Money in or out, band by band — one folded list per band.
+ *
+ * ⚠ THE FOLD RUNS PER BAND, NOT OVER THE WHOLE LIST. Folding across bands would
+ *   put a bank transfer and a customer receipt into the same "Remaining" line,
+ *   which is exactly the mixing the headline refuses. The bands that are not in
+ *   the headline stay visibly apart, below their own divider.
+ */
+function MoneyDetail({
+  bands, companies, exportStem, date,
+}: {
+  bands: MoneyBand[];
+  companies: PivotCompany[];
+  exportStem: string;
+  date: string;
+}) {
+  const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
+  const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));
+  const band = (b: MoneyBand) => {
+    const rows = pivotMoney(b.rows);
+    return (
+      <div key={b.kind} className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-navy">
+            {PARTY_KIND_LABEL[b.kind]}
+            <span className="ml-2 text-[11.5px] font-normal normal-case text-grey">
+              {rows.length} {listNoun(b.kind, rows.length)} · {b.rows.length} {b.rows.length === 1 ? "entry" : "entries"}
+            </span>
+          </h3>
+          <span className="text-[12.5px] text-grey">
+            band total <span className="tabular-nums font-semibold text-navy">{fmtMoney(b.totalLacs)}</span>
+          </span>
+        </div>
+        <PivotTable
+          rows={rows}
+          companies={companies}
+          unit={null}
+          noun={b.kind}
+          exportName={`Daily_Report_${exportStem}_${PARTY_KIND_LABEL[b.kind].replace(/\s+/g, "_")}_${date}`}
+          exportTitle={`${exportStem} — ${PARTY_KIND_LABEL[b.kind]} — ${dmy(date)}`}
+        />
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-5">
+      {trade.map(band)}
+      {other.length > 0 && (
+        <>
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-grey-2">
+              Not counted in the figure above
+            </span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          {other.map(band)}
+        </>
+      )}
+    </div>
+  );
+}
 
 const purchaseColumns = (): QueueColumn<PurchaseLine>[] => [
   { key: "party", header: "Supplier", cell: (r) => r.party, sortValue: (r) => r.party,
@@ -170,10 +350,12 @@ const purchaseColumns = (): QueueColumn<PurchaseLine>[] => [
  * deliberately does not.
  */
 function Section({
-  title, total, count, children, note,
+  title, total, totalLabel = "day total", count, children, note,
 }: {
   title: string;
   total?: string;
+  /** What `total` is. "day total" unless the figure is something narrower — see the sales blocks. */
+  totalLabel?: string;
   count?: string;
   note?: string;
   children: React.ReactNode;
@@ -187,7 +369,7 @@ function Section({
         </h2>
         {total && (
           <span className="text-[12.5px] text-grey">
-            day total <span className="tabular-nums font-semibold text-navy">{total}</span>
+            {totalLabel} <span className="tabular-nums font-semibold text-navy">{total}</span>
           </span>
         )}
       </div>
@@ -253,15 +435,39 @@ export default function DailyReport() {
     () => (report.data?.purchases ?? []).filter((p) => inLocation(loc, p.location)),
     [report.data, loc],
   );
-  // The day book's voucher list carries a book label, not a location, so a
-  // location filter cannot narrow it without guessing. Rather than silently
-  // showing all of it under a Surat heading, the money sections say so.
-  const money = report.data?.money ?? [];
+  // ⚠ MONEY FOLLOWS THE LOCATION FILTER TOO, since 17-09-2026. It used not to:
+  //   a voucher carried only its book's label, and narrowing on that would have
+  //   meant parsing "O-tec — Surat". Each row now carries the location of its
+  //   book from ext_company_map (toMoneyRows), so a Surat filter shows Surat's
+  //   receipts rather than all five books' under a Surat heading. Delhi has no
+  //   book, so it empties by construction, exactly like sales.
+  const money = useMemo(
+    () => (report.data?.money ?? []).filter((m) => inLocation(loc, m.location)),
+    [report.data, loc],
+  );
 
   const totals = useMemo(() => salesTotals(sales), [sales]);
   const groups = useMemo(() => groupSales(sales), [sales]);
   const received = useMemo(() => bandMoney(money, "in"), [money]);
   const paid = useMemo(() => bandMoney(money, "out"), [money]);
+
+  /* ---- the lists behind the cards, one row per customer -------------- */
+  // Company columns are taken across a whole block, so the Ink table and the
+  // Print heads table put O-tec in the same place.
+  const salePivots = useMemo(
+    () => new Map(groups.map((g) => [g.saleType, pivotSales(g.lines)] as const)),
+    [groups],
+  );
+  const saleCompanies = useMemo(() => pivotCompanies(...salePivots.values()), [salePivots]);
+  const receivedCompanies = useMemo(() => pivotCompanies(...received.map((b) => pivotMoney(b.rows))), [received]);
+  const paidCompanies = useMemo(() => pivotCompanies(...paid.map((b) => pivotMoney(b.rows))), [paid]);
+  // A book missing from ext_company_map would otherwise be a column that reads
+  // like a real company. Named once, above the detail, wherever it appears.
+  const unmapped = useMemo(
+    () => [...new Set([...saleCompanies, ...receivedCompanies, ...paidCompanies]
+      .filter((c) => c.unmapped).map(companyColumnLabel))],
+    [saleCompanies, receivedCompanies, paidCompanies],
+  );
   const approvals = useMemo(() => sales.filter((l) => saleKind(l) === "approval"), [sales]);
   const returns = useMemo(() => sales.filter((l) => saleKind(l) === "negative"), [sales]);
 
@@ -407,7 +613,7 @@ export default function DailyReport() {
       sub: g.saleType === "ink" ? fmtKg(g.qty) : `${fmtQty(g.qty)} units`,
       value: fmtMoney(g.revenueLacs),
       onSelect: () => openDetail(`sale-${g.saleType}`),
-      action: `See the ${byParty(g.lines).length} customers behind this`,
+      action: `See the ${g.parties} ${listNoun("sales", g.parties)} behind this`,
     }));
     if (totals.returnsLacs !== 0) {
       rows.push({
@@ -449,15 +655,19 @@ export default function DailyReport() {
   ): Fact[] => {
     const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
     const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));
-    const row = (b: (typeof bands)[number], quiet: boolean): Fact => ({
-      key: b.kind,
-      label: PARTY_KIND_LABEL[b.kind],
-      sub: `${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"}`,
-      tone: quiet ? "quiet" : undefined,
-      value: fmtMoney(b.totalLacs),
-      onSelect: () => openDetail(sectionId),
-      action: `See the ${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"} behind this`,
-    });
+    const row = (b: (typeof bands)[number], quiet: boolean): Fact => {
+      // Counted in PARTIES, because the list behind the row is one line per party.
+      const n = new Set(b.rows.map((r) => r.party)).size;
+      return {
+        key: b.kind,
+        label: PARTY_KIND_LABEL[b.kind],
+        sub: `${n} ${listNoun(b.kind, n)}`,
+        tone: quiet ? "quiet" : undefined,
+        value: fmtMoney(b.totalLacs),
+        onSelect: () => openDetail(sectionId),
+        action: `See the ${n} ${listNoun(b.kind, n)} behind this`,
+      };
+    };
 
     const rows: Fact[] = trade.map((b) => row(b, false));
     if (other.length > 0) {
@@ -871,28 +1081,27 @@ export default function DailyReport() {
             <Button variant="ghost" size="sm" onClick={() => setOpenSection(null)}>Close</Button>
           </div>
 
+          {unmapped.length > 0 && (
+            <Card className="border-orange/40 p-3 text-[12.5px] text-orange">
+              {unmapped.join(", ")}: a Tally book that is not in the company map, so its rows sit in a
+              column of their own rather than under their company. Tag it in Outstanding Dashboard →
+              Settings → Masters → Companies &amp; Locations.
+            </Card>
+          )}
 
           {openSection === "received" && (
       <Section
         title="Received"
         count={`${money.filter((m) => m.direction === "in").length} receipts`}
         total={`${fmtMoney(receivedLacs)} from customers and suppliers`}
-        note={`Every receipt Tally recorded, banded by what the counterparty is. The day total above counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtMoney(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
+        note={`Every receipt Tally recorded${loc === "all" ? "" : ` in ${loc}`}, one line per party, banded by what the counterparty is and folded band by band. The day total counts customers and suppliers only — the same basis as the sheet this replaces. All counterparties together come to ${fmtMoney(receivedAllLacs)}, the difference being transfers between our own accounts, inter-company movement and suspense.`}
       >
-        {money.filter((m) => m.direction === "in").length === 0 && !loading ? (
+        {loading ? (
+          <LoadingNote>Reading the day book…</LoadingNote>
+        ) : received.length === 0 ? (
           <Nothing date={date} what="receipts" />
         ) : (
-          <QueueTable<MoneyRow>
-            rows={tradeFirst(money.filter((m) => m.direction === "in"))}
-            rowKey={(r) => r.id}
-            columns={moneyColumns()}
-            loading={loading}
-            rowsLabel="receipts"
-            initialSort={{ key: "amount", dir: "desc" }}
-            exportName={`Daily_Report_Receipts_${date}`}
-            exportTitle={`Receipts — ${dmy(date)}`}
-            readOnly
-          />
+          <MoneyDetail key={`${date}|${loc}`} bands={received} companies={receivedCompanies} exportStem="Receipts" date={date} />
         )}
       </Section>
           )}
@@ -901,23 +1110,15 @@ export default function DailyReport() {
       <Section
         title="Paid"
         count={`${money.filter((m) => m.direction === "out").length} payments`}
-        total={`${fmtMoney(paidLacs)} to suppliers`}
-        note={`The day total above counts suppliers only. All counterparties together come to ${fmtMoney(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. The Counterparty column separates them.`}
+        total={`${fmtMoney(paidLacs)} to customers and suppliers`}
+        note={`Every payment Tally recorded${loc === "all" ? "" : ` in ${loc}`}, one line per party, banded and folded band by band. The day total counts customers and suppliers only. All counterparties together come to ${fmtMoney(paidAllLacs)} — the rest is movement on our own cash-credit accounts and transfers between books. Purchases are a separate figure, on the Purchased tile, and are never added in here.`}
       >
-        {money.filter((m) => m.direction === "out").length === 0 && !loading ? (
+        {loading ? (
+          <LoadingNote>Reading the day book…</LoadingNote>
+        ) : paid.length === 0 ? (
           <Nothing date={date} what="payments" />
         ) : (
-          <QueueTable<MoneyRow>
-            rows={tradeFirst(money.filter((m) => m.direction === "out"))}
-            rowKey={(r) => r.id}
-            columns={moneyColumns()}
-            loading={loading}
-            rowsLabel="payments"
-            initialSort={{ key: "amount", dir: "desc" }}
-            exportName={`Daily_Report_Payments_${date}`}
-            exportTitle={`Payments — ${dmy(date)}`}
-            readOnly
-          />
+          <MoneyDetail key={`${date}|${loc}`} bands={paid} companies={paidCompanies} exportStem="Payments" date={date} />
         )}
       </Section>
           )}
@@ -975,8 +1176,7 @@ export default function DailyReport() {
           {SALE_TYPE_ORDER.filter((t) => openSection === `sale-${t}`).map((t) => {
             const g = groups.find((x) => x.saleType === t);
             if (!g) return null;
-            const rows = byParty(g.lines);
-            const share = topShare(rows);
+            const rows = salePivots.get(t) ?? [];
             const isInk = t === "ink";
             // Despatch lines for this product line — one row per thing that
             // physically left, which is a different question from who bought.
@@ -989,26 +1189,33 @@ export default function DailyReport() {
         <Section
           key={t}
           title={SALE_TYPE_LABEL[t]}
-          count={`${rows.length} ${rows.length === 1 ? "party" : "parties"} · ${isInk ? fmtKg(g.qty) : fmtQty(g.qty)}`}
+          count={`${rows.length} ${listNoun("sales", rows.length)} · ${isInk ? fmtKg(g.qty) : `${fmtQty(g.qty)} units`}`}
           total={fmtMoney(g.revenueLacs)}
-          note={
+          // ⚠ NOT THE FIGURE ON THE CARD'S TOTAL ROW, AND IT SAYS SO. This list
+          //   is what SOLD; the day's sales figure is net of returns across
+          //   every product line. A reader footing this TOTAL against the
+          //   headline must be told why the two differ, not left to find out.
+          totalLabel="sold, before returns"
+          note={[
             t === "other"
               ? "These lines carry a voucher type no product-line rule covers yet. They are listed rather than dropped; add a rule on ConnectWave and they move into the section above."
-              : rows.length > 5
-                ? `Top 5 customers ${fmtMoney(share.topLacs)} of ${fmtMoney(share.totalLacs)} (${share.pct.toFixed(0)}%).`
-                : undefined
-          }
+              : "",
+            totals.returnsLacs !== 0
+              ? `The day's sales figure, ${fmtMoney(totals.netLacs)}, is net of ${fmtMoney(Math.abs(totals.returnsLacs))} of returns and credit notes across every product line.`
+              : "",
+            g.focQty > 0
+              ? `${isInk ? fmtKg(g.focQty) : `${fmtQty(g.focQty)} units`} went free of charge: counted in quantity, never in amount, and never folded.`
+              : "",
+          ].filter(Boolean).join(" ") || undefined}
         >
-          <QueueTable<PartyTotal>
+          <PivotTable
+            key={`${date}|${loc}|${t}`}
             rows={rows}
-            rowKey={(r) => `${r.party}|${r.company}|${r.location}`}
-            columns={partyColumns(isInk ? "kg" : "qty")}
-            loading={loading}
-            rowsLabel="parties"
-            initialSort={{ key: "amount", dir: "desc" }}
+            companies={saleCompanies}
+            unit={isInk ? "kg" : "qty"}
+            noun="sales"
             exportName={`Daily_Report_${SALE_TYPE_LABEL[t].replace(/\s+/g, "_")}_${date}`}
             exportTitle={`${SALE_TYPE_LABEL[t]} — ${dmy(date)}`}
-            readOnly
           />
         </Section>
         {outwardLines.length > 0 && (
