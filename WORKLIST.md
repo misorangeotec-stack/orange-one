@@ -12684,6 +12684,108 @@ balance, no receipt detail". Left unchanged, as instructed.
 
 ---
 
+### RC-16 · Collection Team becomes a Group-by level on the Salesperson Collection Report  🟡  `[x]`
+*Raised 2026-09-16 · Re-measured against the live mirror, built, browser-verified and **shipped
+18-09-2026** · No database change, no Edge Function — the value was already on every row*
+
+**The ask.** RC-11 added the **Collection Team** filter to the Salesperson Collection Report, but the
+**Group by** builder offered only Salesperson / Customer / Customer Group / Customer Category /
+Company / Location, so the figures could not be read team by team.
+
+**✅ SHIPPED.** *Collection Team* is now a group-by dimension like any other, with two new View chips
+(**Collection Team** and **Collection Team → Customer**). Everything downstream picked it up on its
+own, as predicted: the Excel export writes one column per level plus the `Level` column with no edit,
+and the row-count noun reads the dimension's own label ("7 COLLECTION TEAMS").
+
+**Measured on the live muster, 18-09-2026** (re-measure before quoting — `Vijay` became `Ankita`
+since 16-09):
+
+| collection team | muster rows | ledgers the report actually lists |
+|---|---|---|
+| **(none)** | **1,088** (128 `NULL` / 960 empty) | **30** |
+| Mohta ji | 251 | 224 |
+| Jayshree | 248 | 232 |
+| Nitesh | 184 | 165 |
+| Ankita | 107 | 97 |
+| RELATED PARTY | 8 | 6 |
+| **OTHERS** | **1** | **1** |
+
+⚠ **The two figures are not the same question and neither is a safe assumption.** Most untagged
+ledgers are dormant and never reach this table — 58% of the muster carries no team, but the bucket on
+screen held 30 of 755 listed ledgers on the day it shipped. It grows the moment an untagged customer
+starts billing.
+
+#### The decisions
+
+1. **The unassigned bucket is labelled "No collection team"** and keyed on a **sentinel**
+   (`"\u0000no-team"`), not on its display text — the pattern `shared/lib/blankFilter.ts` uses.
+   🔴 **`OTHERS` IS A REAL COLLECTION TEAM**, carried by one ledger today, so a bucket named after
+   any plausible word would have merged the untagged into a team the client actually uses,
+   indistinguishably. ⚠ This is the **opposite** of the salesperson dimension on the same screen,
+   where `spName()` folds the untagged into `"OTHERS"` deliberately, because there it *is* a real
+   muster value. The two dimensions behave differently on purpose.
+2. **It sorts to the bottom, whatever the column and whatever the direction.** It is an absence, not
+   a team; pinning it means the sort always orders the *teams*, and the top row is never ambiguous.
+   Verified against five sorts in both directions, including the alphabetical label sort where it
+   would otherwise land between `Nitesh` and `OTHERS`.
+3. **The Excel header now names the Collection Team and Salesperson filters.** It printed Company,
+   Location, Sale Type, Segment and Search and neither of these, so an export grouped by team and
+   filtered to one team could not say which team it was.
+
+**One thing beyond the ask, same commit.** The Collection Team filter had **no filter chip on this
+screen** — the Dashboard, the Risk Register and Credit Terms all show one, this report alone did not,
+so the only thing on the page that said a team was selected was the control itself. Grouping by team
+makes a forgotten filter far easier to misread (one bucket, and nothing explaining why), so the chip
+is now there, worded exactly as its siblings word it: `Team: Ankita`.
+
+#### What did NOT change, and why
+
+- 🔴 **The grouping creates a bucket the FILTER deliberately refuses to offer.**
+  `CollectionTeamMultiSelect` says so in capitals: an unassigned customer *"appears under no team, so
+  it cannot be reached from this control at all"*, because a catch-all there *"would hide the coverage
+  gap the Masters screen exists to report"*. A group-by has no such choice — every row must land
+  somewhere. So the untagged are now visible in a bucket the control above cannot select. That is
+  correct, and it is why the label reads as an absence rather than as a team.
+- ⚠ **The bucket key is the RAW, UNTRIMMED value**, deliberately unlike the neighbouring `category`
+  case which trims. The filter is `set.has(c.collectionTeam)` and its option list is built the same
+  way, so a team stored with a stray space has to bucket under exactly the string the filter can
+  select, or group and filter quietly disagree about the same customer. (No stray-space value exists
+  on the muster today; the rule is what keeps that true.)
+- ⚠ **A team is per LEDGER, not per customer name**, and this report keeps per-ledger granularity so a
+  name never clubs across companies. `PROTON ENTERPRISE` appears twice under *No collection team* —
+  once as `Enterprise · Surat`, once as `O-tec · Surat` — and a customer trading in two companies can
+  legitimately show under two different teams. Expect it to be reported as duplication; the
+  "Company · Location" sub-label is what explains it.
+- **"Clear all" still does not clear the Collection Team filter** — and it does not on the Dashboard
+  or the Risk Register either, so this was left alone rather than made to diverge on one screen. Now
+  that the chip is there, a filter that survives "Clear all" is at least visible. Worth fixing across
+  the three screens in one pass.
+
+**Verified 18-09-2026** on the live mirror, against the running code (`npm run build` is the gate —
+there is no test runner):
+
+- Group by Collection Team → 7 buckets, the six real teams plus *No collection team*; `OTHERS` stays
+  its own row. The buckets sum to the Grand Total to within display rounding (₹0.014 Cr on ₹69.19 Cr).
+- The unassigned bucket sits last under Due Pending ↑/↓, Outstanding ↑/↓ and the label sort.
+- Group by Collection Team → Customer: `NITYA PRINT` under `OTHERS`, `RAMSHARNAM IMPEX` under
+  *No collection team* — both confirmed against `ext_ledger_group.collection_team` on ConnectWave.
+- Filter to one team while grouped by team → exactly one bucket, every figure equal to the Grand
+  Total.
+- Export grouped by team: `Level | Collection Team | Customer | Company | Location | …`, header row
+  reads `Collection Team: Ankita`.
+- **As a collector, not as an admin** (Ankita, `employee`, scoped to team `Ankita`): "1 COLLECTION
+  TEAM", her team only, no unassigned bucket, a narrow table that renders normally, and figures
+  identical to the admin's team-filtered view. Her session was minted for the test and revoked
+  immediately with `scope=local`.
+
+**Still open — the siblings, deliberately not touched.** The *Collection Performance* report has the
+same gap through the shared `ZC_DIMENSIONS` in `lib/collections.ts`, and Overdue Aging / DSO /
+Customer Category read the shared `zcDimValue`. Adding it there is the same case again, but on
+`ConsolidatedCustomer`, whose `collectionTeams[]` is an array that *excludes* the unassigned ones — so
+the fold is **not** identical and must not be copied blind. Ask before doing it.
+
+---
+
 ### RC-15 · Salesperson and Collection Team become managed masters, picked from a list  🔴  `[~]`
 🟢 **BUILT, DEPLOYED TO CONNECTWAVE AND BROWSER-VERIFIED 10-09-2026.** Both lists are live and both
 mapping cells are pickers; there is no free-text path left on the muster, on Red Mark, in the Excel
