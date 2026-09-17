@@ -24,7 +24,7 @@
  * charted. Two different answers on one screen would be worse than none.
  */
 import { useMemo, useState } from "react";
-import { fmtQty, type InkRow } from "../lib/inkMis";
+import { fmtDays, fmtQty, type InkRow } from "../lib/inkMis";
 
 const TOP_N = 10;
 const BAR = "#FF6A1F"; // the Hub's accent, and the only hue here — a single series
@@ -34,10 +34,26 @@ export function reorderQty(r: InkRow): number {
   return Math.max(0, r.monthMaxLevel - (r.stock + r.incoming));
 }
 
+/**
+ * An opened group shows the working, not just the answer: what is on the shelf, what is on the
+ * way, what the target is, and the shortfall those three produce. A bare shortfall figure is
+ * unarguable-with — the planner cannot tell whether it is large because stock is low or because
+ * the target is high, which is the first thing they need to know before ordering.
+ */
+interface GroupItem {
+  key: string;
+  label: string;
+  stock: number;
+  incoming: number;
+  target: number;
+  qty: number;
+  daysCover: number | null;
+}
+
 interface Group {
   name: string;
   qty: number;
-  items: { key: string; label: string; qty: number }[];
+  items: GroupItem[];
 }
 
 export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; unit?: string }) {
@@ -51,7 +67,17 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
       const name = r.group?.trim() || "No group";
       const g = by.get(name) ?? { name, qty: 0, items: [] };
       g.qty += qty;
-      g.items.push({ key: r.key, label: r.itemCode || r.description, qty });
+      g.items.push({
+        key: r.key,
+        // The description, never the code: the code is a filing reference, and the planner reads
+        // these lines by name.
+        label: r.description || r.itemCode,
+        stock: r.stock,
+        incoming: r.incoming,
+        target: r.monthMaxLevel,
+        qty,
+        daysCover: r.daysCover,
+      });
       by.set(name, g);
     }
     const all = [...by.values()].sort((a, b) => b.qty - a.qty);
@@ -123,14 +149,55 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
               </button>
 
               {isOpen && (
-                <ul className="mb-2 ml-44 space-y-1 border-l pl-3 pt-1">
-                  {g.items.map((it) => (
-                    <li key={it.key} className="flex items-center gap-3 text-xs">
-                      <span className="flex-1 truncate">{it.label}</span>
-                      <span className="w-24 text-right tabular-nums">{fmtQty(it.qty)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="mb-3 ml-44 overflow-x-auto border-l pl-3 pt-1">
+                  <table className="w-full min-w-[34rem] text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="py-1 text-left font-normal">Ink</th>
+                        <th className="py-1 text-right font-normal">Stock</th>
+                        <th className="py-1 text-right font-normal">On the way</th>
+                        <th className="py-1 text-right font-normal">Month max</th>
+                        <th className="py-1 text-right font-normal">Days cover</th>
+                        <th className="py-1 text-right font-semibold text-foreground">To order</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.items.map((it) => (
+                        <tr key={it.key} className="border-t">
+                          <td className="py-1 pr-3">{it.label}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtQty(it.stock)}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtQty(it.incoming)}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtQty(it.target)}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtDays(it.daysCover)}</td>
+                          <td className="py-1 text-right font-semibold tabular-nums">
+                            {fmtQty(it.qty)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t">
+                        <td className="py-1 font-medium">
+                          {g.items.length} ink{g.items.length === 1 ? "" : "s"}
+                        </td>
+                        <td className="py-1 text-right tabular-nums">
+                          {fmtQty(g.items.reduce((t, i) => t + i.stock, 0))}
+                        </td>
+                        <td className="py-1 text-right tabular-nums">
+                          {fmtQty(g.items.reduce((t, i) => t + i.incoming, 0))}
+                        </td>
+                        <td className="py-1 text-right tabular-nums">
+                          {fmtQty(g.items.reduce((t, i) => t + i.target, 0))}
+                        </td>
+                        {/* Days of cover is a rate, not a quantity: summing it would be nonsense. */}
+                        <td className="py-1 text-right text-muted-foreground">–</td>
+                        <td className="py-1 text-right font-semibold tabular-nums">
+                          {fmtQty(g.qty)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               )}
             </div>
           );
