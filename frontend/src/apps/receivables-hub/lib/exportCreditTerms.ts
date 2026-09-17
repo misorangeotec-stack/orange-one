@@ -72,7 +72,7 @@ const merge = (...styles: (object | undefined)[]) => {
 
 /* ── By customer ────────────────────────────────────────────────────────────────────────────── */
 
-const LEAD_COLS = 3; // Customer, Books, Last transaction
+const LEAD_COLS = 3; // Customer, Books, Last activity (any book)
 
 function customerSheet<L extends PivotLedger>(rows: CustomerRow<L>[], shownBooks: string[], fyLabel: string): ExportSheet<CustomerRow<L>> {
   const cellOf = (c: CustomerRow<L>, book: string) => c.cells[book];
@@ -80,7 +80,8 @@ function customerSheet<L extends PivotLedger>(rows: CustomerRow<L>[], shownBooks
     const l = cellOf(c, book);
     if (field === "days") {
       const s = daysState(l);
-      return s === "na" ? "NA" : s === "set" ? l!.creditDays : "";
+      // "On bills" in words: a blue blank cell explains nothing in a spreadsheet either.
+      return s === "na" ? "NA" : s === "set" ? l!.creditDays : s === "bills" ? "On bills" : "";
     }
     if (field === "limit") {
       const s = limitState(l);
@@ -88,14 +89,14 @@ function customerSheet<L extends PivotLedger>(rows: CustomerRow<L>[], shownBooks
       return s === "na" ? "NA" : s === "set" ? Math.round(l!.creditLimit) : s === "blocked" ? "₹1 blocked" : "";
     }
     if (!l) return "";
-    return field === "since" ? excelDate(l.sinceIso) : Math.round(l.outstanding);
+    return field === "activity" ? (excelDate(l.lastTxnIso) || l.lastActivityMonth) : Math.round(l.outstanding);
   };
 
-  const WIDTH: Record<CellField, number> = { days: 7, limit: 13, since: 13, outstanding: 14 };
+  const WIDTH: Record<CellField, number> = { days: 9, limit: 13, activity: 14, outstanding: 14 };
   const columns: ExportColumn<CustomerRow<L>>[] = [
     { header: "Customer", width: 42, value: (c) => c.name },
     { header: "Books", width: 7, value: (c) => c.bookNames.length },
-    { header: "Last transaction", width: 15, value: (c) => excelDate(c.lastTxn.iso) },
+    { header: "Last activity (any book)", width: 18, value: (c) => excelDate(c.lastTxn.iso) },
     ...shownBooks.flatMap((book) =>
       CELL_FIELDS.map((field): ExportColumn<CustomerRow<L>> => ({
         header: FIELD_LABEL[field],
@@ -121,7 +122,7 @@ function customerSheet<L extends PivotLedger>(rows: CustomerRow<L>[], shownBooks
     rows,
     freezeCols: 1,
     preamble: [
-      [`Credit Terms Not Set — by customer — ${fyLabel}.   Red = open in that book with the term not set (or the ₹1 "blocked" flag) · Blue = credit days set on the bills · NA = not open in that book`],
+      [`Credit Terms Not Set — by customer — ${fyLabel}.   Red = open in that book with the term not set (or the ₹1 "blocked" flag) · Blue "On bills" = no credit days on the ledger, but every open bill carries its own due date · NA = not open in that book`],
       band,
     ],
     preambleStyle: (r, c) => {
@@ -149,7 +150,8 @@ function customerSheet<L extends PivotLedger>(rows: CustomerRow<L>[], shownBooks
         const st = limitState(l);
         return st === "missing" || st === "blocked" ? RED : merge(alt, st === "set" ? MONEY : undefined);
       }
-      if (s.field === "since") return merge(alt, l?.sinceIso ? DATE : undefined);
+      // A bare month ("Aug-26") is text, so only a real date gets the date format.
+      if (s.field === "activity") return merge(alt, l?.lastTxnIso ? DATE : undefined);
       return merge(alt, l ? MONEY : undefined);
     },
   };
@@ -181,7 +183,7 @@ function ledgerSheet<L extends LedgerExportRow>(
     { header: "Outstanding", width: 14, value: (r) => Math.round(r.outstanding) },
     { header: "Overdue", width: 14, value: (r) => Math.round(r.overdue) },
     { header: "Max OD Days", width: 12, value: (r) => r.maxOverdueDays },
-    { header: "Last Transaction", width: 16, value: (r) => excelDate(r.lastTxnIso) || r.lastActivityMonth },
+    { header: "Last Activity", width: 16, value: (r) => excelDate(r.lastTxnIso) || r.lastActivityMonth },
   ];
   return {
     sheetName: "By ledger",
@@ -247,8 +249,7 @@ export function exportCreditTermsXlsx<L extends LedgerExportRow>(o: {
     "Credit days can be set on the ledger or typed on each bill. \"Set on the bills\" (blue on By customer) means no days on the ledger but every open bill carries its own due date — those customers are controlled.",
     `NA means no debtor ledger for this customer in that book. The balances behind this report hold debtors only, so a customer filed under another group in a book also reads NA there${
       o.scoped ? ", as does a book where the customer is tagged to a salesperson or team outside the exporter's view" : ""}.`,
-    "Customer since: Tally does not export a creation date. For customers created after 14 Aug 2026 it is the earlier of when Orange One first saw the ledger and the ledger's first voucher. It is blank, deliberately, for every customer before that date.",
-    "Last transaction: the newest Tally voucher (any type, including credit notes and journals), receipt or open bill we hold. Post-dated entries are not counted until their date. The voucher history held begins April 2024.",
+"Last activity: the newest Tally voucher (any type, including credit notes and journals), receipt or open bill we hold. Each book block shows that book's own ledger; the column on the left is the newest across every book. Post-dated entries are not counted until their date, and the voucher history held begins April 2024.",
     "Outstanding on By customer is each book's balance as it stands; a minus is money held for the customer (an advance). The Company Summary's \"Owed with nothing set\" sums positive balances only.",
     "The Company Summary counts ledgers, per book: one customer can be Complete in one book and Neither set in another.",
   ];

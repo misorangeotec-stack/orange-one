@@ -10,7 +10,7 @@ import { ColumnFilter, SortHead } from "@hub/components/gridColumns";
 import type { ColumnGrid } from "@hub/lib/useColumnGrid";
 import { fmtINRMoney } from "@hub/lib/utils";
 import {
-  CELL_FIELDS, cellKey, daysState, isoToDisplay, lastTxnTip, limitState,
+  activityText, CELL_FIELDS, cellKey, daysState, isoToDisplay, lastTxnTip, limitState,
   type CustomerColumn, type CustomerRow, type PivotLedger,
 } from "@hub/lib/creditTermsPivot";
 
@@ -110,7 +110,7 @@ export default function CreditTermsCustomerGrid<L extends PivotLedger>({
                     colSpan={4}
                     className={`${TH} h-6 text-center font-semibold text-foreground ${BLOCK_EDGE} ${
                       i === shownBooks.length - 1 ? "border-r border-border" : ""} ${i % 2 === 1 ? "bg-foreground/5" : ""}`}
-                    title={`${book}: credit days, credit limit, customer since and balance on this book's ledger`}
+                    title={`${book}: credit days, credit limit, last activity and balance on this book's ledger`}
                   >
                     {book}
                   </TableHead>
@@ -124,7 +124,7 @@ export default function CreditTermsCustomerGrid<L extends PivotLedger>({
                   <Fragment key={book}>
                     {sortHead(cellKey(book, "days"), `${TH} text-right ${edge(i, "days")}`, help.days)}
                     {sortHead(cellKey(book, "limit"), `${TH} text-right`, help.limit)}
-                    {sortHead(cellKey(book, "since"), TH, help.customerSince)}
+                    {sortHead(cellKey(book, "activity"), TH, help.bookActivity)}
                     {sortHead(cellKey(book, "outstanding"), `${TH} text-right ${edge(i, "outstanding")}`, help.bookOutstanding)}
                   </Fragment>
                 ))}
@@ -182,7 +182,11 @@ export default function CreditTermsCustomerGrid<L extends PivotLedger>({
                             : undefined
                           }
                         >
-                          {ds === "na" ? <span className="text-muted-foreground/60">NA</span> : ds === "set" ? l!.creditDays : ""}
+                          {ds === "na" ? <span className="text-muted-foreground/60">NA</span>
+                            : ds === "set" ? l!.creditDays
+                            // A blue blank cannot explain itself: the cell says what it is.
+                            : ds === "bills" ? <span className="text-[10px] font-medium text-sky-700 dark:text-sky-300">On bills</span>
+                            : ""}
                         </TableCell>
                         <TableCell
                           className={`${TD} ${NUM} ${fillOf(ls, i)}`}
@@ -204,8 +208,11 @@ export default function CreditTermsCustomerGrid<L extends PivotLedger>({
                               </span>
                             ) : ""}
                         </TableCell>
-                        <TableCell className={`${TD} text-muted-foreground ${plain}`} title={l ? l.sinceTip : undefined}>
-                          {l ? isoToDisplay(l.sinceIso) : ""}
+                        <TableCell
+                          className={`${TD} text-muted-foreground ${plain}`}
+                          title={l ? lastTxnTip(l.lastTxnIso, l.lastTxnKind, l.lastActivityMonth) : undefined}
+                        >
+                          {activityText(l)}
                         </TableCell>
                         <TableCell className={`${TD} ${NUM} ${plain} ${edge(i, "outstanding")}`}>
                           {l ? fmtINRMoney(l.outstanding) : ""}
