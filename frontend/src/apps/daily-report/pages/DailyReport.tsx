@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import Card from "@/shared/components/ui/Card";
@@ -8,7 +8,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import KpiRow, { type KpiTile } from "@/shared/components/dashboard/KpiRow";
 import { TextInput } from "@/shared/components/ui/Form";
 
-import { useDailyReport, PARTY_KIND_LABEL, type PartyKind, type PurchaseLine } from "../data/dailyReport";
+import { useDailyReport, PARTY_KIND_LABEL, type PurchaseLine } from "../data/dailyReport";
 import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
 import { useCcLimits } from "../data/ccLimits";
@@ -19,15 +19,16 @@ import {
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank, listNoun } from "../lib/labels";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType";
 import {
-  allBandsTotal, bandMoney, bankColumns, cellFoc, cellFor, companyColumnLabel, entityTotal,
-  FACILITY_BALANCE_NOTE, FOLD_SHARE, facilityRows, foldList, groupSales, inLocation,
+  allBandsTotal, bandMoney, bankColumns, cellFor, companyColumnLabel, entityTotal,
+  FACILITY_BALANCE_NOTE, facilityRows, groupSales, inLocation,
   isBankOnlyLocation, pivotCompanies, pivotMoney, pivotSales, purchaseTotal, salesTotals, saleKind,
   tradeTotal, TRADE_BANDS,
-  type LocationFilter, type MoneyBand, type PivotCell, type PivotCompany, type PivotRow,
+  type LocationFilter, type MoneyBand, type PivotCompany,
 } from "../lib/aggregate";
 import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
 import FactCard, { KpiSkeleton, LoadingNote, type Fact } from "../components/Snapshot";
+import PivotGrid from "../components/PivotGrid";
 import { REPORT_LOCATIONS, type BankAccount } from "../types";
 
 /**
@@ -56,204 +57,7 @@ const LOCATION_OPTIONS: { value: LocationFilter; label: string }[] = [
 /** How many days of balance history the bank grid shows. */
 const HISTORY_DAYS = 7;
 
-/* ------------------------------------------------------------ pivot table */
-
-const FocBadge = () => (
-  <span className="rounded bg-orange/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-orange">FOC</span>
-);
-
-/**
- * One list — a product line's customers, or one money band's parties — with
- * the companies across the top and the fold rule applied.
- *
- * The rule itself is `foldList` in aggregate.ts; this only draws it.
- *
- * ⚠ THE REMAINING LINE AND THE TOTAL ARE `footerRows`, NOT ROWS. They are not
- *   customers: among the rows, a click on Amount would carry "Remaining 14
- *   customers" to the top and a filter on Customer would hide the TOTAL. They
- *   are the LIST's figures and do not move when a reader filters — which is
- *   why the footer says "TOTAL" and the section heading says "day total".
- *
- * Free-of-charge-only customers are real customers and stay in the body, where
- * they can be sorted; with the table opening biggest first they sit at its foot.
- */
-function PivotTable({
-  rows, companies, unit, noun, exportName, exportTitle,
-}: {
-  rows: PivotRow[];
-  companies: PivotCompany[];
-  /** "kg" for ink, "qty" for countable goods, null for money — which has no quantity. */
-  unit: "kg" | "qty" | null;
-  noun: PartyKind | "sales";
-  exportName: string;
-  exportTitle: string;
-}) {
-  // Opens FOLDED (decision 8, 17-09-2026). Reset by the caller's `key` when the
-  // date or location changes, so a new day never opens already expanded.
-  const [showAll, setShowAll] = useState(false);
-  const fold = useMemo(() => foldList(rows), [rows]);
-  const folds = fold.remaining !== null;
-  const expanded = showAll || !folds;
-  const body = expanded ? fold.all : [...fold.named, ...fold.focOnly];
-  const plural = listNoun(noun, 2);
-
-  const qtyText = (n: number) => (unit === "kg" ? Math.round(n).toLocaleString("en-IN") : fmtQty(n));
-
-  const qtyCell = (c: PivotCell | undefined) => {
-    if (!c) return null;
-    const foc = cellFoc(c);
-    return (
-      <span className="tabular-nums">
-        {qtyText(c.qty)}
-        {foc === "part" && <span className="ml-1 text-[11px] text-orange">({qtyText(c.focQty)} FOC)</span>}
-      </span>
-    );
-  };
-  // A cell that went entirely free carries quantity and no money. A bare 0.00 in
-  // a money column reads as a data fault and somebody reports it, so it says FOC.
-  const amountCell = (c: PivotCell | undefined, strong = true) => {
-    if (!c) return null;
-    if (unit !== null && cellFoc(c) === "all") return <FocBadge />;
-    return <span className={`tabular-nums ${strong ? "font-semibold" : ""}`}>{fmtLacs(c.amountLacs)}</span>;
-  };
-  const rowCell = (r: { qty: number; amountLacs: number; focQty: number }): PivotCell =>
-    ({ qty: r.qty, amountLacs: r.amountLacs, focQty: r.focQty });
-
-  const showTotals = companies.length > 1;
-  const unitWord = unit === "kg" ? "kg" : "Qty";
-
-  const columns: QueueColumn<PivotRow>[] = [
-    {
-      key: "party",
-      header: noun === "sales" || noun === "customer" ? "Customer" : noun === "vendor" ? "Supplier" : "Party",
-      alwaysVisible: true,
-      cell: (r) => (
-        <span title={r.refs.length ? r.refs.join(", ") : undefined}>
-          {r.party}
-          {unit === null && r.entries > 1 && (
-            <span className="ml-2 text-[11px] text-grey-2">{r.entries} entries</span>
-          )}
-        </span>
-      ),
-      sortValue: (r) => r.party,
-      filter: { kind: "text", get: (r) => r.party },
-      exportValue: (r) => r.party,
-    },
-    ...companies.flatMap((co): QueueColumn<PivotRow>[] => {
-      const label = companyColumnLabel(co);
-      const amount: QueueColumn<PivotRow> = {
-        key: `${co.alias}|amount`, header: `${label} ₹ L`, align: "right",
-        cell: (r) => amountCell(r.cells[co.alias], false),
-        sortValue: (r) => r.cells[co.alias]?.amountLacs ?? 0,
-        filter: { kind: "number", get: (r) => r.cells[co.alias]?.amountLacs ?? 0 },
-        exportValue: (r) => {
-          const c = r.cells[co.alias];
-          return !c ? "" : unit !== null && cellFoc(c) === "all" ? "FOC" : c.amountLacs;
-        },
-      };
-      if (unit === null) return [amount];
-      return [
-        {
-          key: `${co.alias}|qty`, header: `${label} ${unitWord}`, align: "right",
-          cell: (r) => qtyCell(r.cells[co.alias]),
-          sortValue: (r) => r.cells[co.alias]?.qty ?? 0,
-          filter: { kind: "number", get: (r) => r.cells[co.alias]?.qty ?? 0 },
-          exportValue: (r) => r.cells[co.alias]?.qty ?? "",
-        },
-        amount,
-      ];
-    }),
-    ...(showTotals
-      ? [
-          ...(unit === null
-            ? []
-            : [{
-                key: "total|qty", header: `Total ${unitWord}`, align: "right" as const,
-                cell: (r: PivotRow) => qtyCell(rowCell(r)),
-                sortValue: (r: PivotRow) => r.qty,
-                filter: { kind: "number" as const, get: (r: PivotRow) => r.qty },
-                exportValue: (r: PivotRow) => r.qty,
-              }]),
-          {
-            key: "total|amount", header: "Total ₹ L", align: "right" as const,
-            cell: (r: PivotRow) => amountCell(rowCell(r)),
-            sortValue: (r: PivotRow) => r.amountLacs,
-            filter: { kind: "number" as const, get: (r: PivotRow) => r.amountLacs },
-            exportValue: (r: PivotRow) => r.amountLacs,
-          },
-        ]
-      : []),
-  ];
-
-  /** A footer row's cells, from a set of per-company totals. */
-  const footerCells = (label: ReactNode, t: { qty: number; amountLacs: number; focQty: number; cells: Record<string, PivotCell> }) => {
-    const cells: Record<string, ReactNode> = { party: label };
-    for (const co of companies) {
-      const c = t.cells[co.alias];
-      if (unit !== null) cells[`${co.alias}|qty`] = qtyCell(c);
-      cells[`${co.alias}|amount`] = amountCell(c, false);
-    }
-    if (showTotals) {
-      if (unit !== null) cells["total|qty"] = qtyCell(rowCell(t));
-      cells["total|amount"] = amountCell(rowCell(t));
-    }
-    return cells;
-  };
-
-  const footerRows = [
-    ...(!expanded && fold.remaining
-      ? [{
-          key: "remaining", tone: "muted" as const,
-          cells: footerCells(`Remaining ${fold.remaining.count} ${listNoun(noun, fold.remaining.count)}`, fold.remaining),
-        }]
-      : []),
-    { key: "total", tone: "total" as const, cells: footerCells("TOTAL", fold.total) },
-  ];
-
-  return (
-    <div className="space-y-2">
-      {folds && (
-        <p className="flex flex-wrap items-center gap-2 text-[12px] text-grey">
-          {expanded ? (
-            <>Showing all {fold.all.length} {plural}.</>
-          ) : (
-            <>
-              Showing the {fold.named.length} {listNoun(noun, fold.named.length)} that make up{" "}
-              {Math.round(FOLD_SHARE * 100)}% of the total
-              {fold.focOnly.length > 0 && <>, and every free-of-charge {listNoun(noun, 1)}</>}. The other{" "}
-              {fold.remaining?.count} are folded into one line.
-            </>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="font-semibold text-orange hover:underline"
-          >
-            {expanded ? `Show the top ${plural} only` : `Show all ${fold.all.length} ${plural}`}
-          </button>
-        </p>
-      )}
-      <QueueTable<PivotRow>
-        rows={body}
-        rowKey={(r) => r.party}
-        columns={columns}
-        rowsLabel={plural}
-        initialSort={{ key: showTotals ? "total|amount" : `${companies[0]?.alias ?? ""}|amount`, dir: "desc" }}
-        exportName={exportName}
-        exportTitle={exportTitle}
-        exportNotes={
-          expanded
-            ? [`Every ${listNoun(noun, 1)} on the list.`]
-            : [
-                `Folded list: the ${plural} making up ${Math.round(FOLD_SHARE * 100)}% of the total, plus every free-of-charge ${listNoun(noun, 1)}. The ${fold.remaining?.count ?? 0} in the Remaining line are not listed — use "Show all", or the Excel button at the top of the page, which lists every ${listNoun(noun, 1)}.`,
-              ]
-        }
-        footerRows={footerRows}
-        readOnly
-      />
-    </div>
-  );
-}
+/* ------------------------------------------------------------ money lists */
 
 /**
  * Money in or out, band by band — one folded list per band.
@@ -264,12 +68,10 @@ function PivotTable({
  *   the headline stay visibly apart, below their own divider.
  */
 function MoneyDetail({
-  bands, companies, exportStem, date,
+  bands, companies,
 }: {
   bands: MoneyBand[];
   companies: PivotCompany[];
-  exportStem: string;
-  date: string;
 }) {
   const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
   const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));
@@ -288,14 +90,7 @@ function MoneyDetail({
             band total <span className="tabular-nums font-semibold text-navy">{fmtMoney(b.totalLacs)}</span>
           </span>
         </div>
-        <PivotTable
-          rows={rows}
-          companies={companies}
-          unit={null}
-          noun={b.kind}
-          exportName={`Daily_Report_${exportStem}_${PARTY_KIND_LABEL[b.kind].replace(/\s+/g, "_")}_${date}`}
-          exportTitle={`${exportStem} — ${PARTY_KIND_LABEL[b.kind]} — ${dmy(date)}`}
-        />
+        <PivotGrid rows={rows} companies={companies} unit={null} noun={b.kind} />
       </div>
     );
   };
@@ -1101,7 +896,7 @@ export default function DailyReport() {
         ) : received.length === 0 ? (
           <Nothing date={date} what="receipts" />
         ) : (
-          <MoneyDetail key={`${date}|${loc}`} bands={received} companies={receivedCompanies} exportStem="Receipts" date={date} />
+          <MoneyDetail key={`${date}|${loc}`} bands={received} companies={receivedCompanies} />
         )}
       </Section>
           )}
@@ -1118,7 +913,7 @@ export default function DailyReport() {
         ) : paid.length === 0 ? (
           <Nothing date={date} what="payments" />
         ) : (
-          <MoneyDetail key={`${date}|${loc}`} bands={paid} companies={paidCompanies} exportStem="Payments" date={date} />
+          <MoneyDetail key={`${date}|${loc}`} bands={paid} companies={paidCompanies} />
         )}
       </Section>
           )}
@@ -1208,14 +1003,12 @@ export default function DailyReport() {
               : "",
           ].filter(Boolean).join(" ") || undefined}
         >
-          <PivotTable
+          <PivotGrid
             key={`${date}|${loc}|${t}`}
             rows={rows}
             companies={saleCompanies}
             unit={isInk ? "kg" : "qty"}
             noun="sales"
-            exportName={`Daily_Report_${SALE_TYPE_LABEL[t].replace(/\s+/g, "_")}_${date}`}
-            exportTitle={`${SALE_TYPE_LABEL[t]} — ${dmy(date)}`}
           />
         </Section>
         {outwardLines.length > 0 && (
