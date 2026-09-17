@@ -6,6 +6,10 @@
  */
 
 import type { BankAccountType } from "../types";
+// Type-only, like aggregate.ts's import of the same module: data/dailyReport
+// reaches this file at runtime through aggregate, so a runtime import back
+// would be a cycle.
+import type { PartyKind } from "../data/dailyReport";
 
 /**
  * Legal names for the three entities, keyed by mst_companies.alias.
@@ -68,6 +72,19 @@ export const ACCOUNT_TYPE_RANK: Record<BankAccountType, number> = {
  * report prints whatever banks have a stored block, listed here or not.
  */
 export const FACILITY_BANKS: readonly string[] = ["AXIS"];
+
+/**
+ * What the rows of a list are, for its "Remaining N …" line.
+ *
+ * "Remaining 3 customers" under a supplier band is a small lie a reader will
+ * stop on, and a bank-transfer band holds neither.
+ */
+export function listNoun(kind: PartyKind | "sales", n: number): string {
+  const one = n === 1;
+  if (kind === "sales" || kind === "customer") return one ? "customer" : "customers";
+  if (kind === "vendor") return one ? "supplier" : "suppliers";
+  return one ? "party" : "parties";
+}
 
 /** Account types that borrow. */
 export const isFacilityAccount = (t: BankAccountType): boolean => t === "cc" || t === "od";

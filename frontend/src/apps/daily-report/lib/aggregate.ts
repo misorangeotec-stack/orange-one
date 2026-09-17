@@ -65,11 +65,26 @@ export function saleKind(line: SaleLine): SaleKind {
   return "sold";
 }
 
+/**
+ * The MONEY a sales line contributes — nothing, when the goods went free.
+ *
+ * ⚠ A FREE-OF-CHARGE LINE IS NOT ₹0 IN TALLY. Of 1,913 FOC lines in FY 2026-27
+ *   up to 16-09-2026, 1,912 carry a non-zero `revenue`: ink sent free is valued
+ *   at a nominal ₹1 a kilogram, and a MACHINE sent free on a challan carries its
+ *   full value — GARTEX TEXPROCESS on 30-07-2026 is ₹1.28 Cr. `salesTotals` has
+ *   always left that out of the day's figure, as the rule above says. The
+ *   product-line total and the party list used to add it back in, so on 30-07
+ *   the Machines row on the card read ₹128.59 L more than the Total beneath it
+ *   counted, and a free machine would have ranked first in any list sorted by
+ *   amount. Every amount in this module goes through here.
+ */
+export const moneyOf = (line: SaleLine): number => (saleKind(line) === "foc" ? 0 : line.revenueLacs);
+
 export interface SaleGroup {
   saleType: SaleType;
   lines: SaleLine[];
   qty: number;
-  /** Net of free-of-charge lines, which carry quantity but no money. */
+  /** Free-of-charge lines count in qty and add NOTHING here — see `moneyOf`. */
   revenueLacs: number;
   focQty: number;
   parties: number;
@@ -90,47 +105,251 @@ export function groupSales(lines: SaleLine[]): SaleGroup[] {
       saleType,
       lines: group,
       qty: group.reduce((s, l) => s + l.qty, 0),
-      revenueLacs: group.reduce((s, l) => s + l.revenueLacs, 0),
+      revenueLacs: group.reduce((s, l) => s + moneyOf(l), 0),
       focQty: group.filter((l) => saleKind(l) === "foc").reduce((s, l) => s + l.qty, 0),
       parties: new Set(group.map((l) => l.party)).size,
     }))
     .sort((a, b) => b.revenueLacs - a.revenueLacs || b.qty - a.qty);
 }
 
-/** One row per party for a product line — how the client's sheet reads. */
-export interface PartyTotal {
-  party: string;
-  company: string;
-  location: string;
+/* ------------------------------------------------------------------ pivot */
+
+/** One customer's business with one company. */
+export interface PivotCell {
   qty: number;
-  revenueLacs: number;
-  foc: boolean;
+  amountLacs: number;
+  /** The part of `qty` that went free of charge. */
+  focQty: number;
 }
 
-export function byParty(lines: SaleLine[]): PartyTotal[] {
-  const by = new Map<string, PartyTotal>();
+/**
+ * One customer, across every company — a row of the What sold, Money in and
+ * Money out tables.
+ *
+ * `cells` is keyed on the company ALIAS ("O-tec", "Enterprise", "Colorix"), so a
+ * company's Surat and Noida books add into one cell.
+ */
+export interface PivotRow {
+  party: string;
+  cells: Record<string, PivotCell>;
+  qty: number;
+  amountLacs: number;
+  focQty: number;
+  /** Every line was free of charge. Never folded; listed at the foot of its block. */
+  focOnly: boolean;
+  /** Lines (sales) or vouchers (money) behind the row. */
+  entries: number;
+  /** The voucher numbers behind the row, for a tooltip. */
+  refs: string[];
+}
+
+const emptyRow = (party: string): PivotRow => ({
+  party, cells: {}, qty: 0, amountLacs: 0, focQty: 0, focOnly: true, entries: 0, refs: [],
+});
+
+const addToCell = (row: PivotRow, company: string, qty: number, amountLacs: number, focQty: number) => {
+  const cell = row.cells[company] ?? { qty: 0, amountLacs: 0, focQty: 0 };
+  cell.qty += qty;
+  cell.amountLacs += amountLacs;
+  cell.focQty += focQty;
+  row.cells[company] = cell;
+  row.qty += qty;
+  row.amountLacs += amountLacs;
+  row.focQty += focQty;
+};
+
+const addRef = (row: PivotRow, ref: string | null | undefined) => {
+  row.entries += 1;
+  if (ref && !row.refs.includes(ref)) row.refs.push(ref);
+};
+
+/** Biggest first, on the row's total across EVERY company. */
+const byAmount = (a: PivotRow, b: PivotRow): number =>
+  b.amountLacs - a.amountLacs || b.qty - a.qty || a.party.localeCompare(b.party);
+
+/**
+ * One row per CUSTOMER for a product line, with the companies across the top.
+ *
+ * ⚠ THIS REVERSES AN EARLIER DECISION, DELIBERATELY. The function it replaced
+ *   (`byParty`) keyed on party + company + location, so "the same customer buying
+ *   from two entities is two lines on this report, exactly as the reference
+ *   sheet shows it." On 17-09-2026 Ritesh Bhai asked for the opposite: one row
+ *   per customer, one column per company, and no location split (the location
+ *   filter still narrows). It is his report and his call. Do not restore the
+ *   per-book rows as a "fix".
+ *
+ * Pass `SaleGroup.lines` — returns and goods on approval are already out.
+ */
+export function pivotSales(lines: SaleLine[]): PivotRow[] {
+  const by = new Map<string, PivotRow>();
   for (const l of lines) {
-    // Keyed on party AND book: the same customer buying from two entities is two
-    // lines on this report, exactly as the reference sheet shows it.
-    const key = `${l.party}|${l.company}|${l.location}`;
-    const hit = by.get(key) ?? {
-      party: l.party, company: l.company, location: l.location,
-      qty: 0, revenueLacs: 0, foc: true,
-    };
-    hit.qty += l.qty;
-    hit.revenueLacs += l.revenueLacs;
-    // A party is only shown as free-of-charge when EVERY one of its lines is.
-    if (saleKind(l) !== "foc") hit.foc = false;
-    by.set(key, hit);
+    const row = by.get(l.party) ?? emptyRow(l.party);
+    const foc = saleKind(l) === "foc";
+    addToCell(row, l.company, l.qty, moneyOf(l), foc ? l.qty : 0);
+    if (!foc) row.focOnly = false;
+    addRef(row, l.voucherNo);
+    by.set(l.party, row);
   }
-  return [...by.values()].sort((a, b) => b.revenueLacs - a.revenueLacs || b.qty - a.qty);
+  return [...by.values()].sort(byAmount);
 }
 
-/** What the "5 major customers" heading was reaching for, said truthfully. */
-export function topShare(rows: PartyTotal[], n = 5): { topLacs: number; totalLacs: number; pct: number } {
-  const totalLacs = rows.reduce((s, r) => s + r.revenueLacs, 0);
-  const topLacs = rows.slice(0, n).reduce((s, r) => s + r.revenueLacs, 0);
-  return { topLacs, totalLacs, pct: totalLacs > 0 ? (topLacs / totalLacs) * 100 : 0 };
+/** One row per counterparty for a set of receipts or payments, companies across the top. */
+export function pivotMoney(rows: MoneyRow[]): PivotRow[] {
+  const by = new Map<string, PivotRow>();
+  for (const r of rows) {
+    const row = by.get(r.party) ?? emptyRow(r.party);
+    row.focOnly = false;
+    addToCell(row, r.entity, 0, r.amountLacs, 0);
+    addRef(row, r.voucherNo);
+    by.set(r.party, row);
+  }
+  return [...by.values()].sort(byAmount);
+}
+
+/** A company column. */
+export interface PivotCompany {
+  alias: string;
+  /**
+   * A book `ext_company_map` does not know. Its rows arrive under Tally's raw
+   * company label, or under nothing at all.
+   *
+   * ⚠ SURFACED, NEVER SILENT. A column headed "—" beside O-tec and Enterprise
+   *   reads as a third company, and its money looks accounted for. Every render
+   *   heads it "Unmapped" and says which book to tag.
+   */
+  unmapped: boolean;
+}
+
+/**
+ * The company columns for a PAGE — every company any of these row sets touches,
+ * in print order.
+ *
+ * Taken across the whole page rather than per table, so the Ink table and the
+ * Print heads table below it put O-tec in the same column.
+ */
+export function pivotCompanies(...sets: PivotRow[][]): PivotCompany[] {
+  const seen = new Set<string>();
+  for (const rows of sets) for (const r of rows) for (const k of Object.keys(r.cells)) seen.add(k);
+  return [...seen]
+    .sort((a, b) => entityRank(a) - entityRank(b) || a.localeCompare(b))
+    .map((alias) => ({ alias, unmapped: entityRank(alias) === 99 }));
+}
+
+/** What a company column is headed. The SHORT alias, the same words the portal uses. */
+export const companyColumnLabel = (c: PivotCompany): string =>
+  c.unmapped ? (c.alias ? `Unmapped: ${c.alias}` : "Unmapped book") : c.alias;
+
+/** Whether a cell went free: not at all, entirely, or in part. */
+export function cellFoc(c: PivotCell | undefined): "none" | "all" | "part" {
+  if (!c || c.focQty <= 0) return "none";
+  return Math.abs(c.qty - c.focQty) < 1e-9 ? "all" : "part";
+}
+
+/* ------------------------------------------------------------------- fold */
+
+/**
+ * THE FOLD RULE — decided with Ritesh Bhai, 17-09-2026. One place, read by the
+ * screen, the PDF and the workbook.
+ *
+ *   · A list of FOLD_MIN customers or fewer shows every one.
+ *   · Above that, customers are named biggest first until they cover FOLD_SHARE
+ *     of the list's total; the rest fold into one "Remaining N" line, and a
+ *     TOTAL follows so the list still adds up to the figure on page one.
+ *   · FREE-OF-CHARGE IS NEVER FOLDED. Goods sent free still cost money and
+ *     management must see every one. A customer who is only free of charge is
+ *     named at the foot of the block; one with a paid sale AND a free one keeps
+ *     its place among the named rows, wherever the 80% cut falls.
+ *   · A remainder of ONE customer is named instead (the user's call, 17-09-2026):
+ *     "Remaining 1 customer" takes the same line as the name, and hides it.
+ *
+ * It is the answer to the client's own question of 14-09-2026 — whether his old
+ * sheet listed only the large receipts on purpose, and at what cut-off.
+ */
+export const FOLD_MIN = 10;
+export const FOLD_SHARE = 0.8;
+
+export interface FoldTotals {
+  count: number;
+  qty: number;
+  amountLacs: number;
+  focQty: number;
+  cells: Record<string, PivotCell>;
+}
+
+export interface Folded {
+  /** Every row, biggest first — what "Show all" and the workbook list. */
+  all: PivotRow[];
+  /** Rows named above the Remaining line, biggest first. */
+  named: PivotRow[];
+  /** Null when nothing folded. */
+  remaining: (FoldTotals & { rows: PivotRow[] }) | null;
+  /** Free-of-charge-only customers, named below the Remaining line. */
+  focOnly: PivotRow[];
+  total: FoldTotals;
+}
+
+function sumRows(rows: PivotRow[]): FoldTotals {
+  const out: FoldTotals = { count: rows.length, qty: 0, amountLacs: 0, focQty: 0, cells: {} };
+  for (const r of rows) {
+    out.qty += r.qty;
+    out.amountLacs += r.amountLacs;
+    out.focQty += r.focQty;
+    for (const [k, c] of Object.entries(r.cells)) {
+      const t = out.cells[k] ?? { qty: 0, amountLacs: 0, focQty: 0 };
+      t.qty += c.qty;
+      t.amountLacs += c.amountLacs;
+      t.focQty += c.focQty;
+      out.cells[k] = t;
+    }
+  }
+  return out;
+}
+
+/**
+ * Apply the fold rule to one list.
+ *
+ * ⚠ RANKED ONCE, ON THE ROW TOTAL ACROSS ALL COMPANIES. Ranking inside each
+ *   company column would name a customer under O-tec and fold the same customer
+ *   under Enterprise, and the rows would stop adding up to their own TOTAL.
+ */
+export function foldList(rows: PivotRow[]): Folded {
+  const all = [...rows].sort(byAmount);
+  const total = sumRows(all);
+  const focOnly = all.filter((r) => r.focOnly);
+  const ranked = all.filter((r) => !r.focOnly);
+
+  let named: PivotRow[] = [];
+  let rest: PivotRow[] = [];
+  if (all.length <= FOLD_MIN || total.amountLacs <= 0) {
+    named = ranked;
+  } else {
+    const cut = FOLD_SHARE * total.amountLacs;
+    let cum = 0;
+    for (const r of ranked) {
+      // Named while the rows ABOVE it have not yet reached the cut, so the row
+      // that carries the list across 80% is itself named.
+      if (cum < cut) {
+        named.push(r);
+        cum += r.amountLacs;
+      } else if (r.focQty > 0) {
+        named.push(r);
+      } else {
+        rest.push(r);
+      }
+    }
+    if (rest.length === 1) {
+      named = [...named, rest[0]].sort(byAmount);
+      rest = [];
+    }
+  }
+
+  return {
+    all,
+    named,
+    remaining: rest.length > 0 ? { ...sumRows(rest), rows: rest } : null,
+    focOnly,
+    total,
+  };
 }
 
 export interface SalesTotals {
