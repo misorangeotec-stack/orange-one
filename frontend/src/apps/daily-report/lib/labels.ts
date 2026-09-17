@@ -64,6 +64,23 @@ export const ACCOUNT_TYPE_RANK: Record<BankAccountType, number> = {
 };
 
 /**
+ * Companies the report mentions only on a day they have CUSTOMER data — a sale,
+ * a receipt or payment, or a purchase — in the location being read.
+ *
+ * Colorix, and only Colorix: it trades on a few days a month (7 sales lines on 3
+ * days from 01-08 to 17-09-2026, no receipts or payments in September), so on
+ * most days anything naming it is an empty column or a line to read past. The
+ * user's call, 17-09-2026, for customer data only: the company-column lists
+ * already follow the rows (see `pivotCompanies`), and this list decides the rest
+ * of the page — today the "Tally mirror rebuilt" line.
+ *
+ * ⚠ NOT THE BANK SECTION. Colorix's bank account is typed by hand each evening
+ *   and its gap is flagged; hiding it on a quiet day would hide the gap. It is
+ *   still "included" in the sense decided on 11-09-2026 — whenever it has data.
+ */
+export const SHOWN_ONLY_WHEN_ACTIVE: readonly string[] = ["Colorix"];
+
+/**
  * The banks the evening form asks for a credit-limit block at, per company.
  *
  * Axis only, because that is the one row on the client's sheet. The table keeps

@@ -15,7 +15,7 @@ import { useColumnGrid, type GridColumn } from "@hub/lib/useColumnGrid";
 
 import type { PartyKind } from "../data/dailyReport";
 import {
-  cellFoc, companyColumnLabel, FOLD_SHARE, foldList,
+  cellFoc, companyColumnLabel, FOLD_SHARE, foldList, pivotCompanies,
   type PivotCell, type PivotCompany, type PivotRow,
 } from "../lib/aggregate";
 import { listNoun } from "../lib/labels";
@@ -65,15 +65,16 @@ const FocBadge = () => (
 );
 
 export default function PivotGrid({
-  rows, companies, unit, noun,
+  rows, unit, noun,
 }: {
   rows: PivotRow[];
-  /** The page's company columns, in print order — shared by every list on the page. */
-  companies: PivotCompany[];
   /** "kg" for ink, "qty" for countable goods, null for money — which has no quantity. */
   unit: "kg" | "qty" | null;
   noun: PartyKind | "sales";
 }) {
+  // THIS list's companies only — a company with no customer here gets no column (the user's call,
+  // 17-09-2026: Colorix trades on a few days a month, and an empty Colorix column is noise).
+  const companies = useMemo<PivotCompany[]>(() => pivotCompanies(rows), [rows]);
   // Opens FOLDED (decision 8, 17-09-2026). The caller keys this on date and location, so a new day
   // never opens already expanded.
   const [showAll, setShowAll] = useState(false);
