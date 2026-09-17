@@ -152,7 +152,7 @@ export default function InkMis() {
    */
   const allPositions = useMemo(() => data?.rows ?? [], [data]);
   const positions = useMemo(
-    () => allPositions.filter((p) => order[p.key] !== undefined),
+    () => allPositions.filter((p) => (order[p.key] ?? order[p.legacyKey]) !== undefined),
     [allPositions, order],
   );
   const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
@@ -201,7 +201,7 @@ export default function InkMis() {
 
   const rows: InkRow[] = useMemo(() => {
     const built = positions.map((p) => {
-      const base = plans[p.key] ?? EMPTY_PLAN;
+      const base = plans[p.key] ?? plans[p.legacyKey] ?? EMPTY_PLAN;
       // The company tabs use that book's own sales; Combined uses the group's.
       const live = consumption?.get(p.key);
       const src = companyKey ? live?.byCompany[companyKey] : live;
@@ -437,20 +437,22 @@ export default function InkMis() {
         ))}
       </div>
 
-      {/* Summary strip. */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Summary strip — ONE LINE. Six boxed cards pushed the table below the fold, and the
+          table is the report; these are context, so they read as a single row of figures and
+          wrap only when the window is genuinely narrow. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border bg-card px-3 py-2 text-sm">
         {[
-          { label: "Inks listed", value: String(rows.length) },
+          { label: "Inks", value: String(rows.length) },
           { label: "Stock", value: fmtQty(totals.stock) },
           { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
-          { label: "Plant orders", value: fmtQty(totals.plant) },
-          { label: "On order (ETD)", value: fmtQty(totals.etd) },
+          { label: "Plant", value: fmtQty(totals.plant) },
+          { label: "ETD", value: fmtQty(totals.etd) },
           { label: "Needs ordering", value: String(reorderCount) },
         ].map((c) => (
-          <div key={c.label} className="rounded-lg border bg-card p-3">
-            <div className="text-xs text-muted-foreground">{c.label}</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums">{c.value}</div>
-          </div>
+          <span key={c.label} className="whitespace-nowrap">
+            <span className="text-muted-foreground">{c.label} </span>
+            <strong className="tabular-nums">{c.value}</strong>
+          </span>
         ))}
       </div>
 
@@ -543,27 +545,26 @@ export default function InkMis() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900">
-        {consumptionQuery.isError ? (
-          <span>
-            Could not read the Sales Register:{" "}
-            {consumptionQuery.error instanceof Error ? consumptionQuery.error.message : "unknown error"}
-          </span>
-        ) : !consumption ? (
-          <span>Reading averages from the Sales Register…</span>
-        ) : (
-          <span>
-            Averages from the Sales Register, branch and related sales excluded, returns netted.
-            3-month average is the last three full months ÷ 3. Per-day average is this month so far ÷{" "}
-            <strong>{workingDays}</strong> working days, Sundays excluded.
-          </span>
-        )}
-        {typedCount > 0 && (
-          <button type="button" className="font-semibold underline" onClick={clearTypedAverages}>
-            {typedCount} ink{typedCount === 1 ? " has" : "s have"} typed averages — use live figures
-          </button>
-        )}
-      </div>
+      {/* The standing explanation of how the averages are worked out has gone: it said the same
+          thing on every visit and cost a band across the page. What is left appears only when it
+          changes what the planner should believe — a failure, or their own typed figures sitting
+          on top of the live ones. The rule itself lives on the two column headings and in
+          lib/inkMis.ts. */}
+      {(consumptionQuery.isError || typedCount > 0) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {consumptionQuery.isError && (
+            <span>
+              Could not read the Sales Register:{" "}
+              {consumptionQuery.error instanceof Error ? consumptionQuery.error.message : "unknown error"}
+            </span>
+          )}
+          {typedCount > 0 && (
+            <button type="button" className="font-semibold underline" onClick={clearTypedAverages}>
+              {typedCount} ink{typedCount === 1 ? " has" : "s have"} typed averages — use live figures
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
@@ -586,10 +587,6 @@ export default function InkMis() {
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Drag a column's right edge to resize it, double-click the edge to reset it. Use Columns to
-        hide or show columns.
-      </p>
       <ReorderChart rows={rows} />
 
       <ScrollableTable>
@@ -626,8 +623,20 @@ export default function InkMis() {
               <ResizableHead id="code" cols={cols} className="min-w-[9rem]">Item code</ResizableHead>
               {on("description") && <ResizableHead id="description" cols={cols} className="min-w-[16rem]">Description</ResizableHead>}
               {on("remark") && <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">Remark</ResizableHead>}
-              {on("m3") && <ResizableHead id="m3" cols={cols} className="text-right">3-month avg</ResizableHead>}
-              {on("pd") && <ResizableHead id="pd" cols={cols} className="text-right">Per day avg</ResizableHead>}
+              {on("m3") && (
+                <ResizableHead id="m3" cols={cols} className="text-right">
+                  3-month avg
+                  <div className="text-[10px] font-normal text-muted-foreground">last 3 months ÷ 3</div>
+                </ResizableHead>
+              )}
+              {on("pd") && (
+                <ResizableHead id="pd" cols={cols} className="text-right">
+                  Per day avg
+                  <div className="text-[10px] font-normal text-muted-foreground">
+                    this month ÷ {workingDays} days
+                  </div>
+                </ResizableHead>
+              )}
               {on("lead") && <ResizableHead id="lead" cols={cols} className="text-right">Lead time</ResizableHead>}
               {on("safety") && <ResizableHead id="safety" cols={cols} className="text-right">Safety</ResizableHead>}
               {on("days") && <ResizableHead id="days" cols={cols} className="text-right">Days cover</ResizableHead>}

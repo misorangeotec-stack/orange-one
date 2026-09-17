@@ -258,7 +258,7 @@ export default function InkItemMaster() {
     const filtered = master.filter((r) => {
       if (f.books.length && !f.books.includes(r.companyKey)) return false;
       if (f.order.length) {
-        const placed = order[r.mergeKey] !== undefined;
+        const placed = (order[r.mergeKey] ?? order[r.legacyKey]) !== undefined;
         if (!f.order.includes(placed ? "placed" : "unplaced")) return false;
       }
       if (f.closing.length) {
@@ -725,7 +725,7 @@ export default function InkItemMaster() {
                   <div className="flex items-center gap-1">
                     <Input
                       className="h-8 w-14 px-1 text-center tabular-nums"
-                      value={order[r.mergeKey] ?? ""}
+                      value={order[r.mergeKey] ?? order[r.legacyKey] ?? ""}
                       placeholder="–"
                       title="Type a number to place this line. A number already in use inserts here and pushes the rest down."
                       onChange={(e) => setPosition(r.mergeKey, e.target.value)}
@@ -775,7 +775,7 @@ export default function InkItemMaster() {
                     type="number"
                     inputMode="decimal"
                     className="h-8 w-full min-w-0 text-right"
-                    value={plans[r.mergeKey]?.leadTime || ""}
+                    value={(plans[r.mergeKey] ?? plans[r.legacyKey])?.leadTime || ""}
                     placeholder="–"
                     title="Months of cover to order against. Shared by every book on this line."
                     onChange={(e) => setLeadTime(r.mergeKey, e.target.value)}

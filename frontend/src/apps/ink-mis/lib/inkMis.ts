@@ -14,9 +14,16 @@
  *
  * ─── THE MERGE KEY IS THE ITEM CODE ──────────────────────────────────────────────────────
  *
- * The same ink carries the same code in every book (FG-H-BLACK, FG-EP-SHD-CYAN …), which is
- * what makes one merged line possible. Item NAMES are not reliable across books and the code
- * is what the Excel sheet has always keyed on.
+ * THE PLANNER'S DESCRIPTION WINS, then the item code.
+ *
+ * A description they typed is a deliberate statement that these rows are the same ink, and it is
+ * the only thing that reaches across books Tally disagrees about: "SUBLIMATION INK F-SERIES
+ * BLACK" in two books and "SUBLIMATION INKS BLACK-F SERIES (FLOTEC)" in the third is one ink,
+ * whatever the codes say. Where they have not written one, the item code merges the books as
+ * before, and failing that the row stands alone.
+ *
+ * Two rows given the SAME description therefore become one line even if their codes differ. That
+ * is the point of typing it, not a hazard to guard against.
  *
  * Verified against the planner's sheet on 12-Sep-2026: FG-H-BLACK merged to 6,435 and
  * FG-H-LIGHT-MAGENTA to 2,280, both matching the sheet exactly.
@@ -99,8 +106,11 @@ const BY_GUID = new Map(INK_COMPANIES.map((c) => [c.guid, c]));
 
 /** One ink, merged across the four books. Quantities only — ink is bought and sold in KGS. */
 export interface InkPosition {
-  /** Merge key: the item code where one exists, else a per-book synthetic key. */
+  /** Merge key: the planner's description where they typed one, else the item code, else a
+   *  per-book synthetic key. */
   key: string;
+  /** The key this line had before a description re-keyed it — see InkMasterRow.legacyKey. */
+  legacyKey: string;
   /** Displayed in the Item Code column. Empty when nothing supplies one yet. */
   itemCode: string;
   /** False when no code exists anywhere, so this line cannot merge across books. */
@@ -269,6 +279,14 @@ export interface InkMasterRow {
   /** The dashboard line this row feeds. Ordering is keyed on THIS, not on the row, because
    *  several books' rows share one printed line and must share its position. */
   mergeKey: string;
+  /**
+   * What the line was keyed on before a description was typed for it.
+   *
+   * Typing a description re-keys the line, and a number, lead time or category attached to the
+   * old key would otherwise vanish from the screen — which reads as lost work. Both screens fall
+   * back to this key when the new one holds nothing.
+   */
+  legacyKey: string;
 }
 
 export interface InkPositionsResult {
@@ -361,7 +379,10 @@ export async function loadInkPositions(
     const effectiveGroup = (ov.group ?? "").trim() || tallyGroup;
     const effectiveDescription = (ov.description ?? "").trim() || tallyName;
 
-    const mergeKeyForRow = effectiveCode || soloKey(company.key, row.item);
+    // "D:" cannot collide with a code, which may be any word.
+    const typedDescription = norm(ov.description);
+    const codeKey = effectiveCode || soloKey(company.key, row.item);
+    const mergeKeyForRow = typedDescription ? `D:${typedDescription}` : codeKey;
     const lineOv = lines[mergeKeyForRow] ?? {};
     const groupOv = groups[norm(effectiveGroup)] ?? {};
     /*
@@ -378,6 +399,7 @@ export async function loadInkPositions(
     master.push({
       key,
       mergeKey: mergeKeyForRow,
+      legacyKey: codeKey,
       companyKey: company.key,
       company: company.label,
       item: row.item,
@@ -401,6 +423,7 @@ export async function loadInkPositions(
     if (!pos) {
       pos = {
         key: mergeKey,
+        legacyKey: codeKey,
         itemCode: effectiveCode,
         coded: Boolean(effectiveCode),
         sources: [],
@@ -441,8 +464,8 @@ export async function loadInkPositions(
   // they put it. Anything unpositioned falls in behind, coded first and then alphabetically, which
   // is only a starting arrangement for items they have not placed yet.
   const rows = [...merged.values()].sort((a, b) => {
-    const pa = order[a.key];
-    const pb = order[b.key];
+    const pa = order[a.key] ?? order[a.legacyKey];
+    const pb = order[b.key] ?? order[b.legacyKey];
     if (pa !== undefined && pb !== undefined) return pa - pb;
     if (pa !== undefined) return -1;
     if (pb !== undefined) return 1;
