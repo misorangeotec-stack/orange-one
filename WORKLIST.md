@@ -12368,6 +12368,101 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
+### RC-18 · Advances Not Applied — which unapplied money belongs to which invoice  🔴  `[x]`
+*Raised 2026-09-16 · Audited against the live mirror · Report built, verified and shipped 17-09-2026 · The daily email is a separate, unbuilt task*
+
+**✅ SHIPPED 17-09-2026 — the REPORT.** Reports → Collections → **Advances Not Applied**
+(`reports/advances`, report id `advances`). **The daily email is NOT built — a separate future task** (schedule,
+recipients, runner and send were all out of scope by the client's instruction of 17-09-2026). No database change.
+
+**What the screen does.**
+- One row per customer holding unapplied credit, **grouped by salesperson** with a subtotal per group (a switch
+  flattens it). Columns: customer · company · location · salesperson · team · **Unapplied credit** · Tagged to no
+  bill · On a named ref · Named in Tally · Open bills · Pending on open bills · Outstanding · **On Account
+  (Collection Report)**. Every column sorts; filters cascade; 25 a page.
+- **Expand a row:** the vouchers Tally holds behind the money tagged to no bill (date · type · number or NEFT/RTGS
+  narration · amount), **one labelled line for whatever they do not explain** ("Opening balance, no receipt detail
+  in Tally" / "Not explained by the entries above" / "Tally's entries don't reconcile…" / "Manual Other Payment on
+  account"), each credit on a named ref, and — beside it — **the open bills to settle it against**, or "No open
+  bill to settle against yet". The lines always add up to the row, to the paisa. Links to Customer Detail.
+- **Related party** (salesperson `RELATED PARTY`) in its own section, out of every total. **Suspense** at the foot:
+  credits into the SUSPENSE ledgers, read per real Tally book (closed financial years included), not scoped.
+- **Excel:** Advances (grouped, subtotals) · Entries (every line behind every figure) · Related party · Suspense.
+- Code: `lib/advancesReport.ts` (the figure, pure) · `lib/suspenseReceipts.ts` · `lib/exportAdvances.ts` ·
+  `pages/AdvancesReport.tsx`, plus the catalogue entry, the route and the FY-pinned list.
+
+**🔴 The figure is UNCAPPED — the user's decision, 17-09-2026.** The brief's ₹13.73 Cr is
+`collection_customer_snapshot.on_account`, which `collection_refresh()` caps at the ledger's gross overdue
+(`least(named-ref credit + untagged, max(0, overdue))`). That hid **87 customers holding ₹15.00 Cr** — GOPGAN
+DIGITAL PRINTING LLP ₹4.86 Cr received on account with no open bill, RAMSHARNAM IMPEX ₹3.63 Cr M/C ADV, ZAARA'S
+₹1.00 Cr — and under the cap "no open bill to settle against" could never occur. The report shows the whole of it:
+**Unapplied credit = credit on named refs + max(0, Σ pending − outstanding)**, with the same orphan-debit guard as
+the SQL. The capped figure stays as the last column, so the Collection Report still ties.
+
+**Measured 17-09-2026 (live mirror, snapshot 13:00 IST).**
+
+| | customers | ₹ |
+|---|---|---|
+| **All unapplied credit** | **250** | **₹29.61 Cr** |
+| · tagged to no bill (incl. ₹13.15 L manual Other Payment) | | ₹16.35 Cr |
+| · on a named ref | | ₹13.27 Cr |
+| Main section | 243 | ₹19.26 Cr |
+| Related party section | 7 | ₹10.35 Cr |
+| Collection Report's capped On Account (tie-back) | 161 | ₹13.73 Cr |
+| Suspense receipts | 4 | ₹2,19,764 |
+| No open bill to settle against (78 main + 1 related) | 79 | |
+
+By collection team: Jayshree 103 · ₹11.27 Cr · Mohta ji 65 · ₹1.29 Cr · Nitesh 33 · ₹0.79 Cr · Ankita 17 · ₹0.08 Cr ·
+**(no team) 30 · ₹13.15 Cr** · **RELATED PARTY 2 · ₹3.04 Cr**. (The team "Vijay" was renamed "Ankita" on 17-09-2026,
+on the ledgers and on Jayshree's profile alike.)
+
+**Coverage, re-measured.** Of ₹16.22 Cr tagged to no bill in Tally, voucher lines name **₹84.60 L across 39
+customers** (main section ₹63.90 L / 38). 95 customers are opening balance only; on 16 the vouchers add up to MORE
+than the figure, so the guard lists none. Suspense: ₹99,710 and ₹1 in current books, **₹14,750 + ₹1,05,303 in the
+closed FY25-26 Noida Enterprises book** — found only because the routine is called with the book's real tenant.
+
+**Decisions.**
+1. Report only, no email (client, 17-09-2026).
+2. All unapplied credit, uncapped (user, 17-09-2026) — split into tagged to no bill / on a named ref / manual
+   payment, with the capped On Account as a tie-back column.
+3. RELATED PARTY (the salesperson value) in its own section, out of every total.
+4. Suspense at the foot: not scoped, money in only, every book including closed years.
+5. A "No salesperson" group, last; empty today.
+6. Access asked, not assumed — **granted 17-09-2026 to Jayshree Patil and Ritesh Tulsyan** (the user's choice).
+   Ritesh is salesperson-scoped and his list has neither RELATED PARTY nor HARI OM, so he sees 242 · ₹19.08 Cr.
+
+**🔴 Jayshree sees 218 customers · ₹13.43 Cr of the ₹29.61 Cr.** Scope is lifted only for admins, and it was
+deliberately not widened. What she cannot see is data, not code:
+- **30 customers with no collection team · ₹13.15 Cr** — COLORIX DIGITAL PRINTING SOLUTIONS LLP-SALES ₹636.00 L*,
+  RAMSHARNAM IMPEX ₹363.44 L, ZAARA'S ₹100.30 L, ORANGE O TEC ENTERPRISES PRIVATE LIMITED-NOIDA (S) ₹36.65 L*,
+  ORANGE O TEC ENTERPRISE PRIVATE LIMITED-NOIDA ₹30.00 L*, ORANGE O TEC PVT. LTD (DELHI) ₹28.58 L*, PANKAJ FASHIONS
+  PVT LTD-MACHINE ₹25.50 L, VAIBHAV ENTERPRISES MACHINE-2 ₹17.00 L, SHREE RAJ RAJSHWARI SILK MILLS ₹13.15 L, NKM
+  FASHION-MACHINE ₹13.00 L, SHREE SAI DIGITEX ₹8.06 L, PRIYANKA SILK MILLS ₹7.89 L, MITHILI PROFFESIONAL'S-Cross
+  Creation ₹6.45 L, ORCHID COLOURING-MACHINE ₹5.00 L, DASS TRENDZ ₹4.49 L, JAIN KNITTING & DIGITAL ₹4.38 L, SHREE
+  RAM INDUSTRIES ₹3.56 L, NIVYA PRINTS ₹3.49 L, SUMATI PRINTS PVT LTD-MACHINE ₹3.00 L, MANISHA TRADERS ₹1.44 L,
+  JAGANNATH SUDHIR KUMAR ₹1.30 L, ZAKOOPI INFOTECH PVT LTD-MACHINE ₹0.50 L, BANSAL TEXTILE MILLS ₹0.24 L, TRUE COLORS
+  PVT LTD ₹0.24 L*, LOTUS KNITS ₹0.24 L, VENUS MILLS PVT LTD ₹0.23 L, PROTON ENTERPRISE ₹0.20 L, ADVANCE FORM DEBTORS
+  ₹0.13 L, CLOTHERA PRIVATE LIMITED-MACHINE ₹0.10 L, M/S AVON COTTEX PRIVATE LIMITED ₹0.06 L. (* related party)
+- **2 customers in the RELATED PARTY team · ₹3.04 Cr** — ORANGE O TEC ENTERPRISES PVT LTD (SALE) ₹299.58 L,
+  ORANGE O TEC PVT LTD- SALES ₹3.99 L.
+- The fix: give those 30 a collection team in Masters, and decide whether Jayshree should hold RELATED PARTY.
+
+**Verified 17-09-2026.** As admin, on the branch and again on `master`'s code: totals tie to the SQL to the rupee;
+**all 250 customers diffed one by one against SQL** — every money figure, status, team and salesperson matches; the
+open-bill count is lower on 9, all by design (5 customers carry one debit non-bill reference the hub removes; 4
+have bills settled by manual Other Payments, 18 bills in all); each customer's entries add up to its figure; the
+workbook's sheet totals tie. One batched voucher lookup (8 calls), never per customer. **Not tested as Jayshree** —
+the user declined signing in as her.
+
+**Known limitation.** `loadOnAccountEntries` swallows a failed batch, so a lookup that fails would read as "Opening
+balance, no receipt detail". Left unchanged, as instructed.
+
+- [ ] **The daily per-salesperson email** — not built; a separate task when the client asks for it.
+- [ ] Give the 30 no-team customers a collection team in Masters (data, not code).
+- [ ] Client's call: should Jayshree hold the RELATED PARTY team?
+
+---
+
 ### RC-15 · Salesperson and Collection Team become managed masters, picked from a list  🔴  `[~]`
 🟢 **BUILT, DEPLOYED TO CONNECTWAVE AND BROWSER-VERIFIED 10-09-2026.** Both lists are live and both
 mapping cells are pickers; there is no free-text path left on the muster, on Red Mark, in the Excel
