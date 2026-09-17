@@ -91,11 +91,13 @@ export function ColumnFilter({ label, options, selected, onChange, labelOf }: {
 }
 
 /** A header cell that cycles asc → desc → unsorted. */
-export function SortHead({ label, dir, onToggle, className }: {
+export function SortHead({ label, dir, onToggle, className, title }: {
   label: string; dir: SortDir; onToggle: () => void; className?: string;
+  /** Optional hover text explaining the column. Omitted, the header renders exactly as before. */
+  title?: string;
 }) {
   return (
-    <TableHead className={className}>
+    <TableHead className={className} title={title}>
       <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={onToggle}>
         {label}
         {dir === "asc" ? <ArrowUp className="h-3 w-3" />

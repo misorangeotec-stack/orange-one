@@ -542,7 +542,7 @@ export const REPORTS: ReportEntry[] = [
     scoping: "party-client",
     title: "Credit Terms Not Set",
     purpose:
-      "Customers with no credit limit or credit days in Tally, company by company, with what they owe.",
+      "One row per customer with a block per company book — credit days, limit, customer since and what they owe — and the gaps marked red.",
     category: "receivables",
     path: "reports/credit-terms",
     icon: CreditCard,
