@@ -12513,6 +12513,82 @@ wrong.
 
 ---
 
+### RC-17 · Masters: one click to see who is unmapped, and every tab sorts and filters  🔴  `[x]`
+*Raised 2026-09-16 · Re-measured against the live mirror and **shipped 18-09-2026** · No database change*
+
+**The ask.** The **Customer Groups** tab had a *No collection team* chip; nothing equivalent existed for
+salesperson or category, and that chip counted only customers who **owe money**.
+
+**Why it mattered now.** The Advances report (RC-18) shows money against the customer's collection team,
+so a customer with no team is invisible to everyone scoped to one — and the untagged customers hold most
+of the unapplied advance money. This screen is where somebody finds them. Masters is **not** scoped (it
+reads ConnectWave directly, not through `useAppData`), so a Settings full-access user such as Jayshree
+sees every customer here, including ones she cannot reach on any report.
+
+**Measured on the live mirror, 18-09-2026** (the figures move daily — re-measure before quoting):
+
+| | all | owing ≥ ₹1 |
+|---|---|---|
+| Muster rows | 1,887 | — |
+| **No salesperson** | **27** | 3 |
+| **No category** | **37** | 3 |
+| **No collection team** | **1,088** | **7** ← all the old chip showed |
+| salesperson = `OTHERS` (a **real** tag, never folded in) | 678 | — |
+
+Unset teams split **128 `NULL` / 960 empty string**, so `=== null` would have reported 128. Everything
+goes through the shared `isUnset`.
+
+#### The two decisions
+
+1. **The chips count EVERY unmapped customer**, not only those who owe. The owing-only rule was
+   deliberate and right for *its* question — "who is nobody chasing?", where a credit balance means
+   nothing to collect — but it is the wrong denominator for "who needs tagging?". Its comment was
+   **rewritten**, not silently dropped, so the next reader does not restore it as a bug.
+   ⚠ **"Has balance" does NOT reproduce the old 7.** It tests `Math.abs(out) >= 1`, so it keeps credit
+   balances too: chip + Has balance reads **25**. Nothing on the screen reproduces the old 7 exactly.
+2. **The All / Unchecked / New chips were dropped; Status became a column filter.** Both tables already
+   rendered a Status column, and Red Mark records why two controls over one thing were abandoned:
+   *"two controls over the same thing would disagree the moment one of them cascades."*
+
+#### Shipped with it — every Masters tab now sorts and filters on every column
+
+`CLAUDE.md` says every grid sorts on every column and filters under every column by default. Four of the
+seven tabs did not. One new **`components/GridTable.tsx`**, generalised from the grid `AdvancesReport`
+already drove from a column array, now renders all of them:
+
+| Tab | Before |
+|---|---|
+| Salesperson & Category · Customer Groups | sorted on 1 of 9 columns; no filter row |
+| Companies & Locations | **no sort, no filter, no search at all** |
+| Other Payments | **no sort on any of 12 columns**; order hard-coded `payment_date desc` |
+| Salespersons / Collection Teams | hand-rolled sort + cascade; filters on 2 of 5 columns |
+| Red Mark · Disputed Bills | already conformed — moved onto the same table |
+
+- 🐛 **Fixed:** `NameMasterTab` offered a filter value literally spelled `—` (it did `updated_by ?? "—"`)
+  where every other grid offers `(Blank)`. Also split the two-line Updated cell into **Updated** and
+  **Updated by**, since one column cannot sort on a timestamp and filter on a person honestly.
+- **`useColumnGrid` gained `initialSort`.** Without it the conversion would have silently reordered three
+  tabs — the hook starts unsorted, while the two musters opened on Outstanding descending and Other
+  Payments on the newest payment.
+- **`describeFilters` now names the chips and, generically, every per-column selection**, so an export
+  cannot narrow 1,882 rows to 9 without saying why. That also closed the same hole on Red Mark and
+  Disputed Bills, whose exports had been understating their filters.
+- **Orphans deleted in the same commit** (FIX-4 in reverse — `noUnusedLocals` is false, so none of them
+  would ever have failed the build): `Toolbar`, `useMusterFilters`, `OutstandingHead`, the local
+  unsearchable `MultiSelect`, a duplicate `SortDir`, and the orphan-chip props no caller ever passed.
+
+**Verified signed in as Jayshree (`sub_hod`, not an admin, Settings full access, scoped to five teams):**
+counts match the database, chips cascade and reset the page, a filter matching nothing keeps the table and
+its filter row standing with **Clear filters**, blanks read `(Blank)`, self-exclusion holds (a narrowed
+column still offers its other values), and an export of a chipped + filtered view named both filters on its
+About sheet.
+
+**🔴 Still open — and it is data work, not code.** Tagging the 1,088 untagged customers is Jayshree's job,
+through the **Export / Import** buttons already on each tab. Until that is done the Advances report keeps
+hiding money from everyone scoped to a collection team.
+
+---
+
 ### RC-18 · Advances Not Applied — which unapplied money belongs to which invoice  🔴  `[x]`
 *Raised 2026-09-16 · Audited against the live mirror · Report built, verified and shipped 17-09-2026 · The daily email is a separate, unbuilt task*
 

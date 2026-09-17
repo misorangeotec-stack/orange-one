@@ -62,10 +62,25 @@ export function useColumnGrid<T>(
   columns: GridColumn<T>[],
   /** Extra predicate applied before the column filters — the page's own search box, a view toggle. */
   prefilter?: (row: T) => boolean,
+  /**
+   * The order the grid OPENS in. Omitted, it opens in the order the rows arrived.
+   *
+   * ⚠ NOT COSMETIC — leave it off a grid that had a default order and you silently change what the
+   *   screen says. Every table converted onto this hook had one: the two musters opened on
+   *   Outstanding descending (the biggest debtors first), Other Payments on the newest payment, the
+   *   name masters alphabetically. Dropping that reorders the first page without any visible cause.
+   *
+   * ⚠ READ ONCE, on the first render, exactly like any useState seed. That is deliberate: once the
+   *   reader has clicked a header, a re-render must not drag them back to the default.
+   *
+   * Given one, the header's arrow is right on load, which pre-sorting `allRows` would not be — the
+   * column would claim to be unsorted while the rows were in fact ordered by it.
+   */
+  initialSort?: { key: string; dir: "asc" | "desc" },
 ): ColumnGrid<T> {
   const [selectedBy, setSelectedBy] = useState<Record<string, string[]>>({});
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [dir, setDir] = useState<"asc" | "desc" | null>(null);
+  const [sortKey, setSortKey] = useState<string | null>(initialSort?.key ?? null);
+  const [dir, setDir] = useState<"asc" | "desc" | null>(initialSort?.dir ?? null);
 
   const base = useMemo(
     () => (prefilter ? allRows.filter(prefilter) : allRows),
