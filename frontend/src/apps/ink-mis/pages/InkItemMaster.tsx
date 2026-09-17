@@ -210,6 +210,19 @@ export default function InkItemMaster() {
       return next;
     });
 
+  /** Weeks is a number, not text like the other two line fields, so it gets its own setter. */
+  const setWeeks = (mergeKey: string, raw: string) =>
+    setLines((prev) => {
+      const next = { ...prev };
+      const n = Math.round(Number(raw));
+      const row = { ...next[mergeKey] };
+      if (!raw.trim() || !Number.isFinite(n) || n < 1) delete row.weeks;
+      else row.weeks = n;
+      if (Object.keys(row).length) next[mergeKey] = row;
+      else delete next[mergeKey];
+      return next;
+    });
+
   /** Lead time in months, against the printed line. Blank clears it. */
   const setLeadTime = (mergeKey: string, raw: string) =>
     setPlans((prev) => {
@@ -655,6 +668,9 @@ export default function InkItemMaster() {
                 Import/Plant
                 <div className="text-[10px] font-normal text-muted-foreground">sets the group</div>
               </ResizableHead>
+              <ResizableHead id="weeks" cols={cols} className="w-[7rem] text-right">
+                Plant weeks
+              </ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-2 font-normal">
@@ -685,19 +701,20 @@ export default function InkItemMaster() {
               <TableHead className="py-2 font-normal">
                 <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} />
               </TableHead>
+              <TableHead className="py-2 font-normal" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
                   Loading every item from the four books…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
                   Nothing matches those filters.
                 </TableCell>
               </TableRow>
@@ -806,6 +823,26 @@ export default function InkItemMaster() {
                       </option>
                     ))}
                   </select>
+                </TableCell>
+                <TableCell className="text-right">
+                  {/* How many weekly plant orders this ink runs on. Only a Plant ink uses it, so
+                      it is disabled elsewhere rather than hidden — the column stays aligned and
+                      the reason is in the tooltip. Kept on the LINE, not the group: two inks in
+                      one group can easily run on different cycles. */}
+                  <Input
+                    type="number"
+                    min={1}
+                    className="h-8 w-full min-w-0 text-right disabled:opacity-40"
+                    disabled={r.source !== "plant"}
+                    title={
+                      r.source === "plant"
+                        ? "How many weekly plant orders to expect for this ink"
+                        : "Only for inks set to Plant"
+                    }
+                    placeholder={r.source === "plant" ? "1" : "–"}
+                    value={lines[r.mergeKey]?.weeks ?? ""}
+                    onChange={(e) => setWeeks(r.mergeKey, e.target.value)}
+                  />
                 </TableCell>
               </TableRow>
             ))}

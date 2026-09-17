@@ -61,6 +61,7 @@ const DATE_LABEL: Record<ShipmentStatus, string> = {
   ETD: "Expected departure",
   ETA: "Expected arrival",
   "AT PORT": "Landed on",
+  PLANT: "Order Monday",
 };
 
 export default function InkShipments() {
@@ -180,7 +181,7 @@ export default function InkShipments() {
   const slim = "py-1.5 px-2.5 text-[12.5px]";
 
   const totalIncoming = shipments
-    .filter((s) => s.status !== "ETD")
+    .filter((s) => s.status === "ETA" || s.status === "AT PORT")
     .reduce((sum, s) => sum + s.lines.reduce((t, l) => t + (l.qty || 0), 0), 0);
 
   return (
@@ -189,7 +190,8 @@ export default function InkShipments() {
         <div>
           <h1 className="text-2xl font-semibold">Ink pipeline — ETD and ETA entry</h1>
           <p className="text-sm text-muted-foreground">
-            One card per consignment. Delete a consignment once the goods are received.
+            One card per consignment, and one per week of plant order. Delete a card once the
+          goods are received.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -246,6 +248,16 @@ export default function InkShipments() {
         <span>
           <strong className="text-foreground">{fmtQty(totalIncoming)}</strong> KGS on the water or
           at port
+        </span>
+        <span>
+          <strong className="text-foreground">
+            {fmtQty(
+              shipments
+                .filter((s) => s.status === "PLANT")
+                .reduce((sum, s) => sum + s.lines.reduce((t, l) => t + (l.qty || 0), 0), 0),
+            )}
+          </strong>{" "}
+          KGS ordered on the plant
         </span>
       </div>
 

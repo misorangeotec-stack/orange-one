@@ -232,8 +232,13 @@ export default function InkMis() {
     // sorting again would throw it away.
   }, [positions, plans, consumption, shipments, thresholds, companyKey, search, groupsF, categoriesF, sourcesF, remarksF]);
 
-  /** Consignment columns, one per shipment, mirroring the sheet. Scoped to the book in view. */
-  const shipmentCols = useMemo(
+  /**
+   * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
+   *
+   * Split in two: shipments first, then the plant's weekly orders, so the sheet reads
+   * left-to-right as bought-in supply and then made-here supply, with a total after each.
+   */
+  const inScope = useMemo(
     () =>
       shipments
         .filter((s) => !companyKey || s.company === companyKey)
@@ -241,18 +246,21 @@ export default function InkMis() {
         .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")),
     [shipments, companyKey],
   );
+  const shipmentCols = useMemo(() => inScope.filter((s) => s.status !== "PLANT"), [inScope]);
+  const plantCols = useMemo(() => inScope.filter((s) => s.status === "PLANT"), [inScope]);
 
   const totals = useMemo(
     () =>
       rows.reduce(
         (t, r) => ({
           stock: t.stock + r.stock,
+          plant: t.plant + r.plant,
           etd: t.etd + r.etd,
           eta: t.eta + r.eta,
           atPort: t.atPort + r.atPort,
           total: t.total + r.total,
         }),
-        { stock: 0, etd: 0, eta: 0, atPort: 0, total: 0 },
+        { stock: 0, plant: 0, etd: 0, eta: 0, atPort: 0, total: 0 },
       ),
     [rows],
   );
@@ -291,6 +299,7 @@ export default function InkMis() {
   const cols = useTableColumns("dashboard");
   const showCompanyCols = !companyKey && companiesOpen && cols.isVisible("companies");
   const showShipmentCols = cols.isVisible("shipments");
+  const showPlantCols = cols.isVisible("plant");
 
   /**
    * The planning block, left of the stock columns. Item code is not hideable: without it a row
@@ -316,6 +325,7 @@ export default function InkMis() {
     ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
     { value: "companies", label: "Stock by company" },
     { value: "shipments", label: "Consignment columns" },
+    { value: "plant", label: "Plant weekly columns" },
     { value: "incoming", label: "ETA + at port" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
@@ -349,7 +359,7 @@ export default function InkMis() {
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
-      "ETD", "ETA + at port", "Total", "Category", "Import/Plant", "To order",
+      "ETD", "ETA + at port", "Plant total", "Total", "Category", "Import/Plant", "To order",
     ];
     const body = rows.map((r) => [
       r.group, r.itemCode, r.description, r.remark,
@@ -360,7 +370,7 @@ export default function InkMis() {
       ...shipmentCols.map((s) =>
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
-      r.etd, r.incoming, r.total, r.category, sourceLabel(r.source), reorderQty(r),
+      r.etd, r.incoming, r.plant, r.total, r.category, sourceLabel(r.source), reorderQty(r),
     ]);
     const esc = (v: unknown) => {
       const s = String(v ?? "");
@@ -433,6 +443,7 @@ export default function InkMis() {
           { label: "Inks listed", value: String(rows.length) },
           { label: "Stock", value: fmtQty(totals.stock) },
           { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
+          { label: "Plant orders", value: fmtQty(totals.plant) },
           { label: "On order (ETD)", value: fmtQty(totals.etd) },
           { label: "Needs ordering", value: String(reorderCount) },
         ].map((c) => (
@@ -601,7 +612,12 @@ export default function InkMis() {
                   </button>
                 </TableHead>
                 <TableHead
-                  colSpan={(showShipmentCols ? shipmentCols.length : 0) + (cols.isVisible("incoming") ? 1 : 0) + 1}
+                  colSpan={
+                    (showShipmentCols ? shipmentCols.length : 0) +
+                    (cols.isVisible("incoming") ? 1 : 0) +
+                    (showPlantCols ? plantCols.length : 0) +
+                    2
+                  }
                 />
               </TableRow>
             )}
@@ -642,6 +658,19 @@ export default function InkMis() {
               {cols.isVisible("incoming") && (
                 <ResizableHead id="incoming" cols={cols} className="text-right">ETA + at port</ResizableHead>
               )}
+              {showPlantCols &&
+                plantCols.map((s) => (
+                  <ResizableHead key={s.id} id={`plant:${s.id}`} cols={cols} className="text-right">
+                    <div className="text-[10px] uppercase text-muted-foreground">Plant week</div>
+                    <div>{s.reference || "(no ref)"}</div>
+                    <div className="text-[10px] font-normal text-muted-foreground">
+                      {s.date || "no date"}
+                    </div>
+                  </ResizableHead>
+                ))}
+              <ResizableHead id="plantTotal" cols={cols} className="text-right">
+                Plant total
+              </ResizableHead>
               <ResizableHead id="total" cols={cols} className="text-right font-semibold">Total</ResizableHead>
               {cols.isVisible("category") && (
                 <ResizableHead id="category" cols={cols} className="min-w-[10rem]">Category</ResizableHead>
@@ -686,6 +715,8 @@ export default function InkMis() {
               <TableHead />
               {showShipmentCols && shipmentCols.length > 0 && <TableHead colSpan={shipmentCols.length} />}
               {cols.isVisible("incoming") && <TableHead />}
+              {showPlantCols && plantCols.length > 0 && <TableHead colSpan={plantCols.length} />}
+              <TableHead />
               <TableHead />
               {cols.isVisible("category") && (
                 <TableHead className="py-2 font-normal">
@@ -798,6 +829,18 @@ export default function InkMis() {
                   })}
 
                 {cols.isVisible("incoming") && <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>}
+                {showPlantCols &&
+                  plantCols.map((s) => {
+                    const q = s.lines
+                      .filter((l) => r.itemCode && l.itemCode === r.itemCode)
+                      .reduce((t, l) => t + l.qty, 0);
+                    return (
+                      <TableCell key={s.id} className="text-right tabular-nums">
+                        {q ? fmtQty(q) : ""}
+                      </TableCell>
+                    );
+                  })}
+                <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{fmtQty(r.total)}</TableCell>
                 {cols.isVisible("category") && (
                   <TableCell className="text-xs">{r.category}</TableCell>
@@ -831,6 +874,15 @@ export default function InkMis() {
                 {cols.isVisible("incoming") && (
                   <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.eta + totals.atPort)}</TableCell>
                 )}
+                {showPlantCols &&
+                  plantCols.map((s) => (
+                    <TableCell key={s.id} className="text-right font-semibold tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
+                <TableCell className="text-right font-semibold tabular-nums">
+                  {fmtQty(totals.plant)}
+                </TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.total)}</TableCell>
                 {cols.isVisible("category") && <TableCell />}
                 {cols.isVisible("source") && <TableCell />}

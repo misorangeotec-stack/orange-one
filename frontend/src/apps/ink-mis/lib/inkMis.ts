@@ -168,6 +168,12 @@ export interface InkOverride {
 export interface InkLineFields {
   category: string;
   source: string;
+  /**
+   * How many weeks of plant orders this ink runs on. Only meaningful for a Plant ink: it says
+   * how many weekly lines the planner expects to enter, so the dashboard can show whether they
+   * have entered them. Blank means one week.
+   */
+  weeks?: number;
 }
 
 export type InkLines = Record<string, Partial<InkLineFields>>;
@@ -608,10 +614,14 @@ export async function loadInkConsumption(
  *   ETD      ordered, not yet shipped — an expected departure
  *   ETA      shipped, on the water — an expected arrival
  *   AT PORT  landed, clearing customs
+ *   PLANT    a week's order placed on our own plant, dated its Monday. Not a shipment and not
+ *            imported, but it is supply arriving on a date, which is the only thing the planning
+ *            maths cares about, so it rides the same entry screen and the same edits. One entry
+ *            per week; an ink set to two weeks in the item master wants two of them.
  * A consignment that has been received is DELETED, because from then on it is in the stock
  * figure and counting it twice would overstate cover.
  */
-export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT"] as const;
+export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT", "PLANT"] as const;
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
 
 /** One item and quantity inside a consignment — a single cell of the sheet's shipment column. */
@@ -692,6 +702,8 @@ export interface InkRow extends InkPosition {
   atPort: number;
   /** ETA + AT PORT. Goods on the water or landed — what the sheet adds to stock. */
   incoming: number;
+  /** Ordered on our own plant, across every weekly line entered for this ink. */
+  plant: number;
   /** Stock + incoming. The sheet's "ETA + AT PORT + STOCK" grand total. */
   total: number;
   monthMaxLevel: number;
@@ -732,6 +744,7 @@ export function deriveInkRow(
   let etd = 0;
   let eta = 0;
   let atPort = 0;
+  let plant = 0;
   for (const s of shipments) {
     if (companyKey && s.company !== companyKey) continue;
     for (const line of s.lines) {
@@ -741,15 +754,20 @@ export function deriveInkRow(
       if (!pos.itemCode || line.itemCode !== pos.itemCode) continue;
       if (s.status === "ETD") etd += line.qty;
       else if (s.status === "ETA") eta += line.qty;
-      else atPort += line.qty;
+      else if (s.status === "AT PORT") atPort += line.qty;
+      else plant += line.qty;
     }
   }
 
+  // ETA and AT PORT are goods already moving toward us; plant orders are supply we have
+  // committed the plant to make. Both count towards cover, which is why days-with-ETA includes
+  // plant, while ETD — not yet shipped by a supplier — still does not.
   const incoming = eta + atPort;
+  const committed = incoming + plant;
   const monthMaxLevel = plan.threeMonthAvg * plan.leadTime * plan.safetyFactor;
   const dailyMaxLevel = plan.perDayAvg * plan.leadTime * plan.safetyFactor;
   const daysCover = plan.perDayAvg > 0 ? stock / plan.perDayAvg : null;
-  const daysCoverWithIncoming = plan.perDayAvg > 0 ? (stock + incoming) / plan.perDayAvg : null;
+  const daysCoverWithIncoming = plan.perDayAvg > 0 ? (stock + committed) / plan.perDayAvg : null;
   const coverPct = monthMaxLevel > 0 ? (stock / monthMaxLevel) * 100 : null;
 
   let remark: InkRow["remark"] = "";
@@ -765,7 +783,10 @@ export function deriveInkRow(
     eta,
     atPort,
     incoming,
-    total: stock + incoming,
+    plant,
+    // The planner's Total column adds everything they have arranged: stock, ink on the water,
+    // the plant's weekly orders, and what has been ordered but not yet shipped.
+    total: stock + committed + etd,
     monthMaxLevel,
     dailyMaxLevel,
     daysCover,
