@@ -1851,6 +1851,27 @@ Excel read back):
   - The per-list Excel buttons went with QueueTable; the page's Excel lists every customer of every list.
 - 08-09 figures unchanged after both fixes (14 named, Remaining 15, TOTAL ₹41.11 L).
 
+**Second follow-up, 17-09-2026 — master `efe1dfa` (branch `49066fd`):**
+- **Colorix only where it has customer data** (the user: Colorix hardly trades — 7 sales lines on 3 days
+  from 01-08 to 17-09, no receipts or payments in September).
+  - Company columns are now chosen **per list** on screen, in the PDF and in each Excel sheet, so a
+    company gets a column only where it has a customer.
+  - The "Tally mirror rebuilt" line leaves Colorix off on a quiet day (`SHOWN_ONLY_WHEN_ACTIVE` in
+    `labels.ts`).
+  - **The bank section is deliberately unchanged** — the user meant customer data. The bank account is
+    typed by hand and its gap is flagged.
+  - Verified on master's code: on 15-09 only "Not yet classified" has a Colorix column; on 16-09 none
+    does, and the freshness line omits Colorix.
+- **The PDF, redrawn after the user called it cluttered and misaligned.**
+  - **Page one:** a title and one line of terms, five plain cards (no SEE LIST markers), and four
+    equal-height cards on one column grid, so counts and figures line up. Lines outside the headline are
+    grey type, not filled bands. A free-of-charge-only product line says "free". The credit facility
+    shows only when recorded. The notes moved to the end.
+  - **List pages:** a title with its figure on the right, each company named once over its kg | ₹ L pair,
+    lists kept whole on a fresh page when they fit, and a closing line instead of the navy bar.
+  - Checked by rendering pages for 14-09, 08-09, 02-09, 15-09 and Delhi: no ellipsized text, all links
+    resolve.
+
 **Still open:**
 - **View-only check not run.** Nobody holds Daily Report access yet, and the user chose not to grant
   anyone for the test. Run it as the first real `view` user once one is granted.
