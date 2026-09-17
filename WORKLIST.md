@@ -12368,6 +12368,126 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
+### RC-19 · Credit Terms Not Set — one row per customer, a block of columns per book  🔴  `[x]`
+*Raised 2026-09-16 · Audited and measured on the live mirror 17-09-2026 · Built, verified and shipped
+17-09-2026 (`e010ac4`) · ConnectWave SQL applied, rollback rehearsed, cron running*
+
+**✅ SHIPPED.** Reports → Receivables → **Credit Terms Not Set** (`reports/credit-terms`) opens on a new
+**By customer** view: one row per customer NAME with a **four-column block per book** — Days · Limit ·
+Customer since · Outstanding — the name column frozen, a two-row header, alternating block shading, and
+**Books shown** pills to hide the books you are not working on. The old per-ledger list stays as a **By
+ledger** toggle. Both views share every filter, and the Excel export carries the same shape, the same
+fills and a working freeze.
+
+**Cell states.** Each cell is judged on its own, so a customer with days set and no limit reds only the
+Limit cell.
+
+| state | Days / Limit | Customer since | Outstanding | fill |
+|---|---|---|---|---|
+| Not open in that book | **NA** | blank | blank | none |
+| Open, terms set | the values | date or blank | balance | none (alternate blocks shaded) |
+| Open, **terms not set** | blank | date or blank | balance | **subtle red** `FFF2F2` |
+| Open, **set on the bills** | blank, tooltip counts the bills | date or blank | balance | **blue** `EAF3FB` |
+| Open, **limit = ₹1** | `₹1` + *blocked* | date or blank | balance | **subtle red** |
+
+**🔴 The creation date does NOT exist in Tally's export. Do not look for it again.** Checked in BOTH
+databases on 17-09-2026. The 9,536 ledger masters carry no creation or alteration date, and the
+connector's FETCH list never asks for one. ⚠ **`APPLICABLEFROM` is a trap** — nested inside
+`LEDMAILINGDETAILS.LIST` (8,676 ledgers) and `LEDGSTREGDETAILS.LIST` (7,661), invisible to a top-level key
+scan, and it is **not** a creation date: every value is a 1 April (two are 1 July 2017, GST launch), and
+within one book a ledger with a very low `MASTERID` carries a 2025 date. It records when the address or
+GST details were last set. `MASTERID` itself is creation ORDER, per book, and is wrapped JSON
+(`{"#text": …}`) that a plain `->>` cast throws on.
+
+**What "Customer since" therefore is.** Orange One's `mst_parties.created_at` = when the masters sync first
+SAW the ledger. The sync bulk-loaded everything up to **14-08-2026 17:45:24 IST**, so for those it is only
+the load date. **42** customers have been first seen since; compared against each one's first Tally
+voucher, 29 line up (within 3 days or before), **7** had a voucher 1–3 weeks earlier and **4 were old
+customers** with vouchers 2–5 months earlier. So the column is the **EARLIER of first-seen and first
+voucher**, and only for ledgers first seen after the bulk load; everyone older reads **blank** with a
+tooltip saying why. Never a fabricated date. Both halves must load or the cell says so — first-seen alone
+is exactly the trap.
+
+**Last transaction (replaces Last activity, both views).** The old column knew only the last receipt and
+open bills, so a settled bill, a credit note or a journal was invisible. It now takes the newest of the
+last **Tally voucher**, the last receipt and the newest open bill. ⚠ **Post-dated entries do not count
+until their date** — 24 ledgers carried post-dated bank receipts up to 21-Oct-2026 on the day.
+
+**The new ConnectWave object** (`supabase/connectwave/rpt_ledger_voucher_dates*.sql`, applied to
+`ieeefdnyhzgrroifiqbb`):
+- `rpt_ledger_voucher_dates (tenant_id, ledger_guid, first_vch_date, last_vch_date, last_vch_type,
+  refreshed_at)` — one row per customer ledger (**1,266**), rebuilt whole in **~1.4 s**.
+- `rpt_ledger_voucher_dates_if_stale()` chains off **`collection_meta.refreshed_at`**, not
+  `tally_sync_state`: the rebuild reads the snapshot's ledger list, so a new debtor is only coverable once
+  `collection_refresh` has put it there.
+- Cron: `rpt-ledger-voucher-dates-after-sync` at **`1-59/5`** and `rpt-ledger-voucher-dates-nightly` at
+  **`41 18 * * *`** UTC (00:11 IST, which re-applies the post-dated cap on the new day).
+  ⚠ **Every minute offset mod 5 on this project is now taken** (0 = four `*/5` pollers + the `*/30`
+  snapshot · 2 = `rpt-sales-despatch` · 3 = Orange One's masters-sync · 4 = `rpt-soa-register` · 1 = this).
+  The next job here must be placed by measured load, not by arithmetic.
+- Anon can read it; both functions are revoked from anon/authenticated. **Rollback file written AND
+  rehearsed on live** (applied → rebuilt → rolled back, objects gone, snapshot untouched → re-applied).
+
+**Verified on live data, 17-09-2026:** 1,882 ledgers → **1,324 customers** (914 in one book, 290 · 95 · 22,
+and **3 in all five**, so **71.6%** of book cells read NA) · **180** ₹1 limits · block order read from the
+data (O-tec Surat 1,204 · Enterprise Surat 312 · O-tec Noida 177 · Enterprise Noida 108 · Colorix Surat
+81) · no customer name appears twice in one book. Checked in the browser as an admin **and as a
+salesperson-scoped HOD** (954 customers against the admin's 988, Customer since populated, scoped NA
+wording, export works). The workbook was opened in Excel: freeze at column 1 / row 3, merged book bands,
+the three fills, and real dates.
+
+**The decisions taken (all of them, for the record).**
+1. Customer since = earlier of first-seen and first voucher, blank before 14-08-2026 with a tooltip.
+2. "Set on the bills" is blue, never red — 146 ledgers are controlled from their bills, one of them 58
+   machine instalments worth ₹6.55 Cr.
+3. A ₹1 limit counts as NOT set: `₹1` + *blocked*, red.
+4. Pivot on the EXACT customer name ("… MACHINE" is a separate decision from the parent).
+5. The per-ledger view stays, and the company panel stays per ledger and says so on screen — after a
+   pivot one customer can be Complete in one book and Neither set in another.
+6. Customer-level Last transaction added (without it a reader has no activity signal for the older
+   customers, whose Customer since is blank).
+7. Fills are per cell, not per block.
+8. Post-dated vouchers ignored until their date.
+9. Filters stay LEDGER filters: a customer row shows when any ledger in a shown book matches, while the
+   blocks still tell the truth about every shown book. The Company dropdown becomes the Books shown pills.
+10. By ledger's "Last activity" became "Last transaction" too, so the page has one definition.
+11. **No money total in the pivot** — each block's Outstanding is a raw balance and may be negative, and a
+    net total would contradict the panel's positive-only "Owed with nothing set".
+12. For a scoped viewer, NA reads "not open, **or outside your view**".
+
+**Also fixed in passing:** `Clear filters` never reset the collection-team filter and there was no chip
+for it, so that filter narrowed the list with nothing on the page able to undo it.
+
+**Not done, deliberately:** the By ledger list keeps its top-bar filters (it predates the per-column
+filter row), and Customer since is not shown per ledger there.
+
+**Access:** report id `credit-terms`. Admins see it; anyone else needs it in
+`profiles.receivables_allowed_reports`. **Ritesh Tulsyan was granted it on 17-09-2026** (his list is now
+`{advances, credit-terms}`).
+
+---
+
+### RC-20 · A true creation date for customers from before 14-Aug-2026  🟡  `[ ]`
+*Raised 2026-09-17 out of RC-19 · Not started · Needs work in ANOTHER repo plus a full re-pull*
+
+**The ask.** RC-19's "Customer since" is blank for every customer created before the masters sync's bulk
+load, because nothing in either database records when a Tally ledger was created. Filling those blanks is
+a three-part job, and none of it lives in this repo:
+
+1. 🔴 **Probe the live Tally installation FIRST.** Tally exposes master audit information (created/altered
+   dates) only where the **edit log / "Use Tally Audit Features"** is switched on, and whether this
+   installation has it — and since when — is unknown. If it is off, the date does not exist anywhere and
+   the answer is "never available for historical ledgers". Everything below is wasted until this is known.
+2. **Connector FETCH change** in `D:/AI Development/ConnectWave-App` — `connector/internal/tally/entities.go`
+   asks for GUID, MASTERID, ALTERID, NAME, PARENT, balances, BILLCREDITPERIOD, CREDITLIMIT and the contact
+   fields, and no date. Adding one flips `SchemaSignature()`.
+3. **A full re-pull of every company**, which is the expensive half.
+
+Same shape as OD-12b. ⚠ Do not "solve" it with `APPLICABLEFROM` or `MASTERID` — see RC-19 for why both are
+wrong.
+
+---
+
 ### RC-18 · Advances Not Applied — which unapplied money belongs to which invoice  🔴  `[x]`
 *Raised 2026-09-16 · Audited against the live mirror · Report built, verified and shipped 17-09-2026 · The daily email is a separate, unbuilt task*
 
