@@ -71,6 +71,8 @@ export interface SalesSummary {
   totals: { value: Record<string, PeriodCell>; qty: Record<string, PeriodCell> };
   /** How to write a quantity: the dashboard's own, and one per row name. */
   fmtQ: QtyFmt;
+  /** The dashboard's quantity adds products of different units — a bare number, and said so. */
+  mixedUnits: boolean;
   fmtRowQ: (name: string) => QtyFmt;
   lines: number;
 }
@@ -192,6 +194,7 @@ export function buildSalesSummary(input: SummaryInput): SalesSummary {
     pivot,
     totals,
     fmtQ,
+    mixedUnits: qtyUnit === "none",
     fmtRowQ,
     lines: rows.length,
   };

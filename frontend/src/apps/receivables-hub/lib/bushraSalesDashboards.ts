@@ -87,7 +87,7 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     primary: "salesType",
     defaultMetric: "value",
     layout: "overview",
-    qtyUnit: "kg",
+    qtyUnit: "none", // mixed products — KG, pcs and Nos cannot add up to tonnes
     sections: ["type", "salesType"],
   },
   {
@@ -159,7 +159,7 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     // Branch and Related FOC are booked at no value, so quantity is the honest first view.
     defaultMetric: "quantity",
     layout: "slices",
-    qtyUnit: "kg",
+    qtyUnit: "none", // mixed products — KG, pcs and Nos cannot add up to tonnes
   },
   {
     id: "bushra-sales-soa",
@@ -170,7 +170,7 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     primary: "salesType",
     defaultMetric: "value",
     layout: "slices",
-    qtyUnit: "kg",
+    qtyUnit: "none", // mixed products — KG, pcs and Nos cannot add up to tonnes
   },
   {
     id: "bushra-sales-branch-related",
@@ -181,7 +181,7 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     primary: "company",
     defaultMetric: "value",
     layout: "slices",
-    qtyUnit: "kg",
+    qtyUnit: "none", // mixed products — KG, pcs and Nos cannot add up to tonnes
   },
 ];
 

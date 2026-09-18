@@ -189,7 +189,8 @@ export function buildSalesPdfWith(assets: BrandAssets, s: SalesSummary, opts: Sa
     text("GIVEN FREE (FOC) - not counted above", M + 5, y + 5, 7, true, MUTED);
     text(`${s.fmtQ(s.foc.qty)}   ${fmtSales(s.foc.value)}   ${fmtInt(s.foc.vouchers)} vouchers`, M + 5, y + 10, 9.5, true, INK);
   }
-  text(`${s.foc.lines ? "Quantity sold" : "Quantity"} ${s.fmtQ(k.qty)}`, PAGE_W - M - 5, y + 8, 9, false, MUTED, "right");
+  text(`${s.foc.lines ? "Quantity sold" : "Quantity"} ${s.fmtQ(k.qty)}${s.mixedUnits ? " (mixed units)" : ""}`,
+       PAGE_W - M - 5, y + 8, 9, false, MUTED, "right");
   hit(M, y, PAGE_W - 2 * M, 12, "Summary");
 
   /* the three blocks across the slide, each a link into its own section */
@@ -249,7 +250,7 @@ export function buildSalesPdfWith(assets: BrandAssets, s: SalesSummary, opts: Sa
           [{ text: "Discount" }, money(k.discount), { text: k.sales ? `${((-k.discount / k.sales) * 100).toFixed(1)}% of sales` : "", color: MUTED }],
           [{ text: "Credit notes & returns" }, money(k.less), { text: k.sales ? `${((-k.less / k.sales) * 100).toFixed(1)}% of sales` : "", color: MUTED }],
           [{ text: "Net value", bold: true }, { ...money(k.net), bold: true }, { text: "sales − discount − returns", color: MUTED }],
-          [{ text: "Quantity" }, { text: s.fmtQ(k.qty), align: "right" }, { text: "as booked", color: MUTED }],
+          [{ text: "Quantity" }, { text: s.fmtQ(k.qty), align: "right" }, { text: s.mixedUnits ? "as booked, mixed units" : "as booked", color: MUTED }],
           [{ text: "Vouchers" }, { text: fmtInt(k.vouchers), align: "right" }, { text: `${fmtInt(k.parties)} customers`, color: MUTED }],
         ],
       );
