@@ -59,6 +59,12 @@ HERE = pathlib.Path(__file__).resolve().parent
 APP_ROOT = "Orange One Hub"
 TALLY_ROOT = "Tally (ConnectWave)"
 BATCH = int(os.environ.get("FILE_BATCH") or "400")
+# Stop the file copy after this many files — a test knob, never set by the workflow.
+MAX_FILES = int(os.environ.get("MAX_FILES") or "0")
+# Leave the Tally dump out of a hand-started DAYTIME run: it reads ~6 GB from a
+# micro-compute server the Tally screens use. The workflow's skip_tally input.
+# The next scheduled run then includes it (no good Tally copy in the last 7 days).
+SKIP_TALLY = os.environ.get("SKIP_TALLY") == "1"
 
 # What goes into each database copy. auth = the logins (without it nobody can
 # sign in and every created_by points nowhere); storage = the file records;
@@ -170,7 +176,14 @@ def backup_files(run_id: int, stats: dict) -> None:
     failed_examples: list[str] = []
     batch_no = 0
     while True:
-        plan = rpc("backup_files_plan", {"p_after": after, "p_limit": BATCH})
+        limit = BATCH
+        if MAX_FILES:
+            done_so_far = stats["files_copied"] + stats["files_failed"]
+            if done_so_far >= MAX_FILES:
+                log(f"MAX_FILES={MAX_FILES} reached - stopping the file copy here (test run)")
+                break
+            limit = min(BATCH, MAX_FILES - done_so_far)
+        plan = rpc("backup_files_plan", {"p_after": after, "p_limit": limit})
         items = plan.get("items") or []
         if not items:
             break
@@ -391,7 +404,7 @@ def main() -> int:
                                                        "orange-one-hub", int(start["keep_app"]), stats)),
                 *((("tally database", lambda: dump_database("tally", env("TALLY_DB_URL"), TALLY_ROOT,
                                                              "tally-connectwave", int(start["keep_tally"]), stats)),)
-                  if start.get("include_tally") else ()),
+                  if start.get("include_tally") and not SKIP_TALLY else ()),
             ):
                 try:
                     fn()
