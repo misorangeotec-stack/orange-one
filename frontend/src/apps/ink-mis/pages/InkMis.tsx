@@ -45,7 +45,7 @@ import {
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import {
-  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import ReorderChart, { reorderQty } from "../components/ReorderChart";
@@ -306,6 +306,10 @@ export default function InkMis() {
    * cannot be identified. Stock and Total are not hideable either — they are the answer.
    */
   const LEAD_COLS = [
+    // The planner's own row number. On the sheet because "why is this line here?" is otherwise
+    // unanswerable from the dashboard — the order is theirs, and they should be able to see it
+    // rather than infer it from the position.
+    { id: "no", label: "No." },
     { id: "group", label: "Group" },
     { id: "code", label: "Item code", locked: true },
     { id: "description", label: "Description" },
@@ -354,7 +358,7 @@ export default function InkMis() {
 
   const exportCsv = () => {
     const head = [
-      "Group", "Item code", "Description", "Remark",
+      "No.", "Group", "Item code", "Description", "Remark",
       "3-month avg", "Per day avg", "Lead time", "Safety factor",
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
@@ -362,7 +366,7 @@ export default function InkMis() {
       "ETD", "ETA + at port", "Plant total", "Total", "Category", "Import/Plant", "To order",
     ];
     const body = rows.map((r) => [
-      r.group, r.itemCode, r.description, r.remark,
+      order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
       r.plan.threeMonthAvg, r.plan.perDayAvg, r.plan.leadTime, r.plan.safetyFactor,
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
       ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
@@ -619,6 +623,9 @@ export default function InkMis() {
               </TableRow>
             )}
             <TableRow>
+              {on("no") && (
+                <ResizableHead id="no" cols={cols} className="w-16 text-right">No.</ResizableHead>
+              )}
               {on("group") && <ResizableHead id="group" cols={cols} className="min-w-[10rem]">Group</ResizableHead>}
               <ResizableHead id="code" cols={cols} className="min-w-[9rem]">Item code</ResizableHead>
               {on("description") && <ResizableHead id="description" cols={cols} className="min-w-[16rem]">Description</ResizableHead>}
@@ -690,6 +697,7 @@ export default function InkMis() {
             </TableRow>
             {/* The table's own filter row. Same state as the bar above it. */}
             <TableRow className="hover:bg-transparent">
+              {on("no") && <TableHead className="py-2 font-normal" />}
               {on("group") && (
                 <TableHead className="py-2 font-normal">
                   <MultiSelect values={groupsF} onChange={setGroupsF} options={groupOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
@@ -714,6 +722,7 @@ export default function InkMis() {
               <TableHead
                 colSpan={
                   leadVisible.length -
+                  (on("no") ? 1 : 0) -
                   (on("group") ? 1 : 0) -
                   (on("code") ? 1 : 0) -
                   (on("description") ? 1 : 0) -
@@ -741,6 +750,42 @@ export default function InkMis() {
           </TableHeader>
 
           <TableBody>
+            {/* TOTALS FIRST. They were in a footer, which on a table this tall meant scrolling
+                past every row to read the one line that summarises them. */}
+            {rows.length > 0 && (
+              <TableRow className="border-b-2 bg-muted/50 font-semibold hover:bg-muted/50">
+                <TableCell colSpan={leadVisible.length}>Total — {rows.length} inks</TableCell>
+                {showCompanyCols &&
+                  INK_COMPANIES.map((c) => (
+                    <TableCell key={c.key} className="text-right tabular-nums">
+                      {fmtQty(rows.reduce((t, r) => t + (r.byCompany[c.key] ?? 0), 0))}
+                    </TableCell>
+                  ))}
+                <TableCell className="text-right tabular-nums">{fmtQty(totals.stock)}</TableCell>
+                {showShipmentCols &&
+                  shipmentCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
+                {cols.isVisible("incoming") && (
+                  <TableCell className="text-right tabular-nums">
+                    {fmtQty(totals.eta + totals.atPort)}
+                  </TableCell>
+                )}
+                {showPlantCols &&
+                  plantCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
+                <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
+                <TableCell className="text-right tabular-nums">{fmtQty(totals.total)}</TableCell>
+                {cols.isVisible("category") && <TableCell />}
+                {cols.isVisible("source") && <TableCell />}
+              </TableRow>
+            )}
+
             {isLoading && (
               <TableRow>
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
@@ -761,6 +806,11 @@ export default function InkMis() {
 
             {rows.map((r) => (
               <TableRow key={r.key}>
+                {on("no") && (
+                  <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                    {order[r.key] ?? order[r.legacyKey] ?? ""}
+                  </TableCell>
+                )}
                 {on("group") && <TableCell className="text-xs">{r.group}</TableCell>}
                 <TableCell className="font-medium">{r.itemCode}</TableCell>
                 {on("description") && <TableCell>{r.description}</TableCell>}
@@ -861,43 +911,6 @@ export default function InkMis() {
             ))}
           </TableBody>
 
-          {rows.length > 0 && (
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={leadVisible.length} className="font-semibold">
-                  Total — {rows.length} inks
-                </TableCell>
-                {showCompanyCols &&
-                  INK_COMPANIES.map((c) => (
-                    <TableCell key={c.key} className="text-right font-semibold tabular-nums">
-                      {fmtQty(rows.reduce((t, r) => t + (r.byCompany[c.key] ?? 0), 0))}
-                    </TableCell>
-                  ))}
-                <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.stock)}</TableCell>
-                {showShipmentCols &&
-                  shipmentCols.map((s) => (
-                    <TableCell key={s.id} className="text-right font-semibold tabular-nums">
-                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
-                    </TableCell>
-                  ))}
-                {cols.isVisible("incoming") && (
-                  <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.eta + totals.atPort)}</TableCell>
-                )}
-                {showPlantCols &&
-                  plantCols.map((s) => (
-                    <TableCell key={s.id} className="text-right font-semibold tabular-nums">
-                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
-                    </TableCell>
-                  ))}
-                <TableCell className="text-right font-semibold tabular-nums">
-                  {fmtQty(totals.plant)}
-                </TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{fmtQty(totals.total)}</TableCell>
-                {cols.isVisible("category") && <TableCell />}
-                {cols.isVisible("source") && <TableCell />}
-              </TableRow>
-            </TableFooter>
-          )}
         </Table>
       </ScrollableTable>
 
