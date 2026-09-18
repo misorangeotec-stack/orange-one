@@ -844,6 +844,7 @@ const KEY_OVERRIDES = "ink-mis:items:v1";
 const KEY_ORDER = "ink-mis:order:v1";
 const KEY_LINES = "ink-mis:lines:v1";
 const KEY_GROUPS = "ink-mis:groups:v1";
+const KEY_SEEN = "ink-mis:seen:v1";
 const KEY_HOLIDAYS = "ink-mis:holidays:v1";
 
 function readJson<T>(key: string, fallback: T): T {
@@ -938,6 +939,20 @@ export const saveGroupFields = (g: InkGroupFields) => {
   writeJson(KEY_GROUPS, clean);
 };
 
+/**
+ * Lines the planner has already been shown.
+ *
+ * The item master lists what is on the shelf, so an ink that was empty and has just been bought
+ * ARRIVES in the list on its own. Without a record of what was already there, that arrival is
+ * silent and the ink sits unnumbered — invisible on the dashboard — until somebody happens to
+ * scroll past it. This set is what makes "new since you last looked" answerable.
+ */
+export const loadSeenLines = (): string[] => {
+  const v = readJson<string[]>(KEY_SEEN, []);
+  return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
+};
+export const saveSeenLines = (keys: string[]) => writeJson(KEY_SEEN, [...new Set(keys)]);
+
 export const loadOrder = (): InkOrder => {
   const raw = readJson<InkOrder>(KEY_ORDER, {});
   const out: InkOrder = {};
@@ -995,6 +1010,7 @@ export interface InkBackup {
   order: InkOrder;
   lines: InkLines;
   groupFields: InkGroupFields;
+  seenLines: string[];
   holidays: string[];
 }
 
@@ -1010,6 +1026,7 @@ export function buildBackup(): InkBackup {
     order: loadOrder(),
     lines: loadLines(),
     groupFields: loadGroupFields(),
+    seenLines: loadSeenLines(),
     holidays: loadHolidays(),
   };
 }
@@ -1033,6 +1050,7 @@ export function applyBackup(text: string): InkBackup {
   saveOrder(b.order ?? {});
   saveLines(b.lines ?? {});
   saveGroupFields(b.groupFields ?? {});
+  saveSeenLines(Array.isArray(b.seenLines) ? b.seenLines : []);
   saveHolidays(Array.isArray(b.holidays) ? b.holidays : []);
   return b as InkBackup;
 }

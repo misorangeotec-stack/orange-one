@@ -45,8 +45,8 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder,
-  loadGroupFields, loadLines, loadOverrides, loadPlans, renumber, saveGroupFields, saveLines,
-  savePlans, saveOrder, saveOverrides, sourceLabel,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields,
+  saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
 } from "../lib/inkMis";
@@ -130,6 +130,18 @@ export default function InkItemMaster() {
   /** The same two fields at group level — see InkGroupFields. */
   const [savedGroupFields, setSavedGroupFields] = useState<InkGroupFields>(() => loadGroupFields());
   const [groupFields, setGroupFields] = useState<InkGroupFields>(savedGroupFields);
+  /**
+   * ONLY WHAT IS ON THE SHELF, by default.
+   *
+   * Tally's four books hold thousands of items, most of them long dead, and a list that long is
+   * not a working list. So the master shows what has a closing quantity — plus anything the
+   * planner has numbered or edited, which they have said they care about whether or not it is
+   * in stock today. The switch shows the rest when they need to reach one.
+   */
+  const [stockOnly, setStockOnly] = useState(true);
+  /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
+  const [seen, setSeen] = useState<string[]>(() => loadSeenLines());
+  const [showNewDialog, setShowNewDialog] = useState(true);
   const [ioNotice, setIoNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -291,6 +303,14 @@ export default function InkItemMaster() {
           (f.code.includes("edited") && Boolean(overrides[r.key]));
         if (!hit) return false;
       }
+      if (
+        stockOnly &&
+        r.closingQty === 0 &&
+        (order[r.mergeKey] ?? order[r.legacyKey]) === undefined &&
+        !overrides[r.key]
+      ) {
+        return false;
+      }
       if (f.groups.length && !f.groups.includes(r.effectiveGroup)) return false;
       // "(none)" is a real choice: finding what is not categorised yet is the point of the filter.
       if (f.categories.length && !f.categories.includes(r.category || "(none)")) return false;
@@ -312,7 +332,7 @@ export default function InkItemMaster() {
         a.company.localeCompare(b.company)
       );
     });
-  }, [master, f, overrides, order]);
+  }, [master, f, overrides, order, stockOnly]);
 
   // The hook resets to page 1 when resetKey changes, so a narrower filter never strands you on
   // a page that no longer exists.
@@ -330,6 +350,40 @@ export default function InkItemMaster() {
    * scroll to the end to find where to carry on. Taken from the DRAFT, so it answers the number
    * they are about to type, not the one they last saved.
    */
+  /**
+   * Lines in stock that the planner has never been shown. An ink bought for the first time turns
+   * up here on its own, and unnumbered it would never reach the dashboard, so it is put in front
+   * of them rather than left to be found.
+   */
+  const newLines = useMemo(() => {
+    const seenSet = new Set(seen);
+    const out: InkMasterRow[] = [];
+    const taken = new Set<string>();
+    for (const r of master) {
+      if (r.closingQty === 0) continue;
+      if (seenSet.has(r.mergeKey) || seenSet.has(r.legacyKey)) continue;
+      if (taken.has(r.mergeKey)) continue;
+      taken.add(r.mergeKey);
+      out.push(r);
+    }
+    return out;
+  }, [master, seen]);
+
+  /** Nothing is "new" on a first visit — the whole list would be. */
+  useEffect(() => {
+    if (!master.length || seen.length) return;
+    const all = master.filter((r) => r.closingQty !== 0).map((r) => r.mergeKey);
+    setSeen(all);
+    saveSeenLines(all);
+  }, [master, seen.length]);
+
+  const dismissNewLines = () => {
+    const next = [...seen, ...newLines.map((r) => r.mergeKey)];
+    setSeen(next);
+    saveSeenLines(next);
+    setShowNewDialog(false);
+  };
+
   const highest = useMemo(() => {
     // Counted from the ROWS, not from the stored map. A number can outlive its line — typing a
     // description re-keys the line and leaves the old key behind — and reading the map straight
@@ -569,6 +623,15 @@ export default function InkItemMaster() {
           <option value="all">Every stock group</option>
         </select>
 
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={stockOnly}
+            onChange={(e) => setStockOnly(e.target.checked)}
+          />
+          Only items with stock
+        </label>
+
         <Button
           size="sm"
           variant="outline"
@@ -657,6 +720,45 @@ export default function InkItemMaster() {
           <span>All changes saved.</span>
         )}
       </div>
+
+      {showNewDialog && newLines.length > 0 && (
+        <div className="rounded-md border-2 border-orange-400 bg-orange-50 p-3 text-sm text-orange-950">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong>
+              {newLines.length} ink{newLines.length === 1 ? " has" : "s have"} arrived in stock for
+              the first time.
+            </strong>
+            <span>Give each one a number to put it on the dashboard, or skip for now.</span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={dismissNewLines}>
+              Skip
+            </Button>
+          </div>
+          <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+            {newLines.map((r) => (
+              <div key={r.mergeKey} className="flex flex-wrap items-center gap-2">
+                <Input
+                  className="h-8 w-16 bg-background text-center tabular-nums"
+                  placeholder={String(highest + 1)}
+                  value={order[r.mergeKey] ?? ""}
+                  onChange={(e) => setPosition(r.mergeKey, e.target.value)}
+                  onBlur={() => commitPosition(r.mergeKey)}
+                />
+                <span className="flex-1 truncate" title={r.item}>
+                  {r.effectiveDescription || r.item}
+                </span>
+                <span className="w-32 shrink-0 text-xs">{r.company}</span>
+                <span className="w-24 shrink-0 text-right tabular-nums">
+                  {fmtQty(r.closingQty)} {r.baseUnit}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs">
+            Numbers here are part of the same draft as the table — press Save changes to keep
+            them. Skipping only stops the reminder; the inks stay in the list.
+          </p>
+        </div>
+      )}
 
       {ioNotice && (
         <div
