@@ -29,7 +29,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, Boxes, ChevronRight, Download, FileText, Gift, IndianRupee, Layers,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Boxes, ChevronRight, Download, FileText, Gift, IndianRupee, Layers,
   Mail, Percent, RotateCcw, Search, ShoppingCart, Table2,
   TrendingDown, TrendingUp, Users,
 } from "lucide-react";
@@ -55,7 +55,7 @@ import {
 } from "@hub/lib/bushraSalesFigures";
 import { SERIES_1, SERIES_2 } from "@hub/lib/batchCostingDashboard";
 import { useScopedParties } from "@hub/lib/scopeParties";
-import { useReportAccess } from "@hub/lib/reportAccess";
+import { EMAILABLE_REPORTS, useReportAccess } from "@hub/lib/reportAccess";
 import { useSession } from "@/core/platform/session";
 import { Sheet, SheetContent } from "@hub/components/ui/sheet";
 import ReportDeliveryConfig from "@hub/components/ReportDeliveryConfig";
@@ -99,9 +99,10 @@ const PRIMARY_TITLE: Record<PrimaryDim, string> = {
 };
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+/** "Sep-26" → "202609" — the YYYYMM every window and label below expects. */
 const monthKey = (label: string) => {
   const [m, y] = label.split("-");
-  return `${y}${String(MONTHS.indexOf(m) + 1).padStart(2, "0")}`;
+  return `20${y}${String(MONTHS.indexOf(m) + 1).padStart(2, "0")}`;
 };
 
 /** A bar outside the current pick fades back rather than disappearing — it stays there to click. */
@@ -109,6 +110,31 @@ const dim = (selected: string[], name: string) => (!selected.length || selected.
 const pct = (v: number, total: number) => (total ? `${((v / total) * 100).toFixed(1)}%` : "");
 /** "20260918" → "18-09-2026" */
 const dmy = (d: string) => `${d.slice(6)}-${d.slice(4, 6)}-${d.slice(0, 4)}`;
+
+/**
+ * Every filter's options from the rows surviving every OTHER filter — the house cascade, so no
+ * combination a reader can assemble returns an empty table. A column is left out of its own options,
+ * or narrowing to one value would leave no way to widen again. `rows` arrives already narrowed by
+ * anything else the caller applies: the report passes its search and table-only filters in that way.
+ */
+function cascadeOptions(rows: Row[], sel: Record<FilterKey, string[]>): Record<FilterKey, MultiSelectOption[]> {
+  const active = FILTER_KEYS.filter((k) => sel[k].length);
+  const found = byKey(() => new Set<string>());
+  for (const r of rows) {
+    let missedKey: FilterKey | null = null;
+    let missed = 0;
+    for (const k of active) {
+      if (!sel[k].includes(FILTERS[k].get(r))) { missed++; missedKey = k; if (missed > 1) break; }
+    }
+    if (missed > 1) continue;
+    for (const k of FILTER_KEYS) if (missed === 0 || k === missedKey) found[k].add(FILTERS[k].get(r));
+  }
+  return Object.fromEntries(FILTER_KEYS.map((k) => {
+    const vals = [...found[k]];
+    vals.sort(k === "month" ? (a, b) => monthKey(a).localeCompare(monthKey(b)) : collator.compare);
+    return [k, vals.map((v) => ({ value: v, label: v }))];
+  })) as Record<FilterKey, MultiSelectOption[]>;
+}
 
 interface Slice { name: string; value: number; lines: number }
 
@@ -152,6 +178,8 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
     const today = ymd(new Date());
     return today < end ? today : end;
   }, [pickedFys]);
+  /** Where the years being READ start — what the header, the PDF and the exports quote, not `from`. */
+  const readFrom = `${pickedFys[0].slice(0, 4)}0401`;
 
   const { scope, loading: scopeLoading } = useScopedParties();
   const scopeKey = scope.kind === "all" ? "all" : scope.parties.join("|");
@@ -241,24 +269,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
   );
 
   /** Each dropdown's options come from the rows surviving every OTHER filter (the house cascade). */
-  const options = useMemo(() => {
-    const active = FILTER_KEYS.filter((k) => sel[k].length);
-    const found = byKey(() => new Set<string>());
-    for (const r of base) {
-      let missedKey: FilterKey | null = null;
-      let missed = 0;
-      for (const k of active) {
-        if (!sel[k].includes(FILTERS[k].get(r))) { missed++; missedKey = k; if (missed > 1) break; }
-      }
-      if (missed > 1) continue;
-      for (const k of FILTER_KEYS) if (missed === 0 || k === missedKey) found[k].add(FILTERS[k].get(r));
-    }
-    return Object.fromEntries(FILTER_KEYS.map((k) => {
-      const vals = [...found[k]];
-      vals.sort(k === "month" ? (a, b) => monthKey(a).localeCompare(monthKey(b)) : collator.compare);
-      return [k, vals.map((v) => ({ value: v, label: v }))];
-    })) as Record<FilterKey, MultiSelectOption[]>;
-  }, [base, sel]);
+  const options = useMemo(() => cascadeOptions(base, sel), [base, sel]);
 
   /* -------- figures -------- */
   // Sales → Discount → Returns, which add up to Net. Computed in lib/bushraSalesFigures.ts so the
@@ -306,15 +317,6 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
     }),
     [data, preset, thisFy, lastFy, sel],
   );
-  /** The month both halves line up on: the one picked, else the latest with sales this year. */
-  const compareMonth = useMemo(() => {
-    if (sel.month.length === 1) return monthKey(sel.month[0]);
-    let latest = "";
-    for (const r of compareRows) {
-      if (fyOfDate(r.vch_date) === thisFy && r.vch_date > latest) latest = r.vch_date;
-    }
-    return latest ? latest.slice(0, 6) : ymd(new Date()).slice(0, 6);
-  }, [compareRows, thisFy, sel.month]);
   /** Each product's own quantity writer — Ink in T, Machines in Nos, Spare Parts in pcs. */
   const productFmt = useMemo(() => {
     const cache = new Map<string, QtyFmt>();
@@ -328,23 +330,23 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
     };
   }, [compareRows]);
 
-  /** The last day of this year's data — the year-to-date cut-off both years are measured to. */
+  /**
+   * The last day of this year's data — the year-to-date cut-off both years are measured to. With no
+   * line this year it falls back to today, but never past the FY's own 31-Mar: a past year with
+   * nothing in it would otherwise stretch the month list and the YTD window across later years.
+   */
   const compareTo = useMemo(() => {
     let latest = "";
     for (const r of compareRows) if (fyOfDate(r.vch_date) === thisFy && r.vch_date > latest) latest = r.vch_date;
-    return latest || ymd(new Date());
+    if (latest) return latest;
+    const today = ymd(new Date());
+    const fyEnd = `${Number(thisFy.slice(0, 4)) + 1}0331`;
+    return today < fyEnd ? today : fyEnd;
   }, [compareRows, thisFy]);
+  /** The month both halves line up on: the one picked, else the month of that cut-off. */
+  const compareMonth = sel.month.length === 1 ? monthKey(sel.month[0]) : compareTo.slice(0, 6);
   /** Every month of this FY up to that cut-off — what the month cards run over. */
-  const compareMonths = useMemo(() => {
-    const out: string[] = [];
-    let y = Number(thisFy.slice(0, 4)), m = 4;
-    const end = Number(compareTo.slice(0, 6));
-    while (y * 100 + m <= end) {
-      out.push(`${y}${String(m).padStart(2, "0")}`);
-      if (++m > 12) { m = 1; y++; }
-    }
-    return out;
-  }, [thisFy, compareTo]);
+  const compareMonths = useMemo(() => monthsOfFy(thisFy, compareTo), [thisFy, compareTo]);
   const total = metric === "value" ? kpi.net : kpi.qty;
 
   /** Company and location mixes — the same panels on every dashboard, over its own lines. */
@@ -366,20 +368,22 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
     ]);
     const filters = FILTER_KEYS.filter((k) => sel[k].length).map((k) => `${FILTERS[k].label}: ${sel[k].join(", ")}`);
     const summary = buildSalesSummary({
-      rows, compareRows, focRows: focLines, thisFy, lastFy, ytdTo: compareTo, compareMonth,
+      // FOC rides beside the cards on the Sales dashboard only, as on screen. Anywhere else it would
+      // be every product's free issue on a one-product page, or on the FOC page the same lines twice.
+      rows, compareRows, focRows: foc ? focLines : [], thisFy, lastFy, ytdTo: compareTo, compareMonth,
       dims: COMPARE_DIMS[preset.id] ?? { bucket: "salesType", child: "category" },
       qtyUnit: preset.qtyUnit,
       title: preset.id === "bushra-sales-dashboard" ? "Sales Dashboard" : `Sales · ${preset.title}`,
       // The years being READ, not the window the register was loaded over (which always reaches
       // back a year so the comparisons have something to compare with).
-      periodLabel: `FY ${pickedFys.join(", FY ")} · ${dmy(`${pickedFys[0].slice(0, 4)}0401`)} to ${dmy(compareTo)}`,
+      periodLabel: `FY ${pickedFys.join(", FY ")} · ${dmy(readFrom)} to ${dmy(compareTo)}`,
       filters,
     });
     const blob = await buildSalesPdf(summary);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${preset.title.replace(/\s+/g, "_")}_${from}_${to}.pdf`;
+    a.download = `${preset.title.replace(/\s+/g, "_")}_${readFrom}_${to}.pdf`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
@@ -389,6 +393,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
   const emptyMsg = base.length ? "No lines match those filters." : "No lines on this dashboard in this period.";
   const metricWord = metric === "value" ? "Net value" : "Quantity";
   const tabs = SALES_DASHBOARDS.filter((p) => canSee(p.id));
+  const mailReady = EMAILABLE_REPORTS.some((r) => r.id === preset.id);
   const primaryTitle = PRIMARY_TITLE[preset.primary];
 
   return (
@@ -417,8 +422,11 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
             <FileText className="h-3.5 w-3.5" /> PDF
           </Button>
           {/* Setting up the automatic mail belongs WHERE THE DASHBOARD IS, not three screens away
-              in Settings. Admin-only, because arming an unattended send is an admin's decision. */}
-          {isAdmin && (
+              in Settings. Admin-only, because arming an unattended send is an admin's decision.
+              Shown only once the dashboard is `emailable` in lib/reportCatalog.ts — i.e. once a
+              sender exists. Before that, the schedule panel would read "Active — this sends
+              itself" over a report nothing sends. */}
+          {isAdmin && mailReady && (
             <Button variant="outline" onClick={() => setMailOpen(true)}
                     className="h-8 gap-1.5 rounded-button px-3 text-[12px]">
               <Mail className="h-3.5 w-3.5" /> Auto email
@@ -475,7 +483,9 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
             <MultiSelectFilter
               options={fyOptions.map((o) => ({ value: o, label: `FY ${o}` }))}
               value={fys}
-              onChange={(v) => { setFys(v); setSel(NO_FILTERS); }}
+              // Clearing falls back to the current year — shown as such, never as "All Years",
+              // which is what an empty pick would otherwise read while showing one year.
+              onChange={(v) => { setFys(v.length ? v : [currentFy()]); setSel(NO_FILTERS); }}
               allLabel="All Years"
               searchable
               unit="Years"
@@ -513,7 +523,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
             <RotateCcw className="h-3.5 w-3.5" /> Reset All
           </Button>
           <span className="ml-auto rounded-pill bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-            {fmtInt(rows.length)} lines · {from.slice(6)}-{from.slice(4, 6)}-{from.slice(0, 4)} → {to.slice(6)}-{to.slice(4, 6)}-{to.slice(0, 4)}
+            {fmtInt(rows.length)} lines · {dmy(readFrom)} → {dmy(to)}
           </span>
         </div>
       </div>
@@ -603,15 +613,15 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
 
       {/* ── Quarter & month performance: one table, products across the top ─── */}
       <PeriodTable
-        rows={compareRows} months={compareMonths} thisFy={thisFy} measure={tableMeasure} setMeasure={setTableMeasure}
+        rows={compareRows} months={compareMonths} thisFy={thisFy} ytdTo={compareTo} measure={tableMeasure} setMeasure={setTableMeasure}
         fmtQ={fmtQ} productFmt={productFmt} selected={sel.month} onPickMonths={pickMonths} loading={loading}
         rowDim={(COMPARE_DIMS[preset.id] ?? { bucket: "salesType" }).bucket}
       />
 
       {preset.layout === "overview" ? (
         <Overview
-          rows={rows} from={from} to={to} fys={pickedFys} sections={preset.sections ?? ["type", "salesType"]}
-          sel={sel} toggle={toggle} noteFor={pickedNote} fmtQ={fmtQ} options={options} setFilter={setFilter}
+          rows={rows} base={base} from={readFrom} to={to} fys={pickedFys} sections={preset.sections ?? ["type", "salesType"]}
+          sel={sel} toggle={toggle} noteFor={pickedNote} fmtQ={fmtQ} setFilter={setFilter} onResetDashboard={resetAll}
           focPair={foc && foc.lines > 0 ? { name: FOC_ROW, qty: foc.qty, value: foc.value, lines: foc.lines } : null}
           onFocClick={() => navigate(`${BASE}/bushra-dashboard/sales-foc`)}
           grain={grain} setGrain={setGrain} periodMonths={compareMonths} onPickMonths={pickMonths}
@@ -639,8 +649,8 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
       {/* The overview layout carries its own report; every other dashboard gets the same one here. */}
       {preset.layout === "slices" && (
         <Section id="report" title="Sales Report">
-          <SalesReportTable rows={rows} from={from} to={to} loading={loading} fmtQ={fmtQ}
-                            sel={sel} options={options} setFilter={setFilter} />
+          <SalesReportTable rows={rows} base={base} from={readFrom} to={to} loading={loading} fmtQ={fmtQ}
+                            sel={sel} setFilter={setFilter} onResetDashboard={resetAll} />
         </Section>
       )}
     </div>
@@ -667,15 +677,15 @@ const SECTION_META: Record<SectionDim, { heading: string; subtitle: string; colo
   colour: { heading: "By Colour", subtitle: "by colour", colorOf: (n) => INK_SWATCH[n] ?? OTHER_COLOR },
 };
 
-function Overview({ rows, from, to, fys, sections, sel, toggle, noteFor, fmtQ, options, setFilter, focPair, onFocClick, grain, setGrain, periodMonths, onPickMonths, loading, empty, emptyMessage }: {
+function Overview({ rows, base, from, to, fys, sections, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, focPair, onFocClick, grain, setGrain, periodMonths, onPickMonths, loading, empty, emptyMessage }: {
   noteFor: (k: FilterKey, what: string) => string;
   /** The free-issue total as one row for the Type ring, or null where FOC is the dashboard itself. */
   focPair: Pair | null; onFocClick: () => void;
   /** Month or quarter, and the months the period chart runs over. */
   grain: "month" | "quarter"; setGrain: (g: "month" | "quarter") => void; periodMonths: string[];
   onPickMonths: (labels: string[]) => void;
-  rows: Row[]; from: string; to: string; fys: string[]; sections: SectionDim[]; sel: Record<FilterKey, string[]>;
-  fmtQ: QtyFmt; options: Record<FilterKey, MultiSelectOption[]>; setFilter: (k: FilterKey) => (v: string[]) => void;
+  rows: Row[]; base: Row[]; from: string; to: string; fys: string[]; sections: SectionDim[]; sel: Record<FilterKey, string[]>;
+  fmtQ: QtyFmt; setFilter: (k: FilterKey) => (v: string[]) => void; onResetDashboard: () => void;
   toggle: (k: FilterKey) => (name: string) => void;
   loading: boolean; empty: boolean; emptyMessage: string;
 }) {
@@ -730,8 +740,8 @@ function Overview({ rows, from, to, fys, sections, sel, toggle, noteFor, fmtQ, o
       </Section>
 
       <Section id="report" title="Sales Report">
-        <SalesReportTable rows={rows} from={from} to={to} loading={loading} fmtQ={fmtQ}
-                          sel={sel} options={options} setFilter={setFilter} />
+        <SalesReportTable rows={rows} base={base} from={from} to={to} loading={loading} fmtQ={fmtQ}
+                          sel={sel} setFilter={setFilter} onResetDashboard={onResetDashboard} />
       </Section>
     </>
   );
@@ -923,13 +933,15 @@ function ProductPerformance({ rows, dims, month, ytdTo, thisFy, lastFy, fmtQ, lo
 }) {
   const [open, setOpen] = useState<string | null>(null);
 
+  /** The month still running is compared to the same day last year, like the year to date. */
+  const monthCut = ytdTo.slice(0, 6) === month;
   const windows = useMemo(() => {
-    const curMonth = { from: `${month}01`, to: `${month}31` };
+    const curMonth = { from: `${month}01`, to: monthCut ? ytdTo : `${month}31` };
     const preMonth = { from: yearBefore(curMonth.from), to: yearBefore(curMonth.to) };
     const curYtd = { from: `${thisFy.slice(0, 4)}0401`, to: ytdTo };
     const preYtd = { from: yearBefore(curYtd.from), to: yearBefore(curYtd.to) };
     return { curMonth, preMonth, curYtd, preYtd };
-  }, [month, ytdTo, thisFy]);
+  }, [month, monthCut, ytdTo, thisFy]);
 
   /** A card's own quantity writer: by product line where the buckets ARE product lines. */
   const fmtFor = useMemo(() => {
@@ -979,7 +991,7 @@ function ProductPerformance({ rows, dims, month, ytdTo, thisFy, lastFy, fmtQ, lo
       : list;
   }, [rows, dims, windows]);
 
-  const monthLabel = `${monthName(month)} vs ${monthName(yearBefore(`${month}01`).slice(0, 6))}`;
+  const monthLabel = `${monthName(month)} vs ${monthName(yearBefore(`${month}01`).slice(0, 6))}${monthCut ? ` · 1–${Number(ytdTo.slice(6))}` : ""}`;
   const ytdLabel = `FY ${thisFy} to date vs FY ${lastFy}`;
 
   return (
@@ -1293,8 +1305,9 @@ interface PeriodRow {
  * A cell carries this year's figure; hovering it (or reading the Total column) gives last year and
  * the change, so the table stays a table rather than three numbers per cell.
  */
-function PeriodTable({ rows, months, thisFy, measure, setMeasure, fmtQ, productFmt, selected, onPickMonths, rowDim, loading }: {
-  rows: Row[]; months: string[]; thisFy: string; measure: "value" | "qty";
+function PeriodTable({ rows, months, thisFy, ytdTo, measure, setMeasure, fmtQ, productFmt, selected, onPickMonths, rowDim, loading }: {
+  /** `ytdTo` is this year's last day with data; last year is cut at the same day, like for like. */
+  rows: Row[]; months: string[]; thisFy: string; ytdTo: string; measure: "value" | "qty";
   setMeasure: (m: "value" | "qty") => void; fmtQ: QtyFmt; productFmt: (name: string) => QtyFmt;
   selected: string[]; onPickMonths: (labels: string[]) => void;
   /**
@@ -1371,12 +1384,16 @@ function PeriodTable({ rows, months, thisFy, measure, setMeasure, fmtQ, productF
       else { row.pre[name] = (row.pre[name] ?? 0) + v; row.preTotal += v; }
     };
     const seen = new Set<string>();
+    const lastYearTo = yearBefore(ytdTo);
     for (const r of rows) {
       const ym = r.vch_date.slice(0, 6);
       const isCur = months.includes(ym);
       // Last year's line lands on the month it matches — Sep-25 feeds Sep-26's "last year".
       const mapped = isCur ? ym : `${Number(ym.slice(0, 4)) + 1}${ym.slice(4)}`;
       if (!isCur && !months.includes(mapped)) continue;
+      // ...but only up to the same day: 1–18 Sep this year against 1–18 Sep last, not all of it,
+      // so the running month, its quarter and the year all compare like for like.
+      if (!isCur && r.vch_date > lastYearTo) continue;
       const name = get(r);
       seen.add(name);
       const v = measure === "value" ? r.revenue : r.quantity;
@@ -1389,7 +1406,7 @@ function PeriodTable({ rows, months, thisFy, measure, setMeasure, fmtQ, productF
       ? [...MAIN_PRODUCTS, OTHER_PRODUCT].filter((p) => seen.has(p))
       : [...seen].sort((a, b) => Math.abs(grandRow.cur[b] ?? 0) - Math.abs(grandRow.cur[a] ?? 0));
     return { quarters: [...byQuarter.values()], monthRows: byMonth, grand: grandRow, rowNames: names };
-  }, [rows, months, measure, thisFy, rowDim, byProduct]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, months, measure, thisFy, ytdTo, rowDim, byProduct]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * The columns, left to right: each quarter, with its months slotted in behind it while it is open,
@@ -1446,7 +1463,7 @@ function PeriodTable({ rows, months, thisFy, measure, setMeasure, fmtQ, productF
       right={
         <>
           <span className="text-[11px] text-muted-foreground">
-            last year, this year and the change · open a quarter for its months · click a period to filter
+            last year to the same day, this year and the change · open a quarter for its months · click a period to filter
           </span>
           <div className="flex h-7 overflow-hidden rounded-input border border-border text-[11.5px]">
             {(["value", "qty"] as const).map((m) => (
@@ -1698,42 +1715,76 @@ const dateSortKey = (d: string) => d.split("-").reverse().join("");
  * narrows every card and chart too, and the filter bar shows it. Date, Voucher No. and Particulars
  * are the report's own — they narrow only the table.
  */
-const REPORT_COLUMNS: { header: string; filter: { dash: FilterKey } | { table: TableOnlyKey } | null; right?: boolean }[] = [
-  { header: "Date", filter: { table: "date" } },
-  { header: "Voucher No.", filter: { table: "voucherNo" } },
-  { header: "Type", filter: { dash: "type" } },
-  { header: "Company", filter: { dash: "company" } },
-  { header: "Location", filter: { dash: "location" } },
-  { header: "Customer Name", filter: { dash: "party" } },
-  { header: "Particulars", filter: { table: "particulars" } },
-  { header: "Product", filter: { dash: "salesType" } },
-  { header: "Category", filter: { dash: "category" } },
-  { header: "Group", filter: { dash: "group" } },
-  { header: "Ink Type", filter: { dash: "inkType" } },
-  { header: "Colour", filter: { dash: "colour" } },
-  { header: "Quantity", filter: null, right: true },
-  { header: "Rate", filter: null, right: true },
-  { header: "Revenue", filter: null, right: true },
+/**
+ * Every column sorts (the house rule), each by `sort`: the date in calendar order and the amounts
+ * as numbers, not by the text they print.
+ */
+const REPORT_COLUMNS: {
+  header: string; filter: { dash: FilterKey } | { table: TableOnlyKey } | null; right?: boolean;
+  sort: (r: Row) => string | number;
+}[] = [
+  { header: "Date", filter: { table: "date" }, sort: (r) => r.vch_date },
+  { header: "Voucher No.", filter: { table: "voucherNo" }, sort: (r) => r.voucher_no },
+  { header: "Type", filter: { dash: "type" }, sort: FILTERS.type.get },
+  { header: "Company", filter: { dash: "company" }, sort: (r) => r.company },
+  { header: "Location", filter: { dash: "location" }, sort: (r) => r.location_name },
+  { header: "Customer Name", filter: { dash: "party" }, sort: (r) => r.party },
+  { header: "Particulars", filter: { table: "particulars" }, sort: (r) => r.particulars },
+  { header: "Product", filter: { dash: "salesType" }, sort: FILTERS.salesType.get },
+  { header: "Category", filter: { dash: "category" }, sort: (r) => r.item_category },
+  { header: "Group", filter: { dash: "group" }, sort: (r) => r.item_group },
+  { header: "Ink Type", filter: { dash: "inkType" }, sort: (r) => r.ink_type },
+  { header: "Colour", filter: { dash: "colour" }, sort: (r) => r.colour },
+  { header: "Quantity", filter: null, right: true, sort: (r) => r.quantity },
+  { header: "Rate", filter: null, right: true, sort: (r) => r.rate },
+  { header: "Revenue", filter: null, right: true, sort: (r) => r.revenue },
 ];
 
-/** The full sales report: every line the filters leave, filterable per column, searchable, paged, exportable. */
-function SalesReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilter }: {
-  rows: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
-  sel: Record<FilterKey, string[]>; options: Record<FilterKey, MultiSelectOption[]>;
+/** The full sales report: every line the filters leave, filterable and sortable per column, searchable, paged, exportable. */
+function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
+  /** The dashboard's filtered lines, and `base` — its slice before any filter, for the dropdowns. */
+  rows: Row[]; base: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
+  sel: Record<FilterKey, string[]>;
   setFilter: (k: FilterKey) => (v: string[]) => void;
+  onResetDashboard: () => void;
 }) {
   const [q, setQ] = useState("");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
-  const searched = useMemo(() => {
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
+  const matchesSearch = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter((r) =>
-      r.party.toLowerCase().includes(s) || r.particulars.toLowerCase().includes(s) || r.voucher_no.toLowerCase().includes(s));
-  }, [rows, q]);
-  const shown = useMemo(
-    () => searched.filter((r) => TABLE_ONLY_KEYS.every((k) => !tsel[k].length || tsel[k].includes(TABLE_ONLY[k](r)))),
-    [searched, tsel],
+    return (r: Row) => !s ||
+      r.party.toLowerCase().includes(s) || r.particulars.toLowerCase().includes(s) || r.voucher_no.toLowerCase().includes(s);
+  }, [q]);
+  const keepTable = (r: Row, except?: TableOnlyKey) =>
+    TABLE_ONLY_KEYS.every((k) => k === except || !tsel[k].length || tsel[k].includes(TABLE_ONLY[k](r)));
+  const searched = useMemo(() => rows.filter(matchesSearch), [rows, matchesSearch]);
+  const shown = useMemo(() => searched.filter((r) => keepTable(r)), [searched, tsel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sorted = useMemo(() => {
+    if (!sort) return shown;
+    const get = REPORT_COLUMNS[sort.col].sort;
+    return [...shown].sort((a, b) => {
+      const x = get(a), y = get(b);
+      return sort.dir * (typeof x === "number" && typeof y === "number" ? x - y : collator.compare(String(x), String(y)));
+    });
+  }, [shown, sort]);
+  /** Text columns open A→Z, amounts largest first; a second click turns it round. */
+  const toggleSort = (col: number) => setSort((s) =>
+    s?.col === col ? { col, dir: s.dir === 1 ? -1 : 1 } : { col, dir: REPORT_COLUMNS[col].right ? -1 : 1 });
+  /**
+   * The dashboard columns' dropdowns cascade off the table's own filters and search too, so no pick
+   * made in this row can return an empty table. (The filter bar's lists stay the dashboard's own.)
+   */
+  const dashOptions = useMemo(
+    () => cascadeOptions(base.filter((r) => matchesSearch(r) && keepTable(r)), sel),
+    [base, sel, matchesSearch, tsel], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  /** Clears what could have emptied the table — its own filters and search, and the dashboard's when those alone do. */
+  const clearFilters = () => {
+    setTsel(NO_TABLE_FILTERS);
+    setQ("");
+    if (!rows.length) onResetDashboard();
+  };
   /** Table-only options, each from the rows surviving the OTHER table filters. */
   const tableOptions = useMemo(() => Object.fromEntries(TABLE_ONLY_KEYS.map((k) => {
     const vals = new Set<string>();
@@ -1745,7 +1796,9 @@ function SalesReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilt
     return [k, list.map((v) => ({ value: v, label: v }))];
   })) as Record<TableOnlyKey, MultiSelectOption[]>, [searched, tsel]);
 
-  const page = usePagination(shown, { resetKey: `${rows.length}|${q}|${TABLE_ONLY_KEYS.map((k) => tsel[k].join(",")).join("|")}` });
+  const page = usePagination(sorted, {
+    resetKey: `${rows.length}|${q}|${TABLE_ONLY_KEYS.map((k) => tsel[k].join(",")).join("|")}|${sort?.col}|${sort?.dir}`,
+  });
   const totals = useMemo(() => shown.reduce((t, r) => ({ qty: t.qty + r.quantity, value: t.value + r.revenue }), { qty: 0, value: 0 }), [shown]);
   const tableFilterCount = TABLE_ONLY_KEYS.reduce((n, k) => n + tsel[k].length, 0);
 
@@ -1765,7 +1818,7 @@ function SalesReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilt
                       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Customer, particulars, voucher…"
                              className="h-8 w-56 rounded-input pl-7 text-[12px]" />
                     </div>
-                    <Button onClick={() => shown.length && exportSalesRegisterXlsx(shown, { from, to, extra: REPORT_EXTRA, filePrefix: "Bushra_Sales_Report" })}
+                    <Button onClick={() => sorted.length && exportSalesRegisterXlsx(sorted, { from, to, extra: REPORT_EXTRA, filePrefix: "Bushra_Sales_Report" })}
                             disabled={!shown.length}
                             className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
                       <Download className="h-3.5 w-3.5" /> Export
@@ -1776,11 +1829,18 @@ function SalesReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilt
         <table className="w-full min-w-[1800px] border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              {REPORT_COLUMNS.map((c) => (
+              {REPORT_COLUMNS.map((c, i) => (
                 <th key={c.header} className={cn(
                   "whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                   c.right ? "text-right" : "text-left",
-                )}>{c.header}</th>
+                )}>
+                  <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
+                          className={cn("inline-flex items-center gap-1 uppercase hover:text-foreground", sort?.col === i && "text-foreground")}>
+                    {c.header}
+                    {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                  </button>
+                </th>
               ))}
             </tr>
             {/* Filter row — an "Any" dropdown under each heading. */}
@@ -1789,7 +1849,7 @@ function SalesReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilt
                 <th key={c.header} className="px-2 py-1.5 font-normal">
                   {c.filter && ("dash" in c.filter ? (
                     <MultiSelectFilter
-                      options={options[c.filter.dash]}
+                      options={dashOptions[c.filter.dash]}
                       value={sel[c.filter.dash]}
                       onChange={setFilter(c.filter.dash)}
                       allLabel="Any"
@@ -1816,7 +1876,17 @@ function SalesReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilt
           </thead>
           <tbody>
             {page.pageItems.length === 0 ? (
-              <tr><td colSpan={REPORT_COLUMNS.length} className="py-8 text-center text-[12px] text-muted-foreground">No lines match.</td></tr>
+              // The table stays standing when the filters match nothing, so the way back is right here.
+              <tr><td colSpan={REPORT_COLUMNS.length} className="py-8 text-center text-[12px] text-muted-foreground">
+                {base.length ? (
+                  <span className="inline-flex items-center gap-3">
+                    No lines match those filters.
+                    <Button variant="outline" onClick={clearFilters} className="h-7 gap-1.5 rounded-button px-2.5 text-[11.5px]">
+                      <RotateCcw className="h-3 w-3" /> Clear filters
+                    </Button>
+                  </span>
+                ) : "No lines on this dashboard in this period."}
+              </td></tr>
             ) : page.pageItems.map((r, i) => (
               <tr key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
                 <td className="whitespace-nowrap px-3 py-1.5 tabular-nums">{r.date_display}</td>

@@ -180,13 +180,16 @@ export function buildSalesPdfWith(assets: BrandAssets, s: SalesSummary, opts: Sa
   tile(M + 3 * (colW + 4), y, colW, 26, "Credit notes & returns", fmtSales(k.less), `${fmtInt(k.vouchers)} vouchers · ${fmtInt(k.parties)} customers`, "Summary", BAD);
 
   y += 30;
-  // Free issues sit beside the totals, never inside them.
+  // Free issues sit beside the totals, never inside them — on the Sales dashboard, the only one
+  // that passes them in. Elsewhere the strip carries the quantity alone.
   doc.setDrawColor(LINE);
   doc.setFillColor("#faf9f6");
   doc.roundedRect(M, y, PAGE_W - 2 * M, 12, 1.5, 1.5, "FD");
-  text("GIVEN FREE (FOC) - not counted above", M + 5, y + 5, 7, true, MUTED);
-  text(`${s.fmtQ(s.foc.qty)}   ${fmtSales(s.foc.value)}   ${fmtInt(s.foc.vouchers)} vouchers`, M + 5, y + 10, 9.5, true, INK);
-  text(`Quantity sold ${s.fmtQ(k.qty)}`, PAGE_W - M - 5, y + 8, 9, false, MUTED, "right");
+  if (s.foc.lines) {
+    text("GIVEN FREE (FOC) - not counted above", M + 5, y + 5, 7, true, MUTED);
+    text(`${s.fmtQ(s.foc.qty)}   ${fmtSales(s.foc.value)}   ${fmtInt(s.foc.vouchers)} vouchers`, M + 5, y + 10, 9.5, true, INK);
+  }
+  text(`${s.foc.lines ? "Quantity sold" : "Quantity"} ${s.fmtQ(k.qty)}`, PAGE_W - M - 5, y + 8, 9, false, MUTED, "right");
   hit(M, y, PAGE_W - 2 * M, 12, "Summary");
 
   /* the three blocks across the slide, each a link into its own section */
@@ -324,26 +327,23 @@ export function buildSalesPdfWith(assets: BrandAssets, s: SalesSummary, opts: Sa
         section(measure === "value" ? "Revenue by quarter & month" : "Quantity by quarter & month",
                 "last year · this year · change");
         // Quarters first, then each quarter's months, so the page reads the way the screen does.
-        const cols = [{ header: "", w: 46 },
-                      ...s.periods.flatMap((p) => ([
-                        { header: `${p.label} LY`, w: 26, align: "right" as const },
-                        { header: "TY", w: 26, align: "right" as const },
-                        { header: "Chg", w: 18, align: "right" as const },
-                      ]))];
+        // Each period is last year, this year, change — the order its headers below say, and the
+        // order the screen's table uses.
         const cellsFor = (name: string | null): Cell[] => {
           const out: Cell[] = [{ text: name ?? "Total", bold: !name }];
           for (const p of s.periods) {
             const c = name ? s.pivot[measure][name]?.[p.key] : s.totals[measure][p.key];
             const cur = c?.cur ?? 0, pre = c?.pre ?? 0;
             const fmt = measure === "value" ? (n: number) => fmtSales(n) : s.fmtRowQ(name ?? "");
-            out.push({ text: cur ? fmt(cur) : "—", align: "right", bold: !name });
             out.push({ text: pre ? fmt(pre) : "—", align: "right", color: MUTED });
+            out.push({ text: cur ? fmt(cur) : "—", align: "right", bold: !name });
             out.push(change(cur, pre));
           }
           return out;
         };
-        // A wide pivot is split into chunks of four periods so nothing runs off the page.
-        const CHUNK = 4;
+        // A wide pivot is split into chunks so nothing runs off the page: 46 + 3 × 70 = 256 mm of
+        // the 273 between the margins. Four periods (326 mm) cut the last one off.
+        const CHUNK = 3;
         for (let i = 0; i < s.periods.length; i += CHUNK) {
           const slice = s.periods.slice(i, i + CHUNK);
           const sliceCols = [{ header: "", w: 46 },
@@ -356,7 +356,6 @@ export function buildSalesPdfWith(assets: BrandAssets, s: SalesSummary, opts: Sa
           room(30);
           table(sliceCols, [...s.rowNames.map((n) => pickCols(cellsFor(n))), pickCols(cellsFor(null))]);
         }
-        void cols;
       }
     }
   }

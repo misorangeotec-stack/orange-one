@@ -26,14 +26,19 @@ export type LineType = "Output" | "Consumption";
 export type LineCategory = "Finished Good" | "Scrap" | "RM Consumption";
 export type ItemGroup = "Sublimation" | "Reactive" | "Others";
 
-/**
- * Colour words, in the order they are tried. GRAY is normalised to GREY. Also used by the Bushra
- * Sales Register (lib/bushraSalesRegister.ts) — TURQUOISE is there for its dye names.
- */
+/** Colour words, in the order they are tried. GRAY is normalised to GREY. */
 export const COLOURS = [
   "BLACK", "CYAN", "MAGENTA", "YELLOW", "GREY", "GRAY", "PINK", "RED", "ORANGE", "GREEN", "BLUE",
-  "VIOLET", "PURPLE", "BROWN", "WHITE", "TURQUOISE",
+  "VIOLET", "PURPLE", "BROWN", "WHITE",
 ] as const;
+
+/**
+ * The Bushra Sales Register's colours (lib/bushraSalesRegister.ts): the same list plus TURQUOISE, for
+ * its dye names. KEPT APART ON PURPOSE — colourOf takes the word that appears first, so adding one to
+ * COLOURS re-buckets Batch Costing, the Production Dashboard and Packing Material ("TURQUOISE BLUE"
+ * would stop being BLUE). Add it there only with the Batch Costing owner's say-so.
+ */
+export const SALES_REGISTER_COLOURS: readonly string[] = [...COLOURS, "TURQUOISE"];
 
 interface CategoryRule {
   /** Tested against the upper-cased FG name. */
@@ -93,11 +98,11 @@ export function lineCategory(type: LineType, item: string): LineCategory {
 }
 
 /** The colour word in a name — the one that appears FIRST, so "BLACK ULTRA" is BLACK. "" if none. */
-export function colourOf(item: string): string {
+export function colourOf(item: string, colours: readonly string[] = COLOURS): string {
   const name = up(item);
   let best = "";
   let at = Infinity;
-  for (const c of COLOURS) {
+  for (const c of colours) {
     const m = new RegExp(`\\b${c}\\b`).exec(name);
     if (m && m.index < at) { at = m.index; best = c; }
   }

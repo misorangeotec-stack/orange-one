@@ -887,10 +887,11 @@ export const REPORTS: ReportEntry[] = [
   ...SALES_DASHBOARDS.map((p): ReportEntry => ({
     id: p.id,
     scoping: "party-server",
-    // Mailable: the figures are built by the dashboard's own code (lib/bushraSalesSummary.ts) and
-    // the PDF by lib/bushraSalesPdf.ts, both checked on screen before this was ticked. What goes
-    // in, and to whom, is chosen per dashboard in Settings → Permissions.
-    emailable: true,
+    // NOT emailable yet: the figures (lib/bushraSalesSummary.ts), the PDF (lib/bushraSalesPdf.ts)
+    // and the mail setup (components/BushraSalesMailOptions.tsx) are built, but no sender reads
+    // them — the Collections runner mails zero-collections alone. Tick `emailable: true` in the
+    // commit that adds the sender, as the rule on the field says; that also brings back the
+    // dashboard's Auto email button and its switch in Settings → Permissions.
     title: p.id === "bushra-sales-dashboard" ? p.title : `Sales — ${p.title} Dashboard`,
     purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
     category: "bushra-report",

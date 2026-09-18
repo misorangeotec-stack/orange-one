@@ -13,7 +13,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Download, NotebookText, Search } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Download, NotebookText, RotateCcw, Search } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
@@ -70,25 +70,31 @@ const NO_FILTERS: Record<FilterKey, string[]> = emptyByKey(() => []);
 const dateKey = (d: string) => d.split("-").reverse().join("");
 const byDate = (a: string, b: string) => dateKey(a).localeCompare(dateKey(b));
 
-/** The table's columns in order: heading, which filter sits under it (none on the amounts), alignment. */
-const TABLE_COLUMNS: { header: string; filter: FilterKey | null; right?: boolean }[] = [
-  { header: "Location", filter: "location" },
-  { header: "Company", filter: "company" },
-  { header: "Type", filter: "type" },
-  { header: "Date", filter: "date" },
-  { header: "Party Name", filter: "party" },
-  { header: "Particulars", filter: "particulars" },
-  { header: "Voucher Type", filter: "voucherType" },
-  { header: "Voucher No.", filter: "voucherNo" },
-  { header: "GSTIN/UIN", filter: "gstin" },
-  { header: "Quantity", filter: null, right: true },
-  { header: "Rate", filter: null, right: true },
-  { header: "Revenue", filter: null, right: true },
-  { header: "Sales-Type", filter: "salesType" },
-  { header: "Ink Type", filter: "inkType" },
-  { header: "Group", filter: "group" },
-  { header: "Category", filter: "category" },
-  { header: "Colour", filter: "colour" },
+const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+/**
+ * The table's columns in order: heading, which filter sits under it (none on the amounts),
+ * alignment, and what it sorts by — every column sorts, the date by calendar order and the amounts
+ * as numbers rather than the text they print.
+ */
+const TABLE_COLUMNS: { header: string; filter: FilterKey | null; right?: boolean; sort: (r: Row) => string | number }[] = [
+  { header: "Location", filter: "location", sort: (r) => r.location_name },
+  { header: "Company", filter: "company", sort: (r) => r.company },
+  { header: "Type", filter: "type", sort: (r) => r.type },
+  { header: "Date", filter: "date", sort: (r) => r.vch_date },
+  { header: "Party Name", filter: "party", sort: (r) => r.party },
+  { header: "Particulars", filter: "particulars", sort: (r) => r.particulars },
+  { header: "Voucher Type", filter: "voucherType", sort: (r) => r.voucher_type },
+  { header: "Voucher No.", filter: "voucherNo", sort: (r) => r.voucher_no },
+  { header: "GSTIN/UIN", filter: "gstin", sort: (r) => r.gstin ?? "" },
+  { header: "Quantity", filter: null, right: true, sort: (r) => r.quantity },
+  { header: "Rate", filter: null, right: true, sort: (r) => r.rate },
+  { header: "Revenue", filter: null, right: true, sort: (r) => r.revenue },
+  { header: "Sales-Type", filter: "salesType", sort: (r) => r.sales_type },
+  { header: "Ink Type", filter: "inkType", sort: (r) => r.ink_type },
+  { header: "Group", filter: "group", sort: (r) => r.item_group },
+  { header: "Category", filter: "category", sort: (r) => r.item_category },
+  { header: "Colour", filter: "colour", sort: (r) => r.colour },
 ];
 
 const EXPORT_EXTRA: ExtraColumn<Row>[] = [
@@ -124,6 +130,9 @@ export default function BushraSalesRegister() {
     staleTime: 5 * 60 * 1000,
   });
   const error = lookupError ?? rowsError;
+  // The rows query waits, DISABLED, for the item lookup and the scope — and a disabled query is not
+  // "loading" to TanStack. Without the two extra checks the page shows "0 lines · ₹0" meanwhile.
+  const loading = !error && (isLoading || scopeLoading || !lookup);
   const all = useMemo(() => rows ?? [], [rows]);
   const notInMasters = useMemo(() => new Set(all.filter((r) => !r.in_masters).map((r) => r.particulars)).size, [all]);
 
@@ -168,8 +177,21 @@ export default function BushraSalesRegister() {
 
   const totalRevenue = useMemo(() => filtered.reduce((s, r) => s + r.revenue, 0), [filtered]);
 
-  const page = usePagination(filtered, {
-    resetKey: `${from}|${to}|${FILTER_KEYS.map((k) => sel[k].join(",")).join("|")}|${search}`,
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const get = TABLE_COLUMNS[sort.col].sort;
+    return [...filtered].sort((a, b) => {
+      const x = get(a), y = get(b);
+      return sort.dir * (typeof x === "number" && typeof y === "number" ? x - y : collator.compare(String(x), String(y)));
+    });
+  }, [filtered, sort]);
+  /** Text columns open A→Z, amounts largest first; a second click turns it round. */
+  const toggleSort = (col: number) => setSort((s) =>
+    s?.col === col ? { col, dir: s.dir === 1 ? -1 : 1 } : { col, dir: TABLE_COLUMNS[col].right ? -1 : 1 });
+
+  const page = usePagination(sorted, {
+    resetKey: `${from}|${to}|${FILTER_KEYS.map((k) => sel[k].join(",")).join("|")}|${search}|${sort?.col}|${sort?.dir}`,
   });
 
   const chips: FilterChip[] = FILTER_KEYS.flatMap((k) =>
@@ -180,8 +202,8 @@ export default function BushraSalesRegister() {
   const clearAll = () => { setSel(NO_FILTERS); setSearch(""); };
 
   const onExport = () => {
-    if (!filtered.length) return;
-    exportSalesRegisterXlsx(filtered, { from, to, extra: EXPORT_EXTRA, filePrefix: "Bushra_Sales_Register" });
+    if (!sorted.length) return;
+    exportSalesRegisterXlsx(sorted, { from, to, extra: EXPORT_EXTRA, filePrefix: "Bushra_Sales_Register" });
   };
 
   const filterBox = (key: FilterKey, allLabel: string, unit: string, width: string) => (
@@ -256,7 +278,7 @@ export default function BushraSalesRegister() {
 
       {!validRange ? (
         <div className="py-16 text-center text-muted-foreground">Pick a valid date range (from must be on or before to).</div>
-      ) : isLoading ? (
+      ) : loading ? (
         <div className="py-16 text-center text-muted-foreground">Loading the sales register…</div>
       ) : error ? (
         <div className="py-16 text-center text-destructive">{(error as Error).message}</div>
@@ -274,8 +296,15 @@ export default function BushraSalesRegister() {
             <table className="w-full border-collapse min-w-[1800px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  {TABLE_COLUMNS.map((c) => (
-                    <th key={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>{c.header}</th>
+                  {TABLE_COLUMNS.map((c, i) => (
+                    <th key={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
+                      <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
+                              className={`inline-flex items-center gap-1 uppercase hover:text-foreground ${sort?.col === i ? "text-foreground" : ""}`}>
+                        {c.header}
+                        {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
+                          : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                      </button>
+                    </th>
                   ))}
                 </tr>
                 {/* Filter row — one dropdown under each heading, same selection as the toolbar. */}
@@ -298,7 +327,17 @@ export default function BushraSalesRegister() {
               </thead>
               <tbody>
                 {page.pageItems.length === 0 ? (
-                  <tr><td colSpan={TABLE_COLUMNS.length} className="py-10 text-center text-sm text-muted-foreground">No lines match those filters.</td></tr>
+                  // The table stays standing when the filters match nothing, so the way back is right here.
+                  <tr><td colSpan={TABLE_COLUMNS.length} className="py-10 text-center text-sm text-muted-foreground">
+                    {all.length ? (
+                      <span className="inline-flex items-center gap-3">
+                        No lines match those filters.
+                        <Button variant="outline" onClick={clearAll} className="h-8 gap-1.5 rounded-button px-3 text-xs">
+                          <RotateCcw className="h-3.5 w-3.5" /> Clear filters
+                        </Button>
+                      </span>
+                    ) : "No sales lines in this period."}
+                  </td></tr>
                 ) : (
                   page.pageItems.map((r, i) => (
                     <tr key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">

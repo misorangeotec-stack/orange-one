@@ -95,7 +95,9 @@ export function buildSalesSummary(input: SummaryInput): SalesSummary {
   };
 
   /* ---- this month and the year to date, each against last year ---- */
-  const curMonth = { from: `${compareMonth}01`, to: `${compareMonth}31` };
+  // The month still running stops at the same day as the year to date, on both sides.
+  const monthCut = ytdTo.slice(0, 6) === compareMonth;
+  const curMonth = { from: `${compareMonth}01`, to: monthCut ? ytdTo : `${compareMonth}31` };
   const preMonth = { from: yearBefore(curMonth.from), to: yearBefore(curMonth.to) };
   const curYtd = { from: `${thisFy.slice(0, 4)}0401`, to: ytdTo };
   const preYtd = { from: yearBefore(curYtd.from), to: yearBefore(curYtd.to) };
@@ -141,11 +143,14 @@ export function buildSalesSummary(input: SummaryInput): SalesSummary {
   const totals = { value: {} as Record<string, PeriodCell>, qty: {} as Record<string, PeriodCell> };
   const cell = (bag: Record<string, PeriodCell>, key: string) => (bag[key] ??= { cur: 0, pre: 0 });
   const seen = new Set<string>();
+  const lastYearTo = yearBefore(ytdTo);
   for (const r of compareRows) {
     const ym = r.vch_date.slice(0, 6);
     const isCur = months.includes(ym);
     const mapped = isCur ? ym : `${Number(ym.slice(0, 4)) + 1}${ym.slice(4)}`;
     if (!isCur && !months.includes(mapped)) continue;
+    // Last year only to the same day, so the running month, its quarter and the year are like for like.
+    if (!isCur && r.vch_date > lastYearTo) continue;
     const name = DIMS[dims.bucket](r);
     seen.add(name);
     for (const [measure, v] of [["value", r.revenue], ["qty", r.quantity]] as const) {
@@ -168,7 +173,8 @@ export function buildSalesSummary(input: SummaryInput): SalesSummary {
     title: input.title,
     periodLabel: input.periodLabel,
     filters: input.filters,
-    generatedAt: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }),
+    // IST, stated: the scheduled mail builds this on a UTC runner, which would print 5.5 hours early.
+    generatedAt: `${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })} IST`,
     kpis: salesKpis(rows),
     foc: {
       qty: focRows.reduce((s, r) => s + r.quantity, 0),
@@ -178,7 +184,7 @@ export function buildSalesSummary(input: SummaryInput): SalesSummary {
     },
     company: pairBy(rows, DIMS.company),
     location: pairBy(rows, DIMS.location),
-    monthLabel: `${monthName(compareMonth)} vs ${monthName(yearBefore(`${compareMonth}01`).slice(0, 6))}`,
+    monthLabel: `${monthName(compareMonth)} vs ${monthName(yearBefore(`${compareMonth}01`).slice(0, 6))}${monthCut ? ` · 1–${Number(ytdTo.slice(6))}` : ""}`,
     ytdLabel: `FY ${thisFy} to date vs FY ${lastFy}`,
     performance: sortRows(perfRows()),
     periods,

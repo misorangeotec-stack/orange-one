@@ -32,7 +32,7 @@ import { supabase } from "@/core/platform/supabase";
 import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { loadSalesRegister, type RegisterRow } from "./salesRegister";
 import { companyGuidOf, fetchCompanyMap, makeCompanyResolver } from "./companyMap";
-import { colourOf } from "./batchCostingRules";
+import { SALES_REGISTER_COLOURS, colourOf } from "./batchCostingRules";
 import { loadSaleTypeRuleset, type SaleType, type SaleTypeResolver } from "@/apps/daily-report/lib/saleType";
 
 export type SalesTypeSource = "Particulars" | "Central Masters" | "Voucher Type" | "";
@@ -323,7 +323,7 @@ export function classifyRegisterRow(
     ink_type: itemType === "ink" && sales_type === "Ink" ? pick(copies, guid, "inkType") ?? "" : "",
     item_group: pick(copies, guid, "group") ?? "",
     item_category: pick(copies, guid, "category") ?? "",
-    colour: colourOf(r.particulars),
+    colour: colourOf(r.particulars, SALES_REGISTER_COLOURS),
     unit: pick(copies, guid, "unit") ?? "",
     in_masters: copies.length > 0,
   };
