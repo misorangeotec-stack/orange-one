@@ -404,29 +404,40 @@ export default function InkItemMaster() {
     setShowNewDialog(false);
   };
 
+  /**
+   * The rows the master LISTS — what is on the shelf, before the column filters narrow it.
+   *
+   * The counts below describe the list as a whole, so they must not move when a filter is set,
+   * and must ignore what the list no longer carries. Counting the loaded set instead reported
+   * numbers belonging to inks that have since sold out and dropped off: the last number actually
+   * visible was 54 while the card said 56.
+   *
+   * Those numbers are not lost — they are still on their lines, waiting for stock to return.
+   */
+  const listed = useMemo(
+    () => (stockOnly ? master.filter((r) => r.closingQty) : master),
+    [master, stockOnly],
+  );
+
   const highest = useMemo(() => {
-    // Counted from the ROWS, not from the stored map. A number can outlive its line — typing a
-    // description re-keys the line and leaves the old key behind — and reading the map straight
-    // reported numbers that no item on screen carries any more. Only a number some row actually
-    // shows can be the last one used.
     let top = 0;
-    for (const r of master) {
+    for (const r of listed) {
       const n = order[r.mergeKey] ?? order[r.legacyKey];
       if (n !== undefined && n > top) top = n;
     }
     return top;
-  }, [master, order]);
+  }, [listed, order]);
 
   const unnumbered = useMemo(() => {
     const seen = new Set<string>();
     let n = 0;
-    for (const r of master) {
+    for (const r of listed) {
       if (seen.has(r.mergeKey)) continue;
       seen.add(r.mergeKey);
       if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) n++;
     }
     return n;
-  }, [master, order]);
+  }, [listed, order]);
   const edited = Object.keys(overrides).length;
 
   // Group options come from the LOADED rows, not the filtered ones, so choices do not vanish
