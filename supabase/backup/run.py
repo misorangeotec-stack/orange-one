@@ -17,8 +17,9 @@ WHAT ONE RUN DOES
      Weekly (full_files runs) it also checks every logged file is still IN Drive
      and copies back any that were deleted there by hand (verify_drive_files).
   3. DATABASES — a complete compressed pg_dump of Orange One every night, and of
-     Tally (ConnectWave) when the database says so (Sundays), each encrypted
-     with age before it leaves the runner, uploaded, and its md5 checked.
+     Tally (ConnectWave) when the database says so (Sundays), uploaded and its
+     md5 checked. Not encrypted (client's decision 18-09-2026); setting the
+     BACKUP_AGE_RECIPIENT secret turns age encryption back on.
   4. RETENTION — only after tonight's dump is verified: keep the newest N dumps
      of that database (7 / 4), delete the rest permanently (not to Drive's bin,
      which would still count against the space for 30 days).
@@ -313,8 +314,13 @@ def files_step(run_id: int, start: dict, stats: dict) -> None:
 
 def dump_database(label: str, url: str, root: str, prefix: str, keep: int, stats: dict) -> None:
     stamp = now_ist().strftime("%Y-%m-%d_%H%M")
-    name = f"{prefix}_{stamp}.dump.age"
+    # Encryption is OFF by the client's decision (18-09-2026): the copies are
+    # plain pg_dump files. It switches back on by setting the BACKUP_AGE_RECIPIENT
+    # secret again — no code change. Access is then guarded by Drive sharing and
+    # backup@'s 2-step verification alone.
+    encrypt = bool(os.environ.get("AGE_RECIPIENT", "").strip())
     plain = WORK / f"{prefix}_{stamp}.dump"
+    name = plain.name + (".age" if encrypt else "")
     enc = WORK / name
     t0 = time.time()
 
@@ -329,11 +335,12 @@ def dump_database(label: str, url: str, root: str, prefix: str, keep: int, stats
         raise RuntimeError(f"{label}: pg_dump failed: {(r.stderr or '')[-600:]}")
     dump_bytes = plain.stat().st_size
 
-    r = subprocess.run([AGE, "--encrypt", "--recipient", env("AGE_RECIPIENT"), "--output", str(enc), str(plain)],
-                       text=True, capture_output=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"{label}: encryption failed: {r.stderr[-300:]}")
-    plain.unlink()
+    if encrypt:
+        r = subprocess.run([AGE, "--encrypt", "--recipient", env("AGE_RECIPIENT"), "--output", str(enc), str(plain)],
+                           text=True, capture_output=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"{label}: encryption failed: {r.stderr[-300:]}")
+        plain.unlink()
 
     md5 = hashlib.md5()
     with enc.open("rb") as fh:
@@ -354,7 +361,10 @@ def dump_database(label: str, url: str, root: str, prefix: str, keep: int, stats
 
     # Retention: count-based, and only now that tonight's copy is proven.
     r = rclone("lsf", drive(folder), "--files-only", capture=True)
-    mine = sorted(f for f in r.stdout.splitlines() if f.startswith(prefix + "_") and f.endswith(".dump.age"))
+    # Both kinds count, so the copies taken while encryption was on age out
+    # through the same "keep the newest N" as the plain ones (names sort by date).
+    mine = sorted(f for f in r.stdout.splitlines()
+                  if f.startswith(prefix + "_") and (f.endswith(".dump") or f.endswith(".dump.age")))
     removed = []
     for old in mine[:-keep] if len(mine) > keep else []:
         rclone("deletefile", drive(f"{folder}/{old}"), "--drive-use-trash=false", "--log-level", "ERROR")
