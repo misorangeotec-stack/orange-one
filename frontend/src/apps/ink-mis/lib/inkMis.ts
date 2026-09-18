@@ -416,7 +416,12 @@ export async function loadInkPositions(
       needsCode: !effectiveCode,
     });
 
-    const mergeKey = effectiveCode || soloKey(company.key, row.item);
+    // THE ONE KEY, computed once above. This used to be recomputed here from the code alone,
+    // which quietly undid the description merge: the item master keyed a line one way while the
+    // dashboard line, the sales-register bridge and the planning inputs keyed it another. The
+    // visible symptom was an average that never arrived, because the figure was filed under a key
+    // no row asked for.
+    const mergeKey = mergeKeyForRow;
     nameToCode.set(key, mergeKey);
 
     let pos = merged.get(mergeKey);
