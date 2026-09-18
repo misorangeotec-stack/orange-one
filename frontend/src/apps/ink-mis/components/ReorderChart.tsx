@@ -1,48 +1,47 @@
 /**
- * What to order, by group — the one question this whole report exists to answer.
+ * What to order — the one question this whole report exists to answer.
  *
  * ─── THE NUMBER ──────────────────────────────────────────────────────────────────────────
  *
- *   to order = month max level − (stock + ETA + at port)
+ *   to order = month max level − (stock + ETA + at port + plant orders)
  *
  * Month max level is the planner's own target (three-month average × lead time × safety), and
- * ink already on the water counts against it, exactly as it does in the table's Total column.
+ * supply already arranged counts against it, exactly as it does in the table's Total column.
  * A line at or above its target contributes nothing; a line with no target set contributes
  * nothing either, because a shortfall against an unset target is not a fact.
  *
- * ─── THE FORM ────────────────────────────────────────────────────────────────────────────
+ * ─── THE FORM: BUCKETS, NOT BARS ─────────────────────────────────────────────────────────
  *
- * Magnitude compared across a handful of named things: horizontal bars, longest first, so the
- * group to deal with first is the one at the top. One series, so no legend — the heading says
- * what is plotted. Every bar is labelled, which is only safe because the list is capped at ten
- * groups; the rest fold into "Other groups" rather than becoming a wall of hairlines.
+ * This was a bar chart by group. It read well but stood nearly 400px tall on a screen whose
+ * job is the table underneath, and the planner asked for the height back. Six or seven figures
+ * compared at a glance do not need a plot: a row of small totals says the same thing in one
+ * line, and the comparison that matters — which bucket is biggest — survives fine in numbers.
  *
- * Clicking a group opens its inks with their own figures, since "REACTIVE needs 4,000" is
- * where the question starts, not where it ends.
+ * The buckets are CATEGORIES (Reactive, Sublimation, Pigment, Disperse, Chemical, Others),
+ * which is how the planner buys. Groups still appear, but inside an opened bucket, where they
+ * organise the list rather than setting the shape of the screen.
+ *
+ * Opening one shows its inks with the working, not just the answer: stock, what is on the way,
+ * the target and the shortfall those produce. A bare shortfall cannot be argued with — it does
+ * not say whether the number is large because stock is low or because the target is high.
  *
  * It follows the table: whatever is filtered, or whichever company tab is open, is what is
- * charted. Two different answers on one screen would be worse than none.
+ * counted. Two different answers on one screen would be worse than none.
  */
 import { useMemo, useState } from "react";
-import { fmtDays, fmtQty, type InkRow } from "../lib/inkMis";
+import { INK_CATEGORIES, fmtDays, fmtQty, type InkRow } from "../lib/inkMis";
 
-const TOP_N = 10;
-const BAR = "#FF6A1F"; // the Hub's accent, and the only hue here — a single series
+const UNSET = "Not set";
 
 export function reorderQty(r: InkRow): number {
   if (r.monthMaxLevel <= 0) return 0;
-  return Math.max(0, r.monthMaxLevel - (r.stock + r.incoming));
+  return Math.max(0, r.monthMaxLevel - (r.stock + r.incoming + r.plant));
 }
 
-/**
- * An opened group shows the working, not just the answer: what is on the shelf, what is on the
- * way, what the target is, and the shortfall those three produce. A bare shortfall figure is
- * unarguable-with — the planner cannot tell whether it is large because stock is low or because
- * the target is high, which is the first thing they need to know before ordering.
- */
-interface GroupItem {
+interface BucketItem {
   key: string;
   label: string;
+  group: string;
   stock: number;
   incoming: number;
   target: number;
@@ -50,159 +49,144 @@ interface GroupItem {
   daysCover: number | null;
 }
 
-interface Group {
+interface Bucket {
   name: string;
   qty: number;
-  items: GroupItem[];
+  items: BucketItem[];
 }
 
 export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; unit?: string }) {
   const [open, setOpen] = useState<string | null>(null);
 
-  const groups = useMemo<Group[]>(() => {
-    const by = new Map<string, Group>();
+  const buckets = useMemo<Bucket[]>(() => {
+    const by = new Map<string, Bucket>();
     for (const r of rows) {
       const qty = reorderQty(r);
       if (qty <= 0) continue;
-      const name = r.group?.trim() || "No group";
-      const g = by.get(name) ?? { name, qty: 0, items: [] };
-      g.qty += qty;
-      g.items.push({
+      const name = r.category?.trim() || UNSET;
+      const b = by.get(name) ?? { name, qty: 0, items: [] };
+      b.qty += qty;
+      b.items.push({
         key: r.key,
-        // The description, never the code: the code is a filing reference, and the planner reads
-        // these lines by name.
+        // The description, never the code: the planner reads these lines by name.
         label: r.description || r.itemCode,
+        group: r.group,
         stock: r.stock,
-        incoming: r.incoming,
+        incoming: r.incoming + r.plant,
         target: r.monthMaxLevel,
         qty,
         daysCover: r.daysCover,
       });
-      by.set(name, g);
+      by.set(name, b);
     }
-    const all = [...by.values()].sort((a, b) => b.qty - a.qty);
-    all.forEach((g) => g.items.sort((a, b) => b.qty - a.qty));
-    if (all.length <= TOP_N) return all;
-    // Tail folded into one bar rather than a wall of hairlines; it still opens to its items.
-    const head = all.slice(0, TOP_N);
-    const tail = all.slice(TOP_N);
-    head.push({
-      name: `Other groups (${tail.length})`,
-      qty: tail.reduce((t, g) => t + g.qty, 0),
-      items: tail.flatMap((g) => g.items).sort((a, b) => b.qty - a.qty),
-    });
-    return head;
+    // The planner's own category order, so the buckets do not reshuffle as quantities move.
+    // Anything uncategorised sits last, where it reads as work still to do.
+    const order = [...INK_CATEGORIES, UNSET];
+    const out = [...by.values()].sort(
+      (a, b) => order.indexOf(a.name) - order.indexOf(b.name),
+    );
+    out.forEach((b) => b.items.sort((x, y) => y.qty - x.qty));
+    return out;
   }, [rows]);
 
-  const total = groups.reduce((t, g) => t + g.qty, 0);
-  const max = groups.length ? groups[0].qty : 0;
+  const total = buckets.reduce((t, b) => t + b.qty, 0);
 
-  if (!groups.length) {
+  if (!buckets.length) {
     return (
-      <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        <div className="font-medium text-foreground">Nothing to order</div>
-        Every line shown is at or above its month max level — or has no lead time set yet, which
-        is what gives a line a target to fall short of.
+      <div className="rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground">
+        <strong className="text-foreground">Nothing to order.</strong> Every line shown is at or
+        above its month max level, or has no lead time set — which is what gives a line a target
+        to fall short of.
       </div>
     );
   }
 
+  const shown = buckets.find((b) => b.name === open);
+
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">To order, by group</h2>
-        <p className="text-xs text-muted-foreground">
-          Month max level less stock and ink on the way. Click a group for its inks.
-        </p>
-      </div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">
-        {fmtQty(total)} <span className="text-sm font-normal text-muted-foreground">{unit}</span>
+    <div className="rounded-lg border bg-card">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <span className="text-sm font-semibold">To order</span>
+        <span className="text-sm tabular-nums">
+          {fmtQty(total)} <span className="text-xs text-muted-foreground">{unit}</span>
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          Target less stock and supply arranged. Click a bucket for its inks.
+        </span>
       </div>
 
-      <div className="mt-4 space-y-[2px]">
-        {groups.map((g) => {
-          const isOpen = open === g.name;
+      <div className="flex flex-wrap gap-2 px-3 pb-3">
+        {buckets.map((b) => {
+          const isOpen = b.name === open;
           return (
-            <div key={g.name}>
-              <button
-                type="button"
-                onClick={() => setOpen(isOpen ? null : g.name)}
-                aria-expanded={isOpen}
-                title={`${g.name}: ${fmtQty(g.qty)} ${unit} across ${g.items.length} ink${g.items.length === 1 ? "" : "s"}`}
-                className="flex w-full items-center gap-3 rounded px-1 py-1 text-left hover:bg-muted/60"
-              >
-                <span className="w-44 shrink-0 truncate text-xs text-muted-foreground">
-                  {isOpen ? "▾" : "▸"} {g.name}
-                </span>
-                <span className="relative h-5 flex-1">
-                  <span
-                    className="absolute left-0 top-0 h-5 rounded-r"
-                    style={{
-                      width: `${max ? Math.max((g.qty / max) * 100, 0.5) : 0}%`,
-                      backgroundColor: BAR,
-                    }}
-                  />
-                </span>
-                <span className="w-24 shrink-0 text-right text-xs font-medium tabular-nums">
-                  {fmtQty(g.qty)}
-                </span>
-              </button>
-
-              {isOpen && (
-                <div className="mb-3 ml-44 overflow-x-auto border-l pl-3 pt-1">
-                  <table className="w-full min-w-[34rem] text-xs">
-                    <thead>
-                      <tr className="text-muted-foreground">
-                        <th className="py-1 text-left font-normal">Ink</th>
-                        <th className="py-1 text-right font-normal">Stock</th>
-                        <th className="py-1 text-right font-normal">On the way</th>
-                        <th className="py-1 text-right font-normal">Month max</th>
-                        <th className="py-1 text-right font-normal">Days cover</th>
-                        <th className="py-1 text-right font-semibold text-foreground">To order</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.items.map((it) => (
-                        <tr key={it.key} className="border-t">
-                          <td className="py-1 pr-3">{it.label}</td>
-                          <td className="py-1 text-right tabular-nums">{fmtQty(it.stock)}</td>
-                          <td className="py-1 text-right tabular-nums">{fmtQty(it.incoming)}</td>
-                          <td className="py-1 text-right tabular-nums">{fmtQty(it.target)}</td>
-                          <td className="py-1 text-right tabular-nums">{fmtDays(it.daysCover)}</td>
-                          <td className="py-1 text-right font-semibold tabular-nums">
-                            {fmtQty(it.qty)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t">
-                        <td className="py-1 font-medium">
-                          {g.items.length} ink{g.items.length === 1 ? "" : "s"}
-                        </td>
-                        <td className="py-1 text-right tabular-nums">
-                          {fmtQty(g.items.reduce((t, i) => t + i.stock, 0))}
-                        </td>
-                        <td className="py-1 text-right tabular-nums">
-                          {fmtQty(g.items.reduce((t, i) => t + i.incoming, 0))}
-                        </td>
-                        <td className="py-1 text-right tabular-nums">
-                          {fmtQty(g.items.reduce((t, i) => t + i.target, 0))}
-                        </td>
-                        {/* Days of cover is a rate, not a quantity: summing it would be nonsense. */}
-                        <td className="py-1 text-right text-muted-foreground">–</td>
-                        <td className="py-1 text-right font-semibold tabular-nums">
-                          {fmtQty(g.qty)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
+            <button
+              key={b.name}
+              type="button"
+              onClick={() => setOpen(isOpen ? null : b.name)}
+              aria-expanded={isOpen}
+              title={`${b.items.length} ink${b.items.length === 1 ? "" : "s"} to order`}
+              className={`rounded-md border px-3 py-1.5 text-left transition-colors ${
+                isOpen ? "border-primary bg-primary/10" : "hover:bg-muted/60"
+              }`}
+            >
+              <div className="text-[11px] text-muted-foreground">
+                {isOpen ? "▾" : "▸"} {b.name}
+              </div>
+              <div className="text-sm font-semibold tabular-nums">{fmtQty(b.qty)}</div>
+            </button>
           );
         })}
       </div>
+
+      {shown && (
+        <div className="overflow-x-auto border-t px-3 py-2">
+          <table className="w-full min-w-[40rem] text-xs">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="py-1 text-left font-normal">Ink</th>
+                <th className="py-1 text-left font-normal">Group</th>
+                <th className="py-1 text-right font-normal">Stock</th>
+                <th className="py-1 text-right font-normal">On the way</th>
+                <th className="py-1 text-right font-normal">Month max</th>
+                <th className="py-1 text-right font-normal">Days cover</th>
+                <th className="py-1 text-right font-semibold text-foreground">To order</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.items.map((it) => (
+                <tr key={it.key} className="border-t">
+                  <td className="py-1 pr-3">{it.label}</td>
+                  <td className="py-1 pr-3 text-muted-foreground">{it.group}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtQty(it.stock)}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtQty(it.incoming)}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtQty(it.target)}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtDays(it.daysCover)}</td>
+                  <td className="py-1 text-right font-semibold tabular-nums">{fmtQty(it.qty)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t">
+                <td className="py-1 font-medium" colSpan={2}>
+                  {shown.items.length} ink{shown.items.length === 1 ? "" : "s"}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {fmtQty(shown.items.reduce((t, i) => t + i.stock, 0))}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {fmtQty(shown.items.reduce((t, i) => t + i.incoming, 0))}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {fmtQty(shown.items.reduce((t, i) => t + i.target, 0))}
+                </td>
+                {/* Days of cover is a rate, not a quantity: summing it would be nonsense. */}
+                <td className="py-1 text-right text-muted-foreground">–</td>
+                <td className="py-1 text-right font-semibold tabular-nums">{fmtQty(shown.qty)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
