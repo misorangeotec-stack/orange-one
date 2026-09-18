@@ -14,6 +14,8 @@ WHAT ONE RUN DOES
      in batches: plan -> download from Supabase Storage -> upload to Drive ->
      check each landed -> record it (backup_files_done). A file that fails is
      simply offered again next night. Files are NEVER deleted from the backup.
+     Weekly (full_files runs) it also checks every logged file is still IN Drive
+     and copies back any that were deleted there by hand (verify_drive_files).
   3. DATABASES — a complete compressed pg_dump of Orange One every night, and of
      Tally (ConnectWave) when the database says so (Sundays), each encrypted
      with age before it leaves the runner, uploaded, and its md5 checked.
@@ -172,7 +174,9 @@ def drive(path: str) -> str:
 
 def backup_files(run_id: int, stats: dict) -> None:
     after = None
-    stats.update(files_copied=0, files_bytes=0, files_failed=0, files_unmatched=0)
+    for k in ("files_copied", "files_bytes", "files_failed", "files_unmatched"):
+        stats.setdefault(k, 0)
+    stats["files_failed"] = 0   # failures are counted per pass
     failed_examples: list[str] = []
     batch_no = 0
     while True:
@@ -256,6 +260,53 @@ def backup_files(run_id: int, stats: dict) -> None:
     if stats["files_failed"]:
         raise RuntimeError(f"{stats['files_failed']} file(s) could not be copied tonight "
                            f"(they will be tried again tomorrow), e.g. {failed_examples[0]}")
+
+
+def verify_drive_files(run_id: int, stats: dict) -> int:
+    """Weekly: is every file the log calls "backed up" still in Drive?
+
+    A file deleted from Drive by hand would otherwise never be copied again,
+    because the log says it is done. Missing ones that still exist in the app
+    are handed back (backup_files_forget) so the next pass copies them again, to
+    the same place. Returns how many will be re-copied.
+
+    ⚠ Two guards, because acting on a WRONG listing would re-copy the lot: an
+      empty listing while the log is not empty, or more than 20% "missing",
+      stops the check and fails the run for a person to look at.
+    """
+    r = rclone("lsf", drive(f"{APP_ROOT}/Files"), "-R", "--files-only", "--fast-list", capture=True)
+    present = {ln for ln in r.stdout.splitlines() if ln}
+    logged = rpc("backup_files_logged", {}, timeout=300) or []
+    missing = [p for p in logged if p not in present]
+    stats["drive_check_present"] = len(present)
+    stats["drive_check_logged"] = len(logged)
+    stats["drive_check_missing"] = len(missing)
+    if not missing:
+        log(f"drive check: all {len(logged)} backed-up files are in Drive")
+        return 0
+    if not present or len(missing) > 0.2 * len(logged):
+        raise RuntimeError(f"drive check: {len(missing)} of {len(logged)} files look missing from Drive - "
+                           f"too many to be real; nothing was changed, please look (e.g. {missing[0]})")
+    res = rpc("backup_files_forget", {"p_run_id": run_id, "p_paths": missing})
+    recopy, lost = res.get("recopy") or [], res.get("lost") or []
+    stats["drive_check_recopy"] = len(recopy)
+    stats["drive_check_lost"] = lost[:50]
+    log(f"drive check: {len(missing)} missing from Drive - {len(recopy)} will be copied again, "
+        f"{len(lost)} are gone from the app too and cannot be")
+    return len(recopy)
+
+
+def files_step(run_id: int, start: dict, stats: dict) -> None:
+    err = None
+    try:
+        backup_files(run_id, stats)
+    except Exception as e:  # still run the weekly check, then report
+        err = e
+    if start.get("full_files"):
+        if verify_drive_files(run_id, stats):
+            backup_files(run_id, stats)
+    if err:
+        raise err
 
 
 # ----------------------------------------------------------------- databases --
@@ -399,7 +450,7 @@ def main() -> int:
             log(f"dry-run: {stats['files_waiting']} file(s) waiting to be copied; nothing was copied")
         else:
             for step, fn in (
-                ("files", lambda: backup_files(run_id, stats)),
+                ("files", lambda: files_step(run_id, start, stats)),
                 ("app database", lambda: dump_database("app", env("APP_DB_URL"), APP_ROOT,
                                                        "orange-one-hub", int(start["keep_app"]), stats)),
                 *((("tally database", lambda: dump_database("tally", env("TALLY_DB_URL"), TALLY_ROOT,
