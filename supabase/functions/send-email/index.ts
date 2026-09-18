@@ -604,12 +604,17 @@ async function compose(row: Row): Promise<Composed | null> {
 
     return {
       subject: str(p.subject, headline),
+      // eyebrow / tag / footerNote are optional overrides for an announcement that is not about
+      // receivables (the PF-16 backup notice). Absent, the mail renders exactly as before.
+      // eyebrow and tag are escaped by emailShell; footerNote is escaped here.
       html: emailShell({
-        eyebrow: "Receivables",
+        eyebrow: str(p.eyebrow, "Receivables"),
         headline,
         inner,
-        tag: "Outstanding Dashboard",
-        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
+        tag: str(p.tag, "Outstanding Dashboard"),
+        footer: str(p.footerNote)
+          ? `<b style="color:${GREY};">Orange One Hub</b> &middot; ${esc(str(p.footerNote))}`
+          : `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
       }),
       text: [headline, body, ...bullets.map((b) => `- ${b}`), ctaUrl, ...files.map((f) => f.filename)]
         .filter(Boolean).join("\n\n"),
