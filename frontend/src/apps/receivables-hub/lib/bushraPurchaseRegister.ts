@@ -19,7 +19,7 @@ import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { loadItemLookup, type ItemLookup } from "./bushraSalesRegister";
 import { loadPurchaseRegister, type PurchaseRegisterRow } from "./purchaseRegister";
 import { companyGuidOf, fetchCompanyMap, makeCompanyResolver } from "./companyMap";
-import { colourOf } from "./batchCostingRules";
+import { SALES_REGISTER_COLOURS, colourOf } from "./batchCostingRules";
 
 export type PurchaseTypeSource = "Particulars" | "Central Masters" | "Voucher Type" | "";
 
@@ -126,7 +126,7 @@ export function classifyPurchaseRow(r: PurchaseRegisterRow, lookup: ItemLookup, 
     ink_type: itemType === "ink" && purchase_type === "Ink" ? pick(copies, guid, "inkType") ?? "" : "",
     item_group: pick(copies, guid, "group") ?? (service ? "SERVICE" : ""),
     item_category: pick(copies, guid, "category") ?? (service ? "SERVICE" : ""),
-    colour: colourOf(r.particulars),
+    colour: colourOf(r.particulars, SALES_REGISTER_COLOURS),
     in_masters: copies.length > 0,
   };
 }

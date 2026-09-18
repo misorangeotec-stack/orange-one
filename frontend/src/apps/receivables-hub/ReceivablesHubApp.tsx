@@ -37,6 +37,8 @@ import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
 import RedMarkCustomersReport from "@hub/pages/RedMarkCustomersReport";
+import DisputedBillsReport from "@hub/pages/DisputedBillsReport";
+import AdvancesReport from "@hub/pages/AdvancesReport";
 import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
 import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
 import CustomerCategoryReport from "@hub/pages/CustomerCategoryReport";
@@ -53,6 +55,9 @@ import SalesRegister from "@hub/pages/SalesRegister";
 import SOARegister from "@hub/pages/SOARegister";
 import StockSummary from "@hub/pages/StockSummary";
 import BatchCosting from "@hub/pages/BatchCosting";
+import BushraSalesRegister from "@hub/pages/BushraSalesRegister";
+import BushraSalesDashboard from "@hub/pages/BushraSalesDashboard";
+import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import BushraPurchaseRegister from "@hub/pages/BushraPurchaseRegister";
 import BushraPurchaseDashboard from "@hub/pages/BushraPurchaseDashboard";
 import { PURCHASE_DASHBOARDS } from "@hub/lib/bushraPurchaseDashboards";
@@ -124,6 +129,12 @@ function HubRoutes() {
             <Route path="bushra-dashboard" element={<BushraDashboards />} />
             <Route element={<RequireReportAccess />}>
               <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
+              {/* Sales → every Sales dashboard (pure sales, each product, FOC, SOA, branch &
+                  related): one screen, a preset per route (lib/bushraSalesDashboards.ts). The key
+                  resets the filters when moving between them. */}
+              {SALES_DASHBOARDS.map((p) => (
+                <Route key={p.id} path={p.path} element={<BushraSalesDashboard key={p.id} presetId={p.id} />} />
+              ))}
               {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
                   company, and the full cost of a kilogram once they are absorbed. */}
               <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
@@ -247,6 +258,10 @@ function HubRoutes() {
                   pipeline source AND to Both FYs — see the header of pages/CustomerCategoryReport.tsx. */}
               <Route path="reports/category" element={<CustomerCategoryReport />} />
               <Route path="reports/red-mark" element={<RedMarkCustomersReport />} />
+              <Route path="reports/disputed-bills" element={<DisputedBillsReport />} />
+              {/* Money received that no open invoice has absorbed, per salesperson (RC-18). Live (Tally)
+                  only; pinned to Both FYs — see the header of pages/AdvancesReport.tsx. */}
+              <Route path="reports/advances" element={<AdvancesReport />} />
               {/* How long each customer takes to turn a sale into cash: ?over=90 (the card), 60 / 120 /
                   any custom cutoff. A COUNTBACK, not AR/Sales — and a group's DSO is never the average
                   of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
@@ -297,6 +312,9 @@ function HubRoutes() {
                   rpt_batch_line, classified per batch (lib/batchCostingRules.ts). Source-agnostic;
                   own company + FY + period pickers — see FY_PINNED_ROUTES. */}
               <Route path="reports/batch-costing" element={<BatchCosting />} />
+              {/* Reports → Bushra-Report → Sales Register. The Tally Sales Register plus Item Type,
+                  Group, Category and Colour (lib/bushraSalesRegister.ts). Own From/To window. */}
+              <Route path="reports/bushra-sales-register" element={<BushraSalesRegister />} />
               {/* Reports → Bushra-Report → Purchase Register. Purchases, returns and purchase debit
                   notes with Purchase-Type, Group, Category and Colour (lib/bushraPurchaseRegister.ts). */}
               <Route path="reports/bushra-purchase-register" element={<BushraPurchaseRegister />} />

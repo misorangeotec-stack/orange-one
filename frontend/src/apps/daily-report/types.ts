@@ -48,10 +48,10 @@ export interface BankAccount {
    */
   tallyLedgerGuid: string | null;
   tallyLedgerName: string | null;
-  /** All three in ₹ lakhs. NULL is UNKNOWN, and is not the same as a nil limit. */
-  ccLimitLacs: number | null;
-  lcBcLimitLacs: number | null;
-  holdByBankLacs: number | null;
+  // ⚠ NO LIMITS HERE ANY MORE. The CC limit, LC/BC limit and held-by-bank figures
+  //   used to hang off each account. They are per COMPANY and per DAY, so they
+  //   moved to `CcLimit` (DR-1). The three columns still exist on the table —
+  //   additive-only — and nothing reads or writes them.
   sortOrder: number;
   active: boolean;
   notes: string | null;
@@ -70,7 +70,43 @@ export interface BankBalance {
   /** ISO yyyy-mm-dd. */
   date: string;
   closingLacs: number;
+  updatedAt: string;
+}
+
+/**
+ * The four TYPED figures of a company's credit-limit block, ₹ lakhs.
+ *
+ * NULL is UNKNOWN, never zero — a free limit worked out from a blank utilised
+ * figure is confidently wrong, so every derived figure goes null with it.
+ */
+export interface FacilityFigures {
+  /** Sanctioned; carried forward on the form, rarely changes. */
+  ccLimitLacs: number | null;
+  /** Sanctioned; carried forward on the form, rarely changes. */
+  lcBcLimitLacs: number | null;
+  /** Typed daily. */
   lcBcUtilisedLacs: number | null;
+  /** Typed daily. */
+  holdByBankLacs: number | null;
+}
+
+/**
+ * One stored credit-limit block: a company, a bank, a day.
+ *
+ * ⚠ KEYED ON THE ENTITY ALIAS, NEVER company_id. Orange O Tec and Enterprises
+ *   each span a Surat and a Noida Tally book; a company_id key would give five
+ *   blocks where the client's sheet has three, and split a company's cash in two.
+ *
+ * Like BankBalance there is no "not recorded" value: a company-day nobody typed
+ * has no CcLimit at all.
+ */
+export interface CcLimit extends FacilityFigures {
+  /** mst_companies.alias — "O-tec", "Enterprise", "Colorix". */
+  entityAlias: string;
+  /** Upper-case, "AXIS" today. A real column, so a second bank is data. */
+  bank: string;
+  /** ISO yyyy-mm-dd. */
+  date: string;
   updatedAt: string;
 }
 
@@ -80,12 +116,4 @@ export interface BalanceStatus {
   expected: number;
   entered: number;
   missing: { id: string; shortLabel: string; location: string; company: string }[];
-}
-
-/** One row of the evening entry form, as the user is editing it. */
-export interface BalanceDraft {
-  accountId: string;
-  /** Raw text, so a half-typed "2." is never coerced to a number mid-keystroke. */
-  closing: string;
-  lcBcUtilised: string;
 }

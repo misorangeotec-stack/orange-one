@@ -79,7 +79,11 @@ The report is **live for Ritesh Bhai to audit** against his own evening sheet �
 Control → Daily Report. Use **8 September 2026**: it is the day both reference sheets cover, so every
 figure can be checked line by line. Build details are under **DR-1** in the Daily Report section.
 
-**1. `[open]` 🔴 Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026)*
+**For the credit-limit block (built and live 17-09-2026), four questions — items 3, 5, 12 and 13:**
+lakhs or crores · who types the figures each evening · which accounts make up "available balance" ·
+do Enterprises and Colorix have a facility. **Ask item 3 before any real figure is typed.**
+
+**1. `[decided]` Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026 · answered 17-09-2026 by the fold rule, see DR-2)*
 
 For Orange O Tec, Surat, on 8 September:
 
@@ -102,32 +106,61 @@ on the day, not against these notes.
 > **The question:** was the sheet deliberately showing only the large items, or were rows being
 > missed? If it was deliberate, what is the cut-off?
 
+🟢 **Answered 17-09-2026: the fold rule is the cut-off** (built as **DR-2**, live on master `d4c0e5c`). The
+report keeps Tally's figures and every row behind them, and shows the list the way the sheet was
+reaching for:
+
+- A list of **10 or fewer** shows every party.
+- Above 10, it names parties biggest first until they cover **80% of the list's total**, and folds the
+  rest into one **"Remaining N"** line with a **TOTAL** under it, so the list still adds up to the
+  headline.
+- It applies to What sold, Money in and Money out alike, **band by band** on the money pages, so a
+  bank transfer never shares a Remaining line with a customer receipt.
+- **Free-of-charge customers are never folded.**
+- The Excel lists every party, unfolded.
+
+On 8 September no money list is longer than 10, so every receipt and payment shows by name. Folds
+first appear on 14-09 (receipts, 32 customers → 14 named) and 02-09 (payments, 27 suppliers → 4 named).
+
+⚠ **One refinement to confirm with Ritesh Bhai:** when the fold would leave exactly ONE party behind,
+that party is named instead of printing "Remaining 1 customer". That line takes the same space as the
+name, and hides it. It can only happen when a customer with a free-of-charge line sits below the cut.
+Decided by the user 17-09-2026, not by the client.
+
 **2. `[decided]` The headline counts customers and suppliers only.** *(11-09-2026)*
 
 Transfers between our own bank accounts, inter-company movement, petty cash and suspense are listed
 separately underneath, under *"not counted in the figure above"*. On 8 September that is ₹96 L of the
 ₹1.32 Cr Tally recorded as received. Listed to confirm.
 
-**3. `[open]` 🔴 What are the bank limits?**
+**3. `[open]` 🔴 What are the bank limits — and are they in lakhs or crores?**
 
-The facility block — cash credit limit, LC/BC limit, amount held by the bank — is **blank**, because
-none of it is in Tally. It lives in the sanction letters. The sheet shows **44.50 against Axis** but
-does not say lakhs or crores, and it cannot be lakhs: the Axis cash credit account already stands at
-₹7.47 Cr drawn.
+*Updated 17-09-2026 — the block is now built (see DR-1 → Credit-limit block).* It is typed **per
+company, on Bank balances, under each company's total** — no longer once per account on Bank
+accounts. CC limit and LC/BC limit carry forward from the last recorded day; utilised and held by
+bank are typed each evening. None of it is in Tally; it lives in the sanction letters.
 
-> **Needed:** for each cash credit account, the sanctioned limit, the LC/BC limit and the amount held
-> by the bank, in rupees. Typed once into Daily Report → Bank accounts; they only change when the bank
-> changes them.
+🔴 **Units are the open risk.** Every box is labelled **₹ L** and the whole report is in lakhs. The
+sheet prints `(IN CR.)` under its available-balance column, yet that column's 2.45 is exactly its
+own lakh bank total — while this note found on 14-09 that the **CC limit 44.50 cannot be lakhs**, the
+Axis cash credit account already standing at ₹7.47 Cr drawn. So the sheet most likely mixes units:
+limits in crores, available balance in lakhs. The report still works if the limits are typed **in
+lakhs** (44.50 Cr = 4,450.00) — the danger is only someone typing crore figures into lakh boxes.
+
+> **Needed:** for each company with a facility, the sanctioned CC limit, the LC/BC limit and the
+> amount held by the bank, **stated in rupees**, and confirmation of which columns on the old sheet
+> were in crores. Do not type the first real evening until this is answered.
 
 **4. `[open]` Does anyone track LC/BC utilised each day?**
 
-The one facility figure with no source anywhere. If someone does, it goes in the optional box on the
-evening form and the free limit works itself out. If nobody does, the three LC/BC columns come off
-the report rather than sitting permanently empty.
+The one facility figure with no source anywhere. If someone does, it goes in the **Utilised** box of
+the company's credit facility on Bank balances (the old per-account optional box is gone) and the
+free limit works itself out. If nobody does, the LC/BC columns show a dash rather than a made-up zero.
 
 **5. `[open]` 🔴 Who types the bank balances each evening?**
 
-**None have been entered yet** — the report shows 0 of 11. That person needs **Daily Report at
+**None have been entered yet** — the report shows 0 of 11. The same person types each company's
+**credit facility** on that screen. That person needs **Daily Report at
 `edit`** in Admin → Module Access. A Sunday or a day off stays blank on purpose; only a working day
 nobody typed is flagged.
 
@@ -182,6 +215,27 @@ unaffected.
 **11. `[decided]` Colorix is included; sales are net of GST; one report with a location filter.** *(11-09-2026)*
 
 Listed to confirm. Colorix appeared on neither reference sheet.
+
+**12. `[open]` 🔴 Which accounts make up the credit facility's "available balance"?** *(17-09-2026)*
+
+Built as the **whole company's bank total** — all five Orange O Tec accounts — because that is what
+was asked, and on 8 September the sheet's 2.45 equals its own Orange O Tec bank total. But the
+sheet's bank table sums only **two** columns, AXIS-ST and NOIDA. The report's Orange O Tec also holds
+the **ICICI 0014 cash credit** account and the **Delhi** account, and a cash-credit balance is money
+owed, so adding it in may be wrong in sign as well as in scope. It could not be checked against real
+figures: no balance had ever been saved.
+
+> **The question:** which accounts should "available balance / lien amt" add up? Changing it is one
+> function (`facilityBalanceAccounts` in `apps/daily-report/lib/aggregate.ts`); every screen and
+> export follows.
+
+**13. `[open]` Do Orange O Tec Enterprises and Colorix have a credit facility?** *(17-09-2026)*
+
+The old sheet shows a CC row for Orange O Tec only. Both other companies get the same inputs on Bank
+balances; neither shows a row on the report until something is typed, so nothing needs changing if
+the answer is no.
+
+> **The question:** does either hold a CC or LC/BC limit, and at which bank?
 
 ### OCPI
 
@@ -1564,8 +1618,9 @@ was missing, and the collection and payment lines listed a fraction of what Tall
    table behind it**, and clicking it again closes it. Everything is in **₹ lakhs with the unit
    printed** — there are no crores anywhere on the report. Location filter (All / Surat / Noida /
    Delhi). Excel workbook and branded PDF.
-2. **Bank balances** — one form, eleven accounts, typed each evening.
-3. **Bank accounts** — the master of those eleven accounts and their limits.
+2. **Bank balances** — one form, eleven accounts, typed each evening; each company's card ends with
+   its total and its **credit facility** (added 17-09-2026, see below).
+3. **Bank accounts** — the master of those eleven accounts. *(Limits are no longer here.)*
 
 **Where the numbers come from.**
 
@@ -1576,7 +1631,7 @@ was missing, and the collection and payment lines listed a fraction of what Tall
 | Purchases | `rpt_purchase_item` on ConnectWave | No |
 | Counterparty type (customer, supplier, bank…) | `v_ledger_detail.group_chain` | No |
 | Closing bank balances | `daily_report_bank_balances` | **Yes, daily** |
-| Bank limits | `daily_report_bank_accounts` | **Yes, once** |
+| Credit facility (CC limit, LC/BC limit, utilised, held) | `daily_report_cc_limits` | **Yes — limits carry forward, utilised and held daily** |
 
 **Decisions already built in** — confirmed with the user 11-09-2026:
 
@@ -1605,7 +1660,35 @@ was missing, and the collection and payment lines listed a fraction of what Tall
 **Before anyone but an admin can use it** — see the discussion items for the detail:
 - Grant **Daily Report at `edit`** to whoever types the bank balances. **None have been typed yet.**
 - Grant **Daily Report at `view`** to the CFO and management.
-- Type the **bank limits** into Bank accounts once finance confirms them. The facility block is blank until then.
+- Type the **credit facility** under each company on Bank balances once finance confirms the limits
+  **and the units** (discussion items 3 and 12). The facility block says "not recorded" until then.
+
+**✅ Credit-limit block — COMPLETE for now. Built 17-09-2026, live on master `c8498f3`.** Nothing left
+to build; waiting only on Ritesh Bhai's answers (discussion items 3, 5, 12, 13).
+
+The client's top-right CC block had never shown anything: it was modelled per *account*, on static
+master columns, and all were blank. It is per *company* and two of its figures change daily.
+
+- **Migration `20261125120000_dr1_cc_limits`** (applied live before the frontend; rollback rehearsed
+  on live — apply, roll back, compare, re-apply). New table `daily_report_cc_limits`, keyed **company
+  alias + bank + day**, bank a real column defaulting to AXIS. Written only through
+  `set_cc_daily_limit()` — same rules as the balances: edit access, IST today, no future dates, and
+  **all four boxes blank deletes the day** rather than storing zeros. `set_daily_report_evening()`
+  saves balances and facilities in one transaction.
+- **Bank balances:** a **company total** row per card (blank until every account is typed, and says
+  which are missing), then **Credit facility · AXIS** in the sheet's column order — CC limit, LC/BC
+  limit, utilised, held typed; available balance, free limit, available CC limit worked out.
+- **One calculation for all three outputs** — the report page, the PDF and the Excel read the same
+  function, per company, whatever the location filter.
+- **Removed from the screens** (database columns kept): the per-account "LC / BC utilised (optional)"
+  box, and the limit fields on Bank accounts — nothing can be typed in two places now.
+- Also fixed: **"Saved at" never appeared** after saving balances.
+- **Verified on orangeonehub.com, 17-09-2026:** the 08-09 sheet reproduces (free limit **0.22**,
+  available CC **40.00**, available balance **2.45**); the next evening opens with the limits carried
+  and saves no copy; the page, PDF and Excel agree under the Surat filter; future dates and direct
+  table writes are refused; clearing deletes. All test figures were removed afterwards — both tables
+  0 rows. Permission gate tested as a non-admin in a rolled-back transaction (**nobody but admins has
+  Daily Report access yet**).
 
 **Found while building, deliberately NOT fixed here:**
 
@@ -1619,8 +1702,239 @@ was missing, and the collection and payment lines listed a fraction of what Tall
   customer or supplier rather than under Branch / Divisions. Colorix is filed as a supplier in the
   Orange O Tec Surat book. Raised as a question rather than patched — see discussion item 7.
 
-**Phase 2, not started:** emailing the report every evening. The PDF already exposes a Blob entry
-point (`dailyReportPdfBlob`) so that becomes a backend job rather than a rewrite.
+**Phase 2 — emailing the report every evening — is its own entry now: see DR-3.** The PDF already
+exposes a Blob entry point (`dailyReportPdfBlob`), so that becomes a backend job rather than a rewrite.
+
+### DR-2 · The Daily Report as a document: a summary page, a page per block, and customer lists that fold  `[x]`
+*Raised 2026-09-16 by Ritesh Bhai · Decided with him 17-09-2026 · **Built, verified and live
+17-09-2026**, master `d4c0e5c` (branch commit `1a6288c`) · The email is NOT part of this — see DR-3*
+
+**The ask.** Make the report read like the zero-collections report:
+- **Page one is only a summary** (including the credit facility), and every figure on it is a link.
+- **One page per block:** What sold · Money in · Money out · Bank.
+- **What sold pivots to one row per customer with the companies as columns.**
+- **Long lists fold** to the customers making up 80%, with the rest in one line.
+
+**Decided with the client, 17-09-2026 — built exactly so:**
+1. **The fold rule.**
+   - A list of **10 or fewer** shows every customer.
+   - Above 10, customers are named biggest first until they cover **80% of that list's total**.
+   - The rest fold into **"Remaining N customers"**, followed by a **TOTAL** that adds up to the figure
+     on page one.
+   - The same rule applies on What sold, Money in and Money out.
+2. **Free of charge is never folded.**
+   - A customer who is only free of charge is named at the foot of its block, below Remaining and
+     above TOTAL.
+   - A customer with a paid AND a free sale keeps its place among the named rows, with FOC marked in
+     that company's cell only.
+3. **One column per company, no location split.** Surat and Noida add together; the location filter
+   still narrows.
+4. **Company columns use the short names:** O-tec · Enterprise · Colorix, in `entityRank` order.
+
+**Decided by default — listed for the user 17-09-2026:**
+5. Section headings, bank cards and the PDF/Excel headings **keep the full legal names**
+   (`entityLabel`); only the new company columns are short.
+6. **Nothing is removed, everything has a page:**
+   - heads and machines outward, goods on approval and *Not yet classified* go on **What sold**;
+   - **Purchases** go on **Money out** under their own heading, never added into payments;
+   - the facility and the balance grid go on **Bank**.
+7. **The Excel carries every customer, unfolded**, in the same company-column shape.
+8. **On screen the lists open folded**, with a *Show all N customers* control.
+
+**Decided by the user while building, 17-09-2026:**
+- **Money now follows the location filter.**
+  - It never did: a voucher carried only its book's label.
+  - Each money row now carries its book's company and location from `ext_company_map`
+    (`toMoneyRows`), so a Surat filter shows Surat's receipts, and Delhi empties by construction like
+    sales.
+- **A remainder of exactly one customer is named, not folded.** This is a refinement of the client's
+  rule, raised in *To discuss* item 1 to confirm. It can only happen when a customer with a
+  free-of-charge line sits below the cut: with more than 10 paid customers, the two smallest can never
+  make up more than 20%.
+- **No one was granted Daily Report access for a view-only test** (see *Still open*).
+
+**Built.**
+- **`lib/aggregate.ts`:**
+  - `pivotSales` / `pivotMoney` (one row per customer, cells per company alias).
+  - `pivotCompanies` (page-wide columns; a book missing from the company map is flagged *Unmapped*,
+    never a silent "—" column).
+  - `foldList` (the rule above, ranked once on the row total across all companies).
+  - `byParty` and `topShare` are gone. The comment on `pivotSales` records that one row per customer
+    reverses the earlier "two lines per entity" decision deliberately.
+- **`shared/components/ui/QueueTable.tsx`:** a new optional `footerRows` prop, rendered in a `<tfoot>`
+  outside sorting, filtering and pagination, so a sort never lifts "Remaining 15 customers" to the top
+  and a filter never hides TOTAL. No existing caller changed.
+- **Screen:**
+  - The four cards and one-block-at-a-time stay.
+  - Each product line and each money band is now a folded pivot, with *Show all*.
+  - Money is folded **band by band**, trade bands first, then *"Not counted in the figure above"*.
+  - A sale block's figure is labelled **"sold, before returns"**, with the net stated beside it.
+- **PDF (`exportDailyPdf.ts`, rewritten on `exportCollectionsPdf.ts`):**
+  - **Page one:** the five cards, the four block summaries two by two, the credit facility and the
+    notes. Every figure is a deferred link (`applyDeferredLinks`).
+  - **What sold · Money in · Money out · Bank** each start a page with *Back to Home*. Bank is last,
+    in landscape. Bookmarks for all five.
+  - Customer-name and line-table columns are measured and **wrap rather than ellipsize** (the longest
+    real name in FY 26-27 is 52 characters).
+- **Excel:**
+  - One sheet per product line and a Receipts / Payments sheet, all in company-column shape with every
+    party, TOTALs in the preamble so the autofilter cannot hide them.
+  - Voucher-level detail kept on *Receipt vouchers* / *Payment vouchers*, now with Company and
+    Location.
+- **What left the screen (views only, no actions):** the money tables' Book, Voucher type and Voucher
+  no. columns, and the sales tables' Location column. The voucher detail is in the Excel, and the
+  voucher numbers are a tooltip on each party.
+
+**🔴 Found while building, and fixed:**
+- **Free-of-charge lines carry value in Tally.**
+  - 1,912 of 1,913 FOC lines in FY 26-27 have a non-zero `revenue`: ink at a nominal ₹1/kg, and a
+    **machine sent free at full value** (GARTEX TEXPROCESS, 30-07-2026, ₹1.28 Cr).
+  - `salesTotals` always left it out of the day's figure. `groupSales` and the party list added it back.
+  - So on 30-07 the Machines row on the card read ₹128.59 L more than the Total counted, and a free
+    machine would have ranked first in any fold.
+  - Now free of charge is **quantity only, everywhere** (`moneyOf`).
+- **Money was not narrowed by location** (above).
+
+**Found, NOT fixed here:**
+- **Month-to-date sales ignore the location filter.** `loadDailyReport` sums every book, so under Surat
+  the "Month to date" hint is still all locations. This was already the case, and it now sits beside
+  day figures that do narrow. A small change to `mtd`, not attempted.
+- **The single-book day-book path cannot be reached from the screen.** `loadDailyReport` always reads
+  every mapped book. `toMoneyRows` handles it anyway, and was tested with a real single-book payload.
+
+**Verified 17-09-2026 against the live mirror** (admin account, dev server, PDF read with pdf.js,
+Excel read back):
+- **08-09, Ink:**
+  - 31 customers fold to **14 named** (13 to 81.2%, plus Shree Nandeshwar), then **Remaining 15**
+    (₹7.22 L), then Grando and Artisan (FOC only), then **TOTAL 6,540 kg (130 FOC), ₹41.11 L** — the
+    card's Ink figure.
+  - Shree Nandeshwar is one row: O-tec 60 kg ₹0.51 L, Enterprise 60 kg **FOC**.
+  - K3 Fabric Hub has values under both companies. Heads (5) and spares (10) show everyone; Peacock's
+    heads read `7 (1 FOC)`.
+- **08-09, money:** every list is 10 parties or fewer (customer receipts 9, supplier payments 7), so
+  nothing folds, and every band adds up to its card row.
+- **Long money lists:**
+  - 14-09 receipts: 32 customers → 14 named + Remaining 18.
+  - 02-09 payments: 27 suppliers → 4 named + Remaining 23.
+  - Both add up in every column.
+- **30-07:** both free machines show as FOC-only, and the Machines row now matches what the Total counts.
+- **Location:**
+  - **Surat 14-09:** money narrows to Surat books only.
+  - **Noida 02-09:** money narrows to Noida books only.
+  - **Delhi:** the business pages print why they are empty.
+- **PDF:**
+  - Page-one links land on What sold / Money in / Money out / Bank, including when a block spills to a
+    second page; every other page links home.
+  - **No ellipsized text on any page** of five documents.
+  - A sort on the screen keeps Remaining and TOTAL at the foot.
+- **The five built-in decisions still hold:** net of GST, trade-only headline, approval not counted, a
+  blank balance never zero, Colorix included.
+
+**🔴 Follow-up the same day, after the user tested it live — master `d08354e` (branch `1b13c0a`):**
+- **"Unmapped: ORANGE ENT BRANCH" / "Unmapped: ORANGE O TEC BRANCH" columns on 16-09-2026.**
+  - The cause is master's `receivables-hub/lib/salesRegister.ts`, which is AHEAD of `daily-reports`:
+    since 10-09 it fills `company` with the counterparty class on every Branch / Related line.
+  - DR-2 was proved "master not ahead" on its OWN files only, and was tested against the branch's older
+    loader, so the pivot looked clean locally and broke live.
+  - **Fixed:** `data/dailyReport.ts` now takes each sales line's company and location from the book's
+    GUID through `ext_company_map`, whatever the loader displays.
+  - Re-verified on a dev server run from the `oo-master` worktree: its loader does return
+    "ORANGE ENT BRANCH", and the report still shows only O-tec and Enterprise — screen, PDF and Excel.
+- **The lists were hard to read** (roomy rows, names on three lines, headers breaking). They are now
+  drawn as the **Disputed Bills / Red Mark** grid (`components/PivotGrid.tsx`), from the same hub parts:
+  - one 29px line per row, a sticky customer column that truncates with the full name on hover;
+  - each company named once over its `kg | ₹ L` pair;
+  - sort on every column (`useColumnGrid`) and a searchable Customer filter; the figure columns carry no
+    filter (unique values, as on Disputed Bills);
+  - Remaining and TOTAL drawn after the rows, so no sort or filter moves them.
+  - The `QueueTable.footerRows` prop added for the first cut is removed again; nothing else used it.
+  - The per-list Excel buttons went with QueueTable; the page's Excel lists every customer of every list.
+- 08-09 figures unchanged after both fixes (14 named, Remaining 15, TOTAL ₹41.11 L).
+
+**Second follow-up, 17-09-2026 — master `efe1dfa` (branch `49066fd`):**
+- **Colorix only where it has customer data** (the user: Colorix hardly trades — 7 sales lines on 3 days
+  from 01-08 to 17-09, no receipts or payments in September).
+  - Company columns are now chosen **per list** on screen, in the PDF and in each Excel sheet, so a
+    company gets a column only where it has a customer.
+  - The "Tally mirror rebuilt" line leaves Colorix off on a quiet day (`SHOWN_ONLY_WHEN_ACTIVE` in
+    `labels.ts`).
+  - **The bank section is deliberately unchanged** — the user meant customer data. The bank account is
+    typed by hand and its gap is flagged.
+  - Verified on master's code: on 15-09 only "Not yet classified" has a Colorix column; on 16-09 none
+    does, and the freshness line omits Colorix.
+- **The PDF, redrawn after the user called it cluttered and misaligned.**
+  - **Page one:** a title and one line of terms, five plain cards (no SEE LIST markers), and four
+    equal-height cards on one column grid, so counts and figures line up. Lines outside the headline are
+    grey type, not filled bands. A free-of-charge-only product line says "free". The credit facility
+    shows only when recorded. The notes moved to the end.
+  - **List pages:** a title with its figure on the right, each company named once over its kg | ₹ L pair,
+    lists kept whole on a fresh page when they fit, and a closing line instead of the navy bar.
+  - Checked by rendering pages for 14-09, 08-09, 02-09, 15-09 and Delhi: no ellipsized text, all links
+    resolve.
+
+**Still open:**
+- **View-only check not run.** Nobody holds Daily Report access yet, and the user chose not to grant
+  anyone for the test. Run it as the first real `view` user once one is granted.
+- **Does page one need the previous day's comparison?** Asked on 16-09 and not decided on 17-09;
+  not built.
+- **The email:** DR-3.
+
+### DR-3 · Daily Report — email it every evening  `[ ]`
+*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 so closing DR-2
+did not close this · **The client wants this next***
+
+**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection report
+already goes out.
+
+**🟢 The document is ready.** `lib/exportDailyPdf.ts` exposes `dailyReportPdfBlob`, and DR-2 settled
+its shape. What is missing is everything around it: the runner, the schedule, the recipients and the
+send.
+
+**🟢 Copy the Collection report's delivery — the CURRENT pattern, not the first one.**
+- **Waking.** The waking moved to **pg_cron on 29-08-2026**. The first design ticked GitHub's `schedule`
+  every 30 minutes, and on this repo that decayed from ~40 ticks a day to one, then **missed a Saturday
+  slot outright**. Now a pg_cron job asks the gate RPC and, only when a send is due, fires GitHub's
+  `workflow_dispatch` via `net.http_post`. GitHub's own cron stays only as a backstop, which cannot
+  double-send because the runner re-asks the gate and the send log claims the slot.
+- **Runner.** `.github/workflows/collections-report.yml` checks out, runs `npm ci`, **bundles the app's
+  own TypeScript** (`supabase/collectionsreport/build.mjs`), builds and sends. Needs **Node 22+**.
+- **Modes.** `dry-run` (the default: build, send nothing), `sample`, `scheduled`.
+- **The decision lives in the database** (`collections_report_due()`), so the settings screen and the
+  rule the sender obeys are one object.
+
+**🔴 It does not run in an Edge Function, and that is measured.** Edge Functions allow **~2 seconds of CPU
+per request, cumulative — yielding does not reset it**. Drawing the Collection report is ~40 seconds of
+CPU; this report is smaller, but it is the same shape of work under the same ceiling.
+
+**The traps (each cost real time on the Collection report):**
+- **Dispatch silently does nothing:**
+  - if the body omits `inputs.mode='scheduled'` (the input defaults to `dry-run` and reports success);
+  - if `ref` is not `master`;
+  - if the request has no `User-Agent` (pg_net adds none);
+  - if the token is not `misorangeotec-stack`'s.
+- **The token is borrowed.** `private.collections_report_kick_config.github_pat` holds the `gh` CLI's
+  OAuth token, not a dedicated PAT. Decide whether this report shares it or gets its own.
+- **Secrets go in a `private.*_config` table, not Vault** (Vault holds nothing and is used nowhere).
+- **Every run exits "success".** "Not due" is a successful run, and a dropped tick makes no run at all,
+  so a **watchdog** must alert when a slot passes unserved. A new outbox `kind` also needs its renderer
+  in `send-email`, or it is `markSkipped` silently.
+- **Scheduled workflows run only from the default branch.** GitHub also disables a scheduled workflow
+  after 60 days without a commit.
+- **Do not put cron jobs on `*/5` or `*/15` boundaries.** Those already carry other jobs; the house slots
+  are minutes 3, 8, 13 … 58.
+- **Arming it is a live send.** Build behind the same two-switch gate, prove it with `dry-run`, then
+  `sample`, before a recipient is added.
+- **Every figure must keep coming from `lib/aggregate.ts`**, so the mailed PDF cannot disagree with the
+  screen.
+- **The bank balances and the credit facility are typed by hand each evening** (discussion items 3 and
+  5). An email sent before they are typed will say "0 of 11 entered". Decide whether the send waits
+  for them, or goes regardless and says so.
+
+**To discuss with Ritesh Bhai:**
+- [ ] **When does it send, and to whom?** Management and the CFO — which addresses?
+- [ ] **Does it attach the Excel workbook as well as the PDF?**
+- [ ] **Does it wait for the bank balances to be typed**, or send at a fixed time regardless?
+- [ ] **Which location?** One all-locations report, or separate Surat and Noida copies as the old sheets were?
 
 ## OCPI  *(new module)*
 
@@ -10488,6 +10802,174 @@ godown on the current financial year)*
 
 ---
 
+### OD-16 · 🔴 Stop asking for a quantity the lots already answer — auto-fill when the picked lots fit inside Ship now  🟢  `[x]` DONE
+*Raised 2026-09-16 · Audited the same day against the running code and the live database ·
+**High priority, client-asked** · **Built, browser-verified and shipped to master 16-09-2026**
+(`2e5f5a5` on `daily-reports`) · the three client questions below are still open, and each was built
+to its recommendation*
+
+**✅ BUILT 16-09-2026 — what shipped**
+
+- **`LotAllocField.tsx` gained `autoFill`, and only `ShipLinesGrid` turns it on.** When the picked
+  lots hold no more than Ship now, each box fills with its lot's Tally balance. It asks only when the
+  lots hold more. The boxes are **pre-filled, never hidden or locked**, so the advisory-balance rule
+  and "typing must stay possible" are untouched, the footer reads *"45 of 45 KGS"* by itself, and
+  nothing was removed (no FIX-4 sweep needed). The correction screen is unchanged; one prop opts it in.
+- **A seed needs EVERY picked lot to resolve:** known to Tally, in exactly one book, **the same book as
+  the other lots** (trap 4 widened: two lots from two books are also one dispatch drawing on two
+  books), in the line's unit, and with a balance above zero at 3 dp. Anything less asks, as before.
+- **Re-decided on every Ship now keystroke, and on every lot picked or removed.** A seeded figure is
+  the lot's balance, never derived from Ship now, so whatever Ship now ends on decides. A half-typed
+  "4" on the way to "45" leaves nothing behind.
+- **A typed figure is sacred, and so is the rest of its split.** Each row carries a `seeded` mark;
+  typing into a box drops it. Once any box holds a typed number, the field neither fills nor clears
+  that line. ⚠ This departs from "a seeded value may be cleared when the condition stops holding",
+  on purpose: seeded 6 and 4 for 10, a person corrects the 6 to 5, then lowers Ship now to 9. The lots
+  no longer fit, and clearing the 4 would throw away a figure that was right. A split reloaded from
+  the database carries no mark, so it counts as typed. The mark never reaches the server: both save
+  paths map rows to `{ lot_no, qty, seq }` by hand.
+- **Focus:** when a pick fills every box, the caret moves on to the next field via the shared
+  `advanceFocus` (the next row's Ship now, or Remarks after the last row).
+
+**🔴 Two corrections to the audit below, both proven live:**
+1. **Trap 8 was wrong to say "the way `fmtQty` renders them".** `fmtQty` groups with en-IN commas,
+   and `fms_dispatch_lots_normalise` keeps a lot qty only if it matches `^\d+(\.\d+)?$`; anything else
+   becomes **NULL, silently**. Run live, `"1,021"` came back `qty: null` and the Order Register summary
+   read `L1, L2 (1021)`. The lots on today's queue hold 1,021 · 4,200 · 10,000 · 73,550, so this would
+   have bitten on the first large split. Seeds are written `String(Number(n.toFixed(3)))`.
+2. **Trap 1's "~3.6%" is stale.** `supabase/connectwave/rpt_lot_balance.sql` re-measured negative
+   balances at **~11.4%** on 08-09-2026. `rpt_lots_for_item` never offers them (`p_min 0.0001`), so
+   they read as unknown and the line asks.
+
+**Re-measured 16-09-2026:** 557 dispatched lines carry lots (was 461); 550 single-lot; still **7**
+multi-lot (max 5 lots), all 7 summing exactly to both Ship now and the billed qty. 164 lines in
+flight, none multi-lot. All 367 Tally lots behind the 19 orders awaiting material status are `KGS`,
+matching every line, so the unit guard is a safety net that does not fire today.
+
+**Verified in the browser as the store keeper** (`ink@orangeotec.com`, Amit Sharma, Sub-HOD), on
+**SO-2627-1283 · SUPER HD YELLOW** (lots 20 / 15 / 10), with **nothing saved**:
+lots first, Ship now blank → blank boxes, as before · Ship now "4" → still blank · "45" → **20/15/10,
+"45 of 45 KGS"** · 60 → kept, *"15 short, saved as it is"* · 30 → blank, asks · back to 45 → refilled ·
+typed 18, then Ship now 50 and 30 → **18/15/10 kept both times** · dropped to one lot → quantity
+cleared, no box · a typed `ZZ-NOT-IN-TALLY` → no seeding at all · removing it re-seeded and moved the
+caret to Remarks · **CYAN: Ship now first, then two picks → seeded, caret on YELLOW's Ship now with its
+text selected** · **BLACK 1,021 + 1,015 → boxes read `1021` / `1015`**. The save was **captured, not
+sent**: every write to the project was aborted in the browser. The one request,
+`fms_dispatch_record_material_status`, carried `{lot_no, qty, seq}` only, no mark, seeded qtys `"20"`
+`"15"` `"1"` `"1"`, and the single lot `qty: ""` as before; all survived the live normaliser.
+Afterwards SO-2627-1283 was confirmed untouched (`ms_at` null, `updated_at` still 14-09), with no
+round amended and no mail queued. **Correction screen (admin):** re-picking 6 + 9 against 100
+delivered, then 30, left the boxes blank and asking. Cancelled.
+
+**Not observable live, proven in code only:** reopening a saved multi-lot split (none sits in an
+editable round, and the test did not save one), lots from two books (no order without a company is
+awaiting), and a unit mismatch.
+
+**⚠ Observation for the client:** picking lots before typing Ship now still drops the caret into the
+first box, as before. If the store keeper types a split there, the fill switches off for that line
+(typed wins). Typing Ship now instead fills the boxes. Worth a line in the store keeper's walkthrough.
+
+**The ask.** Picking a second lot always draws a quantity box against every lot and asks the store
+keeper to split by hand. It should only ask when it genuinely has to. If the **stock in the picked
+lots fits inside the Ship-now quantity**, fill each lot with what it holds and ask nothing. Ask only
+when the picked lots hold **more** than Ship now, because that is the only case where a human choice
+exists. And every comparison is against **Ship now**, not Pending.
+
+**🟢 The "Ship now, not Pending" half is already right — this is a clarification, not a defect.**
+Both writers already hand the field the shipped figure, not the pending one:
+`ShipLinesGrid.tsx:160` passes `quantity={v.ship_qty}` and `OrderDetail.tsx:867` passes the
+corrected quantity. `pendingQtyOf` is used for the Pending column and for locking a completed line,
+and it never reaches `LotAllocField`. Nothing needs undoing here; the rule simply has to stay this
+way when the auto-fill is written.
+
+**What the field does today** (`components/LotAllocField.tsx`):
+
+| | |
+|---|---|
+| One lot | **No box at all.** "One lot means 100% of it, and asks for nothing" — the server fills the figure in |
+| Two or more | A quantity box per lot, **all blank**, and the caret jumps to the first empty one |
+| The footer | *"Say how much came from each — 10 KGS in total."* until something is typed, then *"8 of 10 — 2 short, saved as it is."* |
+| Dropping back to one | **Clears the quantity**, deliberately — that row now carries the whole line |
+
+**🟢 The live data says this typing is almost pure ceremony.** Measured 16-09-2026 on
+`fms_dispatch_round_item_lots`:
+
+| | |
+|---|---|
+| Dispatch lines carrying lots since OD-15 | **461** |
+| Single-lot (asks nothing today) | **454** |
+| Multi-lot (asks every time) | **7** |
+| Most lots on one line | **5** — five boxes typed for a 50 KGS shipment |
+| 🟢 Multi-lot lines whose split does **not** sum to Ship now | **0 of 7** |
+
+Every multi-lot allocation on file lands **exactly** on the shipped quantity. Nobody has ever needed
+a split that differed from it, which is the evidence that the question is usually being asked with
+only one possible answer. ⚠ It also means the change touches ~1.5% of lines — small, but it is the
+one path people complain about.
+
+**The rule, stated precisely.** Let `capacity` = the sum of Tally's balance for every picked lot.
+- `capacity ≤ ship_now` → fill each lot with its full balance, draw no boxes.
+- `capacity > ship_now` → ask, exactly as today.
+
+**The traps. Four are blocking.**
+
+1. 🔴 **A lot Tally does not know has a capacity of ZERO, not "unknown".** `totalOf()` sums the
+   matching options and returns 0 for a lot that is absent — and absent is a real, common state:
+   **~3.6% of lots do not resolve to a clean balance**, plus every lot entered through the typing
+   escape hatch, plus everything when ConnectWave is unreachable (the field degrades to a plain box
+   by design). With a zero capacity the rule reads `0 ≤ ship_now` as "it fits" and auto-fills
+   **nothing**, silently under-allocating a line that used to prompt. **Auto-fill only when EVERY
+   picked lot has a known balance; otherwise ask, as today.**
+2. 🔴 **The balance is ADVISORY AND NEVER A GATE**, and the component header says so in capitals,
+   adding that the rule predates it and is "not ours to change" — a lot in the store keeper's hands
+   that Tally has not caught up with must stay enterable, and over-drawing is shown and **saved
+   anyway**. So auto-fill must **seed** the boxes, never lock them: every figure stays editable,
+   including above the balance, and the boxes must come back the moment the condition flips.
+3. 🔴 **Ship now is usually still empty when the lots are picked.** In the client's own screenshot
+   two lots are already ticked while Ship now reads 0 — so a fill computed once, at the moment of
+   selection, would never fire on the normal order of work. It has to **recompute when `ship_qty`
+   changes too**, and `quantity` is documented as moving "exactly as typed", so a half-typed "1" on
+   the way to "10" must not lock in a wrong split.
+4. 🔴 **A lot number is only unique within one Tally book, and `totalOf` sums across books.** A lot
+   showing *"90 in Noida, 6 in Delhi"* totals 96, but a single dispatch cannot draw from two books.
+   Auto-filling 96 would invent stock. **Do not auto-fill a lot that resolves to more than one
+   book** — leave those to the box, which is what OD-12 decided the balance line is for.
+5. ⚠ **"Fits inside" includes being short.** If the lots hold 8 and Ship now is 10, the rule fills 8
+   and leaves a 2 gap. The footer already reports that honestly — *"8 of 10 — 2 short, saved as it
+   is"* — so the recommendation is to fill and show the gap rather than fall back to asking. But it
+   is a choice, because the auto-filled line is then knowingly incomplete. Confirm with the client.
+6. ⚠ **Never overwrite a figure somebody typed.** Once a box has a value, a later change to Ship now
+   must not silently rewrite it. Fill blanks only, or track whether a row has been touched.
+7. ⚠ **Dropping to one lot clears the quantity, on purpose.** Auto-fill must not resurrect a number
+   there: a single lot carries the whole line by definition and the server writes the figure.
+8. ⚠ **Compare with the existing tolerance, not with `>`.** The file already uses `0.0005` for the
+   sum check; a raw comparison makes `10.000000001 > 10` true and asks anyway. And write the seeded
+   values the way `fmtQty` renders them — Tally reports `176.0000` and a store keeper expects `176`.
+9. ⚠ **Focus must still move on.** `setValues` schedules a `requestAnimationFrame` onto the first
+   blank quantity box. When auto-fill leaves no blank box that call finds nothing and the caret
+   stays put, against the house rule that focus moves to the next field after every selection.
+10. ⚠ **One component, two writers.** Check Material Status and the coordinator's correction screen
+    both render it. The correction screen edits an **already-dispatched** line, where Tally's
+    balances have moved on since — auto-filling there can contradict what physically went out.
+    Consider seeding on the entry path only, and decide it deliberately rather than by default.
+11. ⚠ **If the boxes are hidden rather than pre-filled, sweep for orphans.** Hiding a control whose
+    handler survives is the FIX-4 pattern; `noUnusedLocals` is false here, so an unreachable box
+    fails nothing and looks present in the code.
+
+**To discuss with Ritesh Bhai** *(each built to its recommendation 16-09-2026; each alternative is a
+one-line change)*
+- [ ] 🔴 **Short auto-fill:** lots hold 8, Ship now is 10 — fill 8 and show "2 short", or keep
+      asking? (Recommendation: fill and show.) **Built: fill and show.** To ask instead, `fits` in
+      `reseed` becomes `Math.abs(capacity - shipNow) <= QTY_EPS`.
+- [ ] **Should the boxes be hidden, or shown pre-filled and editable?** Pre-filled is safer: the
+      store keeper sees the split that is about to be saved and can correct it. **Built: pre-filled
+      and editable.**
+- [ ] **The correction screen** — same behaviour, or entry-path only? (See trap 10.) **Built: entry
+      path only.** To opt in, add `autoFill` to the `LotAllocField` in `OrderDetail.tsx`.
+
+---
+
+
 ## Production Entry
 
 *(cross-ref: **PF-1** — Save Draft lands here FIRST)*
@@ -11886,6 +12368,424 @@ The Zero-Collection report itself is built. Live handover doc:
 
 ---
 
+### RC-19 · Credit Terms Not Set — one row per customer, a block of columns per book  🔴  `[x]`
+*Raised 2026-09-16 · Audited and measured on the live mirror 17-09-2026 · Built, verified and shipped
+17-09-2026 (`e010ac4`) · ConnectWave SQL applied, rollback rehearsed, cron running*
+
+**✅ SHIPPED.** Reports → Receivables → **Credit Terms Not Set** (`reports/credit-terms`) opens on a new
+**By customer** view: one row per customer NAME with a **four-column block per book** — Days · Limit ·
+Customer since · Outstanding — the name column frozen, a two-row header, alternating block shading, and
+**Books shown** pills to hide the books you are not working on. The old per-ledger list stays as a **By
+ledger** toggle. Both views share every filter, and the Excel export carries the same shape, the same
+fills and a working freeze.
+
+**Cell states.** Each cell is judged on its own, so a customer with days set and no limit reds only the
+Limit cell.
+
+| state | Days / Limit | Customer since | Outstanding | fill |
+|---|---|---|---|---|
+| Not open in that book | **NA** | blank | blank | none |
+| Open, terms set | the values | date or blank | balance | none (alternate blocks shaded) |
+| Open, **terms not set** | blank | date or blank | balance | **subtle red** `FFF2F2` |
+| Open, **set on the bills** | blank, tooltip counts the bills | date or blank | balance | **blue** `EAF3FB` |
+| Open, **limit = ₹1** | `₹1` + *blocked* | date or blank | balance | **subtle red** |
+
+**🔴 The creation date does NOT exist in Tally's export. Do not look for it again.** Checked in BOTH
+databases on 17-09-2026. The 9,536 ledger masters carry no creation or alteration date, and the
+connector's FETCH list never asks for one. ⚠ **`APPLICABLEFROM` is a trap** — nested inside
+`LEDMAILINGDETAILS.LIST` (8,676 ledgers) and `LEDGSTREGDETAILS.LIST` (7,661), invisible to a top-level key
+scan, and it is **not** a creation date: every value is a 1 April (two are 1 July 2017, GST launch), and
+within one book a ledger with a very low `MASTERID` carries a 2025 date. It records when the address or
+GST details were last set. `MASTERID` itself is creation ORDER, per book, and is wrapped JSON
+(`{"#text": …}`) that a plain `->>` cast throws on.
+
+**What "Customer since" therefore is.** Orange One's `mst_parties.created_at` = when the masters sync first
+SAW the ledger. The sync bulk-loaded everything up to **14-08-2026 17:45:24 IST**, so for those it is only
+the load date. **42** customers have been first seen since; compared against each one's first Tally
+voucher, 29 line up (within 3 days or before), **7** had a voucher 1–3 weeks earlier and **4 were old
+customers** with vouchers 2–5 months earlier. So the column is the **EARLIER of first-seen and first
+voucher**, and only for ledgers first seen after the bulk load; everyone older reads **blank** with a
+tooltip saying why. Never a fabricated date. Both halves must load or the cell says so — first-seen alone
+is exactly the trap.
+
+**Last transaction (replaces Last activity, both views).** The old column knew only the last receipt and
+open bills, so a settled bill, a credit note or a journal was invisible. It now takes the newest of the
+last **Tally voucher**, the last receipt and the newest open bill. ⚠ **Post-dated entries do not count
+until their date** — 24 ledgers carried post-dated bank receipts up to 21-Oct-2026 on the day.
+
+**The new ConnectWave object** (`supabase/connectwave/rpt_ledger_voucher_dates*.sql`, applied to
+`ieeefdnyhzgrroifiqbb`):
+- `rpt_ledger_voucher_dates (tenant_id, ledger_guid, first_vch_date, last_vch_date, last_vch_type,
+  refreshed_at)` — one row per customer ledger (**1,266**), rebuilt whole in **~1.4 s**.
+- `rpt_ledger_voucher_dates_if_stale()` chains off **`collection_meta.refreshed_at`**, not
+  `tally_sync_state`: the rebuild reads the snapshot's ledger list, so a new debtor is only coverable once
+  `collection_refresh` has put it there.
+- Cron: `rpt-ledger-voucher-dates-after-sync` at **`1-59/5`** and `rpt-ledger-voucher-dates-nightly` at
+  **`41 18 * * *`** UTC (00:11 IST, which re-applies the post-dated cap on the new day).
+  ⚠ **Every minute offset mod 5 on this project is now taken** (0 = four `*/5` pollers + the `*/30`
+  snapshot · 2 = `rpt-sales-despatch` · 3 = Orange One's masters-sync · 4 = `rpt-soa-register` · 1 = this).
+  The next job here must be placed by measured load, not by arithmetic.
+- Anon can read it; both functions are revoked from anon/authenticated. **Rollback file written AND
+  rehearsed on live** (applied → rebuilt → rolled back, objects gone, snapshot untouched → re-applied).
+
+**Verified on live data, 17-09-2026:** 1,882 ledgers → **1,324 customers** (914 in one book, 290 · 95 · 22,
+and **3 in all five**, so **71.6%** of book cells read NA) · **180** ₹1 limits · block order read from the
+data (O-tec Surat 1,204 · Enterprise Surat 312 · O-tec Noida 177 · Enterprise Noida 108 · Colorix Surat
+81) · no customer name appears twice in one book. Checked in the browser as an admin **and as a
+salesperson-scoped HOD** (954 customers against the admin's 988, Customer since populated, scoped NA
+wording, export works). The workbook was opened in Excel: freeze at column 1 / row 3, merged book bands,
+the three fills, and real dates.
+
+**The decisions taken (all of them, for the record).**
+1. Customer since = earlier of first-seen and first voucher, blank before 14-08-2026 with a tooltip.
+2. "Set on the bills" is blue, never red — 146 ledgers are controlled from their bills, one of them 58
+   machine instalments worth ₹6.55 Cr.
+3. A ₹1 limit counts as NOT set: `₹1` + *blocked*, red.
+4. Pivot on the EXACT customer name ("… MACHINE" is a separate decision from the parent).
+5. The per-ledger view stays, and the company panel stays per ledger and says so on screen — after a
+   pivot one customer can be Complete in one book and Neither set in another.
+6. Customer-level Last transaction added (without it a reader has no activity signal for the older
+   customers, whose Customer since is blank).
+7. Fills are per cell, not per block.
+8. Post-dated vouchers ignored until their date.
+9. Filters stay LEDGER filters: a customer row shows when any ledger in a shown book matches, while the
+   blocks still tell the truth about every shown book. The Company dropdown becomes the Books shown pills.
+10. By ledger's "Last activity" became "Last transaction" too, so the page has one definition.
+11. **No money total in the pivot** — each block's Outstanding is a raw balance and may be negative, and a
+    net total would contradict the panel's positive-only "Owed with nothing set".
+12. For a scoped viewer, NA reads "not open, **or outside your view**".
+
+**Also fixed in passing:** `Clear filters` never reset the collection-team filter and there was no chip
+for it, so that filter narrowed the list with nothing on the page able to undo it.
+
+**Not done, deliberately:** the By ledger list keeps its top-bar filters (it predates the per-column
+filter row), and Customer since is not shown per ledger there.
+
+**Access:** report id `credit-terms`. Admins see it; anyone else needs it in
+`profiles.receivables_allowed_reports`. **Ritesh Tulsyan was granted it on 17-09-2026** (his list is now
+`{advances, credit-terms}`).
+
+**🔁 REVISED 18-09-2026 on the client's read of the live report (`df932fb`).**
+- 🔴 **"Customer since" is OUT of the blocks.** It could only be filled for customers created after
+  14-08-2026, so it was blank in about 98% of the grid: *"I don't understand why you have shown Customer
+  since... instead of showing it, we should have shown last activity."* Each block's fourth column is now
+  that book's **Last activity** (the newest Tally voucher, receipt or open bill on that ledger), which
+  exists for every ledger that has ever traded. The left-hand column stays as the newest across every
+  book, renamed **Last activity (any book)**; the By ledger column is **Last Activity** again too, so the
+  page has one word for one thing. The creation-date finding is preserved in this entry and in RC-20 —
+  ⚠ the mst_parties read was removed with the column, so restoring it means restoring that fetch.
+- **The report opens filtered**, on the client's instruction: **Has outstanding ON** (1,131 of 1,882
+  ledgers are at exactly zero) and **Sale type = every type except Machine and Spare Parts**. Both are
+  the ordinary controls, so either can be switched off. Counts on the day: 988 customers with a gap →
+  142 once zero balances go → **87** once machine and spares go. ⚠ Clearing filters returns to this
+  DEFAULT view, not to "no filters"; the defaults carry no chip (the button and the Sale type chip show
+  them); and the panel and strip count the same filtered set as the list, which is what keeps a figure
+  you click and the list you land on the same customers.
+- **A blue cell now reads "On bills"** in words, on screen and in the workbook. The first question asked
+  of the live report was what the blue meant, and a coloured blank cannot answer that.
+
+**Related, same day:** `send-email` gained an optional `bullets` array and `ctaUrl`/`ctaLabel` for the
+`receivables_collections_report` kind (deployed v32, commit `5eace03`), because the announcement mail
+had gone out as one escaped paragraph. ⚠ Live matched **master's** copy of that function; the
+`daily-reports` copy carries an unreleased `travel_` renderer, so deploying from that checkout would
+have dropped Complaint's email. Check the deployed bundle before any future deploy.
+
+---
+
+### RC-20 · A true creation date for customers from before 14-Aug-2026  🟡  `[ ]`
+*Raised 2026-09-17 out of RC-19 · Not started · Needs work in ANOTHER repo plus a full re-pull*
+
+**The ask.** RC-19's "Customer since" is blank for every customer created before the masters sync's bulk
+load, because nothing in either database records when a Tally ledger was created. Filling those blanks is
+a three-part job, and none of it lives in this repo:
+
+1. 🔴 **Probe the live Tally installation FIRST.** Tally exposes master audit information (created/altered
+   dates) only where the **edit log / "Use Tally Audit Features"** is switched on, and whether this
+   installation has it — and since when — is unknown. If it is off, the date does not exist anywhere and
+   the answer is "never available for historical ledgers". Everything below is wasted until this is known.
+2. **Connector FETCH change** in `D:/AI Development/ConnectWave-App` — `connector/internal/tally/entities.go`
+   asks for GUID, MASTERID, ALTERID, NAME, PARENT, balances, BILLCREDITPERIOD, CREDITLIMIT and the contact
+   fields, and no date. Adding one flips `SchemaSignature()`.
+3. **A full re-pull of every company**, which is the expensive half.
+
+Same shape as OD-12b. ⚠ Do not "solve" it with `APPLICABLEFROM` or `MASTERID` — see RC-19 for why both are
+wrong.
+
+---
+
+### RC-17 · Masters: one click to see who is unmapped, and every tab sorts and filters  🔴  `[x]`
+*Raised 2026-09-16 · Re-measured against the live mirror and **shipped 18-09-2026** · No database change*
+
+**The ask.** The **Customer Groups** tab had a *No collection team* chip; nothing equivalent existed for
+salesperson or category, and that chip counted only customers who **owe money**.
+
+**Why it mattered now.** The Advances report (RC-18) shows money against the customer's collection team,
+so a customer with no team is invisible to everyone scoped to one — and the untagged customers hold most
+of the unapplied advance money. This screen is where somebody finds them. Masters is **not** scoped (it
+reads ConnectWave directly, not through `useAppData`), so a Settings full-access user such as Jayshree
+sees every customer here, including ones she cannot reach on any report.
+
+**Measured on the live mirror, 18-09-2026** (the figures move daily — re-measure before quoting):
+
+| | all | owing ≥ ₹1 |
+|---|---|---|
+| Muster rows | 1,887 | — |
+| **No salesperson** | **27** | 3 |
+| **No category** | **37** | 3 |
+| **No collection team** | **1,088** | **7** ← all the old chip showed |
+| salesperson = `OTHERS` (a **real** tag, never folded in) | 678 | — |
+
+Unset teams split **128 `NULL` / 960 empty string**, so `=== null` would have reported 128. Everything
+goes through the shared `isUnset`.
+
+#### The two decisions
+
+1. **The chips count EVERY unmapped customer**, not only those who owe. The owing-only rule was
+   deliberate and right for *its* question — "who is nobody chasing?", where a credit balance means
+   nothing to collect — but it is the wrong denominator for "who needs tagging?". Its comment was
+   **rewritten**, not silently dropped, so the next reader does not restore it as a bug.
+   ⚠ **"Has balance" does NOT reproduce the old 7.** It tests `Math.abs(out) >= 1`, so it keeps credit
+   balances too: chip + Has balance reads **25**. Nothing on the screen reproduces the old 7 exactly.
+2. **The All / Unchecked / New chips were dropped; Status became a column filter.** Both tables already
+   rendered a Status column, and Red Mark records why two controls over one thing were abandoned:
+   *"two controls over the same thing would disagree the moment one of them cascades."*
+
+#### Shipped with it — every Masters tab now sorts and filters on every column
+
+`CLAUDE.md` says every grid sorts on every column and filters under every column by default. Four of the
+seven tabs did not. One new **`components/GridTable.tsx`**, generalised from the grid `AdvancesReport`
+already drove from a column array, now renders all of them:
+
+| Tab | Before |
+|---|---|
+| Salesperson & Category · Customer Groups | sorted on 1 of 9 columns; no filter row |
+| Companies & Locations | **no sort, no filter, no search at all** |
+| Other Payments | **no sort on any of 12 columns**; order hard-coded `payment_date desc` |
+| Salespersons / Collection Teams | hand-rolled sort + cascade; filters on 2 of 5 columns |
+| Red Mark · Disputed Bills | already conformed — moved onto the same table |
+
+- 🐛 **Fixed:** `NameMasterTab` offered a filter value literally spelled `—` (it did `updated_by ?? "—"`)
+  where every other grid offers `(Blank)`. Also split the two-line Updated cell into **Updated** and
+  **Updated by**, since one column cannot sort on a timestamp and filter on a person honestly.
+- **`useColumnGrid` gained `initialSort`.** Without it the conversion would have silently reordered three
+  tabs — the hook starts unsorted, while the two musters opened on Outstanding descending and Other
+  Payments on the newest payment.
+- **`describeFilters` now names the chips and, generically, every per-column selection**, so an export
+  cannot narrow 1,882 rows to 9 without saying why. That also closed the same hole on Red Mark and
+  Disputed Bills, whose exports had been understating their filters.
+- **Orphans deleted in the same commit** (FIX-4 in reverse — `noUnusedLocals` is false, so none of them
+  would ever have failed the build): `Toolbar`, `useMusterFilters`, `OutstandingHead`, the local
+  unsearchable `MultiSelect`, a duplicate `SortDir`, and the orphan-chip props no caller ever passed.
+
+**Verified signed in as Jayshree (`sub_hod`, not an admin, Settings full access, scoped to five teams):**
+counts match the database, chips cascade and reset the page, a filter matching nothing keeps the table and
+its filter row standing with **Clear filters**, blanks read `(Blank)`, self-exclusion holds (a narrowed
+column still offers its other values), and an export of a chipped + filtered view named both filters on its
+About sheet.
+
+**🔴 Still open — and it is data work, not code.** Tagging the 1,088 untagged customers is Jayshree's job,
+through the **Export / Import** buttons already on each tab. Until that is done the Advances report keeps
+hiding money from everyone scoped to a collection team.
+
+---
+
+### RC-18 · Advances Not Applied — which unapplied money belongs to which invoice  🔴  `[x]`
+*Raised 2026-09-16 · Audited against the live mirror · Report built, verified and shipped 17-09-2026 · The daily email is a separate, unbuilt task*
+
+**✅ SHIPPED 17-09-2026 — the REPORT.** Reports → Collections → **Advances Not Applied**
+(`reports/advances`, report id `advances`). **The daily email is NOT built — a separate future task** (schedule,
+recipients, runner and send were all out of scope by the client's instruction of 17-09-2026). No database change.
+
+**What the screen does.**
+- One row per customer holding unapplied credit, **grouped by salesperson** with a subtotal per group (a switch
+  flattens it). Columns: customer · company · location · salesperson · team · **Unapplied credit** · Tagged to no
+  bill · On a named ref · Named in Tally · Open bills · Pending on open bills · Outstanding · **On Account
+  (Collection Report)**. Every column sorts; filters cascade; 25 a page.
+- **Expand a row:** the vouchers Tally holds behind the money tagged to no bill (date · type · number or NEFT/RTGS
+  narration · amount), **one labelled line for whatever they do not explain** ("Opening balance, no receipt detail
+  in Tally" / "Not explained by the entries above" / "Tally's entries don't reconcile…" / "Manual Other Payment on
+  account"), each credit on a named ref, and — beside it — **the open bills to settle it against**, or "No open
+  bill to settle against yet". The lines always add up to the row, to the paisa. Links to Customer Detail.
+- **Related party** (salesperson `RELATED PARTY`) in its own section, out of every total. **Suspense** at the foot:
+  credits into the SUSPENSE ledgers, read per real Tally book (closed financial years included), not scoped.
+- **Excel:** Advances (grouped, subtotals) · Entries (every line behind every figure) · Related party · Suspense.
+- Code: `lib/advancesReport.ts` (the figure, pure) · `lib/suspenseReceipts.ts` · `lib/exportAdvances.ts` ·
+  `pages/AdvancesReport.tsx`, plus the catalogue entry, the route and the FY-pinned list.
+
+**🔴 The figure is UNCAPPED — the user's decision, 17-09-2026.** The brief's ₹13.73 Cr is
+`collection_customer_snapshot.on_account`, which `collection_refresh()` caps at the ledger's gross overdue
+(`least(named-ref credit + untagged, max(0, overdue))`). That hid **87 customers holding ₹15.00 Cr** — GOPGAN
+DIGITAL PRINTING LLP ₹4.86 Cr received on account with no open bill, RAMSHARNAM IMPEX ₹3.63 Cr M/C ADV, ZAARA'S
+₹1.00 Cr — and under the cap "no open bill to settle against" could never occur. The report shows the whole of it:
+**Unapplied credit = credit on named refs + max(0, Σ pending − outstanding)**, with the same orphan-debit guard as
+the SQL. The capped figure stays as the last column, so the Collection Report still ties.
+
+**Measured 17-09-2026 (live mirror, snapshot 13:00 IST).**
+
+| | customers | ₹ |
+|---|---|---|
+| **All unapplied credit** | **250** | **₹29.61 Cr** |
+| · tagged to no bill (incl. ₹13.15 L manual Other Payment) | | ₹16.35 Cr |
+| · on a named ref | | ₹13.27 Cr |
+| Main section | 243 | ₹19.26 Cr |
+| Related party section | 7 | ₹10.35 Cr |
+| Collection Report's capped On Account (tie-back) | 161 | ₹13.73 Cr |
+| Suspense receipts | 4 | ₹2,19,764 |
+| No open bill to settle against (78 main + 1 related) | 79 | |
+
+By collection team: Jayshree 103 · ₹11.27 Cr · Mohta ji 65 · ₹1.29 Cr · Nitesh 33 · ₹0.79 Cr · Ankita 17 · ₹0.08 Cr ·
+**(no team) 30 · ₹13.15 Cr** · **RELATED PARTY 2 · ₹3.04 Cr**. (The team "Vijay" was renamed "Ankita" on 17-09-2026,
+on the ledgers and on Jayshree's profile alike.)
+
+**Coverage, re-measured.** Of ₹16.22 Cr tagged to no bill in Tally, voucher lines name **₹84.60 L across 39
+customers** (main section ₹63.90 L / 38). 95 customers are opening balance only; on 16 the vouchers add up to MORE
+than the figure, so the guard lists none. Suspense: ₹99,710 and ₹1 in current books, **₹14,750 + ₹1,05,303 in the
+closed FY25-26 Noida Enterprises book** — found only because the routine is called with the book's real tenant.
+
+**Decisions.**
+1. Report only, no email (client, 17-09-2026).
+2. All unapplied credit, uncapped (user, 17-09-2026) — split into tagged to no bill / on a named ref / manual
+   payment, with the capped On Account as a tie-back column.
+3. RELATED PARTY (the salesperson value) in its own section, out of every total.
+4. Suspense at the foot: not scoped, money in only, every book including closed years.
+5. A "No salesperson" group, last; empty today.
+6. Access asked, not assumed — **granted 17-09-2026 to Jayshree Patil and Ritesh Tulsyan** (the user's choice).
+   Ritesh is salesperson-scoped and his list has neither RELATED PARTY nor HARI OM, so he sees 242 · ₹19.08 Cr.
+
+**🔴 Jayshree sees 218 customers · ₹13.43 Cr of the ₹29.61 Cr.** Scope is lifted only for admins, and it was
+deliberately not widened. What she cannot see is data, not code:
+- **30 customers with no collection team · ₹13.15 Cr** — COLORIX DIGITAL PRINTING SOLUTIONS LLP-SALES ₹636.00 L*,
+  RAMSHARNAM IMPEX ₹363.44 L, ZAARA'S ₹100.30 L, ORANGE O TEC ENTERPRISES PRIVATE LIMITED-NOIDA (S) ₹36.65 L*,
+  ORANGE O TEC ENTERPRISE PRIVATE LIMITED-NOIDA ₹30.00 L*, ORANGE O TEC PVT. LTD (DELHI) ₹28.58 L*, PANKAJ FASHIONS
+  PVT LTD-MACHINE ₹25.50 L, VAIBHAV ENTERPRISES MACHINE-2 ₹17.00 L, SHREE RAJ RAJSHWARI SILK MILLS ₹13.15 L, NKM
+  FASHION-MACHINE ₹13.00 L, SHREE SAI DIGITEX ₹8.06 L, PRIYANKA SILK MILLS ₹7.89 L, MITHILI PROFFESIONAL'S-Cross
+  Creation ₹6.45 L, ORCHID COLOURING-MACHINE ₹5.00 L, DASS TRENDZ ₹4.49 L, JAIN KNITTING & DIGITAL ₹4.38 L, SHREE
+  RAM INDUSTRIES ₹3.56 L, NIVYA PRINTS ₹3.49 L, SUMATI PRINTS PVT LTD-MACHINE ₹3.00 L, MANISHA TRADERS ₹1.44 L,
+  JAGANNATH SUDHIR KUMAR ₹1.30 L, ZAKOOPI INFOTECH PVT LTD-MACHINE ₹0.50 L, BANSAL TEXTILE MILLS ₹0.24 L, TRUE COLORS
+  PVT LTD ₹0.24 L*, LOTUS KNITS ₹0.24 L, VENUS MILLS PVT LTD ₹0.23 L, PROTON ENTERPRISE ₹0.20 L, ADVANCE FORM DEBTORS
+  ₹0.13 L, CLOTHERA PRIVATE LIMITED-MACHINE ₹0.10 L, M/S AVON COTTEX PRIVATE LIMITED ₹0.06 L. (* related party)
+- **2 customers in the RELATED PARTY team · ₹3.04 Cr** — ORANGE O TEC ENTERPRISES PVT LTD (SALE) ₹299.58 L,
+  ORANGE O TEC PVT LTD- SALES ₹3.99 L.
+- The fix: give those 30 a collection team in Masters, and decide whether Jayshree should hold RELATED PARTY.
+
+**Verified 17-09-2026.** As admin, on the branch and again on `master`'s code: totals tie to the SQL to the rupee;
+**all 250 customers diffed one by one against SQL** — every money figure, status, team and salesperson matches; the
+open-bill count is lower on 9, all by design (5 customers carry one debit non-bill reference the hub removes; 4
+have bills settled by manual Other Payments, 18 bills in all); each customer's entries add up to its figure; the
+workbook's sheet totals tie. One batched voucher lookup (8 calls), never per customer. **Not tested as Jayshree** —
+the user declined signing in as her.
+
+**Known limitation.** `loadOnAccountEntries` swallows a failed batch, so a lookup that fails would read as "Opening
+balance, no receipt detail". Left unchanged, as instructed.
+
+- [ ] **The daily per-salesperson email** — not built; a separate task when the client asks for it.
+- [ ] Give the 30 no-team customers a collection team in Masters (data, not code).
+- [ ] Client's call: should Jayshree hold the RELATED PARTY team?
+
+---
+
+### RC-16 · Collection Team becomes a Group-by level on the Salesperson Collection Report  🟡  `[x]`
+*Raised 2026-09-16 · Re-measured against the live mirror, built, browser-verified and **shipped
+18-09-2026** · No database change, no Edge Function — the value was already on every row*
+
+**The ask.** RC-11 added the **Collection Team** filter to the Salesperson Collection Report, but the
+**Group by** builder offered only Salesperson / Customer / Customer Group / Customer Category /
+Company / Location, so the figures could not be read team by team.
+
+**✅ SHIPPED.** *Collection Team* is now a group-by dimension like any other, with two new View chips
+(**Collection Team** and **Collection Team → Customer**). Everything downstream picked it up on its
+own, as predicted: the Excel export writes one column per level plus the `Level` column with no edit,
+and the row-count noun reads the dimension's own label ("7 COLLECTION TEAMS").
+
+**Measured on the live muster, 18-09-2026** (re-measure before quoting — `Vijay` became `Ankita`
+since 16-09):
+
+| collection team | muster rows | ledgers the report actually lists |
+|---|---|---|
+| **(none)** | **1,088** (128 `NULL` / 960 empty) | **30** |
+| Mohta ji | 251 | 224 |
+| Jayshree | 248 | 232 |
+| Nitesh | 184 | 165 |
+| Ankita | 107 | 97 |
+| RELATED PARTY | 8 | 6 |
+| **OTHERS** | **1** | **1** |
+
+⚠ **The two figures are not the same question and neither is a safe assumption.** Most untagged
+ledgers are dormant and never reach this table — 58% of the muster carries no team, but the bucket on
+screen held 30 of 755 listed ledgers on the day it shipped. It grows the moment an untagged customer
+starts billing.
+
+#### The decisions
+
+1. **The unassigned bucket is labelled "No collection team"** and keyed on a **sentinel**
+   (`"\u0000no-team"`), not on its display text — the pattern `shared/lib/blankFilter.ts` uses.
+   🔴 **`OTHERS` IS A REAL COLLECTION TEAM**, carried by one ledger today, so a bucket named after
+   any plausible word would have merged the untagged into a team the client actually uses,
+   indistinguishably. ⚠ This is the **opposite** of the salesperson dimension on the same screen,
+   where `spName()` folds the untagged into `"OTHERS"` deliberately, because there it *is* a real
+   muster value. The two dimensions behave differently on purpose.
+2. **It sorts to the bottom, whatever the column and whatever the direction.** It is an absence, not
+   a team; pinning it means the sort always orders the *teams*, and the top row is never ambiguous.
+   Verified against five sorts in both directions, including the alphabetical label sort where it
+   would otherwise land between `Nitesh` and `OTHERS`.
+3. **The Excel header now names the Collection Team and Salesperson filters.** It printed Company,
+   Location, Sale Type, Segment and Search and neither of these, so an export grouped by team and
+   filtered to one team could not say which team it was.
+
+**One thing beyond the ask, same commit.** The Collection Team filter had **no filter chip on this
+screen** — the Dashboard, the Risk Register and Credit Terms all show one, this report alone did not,
+so the only thing on the page that said a team was selected was the control itself. Grouping by team
+makes a forgotten filter far easier to misread (one bucket, and nothing explaining why), so the chip
+is now there, worded exactly as its siblings word it: `Team: Ankita`.
+
+#### What did NOT change, and why
+
+- 🔴 **The grouping creates a bucket the FILTER deliberately refuses to offer.**
+  `CollectionTeamMultiSelect` says so in capitals: an unassigned customer *"appears under no team, so
+  it cannot be reached from this control at all"*, because a catch-all there *"would hide the coverage
+  gap the Masters screen exists to report"*. A group-by has no such choice — every row must land
+  somewhere. So the untagged are now visible in a bucket the control above cannot select. That is
+  correct, and it is why the label reads as an absence rather than as a team.
+- ⚠ **The bucket key is the RAW, UNTRIMMED value**, deliberately unlike the neighbouring `category`
+  case which trims. The filter is `set.has(c.collectionTeam)` and its option list is built the same
+  way, so a team stored with a stray space has to bucket under exactly the string the filter can
+  select, or group and filter quietly disagree about the same customer. (No stray-space value exists
+  on the muster today; the rule is what keeps that true.)
+- ⚠ **A team is per LEDGER, not per customer name**, and this report keeps per-ledger granularity so a
+  name never clubs across companies. `PROTON ENTERPRISE` appears twice under *No collection team* —
+  once as `Enterprise · Surat`, once as `O-tec · Surat` — and a customer trading in two companies can
+  legitimately show under two different teams. Expect it to be reported as duplication; the
+  "Company · Location" sub-label is what explains it.
+- **"Clear all" still does not clear the Collection Team filter** — and it does not on the Dashboard
+  or the Risk Register either, so this was left alone rather than made to diverge on one screen. Now
+  that the chip is there, a filter that survives "Clear all" is at least visible. Worth fixing across
+  the three screens in one pass.
+
+**Verified 18-09-2026** on the live mirror, against the running code (`npm run build` is the gate —
+there is no test runner):
+
+- Group by Collection Team → 7 buckets, the six real teams plus *No collection team*; `OTHERS` stays
+  its own row. The buckets sum to the Grand Total to within display rounding (₹0.014 Cr on ₹69.19 Cr).
+- The unassigned bucket sits last under Due Pending ↑/↓, Outstanding ↑/↓ and the label sort.
+- Group by Collection Team → Customer: `NITYA PRINT` under `OTHERS`, `RAMSHARNAM IMPEX` under
+  *No collection team* — both confirmed against `ext_ledger_group.collection_team` on ConnectWave.
+- Filter to one team while grouped by team → exactly one bucket, every figure equal to the Grand
+  Total.
+- Export grouped by team: `Level | Collection Team | Customer | Company | Location | …`, header row
+  reads `Collection Team: Ankita`.
+- **As a collector, not as an admin** (Ankita, `employee`, scoped to team `Ankita`): "1 COLLECTION
+  TEAM", her team only, no unassigned bucket, a narrow table that renders normally, and figures
+  identical to the admin's team-filtered view. Her session was minted for the test and revoked
+  immediately with `scope=local`.
+
+**Still open — the siblings, deliberately not touched.** The *Collection Performance* report has the
+same gap through the shared `ZC_DIMENSIONS` in `lib/collections.ts`, and Overdue Aging / DSO /
+Customer Category read the shared `zcDimValue`. Adding it there is the same case again, but on
+`ConsolidatedCustomer`, whose `collectionTeams[]` is an array that *excludes* the unassigned ones — so
+the fold is **not** identical and must not be copied blind. Ask before doing it.
+
+---
+
 ### RC-15 · Salesperson and Collection Team become managed masters, picked from a list  🔴  `[~]`
 🟢 **BUILT, DEPLOYED TO CONNECTWAVE AND BROWSER-VERIFIED 10-09-2026.** Both lists are live and both
 mapping cells are pickers; there is no free-text path left on the muster, on Red Mark, in the Excel
@@ -12054,7 +12954,154 @@ browser never holds write access. New master writes go the same way; do not add 
 
 ---
 
-### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[ ]`
+### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[x]`
+🟢 **SHIPPED 17-09-2026** (master `082958d`, taken by content from daily-reports `1452894`). Seeded with
+**26** disputes from Jayshree's sheet, every remark and item byte-identical. Tested as Nitesh on a session
+minted server-side (no password), then revoked.
+
+| Deploy step | When (IST) | State |
+|---|---|---|
+| ConnectWave SQL `supabase/connectwave/disputed_bills.sql` | 17-09 02:21 | applied → **rollback rehearsed on live** (table gone, `ext_redmark` 54 rows / 0 cleared / its constraint intact) → re-applied. Check constraint proven to refuse a note-less clear (23514) |
+| `muster-write` Edge Function | 17-09 02:24 | **v12** live. v11 was diffed first: identical to the repo once line endings are normalised (md5 `504ef616…`), so nobody's change was dropped or shipped by accident |
+| Seed load | 17-09 02:53 | **26 rows**, all uncleared, source `dispute_sheet`, in one statement that writes nothing unless all 26 bills are still open |
+| Frontend | 17-09 02:56 | master `082958d`. `reportCatalog.ts`, `ReceivablesHubApp.tsx`, `UserLayout.tsx` and `menus.tsx` applied as hunks onto master's newer copies |
+| Report grant | 17-09 03:00 | `disputed-bills` added for Jayshree Patil, Nitesh Prajapati, BENI MADHAV MOHTA, VIJAY (approved by the user 17-09-2026). Granted AFTER Vercel reported the frontend live (02:59), so no Permissions screen still running the old bundle could drop an id it did not know yet. Existing grants untouched |
+
+**What it does now**
+- **`ext_dispute`** (ConnectWave): one row per bill, `unique (ledger_id, bill_ref)`. It stores only what a
+  human types: remark, item description, the clear status, stewardship `checked`. `tally_name` is a display
+  fallback. RLS is on with one read policy, and anon/authenticated have **select only** (Supabase's default
+  grants were revoked, because RLS does not govern TRUNCATE).
+- **Disputed Bills report** (Reports → Customers → `reports/disputed-bills`), scoped through `allCustomers`
+  like Red Mark:
+  - **Columns:** customer · company · location · team · salesperson · bill ref · Bill (Open / *No longer
+    open*) · date · overdue · sale type · amount · pending · **Settled** · item · remark · clear status.
+  - **Settled = Amount − Pending**, with the split on hover (see findings).
+  - A **Bill no longer open** tile opens exactly those rows.
+  - **Default view Uncleared**, with the shared toggle. Clear / Reopen uses the shared note dialog, with the
+    dispute's own wording.
+  - **Admins / Settings full access** also get *Add disputed bills* and an inline remark edit. The edit
+    writes **only the remark**.
+  - The Excel export carries the as-on date and the bill-wise note. Pinned to Both FYs.
+- **Settings → Masters → Disputed Bills** (beside Red Mark):
+  - Remark, item and checked are edited inline. Only the changed fields are sent.
+  - Clear / Reopen, and Delete (for mistakes; the dialog says to use Clear if the dispute was settled).
+  - Export / Import follows the Red Mark contract: import edits details and can clear with a note, but never
+    adds, removes or reopens.
+  - The tab loads its own data, so the other tabs don't pay for the 6,000-row read.
+  - It shows no money, on purpose (raw snapshot vs the dashboard's netted figures). The money is on the
+    report.
+- **Add a bill** (the same dialog on both screens):
+  1. Pick a customer. Only customers with an open bill are listed.
+  2. Their open bills are shown, overdue first; focus moves to the first bill.
+  3. Tick one or more bills (bills already on the list are **greyed out**, cleared ones say *reopen it
+     there*), type a remark, save.
+  - Nothing about money or dates is typed.
+  - The server re-checks that each bill is open **for that customer** (400 otherwise) and refuses a
+    duplicate with a readable 409.
+  - Several bills are inserted in one statement: all land or none.
+- **`muster-write`:** `CLEARABLE` now separates the **row key** from the **authorisation key**. A dispute
+  is found by `id`, and the ledger read off that row decides who may clear it. Red Mark still authorises
+  before reading, exactly as before.
+  - `insert/update/delete_dispute` sit behind the admin gate.
+  - `clear/reopen_dispute` go through `authorizeClear` ahead of it.
+- **Shared components:** `ClearNoteDialog` and `ClearStatusBadge` take a `copy` prop (`RED_MARK_COPY` /
+  `DISPUTE_COPY` in `lib/clearStatus.ts`) and default to Red Mark's. Red Mark's dialog was checked word for
+  word against HEAD. The dispute wording does not claim anything moves "everywhere", because a cleared
+  dispute moves no other screen.
+
+**Verified** (17-09-2026)
+- **API, 38/38**, as Nitesh (collector) and the admin test account:
+  - Own-team `clear_dispute` 200; another team's 403; no note 400; double clear / double reopen 409;
+    missing id 404.
+  - `insert/update/delete_dispute` as Nitesh 403.
+  - Duplicate add 409; a bill that is not open, or another customer's bill, 400.
+  - The anon key reads the table but cannot write it (42501).
+  - Red Mark: own clear 200 then reopen 200, other team 403, `update/delete_redmark` 403.
+- **Clearing one of two disputes on N.H.H. TEXTILE PROCESSORS left the other untouched**, confirmed by
+  reading ConnectWave back: `cleared_by` / `updated_by` = the caller.
+- **Browser, as admin:**
+  - Added 2 bills through the dialog; re-opening the dialog showed both disabled.
+  - Inline remark edit changed only `remarks`.
+  - Settled = Amount − Pending on every row (AJANTA DIGITAL INDUSTRIES INK/26-27/730: ₹70,800 − ₹14,160 =
+    ₹56,640).
+  - A dispute on a bill Tally no longer holds read *No longer open* under the tile, and was not dropped.
+  - Masters export/import: 2 written, 1 refused for a missing clear note.
+  - Delete through the Masters tab.
+- **Browser, as Nitesh** (the report grant injected in the browser only):
+  - Only his team's 4 test disputes; Vijay's JAY MATAJI hidden.
+  - No Add, no remark edit, Clear enabled.
+  - Clear → reopen through the dialog.
+- **Clean-up:** every test dispute deleted (table back to 0 before the seed). Red Mark's 54 rows are
+  **identical to the pre-test backup** (table md5 `ed2c1dd9…`), including EVOKE FASHION, which was cleared
+  and reopened in the API test and then restored with its triggers held.
+
+**The seed — Jayshree's DISPUTE tab, re-measured 17-09-2026**
+- **38 rows → 26 loaded, 12 not loaded, 0 ambiguous.** Matching was exact on customer name → ledger plus
+  the bill reference, and every match was unique.
+- **Remarks: sheet 20 = 11 on the 26 loaded + 9 on the 12 not loaded.** Table after load: **11 remarks, 11
+  items**, compared **row by row by string and md5: 26/26 identical**. Row 17's curly apostrophe survived.
+- By collection team: Jayshree 12 · Vijay 7 · Nitesh 4 · Mohta ji 3.
+- **Two loaded remarks already read as settled**, and were loaded uncleared on the user's decision, for
+  Jayshree to clear with her own note:
+  - ANISHA THE COLOUR CO. SPARE/25-26/1420 — *"NO DISPUTE"*
+  - RAJIV SILK MILLS HEAD/25-26/211 — *"Dispute resolved. The customer will make the payment by the 20th."*
+- Four loaded bills have been part-paid since the sheet (SWASTIK SPARE/25-26/2022 ₹88,300 → ₹19,116;
+  CLOTHERA INK/25-26/7367 ₹15,222 → ₹472, INK/25-26/8189 ₹41,536 → ₹5,192; NITIN INK/N/24-25/659 ₹53,808 →
+  ₹43,808).
+- **The 12 NOT loaded** (bill no longer open in Tally, most likely settled since 02-09), recorded here so
+  their remarks are not lost:
+
+  | Row | Salesperson | Customer | Bill | Date | Pending in sheet | Remark |
+  |---|---|---|---|---|---|---|
+  | 3 | AAYUSH SIR | SWASTIK DIGITAL | HD/HG/25-26/286 | 18-12-2025 | ₹2,65,500 | 50K DIS cn DONE |
+  | 5 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/25-26/2494 | 17-03-2026 | ₹5,534 | 10% DIS DN |
+  | 6 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/51 | 04-04-2026 | ₹2,697 | 10% DIS DN |
+  | 7 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/108 | 15-04-2026 | ₹2,643 | 10% DIS DN |
+  | 8 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/109 | 15-04-2026 | ₹12,390 | 10% DIS DN |
+  | 9 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/110 | 15-04-2026 | ₹34,152 | 10% DIS DN |
+  | 10 | NAKUL JI | PANORAMMA PRINT | SPARE/26-27/110 | 28-06-2025 | ₹6,55,490 | CLEAR |
+  | 13 | NAKUL JI | VISHNU HARI DIGITAL CREATION | INK/24-25/7727 | 31-01-2025 | ₹23,010 | customer will issue payment this week |
+  | 19 | NAKUL JI | S K ENTERPRISE | INK/25-26/152 | 05-04-2025 | ₹1,21,540 | NAKUL JI WILL CLEAR THIS MATTER NEXT WEEK |
+  | 28 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8163 | 30-01-2026 | ₹1,416 | — |
+  | 29 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8188 | 31-01-2026 | ₹15,399 | — |
+  | 31 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8483 | 14-02-2026 | ₹71,656 | — |
+
+**Decisions, as built** (the brief's recommended answers; items 4 and 5 confirmed by the user 17-09-2026)
+1. **Where the screen lives: both** — a report for daily work, a Masters tab for bulk edits. Collectors
+   cannot open Settings, so the report is the only place they can clear.
+2. **Who adds a dispute and edits a remark: admins and Settings full access**, like Red Mark; collectors
+   clear and reopen their own customers' disputes. *Alternative if the client wants collectors editing
+   remarks:* a second narrow door that writes only `remarks`, authorised per ledger.
+3. **The sheet's `type` is an item description**, so `item_description` is its own nullable column; sale
+   type is shown live beside it. *Alternative:* fold it into the remark.
+4. **The 12 bills no longer open were not loaded**; they are listed above.
+5. **Report access is a live permission change**. See the Report grant row in the deploy table.
+
+**Findings worth keeping**
+- 🔴 **The brief's "five numbers" trap does not hold on Live.** `connectwaveFetcher` sets `receiptAdj`,
+  `creditNoteAdj`, `debitNoteAdj` and `journalAdj` to **0 on every bill**. The invoice snapshot nets them per
+  bill and does not split them, and only `otherPaymentAdj` is ever filled. So a five-way breakdown would have
+  shown four zeros. The report shows **one Settled figure = Amount − Pending**, which reconciles by
+  construction, with *In Tally* vs *manual Other Payments* on hover. No open bill has an Other Payment
+  against it today.
+- 🟡 **On an opening bill (`is_opening`), Amount is what was still owed when the books began**, not the
+  invoice value, so Settled counts only what came in since. The hover says so.
+- 🟡 **The same bill can read differently in Masters and on the report.** The dashboard nets manual Other
+  Payments into `pending` and drops a few cash-voucher "bills" (`liveNonBillRefs`); the raw snapshot does
+  neither. That is why the Masters grid carries no money.
+- 🟡 **247 open-bill rows have pending ≤ 0** (advances, unapplied credits). The add dialog offers only bills
+  still owed.
+- 🟡 `fetchAll` in `musterApi.ts` now accepts several order columns: `collection_invoice_snapshot` is unique
+  only on the pair, and paging on one column can repeat a row and drop another.
+
+**Still open — follow-ups, not part of RC-13**
+- [ ] 🟡 **Tell Jayshree two loaded disputes already say they are settled** (ANISHA, RAJIV SILK MILLS HEAD/25-26/211)
+      and that clearing is hers, with a note.
+- [ ] 🟡 **Should a dispute carry an owner or a target date?** Still open (see *To settle*); almost every
+      remark names a person and a deadline.
+- [ ] The Red Mark remarks that were never loaded remain an RC-12 follow-up.
+
 *Raised 2026-09-03 · Audited the same day against the code and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **DISPUTE***
 
@@ -12209,7 +13256,77 @@ column.
       deadline (*"Nakul Sir … by this week"*). Those are two columns that could be filtered and chased
       instead of read.
 
-### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[ ]`
+### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[x]`
+🟢 **SHIPPED AND LIVE 16-09-2026 23:26 IST** (master `3deb91e`, Vercel success). Built from daily-reports
+`d744318` (14:06) + `1914a3c` compact table (23:07) + `44f92a7` as-on date over the balances (23:22).
+Verified on live data and on orangeonehub.com as Nitesh. **The 54 red marks were left exactly as found
+(0 cleared).** Nothing is cleared until somebody clears it.
+
+| Deploy step | When (IST) | State |
+|---|---|---|
+| ConnectWave SQL `supabase/connectwave/redmark_clear_status.sql` | 16-09 13:39 | applied → **rollback rehearsed on live** (54 rows, `checked`/`reason` untouched) → re-applied. Check constraint proven to refuse a note-less clear (23514) |
+| `muster-write` Edge Function | 16-09 13:41 | **v11** live. ⚠ Also carried RC-11's team-rename cascade (`543ddb7`), which v10 never had — approved |
+| Frontend | 16-09 23:26 | master `3deb91e`. `UserLayout.tsx` applied as a hunk onto master's newer copy |
+| Report grant | 16-09 23:28 | `red-mark-customers` added for Nitesh, BENI MADHAV MOHTA, VIJAY; Reports un-hidden for Nitesh (it shows only granted reports) |
+
+**What it does now**
+- **Clear / Reopen** on the Red Mark master (Settings → Masters) AND on the report, because collectors
+  cannot open Settings. Note required on clear (UI, server, and a DB check constraint). Reopen keeps the
+  last clearing's who/when/note as history; who reopened is `updated_by`. Delete stays, for mistakes only,
+  and is visibly different (red icon vs a labelled green Clear).
+- **Who may clear** — its own rule in `muster-write` (`authorizeClear`), handled BEFORE the admin gate,
+  which is untouched: admin or Settings full-access on anyone; otherwise an `edit` module grant AND the
+  ledger's `ext_ledger_group.collection_team` in the caller's `receivables_collection_teams`. Fails closed.
+- **`blocked` = has an UNCLEARED red mark** (`connectwaveFetcher`). Every reader moved with that one line.
+- **The report**: as-on date over Outstanding/Due, three rolling months of receipts and sales, bounced
+  cheques, Rcvd ÷ Due, current-month sales flagged red on uncleared rows, a *Billed this month* tile
+  (**10** on day one), the clear status and toggle, all in the Excel. Pinned to Both FYs. Compact
+  single-line rows with the customer column pinned.
+- **Import** can clear (Yes + a note) but **never reopens**: a sheet exported before somebody cleared a case
+  still says No. A missing Cleared column means no change.
+- **Reusable for RC-13**: `lib/clearStatus.ts` (`useCanClear`, views, `describeClear`), `ClearStatusToggle`,
+  `ClearNoteDialog`, `ClearStatusBadge`, `components/gridColumns.tsx` + `lib/useColumnGrid.ts` (sort +
+  cascading filters, lifted out of NameMasterTab), and the `CLEARABLE` registry in `muster-write`.
+
+**Verified** (16-09-2026)
+- As **Nitesh** (session minted server-side, no password handled, then revoked): own ledger clear 200;
+  another team's 403; `update_redmark` / `delete_redmark` 403; no note 400; double clear / reopen 409.
+- **Every surface moved**: SAMEER ENTERPRISES cleared → Dashboard tile 33 → 32, gone from the Risk
+  Register `?redmark=1` and the Credit Terms badge; reopened → back to 33.
+- **Uncleared wins**: R STUDIO (Ent Surat) cleared while its Otec Surat ledger stayed red — the tile did
+  NOT move and R STUDIO stayed on the Risk Register.
+- **Hand-checked to the rupee**: GOPAL HOME FURNISHING - MACHINE — Rcv Jul ₹30.00 L, Aug ₹3.00 L, Outstanding
+  = Due ₹19.57 L, 538 days — against `collection_customer_snapshot`. Outstanding and Due rebuilt bill by bill
+  for KALAHANSH FASHIONS LLP-MACHINE (₹74.04 L = 12 open bills; ₹30.00 L = the ones past due).
+- **Live as Nitesh** on orangeonehub.com: the report opens, 11 rows (his team only), 11 Clear buttons
+  enabled, *Billed this month* 2, no Settings.
+
+**Findings worth keeping**
+- 🔴 **The scheduled Collection email does NOT move on a clear.** It builds with `defaultFilters()`, where
+  `blockedOnly: false` (`supabase/collectionsreport/reportSpec.ts`). Only a MANUAL send from a screen with
+  *Red Mark only* ticked changes. The brief assumed otherwise.
+- 🔴 **Receipts are gross, and it matters here**: GOPAL - MACHINE reads ₹33 L received / 169% of due while
+  all ₹33 L bounced. The Bounced column exists for exactly this row.
+- 🟡 **Bounced comes from `collection_range_facts`, not `MonthFacts`.** Under Live, `MonthFacts.chequeReturns`
+  is the year's total spread by receipt weight — an estimate. The RPC reads dated vouchers, but counts only
+  Payment vouchers named **CHQ.R** (not refunds or unlabelled bounces), so the column says so.
+- 🟡 **Nobody but admins could open the Red Mark report** before this: every collector's
+  `receivables_allowed_reports` was empty (empty = no reports). Granted as above.
+- 🟡 `insert_redmark` upserted without the clear fields, so re-adding a cleared customer would have left
+  them cleared and invisible. It now sets `cleared: false`.
+
+**Still open — follow-ups, not part of RC-12**
+- [ ] 🔴 **The sheet's ~20 remarks were never loaded** — `reason` is NULL on all 54 rows, so the Reason
+      column is blank everywhere. Source: `Misc/Jayshree/DISPUTE & REDMARK.xlsx`, tab REDMARK. Needs a
+      ledger match with unmatched rows reported; ask the user before loading.
+- [x] ~~🟡 **Jayshree still cannot open the report**~~ — **granted by the user 16-09-2026 23:54 IST** in
+      Settings → Permissions: `red-mark-customers` (plus `zero-collections`) ticked and the Reports menu
+      switched on. Verified on her profile: Reports no longer hidden, `edit` access, all five teams, so she
+      sees all 54 red marks and can clear any of them. ⚠ On that screen a plain menu is a single on/off
+      tick — there is no "Standard" pill; only Settings carries a Hidden / Full access pair.
+- [ ] 🟡 **Tell whoever reads the Collection mail** that Red Mark counts can now fall on their own when a
+      case is cleared — on the screens, and on any manual *Red Mark only* send.
+
 *Raised 2026-09-03 · Audited the same day against the code, the live musters and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **REDMARK***
 
@@ -12306,28 +13423,28 @@ column that can never go stale or be forgotten.
 #### What to build
 
 **Part A — the master**
-- [ ] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
-- [ ] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
+- [x] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
+- [x] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
       Uncleared** with All / Cleared / Uncleared beside it.
-- [ ] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
+- [x] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
       correction.
 
 **Part B — export / import**
-- [ ] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
+- [x] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
       batch can be cleared from Excel the way Salesperson/Reason/Checked already are.
-- [ ] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
+- [x] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
       *Cleared* column does not change it, and clearing-by-import is exactly the safe middle
       ground: it settles a case without letting a spreadsheet flag or unflag customers wholesale.
 
 **Part C — the report**
-- [ ] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
+- [x] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
       the **as-on date**, stated on the page and carried into the export — an outstanding figure with
       no date on it is unreadable a week later.
-- [ ] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
+- [x] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
       it, from `MonthFacts.receipts`. The columns roll forward on their own; nobody hand-adds a month
       the way the sheet does with its JUN / JULY / Aug. One number cannot tell a first miss from a
       long silence, which is the whole question on a red-marked customer.
-- [ ] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
+- [x] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
       A red-marked customer should not be being supplied. If we billed them anything this month the
       row must shout — that is a control, not a statistic.
       ✅ The data is already there and the codebase already says why: `MonthFacts.sales` is documented
@@ -12335,9 +13452,9 @@ column that can never go stale or be forgotten.
       unused for exactly this.
       Worth a KPI tile too: **N red-marked customers were billed this month**. That is the number
       management will act on, and nothing in the app can answer it today.
-- [ ] **Percentage = received ÷ due**, computed. Never imported — see To settle.
-- [ ] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
-- [ ] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
+- [x] **Percentage = received ÷ due**, computed. Never imported — see To settle.
+- [x] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
+- [x] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
       (`outstanding` and `overdue`).
 
 #### The traps
@@ -12411,6 +13528,9 @@ behaving differently.
 
 
 ### RC-11 · Collection Team — fill it, filter on it, and scope each collector to their own customers  🔴  `[~]`
+⚠ **Found 14-09-2026: the collection-team rename cascade (`543ddb7`) was committed but never deployed.**
+`muster-write` v10 (09-09) predated it, so renaming a team in Settings → Masters did NOT move users'
+`receivables_collection_teams`. It went live with **RC-12's v11 deploy, 16-09-2026 13:41 IST**.
 🟢 **BUILT, LOADED AND BROWSER-VERIFIED 10-09-2026.** Every customer who owes money now has a
 collection team — **648 owing, 0 unmapped, ₹0.00 unaccounted** — a user can be scoped by team
 instead of by salesperson, and all 13 salesperson filters have a team twin beside them.

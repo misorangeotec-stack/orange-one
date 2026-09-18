@@ -32,7 +32,7 @@ import { supabase } from "@/core/platform/supabase";
 import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { loadSalesRegister, type RegisterRow } from "./salesRegister";
 import { companyGuidOf, fetchCompanyMap, makeCompanyResolver } from "./companyMap";
-import { colourOf } from "./batchCostingRules";
+import { SALES_REGISTER_COLOURS, colourOf } from "./batchCostingRules";
 import { loadSaleTypeRuleset, type SaleType, type SaleTypeResolver } from "@/apps/daily-report/lib/saleType";
 
 export type SalesTypeSource = "Particulars" | "Central Masters" | "Voucher Type" | "";
@@ -48,6 +48,8 @@ export interface BushraRegisterRow extends RegisterRow {
   item_category: string;
   /** 'BLACK', 'CYAN', … — "" when the item description names no colour. */
   colour: string;
+  /** The item's unit in Central Masters ('KGS', 'PCS', 'NOS', 'MTR'…) — "" when unknown. */
+  unit: string;
   /** False when no Central Masters item carries this name. */
   in_masters: boolean;
 }
@@ -60,6 +62,7 @@ interface MasterItemInfo {
   inkType: string | null;
   category: string | null;
   group: string | null;
+  unit: string | null;
 }
 
 const db = supabase as any;
@@ -153,13 +156,15 @@ export interface ItemLookup {
 
 /** Every Central Masters item, keyed by name. ~14k rows over 15 pages; cached by the page. */
 export async function loadItemLookup(): Promise<ItemLookup> {
-  const [items, groups, companies] = await Promise.all([
-    pageAll<{ name: string; company_id: string | null; group_id: string | null; item_type: ItemType | null; category: string | null; ink_type: string | null }>(
-      "mst_items", "id,name,company_id,group_id,item_type,category,ink_type"),
+  const [items, groups, companies, units] = await Promise.all([
+    pageAll<{ name: string; company_id: string | null; group_id: string | null; unit_id: string | null; item_type: ItemType | null; category: string | null; ink_type: string | null }>(
+      "mst_items", "id,name,company_id,group_id,unit_id,item_type,category,ink_type"),
     pageAll<{ id: string; name: string }>("mst_item_groups", "id,name"),
     pageAll<{ id: string; tally_guid: string | null }>("mst_companies", "id,tally_guid"),
+    pageAll<{ id: string; name: string }>("mst_units", "id,name"),
   ]);
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
+  const unitName = new Map(units.map((u) => [u.id, u.name]));
   const companyGuid = new Map(companies.map((c) => [c.id, c.tally_guid ?? ""]));
 
   const groupOf = (id: string | null) => (id && groupName.get(id)) || null;
@@ -180,6 +185,7 @@ export async function loadItemLookup(): Promise<ItemLookup> {
       inkType: canonInk(i.ink_type),
       category: canonCategory(i.category),
       group: canonGroup(groupOf(i.group_id)),
+      unit: (i.unit_id && unitName.get(i.unit_id)) || null,
     };
     const k = wsKey(i.name);
     push(exact, k, info);
@@ -317,7 +323,8 @@ export function classifyRegisterRow(
     ink_type: itemType === "ink" && sales_type === "Ink" ? pick(copies, guid, "inkType") ?? "" : "",
     item_group: pick(copies, guid, "group") ?? "",
     item_category: pick(copies, guid, "category") ?? "",
-    colour: colourOf(r.particulars),
+    colour: colourOf(r.particulars, SALES_REGISTER_COLOURS),
+    unit: pick(copies, guid, "unit") ?? "",
     in_masters: copies.length > 0,
   };
 }

@@ -425,6 +425,52 @@ export type Database = {
           },
         ]
       }
+      // Hand-added for migration 20261125120000 (DR-1, the credit-limit block), applied.
+      // Keyed on the entity ALIAS, not company_id — two Tally books share one alias.
+      // Every figure nullable; an all-null row cannot exist (CHECK), so an absent
+      // row is how a company-day says "not recorded".
+      daily_report_cc_limits: {
+        Row: {
+          balance_date: string
+          bank: string
+          cc_limit_lacs: number | null
+          entered_at: string
+          entered_by: string | null
+          entity_alias: string
+          hold_by_bank_lacs: number | null
+          lc_bc_limit_lacs: number | null
+          lc_bc_utilised_lacs: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          balance_date: string
+          bank?: string
+          cc_limit_lacs?: number | null
+          entered_at?: string
+          entered_by?: string | null
+          entity_alias: string
+          hold_by_bank_lacs?: number | null
+          lc_bc_limit_lacs?: number | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          balance_date?: string
+          bank?: string
+          cc_limit_lacs?: number | null
+          entered_at?: string
+          entered_by?: string | null
+          entity_alias?: string
+          hold_by_bank_lacs?: number | null
+          lc_bc_limit_lacs?: number | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       fms_entries: {
         Row: {
           code: string
@@ -7976,6 +8022,28 @@ export type Database = {
       daily_report_balance_status: {
         Args: { p_date?: string | null }
         Returns: Json
+      }
+      // Hand-added for migration 20261125120000 (DR-1, the credit-limit block), applied.
+      //
+      // All four figures null DELETES the company-day row, returning it to "not
+      // recorded" — the same rule as p_closing above, spread over four inputs.
+      set_cc_daily_limit: {
+        Args: {
+          p_entity_alias: string
+          p_bank: string | null
+          p_balance_date: string
+          p_cc_limit: number | null
+          p_lc_bc_limit: number | null
+          p_lc_bc_utilised: number | null
+          p_hold_by_bank: number | null
+        }
+        Returns: undefined
+      }
+      set_cc_daily_limits: { Args: { p_rows: Json }; Returns: number }
+      // The entry screen's Save all: balances and credit-limit blocks in ONE transaction.
+      set_daily_report_evening: {
+        Args: { p_balances: Json; p_cc_limits: Json }
+        Returns: number
       }
       set_email_module_enabled: {
         Args: { p_enabled: boolean; p_module: string }

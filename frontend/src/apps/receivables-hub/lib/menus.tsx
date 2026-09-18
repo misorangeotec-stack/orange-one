@@ -72,6 +72,12 @@ export interface ReceivablesMenuChild {
    * opening a dashboard would leave its own group unhighlighted.
    */
   matchPaths?: string[];
+  /**
+   * A third tier: the screens inside a dashboard GROUP, listed under it in the sidebar so a reader
+   * can hop between them (Sales → Ink → FOC …) without going back to the landing page. `reportId`
+   * is the catalogue grant each one needs; `visibleMenusFor` drops the ones the viewer lacks.
+   */
+  pages?: { key: string; title: string; url: string; reportId: string }[];
 }
 
 export interface ReceivablesMenu {
@@ -166,6 +172,9 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
       url: dashboardGroupHref(g.id),
       icon: g.icon,
       matchPaths: groupPaths(g),
+      pages: g.pages
+        .filter((p) => p.status === "live" && p.path)
+        .map((p) => ({ key: `bushra-dashboard:${g.id}:${p.id}`, title: p.title, url: `${BASE}/${p.path}`, reportId: p.id })),
     })),
   },
   {
@@ -176,7 +185,7 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
     fullAccessOnly: true,
     fullAccessNote:
       "gives the Masters tab — salesperson & category tags, customer groups, companies & locations, " +
-      "other payments, red marks, and the salesperson and collection team lists themselves",
+      "other payments, red marks, disputed bills, and the salesperson and collection team lists themselves",
   },
 ];
 
@@ -227,7 +236,9 @@ export function visibleMenusFor(
     if (m.key === "bushra-dashboard") {
       return {
         ...m,
-        children: m.children.filter((c) => holdsDashboardGroup(c.key.slice("bushra-dashboard:".length))),
+        children: m.children
+          .filter((c) => holdsDashboardGroup(c.key.slice("bushra-dashboard:".length)))
+          .map((c) => ({ ...c, pages: c.pages?.filter((p) => allowedReportIds.has(p.reportId)) })),
       };
     }
     return m;

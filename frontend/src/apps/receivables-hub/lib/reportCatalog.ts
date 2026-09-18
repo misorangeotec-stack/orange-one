@@ -36,8 +36,14 @@ import {
 // The Bushra-Dashboard screens' icons, kept on their own line: master's list above keeps gaining
 // icons, and an addition beside another branch's addition is a merge conflict for no reason.
 import { Package, Receipt } from "lucide-react";
+// RC-18's icon, on its own line for the same reason as RC-13's below.
+import { BadgeIndianRupee } from "lucide-react";
+// RC-13's icon, on its own line so it never collides with edits to the list above.
+import { FileWarning } from "lucide-react";
+// The Purchase dashboards' icon, on its own line for the same reason.
 import { Truck } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 import type { Crumb } from "@/apps/currentApp";
 
@@ -245,7 +251,7 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
   {
     id: "bushra-report",
     title: "Bushra-Report",
-    blurb: "Bushra's reports — production and batch costing, read straight from the Tally books.",
+    blurb: "Bushra's reports — production, batch costing and sales, read straight from the Tally books.",
     icon: ClipboardList,
   },
 ];
@@ -540,7 +546,7 @@ export const REPORTS: ReportEntry[] = [
     scoping: "party-client",
     title: "Credit Terms Not Set",
     purpose:
-      "Customers with no credit limit or credit days in Tally, company by company, with what they owe.",
+      "One row per customer with a block per company book — credit days, limit, customer since and what they owe — and the gaps marked red.",
     category: "receivables",
     path: "reports/credit-terms",
     icon: CreditCard,
@@ -590,6 +596,20 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["on account", "manual"],
   },
+  {
+    // RC-18. The customer rows are scoped in the browser through allCustomers, like Disputed Bills.
+    // The Suspense block at its foot is NOT scoped: those receipts name no customer to scope by.
+    id: "advances",
+    scoping: "party-client",
+    title: "Advances Not Applied",
+    purpose: "Money received that no open invoice has absorbed, per salesperson, with its receipts and open bills.",
+    category: "collections",
+    path: "reports/advances",
+    icon: BadgeIndianRupee,
+    source: "tally",
+    status: "live",
+    keywords: ["advance", "on account", "unapplied", "unallocated", "suspense", "receipt", "settle"],
+  },
 
   // ── Customers ──────────────────────────────────────────────────────────────
   {
@@ -630,6 +650,20 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["red mark", "blocked", "flag", "watchlist"],
+  },
+  {
+    // RC-13. Scoped in the browser through allCustomers, like Red Mark: a dispute on a customer the
+    // viewer cannot see is never drawn.
+    id: "disputed-bills",
+    scoping: "party-client",
+    title: "Disputed Bills",
+    purpose: "Bills under dispute (managed in Masters), with live amount, pending and settled; clear once settled.",
+    category: "customers",
+    path: "reports/disputed-bills",
+    icon: FileWarning,
+    source: "tally",
+    status: "live",
+    keywords: ["dispute", "disputed", "remark", "rate difference", "credit note", "clear"],
   },
 
   // ── Sales & Team ───────────────────────────────────────────────────────────
@@ -827,6 +861,19 @@ export const REPORTS: ReportEntry[] = [
     ],
   },
   {
+    id: "bushra-sales-register",
+    // Same read as the Tally Sales Register — rpt_sales_register with .in("party", …).
+    scoping: "party-server",
+    title: "Sales Register",
+    purpose: "Every sales voucher line, with sales-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-sales-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
+  },
+  {
     id: "bushra-purchase-register",
     // Vendors, not customers — the salesperson scope does not apply.
     scoping: "none",
@@ -886,6 +933,25 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
+  // Bushra-Dashboard → Sales: one entry per dashboard, generated from lib/bushraSalesDashboards.ts so
+  // each id and path matches its screen. All built on the Bushra Sales Register (party-server scope).
+  ...SALES_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "party-server",
+    // NOT emailable yet: the figures (lib/bushraSalesSummary.ts), the PDF (lib/bushraSalesPdf.ts)
+    // and the mail setup (components/BushraSalesMailOptions.tsx) are built, but no sender reads
+    // them — the Collections runner mails zero-collections alone. Tick `emailable: true` in the
+    // commit that adds the sender, as the rule on the field says; that also brings back the
+    // dashboard's Auto email button and its switch in Settings → Permissions.
+    title: p.id === "bushra-sales-dashboard" ? p.title : `Sales — ${p.title} Dashboard`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: ShoppingCart,
+    source: "tally",
+    status: "live",
+    keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
+  })),
   // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
   // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
   ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({

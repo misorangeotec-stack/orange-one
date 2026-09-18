@@ -22,17 +22,17 @@ import { exportSheetsToXlsx, GROUP_ROW_STYLE, type ExportSheet } from "@/shared/
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySheet = ExportSheet<any>;
 
-import type { MoneyRow, PurchaseLine } from "../data/dailyReport";
+import type { MoneyRow, PartyKind, PurchaseLine } from "../data/dailyReport";
 import { PARTY_KIND_LABEL } from "../data/dailyReport";
 import {
-  bandMoney, byParty, cellFor, entityTotal, facilityRows, groupSales, saleKind, salesTotals,
-  tradeTotal,
-  type LocationFilter,
+  bandMoney, cellFoc, cellFor, companyColumnLabel, entityTotal, FACILITY_BALANCE_NOTE, facilityRows,
+  foldList, groupSales, pivotCompanies, pivotMoney, pivotSales, saleKind, salesTotals, tradeTotal,
+  type LocationFilter, type PivotRow,
 } from "./aggregate";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER } from "./saleType";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank } from "./labels";
 import { dmy, isSunday, longDate } from "./format";
-import type { BankAccount, BankBalance } from "../types";
+import type { BankAccount, BankBalance, CcLimit } from "../types";
 import type { SaleLine } from "../data/dailyReport";
 
 export interface DailyXlsxInput {
@@ -43,6 +43,13 @@ export interface DailyXlsxInput {
   purchases: PurchaseLine[];
   accounts: BankAccount[];
   balances: Map<string, BankBalance>;
+  /**
+   * EVERY account, whatever the location filter — the credit facility is per
+   * company, so its available balance must not shrink to one location's cash.
+   */
+  facilityAccounts: BankAccount[];
+  /** The day's stored credit-limit blocks, sparse. */
+  ccLimits: Map<string, CcLimit>;
   /** Oldest first — the same window the screen's grid shows. */
   dates: string[];
   mtdSalesLacs: number;
@@ -50,14 +57,17 @@ export interface DailyXlsxInput {
   rulesLoaded: boolean;
 }
 
+const lacs = (n: number) => Number(n.toFixed(2));
+
 /**
- * Receipts or payments, banded.
+ * Receipts or payments, VOUCHER BY VOUCHER, banded.
  *
- * Rows arrive grouped by counterparty band, trade first, and the preamble
- * carries each band's total above the header — so a reader who only wants "what
- * did customers actually pay us" has it without filtering.
+ * The screen and the PDF now show one line per party; this sheet is where the
+ * voucher numbers, voucher types and books still live, so nothing the old
+ * tables showed is lost. Rows arrive grouped by counterparty band, trade first,
+ * and the preamble carries each band's total above the header.
  */
-const moneySheet = (
+const voucherSheet = (
   rows: MoneyRow[],
   direction: "in" | "out",
   sheetName: string,
@@ -70,15 +80,58 @@ const moneySheet = (
     columns: [
       { header: "Counterparty", width: 16, value: (r) => PARTY_KIND_LABEL[r.kind] },
       { header: "Party", width: 46, value: (r) => r.party },
+      { header: "Company", width: 14, value: (r) => r.entity || "Unmapped" },
+      { header: "Location", width: 10, value: (r) => r.location },
       { header: "Book", width: 22, value: (r) => r.company ?? "" },
       { header: "Voucher type", width: 20, value: (r) => r.voucherType ?? "" },
       { header: "Voucher no.", width: 18, value: (r) => r.voucherNo ?? "" },
-      { header: "Amount (₹ L)", width: 14, value: (r) => Number(r.amountLacs.toFixed(2)) },
+      { header: "Amount (₹ L)", width: 14, value: (r) => lacs(r.amountLacs) },
     ],
     preamble: [
       [`${sheetName} — ${dmy(dateIso)}`],
-      ...bands.map((b) => [PARTY_KIND_LABEL[b.kind], Number(b.totalLacs.toFixed(2))]),
-      ["All counterparties", Number(bands.reduce((s, b) => s + b.totalLacs, 0).toFixed(2))],
+      ...bands.map((b) => [PARTY_KIND_LABEL[b.kind], lacs(b.totalLacs)]),
+      ["All counterparties", lacs(bands.reduce((s, b) => s + b.totalLacs, 0))],
+      [],
+    ],
+  };
+};
+
+/**
+ * Receipts or payments, ONE LINE PER PARTY, with the companies across the top —
+ * the same shape as the screen and the PDF, but every party listed.
+ *
+ * ⚠ THE TOTALS ARE IN THE PREAMBLE, NOT IN A ROW. The sheet carries an
+ *   autofilter; a TOTAL written as a data row is sorted into the middle of the
+ *   list and hidden by the first filter, which is the very thing this workbook
+ *   is for.
+ */
+const partySheet = (
+  rows: MoneyRow[],
+  direction: "in" | "out",
+  sheetName: string,
+  dateIso: string,
+): ExportSheet<{ kind: PartyKind; row: PivotRow }> => {
+  const bands = bandMoney(rows, direction).map((b) => ({ band: b, rows: pivotMoney(b.rows) }));
+  const companies = pivotCompanies(...bands.map((b) => b.rows));
+  const trade = tradeTotal(bands.map((b) => b.band));
+  return {
+    sheetName,
+    rows: bands.flatMap((b) => b.rows.map((row) => ({ kind: b.band.kind, row }))),
+    columns: [
+      { header: "Counterparty", width: 16, value: (r) => PARTY_KIND_LABEL[r.kind] },
+      { header: "Party", width: 46, value: (r) => r.row.party },
+      ...companies.map((co) => ({
+        header: `${companyColumnLabel(co)} (₹ L)`, width: 16,
+        value: (r: { row: PivotRow }) => (r.row.cells[co.alias] ? lacs(r.row.cells[co.alias].amountLacs) : ""),
+      })),
+      { header: "Total (₹ L)", width: 14, value: (r) => lacs(r.row.amountLacs) },
+      { header: "Entries", width: 9, value: (r) => r.row.entries },
+    ],
+    preamble: [
+      [`${sheetName} — ${dmy(dateIso)} — one line per party`],
+      ["Customers and suppliers (the headline figure)", lacs(trade)],
+      ...bands.map((b) => [`${PARTY_KIND_LABEL[b.band.kind]} — ${b.rows.length} ${b.rows.length === 1 ? "party" : "parties"}`, lacs(b.band.totalLacs)]),
+      ["All counterparties", lacs(bands.reduce((s, b) => s + b.band.totalLacs, 0))],
       [],
     ],
   };
@@ -134,26 +187,51 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
     ],
   });
 
-  sheets.push(moneySheet(d.money, "in", "Receipts", d.date));
-  sheets.push(moneySheet(d.money, "out", "Payments", d.date));
-
   /* ---- one sheet per product line -------------------------------------- */
+  //
+  // ⚠ EVERY CUSTOMER, UNFOLDED (decided 17-09-2026). The screen and the PDF fold
+  //   a long list to the customers making up 80% of it; this workbook is where
+  //   finance filters and pivots, so it lists them all, in the same shape — one
+  //   row per customer, the companies across the top — with the TOTAL in the
+  //   preamble, where a filter cannot hide it.
+  const salePivots = new Map(groups.map((g) => [g.saleType, pivotSales(g.lines)] as const));
   for (const t of SALE_TYPE_ORDER) {
     const g = groups.find((x) => x.saleType === t);
     if (!g) continue;
-    const rows = byParty(g.lines);
+    const fold = foldList(salePivots.get(t) ?? []);
+    // This sheet's companies only: a company with no customer here gets no column (the user's
+    // call, 17-09-2026 — an empty Colorix column on most days is noise).
+    const companies = pivotCompanies(fold.all);
+    const unit = t === "ink" ? "kg" : "Qty";
     sheets.push({
       // Excel caps a tab name at 31 characters.
       sheetName: SALE_TYPE_LABEL[t].slice(0, 31),
-      rows,
+      rows: fold.all,
       columns: [
-        { header: "Party", width: 46, value: (r) => r.party },
-        { header: "Entity", width: 34, value: (r) => entityLabel(r.company) },
-        { header: "Location", width: 12, value: (r) => r.location },
-        { header: t === "ink" ? "Qty (kg)" : "Qty", width: 12, value: (r) => r.qty },
-        // A free-of-charge party has quantity and no money. Writing 0.00 into a
-        // money column would read as a real zero-value sale; the word does not.
-        { header: "Amount (₹ L)", width: 14, value: (r) => (r.foc ? "FOC" : Number(r.revenueLacs.toFixed(2))) },
+        { header: "Customer", width: 46, value: (r: PivotRow) => r.party },
+        ...companies.flatMap((co) => [
+          { header: `${companyColumnLabel(co)} ${unit}`, width: 14, value: (r: PivotRow) => r.cells[co.alias]?.qty ?? "" },
+          {
+            header: `${companyColumnLabel(co)} (₹ L)`, width: 16,
+            // A cell that went entirely free has quantity and no money. Writing
+            // 0.00 would read as a real zero-value sale; the word does not.
+            value: (r: PivotRow) => {
+              const c = r.cells[co.alias];
+              return !c ? "" : cellFoc(c) === "all" ? "FOC" : lacs(c.amountLacs);
+            },
+          },
+        ]),
+        { header: `Total ${unit}`, width: 12, value: (r: PivotRow) => r.qty },
+        { header: "Total (₹ L)", width: 14, value: (r: PivotRow) => lacs(r.amountLacs) },
+        { header: `Free of charge ${unit}`, width: 16, value: (r: PivotRow) => (r.focQty > 0 ? r.focQty : "") },
+      ],
+      preamble: [
+        [`${SALE_TYPE_LABEL[t]} — ${dmy(d.date)} — what sold, before returns, every customer`],
+        [`TOTAL — ${fold.all.length} customers`, `${Math.round(fold.total.qty * 1000) / 1000} ${t === "ink" ? "kg" : "units"}`, lacs(fold.total.amountLacs)],
+        ...(fold.total.focQty > 0
+          ? [["of which free of charge", `${Math.round(fold.total.focQty * 1000) / 1000} ${t === "ink" ? "kg" : "units"}`, "counted in quantity, never in amount"]]
+          : []),
+        [],
       ],
     });
   }
@@ -178,6 +256,12 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
     });
   }
 
+  /* ---- money, in the same order as the PDF: in, then out ---------------- */
+  sheets.push(partySheet(d.money, "in", "Receipts", d.date));
+  sheets.push(voucherSheet(d.money, "in", "Receipt vouchers", d.date));
+  sheets.push(partySheet(d.money, "out", "Payments", d.date));
+  sheets.push(voucherSheet(d.money, "out", "Payment vouchers", d.date));
+
   if (d.purchases.length > 0) {
     sheets.push({
       sheetName: "Purchases",
@@ -195,21 +279,32 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
   }
 
   /* ---- bank facility ---------------------------------------------------- */
-  const facility = facilityRows(bankCols, d.balances, d.date);
+  // Per company, from every account — never the location-filtered bankCols.
+  const facility = facilityRows(d.facilityAccounts, d.balances, d.ccLimits, d.date);
   if (facility.length > 0) {
+    // A dash, never 0: a blank figure written as zero reads as a withdrawn limit
+    // in a file somebody sums.
     const blank = (n: number | null) => (n == null ? "—" : Number(n.toFixed(2)));
     sheets.push({
       sheetName: "Bank facility",
       rows: facility,
+      // The client's sheet column order.
       columns: [
-        { header: "Account", width: 18, value: (f) => f.account.name },
-        { header: "Entity", width: 34, value: (f) => entityLabel(f.account.entityAlias) },
-        { header: "CC limit", width: 12, value: (f) => blank(f.ccLimit) },
-        { header: "Held by bank", width: 14, value: (f) => blank(f.heldByBank) },
-        { header: "Available CC", width: 14, value: (f) => blank(f.availableCc) },
-        { header: "LC / BC limit", width: 14, value: (f) => blank(f.lcBcLimit) },
-        { header: "Utilised", width: 12, value: (f) => blank(f.lcBcUtilised) },
-        { header: "Free limit", width: 12, value: (f) => blank(f.lcBcFree) },
+        { header: "Company", width: 34, value: (f) => entityLabel(f.entityAlias) },
+        { header: "Bank", width: 10, value: (f) => f.bank },
+        { header: "CC limit (₹ L)", width: 14, value: (f) => blank(f.ccLimit) },
+        { header: "Available balance (₹ L)", width: 22, value: (f) => blank(f.availableBalance) },
+        { header: "LC / BC limit (₹ L)", width: 18, value: (f) => blank(f.lcBcLimit) },
+        { header: "Utilised (₹ L)", width: 14, value: (f) => blank(f.lcBcUtilised) },
+        { header: "Free limit (₹ L)", width: 16, value: (f) => blank(f.lcBcFree) },
+        { header: "Held by bank (₹ L)", width: 18, value: (f) => blank(f.heldByBank) },
+        { header: "Available CC limit (₹ L)", width: 22, value: (f) => blank(f.availableCc) },
+      ],
+      preamble: [
+        [`Bank facility — ${dmy(d.date)}`],
+        ["Per company, whatever the location filter. Free limit = LC / BC limit − utilised. Available CC limit = CC limit − held by bank."],
+        [FACILITY_BALANCE_NOTE],
+        [],
       ],
     });
   }
@@ -274,8 +369,10 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
       BASIS_NOTE,
       BLANK_NOTE,
       "Outward includes delivery challans, which move goods but are not invoices. The Type column says SALE or DC.",
-      "Goods out on approval are listed but NOT counted as sales.",
-      "The headline received and paid figures count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. Every other counterparty — transfers between our own accounts, inter-company movement, cash and suspense — is listed and totalled separately on the Receipts and Payments sheets.",
+      "Goods out on approval are shown on the Summary but NOT counted as sales.",
+      "Goods sent free of charge count in quantity, never in amount. A company cell that went entirely free says FOC.",
+      "The product-line sheets and the Receipts and Payments sheets list EVERY customer, one row per customer with the companies across the top. The screen and the PDF fold a list of more than 10 to the customers making up 80% of it; this workbook does not. Totals sit above each header so a filter cannot hide them.",
+      "The headline received and paid figures count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. Every other counterparty — transfers between our own accounts, inter-company movement, cash and suspense — is listed and totalled separately on the Receipts and Payments sheets. The voucher-by-voucher detail is on Receipt vouchers and Payment vouchers.",
       ...(d.rulesLoaded
         ? []
         : ["⚠ The product-line rules could not be read, so every sale is filed under Not yet classified. The amounts are still correct."]),

@@ -106,6 +106,15 @@ const FY_PINNED_ROUTES = [
   // between the chosen FY and the one before — a topbar multi-FY selector would make "new" and
   // "non active" meaningless.
   "/outstanding-dashboard/reports/customer-profile",
+  // The Red Mark report's Received / Sales columns are the last three CALENDAR months, which no
+  // financial year can contain: in April a single-FY view would keep the receipts (not FY-windowed)
+  // and silently drop February's and March's sales. Its own nested FYProvider pins it to Both FYs.
+  "/outstanding-dashboard/reports/red-mark",
+  // Disputed Bills (RC-13) reads only open bills, which are not FY-windowed, so a selector here would
+  // change nothing on the page and read as broken. Its own nested FYProvider pins it to Both FYs.
+  "/outstanding-dashboard/reports/disputed-bills",
+  // Advances Not Applied (RC-18) reads open bills and ledger balances, neither FY-windowed — same reason.
+  "/outstanding-dashboard/reports/advances",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its
@@ -133,6 +142,8 @@ const FY_PINNED_ROUTES = [
   "/outstanding-dashboard/reports/stock-summary",
   // Batch Costing — same own company + FY + period pickers as the Stock Summary, same reason.
   "/outstanding-dashboard/reports/batch-costing",
+  // Bushra-Report → Sales Register — its own From/To window, like the Tally Sales Register.
+  "/outstanding-dashboard/reports/bushra-sales-register",
   // Bushra-Report → Purchase Register — its own From/To window.
   "/outstanding-dashboard/reports/bushra-purchase-register",
   // Bushra-Dashboard → Production Batch Costing Dashboard — own company + FY + period pickers.

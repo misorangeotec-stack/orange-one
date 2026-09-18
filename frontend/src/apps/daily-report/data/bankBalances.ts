@@ -16,6 +16,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/core/platform/supabase";
 import type { BalanceStatus, BankBalance } from "../types";
+import type { CcLimitWrite } from "./ccLimits";
 
 /** The key a sparse balance map is read by. */
 export const balanceKey = (accountId: string, iso: string): string => `${accountId}|${iso}`;
@@ -25,7 +26,7 @@ export type BalanceMap = Map<string, BankBalance>;
 export async function fetchBankBalances(fromIso: string, toIso: string): Promise<BalanceMap> {
   const { data, error } = await supabase
     .from("daily_report_bank_balances")
-    .select("bank_account_id, balance_date, closing_balance_lacs, lc_bc_utilised_lacs, updated_at")
+    .select("bank_account_id, balance_date, closing_balance_lacs, updated_at")
     .gte("balance_date", fromIso)
     .lte("balance_date", toIso);
   if (error) throw new Error(error.message);
@@ -36,7 +37,6 @@ export async function fetchBankBalances(fromIso: string, toIso: string): Promise
       bankAccountId: r.bank_account_id,
       date: r.balance_date,
       closingLacs: Number(r.closing_balance_lacs),
-      lcBcUtilisedLacs: r.lc_bc_utilised_lacs == null ? null : Number(r.lc_bc_utilised_lacs),
       updatedAt: r.updated_at,
     };
     map.set(balanceKey(row.bankAccountId, row.date), row);
@@ -71,7 +71,7 @@ export async function fetchPreviousBalances(beforeIso: string): Promise<Map<stri
 
   const { data, error } = await supabase
     .from("daily_report_bank_balances")
-    .select("bank_account_id, balance_date, closing_balance_lacs, lc_bc_utilised_lacs, updated_at")
+    .select("bank_account_id, balance_date, closing_balance_lacs, updated_at")
     .gte("balance_date", fromIso)
     .lt("balance_date", beforeIso)
     .order("balance_date", { ascending: false });
@@ -86,7 +86,6 @@ export async function fetchPreviousBalances(beforeIso: string): Promise<Map<stri
       bankAccountId: r.bank_account_id,
       date: r.balance_date,
       closingLacs: Number(r.closing_balance_lacs),
-      lcBcUtilisedLacs: r.lc_bc_utilised_lacs == null ? null : Number(r.lc_bc_utilised_lacs),
       updatedAt: r.updated_at,
     });
   }
@@ -135,22 +134,35 @@ export interface BalanceWrite {
   bankAccountId: string;
   date: string;
   closingLacs: number | null;
-  lcBcUtilisedLacs: number | null;
 }
 
 /**
- * Save an evening in ONE transaction — the whole evening lands or none of it
- * does. A half-saved evening is worse than an unsaved one: the completeness
- * chip would read "9 of 11" and nobody could tell which two failed.
+ * Save an evening in ONE transaction — every closing balance AND every company's
+ * credit-limit block land together, or none of them do. A half-saved evening is
+ * worse than an unsaved one: the completeness chip would read "9 of 11" and
+ * nobody could tell which two failed, and a block saved without its balances
+ * would print an available balance the page cannot explain.
+ *
+ * ⚠ NO lc_bc_utilised_lacs ON A BALANCE ROW. That per-account figure is retired —
+ *   utilised is typed once, per company, in the credit-limit block. The routine
+ *   stores NULL for the absent key, which is all the column has ever held.
  */
-export async function saveBalances(rows: BalanceWrite[]): Promise<number> {
-  if (rows.length === 0) return 0;
-  const { data, error } = await supabase.rpc("set_bank_daily_balances", {
-    p_rows: rows.map((r) => ({
+export async function saveEvening(balances: BalanceWrite[], limits: CcLimitWrite[]): Promise<number> {
+  if (balances.length === 0 && limits.length === 0) return 0;
+  const { data, error } = await supabase.rpc("set_daily_report_evening", {
+    p_balances: balances.map((r) => ({
       bank_account_id: r.bankAccountId,
       balance_date: r.date,
       closing_balance_lacs: r.closingLacs,
+    })),
+    p_cc_limits: limits.map((r) => ({
+      entity_alias: r.entityAlias,
+      bank: r.bank,
+      balance_date: r.date,
+      cc_limit_lacs: r.ccLimitLacs,
+      lc_bc_limit_lacs: r.lcBcLimitLacs,
       lc_bc_utilised_lacs: r.lcBcUtilisedLacs,
+      hold_by_bank_lacs: r.holdByBankLacs,
     })),
   });
   if (error) throw new Error(error.message);
