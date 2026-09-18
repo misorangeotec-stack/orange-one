@@ -10,9 +10,9 @@ import KraKpiApp from "./KraKpiApp";
  * WHO SEES WHAT IS DECIDED BY THE SERVER, NOT BY THIS GRANT. Every figure comes from one
  * RPC, `kpi_report`, which checks the caller itself: their own report, their reporting
  * chain's, or anyone's for an admin. That is why the user decided (18-09-2026) the app
- * should be UNIVERSAL — everyone opens their own report with no per-person grant. Adding
- * "kra-kpi" to UNIVERSAL_APP_IDS (apps/universal.ts) is the switch, and it waits for the
- * user's go-ahead; until then it is granted like any other module.
+ * is UNIVERSAL — everyone opens their own report with no per-person grant — and it is
+ * listed in UNIVERSAL_APP_IDS (apps/universal.ts). Customer logins are turned away in
+ * KraKpiApp.
  */
 export const kraKpiApp: AppManifest = {
   id: "kra-kpi",

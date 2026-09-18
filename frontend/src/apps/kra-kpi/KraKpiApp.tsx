@@ -19,12 +19,17 @@ function KraKpiLayout() {
 }
 
 /**
- * Root of the KRA / KPI Scorecard. The route is gated upstream by
- * <RequireModule appId="kra-kpi"> in App.tsx; the DATA is gated again, per person,
- * inside kpi_report — a report can only ever be the caller's own, their team's, or
- * (for an admin) anyone's, whatever the route lets through.
+ * Root of the KRA / KPI Scorecard. The app is UNIVERSAL (apps/universal.ts), so every
+ * staff login opens it with no grant; the DATA is gated per person inside kpi_report —
+ * a report can only ever be the caller's own, their team's, or (for an admin) anyone's.
+ *
+ * Customer logins (Orange Order Desk) have no place in a staff scorecard, and a
+ * universal app would otherwise open for them by URL — so they are sent back to their
+ * own app, exactly as the home screen sends them (core/workspace/HomeLayout.tsx).
  */
 export default function KraKpiApp() {
+  const { isExternal, isAdmin } = useSession();
+  if (isExternal && !isAdmin) return <Navigate to={appBasePath("customer-orders")} replace />;
   return (
     <Routes>
       <Route element={<KraKpiLayout />}>
