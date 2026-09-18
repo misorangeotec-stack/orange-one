@@ -7136,6 +7136,23 @@ people and simply never picked up. **The question is whether it is wanted at all
 nobody has left the company — those exits were handled outside the portal, so there is no history in
 here to migrate or report on.
 
+### EX-2 · Make Employee Exit scorable before it joins the ranking  🟢  `[ ]`
+*Raised 18-09-2026 from CC-1 · ⏸ **Parked by the user, 18-09-2026** — only matters once Exit is in use (EX-1).*
+
+The monthly ranking (CC-1) scores every FMS by running its own code on the server, and Exit cannot run there yet:
+its Completed-tab builder (`completedFor`) lives inside the React store (`hr-exit/store.tsx`). Before Exit counts:
+move it into `hr-exit/lib/queues.ts` as a pure function the store then calls (as HR Recruitment's
+`hrCompletedEntries` was), write `fms-control-center/ranking/modules/hrExit.ts`, move `hr-exit` from
+`NOT_SCORED` to `RANKED_MODULES` in `ranking/registry.ts`, rebuild the bundle from master, redeploy
+`fms-ranking`, and switch the module on in the ranking's admin section.
+
+**Gaps to decide then:** a clearance check marked N/A records no actor; `lwdConfirmedAt` is re-stamped on every
+re-confirm; `fnfApprovedById` is overwritten by a re-decision; My Work's Exit rule has no reporting-manager arm
+although the store's queue has one.
+
+**Why it can wait:** Exit has 0 cases and is switched off in the ranking, and the ranking's build cannot forget it
+— Exit is listed as excused, with this reason.
+
 ### KB-1 · 🟢 HR knowledge base — a second brain over the HR documents  `[~]`
 *Raised 2026-08-20 · **🟢 Low priority, IN PROGRESS (03-09-2026).** A demo has already been built and
 shown; what remains is turning it into something live. ⚠ The permissions question below must be
@@ -10213,6 +10230,24 @@ gets the app or comes off the step.
 *(cross-ref: **OD-12** built the picker this extends; its header comment in `ShipLinesGrid.tsx` states
 the two principles item 6 rests on · **OD-12b** is still open and unrelated to this — it is the blank
 godown on the current financial year)*
+
+### OD-17 · Keep credit check's original due date so it can count in the ranking  🟢  `[ ]`
+*Raised 18-09-2026 from CC-1 · ⏸ **Parked by the user, 18-09-2026** — not urgent; do it when Dispatch is next opened.*
+
+When credit is decided, the approve RPC stamps `cc_decided_at` together with `cc_at`, and `dispatchDueIso`
+anchors Credit Check on `cc_decided_at` — so a DECIDED credit check is always due the day after it was done and
+can never read as late (all 840 closed in August read "on time"; the register's Days late column says the same).
+So the monthly ranking (CC-1) leaves credit check out, for everyone, both ways.
+
+**The fix:** keep the clock start the step was really measured from (e.g. a new nullable column stamped when the
+order enters Credit Check — the submission, or the round start on a loop) and date a decided check from it. That is
+an additive column plus the `credit_check` arm of `ANCHOR_AT` in `order-to-dispatch/lib/queues.ts`. A credit
+HOLD also restarts the clock today — decide whether it should. Then remove `credit_check` from `EXCLUDED` in
+`fms-control-center/ranking/modules/orderToDispatch.ts`, rebuild the ranking bundle from master and redeploy
+`fms-ranking`.
+
+**Why it can wait:** nothing is scored wrongly today — credit checks count for nobody. The only cost is that
+whoever approves credit gets no ranking credit for that work.
 
 ---
 
