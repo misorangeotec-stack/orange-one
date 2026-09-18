@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useMemo, useState, type ReactNode } from "react";
 import Avatar from "@/shared/components/ui/Avatar";
 import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
-import PillToggle from "@/shared/components/ui/PillToggle";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useSession } from "@/core/platform/session";
 import { computeDownlineIds, useDirectory } from "@/core/platform/store";
@@ -13,23 +11,12 @@ import { formatDateTime } from "@/shared/lib/time";
 import { useKpiReport, type ReportItem } from "../data/report";
 import { fmtPct, fmtScore } from "../facts/score";
 import { exportKpiScorecard } from "../lib/exportKpi";
-import {
-  canStepForward,
-  isRunning,
-  monthOf,
-  periodFromParams,
-  periodLabel,
-  periodWord,
-  rangeLabel,
-  step,
-  today,
-  weekOf,
-  type Period,
-  type PeriodMode,
-} from "../lib/period";
+import { periodLabel, periodWord, rangeLabel } from "../lib/period";
 import { moduleSplit, toGridRows, totalsOf, type GridRow } from "../lib/rows";
+import { useReportParams } from "../lib/useReportParams";
 import Consolidated from "../components/Consolidated";
 import ItemsModal, { type Drill } from "../components/ItemsModal";
+import PeriodControls, { ExcelButton } from "../components/PeriodControls";
 
 // Picker grouping, as on Task Management's Weekly Scorecard: admins, HODs, sub-HODs, employees.
 const ROLE_GROUP: Record<string, { label: string; rank: number }> = {
@@ -82,12 +69,7 @@ function CountButton({ value, onClick, title, children }: { value: number; onCli
 export default function Scorecard() {
   const { user, isAdmin } = useSession();
   const { profiles } = useDirectory();
-  const [params, setParams] = useSearchParams();
-
-  const period = useMemo(
-    () => periodFromParams(params.get("mode"), params.get("from"), params.get("to")),
-    [params],
-  );
+  const { params, period, set: setQuery, setPeriod } = useReportParams();
   const requested = params.get("user") ?? user.id;
 
   const pool = useMemo<Profile[]>(() => {
@@ -102,18 +84,6 @@ export default function Scorecard() {
 
   const personId = pool.some((p) => p.id === requested) ? requested : user.id;
   const person = pool.find((p) => p.id === personId) ?? user;
-
-  const setQuery = (next: Partial<{ user: string; mode: PeriodMode; from: string; to: string }>) => {
-    const p = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(next)) if (v) p.set(k, v);
-    if (next.mode && next.mode !== "custom") p.delete("to");
-    setParams(p, { replace: true });
-  };
-  const setPeriod = (p: Period) => setQuery({ mode: p.mode, from: p.from, to: p.mode === "custom" ? p.to : undefined });
-
-  // Custom range: edited as a draft, applied only when both ends make sense.
-  const [draft, setDraft] = useState({ from: period.from, to: period.to });
-  useEffect(() => setDraft({ from: period.from, to: period.to }), [period.from, period.to]);
 
   const q = useKpiReport(personId, period.from, period.to);
   const report = q.data ?? null;
@@ -282,106 +252,9 @@ export default function Scorecard() {
             />
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-wide text-grey-2">Period</label>
-            <PillToggle<PeriodMode>
-              value={period.mode}
-              onChange={(m) =>
-                setPeriod(m === "week" ? weekOf(period.from) : m === "month" ? monthOf(period.from) : { mode: "custom", from: period.from, to: period.to })
-              }
-              options={[
-                { value: "week", label: "Week" },
-                { value: "month", label: "Month" },
-                { value: "custom", label: "Custom" },
-              ]}
-            />
-          </div>
+          <PeriodControls period={period} onChange={setPeriod} />
 
-          <div className="min-w-0">
-            {period.mode === "custom" ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="date"
-                  value={draft.from}
-                  max={draft.to}
-                  onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
-                  aria-label="From"
-                  className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] text-ink outline-none focus:border-orange"
-                />
-                <span className="text-grey-2">to</span>
-                <input
-                  type="date"
-                  value={draft.to}
-                  min={draft.from}
-                  max={today()}
-                  onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
-                  aria-label="To"
-                  className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] text-ink outline-none focus:border-orange"
-                />
-                <button
-                  type="button"
-                  disabled={
-                    !draft.from ||
-                    !draft.to ||
-                    draft.from > draft.to ||
-                    draft.to > today() ||
-                    (draft.from === period.from && draft.to === period.to)
-                  }
-                  onClick={() => setPeriod({ mode: "custom", from: draft.from, to: draft.to })}
-                  className="h-9 rounded-lg bg-navy px-3 text-[12.5px] font-semibold text-white transition disabled:opacity-40"
-                >
-                  Show
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setPeriod(step(period, -1))}
-                  aria-label={`Previous ${w}`}
-                  className="grid h-9 w-9 place-items-center rounded-lg border border-line text-grey transition hover:border-orange/40 hover:text-orange"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                </button>
-                <span className="min-w-[170px] px-1 text-center text-[13px] font-semibold text-navy tabular-nums">{periodLabel(period)}</span>
-                {/* Stops at the current week / month: a period that has not started has no figures. */}
-                <button
-                  type="button"
-                  onClick={() => setPeriod(step(period, 1))}
-                  disabled={!canStepForward(period)}
-                  aria-label={`Next ${w}`}
-                  title={canStepForward(period) ? `Next ${w}` : `This is the current ${w}`}
-                  className="grid h-9 w-9 place-items-center rounded-lg border border-line text-grey transition enabled:hover:border-orange/40 enabled:hover:text-orange disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                </button>
-                {!isRunning(period) && (
-                  <button
-                    type="button"
-                    onClick={() => setPeriod(period.mode === "month" ? monthOf(today()) : weekOf(today()))}
-                    className="ml-1 h-9 whitespace-nowrap rounded-lg border border-line px-2.5 text-[12.5px] font-semibold text-orange transition hover:border-orange/40"
-                  >
-                    This {w}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={runExport}
-            disabled={!report}
-            title="Download in the weekly MIS sheet's layout"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[12.5px] font-semibold text-grey-2 transition hover:border-orange/50 hover:text-orange disabled:opacity-40 sm:ml-auto"
-          >
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Excel
-          </button>
+          <ExcelButton onClick={runExport} disabled={!report} title="Download in the weekly MIS sheet's layout" />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-[12px] text-grey">

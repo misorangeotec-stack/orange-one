@@ -4,6 +4,7 @@ import { useSession, roleLabel } from "@/core/platform/session";
 import { appBasePath } from "../appInfo";
 import { kraKpiNav } from "./nav";
 import Scorecard from "./pages/Scorecard";
+import Team from "./pages/Team";
 
 /** Wires the portal session into the shared AppShell, as every app does. */
 function KraKpiLayout() {
@@ -34,6 +35,7 @@ export default function KraKpiApp() {
     <Routes>
       <Route element={<KraKpiLayout />}>
         <Route index element={<Scorecard />} />
+        <Route path="team" element={<Team />} />
         <Route path="*" element={<Navigate to={appBasePath("kra-kpi")} replace />} />
       </Route>
     </Routes>

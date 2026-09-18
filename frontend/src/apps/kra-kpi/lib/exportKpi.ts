@@ -56,14 +56,20 @@ const TITLE_STYLE = { font: { bold: true, sz: 14, color: { rgb: "0B1F3A" } } };
 const LABEL_STYLE = { font: { bold: true, color: { rgb: "5B6B7F" } } };
 const SCORE_STYLE = { font: { bold: true, color: { rgb: "0B1F3A" } }, fill: { fgColor: { rgb: "FFE7D9" } } };
 
-export async function exportKpiScorecard(o: {
+export interface MisInput {
   personName: string;
   period: Period;
   report: KpiReport;
   rows: GridRow[];
   totals: Totals;
   modules: ModuleSplit[];
-}): Promise<void> {
+}
+
+/**
+ * One person's sheet in the client's layout. Built apart from the download so the Team summary
+ * (KPI-2) can put one per person into a single workbook — the whole weekly review in one file.
+ */
+export function misSheet(o: MisInput, sheetName = "KRA KPI"): ExportSheet<SheetRow> {
   const { personName, period, report, rows, totals, modules } = o;
   const W = periodWord(period.mode);
 
@@ -109,8 +115,8 @@ export async function exportKpiScorecard(o: {
     merges.push({ s: { r: first + i, c: 0 }, e: { r: first + i + 1, c: 0 } });
   }
 
-  const scorecard: ExportSheet<SheetRow> = {
-    sheetName: "KRA KPI",
+  return {
+    sheetName,
     columns,
     rows: all,
     preamble,
@@ -119,14 +125,19 @@ export async function exportKpiScorecard(o: {
     rowStyle: (r) => (r.band === "total" ? GROUP_ROW_STYLE : r.band === "score" ? SCORE_STYLE : undefined),
     freezeCols: 1,
   };
+}
 
+/** Every piece of work behind one person's counts. */
+function itemsSheet(o: MisInput): ExportSheet<ReportItem> {
+  const { period, report, rows } = o;
+  const W = periodWord(period.mode);
   const perName: Record<ReportItem["per"], string> = {
     cur: `This ${W.toLowerCase()}`,
     last: `Last ${W.toLowerCase()}`,
     next: `Next ${W.toLowerCase()}`,
   };
   const labelOf = new Map(rows.map((r) => [`${r.source}|${r.module}|${r.rowKey}`, r]));
-  const items: ExportSheet<ReportItem> = {
+  return {
     sheetName: "Items",
     columns: [
       { header: "Period", width: 12, value: (i) => perName[i.per] },
@@ -141,26 +152,38 @@ export async function exportKpiScorecard(o: {
     rows: report.items,
     freezeCols: 1,
   };
+}
 
-  const notes = [
+/**
+ * What the numbers mean, for the About sheet — one person's export and the team pack alike.
+ * `bulkClosed` is one person's count for the period, or null where it does not apply.
+ */
+export function misNotes(period: Period, bulkClosed: number | null, notInUse: string[]): string[] {
+  const W = periodWord(period.mode);
+  return [
     `Work counts in the ${W.toLowerCase()} it was DUE. It joins Planned once it is done, or once its due date has passed; work due later in a running ${W.toLowerCase()} is still due, not missed.`,
     "Done = closed at any time up to the as-of. On time = closed on or before the due date (Indian calendar day). A task finished after its deadline was revised is done but late.",
     "% work not done = (done − planned) ÷ planned × 100. % work not done on time = (on time − done) ÷ done × 100 — the second row's base is work DONE, as on the weekly MIS sheet. No base, no percentage: shown as —.",
     "Score out of 100 = (on time + ½ × late) ÷ planned × 100, pooled across every row. The same rule as the monthly FMS ranking.",
     "A team step with several owners counts for each of them until someone closes it; then only the person who closed it gets it. An admin who closes someone's step gets the credit.",
-    `${report.footer.bulk_closed} task(s) due in this ${W.toLowerCase()} were closed by an admin bulk close and are not scored.`,
+    ...(bulkClosed === null
+      ? ["Tasks closed by an admin bulk close are not scored."]
+      : [`${bulkClosed} task(s) due in this ${W.toLowerCase()} were closed by an admin bulk close and are not scored.`]),
     "Next planned includes recurring tasks not generated yet (they are created one day at a time); \"up to\" marks tasks that can still be marked Not Applicable. FMS steps have no due date until the step before them closes, so only those already due are counted.",
-    ...(report.footer.skipped.length
-      ? [`Not counted — not in use yet: ${report.footer.skipped.map((s) => s.name).join(", ")}.`]
-      : []),
+    ...(notInUse.length ? [`Not counted — not in use yet: ${notInUse.join(", ")}.`] : []),
   ];
+}
 
+/** One person's scorecard, downloaded: their MIS sheet and the items behind it. */
+export async function exportKpiScorecard(o: MisInput): Promise<void> {
+  const { personName, period, report } = o;
+  const W = periodWord(period.mode);
   const safe = personName.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
   await exportSheetsToXlsx({
     fileName: `KRA_KPI_${safe}_${period.from}_to_${period.to}`,
     title: `KRA / KPI Scorecard — ${personName} — ${periodLabel(period)}`,
-    sheets: [scorecard, items],
+    sheets: [misSheet(o), itemsSheet(o)],
     filters: [`Person: ${personName}`, `${W}: ${periodLabel(period)}`, `As of: ${formatDateTime(report.as_of)}`],
-    notes,
+    notes: misNotes(period, report.footer.bulk_closed, report.footer.skipped.map((s) => s.name)),
   });
 }
