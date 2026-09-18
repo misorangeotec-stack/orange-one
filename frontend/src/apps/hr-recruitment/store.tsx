@@ -101,14 +101,8 @@ import {
   seatsTaken,
   STAGE_PENDING_STEP,
   reconsiderTargetStage,
-  stageEntryOf,
-  hrApprovalLockReason,
-  mgmtApprovalLockReason,
-  jobPostingLockReason,
-  interviewResultLockReason,
-  onboardingLockReason,
-  reviewLockReason,
-  probationDecisionLockReason,
+  hrCompletedEntries,
+  type HrCompletedIndex,
   type HrSnapshot,
   type QueueEntry,
   type StageEntry,
@@ -1352,123 +1346,55 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       (iv) => !iv.heldAt && iv.interviewerIds.includes(user.id),
     );
 
-    const deptOfReq = (requisitionId: string | null): string | null =>
-      requisitionId ? (reqById.get(requisitionId)?.departmentId ?? null) : null;
+    const completedIndex: HrCompletedIndex = {
+      requisitions,
+      candidates,
+      onboardings,
+      probations,
+      reqById,
+      canById,
+      cansByReq,
+      ivsByCan,
+      reviewsByProb,
+    };
 
     /**
-     * "What I did here", one entry per (step, entity). Each entry carries its own
-     * lockReason (pure, mirrors the server guard) and a precomputed canEdit (this
-     * user owns the step AND its window is open) — canActOn is not uniform across the
-     * four entities, so the builder that knows the entity resolves ownership once.
+     * Whether THIS user may edit an entry — the one part of a Completed entry that is
+     * about the viewer. The list itself is `hrCompletedEntries` (lib/queues.ts), which
+     * the server-side ranking reads too. Onboarding and the probation decision are
+     * view-only in the Completed tab.
      */
-    const completedForUngated = (stepKey: StepKey): StageEntry<CompletedRow>[] => {
+    const ownsCompleted = (stepKey: StepKey, row: CompletedRow): boolean => {
       switch (stepKey) {
         case "hr_head_approval":
-          return requisitions
-            .filter((r) => r.hrApprovedAt)
-            .map((r) => {
-              const lock = hrApprovalLockReason(r);
-              return stageEntryOf(
-                "hr_head_approval",
-                { id: `hr_head_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
-                r.hrApproverId, r.hrApprovedAt!, lock, canActOn("hr_head_approval", r) && !lock,
-              );
-            });
         case "mgmt_approval":
-          return requisitions
-            .filter((r) => r.mgmtApprovedAt)
-            .map((r) => {
-              const lock = mgmtApprovalLockReason(r);
-              return stageEntryOf(
-                "mgmt_approval",
-                { id: `mgmt_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
-                r.mgmtApproverId, r.mgmtApprovedAt!, lock, canActOn("mgmt_approval", r) && !lock,
-              );
-            });
         case "job_posting":
-          return requisitions
-            .filter((r) => r.postedAt)
-            .map((r) => {
-              const hasCandidate = (cansByReq.get(r.id)?.length ?? 0) > 0;
-              const lock = jobPostingLockReason(r, hasCandidate);
-              return stageEntryOf(
-                "job_posting",
-                { id: `job_posting:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
-                r.postedBy, r.postedAt!, lock, canActOn("job_posting", r) && !lock,
-              );
-            });
+          return canActOn(stepKey, row as Requisition);
         case "telephonic_screening":
         case "interview_1":
         case "interview_2":
-        case "interview_3": {
-          const round = (stepKey === "telephonic_screening" ? 0 : Number(stepKey.slice(-1))) as 0 | 1 | 2 | 3;
-          const out: StageEntry<CompletedRow>[] = [];
-          for (const c of candidates) {
-            const iv = (ivsByCan.get(c.id) ?? []).find((v) => v.round === round && v.heldAt);
-            if (!iv) continue;
-            const lock = interviewResultLockReason(c, round);
-            out.push(
-              stageEntryOf(
-                stepKey,
-                { id: `${stepKey}:${c.id}`, entityId: c.id, requisitionId: c.requisitionId, departmentId: deptOfReq(c.requisitionId), ref: c.name, editedAtIso: iv.editedAt, editedById: iv.editedBy, row: c },
-                iv.resultRecordedBy, iv.heldAt!, lock, canActOnCandidate(c) && !lock,
-              ),
-            );
-          }
-          return out;
-        }
-        case "onboarding":
-          // Reaches Completed only once the person joined — a record, view-only.
-          return onboardings
-            .filter((o) => o.completedAt)
-            .map((o) =>
-              stageEntryOf(
-                "onboarding",
-                { id: `onboarding:${o.id}`, entityId: o.id, requisitionId: o.requisitionId, departmentId: deptOfReq(o.requisitionId), ref: canById.get(o.candidateId)?.name ?? "New hire", editedAtIso: o.editedAt, editedById: o.editedBy, row: o },
-                o.joiningDateBy ?? o.offerDecidedBy, o.completedAt!, onboardingLockReason(), false,
-              ),
-            );
+        case "interview_3":
+          return canActOnCandidate(row as Candidate);
         case "probation_m1":
         case "probation_m2":
         case "probation_m3":
-        case "probation_extension": {
-          const month = stepKey === "probation_extension" ? 4 : Number(stepKey.slice(-1));
-          const out: StageEntry<CompletedRow>[] = [];
-          for (const p of probations) {
-            const review = (reviewsByProb.get(p.id) ?? []).find((rv) => rv.month === month);
-            if (!review) continue;
-            const lock = reviewLockReason(p, review);
-            out.push(
-              stageEntryOf(
-                stepKey,
-                { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: review.editedAt, editedById: review.editedBy, row: p },
-                review.reviewerId, review.reviewedAt, lock, canActOnProbation(p) && !lock,
-              ),
-            );
-          }
-          return out;
-        }
-        case "probation_final":
-          // The decision is VIEW-ONLY in the Completed tab: it is taken (and, for an
-          // 'extend', corrected) from the probation panel while it is the pending work —
-          // there is no standalone decision editor. onView opens the panel.
-          return probations
-            .filter((p) => p.outcome)
-            .map((p) => {
-              const hasM4 = (reviewsByProb.get(p.id) ?? []).some((rv) => rv.month === 4);
-              const lock =
-                probationDecisionLockReason(p, hasM4) ??
-                "Open the probation to change an extended decision while the month-4 review is pending.";
-              return stageEntryOf(
-                "probation_final",
-                { id: `probation_final:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: p.editedAt, editedById: p.editedBy, row: p },
-                p.outcomeBy, p.outcomeAt!, lock, false,
-              );
-            });
+        case "probation_extension":
+          return canActOnProbation(row as Probation);
         default:
-          return [];
+          return false;
       }
     };
+
+    /**
+     * "What I did here", one entry per (step, entity). Each entry carries its own
+     * lockReason (pure, mirrors the server guard); canEdit = this user owns the step
+     * AND its window is open.
+     */
+    const completedForUngated = (stepKey: StepKey): StageEntry<CompletedRow>[] =>
+      hrCompletedEntries(completedIndex, stepKey).map((e) => ({
+        ...e,
+        canEdit: !e.lockReason && ownsCompleted(stepKey, e.row),
+      }));
 
     /**
      * The module write ceiling, applied once to every completed entry.

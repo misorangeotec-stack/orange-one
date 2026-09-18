@@ -254,17 +254,47 @@ const stageRound = (stage: CandidateStage): 0 | 1 | 2 | 3 | null =>
  * because that stage never happened). Falling back to `uploadedAt` instead would date
  * the due clock from the CV's arrival and paint the card overdue at birth.
  */
-function lastCompletedStageIso(c: Candidate): string | null {
-  return (
-    c.interview3At ??
-    c.interview2At ??
-    c.interview1At ??
-    c.telephonicAt ??
-    c.hodDecidedAt ??
-    c.hrShortlistedAt ??
-    null
-  );
+function lastCompletedStageIso(c: Candidate, before?: StepKey): string | null {
+  // Latest first. `before` limits the walk to stages EARLIER than that step — the
+  // question a step that has already closed asks, since its own stamp and every
+  // later one are no part of what it was waiting on.
+  const chain: [StepKey, string | null][] = [
+    ["interview_3", c.interview3At],
+    ["interview_2", c.interview2At],
+    ["interview_1", c.interview1At],
+    ["telephonic_screening", c.telephonicAt],
+    ["hod_shortlist", c.hodDecidedAt],
+    ["hr_shortlist", c.hrShortlistedAt],
+  ];
+  const cut = before ? CANDIDATE_STEP_ORDER.indexOf(before) : Infinity;
+  for (const [step, at] of chain) {
+    if (CANDIDATE_STEP_ORDER.indexOf(step) < cut && at) return at;
+  }
+  return null;
 }
+
+/** The candidate-scope steps in workflow order. */
+const CANDIDATE_STEP_ORDER: StepKey[] = [
+  "hr_shortlist",
+  "hod_shortlist",
+  "telephonic_screening",
+  "interview_1",
+  "interview_2",
+  "interview_3",
+  "final_decision",
+];
+
+/** The interview round a candidate STEP conducts. Telephonic is round 0. */
+const stepRound = (step: StepKey): 0 | 1 | 2 | 3 | null =>
+  step === "telephonic_screening"
+    ? 0
+    : step === "interview_1"
+      ? 1
+      : step === "interview_2"
+        ? 2
+        : step === "interview_3"
+          ? 3
+          : null;
 
 /**
  * Due date for the step a candidate card is currently waiting on.
@@ -288,19 +318,56 @@ export function candidateDueIso(
 ): string | null {
   const step = STAGE_PENDING_STEP[c.stage];
   if (!step) return null; // finalized / disqualified — nothing is due
+  return candidateDueFor(snap, c, step, stageRound(c.stage), "pending", reqById, ivByCandidate);
+}
+
+/**
+ * When a candidate step that has ALREADY CLOSED was due — the same rule
+ * `candidateDueIso` applies while it is open, asked afterwards.
+ *
+ * Two things differ only because the step is done, and both keep the answer the
+ * one the card showed while it waited:
+ *   • a round is due on the date of the interview that was HELD, which is the
+ *     booking that was pending until then;
+ *   • the skipped-stage fallback walks only the stages BEFORE this step. Its own
+ *     stamp, and every later one, happened after it.
+ *
+ * Read by the monthly ranking (CC-1), which scores a closed step against this.
+ */
+export function candidateStepDueIso(
+  snap: HrSnapshot,
+  c: Candidate,
+  step: StepKey,
+  reqById: Map<string, Requisition>,
+  ivByCandidate?: Map<string, Interview[]>,
+): string | null {
+  return candidateDueFor(snap, c, step, stepRound(step), "held", reqById, ivByCandidate);
+}
+
+function candidateDueFor(
+  snap: HrSnapshot,
+  c: Candidate,
+  step: StepKey,
+  round: 0 | 1 | 2 | 3 | null,
+  which: "pending" | "held",
+  reqById: Map<string, Requisition>,
+  ivByCandidate?: Map<string, Interview[]>,
+): string | null {
   const sla = snap.stepSla[step];
   if (!sla) return null;
 
-  const round = stageRound(c.stage);
   if (round !== null) {
     const list = ivByCandidate?.get(c.id) ?? snap.interviews.filter((iv) => iv.candidateId === c.id);
-    const booked = list.find((iv) => iv.round === round && !iv.heldAt);
+    const booked = list.find((iv) => iv.round === round && (which === "held" ? !!iv.heldAt : !iv.heldAt));
     if (booked?.scheduledOn) return booked.scheduledOn;
   }
 
   // A skipped-into stage has a null configured anchor — fall back to the last stage that
   // actually completed, not to the CV's upload date (which would be born overdue).
-  const from = candidateStepCompletedIso(c, sla.anchor, reqById) ?? lastCompletedStageIso(c) ?? c.uploadedAt;
+  const from =
+    candidateStepCompletedIso(c, sla.anchor, reqById) ??
+    lastCompletedStageIso(c, which === "held" ? step : undefined) ??
+    c.uploadedAt;
   return dueIsoFrom(from, sla);
 }
 
@@ -814,3 +881,157 @@ export const probationDecisionLockReason = (p: Probation, hasMonth4Review: boole
   if (hasMonth4Review) return "The month-4 review has been recorded — the extension decision can no longer be re-opened.";
   return "The probation decision is final — it can no longer be changed.";
 };
+
+/* -------------------------------------------------------------------------- */
+/*  Completed entries — what each step's Completed tab lists                   */
+/* -------------------------------------------------------------------------- */
+
+/** The lookups the Completed builder reads. The store passes the maps it already built. */
+export interface HrCompletedIndex {
+  requisitions: Requisition[];
+  candidates: Candidate[];
+  onboardings: Onboarding[];
+  probations: Probation[];
+  reqById: Map<string, Requisition>;
+  canById: Map<string, Candidate>;
+  cansByReq: Map<string, Candidate[]>;
+  ivsByCan: Map<string, Interview[]>;
+  reviewsByProb: Map<string, ProbationReview[]>;
+}
+
+/**
+ * "What was done here", one entry per (step, entity) — every step's Completed tab.
+ *
+ * Lived inside the store's `useMemo` until the monthly ranking (CC-1) needed the
+ * same list on the server, where React cannot run. It moved here rather than being
+ * copied, and the store now calls it. What stayed behind is the one thing that is
+ * about the VIEWER — whether they may edit an entry — so every entry leaves here
+ * with `canEdit: false` and the store sets it.
+ */
+export function hrCompletedEntries(ix: HrCompletedIndex, stepKey: StepKey): StageEntry<CompletedRow>[] {
+  const deptOfReq = (requisitionId: string | null): string | null =>
+    requisitionId ? (ix.reqById.get(requisitionId)?.departmentId ?? null) : null;
+
+  switch (stepKey) {
+    case "hr_head_approval":
+      return ix.requisitions
+        .filter((r) => r.hrApprovedAt)
+        .map((r) =>
+          stageEntryOf(
+            "hr_head_approval",
+            { id: `hr_head_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+            r.hrApproverId, r.hrApprovedAt!, hrApprovalLockReason(r), false,
+          ),
+        );
+    case "mgmt_approval":
+      return ix.requisitions
+        .filter((r) => r.mgmtApprovedAt)
+        .map((r) =>
+          stageEntryOf(
+            "mgmt_approval",
+            { id: `mgmt_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+            r.mgmtApproverId, r.mgmtApprovedAt!, mgmtApprovalLockReason(r), false,
+          ),
+        );
+    case "job_posting":
+      return ix.requisitions
+        .filter((r) => r.postedAt)
+        .map((r) => {
+          const hasCandidate = (ix.cansByReq.get(r.id)?.length ?? 0) > 0;
+          return stageEntryOf(
+            "job_posting",
+            { id: `job_posting:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+            r.postedBy, r.postedAt!, jobPostingLockReason(r, hasCandidate), false,
+          );
+        });
+    case "telephonic_screening":
+    case "interview_1":
+    case "interview_2":
+    case "interview_3": {
+      const round = (stepKey === "telephonic_screening" ? 0 : Number(stepKey.slice(-1))) as 0 | 1 | 2 | 3;
+      const out: StageEntry<CompletedRow>[] = [];
+      for (const c of ix.candidates) {
+        const iv = (ix.ivsByCan.get(c.id) ?? []).find((v) => v.round === round && v.heldAt);
+        if (!iv) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${c.id}`, entityId: c.id, requisitionId: c.requisitionId, departmentId: deptOfReq(c.requisitionId), ref: c.name, editedAtIso: iv.editedAt, editedById: iv.editedBy, row: c },
+            iv.resultRecordedBy, iv.heldAt!, interviewResultLockReason(c, round), false,
+          ),
+        );
+      }
+      return out;
+    }
+    case "onboarding":
+      // Reaches Completed only once the person joined — a record, view-only.
+      return ix.onboardings
+        .filter((o) => o.completedAt)
+        .map((o) =>
+          stageEntryOf(
+            "onboarding",
+            { id: `onboarding:${o.id}`, entityId: o.id, requisitionId: o.requisitionId, departmentId: deptOfReq(o.requisitionId), ref: ix.canById.get(o.candidateId)?.name ?? "New hire", editedAtIso: o.editedAt, editedById: o.editedBy, row: o },
+            o.joiningDateBy ?? o.offerDecidedBy, o.completedAt!, onboardingLockReason(), false,
+          ),
+        );
+    case "probation_m1":
+    case "probation_m2":
+    case "probation_m3":
+    case "probation_extension": {
+      const month = stepKey === "probation_extension" ? 4 : Number(stepKey.slice(-1));
+      const out: StageEntry<CompletedRow>[] = [];
+      for (const p of ix.probations) {
+        const review = (ix.reviewsByProb.get(p.id) ?? []).find((rv) => rv.month === month);
+        if (!review) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: review.editedAt, editedById: review.editedBy, row: p },
+            review.reviewerId, review.reviewedAt, reviewLockReason(p, review), false,
+          ),
+        );
+      }
+      return out;
+    }
+    case "probation_final":
+      // The decision is VIEW-ONLY in the Completed tab: it is taken (and, for an
+      // 'extend', corrected) from the probation panel while it is the pending work —
+      // there is no standalone decision editor. onView opens the panel.
+      return ix.probations
+        .filter((p) => p.outcome)
+        .map((p) => {
+          const hasM4 = (ix.reviewsByProb.get(p.id) ?? []).some((rv) => rv.month === 4);
+          const lock =
+            probationDecisionLockReason(p, hasM4) ??
+            "Open the probation to change an extended decision while the month-4 review is pending.";
+          return stageEntryOf(
+            "probation_final",
+            { id: `probation_final:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: p.editedAt, editedById: p.editedBy, row: p },
+            p.outcomeBy, p.outcomeAt!, lock, false,
+          );
+        });
+    default:
+      return [];
+  }
+}
+
+/**
+ * WHO closed a candidate step — the twin of `candidateStepCompletedIso`, for the
+ * three candidate steps no Completed tab lists (the shortlists and the decision).
+ *
+ * ⚠ A DISQUALIFICATION RECORDS NO ACTOR. `final_decision` completes on
+ *   `finalizedAt ?? disqualifiedAt`, but only the offer has a `finalizedBy`, so a
+ *   disqualified card returns null here: it was closed, by nobody the data knows.
+ */
+export function candidateStepActorId(c: Candidate, step: StepKey): string | null {
+  switch (step) {
+    case "hr_shortlist":
+      return c.hrShortlistedBy;
+    case "hod_shortlist":
+      return c.hodDecidedBy;
+    case "final_decision":
+      return c.finalizedAt ? c.finalizedBy : null;
+    default:
+      return null;
+  }
+}
