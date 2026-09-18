@@ -1,6 +1,7 @@
 import type { AppManifest } from "./types";
 import type { AppCategory } from "./categories";
 import { taskManagementApp } from "./task-management/meta";
+import { kraKpiApp } from "./kra-kpi/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
 import { importApp } from "./import/meta";
@@ -40,6 +41,10 @@ const comingSoon = (
 
 export const apps: AppManifest[] = [
   taskManagementApp,
+  // KRA / KPI Scorecard (KPI-1) — every employee's own work done / done on time, per
+  // module and step, over FMS steps and Task Management tasks. Its data is gated per
+  // person inside the kpi_report RPC, which is what makes it safe to make universal.
+  kraKpiApp,
   receivablesHubApp,
   procurementApp,
   // Import Purchase FMS — separate module (own fms_import_* tables), granted per

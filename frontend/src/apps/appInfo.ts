@@ -55,6 +55,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/task-management",
     category: "productivity",
   },
+  // Every employee's own KRA / KPI report — work done, and work done on time, per
+  // module and step, for any week or range (KPI-1). Filed beside Task Management
+  // because half of it IS Task Management, and because it is a personal screen
+  // everyone opens, not a control-room board.
+  "kra-kpi": {
+    name: "KRA / KPI Scorecard",
+    basePath: "/kra-kpi",
+    category: "productivity",
+  },
   "outstanding-dashboard": {
     name: "Outstanding Dashboard",
     basePath: "/outstanding-dashboard",

@@ -85,3 +85,10 @@ verify_jwt = true
 # Deploy with --no-verify-jwt.
 [functions.fms-ranking]
 verify_jwt = false
+
+# The KRA / KPI scorecard's nightly facts (KPI-1). Called ONLY by the server, exactly like
+# fms-ranking above: pg_cron posts the `x-dispatch-secret` header with no JWT, and the
+# function calls itself once per module with the same header. People read their figures
+# through the kpi_report RPC, never through this function. Deploy with --no-verify-jwt.
+[functions.kpi-facts]
+verify_jwt = false
