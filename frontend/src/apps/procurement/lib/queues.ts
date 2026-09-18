@@ -443,28 +443,57 @@ export function lineDueIso(data: ProcSnapshot, line: RequestItem, step: StepKey)
 export function poDueIso(idx: ProcIndex, data: ProcSnapshot, po: PurchaseOrder, step: StepKey): string | null {
   if (step === "follow_up") return dispatchDueForPo(idx, data, po.id);
   if (step === "inward") return null;
-  const { days } = slaFor(data, step);
-  const after = (iso: string | null) => (iso ? localDateIso(addWorkingDays(new Date(iso), days)) : null);
 
-  if (step === "tally") return after(minIso(unbookedGrnsForPo(idx, po.id).map((g) => g.createdAt)));
+  // The PO is due on its OLDEST outstanding item's own due date. Adding working
+  // days never moves a date backwards, so this is the same day as "the oldest
+  // item's timestamp, plus the step's days" — the rule is each helper below.
+  if (step === "tally") return minIso(unbookedGrnsForPo(idx, po.id).map((g) => grnTallyDueIso(data, g)));
 
   // The QC branch is trigger-anchored for the same reason Tally is: QC is per
   // RECEIPT and the branch steps are per INSPECTION, so a PO with three
   // deliveries has no single date to count from. Each clocks off its own oldest
   // outstanding item, and gets no `po.createdAt` fallback.
   if (step === "qc_inspection") {
-    return after(minIso(uninspectedGrnsForPo(idx, po.id).map((g) => idx.tallyByGrn.get(g.id)?.createdAt ?? null)));
+    return minIso(uninspectedGrnsForPo(idx, po.id).map((g) => grnQcDueIso(idx, data, g)));
   }
   if (step === "purchase_return") {
-    return after(minIso(returnsPendingForPo(idx, po.id).map((q) => q.inspectedAt)));
+    return minIso(returnsPendingForPo(idx, po.id).map((q) => inspectionReturnDueIso(data, q)));
   }
   if (step === "gate_outward") {
-    return after(minIso(gateOutPendingForPo(idx, po.id).map((q) => q.returnedAt)));
+    return minIso(gateOutPendingForPo(idx, po.id).map((q) => inspectionGateOutDueIso(data, q)));
   }
 
-  const { anchor } = slaFor(data, step);
-  return after(poStepCompletedIso(idx, po, anchor) ?? po.createdAt);
+  const { anchor, days } = slaFor(data, step);
+  return afterWorkingDays(poStepCompletedIso(idx, po, anchor) ?? po.createdAt, days);
 }
+
+const afterWorkingDays = (iso: string | null, days: number): string | null =>
+  iso ? localDateIso(addWorkingDays(new Date(iso), days)) : null;
+
+/*
+ * The four trigger-anchored steps, ONE ITEM AT A TIME.
+ *
+ * `poDueIso` above answers for a PO's oldest OUTSTANDING item, which is what a
+ * queue needs and is null once nothing is outstanding. Anything asking when an
+ * item that is already done WAS due — the monthly ranking (CC-1) — reads these,
+ * and so does `poDueIso`, so the two can never disagree.
+ */
+
+/** A receipt's Tally booking: due N working days after the goods arrived (the GRN). */
+export const grnTallyDueIso = (data: ProcSnapshot, g: Grn): string | null =>
+  afterWorkingDays(g.createdAt, slaFor(data, "tally").days);
+
+/** A receipt's QC inspection: due N working days after its Tally booking. */
+export const grnQcDueIso = (idx: ProcIndex, data: ProcSnapshot, g: Grn): string | null =>
+  afterWorkingDays(idx.tallyByGrn.get(g.id)?.createdAt ?? null, slaFor(data, "qc_inspection").days);
+
+/** A rejection's purchase return: due N working days after the inspection. */
+export const inspectionReturnDueIso = (data: ProcSnapshot, q: QcInspection): string | null =>
+  afterWorkingDays(q.inspectedAt, slaFor(data, "purchase_return").days);
+
+/** A rejection's gate outward: due N working days after the return. */
+export const inspectionGateOutDueIso = (data: ProcSnapshot, q: QcInspection): string | null =>
+  afterWorkingDays(q.returnedAt, slaFor(data, "gate_outward").days);
 
 /* -------------------------------------------------------------------------- */
 /*  Per-step predicates                                                        */

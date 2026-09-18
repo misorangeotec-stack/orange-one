@@ -28,9 +28,12 @@
  * reflect every filter EXCEPT the bucket selection itself — otherwise clicking
  * "Overdue" would zero the other three tiles and you could never get back.
  */
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useMemo, useState, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
+import Tabs from "@/shared/components/ui/Tabs";
+import RankingPanel from "@/apps/fms-control-center/components/ranking/RankingPanel";
+import HomeRankChip from "@/apps/fms-control-center/components/ranking/HomeRankChip";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import DueCell from "@/shared/components/ui/DueCell";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
@@ -135,6 +138,25 @@ export default function MyWorkToday() {
 export function MyWorkView({ state }: { state: AggregateState }) {
   const { user, isAdmin } = useSession();
   const today = todayLocalIso();
+
+  /*
+   * My work | Ranking (CC-1). The monthly FMS ranking lives here, on the one screen
+   * every employee already has, rather than behind the Control Center grant. The tab
+   * is in the URL (?view=ranking) so the banner's rank chip — and a link in a message —
+   * can open it directly.
+   */
+  const [params, setParams] = useSearchParams();
+  const view: "work" | "ranking" = params.get("view") === "ranking" ? "ranking" : "work";
+  const setView = (v: string) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        if (v === "ranking") next.set("view", "ranking");
+        else next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
 
   const [bucketFilter, setBucketFilter] = useState<Bucket | null>(null);
   const [sources, setSources] = useState<string[]>([]);
@@ -348,8 +370,22 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         isAdmin={isAdmin}
         scope={scope}
         onScopeChange={setScopePref}
+        rank={<HomeRankChip onOpen={() => setView("ranking")} />}
       />
 
+      <Tabs
+        tabs={[
+          { key: "work", label: "My work", count: state.isSettling ? undefined : pending },
+          { key: "ranking", label: "Ranking" },
+        ]}
+        active={view}
+        onChange={setView}
+      />
+
+      {view === "ranking" ? (
+        <RankingPanel />
+      ) : (
+      <>
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {TILES.map((t) => (
           <KpiTile
@@ -502,6 +538,8 @@ export function MyWorkView({ state }: { state: AggregateState }) {
       {/* An all-work readout — its raw per-source counts are unscoped, so hide it
           in Mine mode to keep the screen self-consistent. */}
       {scope === "all" && <SourceStrip sources={state.sources} hasStepUnits={state.hasStepUnits} />}
+      </>
+      )}
     </div>
   );
 }
@@ -519,6 +557,7 @@ function Hero({
   isAdmin,
   scope,
   onScopeChange,
+  rank,
 }: {
   greeting: string;
   name: string;
@@ -530,6 +569,8 @@ function Hero({
   isAdmin: boolean;
   scope: "mine" | "all";
   onScopeChange: (s: "mine" | "all") => void;
+  /** The viewer's monthly rank (CC-1), shown in the banner's right column. */
+  rank?: ReactNode;
 }) {
   return (
     <div className="relative overflow-hidden rounded-card bg-navy text-white px-5 py-5 sm:px-6 sm:py-6">
@@ -567,6 +608,7 @@ function Hero({
 
         <div className="flex flex-col items-end gap-2">
           {isAdmin && <ScopeTabs scope={scope} onChange={onScopeChange} />}
+          {rank}
           {!settling && pending > 0 && (
             <div className="flex items-center gap-2">
               {overdue > 0 && <HeroPill tone="red" value={overdue} label={overdue === 1 ? "overdue" : "overdue"} />}
