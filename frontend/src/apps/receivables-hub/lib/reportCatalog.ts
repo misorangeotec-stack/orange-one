@@ -40,8 +40,11 @@ import { Package, Receipt } from "lucide-react";
 import { BadgeIndianRupee } from "lucide-react";
 // RC-13's icon, on its own line so it never collides with edits to the list above.
 import { FileWarning } from "lucide-react";
+// The Purchase dashboards' icon, on its own line for the same reason.
+import { Truck } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
+import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 import type { Crumb } from "@/apps/currentApp";
 
 /**
@@ -870,6 +873,23 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
   },
+  {
+    id: "bushra-purchase-register",
+    // Vendors, not customers — the salesperson scope does not apply.
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
+    title: "Purchase Register",
+    purpose: "Every purchase, purchase return and purchase debit note line, with purchase-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-purchase-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "purchase register", "purchase", "purchase return", "debit note", "inward service", "vendor",
+      "colour", "color", "item group", "item category", "bushra",
+    ],
+  },
 
   // ── Bushra-Dashboard screens ───────────────────────────────────────────────
   // The three screens under the Bushra-Dashboard MENU are catalogued here so they are granted
@@ -932,6 +952,21 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
+  })),
+  // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
+  // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
+  ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
+    title: p.id === "bushra-purchase-dashboard" ? p.title : `Purchase — ${purchaseDashboardTitle(p)}`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: Truck,
+    source: "tally",
+    status: "live",
+    keywords: ["purchase dashboard", p.title.toLowerCase(), "purchase type", "category", "vendor", "bushra"],
   })),
 ];
 

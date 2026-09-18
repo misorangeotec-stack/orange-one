@@ -33,8 +33,8 @@ export const COLOURS = [
 ] as const;
 
 /**
- * The Bushra Sales Register's colours (lib/bushraSalesRegister.ts): the same list plus TURQUOISE, for
- * its dye names. KEPT APART ON PURPOSE — colourOf takes the word that appears first, so adding one to
+ * The Bushra Sales and Purchase Registers' colours (lib/bushraSalesRegister.ts,
+ * lib/bushraPurchaseRegister.ts): the same list plus TURQUOISE, for their dye names. KEPT APART ON PURPOSE — colourOf takes the word that appears first, so adding one to
  * COLOURS re-buckets Batch Costing, the Production Dashboard and Packing Material ("TURQUOISE BLUE"
  * would stop being BLUE). Add it there only with the Batch Costing owner's say-so.
  */

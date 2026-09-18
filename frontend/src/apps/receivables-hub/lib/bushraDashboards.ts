@@ -19,9 +19,10 @@
  * only the pages the viewer holds (groupPageIds below). A new page therefore also needs its catalogue
  * entry, or nobody but an admin can open it.
  */
-import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, type LucideIcon } from "lucide-react";
+import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, type LucideIcon } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
+import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 
 const BASE = appBasePath("outstanding-dashboard");
 
@@ -93,6 +94,21 @@ export const BUSHRA_DASHBOARDS: BushraDashboardGroup[] = [
       purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
       path: p.path,
       icon: p.id === "bushra-sales-dashboard" ? LayoutDashboard : ShoppingCart,
+      status: "live" as const,
+    })),
+  },
+  {
+    id: "purchase",
+    title: "Purchase",
+    blurb: "Every purchase, and machines, spare parts, service and everything else — by purchase-type, category and group.",
+    icon: Truck,
+    // Generated from the preset list, so each page's id and path cannot drift from its screen.
+    pages: PURCHASE_DASHBOARDS.map((p) => ({
+      id: p.id,
+      title: purchaseDashboardTitle(p),
+      purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+      path: p.path,
+      icon: p.id === "bushra-purchase-dashboard" ? LayoutDashboard : Truck,
       status: "live" as const,
     })),
   },

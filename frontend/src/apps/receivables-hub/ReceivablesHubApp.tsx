@@ -58,6 +58,9 @@ import BatchCosting from "@hub/pages/BatchCosting";
 import BushraSalesRegister from "@hub/pages/BushraSalesRegister";
 import BushraSalesDashboard from "@hub/pages/BushraSalesDashboard";
 import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
+import BushraPurchaseRegister from "@hub/pages/BushraPurchaseRegister";
+import BushraPurchaseDashboard from "@hub/pages/BushraPurchaseDashboard";
+import { PURCHASE_DASHBOARDS } from "@hub/lib/bushraPurchaseDashboards";
 import ProductionBatchCostingDashboard from "@hub/pages/ProductionBatchCostingDashboard";
 import ProductionExpenses from "@hub/pages/ProductionExpenses";
 import BushraDashboards from "@hub/pages/BushraDashboards";
@@ -138,6 +141,11 @@ function HubRoutes() {
               {/* The third leg of the cost: caps, cans and stickers, which never touch a
                   production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
               <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
+              {/* Purchase → Purchase, Machines, Spare Parts, Service, Other: one screen, a preset per
+                  route (lib/bushraPurchaseDashboards.ts). The key resets the filters between them. */}
+              {PURCHASE_DASHBOARDS.map((p) => (
+                <Route key={p.id} path={p.path} element={<BushraPurchaseDashboard key={p.id} presetId={p.id} />} />
+              ))}
             </Route>
           </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
@@ -307,6 +315,9 @@ function HubRoutes() {
               {/* Reports → Bushra-Report → Sales Register. The Tally Sales Register plus Item Type,
                   Group, Category and Colour (lib/bushraSalesRegister.ts). Own From/To window. */}
               <Route path="reports/bushra-sales-register" element={<BushraSalesRegister />} />
+              {/* Reports → Bushra-Report → Purchase Register. Purchases, returns and purchase debit
+                  notes with Purchase-Type, Group, Category and Colour (lib/bushraPurchaseRegister.ts). */}
+              <Route path="reports/bushra-purchase-register" element={<BushraPurchaseRegister />} />
             </Route>
           </Route>
           {/* Customer Creation FMS.
