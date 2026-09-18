@@ -4,10 +4,12 @@
  * FOUR READS, ALL AGAINST CONNECTWAVE, ALL REUSED RATHER THAN REBUILT:
  *
  *   · `loadSalesRegister`  (@hub/lib/salesRegister) — the day's invoice and
- *     challan LINES: party, item, quantity, revenue net of tax. Already resolves
- *     each row's company and location from ext_company_map by GUID, which is why
- *     this module never reads `company_label` or `location` off the table. Both
- *     are name-derived guesses that Tally re-mints every April.
+ *     challan LINES: party, item, quantity, revenue net of tax. This module takes
+ *     each line's company and location from ext_company_map by the BOOK's GUID
+ *     itself (see toSaleLine), and never reads `company_label` or `location` off
+ *     the table — both are name-derived guesses Tally re-mints every April — nor
+ *     the loader's display `company`, which on a Branch or Related line is the
+ *     counterparty class rather than the book's owner.
  *
  *   · `loadDayBookMulti`   (@hub/lib/dayBook) — the day's MONEY: collection and
  *     payment totals, the voucher list behind them, and the purchase figure.
@@ -29,11 +31,11 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
-import { fetchCompanyMap } from "@hub/lib/companyMap";
+import { companyGuidOf, fetchCompanyMap } from "@hub/lib/companyMap";
 import {
   loadLastRegisterRefresh, loadRegisterCompanies, loadSalesRegister, type RegisterRow,
 } from "@hub/lib/salesRegister";
-import { loadDayBookMulti, type DayBookData, type DayCompanyRef } from "@hub/lib/dayBook";
+import { loadDayBookMulti, type DayBookData, type DayCompanyRef, type DayVoucher } from "@hub/lib/dayBook";
 
 import { isoToYmd, toLacs } from "../lib/format";
 import { loadSaleTypeRuleset, type SaleType } from "../lib/saleType";
@@ -62,8 +64,17 @@ export interface MoneyRow {
   id: string;
   direction: "in" | "out";
   party: string;
-  /** The book it came from, when several are combined. */
+  /** The book label it came from ("O-tec — Surat"). For display only — never parse it. */
   company: string | null;
+  /**
+   * The company ALIAS ("O-tec", "Enterprise", "Colorix") — the column this row
+   * adds into. Resolved from the book's GUID through `ext_company_map`, never by
+   * splitting `company` on its dash. Empty when the book could not be resolved,
+   * which every render surfaces as an unmapped book.
+   */
+  entity: string;
+  /** The book's location ("Surat", "Noida"), from the same map. What the location filter reads. */
+  location: string;
   voucherNo: string | null;
   voucherType: string | null;
   kind: PartyKind;
@@ -129,7 +140,7 @@ export interface DailyReportData {
    *   6pm on the current day is looking at a partial day, and nothing else on the
    *   screen would tell them so. On a past date it is simply reassurance.
    */
-  freshness: { label: string; builtAt: string | null }[];
+  freshness: Freshness[];
 }
 
 /* ------------------------------------------------------------- classifying */
@@ -265,6 +276,58 @@ async function fetchPartyKinds(
   return byLabel;
 }
 
+/* ------------------------------------------------------------ money rows */
+
+/** A book the day book was read for, and what `ext_company_map` says it is. */
+export interface MoneyBook extends DayCompanyRef {
+  company: string;
+  location: string;
+}
+
+/**
+ * The day's receipts and payments as report rows.
+ *
+ * ⚠ THE COMPANY IS CARRIED EXPLICITLY, AND THE SINGLE-BOOK CASE IS WHY.
+ *   `loadDayBookMulti` returns ONE book's payload unmerged, and an unmerged
+ *   payload carries no `company` on its vouchers. Resolving the company from
+ *   the voucher's label alone would drop every receipt into no column the
+ *   moment the company map holds one row. So a voucher with no label takes the
+ *   sole book, and the company and location come from that book's map row —
+ *   never from splitting "O-tec — Surat" on its dash.
+ *
+ * Exported and pure so that path can be exercised with a real single-book
+ * payload; `loadDailyReport` always reads every mapped book and never takes it.
+ */
+export function toMoneyRows(
+  vouchers: DayVoucher[],
+  books: MoneyBook[],
+  kinds: Map<string, PartyKind>,
+): MoneyRow[] {
+  const byLabel = new Map(books.map((b) => [b.label, b]));
+  const sole = books.length === 1 ? books[0] : undefined;
+  return vouchers
+    .filter((v) => v.kind === "receipt" || v.kind === "payment")
+    .map((v, i): MoneyRow => {
+      const book = v.company ? byLabel.get(v.company) : sole;
+      return {
+        // The payload carries no stable line key, and one party can pay twice in a
+        // day, so the index is part of the key — a colliding React key remounts
+        // rows mid-render and can swap two rows' values.
+        id: `${v.kind}|${v.voucher_no ?? ""}|${v.party ?? ""}|${i}`,
+        direction: v.kind === "receipt" ? "in" : "out",
+        party: v.party ?? "—",
+        company: v.company ?? book?.label ?? null,
+        entity: book?.company ?? "",
+        location: book?.location ?? "",
+        voucherNo: v.voucher_no || null,
+        voucherType: v.voucher_type || null,
+        // Keyed by the BOOK the voucher came from, not by the party's name alone.
+        kind: kinds.get(`${book?.label ?? v.company ?? ""}|${v.party ?? ""}`) ?? "other",
+        amountLacs: toLacs(v.amount),
+      };
+    });
+}
+
 /* ----------------------------------------------------------- the assembly */
 
 /** Goods that left on a challan rather than an invoice. */
@@ -309,17 +372,27 @@ async function fetchPurchases(dateYmd: string, tenants: string[]): Promise<Purch
   });
 }
 
+/** When one book's register last rebuilt. */
+export interface Freshness {
+  label: string;
+  /** The book's company alias, from ext_company_map by GUID — "" when unmapped. */
+  company: string;
+  builtAt: string | null;
+}
+
 /**
  * When each book's register last rebuilt. Never throws: a missing freshness line
  * is a cosmetic loss, and failing the whole report for it would trade a real
  * page for a caption.
  */
-async function loadFreshness(): Promise<{ label: string; builtAt: string | null }[]> {
+async function loadFreshness(companyRows: { company_guid: string; company: string }[]): Promise<Freshness[]> {
   try {
     const books = await loadRegisterCompanies();
+    const companyOf = new Map(companyRows.map((c) => [c.company_guid, c.company]));
     return await Promise.all(
       books.map(async (b) => ({
         label: b.label,
+        company: companyOf.get(companyGuidOf(b.tenantId)) ?? "",
         builtAt: (await loadLastRegisterRefresh(b.tenantId))?.ran_at ?? null,
       })),
     );
@@ -334,9 +407,13 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
   const monthStartYmd = isoToYmd(`${dateIso.slice(0, 7)}-01`);
 
   const companyRows = await fetchCompanyMap();
-  const companies: DayCompanyRef[] = companyRows.map((c) => ({
+  // The label is only what a merged payload stamps on each voucher; the company
+  // and location travel beside it, so nothing downstream has to parse it back.
+  const companies: MoneyBook[] = companyRows.map((c) => ({
     guid: c.company_guid,
     label: `${c.company} — ${c.location}`,
+    company: c.company,
+    location: c.location,
   }));
 
   const [rules, dayRows, mtdRows, dayBook, freshness] = await Promise.all([
@@ -344,13 +421,20 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
     loadSalesRegister(dayYmd, dayYmd),
     loadSalesRegister(monthStartYmd, dayYmd),
     loadDayBookMulti(companies, dayYmd),
-    loadFreshness(),
+    loadFreshness(companyRows),
   ]);
 
+  // ⚠ THE COMPANY IS THE BOOK'S OWNER, READ HERE FROM THE BOOK — NEVER `RegisterRow.company`.
+  //   On master, `loadSalesRegister` fills `company` with the counterparty CLASS on a Branch or
+  //   Related line ("ORANGE ENT BRANCH", "ORANGE O TEC RELATED"), because that is how finance reads
+  //   the Sales Register (asked 2026-09-10). This report puts each company in a COLUMN, so those
+  //   lines grew columns of their own — "Unmapped: ORANGE ENT BRANCH" on 16-09-2026 — while the
+  //   sale was plainly Enterprise's. The tenant GUID names the book whatever the display rule is.
+  const bookOf = new Map(companyRows.map((c) => [c.company_guid, c]));
   const toSaleLine = (r: RegisterRow): SaleLine => ({
     id: registerId(r),
-    company: r.company,
-    location: r.location_name,
+    company: bookOf.get(companyGuidOf(r.tenant_id))?.company ?? r.company,
+    location: bookOf.get(companyGuidOf(r.tenant_id))?.location ?? r.location_name,
     party: r.party,
     item: r.particulars,
     type: r.type,
@@ -371,27 +455,12 @@ export async function loadDailyReport(dateIso: string): Promise<DailyReportData>
   const cashKinds = new Set(["receipt", "payment"]);
   const cashVouchers = (dayBook.vouchers ?? []).filter((v) => cashKinds.has(v.kind));
   const guidByLabel = new Map(companies.map((c) => [c.label, c.guid]));
-  // loadDayBookMulti short-circuits for a SINGLE company and returns that book's
-  // payload unmerged — and an unmerged payload carries no `company` on its
-  // vouchers. Without this the key would be "|PARTY" and every row would fall to
-  // Other the moment the company map holds one row.
-  const soleLabel = companies.length === 1 ? companies[0].label : null;
   const kinds = await fetchPartyKinds(cashVouchers.map((v) => v.party ?? ""), guidByLabel);
 
-  const money: MoneyRow[] = cashVouchers.map((v, i) => ({
-    // The payload carries no stable line key, and one party can pay twice in a
-    // day, so the index is part of the key — a colliding React key remounts
-    // rows mid-render and can swap two rows' values.
-    id: `${v.kind}|${v.voucher_no ?? ""}|${v.party ?? ""}|${i}`,
-    direction: v.kind === "receipt" ? "in" : "out",
-    party: v.party ?? "—",
-    company: v.company ?? null,
-    voucherNo: v.voucher_no || null,
-    voucherType: v.voucher_type || null,
-    // Keyed by the BOOK the voucher came from, not by the party's name alone.
-    kind: kinds.get(`${v.company ?? soleLabel ?? ""}|${v.party ?? ""}`) ?? "other",
-    amountLacs: toLacs(v.amount),
-  }));
+  // loadDayBookMulti short-circuits for a SINGLE company and returns that book's
+  // payload unmerged, with no `company` on its vouchers — toMoneyRows gives those
+  // the sole book, so neither the band nor the company column goes missing.
+  const money: MoneyRow[] = toMoneyRows(cashVouchers, companies, kinds);
 
   const tenants = [...new Set(dayRows.map((r) => r.tenant_id))];
   const purchases = await fetchPurchases(dayYmd, tenants);

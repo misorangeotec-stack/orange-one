@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import * as XLSX from "xlsx-js-style";
+import { useQuery } from "@tanstack/react-query";
 import {
   CreditCard, Download, Search, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Lock,
 } from "lucide-react";
@@ -30,7 +30,16 @@ import { useFY } from "@hub/lib/fyContext";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { fmtINRMoney } from "@hub/lib/utils";
 import type { SaleType } from "@hub/lib/types";
-import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
+import { exportCreditTermsXlsx } from "@hub/lib/exportCreditTerms";
+import { fetchLedgerVoucherDates } from "@hub/lib/creditTermsFacts";
+import {
+  activityOrd, buildBooks, CELL_FIELDS, cellKey, customerColumns, isoToDisplay,
+  lastTransaction, lastTxnTip, pivotCustomers, todayIst,
+  type CustomerRow, type TxnKind,
+} from "@hub/lib/creditTermsPivot";
+import { useColumnGrid } from "@hub/lib/useColumnGrid";
+import { useScopeDimension } from "@hub/lib/scope";
+import CreditTermsCustomerGrid, { FILL_BILLS, FILL_RED } from "@hub/components/CreditTermsCustomerGrid";
 
 /**
  * Credit Terms Not Set — which customers carry no credit days / credit limit, book by book.
@@ -66,6 +75,19 @@ import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
  * by useAppData, with the limit sign-corrected (Tally holds a debtor's limit as a negative Cr
  * amount) and the free-text credit period ("60 Days", "60", "1 Days") parsed to an integer by the
  * snapshot. Live (Tally) only — the legacy pipeline carries neither field reliably.
+ *
+ * ── Two views of the same ledgers (RC-19) ──
+ *
+ *  By customer (the default) pivots the ledgers to one row per customer NAME with a block per book —
+ *  Days · Limit · Customer since · Outstanding. By ledger is the original list. Every filter above
+ *  them is a LEDGER filter in both: in By customer a row shows when ANY of its ledgers in a shown book
+ *  passes, and its blocks still tell the truth about every shown book. The company panel stays per
+ *  ledger in both views (rule 3 still holds) — after a pivot one customer can be Complete in one book
+ *  and Neither set in another, so the panel could not count customers without double-counting.
+ *
+ *  "Customer since" and "Last transaction" come from two extra reads (lib/creditTermsFacts.ts); the
+ *  rules and the evidence for them are in lib/creditTermsPivot.ts. Both fail soft: the page still
+ *  renders, and the affected cells say they could not be loaded rather than reading blank.
  */
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -83,30 +105,27 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
   return pages;
 }
 
-const MONTH_ABBR: Record<string, number> = {
-  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
-};
-
-/** "2026-08-12" -> "12-Aug-26". Anything unparseable comes back empty, never "Invalid Date". */
-function isoToDisplay(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return "";
-  const name = Object.keys(MONTH_ABBR).find((k) => MONTH_ABBR[k] === Number(m[2]));
-  return name ? m[3] + "-" + name + "-" + m[1].slice(2) : "";
-}
-
-/** Sortable integer for either form: "2026-08-12" -> 20260812, "Aug-26" -> 20260800. */
-function activityOrd(iso: string, monthLabel: string): number {
-  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (d) return Number(d[1] + d[2] + d[3]);
-  const m = /^([A-Za-z]{3})-(\d{2})$/.exec(monthLabel);
-  if (m && MONTH_ABBR[m[1]]) return Number("20" + m[2]) * 10000 + MONTH_ABBR[m[1]] * 100;
-  return 0;
-}
-
 /** A limit of 0 is blank; a limit of ₹1 is the legacy Tally block flag. Neither is a limit. */
 const hasLimit = (creditLimit: number) => creditLimit > 1;
 const hasDays = (creditPeriod: number) => creditPeriod > 0;
+
+/**
+ * THE DEFAULT VIEW, and both halves of it are the client's call (18-09-2026).
+ *
+ * A reader opening this report is doing credit control, not an audit of dormant ledgers, so the list
+ * starts on the customers who actually owe something and trade in the goods this team chases.
+ *
+ *   · Balance   "nonzero" — 1,131 of 1,882 ledgers sit at exactly zero.
+ *   · Sale type every type EXCEPT Machine and Spare Parts.
+ *
+ * ⚠ A PARTIAL SALE-TYPE SELECTION EXCLUDES LEDGERS WITH NO SALE-TYPE ACTIVITY AT ALL, and that is the
+ *   documented behaviour of this filter (see saleTypeFilterOn below), not a bug in the default. Turning
+ *   the Sale type filter back to All Sale Types brings them back, which is what the control is for.
+ */
+const DEFAULT_BALANCE: BalanceMode = "nonzero";
+const DEFAULT_SALE_TYPES: string[] = SALE_TYPE_OPTIONS
+  .map((o) => o.value)
+  .filter((v) => v !== "machine" && v !== "spare_parts");
 
 /** Filters a caller can ask survives() to ignore. */
 type Skippable = "book" | "status" | "salesPerson" | "collectionTeam" | "saleType";
@@ -180,11 +199,13 @@ interface Row {
   billWiseBills: number;
   /** Sale types this customer actually trades in — open outstanding OR sales this FY. */
   saleTypes: SaleType[];
-  /** Last activity we can prove: newest of the last receipt and the newest bill. "" when none. */
-  lastActivity: string;
+  /** Newest of the last Tally voucher, the last receipt and the newest open bill, never in the future. */
+  lastTxnIso: string;
+  lastTxnKind: TxnKind | "";
   /** Fallback when no dated record exists but a month shows turnover — "Aug-26". */
   lastActivityMonth: string;
-  lastActivityOrd: number;
+  /** Sorts either form: the date, or the month fallback. */
+  lastTxnOrd: number;
   redMark: boolean;
   outstanding: number;
   overdue: number;
@@ -204,7 +225,7 @@ interface BookSummary {
 
 type SortKey =
   | "customer" | "book" | "salesPerson" | "category" | "saleTypes" | "creditDays" | "creditLimit"
-  | "status" | "outstanding" | "overdue" | "maxOverdueDays" | "lastActivity";
+  | "status" | "outstanding" | "overdue" | "maxOverdueDays" | "lastTransaction";
 
 /** "Ink, Spare Parts" — the label list, which is also what the column sorts and exports on. */
 const saleTypeText = (r: { saleTypes: SaleType[] }) =>
@@ -240,7 +261,13 @@ const COL_HELP: Record<string, string> = {
   outstanding: "What this customer owes right now, after other payments are applied.",
   overdue: "How much of that is already past its due date.",
   maxOd: "The oldest unpaid bill, in days past due.",
-  lastActivity: "The most recent receipt or bill we hold for this ledger. A dash means no receipt and no bill in the period shown, so the ledger is dormant. A bare month (e.g. Aug-26) means there was turnover that month but no dated document to point at. Covers receipts and bills — not credit notes or journals.",
+  lastTransaction: "The most recent entry we hold for this customer, across every book they are open in: any Tally voucher (sales, receipts, credit notes, journals — settled or not), the last receipt, or the newest open bill. Post-dated entries are not counted until their date. A dash means nothing in the history we hold, which begins April 2024. A bare month (e.g. Aug-26) means turnover that month but no dated document to point at.",
+  // ── by customer ──
+  books: "How many of our company books this customer is open in — its ledger exists there as a debtor. Counts every book, including any you have hidden.",
+  days: "Credit days on this book's ledger. Red = open in this book with no credit days. Blue = no days on the ledger, but every open bill carries its own due date, so the customer IS controlled. NA = not open in this book.",
+  limit: "Credit limit on this book's ledger. Red = open in this book with no limit, or the ₹1 'blocked' flag (an old Tally marker, not a real limit). NA = not open in this book.",
+  bookActivity: "The most recent entry on THIS book's ledger: any Tally voucher, the last receipt, or the newest open bill. Blank means nothing in the history we hold, which begins April 2024. NA = not open in this book.",
+  bookOutstanding: "This book's balance for the customer, as it stands. A minus is money we hold for them (an advance). Blank = not open in this book.",
 };
 
 /**
@@ -288,15 +315,31 @@ export default function CreditTermsReport() {
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  const [saleTypes, setSaleTypes] = useState<string[]>([]);
+  const [saleTypes, setSaleTypes] = useState<string[]>(DEFAULT_SALE_TYPES);
   const [onlyElsewhere, setOnlyElsewhere] = useState(false);
-  const [balanceMode, setBalanceMode] = useState<BalanceMode>("all");
+  const [balanceMode, setBalanceMode] = useState<BalanceMode>(DEFAULT_BALANCE);
   const [sortKey, setSortKey] = useState<SortKey>("outstanding");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(25);
+  /** By customer is the default (RC-19); By ledger is the original list, kept whole. */
+  const [view, setView] = useState<"customer" | "ledger">("customer");
+  const scoped = useScopeDimension() !== "none";
+
+  // "Customer since" and "Last transaction" (RC-19). Both return a Map, so neither key may join
+  // main.tsx's PERSISTED_QUERY_ROOTS. Both fail soft — see the header.
+  const voucherDatesQ = useQuery({
+    queryKey: ["creditTerms", "voucherDates"],
+    queryFn: fetchLedgerVoucherDates,
+    enabled: source === "connectwave",
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const factsPending = source === "connectwave" && voucherDatesQ.isPending;
+  const vouchers = voucherDatesQ.data ?? null;
 
   const allRows = useMemo<Row[]>(() => {
+    const today = todayIst();
     // Pass 1: which terms does each customer NAME hold anywhere? Exact-name match, deliberately —
     // "VAIBHAV ENTERPRISES MACHINE" is a separate ledger and a separate decision, so it must not
     // vouch for "VAIBHAV ENTERPRISES".
@@ -323,17 +366,20 @@ export default function CreditTermsReport() {
       // spares and cleared the balance is still a spare-parts customer to whoever filters for one.
       const saleTypes = (SALE_TYPE_OPTIONS.map((o) => o.value) as SaleType[])
         .filter((t) => (c.outstandingByType?.[t] ?? 0) > 0 || (c.salesByType?.[t] ?? 0) > 0);
-      // Last activity: the newest of the last receipt and the newest bill we hold. Both are ISO,
-      // so a string compare IS a date compare.
-      // ⚠ This is not the full voucher register — we hold receipts and bills, not credit notes or
-      //   journals — so it is the last activity we can PROVE, not provably the last activity.
-      //   The column is named "Last activity" for exactly that reason; do not rename it to
-      //   "Last transaction" without first sourcing the voucher-level date from ConnectWave.
+      // Last transaction: the newest of the last Tally voucher, the last receipt and the newest open
+      // bill. The voucher date comes from ConnectWave's rpt_ledger_voucher_dates, which sees what
+      // receipts and open bills cannot — a settled bill, a credit note, a journal. It used to be
+      // "Last activity" for exactly that gap. All ISO, so a string compare IS a date compare; the
+      // voucher goes first so it names the kind on a tie. Nothing after today counts (post-dated).
       const bills = customerDetail[c.id]?.invoices ?? [];
       const lastBill = bills.reduce((m, inv) => (inv.date && inv.date > m ? inv.date : m), "");
-      const lastActivity = [c.lastReceiptDate ?? "", lastBill].filter(Boolean).sort().pop() ?? "";
+      const last = lastTransaction([
+        { iso: vouchers?.get(c.id)?.last ?? "", kind: "voucher" },
+        { iso: c.lastReceiptDate ?? "", kind: "receipt" },
+        { iso: lastBill, kind: "bill" },
+      ], today);
       // No dated record, but a month carrying turnover still says the ledger is not dead.
-      const lastActivityMonth = lastActivity ? "" :
+      const lastActivityMonth = last.iso ? "" :
         (customerDetail[c.id]?.trend ?? []).reduce(
           (m, t) => ((t.sales > 0 || t.receipts > 0) ? t.month : m), "");
       return {
@@ -352,16 +398,17 @@ export default function CreditTermsReport() {
         setElsewhere: missingDaysHeldElsewhere || missingLimitHeldElsewhere,
         billWiseBills,
         saleTypes,
-        lastActivity,
+        lastTxnIso: last.iso,
+        lastTxnKind: last.kind,
         lastActivityMonth,
-        lastActivityOrd: activityOrd(lastActivity, lastActivityMonth),
+        lastTxnOrd: activityOrd(last.iso, lastActivityMonth),
         redMark: c.blocked,
         outstanding: c.outstanding,
         overdue: c.overdue,
         maxOverdueDays: c.maxOverdueDays,
       };
     });
-  }, [allCustomers, customerDetail]);
+  }, [allCustomers, customerDetail, vouchers]);
 
   /**
    * One predicate for every filter, with the caller naming the ones to SKIP.
@@ -433,7 +480,7 @@ export default function CreditTermsReport() {
         case "outstanding":    av = a.outstanding; bv = b.outstanding; break;
         case "overdue":        av = a.overdue; bv = b.overdue; break;
         case "maxOverdueDays": av = a.maxOverdueDays; bv = b.maxOverdueDays; break;
-        case "lastActivity":   av = a.lastActivityOrd; bv = b.lastActivityOrd; break;
+        case "lastTransaction": av = a.lastTxnOrd; bv = b.lastTxnOrd; break;
         // Sorts by how incomplete the row is, not alphabetically by its label.
         case "status":         av = STATUS_ORDER.indexOf(a.status); bv = STATUS_ORDER.indexOf(b.status); break;
         case "book":           av = a.book; bv = b.book; break;
@@ -486,17 +533,55 @@ export default function CreditTermsReport() {
   const listOutstanding = filteredRows.reduce((s, r) => s + r.outstanding, 0);
   const listOverdue = filteredRows.reduce((s, r) => s + r.overdue, 0);
 
-  /* Pagination */
-  const effectivePageSize = pageSize === "all" ? Math.max(1, filteredRows.length) : pageSize;
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / effectivePageSize));
+  /* ── By customer (RC-19) ─────────────────────────────────── */
+
+  // Block order comes from the data (most ledgers first), from ALL rows — never from the filtered set,
+  // or the blocks would reorder under the reader as filters change.
+  const bookOrder = useMemo(() => buildBooks(allRows), [allRows]);
+  // The Company filter IS the "Books shown" control in this view: empty = every book.
+  const shownBooks = useMemo(
+    () => (books.length === 0 ? bookOrder : bookOrder.filter((b) => books.includes(b))),
+    [bookOrder, books],
+  );
+  const customers = useMemo(() => pivotCustomers(allRows, bookOrder), [allRows, bookOrder]);
+  const customerCols = useMemo(() => customerColumns<Row>(shownBooks), [shownBooks]);
+  // A customer shows when ANY of its ledgers passes every ledger filter — and survives() includes the
+  // book test, so a customer open only in hidden books drops out.
+  const customerPrefilter = useCallback(
+    (c: CustomerRow<Row>) => Object.values(c.cells).some((l) => survives(l)),
+    [survives],
+  );
+  const customerGrid = useColumnGrid(customers, customerCols, customerPrefilter);
+
+  /* Pagination — one set of controls, counting whichever view is showing */
+  const activeCount = view === "customer" ? customerGrid.rows.length : filteredRows.length;
+  const effectivePageSize = pageSize === "all" ? Math.max(1, activeCount) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(activeCount / effectivePageSize));
   const safePage = Math.min(currentPage, totalPages);
-  const paginatedRows = pageSize === "all"
-    ? filteredRows
-    : filteredRows.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize);
-  const rangeStart = filteredRows.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1;
-  const rangeEnd = Math.min(safePage * effectivePageSize, filteredRows.length);
+  const pageSlice = <T,>(list: T[]) =>
+    pageSize === "all" ? list : list.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize);
+  const paginatedRows = pageSlice(filteredRows);
+  const customerPageRows = pageSlice(customerGrid.rows);
+  const rangeStart = activeCount === 0 ? 0 : (safePage - 1) * effectivePageSize + 1;
+  const rangeEnd = Math.min(safePage * effectivePageSize, activeCount);
 
   const resetPage = () => setCurrentPage(1);
+
+  /**
+   * Show or hide one book's block. At least one book always stays on — an empty grid with no block to
+   * switch back on would be a dead end. Hiding a book also clears its column filters: a filter on a
+   * column that is not drawn narrows nothing, but it would still count as active.
+   */
+  const toggleBook = (book: string) => {
+    const hiding = shownBooks.includes(book);
+    if (hiding && shownBooks.length === 1) return;
+    const next = hiding
+      ? shownBooks.filter((b) => b !== book)
+      : bookOrder.filter((b) => b === book || shownBooks.includes(b));
+    if (hiding) for (const f of CELL_FIELDS) customerGrid.setSelected(cellKey(book, f), []);
+    setBooks(next.length === bookOrder.length ? [] : next);
+    resetPage();
+  };
   const toggleSort = (k: SortKey) => {
     if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -531,95 +616,94 @@ export default function CreditTermsReport() {
     const already = drillActive(book, sts, mode);
     setBooks(already || book === null ? [] : [book]);
     setStatuses(already ? INCOMPLETE : sts);
-    setBalanceMode(already ? "all" : mode);
+    setBalanceMode(already ? DEFAULT_BALANCE : mode);
     resetPage();
   };
 
+  // ⚠ Collection team used to be missing here AND from the chips, so a team filter had no chip and
+  //   survived "Clear filters" — a filter narrowing the list that no control on the page could undo.
   const clearAll = () => {
-    setSearch(""); setBooks([]); setStatuses([]); setSalesPersons([]); setCategories([]);
-    setSaleTypes([]); setOnlyElsewhere(false); setBalanceMode("all"); resetPage();
+    setSearch(""); setBooks([]); setStatuses([]); setSalesPersons([]); setCollectionTeams([]);
+    setCategories([]); setSaleTypes(DEFAULT_SALE_TYPES); setOnlyElsewhere(false);
+    setBalanceMode(DEFAULT_BALANCE); resetPage();
   };
+  /** The page filters AND the By customer column filters — what "Clear filters" means on either view. */
+  const clearEverything = () => { clearAll(); customerGrid.clearFilters(); };
 
   const chips: FilterChip[] = [
     search && { label: `Search: ${search}`, onRemove: () => { setSearch(""); resetPage(); } },
     books.length > 0 && {
-      label: books.length <= 2 ? `Company: ${books.join(", ")}` : `Company: ${books.length} selected`,
+      label: view === "customer"
+        ? `Books shown: ${books.length <= 2 ? books.join(", ") : `${books.length} of ${bookOrder.length}`}`
+        : books.length <= 2 ? `Company: ${books.join(", ")}` : `Company: ${books.length} selected`,
       onRemove: () => { setBooks([]); resetPage(); },
     },
     statuses.length > 0 && {
-      label: statuses.length === INCOMPLETE.length && INCOMPLETE.every((s) => statuses.includes(s))
+      // In By customer a status matches when ANY shown book has it — the chip says so.
+      label: (statuses.length === INCOMPLETE.length && INCOMPLETE.every((s) => statuses.includes(s))
         ? "Not set up yet"
-        : `Status: ${statuses.map((s) => STATUS_LABEL[s]).join(", ")}`,
+        : `Status: ${statuses.map((s) => STATUS_LABEL[s]).join(", ")}`) + (view === "customer" ? " (in any shown book)" : ""),
       onRemove: () => { setStatuses([]); resetPage(); },
     },
     salesPersons.length > 0 && {
       label: salesPersons.length <= 2 ? `Salesperson: ${salesPersons.join(", ")}` : `Salesperson: ${salesPersons.length} selected`,
       onRemove: () => { setSalesPersons([]); resetPage(); },
     },
+    collectionTeams.length > 0 && {
+      label: collectionTeams.length <= 2 ? `Collection team: ${collectionTeams.join(", ")}` : `Collection team: ${collectionTeams.length} selected`,
+      onRemove: () => { setCollectionTeams([]); resetPage(); },
+    },
     categories.length > 0 && {
       label: `Category: ${categories.join(", ")}`,
       onRemove: () => { setCategories([]); resetPage(); },
     },
     saleTypeFilterOn && {
-      label: `Sale type: ${saleTypes.map((t) => SALE_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t).join(", ")}`,
+      // The default reads as what it excludes; any other selection names what it includes.
+      label: saleTypes.length === DEFAULT_SALE_TYPES.length && DEFAULT_SALE_TYPES.every((t) => saleTypes.includes(t))
+        ? "Sale type: all except Machine and Spare Parts"
+        : `Sale type: ${saleTypes.map((t) => SALE_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t).join(", ")}`,
       onRemove: () => { setSaleTypes([]); resetPage(); },
     },
     onlyElsewhere && { label: "Set in another company", onRemove: () => { setOnlyElsewhere(false); resetPage(); } },
-    balanceMode !== "all" && {
-      label: balanceMode === "owing" ? "Owes money" : "Has outstanding",
-      onRemove: () => { setBalanceMode("all"); resetPage(); },
+    // No chip for the default: the Has outstanding button already shows it is on, and a chip that
+    // reappears the moment you clear it reads as a filter you cannot remove.
+    balanceMode !== DEFAULT_BALANCE && balanceMode !== "all" && {
+      label: "Owes money",
+      onRemove: () => { setBalanceMode(DEFAULT_BALANCE); resetPage(); },
     },
   ].filter(Boolean) as FilterChip[];
 
+  /**
+   * The workbook mirrors the screen: the active view (every page of it, shown books only) plus the
+   * per-ledger Company Summary. Filters are listed on its About sheet — the chips, and in By customer
+   * every column filter that is narrowing the grid.
+   */
   const exportXlsx = () => {
-    const wb = XLSX.utils.book_new();
-
-    const sumHeader = ["Company", "Customers", "Neither set", "Days missing", "Limit missing",
-      "Set on the bills", "Complete", "% set", "Owed with nothing set"];
-    const sumAoa: (string | number)[][] = [
-      [`Credit Terms Not Set — company summary — ${fyLabel}`],
-      [],
-      sumHeader,
-      ...bookSummaries.map((s) => [s.book, s.customers, s.none, s.days, s.limit, s.billwise, s.complete, pctSet(s), Math.round(s.owed)]),
-      ["Total", bookTotal.customers, bookTotal.none, bookTotal.days, bookTotal.limit, bookTotal.billwise,
-        bookTotal.complete, pctSet(bookTotal), Math.round(bookTotal.owed)],
-    ];
-    const ws1 = XLSX.utils.aoa_to_sheet(sumAoa);
-    ws1["!cols"] = [{ wch: 24 }, { wch: 11 }, { wch: 12 }, { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 8 }, { wch: 22 }];
-    styleRow(ws1, 0, sumHeader.length, HEADER_STYLE);
-    styleRow(ws1, 2, sumHeader.length, HEADER_STYLE);
-    styleRow(ws1, sumAoa.length - 1, sumHeader.length, GRAND_TOTAL_STYLE);
-    XLSX.utils.book_append_sheet(wb, ws1, "Company Summary");
-
-    const detHeader = ["Customer", "Company", "Location", "Sales Person", "Category", "Sale Types",
-      "Credit Days", "Credit Limit", "Status", "Bill-wise Due Dates", "Set Elsewhere", "Red Mark",
-      "Outstanding", "Overdue", "Max OD Days", "Last Activity"];
-    const detAoa: (string | number)[][] = [
-      [`Credit Terms Not Set — ${fyLabel}`],
-      [],
-      detHeader,
-      ...filteredRows.map((r) => [
-        r.customer, r.company, r.location, r.salesPerson, r.category, saleTypeText(r),
-        hasDays(r.creditDays) ? r.creditDays : "",
-        // ₹1 exports as the words, never as the number 1 — a 1 in a rupee column reads as data.
-        hasLimit(r.creditLimit) ? Math.round(r.creditLimit) : r.limitIsFlag ? "₹1 flag (Tally)" : "",
-        STATUS_LABEL[r.status], r.billWiseBills || "", r.setElsewhere ? "Yes" : "", r.redMark ? "Red Mark" : "",
-        Math.round(r.outstanding), Math.round(r.overdue), r.maxOverdueDays,
-        isoToDisplay(r.lastActivity) || r.lastActivityMonth || "",
-      ]),
-      ["", "", "", "", "", "", "", "", `Total (${filteredRows.length} rows)`, "", "", "",
-        Math.round(listOutstanding), Math.round(listOverdue), "", ""],
-    ];
-    const ws2 = XLSX.utils.aoa_to_sheet(detAoa);
-    ws2["!cols"] = [{ wch: 36 }, { wch: 14 }, { wch: 11 }, { wch: 16 }, { wch: 9 }, { wch: 22 },
-      { wch: 11 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 13 }, { wch: 10 }, { wch: 14 },
-      { wch: 14 }, { wch: 12 }, { wch: 14 }];
-    styleRow(ws2, 0, detHeader.length, HEADER_STYLE);
-    styleRow(ws2, 2, detHeader.length, HEADER_STYLE);
-    styleRow(ws2, detAoa.length - 1, detHeader.length, GRAND_TOTAL_STYLE);
-    XLSX.utils.book_append_sheet(wb, ws2, "Customers");
-
-    XLSX.writeFile(wb, `credit-terms-not-set-${fyLabel.replace(/\s+/g, "")}.xlsx`);
+    const columnFilters = view === "customer"
+      ? customerCols
+          .map((c) => ({ c, v: customerGrid.selected(c.key) }))
+          .filter(({ v }) => v.length > 0)
+          .map(({ c, v }) => `${c.book ? `${c.book} · ` : ""}${c.label}: ${v.map(customerGrid.optionLabel).join(", ")}`)
+      : [];
+    void exportCreditTermsXlsx({
+      view,
+      fyLabel,
+      customers: customerGrid.rows,
+      shownBooks,
+      ledgers: filteredRows,
+      summaries: bookSummaries,
+      summaryTotal: bookTotal,
+      pctSet,
+      text: { status: (r) => STATUS_LABEL[r.status], saleTypes: saleTypeText },
+      // The default balance filter has no chip on screen (the button shows it), so it has to be
+      // named here or the workbook understates what it left out.
+      filters: [
+        ...chips.map((c) => c.label),
+        ...(balanceMode === "nonzero" ? ["Has outstanding: zero balances excluded"] : []),
+        ...columnFilters,
+      ],
+      scoped,
+    });
   };
 
   /* ── Not applicable on the default pipeline ──────────────── */
@@ -648,7 +732,9 @@ export default function CreditTermsReport() {
     );
   }
 
-  if (loading) return <div className="p-6 text-sm text-muted-foreground">Loading credit terms…</div>;
+  // Waits for the two RC-19 reads too: rendering first would flash every Customer since as
+  // "before 14 Aug" and every Last transaction without its voucher date, then change under the reader.
+  if (loading || factsPending) return <div className="p-6 text-sm text-muted-foreground">Loading credit terms…</div>;
   if (error) return <div className="p-6 text-sm text-destructive">Failed to load: {error}</div>;
 
   const notSetUp = bookTotal.none + bookTotal.days + bookTotal.limit;
@@ -661,11 +747,14 @@ export default function CreditTermsReport() {
             <CreditCard className="h-6 w-6 text-primary" /> Credit Terms Not Set
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Which customers have no credit limit and no credit days in Tally, company by company. One
-            row per ledger per book, so a customer billed by two companies appears once for each. ({fyLabel})
+            Which customers have no credit limit and no credit days in Tally, company by company.{" "}
+            {view === "customer"
+              ? "One row per customer, with a block of columns for each company book."
+              : "One row per ledger per book, so a customer billed by two companies appears once for each."}{" "}
+            ({fyLabel})
           </p>
         </div>
-        <Button onClick={exportXlsx} disabled={filteredRows.length === 0} className="rounded-button gap-2">
+        <Button onClick={exportXlsx} disabled={activeCount === 0} className="rounded-button gap-2">
           <Download className="h-4 w-4" /> Export Excel
         </Button>
       </div>
@@ -673,7 +762,10 @@ export default function CreditTermsReport() {
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: "Customer records", value: String(bookTotal.customers), sub: "one per ledger per company" },
+          // ⚠ The strip and the panel count what the FILTERS allow, and the view now opens filtered
+          //   (owing, and not machine/spares), so both read smaller than the whole book by design —
+          //   that is what keeps a panel figure and the list you land on the same set of customers.
+          { label: "Customer records", value: String(bookTotal.customers), sub: "one per ledger per company, in the current filters" },
           { label: "Not set up yet", value: String(notSetUp), sub: "missing days, limit or both" },
           { label: "Set on the bills", value: String(bookTotal.billwise), sub: "ledger blank, bills carry due dates" },
           { label: "Neither set", value: String(bookTotal.none), sub: "no credit term at all" },
@@ -703,6 +795,8 @@ export default function CreditTermsReport() {
               carries its own due date; those are controlled, so they are counted there and NOT in
               &ldquo;Neither set&rdquo;. These counts ignore the Status filter, so &ldquo;Complete&rdquo;
               keeps its meaning while the list below shows only the gaps.
+              <strong> Counted per ledger, per book</strong> — in the By customer view one customer can be
+              Complete in one book and Neither set in another, so the panel does not count customers.
             </p>
           </div>
           <ScrollableTable>
@@ -804,11 +898,15 @@ export default function CreditTermsReport() {
             className="pl-8 w-64 h-9 rounded-input text-sm"
           />
         </div>
-        <MultiSelectFilter
-          options={bookOptions} value={books} onChange={(v) => { setBooks(v); resetPage(); }}
-          allLabel="All Companies" unit="Companies" searchable
-          triggerClassName="w-52 h-9 text-sm rounded-input"
-        />
+        {/* In By customer the Books shown pills below the filters ARE the company filter — one state,
+            one control, so the two can never disagree. */}
+        {view === "ledger" && (
+          <MultiSelectFilter
+            options={bookOptions} value={books} onChange={(v) => { setBooks(v); resetPage(); }}
+            allLabel="All Companies" unit="Companies" searchable
+            triggerClassName="w-52 h-9 text-sm rounded-input"
+          />
+        )}
         <MultiSelectFilter
           options={statusOptions} value={statuses}
           onChange={(v) => { setStatuses(v as TermStatus[]); resetPage(); }}
@@ -836,7 +934,7 @@ export default function CreditTermsReport() {
           variant={balanceMode === "nonzero" ? "default" : "outline"}
           onClick={() => { setBalanceMode((m) => (m === "nonzero" ? "all" : "nonzero")); resetPage(); }}
           className="h-9 rounded-button text-xs"
-          title="Show only ledgers carrying a balance right now, positive or negative. 1,131 of 1,854 sit at exactly zero and are usually not worth chasing."
+          title="On by default. Shows only ledgers carrying a balance right now, positive or negative: 1,131 of 1,882 sit at exactly zero and are usually not worth chasing. Click to include them."
         >
           Has outstanding
         </Button>
@@ -850,9 +948,101 @@ export default function CreditTermsReport() {
         </Button>
       </div>
 
-      <FilterChips chips={chips} onClearAll={clearAll} />
+      <FilterChips chips={chips} onClearAll={clearEverything} />
 
-      {/* ── Panel 2 · customer-wise ────────────────────────── */}
+      {voucherDatesQ.isError && (
+        <div className="rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+          Tally voucher dates could not be loaded, so Last activity covers receipts and open bills only and
+          misses credit notes, journals and settled bills. Reload the page to try again.
+        </div>
+      )}
+
+      {/* ── View toggle, and in By customer the books to show ── */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="inline-flex rounded-button border border-border bg-muted/40 p-0.5">
+          {([["customer", "By customer"], ["ledger", "By ledger"]] as const).map(([v, label]) => (
+            <Button
+              key={v}
+              size="sm"
+              variant={view === v ? "default" : "ghost"}
+              className="h-7 rounded-button px-3 text-xs"
+              onClick={() => { setView(v); resetPage(); }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        {view === "customer" && (
+          <>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Books shown:</span>
+              {bookOrder.map((b) => {
+                const on = shownBooks.includes(b);
+                return (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => toggleBook(b)}
+                    title={on
+                      ? (shownBooks.length === 1 ? "At least one book stays shown" : `Hide ${b}`)
+                      : `Show ${b}`}
+                    className={`h-7 rounded-full border px-2.5 text-xs transition-colors ${
+                      on
+                        ? "border-primary/40 bg-primary/10 text-foreground"
+                        : "border-border bg-surface text-muted-foreground line-through decoration-muted-foreground/60"
+                    }`}
+                  >
+                    {b}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span className={`inline-block h-3 w-3 rounded-sm border border-destructive/30 ${FILL_RED}`} /> Open, term not set (or ₹1 blocked)
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className={`inline-block h-3 w-3 rounded-sm border border-sky-500/30 ${FILL_BILLS}`} /> <span className="font-medium">On bills</span>: days set on the bills, not the ledger
+              </span>
+              <span><span className="font-medium">NA</span> = not open in that book</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {view === "customer" && (
+        <CreditTermsCustomerGrid
+          grid={customerGrid}
+          columns={customerCols}
+          shownBooks={shownBooks}
+          pageRows={customerPageRows}
+          onFilterChange={resetPage}
+          onClearAll={clearEverything}
+          help={COL_HELP}
+        />
+      )}
+
+      {view === "customer" && (
+        <p className="text-[11px] text-muted-foreground max-w-5xl">
+          This list opens on the customers who <span className="font-medium">owe something right now</span>
+          and who buy anything other than machines and spare parts. Both are ordinary filters above: turn off
+          <span className="font-medium"> Has outstanding</span>, or set Sale type back to All Sale Types, to
+          see everyone.{" "}
+          <span className="font-medium">NA</span> means no debtor ledger for this customer in that book. The
+          balances behind this report hold debtors only, so a customer filed under another group in a book
+          also reads NA there
+          {scoped ? ", as does a book where the customer is tagged to someone outside your view" : ""}.
+          <span className="font-medium"> On bills</span> means the ledger carries no credit days but every
+          open bill has its own due date, so that customer is controlled and is not a gap.{" "}
+          <span className="font-medium">Last activity</span> in each block is that book's own newest Tally
+          voucher, receipt or open bill; the column on the left is the newest across every book. Post-dated
+          entries are not counted until their date. Each block's Outstanding is that book's balance as it
+          stands; a minus is money held for the customer.
+        </p>
+      )}
+
+      {/* ── Panel 2 · ledger-wise ─────────────────────────── */}
+      {view === "ledger" && (
       <Card className="rounded-card border-border bg-surface">
         <CardContent className="p-0">
           <ScrollableTable>
@@ -871,7 +1061,7 @@ export default function CreditTermsReport() {
                   <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.outstanding} onClick={() => toggleSort("outstanding")}>Outstanding <SortIcon k="outstanding" /></TableHead>
                   <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.overdue} onClick={() => toggleSort("overdue")}>Overdue <SortIcon k="overdue" /></TableHead>
                   <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.maxOd} onClick={() => toggleSort("maxOverdueDays")}>Max OD <SortIcon k="maxOverdueDays" /></TableHead>
-                  <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.lastActivity} onClick={() => toggleSort("lastActivity")}>Last Activity <SortIcon k="lastActivity" /></TableHead>
+                  <TableHead className="text-xs text-right cursor-pointer" title={COL_HELP.lastTransaction} onClick={() => toggleSort("lastTransaction")}>Last Activity <SortIcon k="lastTransaction" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -882,7 +1072,7 @@ export default function CreditTermsReport() {
                     <TableCell colSpan={13} className="py-10 text-center text-sm text-muted-foreground">
                       <div className="flex flex-col items-center gap-2">
                         No customers match the current filters.
-                        <Button variant="outline" size="sm" onClick={clearAll} className="rounded-button text-xs">
+                        <Button variant="outline" size="sm" onClick={clearEverything} className="rounded-button text-xs">
                           Clear filters
                         </Button>
                       </div>
@@ -949,9 +1139,9 @@ export default function CreditTermsReport() {
                         <TableCell className="text-xs text-right font-mono text-muted-foreground">{r.maxOverdueDays > 0 ? r.maxOverdueDays : "—"}</TableCell>
                         <TableCell
                           className="text-xs text-right font-mono text-muted-foreground"
-                          title={r.lastActivity ? "Newest receipt or bill on this ledger" : r.lastActivityMonth ? "Turnover in this month, but no dated document" : "No receipt and no bill in the period shown"}
+                          title={lastTxnTip(r.lastTxnIso, r.lastTxnKind, r.lastActivityMonth)}
                         >
-                          {isoToDisplay(r.lastActivity) || r.lastActivityMonth || "—"}
+                          {isoToDisplay(r.lastTxnIso) || r.lastActivityMonth || "—"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -971,9 +1161,10 @@ export default function CreditTermsReport() {
           </ScrollableTable>
         </CardContent>
       </Card>
+      )}
 
-      {/* Pagination */}
-      {filteredRows.length > 0 && (
+      {/* Pagination — shared by both views */}
+      {activeCount > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Rows per page</span>
@@ -985,7 +1176,9 @@ export default function CreditTermsReport() {
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-xs text-muted-foreground whitespace-nowrap">{rangeStart}–{rangeEnd} of {filteredRows.length}</span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {rangeStart}–{rangeEnd} of {activeCount} {view === "customer" ? "customers" : "records"}
+            </span>
           </div>
           {totalPages > 1 && (
             <Pagination className="mx-0 w-auto justify-end">

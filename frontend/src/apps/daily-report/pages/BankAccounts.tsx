@@ -1,20 +1,26 @@
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import { useSession } from "@/core/platform/session";
 import { useBankAccounts, useCompanyOptions, upsertBankAccount, setBankAccountActive } from "../data/bankAccounts";
 import { ACCOUNT_TYPE_LABEL, ACCOUNT_TYPE_RANK, entityLabel, entityRank } from "../lib/labels";
-import { fmtLacs } from "../lib/format";
 import { REPORT_LOCATIONS, type BankAccount, type BankAccountType } from "../types";
 
 /**
  * Daily Report → Bank accounts.
  *
  * The list of accounts the report tracks: which entity owns each, where it is
- * reported, what the bank calls it, and the sanctioned limits the facility block
- * is computed from. Portal-owned — Tally holds the bank LEDGERS but not the
- * account numbers, the limits, or a label short enough for a grid column head.
+ * reported, and what the bank calls it. Portal-owned — Tally holds the bank
+ * LEDGERS but not the account numbers or a label short enough for a grid column
+ * head.
+ *
+ * ⚠ NO CREDIT LIMITS HERE, ON PURPOSE (DR-1). This screen used to carry CC limit,
+ *   LC/BC limit and held-by-bank per account. The client's block is per COMPANY
+ *   and changes DAILY, so it is typed on Bank balances under each company's
+ *   total. Leaving the old fields here would have been a second place to type a
+ *   limit that nothing reads — it would save, and change nothing on the report.
  *
  * Eleven rows today. Deliberately a master screen rather than a settings panel:
  * the Excel round trip MasterCrud gives for free is how eleven accounts were
@@ -32,23 +38,6 @@ const TypeChip = ({ type }: { type: BankAccountType }) => (
     {ACCOUNT_TYPE_LABEL[type]}
   </span>
 );
-
-/** A money column: blank is UNSET, which is not the same as a nil limit. */
-const limitCol = (
-  header: string,
-  get: (a: BankAccount) => number | null,
-): MasterColumn<BankAccount> => ({
-  header,
-  className: "w-32",
-  render: (a) =>
-    get(a) == null
-      ? <span className="text-grey-2">—</span>
-      : <span className="tabular-nums">{fmtLacs(get(a))}</span>,
-  // "1,200.00" sorts before "9.00" as text, so money always declares this.
-  // -1 keeps "no limit" out of the top of a descending sort.
-  sortValue: (a) => get(a) ?? -1,
-  filter: { get: (a) => (get(a) == null ? "" : fmtLacs(get(a))) },
-});
 
 export default function BankAccounts() {
   const { canEditModule } = useSession();
@@ -119,9 +108,6 @@ export default function BankAccounts() {
       sortValue: (a) => ACCOUNT_TYPE_RANK[a.accountType],
       filter: { get: (a) => ACCOUNT_TYPE_LABEL[a.accountType] },
     },
-    limitCol("CC limit (₹ L)", (a) => a.ccLimitLacs),
-    limitCol("LC / BC limit (₹ L)", (a) => a.lcBcLimitLacs),
-    limitCol("Held by bank (₹ L)", (a) => a.holdByBankLacs),
     {
       header: "Tally ledger",
       render: (a) =>
@@ -157,7 +143,7 @@ export default function BankAccounts() {
       hint: "Where the REPORT files this account, which is not always where its Tally book is. Delhi has bank accounts but no Tally company of its own — its account sits inside the O-tec Noida book, and the report says so rather than showing empty sales tables.",
     },
     { key: "bank", label: "Bank", type: "text", required: true,
-      hint: "AXIS, ICICI, HDFC… Spell it the same way every time: the facility block groups on this, so “Axis” and “AXIS” would read as two banks." },
+      hint: "AXIS, ICICI, HDFC… Spell it the same way every time, so “Axis” and “AXIS” never read as two banks." },
     { key: "branch", label: "Branch / note", type: "text",
       hint: "Free text, shown only on this screen. “Surat (CC)”, “Surat (new)” — whatever tells two accounts at the same bank apart." },
     { key: "accountNo", label: "Account number", type: "text",
@@ -168,7 +154,7 @@ export default function BankAccounts() {
       options: (Object.keys(ACCOUNT_TYPE_LABEL) as BankAccountType[]).map((t) => ({
         value: t, label: ACCOUNT_TYPE_LABEL[t],
       })),
-      hint: "Cash credit and overdraft are the borrowing accounts, and the only ones the facility block reports on. A fixed vocabulary, hence buttons.",
+      hint: "Cash credit and overdraft are the borrowing accounts. A fixed vocabulary, hence buttons.",
     },
     {
       key: "tallyLedgerName", label: "Tally ledger name", type: "text",
@@ -179,23 +165,11 @@ export default function BankAccounts() {
       hint: "The stable identity behind the name above, from ConnectWave's ledger master. Leave blank if this account genuinely has no Tally ledger — it still records and reports its balance normally.",
     },
     {
-      key: "ccLimitLacs", label: "CC limit (₹ lakhs)", type: "text",
-      hint: "Sanctioned cash-credit limit, IN LAKHS. Leave blank on an account that has none — a zero here reads as a facility the bank has withdrawn, which is a different statement.",
-    },
-    {
-      key: "lcBcLimitLacs", label: "LC / BC limit (₹ lakhs)", type: "text",
-      hint: "Sanctioned letter-of-credit / bill-collection limit. The FREE limit is computed as this minus the utilised figure typed each evening — never type a free limit anywhere.",
-    },
-    {
-      key: "holdByBankLacs", label: "Held by bank (₹ lakhs)", type: "text",
-      hint: "The standing hold the bank keeps against the CC limit. AVAILABLE CC LIMIT is computed as CC limit minus this. Change it only when the bank does.",
-    },
-    {
       key: "sortOrder", label: "Sort order", type: "text", placeholder: "0",
       hint: "Left-to-right order of this account's column in the balance grid, and top-to-bottom on the evening form. Lower first; ties fall back to the column head.",
     },
     { key: "notes", label: "Notes", type: "textarea",
-      hint: "Anything a later reader needs — how the Tally ledger was matched, why a limit is blank." },
+      hint: "Anything a later reader needs — how the Tally ledger was matched, why a ledger is not linked." },
   ];
 
   return (
@@ -204,8 +178,9 @@ export default function BankAccounts() {
         <h1 className="text-[19px] font-semibold text-navy">Bank accounts</h1>
         <p className="mt-1 max-w-3xl text-[12.5px] text-grey">
           The accounts the Daily Report tracks. Tally holds the bank ledgers, but not the account
-          numbers, the sanctioned limits, or a label short enough to head a grid column — so those
-          live here. Limits are in ₹ lakhs.
+          numbers or a label short enough to head a grid column — so those live here. Credit
+          limits are typed per company, each evening, on{" "}
+          <Link to="/daily-report/bank-balances" className="font-semibold text-orange">Bank balances</Link>.
         </p>
       </div>
 
@@ -226,7 +201,7 @@ export default function BankAccounts() {
         emptyValues={{
           name: "", companyId: "", location: "Surat", bank: "", branch: "", accountNo: "",
           ifsc: "", accountType: "current", tallyLedgerName: "", tallyLedgerGuid: "",
-          ccLimitLacs: "", lcBcLimitLacs: "", holdByBankLacs: "", sortOrder: "500", notes: "",
+          sortOrder: "500", notes: "",
         }}
         toValues={(a) => ({
           name: a.name,
@@ -239,11 +214,6 @@ export default function BankAccounts() {
           accountType: a.accountType,
           tallyLedgerName: a.tallyLedgerName ?? "",
           tallyLedgerGuid: a.tallyLedgerGuid ?? "",
-          // "" is UNSET and is not 0 — an account with no CC limit must not read
-          // as one whose limit was withdrawn to nil.
-          ccLimitLacs: a.ccLimitLacs == null ? "" : String(a.ccLimitLacs),
-          lcBcLimitLacs: a.lcBcLimitLacs == null ? "" : String(a.lcBcLimitLacs),
-          holdByBankLacs: a.holdByBankLacs == null ? "" : String(a.holdByBankLacs),
           sortOrder: String(a.sortOrder),
           notes: a.notes ?? "",
         })}

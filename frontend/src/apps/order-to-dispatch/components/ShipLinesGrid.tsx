@@ -50,6 +50,10 @@ import type { DispatchOrder } from "../types";
  *   ⚠ A SINGLE LOT ASKS FOR NOTHING EXTRA — no quantity box, no second row, one line of balance
  *     text where the dropdown's sublabel used to be. 4,354 of 4,455 shipped lines are single-lot
  *     and that path must not get slower to type than the plain picker it replaces.
+ *
+ *   OD-16 · and several lots ask only when they must: when the picked lots hold no more than Ship
+ *     now, their boxes fill from Tally's balances (`autoFill`). On here, deliberately NOT on the
+ *     coordinator's correction screen, which edits a line that has already gone out.
  */
 
 export interface ShipLineValue {
@@ -162,6 +166,7 @@ export default function ShipLinesGrid({
                         options={lots[s.itemName(l.itemId)] ?? []}
                         bookOf={bookOf}
                         disabled={readOnly}
+                        autoFill
                       />
                     )}
                   </td>

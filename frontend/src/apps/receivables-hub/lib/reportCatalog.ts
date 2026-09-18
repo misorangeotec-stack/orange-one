@@ -36,6 +36,10 @@ import {
 // The Bushra-Dashboard screens' icons, kept on their own line: master's list above keeps gaining
 // icons, and an addition beside another branch's addition is a merge conflict for no reason.
 import { Package, Receipt } from "lucide-react";
+// RC-18's icon, on its own line for the same reason as RC-13's below.
+import { BadgeIndianRupee } from "lucide-react";
+// RC-13's icon, on its own line so it never collides with edits to the list above.
+import { FileWarning } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import type { Crumb } from "@/apps/currentApp";
 
@@ -538,7 +542,7 @@ export const REPORTS: ReportEntry[] = [
     scoping: "party-client",
     title: "Credit Terms Not Set",
     purpose:
-      "Customers with no credit limit or credit days in Tally, company by company, with what they owe.",
+      "One row per customer with a block per company book — credit days, limit, customer since and what they owe — and the gaps marked red.",
     category: "receivables",
     path: "reports/credit-terms",
     icon: CreditCard,
@@ -588,6 +592,20 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["on account", "manual"],
   },
+  {
+    // RC-18. The customer rows are scoped in the browser through allCustomers, like Disputed Bills.
+    // The Suspense block at its foot is NOT scoped: those receipts name no customer to scope by.
+    id: "advances",
+    scoping: "party-client",
+    title: "Advances Not Applied",
+    purpose: "Money received that no open invoice has absorbed, per salesperson, with its receipts and open bills.",
+    category: "collections",
+    path: "reports/advances",
+    icon: BadgeIndianRupee,
+    source: "tally",
+    status: "live",
+    keywords: ["advance", "on account", "unapplied", "unallocated", "suspense", "receipt", "settle"],
+  },
 
   // ── Customers ──────────────────────────────────────────────────────────────
   {
@@ -628,6 +646,20 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["red mark", "blocked", "flag", "watchlist"],
+  },
+  {
+    // RC-13. Scoped in the browser through allCustomers, like Red Mark: a dispute on a customer the
+    // viewer cannot see is never drawn.
+    id: "disputed-bills",
+    scoping: "party-client",
+    title: "Disputed Bills",
+    purpose: "Bills under dispute (managed in Masters), with live amount, pending and settled; clear once settled.",
+    category: "customers",
+    path: "reports/disputed-bills",
+    icon: FileWarning,
+    source: "tally",
+    status: "live",
+    keywords: ["dispute", "disputed", "remark", "rate difference", "credit note", "clear"],
   },
 
   // ── Sales & Team ───────────────────────────────────────────────────────────

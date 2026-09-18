@@ -6,6 +6,10 @@
  */
 
 import type { BankAccountType } from "../types";
+// Type-only, like aggregate.ts's import of the same module: data/dailyReport
+// reaches this file at runtime through aggregate, so a runtime import back
+// would be a cycle.
+import type { PartyKind } from "../data/dailyReport";
 
 /**
  * Legal names for the three entities, keyed by mst_companies.alias.
@@ -59,7 +63,47 @@ export const ACCOUNT_TYPE_RANK: Record<BankAccountType, number> = {
   cc: 0, od: 1, current: 2, savings: 3,
 };
 
-/** Account types that borrow, and so appear in the facility block. */
+/**
+ * Companies the report mentions only on a day they have CUSTOMER data — a sale,
+ * a receipt or payment, or a purchase — in the location being read.
+ *
+ * Colorix, and only Colorix: it trades on a few days a month (7 sales lines on 3
+ * days from 01-08 to 17-09-2026, no receipts or payments in September), so on
+ * most days anything naming it is an empty column or a line to read past. The
+ * user's call, 17-09-2026, for customer data only: the company-column lists
+ * already follow the rows (see `pivotCompanies`), and this list decides the rest
+ * of the page — today the "Tally mirror rebuilt" line.
+ *
+ * ⚠ NOT THE BANK SECTION. Colorix's bank account is typed by hand each evening
+ *   and its gap is flagged; hiding it on a quiet day would hide the gap. It is
+ *   still "included" in the sense decided on 11-09-2026 — whenever it has data.
+ */
+export const SHOWN_ONLY_WHEN_ACTIVE: readonly string[] = ["Colorix"];
+
+/**
+ * The banks the evening form asks for a credit-limit block at, per company.
+ *
+ * Axis only, because that is the one row on the client's sheet. The table keeps
+ * bank as a real column (Orange O Tec also holds an ICICI cash-credit account),
+ * so a second facility is this list plus data — never a schema change. The
+ * report prints whatever banks have a stored block, listed here or not.
+ */
+export const FACILITY_BANKS: readonly string[] = ["AXIS"];
+
+/**
+ * What the rows of a list are, for its "Remaining N …" line.
+ *
+ * "Remaining 3 customers" under a supplier band is a small lie a reader will
+ * stop on, and a bank-transfer band holds neither.
+ */
+export function listNoun(kind: PartyKind | "sales", n: number): string {
+  const one = n === 1;
+  if (kind === "sales" || kind === "customer") return one ? "customer" : "customers";
+  if (kind === "vendor") return one ? "supplier" : "suppliers";
+  return one ? "party" : "parties";
+}
+
+/** Account types that borrow. */
 export const isFacilityAccount = (t: BankAccountType): boolean => t === "cc" || t === "od";
 
 /**

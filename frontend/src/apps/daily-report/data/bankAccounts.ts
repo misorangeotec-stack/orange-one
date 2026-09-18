@@ -28,14 +28,13 @@ import type { BankAccount, BankAccountType, ReportLocation } from "../types";
 //   literal, the parser has nothing to read, and EVERY column comes back as
 //   GenericStringError — while the request itself still works at runtime, so the
 //   only symptom is that the result is untyped.
-const SELECT = "id,company_id,location,bank_name,branch,account_no,ifsc,account_type,short_label,tally_ledger_guid,tally_ledger_name,cc_limit_lacs,lc_bc_limit_lacs,hold_by_bank_lacs,sort_order,active,notes";
-
-/** Supabase hands numerics back as strings on some paths; normalise once here. */
-const num = (v: unknown): number | null => {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
+//
+// ⚠ cc_limit_lacs, lc_bc_limit_lacs and hold_by_bank_lacs are deliberately NOT
+//   selected, and not written below. They still exist on the table (additive
+//   only), but the credit-limit block is per company and per day, so it lives
+//   in daily_report_cc_limits (DR-1). Reading them back in would put a second,
+//   silently ignored place to type a limit on the master screen.
+const SELECT = "id,company_id,location,bank_name,branch,account_no,ifsc,account_type,short_label,tally_ledger_guid,tally_ledger_name,sort_order,active,notes";
 
 export async function fetchBankAccounts(): Promise<BankAccount[]> {
   const [{ data, error }, companies] = await Promise.all([
@@ -63,9 +62,6 @@ export async function fetchBankAccounts(): Promise<BankAccount[]> {
     accountType: r.account_type as BankAccountType,
     tallyLedgerGuid: r.tally_ledger_guid,
     tallyLedgerName: r.tally_ledger_name,
-    ccLimitLacs: num(r.cc_limit_lacs),
-    lcBcLimitLacs: num(r.lc_bc_limit_lacs),
-    holdByBankLacs: num(r.hold_by_bank_lacs),
     sortOrder: r.sort_order,
     active: r.active,
     notes: r.notes,
@@ -92,23 +88,12 @@ export function useCompanyOptions() {
  * The form hands everything back as strings (MasterCrud's value bag is
  * Record<string,string>), so this is where "" becomes NULL.
  *
- * ⚠ "" IS UNSET, AND UNSET IS NOT ZERO. An account with no CC limit must store
- *   NULL, not 0 — the facility block reads a 0 limit as a facility the bank has
- *   WITHDRAWN, which is a different and alarming statement. Same for every
- *   optional text field.
+ * ⚠ "" IS UNSET. An optional field left blank stores NULL, never an empty
+ *   string that a later reader has to remember to treat as missing.
  */
 const text = (v: string | undefined): string | null => {
   const t = (v ?? "").trim();
   return t === "" ? null : t;
-};
-
-/** A typed money field: blank stays blank, and a non-number is rejected loudly. */
-const money = (v: string | undefined, label: string): number | null => {
-  const t = (v ?? "").trim();
-  if (t === "") return null;
-  const n = Number(t.replace(/,/g, ""));
-  if (!Number.isFinite(n)) throw new Error(`${label} must be a number, or left blank.`);
-  return n;
 };
 
 export async function upsertBankAccount(
@@ -135,9 +120,6 @@ export async function upsertBankAccount(
     short_label: label,
     tally_ledger_guid: text(v.tallyLedgerGuid),
     tally_ledger_name: text(v.tallyLedgerName),
-    cc_limit_lacs: money(v.ccLimitLacs, "CC limit"),
-    lc_bc_limit_lacs: money(v.lcBcLimitLacs, "LC / BC limit"),
-    hold_by_bank_lacs: money(v.holdByBankLacs, "Held by bank"),
     sort_order: Number(v.sortOrder) || 0,
     notes: text(v.notes),
     active,
