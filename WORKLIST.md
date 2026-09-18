@@ -9303,8 +9303,8 @@ day of closure. **Test on `abs(credit_limit)`, always.**
 *(cross-ref: **PC-1** above — decide whether this stays alongside the new dashboard)*
 
 ### CC-1 · Ranking on the master control center  🟢  `[x]`
-*Raised 2026-08-20 · planned and **LIVE 18-09-2026** (master `37fe245`). One step left: **arm the nightly
-run** — the file is written, not applied, awaiting the user's yes (see below).*
+*Raised 2026-08-20 · planned and **LIVE 18-09-2026** (master `37fe245`). **Nightly run ARMED 18-09-2026**
+(cron job `fms-ranking-nightly`, 00:52 IST) on the user's yes; its first scheduled run is tonight.*
 
 **What it is.** A monthly ranking of how well each person keeps their FMS steps on time. Every step a
 person is given scores **1 on time · ½ late · 0 missed**; score = points ÷ steps, one decimal, one
@@ -9357,12 +9357,13 @@ Revise & Resubmit / Collect Resumes · test records 15 dispatch, 9 HR (MRF-2627-
 QT-M0040/42/45/53) · 75 untimed (Inward, Log Book) · 1 Purchase rejection with no time.
 
 **Operating it**
-- ⏳ **Arm the nightly run** — `supabase/migrations/20261127130000_cc1_fms_ranking_nightly.sql`, `22 19 * * *`
-  (00:52 IST; minute 22 was free on 18-09 — re-check `cron.job`). Until then run it by hand: POST `{run:true}`
-  to `fms-ranking` with the `x-dispatch-secret` header (`{run:true,dryRun:true}` writes nothing).
+- ✅ **Nightly run armed** 18-09-2026 — `fms-ranking-nightly`, `22 19 * * *` (00:52 IST), calls `fms_rank_kick()`;
+  its answer lands in `net._http_response`. Proved end to end the same evening (pg_net 200, September
+  recomputed, August untouched). Stop it with `…130000_cc1_fms_ranking_nightly_rollback.sql`. A manual run:
+  POST `{run:true}` to `fms-ranking` with the `x-dispatch-secret` header (`{run:true,dryRun:true}` writes nothing).
 - Admins: exclusions and per-module switches in the Ranking panel's admin section; "Preview as" shows any
   employee's exact view.
-- Migrations applied: `20261127120000/121000/122000/123000_cc1_*` (each has a `_rollback.sql`). ⚠ The first
+- Migrations applied: `20261127120000/121000/122000/123000/130000_cc1_*` (each has a `_rollback.sql`). ⚠ The first
   rollback deletes every ranking, frozen months included.
 - Follow-ups worth a task of their own: Dispatch should keep credit check's original clock start so it can
   count; Employee Exit needs its Completed builder moved out of the store before it can be scored.
