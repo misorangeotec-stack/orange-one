@@ -407,7 +407,10 @@ export async function loadInkPositions(
       tallyGroup,
       tallyDescription: tallyName,
       baseUnit: row.base_unit || "",
-      closingQty: row.closing_qty,
+      // Tally sends no quantity at all for an item that has never moved, and the mirror passes
+      // that through as null. Typed as a number, it slips past a `=== 0` test and such rows kept
+      // showing in a list meant to hold only stock. Coerced here, once, so every reader is safe.
+      closingQty: Number(row.closing_qty) || 0,
       effectiveCode,
       effectiveGroup,
       category: effectiveCategory,

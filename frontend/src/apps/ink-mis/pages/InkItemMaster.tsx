@@ -305,7 +305,7 @@ export default function InkItemMaster() {
       }
       if (
         stockOnly &&
-        r.closingQty === 0 &&
+        !r.closingQty &&
         (order[r.mergeKey] ?? order[r.legacyKey]) === undefined &&
         !overrides[r.key]
       ) {
@@ -360,7 +360,7 @@ export default function InkItemMaster() {
     const out: InkMasterRow[] = [];
     const taken = new Set<string>();
     for (const r of master) {
-      if (r.closingQty === 0) continue;
+      if (!r.closingQty) continue;
       if (seenSet.has(r.mergeKey) || seenSet.has(r.legacyKey)) continue;
       if (taken.has(r.mergeKey)) continue;
       taken.add(r.mergeKey);
@@ -372,7 +372,7 @@ export default function InkItemMaster() {
   /** Nothing is "new" on a first visit — the whole list would be. */
   useEffect(() => {
     if (!master.length || seen.length) return;
-    const all = master.filter((r) => r.closingQty !== 0).map((r) => r.mergeKey);
+    const all = master.filter((r) => r.closingQty).map((r) => r.mergeKey);
     setSeen(all);
     saveSeenLines(all);
   }, [master, seen.length]);
@@ -597,7 +597,9 @@ export default function InkItemMaster() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
-          { label: "Items listed", value: String(master.length) },
+          // The count of what is ON SCREEN. It read the whole loaded set, so it still said 1,823
+          // while the list showed a few hundred — the one number that made the filter look broken.
+          { label: "Items listed", value: String(rows.length) },
           { label: "Not numbered, so off the dashboard", value: String(unnumbered) },
           { label: "Still without a code", value: String(needsCode) },
           { label: "You have edited", value: String(edited) },
