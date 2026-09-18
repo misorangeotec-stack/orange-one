@@ -19,21 +19,31 @@ import type { ItemType, MasterItem } from "@/core/platform/liveMasters";
  * are the ways to move it between browsers.
  */
 
-/** The fields that can be changed here. `groupName` and `color` have no central column to write to. */
+/**
+ * The fields that can be changed here.
+ *
+ * `groupName`, `color` and `description` have no central column behind them at
+ * all — Central Masters holds an item's group as a per-company id, and carries
+ * neither a colour nor a description (MS-1). They are mine outright. The rest
+ * mirror a central column and are stored only while they disagree with it.
+ */
 export interface MirrorOverride {
   itemType?: ItemType | null;
   category?: string | null;
   inkType?: string | null;
   groupName?: string | null;
   color?: string | null;
-  note?: string | null;
+  code?: string | null;
+  description?: string | null;
   active?: boolean;
   updatedAt?: string;
 }
 
 export type OverrideMap = Record<string, MirrorOverride>;
 
-export const EDITABLE_KEYS = ["itemType", "category", "inkType", "groupName", "color", "note"] as const;
+export const EDITABLE_KEYS = [
+  "itemType", "category", "inkType", "groupName", "color", "code", "description",
+] as const;
 export type EditableKey = (typeof EDITABLE_KEYS)[number];
 
 const OVERRIDES_KEY = "bushra-central-master:overrides:v1";
@@ -104,33 +114,67 @@ function centralValue(item: MasterItem, key: EditableKey, centralGroupName: stri
     case "category": return item.category;
     case "inkType": return item.inkType;
     case "groupName": return centralGroupName;
+    case "code": return item.code;
     case "color": return null;
-    case "note": return null;
+    case "description": return null;
   }
 }
 
-/** Save the form's values, keeping only what differs from central. */
-export function saveOverride(
-  item: MasterItem,
-  centralGroupName: string | null,
-  values: Partial<Record<EditableKey, string>>,
-  active: boolean,
-) {
+/** One row's worth of edits, as the grid hands them over. */
+export interface MirrorEdit {
+  item: MasterItem;
+  centralGroupName: string | null;
+  values: Partial<Record<EditableKey, string>>;
+  active?: boolean;
+}
+
+/** What one row's override becomes, given the edits over it. Nothing is written here. */
+function nextOverride({ item, centralGroupName, values, active }: MirrorEdit): MirrorOverride | null {
+  const current = overrides[item.id] ?? {};
   const next: MirrorOverride = {};
   for (const key of EDITABLE_KEYS) {
+    // A key the edit does not mention keeps whatever the override already holds,
+    // so saving one cell never silently drops the others.
     if (!(key in values)) {
-      if (overrides[item.id]?.[key] !== undefined) (next as Record<string, unknown>)[key] = overrides[item.id][key];
+      if (current[key] !== undefined) (next as Record<string, unknown>)[key] = current[key];
       continue;
     }
     const mine = norm(values[key]);
     if (mine !== norm(centralValue(item, key, centralGroupName))) (next as Record<string, unknown>)[key] = mine;
   }
-  if (active !== item.active) next.active = active;
+  const wantActive = active ?? current.active ?? item.active;
+  if (wantActive !== item.active) next.active = wantActive;
 
-  if (Object.keys(next).length === 0) delete overrides[item.id];
-  else overrides[item.id] = { ...next, updatedAt: new Date().toISOString() };
-  overrides = { ...overrides };
+  return Object.keys(next).length === 0 ? null : { ...next, updatedAt: new Date().toISOString() };
+}
+
+/** Save one row. */
+export function saveOverride(
+  item: MasterItem,
+  centralGroupName: string | null,
+  values: Partial<Record<EditableKey, string>>,
+  active?: boolean,
+) {
+  saveMany([{ item, centralGroupName, values, active }]);
+}
+
+/**
+ * Save many rows at once — what the grid's single Save button calls.
+ *
+ * ⚠ ONE FLUSH FOR THE WHOLE BATCH. Writing row by row would re-serialise the
+ *   entire map per row, which is quadratic on a master this size.
+ */
+export function saveMany(edits: MirrorEdit[]): number {
+  if (edits.length === 0) return 0;
+  const next = { ...overrides };
+  for (const edit of edits) {
+    const row = nextOverride(edit);
+    if (row) next[edit.item.id] = row;
+    else delete next[edit.item.id];
+  }
+  overrides = next;
   scheduleFlush();
+  return edits.length;
 }
 
 export function resetOverride(id: string) {
