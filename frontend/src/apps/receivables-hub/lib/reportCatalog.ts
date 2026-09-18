@@ -877,6 +877,7 @@ export const REPORTS: ReportEntry[] = [
     id: "bushra-purchase-register",
     // Vendors, not customers — the salesperson scope does not apply.
     scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
     title: "Purchase Register",
     purpose: "Every purchase, purchase return and purchase debit note line, with purchase-type, ink type, group and category from Central Masters, and colour.",
     category: "bushra-report",
@@ -957,6 +958,7 @@ export const REPORTS: ReportEntry[] = [
   ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({
     id: p.id,
     scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
     title: p.id === "bushra-purchase-dashboard" ? p.title : `Purchase — ${purchaseDashboardTitle(p)}`,
     purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
     category: "bushra-report",

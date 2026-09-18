@@ -102,8 +102,13 @@ export function classifyPurchaseRow(r: PurchaseRegisterRow, lookup: ItemLookup, 
   const guid = companyGuidOf(r.tenant_id);
   const itemType = pick(copies, guid, "itemType") as ItemType | null;
 
-  let purchase_type = fromParticulars(r.particulars);
-  let purchase_type_source: PurchaseTypeSource = purchase_type ? "Particulars" : "";
+  // A SERVICE BILL'S EXPENSE LINE IS A SERVICE, whatever its ledger is called. The tag rule was
+  // written for sales discount lines; on a GST-INWARD SERVICE bill posting to "REPAIRS & MAINTENANCE -
+  // MACHINE" it would read "-MACHINE" and file a repair as a machine purchase, off the Service
+  // dashboard. Finance want goods vs service shown in Purchase-Type (2026-09-15), so it wins here.
+  const serviceBill = r.kind === "ledger" && fromVoucherType(r.voucher_type) === SERVICE_TYPE;
+  let purchase_type = serviceBill ? SERVICE_TYPE : fromParticulars(r.particulars);
+  let purchase_type_source: PurchaseTypeSource = serviceBill ? "Voucher Type" : purchase_type ? "Particulars" : "";
   if (!purchase_type && itemType) {
     purchase_type = itemTypeLabel(itemType);
     purchase_type_source = purchase_type ? "Central Masters" : "";

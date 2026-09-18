@@ -57,6 +57,18 @@ def get(path: str, tries: int = 3):
             time.sleep(5 * (attempt + 1))
 
 
+def get_all(path: str, order: str) -> list:
+    """Every row, page by page. PostgREST caps one response at max-rows (1,000 here) and answers 200
+    with the rest silently dropped, so a list that can grow is never read in one request."""
+    out: list = []
+    for offset in range(0, 10**7, PAGE):
+        page = get(f"{path}&order={order}&limit={PAGE}&offset={offset}")
+        out.extend(page)
+        if len(page) < PAGE:
+            return out
+    return out
+
+
 # ------------------------------------------------------------------ tally json helpers
 
 def jtext(v):
@@ -65,15 +77,26 @@ def jtext(v):
     return v
 
 
-NUM = re.compile(r"-?\d[\d,]*(?:\.\d+)?|-?\.\d+")
+CLEAN_NUMBER = re.compile(r"\s*-?[0-9]+(\.[0-9]+)?\s*")
 
 
 def amt(v) -> float:
+    """public.amt, line for line (ConnectWave-App connector/supabase/00_helpers.sql).
+
+    A forex line reads "-$4252.00 @ ₹87.30/$ = -₹371199.60": the BASE-currency value is the part after
+    the last '='. Taking the first number instead gave +4252 there — a ₹3.7 L machine purchase shown as
+    a ₹4,252 return. Anything else keeps only digits, '.' and '-', as the SQL does; a string that still
+    will not parse raises, as the SQL cast does, rather than quietly becoming 0.
+    """
     s = jtext(v)
-    if not s:
+    if s is None or not str(s).strip():
         return 0.0
-    m = NUM.search(str(s))
-    return float(m.group(0).replace(",", "")) if m else 0.0
+    s = str(s)
+    if CLEAN_NUMBER.fullmatch(s):
+        return float(s)
+    part = s.rsplit("=", 1)[-1] if "=" in s else s
+    cleaned = re.sub(r"[^0-9.-]", "", part)
+    return float(cleaned) if cleaned else 0.0
 
 
 def as_list(v) -> list:
@@ -198,9 +221,10 @@ def main() -> None:
     ap.add_argument("--to", dest="to", default=date.today().strftime("%Y%m%d"))
     args = ap.parse_args()
 
-    companies = {c["tenant_id"]: c["company_name"] for c in get("v_company?select=tenant_id,company_name")}
-    tenants = sorted({b["tenant_id"] for b in get("rpt_sales_book?select=tenant_id")})
-    natures = get("v_voucher_type_nature?select=tenant_id,voucher_type,chain")
+    companies = {c["tenant_id"]: c["company_name"]
+                 for c in get_all("v_company?select=tenant_id,company_name", "tenant_id.asc")}
+    tenants = sorted({b["tenant_id"] for b in get_all("rpt_sales_book?select=tenant_id", "tenant_id.asc")})
+    natures = get_all("v_voucher_type_nature?select=tenant_id,voucher_type,chain", "tenant_id.asc,voucher_type.asc")
 
     # A book can hold vouchers whose voucher-type MASTER it no longer has (Enterprise Surat 2024-26 has
     # 'GST PURCHASE - INK' vouchers but no such type). Such a name is judged by the same type in the

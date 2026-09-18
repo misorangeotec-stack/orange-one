@@ -55,13 +55,58 @@ create table if not exists public.rpt_purchase_register (
 create index if not exists rpt_purchase_register_tenant_date
   on public.rpt_purchase_register (tenant_id, vch_date);
 
+-- READ-ONLY TO THE BROWSER, like rpt_soa_register and rpt_sales_despatch. Supabase's default
+-- privileges grant ALL on a new public table to anon and authenticated, so an absent write grant is
+-- not enough: without RLS, anyone holding the anon key (it ships in the bundle) could rewrite
+-- purchases through PostgREST until the next rebuild. RLS on, one read policy, writes revoked.
+alter table public.rpt_purchase_register enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public'
+                   and tablename = 'rpt_purchase_register' and policyname = 'rpt_purchase_register anon read') then
+    create policy "rpt_purchase_register anon read" on public.rpt_purchase_register
+      for select to anon, authenticated using (true);
+  end if;
+end $$;
+
+revoke insert, update, delete, truncate on public.rpt_purchase_register from anon, authenticated;
 grant select on public.rpt_purchase_register to anon, authenticated;
+
+-- One row per book per refresh, so a failed rebuild is visible instead of silently leaving the
+-- previous rows in place.
+create table if not exists public.rpt_purchase_register_refresh_log (
+  id        bigserial primary key,
+  ran_at    timestamptz not null default now(),
+  tenant_id text,
+  row_count integer,
+  seconds   numeric,
+  error     text
+);
+
+create index if not exists rpt_purchase_register_refresh_log_tenant_idx
+  on public.rpt_purchase_register_refresh_log (tenant_id, ran_at desc);
+
+alter table public.rpt_purchase_register_refresh_log enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public'
+                   and tablename = 'rpt_purchase_register_refresh_log' and policyname = 'rpt_purchase_register_refresh_log anon read') then
+    create policy "rpt_purchase_register_refresh_log anon read" on public.rpt_purchase_register_refresh_log
+      for select to anon, authenticated using (true);
+  end if;
+end $$;
+
+revoke insert, update, delete, truncate on public.rpt_purchase_register_refresh_log from anon, authenticated;
+grant select on public.rpt_purchase_register_refresh_log to anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.rpt_purchase_register_rebuild(p_tenant text, p_from text DEFAULT '00000000'::text, p_to text DEFAULT '99999999'::text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
+ SET statement_timeout TO '0'
 AS $function$
 declare n int;
 begin
@@ -198,24 +243,50 @@ end $function$;
 revoke all on function public.rpt_purchase_register_rebuild(text, text, text) from public, anon, authenticated;
 
 -- Rebuild every book rpt_sales_book knows (the generic winning-book resolver, over ALL vouchers).
+-- EACH BOOK IN ITS OWN SUB-TRANSACTION: one book's failure (a bad amount string, say) rolls back
+-- that book only and is written to the log; every other book still commits. A second call while
+-- one is running skips rather than queueing behind it.
 CREATE OR REPLACE FUNCTION public.rpt_purchase_register_refresh_all()
- RETURNS integer
+ RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
+ SET statement_timeout TO '0'
 AS $function$
-declare t text; n int := 0;
+declare
+  t text; n int; rows_n int := 0; ok int := 0; failed int := 0;
+  t0 timestamptz := clock_timestamp(); t1 timestamptz;
 begin
+  if not pg_try_advisory_xact_lock(hashtext('rpt_purchase_register:refresh_all')) then
+    return 'another refresh is running; skipped';
+  end if;
   for t in select distinct tenant_id from public.rpt_sales_book loop
-    n := n + public.rpt_purchase_register_rebuild(t);
+    t1 := clock_timestamp();
+    begin
+      n := coalesce(public.rpt_purchase_register_rebuild(t), 0);
+      ok := ok + 1; rows_n := rows_n + n;
+      insert into public.rpt_purchase_register_refresh_log (tenant_id, row_count, seconds)
+      values (t, n, round(extract(epoch from (clock_timestamp() - t1))::numeric, 1));
+    exception when others then
+      failed := failed + 1;
+      insert into public.rpt_purchase_register_refresh_log (tenant_id, seconds, error)
+      values (t, round(extract(epoch from (clock_timestamp() - t1))::numeric, 1), sqlerrm);
+    end;
   end loop;
-  return n;
+  return format('rebuilt %s book(s), %s failed, %s rows in %ss',
+                ok, failed, rows_n, round(extract(epoch from (clock_timestamp() - t0))::numeric, 1));
 end $function$;
 
 revoke all on function public.rpt_purchase_register_refresh_all() from public, anon, authenticated;
 
--- When applying: run once, then schedule OFF the five-minute marks the other rebuilds use
--- (see CONNECTWAVE-READ-COST.md), e.g.
+-- WHEN APPLYING: run once, then schedule it nightly.
 --   select public.rpt_purchase_register_refresh_all();
---   select cron.schedule('rpt-purchase-register-nightly', '25 15 * * *',   -- 20:55 IST
---                        $$select public.rpt_purchase_register_refresh_all()$$);
+--
+-- ⚠ Every minute offset mod 5 is already taken by a live `*/5`-style poller, and two of those live
+-- jobs have no file in any repo, so CHECK THE LIVE LIST FIRST: select jobname, schedule from cron.job;
+-- A nightly job is placed by quiet hours instead: 20:17 UTC (01:47 IST) sits clear of the batch-line
+-- rebuild (18:00 UTC), the ledger-voucher-dates nightly (18:41 UTC) and the PF-16 backup (22:40 UTC),
+-- while Tally is quiet and the pollers no-op.
+--   select cron.schedule('rpt-purchase-register-nightly', '17 20 * * *',
+--     $$ set statement_timeout='60min';
+--        select public.rpt_purchase_register_refresh_all(); $$);

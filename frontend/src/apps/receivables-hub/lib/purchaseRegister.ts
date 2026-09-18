@@ -106,6 +106,11 @@ async function readRaw(tenants: string[], from: string, to: string): Promise<Raw
       .order("vch_date", { ascending: true })
       .order("tenant_id", { ascending: true })
       .order("voucher_no", { ascending: true })
+      // voucher_guid makes the order UNIQUE (the key is tenant, guid, line). Without it, two vouchers
+      // sharing a date and number — Tally numbers each voucher type apart, and purchase bills often
+      // carry blank or manual numbers — tie, and a tie across a 1,000-row page boundary can come back
+      // on both pages or on neither.
+      .order("voucher_guid", { ascending: true })
       .order("line_no", { ascending: true })
       .range(offset, offset + PAGE - 1)
       .returns<RawRow[]>();

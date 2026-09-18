@@ -23,7 +23,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  ArrowLeft, Boxes, Download, FileText, IndianRupee, RotateCcw, Search, Table2, Truck,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Boxes, Download, FileText, IndianRupee, RotateCcw, Search, Table2, Truck,
   TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { cn } from "@hub/lib/utils";
@@ -87,10 +87,36 @@ const NO_FILTERS = byKey<string[]>(() => []);
 const BAR_FILTER_KEYS = FILTER_KEYS.filter((k) => k !== "particulars");
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+/** "Sep-26" → "202609" — full YYYYMM, as on the Sales dashboards. */
 const monthKey = (label: string) => {
   const [m, y] = label.split("-");
-  return `${y}${String(MONTHS.indexOf(m) + 1).padStart(2, "0")}`;
+  return `20${y}${String(MONTHS.indexOf(m) + 1).padStart(2, "0")}`;
 };
+
+/**
+ * Every filter's options from the rows surviving every OTHER filter — the house cascade, so no
+ * combination a reader can assemble returns an empty table. A column is left out of its own options,
+ * or narrowing to one value would leave no way to widen again. `rows` arrives already narrowed by
+ * anything else the caller applies: the report passes its search and table-only filters in that way.
+ */
+function cascadeOptions(rows: Row[], sel: Record<FilterKey, string[]>): Record<FilterKey, MultiSelectOption[]> {
+  const active = FILTER_KEYS.filter((k) => sel[k].length);
+  const found = byKey(() => new Set<string>());
+  for (const r of rows) {
+    let missedKey: FilterKey | null = null;
+    let missed = 0;
+    for (const k of active) {
+      if (!sel[k].includes(FILTERS[k].get(r))) { missed++; missedKey = k; if (missed > 1) break; }
+    }
+    if (missed > 1) continue;
+    for (const k of FILTER_KEYS) if (missed === 0 || k === missedKey) found[k].add(FILTERS[k].get(r));
+  }
+  return Object.fromEntries(FILTER_KEYS.map((k) => {
+    const vals = [...found[k]];
+    vals.sort(k === "month" ? (a, b) => monthKey(a).localeCompare(monthKey(b)) : collator.compare);
+    return [k, vals.map((v) => ({ value: v, label: v }))];
+  })) as Record<FilterKey, MultiSelectOption[]>;
+}
 
 const dim = (selected: string[], name: string) => (!selected.length || selected.includes(name) ? 1 : 0.3);
 const fmtInt = (n: number) => new Intl.NumberFormat("en-IN").format(Math.round(n));
@@ -124,8 +150,9 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
   }, [pickedFys]);
 
   // Same cache keys as the Purchase Register page, so every dashboard and the register share one load.
+  // ⚠ The item lookup's key is the Sales side's: bump it WITH that one, or the lookup downloads twice.
   const { data: lookup, error: lookupError } = useQuery({
-    queryKey: ["bushraSalesRegister", "itemLookup", "v2"],
+    queryKey: ["bushraSalesRegister", "itemLookup", "v3"],
     queryFn: loadItemLookup,
     staleTime: 30 * 60 * 1000,
   });
@@ -175,24 +202,8 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
     [base, sel],
   );
 
-  const options = useMemo(() => {
-    const active = FILTER_KEYS.filter((k) => sel[k].length);
-    const found = byKey(() => new Set<string>());
-    for (const r of base) {
-      let missedKey: FilterKey | null = null;
-      let missed = 0;
-      for (const k of active) {
-        if (!sel[k].includes(FILTERS[k].get(r))) { missed++; missedKey = k; if (missed > 1) break; }
-      }
-      if (missed > 1) continue;
-      for (const k of FILTER_KEYS) if (missed === 0 || k === missedKey) found[k].add(FILTERS[k].get(r));
-    }
-    return Object.fromEntries(FILTER_KEYS.map((k) => {
-      const vals = [...found[k]];
-      vals.sort(k === "month" ? (a, b) => monthKey(a).localeCompare(monthKey(b)) : collator.compare);
-      return [k, vals.map((v) => ({ value: v, label: v }))];
-    })) as Record<FilterKey, MultiSelectOption[]>;
-  }, [base, sel]);
+  /** Each dropdown's options come from the rows surviving every OTHER filter (the house cascade). */
+  const options = useMemo(() => cascadeOptions(base, sel), [base, sel]);
 
   /* -------- figures -------- */
   const kpi = useMemo(() => {
@@ -265,7 +276,9 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
             <MultiSelectFilter
               options={fyOptions.map((o) => ({ value: o, label: `FY ${o}` }))}
               value={fys}
-              onChange={(v) => { setFys(v); setSel(NO_FILTERS); }}
+              // Clearing falls back to the current year — shown as such, never as "All Years",
+              // which is what an empty pick would otherwise read while showing one year.
+              onChange={(v) => { setFys(v.length ? v : [currentFy()]); setSel(NO_FILTERS); }}
               allLabel="All Years"
               searchable
               unit="Years"
@@ -321,8 +334,8 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
 
       <Overview
         rows={rows} from={from} to={to} fys={pickedFys} sections={preset.sections} hasQuantity={preset.hasQuantity}
-        sel={sel} toggle={toggle} noteFor={pickedNote} fmtQ={fmtQ} options={options} setFilter={setFilter}
-        loading={loading} empty={empty} emptyMessage={emptyMsg}
+        base={base} sel={sel} toggle={toggle} noteFor={pickedNote} fmtQ={fmtQ} setFilter={setFilter}
+        onResetDashboard={resetAll} loading={loading} empty={empty} emptyMessage={emptyMsg}
       />
     </div>
   );
@@ -398,11 +411,11 @@ const SECTION_META: Record<PurchaseSectionDim, { heading: string; subtitle: stri
   company: { heading: "By Company", subtitle: "by company", colorOf: () => CAT[3] },
 };
 
-function Overview({ rows, from, to, fys, sections, hasQuantity, sel, toggle, noteFor, fmtQ, options, setFilter, loading, empty, emptyMessage }: {
-  rows: Row[]; from: string; to: string; fys: string[]; sections: PurchaseSectionDim[]; hasQuantity: boolean;
+function Overview({ rows, base, from, to, fys, sections, hasQuantity, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, loading, empty, emptyMessage }: {
+  rows: Row[]; base: Row[]; from: string; to: string; fys: string[]; sections: PurchaseSectionDim[]; hasQuantity: boolean;
   sel: Record<FilterKey, string[]>; toggle: (k: FilterKey) => (name: string) => void;
   noteFor: (k: FilterKey, what: string) => string; fmtQ: QtyFmt;
-  options: Record<FilterKey, MultiSelectOption[]>; setFilter: (k: FilterKey) => (v: string[]) => void;
+  setFilter: (k: FilterKey) => (v: string[]) => void; onResetDashboard: () => void;
   loading: boolean; empty: boolean; emptyMessage: string;
 }) {
   const bySection = useMemo(
@@ -443,8 +456,8 @@ function Overview({ rows, from, to, fys, sections, hasQuantity, sel, toggle, not
       </div>
 
       <SectionHeading>Purchase Report</SectionHeading>
-      <PurchaseReportTable rows={rows} from={from} to={to} loading={loading} fmtQ={fmtQ}
-                           sel={sel} options={options} setFilter={setFilter} />
+      <PurchaseReportTable rows={rows} base={base} from={from} to={to} loading={loading} fmtQ={fmtQ}
+                           sel={sel} setFilter={setFilter} onResetDashboard={onResetDashboard} />
     </>
   );
 }
@@ -605,42 +618,75 @@ const TABLE_ONLY_KEYS = Object.keys(TABLE_ONLY) as TableOnlyKey[];
 const NO_TABLE_FILTERS: Record<TableOnlyKey, string[]> = { date: [], voucherNo: [] };
 const dateSortKey = (d: string) => d.split("-").reverse().join("");
 
-/** Columns the dashboard also filters use the DASHBOARD's selection; Date and Voucher No. narrow only the table. */
-const REPORT_COLUMNS: { header: string; filter: { dash: FilterKey } | { table: TableOnlyKey } | null; right?: boolean }[] = [
-  { header: "Date", filter: { table: "date" } },
-  { header: "Voucher No.", filter: { table: "voucherNo" } },
-  { header: "Type", filter: { dash: "type" } },
-  { header: "Company", filter: { dash: "company" } },
-  { header: "Location", filter: { dash: "location" } },
-  { header: "Vendor Name", filter: { dash: "party" } },
-  { header: "Particulars", filter: { dash: "particulars" } },
-  { header: "Purchase-Type", filter: { dash: "purchaseType" } },
-  { header: "Category", filter: { dash: "category" } },
-  { header: "Group", filter: { dash: "group" } },
-  { header: "Ink Type", filter: { dash: "inkType" } },
-  { header: "Colour", filter: { dash: "colour" } },
-  { header: "Quantity", filter: null, right: true },
-  { header: "Rate", filter: null, right: true },
-  { header: "Amount", filter: null, right: true },
+/**
+ * Columns the dashboard also filters use the DASHBOARD's selection; Date and Voucher No. narrow only
+ * the table. Every column sorts (the house rule), each by `sort`: the date in calendar order and the
+ * amounts as numbers, not by the text they print.
+ */
+const REPORT_COLUMNS: {
+  header: string; filter: { dash: FilterKey } | { table: TableOnlyKey } | null; right?: boolean;
+  sort: (r: Row) => string | number;
+}[] = [
+  { header: "Date", filter: { table: "date" }, sort: (r) => r.vch_date },
+  { header: "Voucher No.", filter: { table: "voucherNo" }, sort: (r) => r.voucher_no },
+  { header: "Type", filter: { dash: "type" }, sort: (r) => r.type },
+  { header: "Company", filter: { dash: "company" }, sort: (r) => r.company },
+  { header: "Location", filter: { dash: "location" }, sort: (r) => r.location_name },
+  { header: "Vendor Name", filter: { dash: "party" }, sort: (r) => r.party },
+  { header: "Particulars", filter: { dash: "particulars" }, sort: (r) => r.particulars },
+  { header: "Purchase-Type", filter: { dash: "purchaseType" }, sort: (r) => r.purchase_type },
+  { header: "Category", filter: { dash: "category" }, sort: (r) => r.item_category },
+  { header: "Group", filter: { dash: "group" }, sort: (r) => r.item_group },
+  { header: "Ink Type", filter: { dash: "inkType" }, sort: (r) => r.ink_type },
+  { header: "Colour", filter: { dash: "colour" }, sort: (r) => r.colour },
+  { header: "Quantity", filter: null, right: true, sort: (r) => r.quantity },
+  { header: "Rate", filter: null, right: true, sort: (r) => r.rate },
+  { header: "Amount", filter: null, right: true, sort: (r) => r.amount },
 ];
 
-function PurchaseReportTable({ rows, from, to, loading, fmtQ, sel, options, setFilter }: {
-  rows: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
-  sel: Record<FilterKey, string[]>; options: Record<FilterKey, MultiSelectOption[]>;
+function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
+  /** The dashboard's filtered lines, and `base` — its slice before any filter, for the dropdowns. */
+  rows: Row[]; base: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
+  sel: Record<FilterKey, string[]>;
   setFilter: (k: FilterKey) => (v: string[]) => void;
+  onResetDashboard: () => void;
 }) {
   const [q, setQ] = useState("");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
-  const searched = useMemo(() => {
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
+  const matchesSearch = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter((r) =>
-      r.party.toLowerCase().includes(s) || r.particulars.toLowerCase().includes(s) || r.voucher_no.toLowerCase().includes(s));
-  }, [rows, q]);
-  const shown = useMemo(
-    () => searched.filter((r) => TABLE_ONLY_KEYS.every((k) => !tsel[k].length || tsel[k].includes(TABLE_ONLY[k](r)))),
-    [searched, tsel],
+    return (r: Row) => !s ||
+      r.party.toLowerCase().includes(s) || r.particulars.toLowerCase().includes(s) || r.voucher_no.toLowerCase().includes(s);
+  }, [q]);
+  const keepTable = (r: Row) => TABLE_ONLY_KEYS.every((k) => !tsel[k].length || tsel[k].includes(TABLE_ONLY[k](r)));
+  const searched = useMemo(() => rows.filter(matchesSearch), [rows, matchesSearch]);
+  const shown = useMemo(() => searched.filter(keepTable), [searched, tsel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sorted = useMemo(() => {
+    if (!sort) return shown;
+    const get = REPORT_COLUMNS[sort.col].sort;
+    return [...shown].sort((a, b) => {
+      const x = get(a), y = get(b);
+      return sort.dir * (typeof x === "number" && typeof y === "number" ? x - y : collator.compare(String(x), String(y)));
+    });
+  }, [shown, sort]);
+  /** Text columns open A→Z, amounts largest first; a second click turns it round. */
+  const toggleSort = (col: number) => setSort((s) =>
+    s?.col === col ? { col, dir: s.dir === 1 ? -1 : 1 } : { col, dir: REPORT_COLUMNS[col].right ? -1 : 1 });
+  /**
+   * The dashboard columns' dropdowns cascade off the table's own filters and search too, so no pick
+   * made in this row can return an empty table. (The filter bar's lists stay the dashboard's own.)
+   */
+  const dashOptions = useMemo(
+    () => cascadeOptions(base.filter((r) => matchesSearch(r) && keepTable(r)), sel),
+    [base, sel, matchesSearch, tsel], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  /** Clears what could have emptied the table — its own filters and search, and the dashboard's when those alone do. */
+  const clearFilters = () => {
+    setTsel(NO_TABLE_FILTERS);
+    setQ("");
+    if (!rows.length) onResetDashboard();
+  };
   const tableOptions = useMemo(() => Object.fromEntries(TABLE_ONLY_KEYS.map((k) => {
     const vals = new Set<string>();
     for (const r of searched) {
@@ -651,7 +697,9 @@ function PurchaseReportTable({ rows, from, to, loading, fmtQ, sel, options, setF
     return [k, list.map((v) => ({ value: v, label: v }))];
   })) as Record<TableOnlyKey, MultiSelectOption[]>, [searched, tsel]);
 
-  const page = usePagination(shown, { resetKey: `${rows.length}|${q}|${TABLE_ONLY_KEYS.map((k) => tsel[k].join(",")).join("|")}` });
+  const page = usePagination(sorted, {
+    resetKey: `${rows.length}|${q}|${TABLE_ONLY_KEYS.map((k) => tsel[k].join(",")).join("|")}|${sort?.col}|${sort?.dir}`,
+  });
   const totals = useMemo(() => shown.reduce((t, r) => ({ qty: t.qty + r.quantity, value: t.value + r.amount }), { qty: 0, value: 0 }), [shown]);
   const tableFilterCount = TABLE_ONLY_KEYS.reduce((n, k) => n + tsel[k].length, 0);
 
@@ -670,7 +718,7 @@ function PurchaseReportTable({ rows, from, to, loading, fmtQ, sel, options, setF
                       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Vendor, particulars, voucher…"
                              className="h-8 w-56 rounded-input pl-7 text-[12px]" />
                     </div>
-                    <Button onClick={() => shown.length && exportPurchaseRegisterXlsx(shown, { from, to })}
+                    <Button onClick={() => sorted.length && exportPurchaseRegisterXlsx(sorted, { from, to })}
                             disabled={!shown.length}
                             className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
                       <Download className="h-3.5 w-3.5" /> Export
@@ -681,11 +729,18 @@ function PurchaseReportTable({ rows, from, to, loading, fmtQ, sel, options, setF
         <table className="w-full min-w-[1800px] border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              {REPORT_COLUMNS.map((c) => (
+              {REPORT_COLUMNS.map((c, i) => (
                 <th key={c.header} className={cn(
                   "whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                   c.right ? "text-right" : "text-left",
-                )}>{c.header}</th>
+                )}>
+                  <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
+                          className={cn("inline-flex items-center gap-1 uppercase hover:text-foreground", sort?.col === i && "text-foreground")}>
+                    {c.header}
+                    {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                  </button>
+                </th>
               ))}
             </tr>
             <tr className="border-b-2 border-border bg-muted/30">
@@ -693,7 +748,7 @@ function PurchaseReportTable({ rows, from, to, loading, fmtQ, sel, options, setF
                 <th key={c.header} className="px-2 py-1.5 font-normal">
                   {c.filter && ("dash" in c.filter ? (
                     <MultiSelectFilter
-                      options={options[c.filter.dash]}
+                      options={dashOptions[c.filter.dash]}
                       value={sel[c.filter.dash]}
                       onChange={setFilter(c.filter.dash)}
                       allLabel="Any" unit={c.header} searchable contentClassName="w-72"
@@ -714,7 +769,17 @@ function PurchaseReportTable({ rows, from, to, loading, fmtQ, sel, options, setF
           </thead>
           <tbody>
             {page.pageItems.length === 0 ? (
-              <tr><td colSpan={REPORT_COLUMNS.length} className="py-8 text-center text-[12px] text-muted-foreground">No lines match.</td></tr>
+              // The table stays standing when the filters match nothing, so the way back is right here.
+              <tr><td colSpan={REPORT_COLUMNS.length} className="py-8 text-center text-[12px] text-muted-foreground">
+                {base.length ? (
+                  <span className="inline-flex items-center gap-3">
+                    No lines match those filters.
+                    <Button variant="outline" onClick={clearFilters} className="h-7 gap-1.5 rounded-button px-2.5 text-[11.5px]">
+                      <RotateCcw className="h-3 w-3" /> Clear filters
+                    </Button>
+                  </span>
+                ) : "No lines on this dashboard in this period."}
+              </td></tr>
             ) : page.pageItems.map((r, i) => (
               <tr key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
                 <td className="whitespace-nowrap px-3 py-1.5 tabular-nums">{r.date_display}</td>
