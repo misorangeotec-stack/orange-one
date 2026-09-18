@@ -10,7 +10,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NavItem } from "@/shared/components/layout/types";
 import { roleLabel, useSession } from "@/core/platform/session";
-import { appBasePath } from "../appInfo";
+import { appBasePath, appName } from "../appInfo";
 import ItemMaster from "./pages/ItemMaster";
 
 const B = appBasePath("bushra-central-master");
@@ -20,7 +20,7 @@ const ic = {
 };
 
 const NAV: NavItem[] = [
-  { label: "Item master", to: `${B}/items`, icon: ic.items, section: "Bushra Central Master" },
+  { label: "Item master", to: `${B}/items`, icon: ic.items, section: appName("bushra-central-master") },
 ];
 
 function BushraCentralMasterLayout() {

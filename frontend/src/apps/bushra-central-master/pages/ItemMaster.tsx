@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { saveAs } from "file-saver";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
 import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
+import { filterOptionLabel, filterValueOf, sortFilterOptions } from "@/shared/lib/blankFilter";
+import { todayLocalIso } from "@/shared/lib/dueBuckets";
+import { useSession } from "@/core/platform/session";
 import {
   companyDisplayName, itemTypeLabel, ITEM_TYPES,
   fetchMasterCompanies, fetchMasterItems, fetchMasterLookup,
   type ItemType, type MasterItem,
 } from "@/core/platform/liveMasters";
+import { appName } from "../../appInfo";
 import {
-  applyBackup, buildBackup, markAllSeen, noteCentralIds, resetAllOverrides, resetOverride,
-  saveMany, useMirrorStore, type EditableKey, type MirrorEdit,
+  buildBackup, centralValue, loadDrafts, markAllSeen, noteCentralIds, parseBackup, replaceAllOverrides,
+  resetAllOverrides, resetOverride, saveDrafts, saveMany, useMirrorStore,
+  type DraftMap, type EditableKey, type MirrorEdit,
 } from "../lib/store";
 
 /**
@@ -25,7 +32,14 @@ import {
  *   month and wrong for this one: the whole point here is to fill Type, Category,
  *   Ink type, Group, Colour, Code and Description down a column across many items
  *   and commit them together. So every cell is an input, edits collect as a draft,
- *   and ONE Save button writes them.
+ *   and ONE Save button writes them. Drafts are kept in the browser too, so leaving
+ *   the page — by the sidebar, the breadcrumb or a reload — does not lose them.
+ *
+ * ⚠ IT IS STILL A GRID, so it follows the house rules: every column sorts, every
+ *   column but Item (search covers it) has a searchable filter underneath, the
+ *   filter lists cascade, and a filter that matches nothing keeps the table
+ *   standing with a Clear filters button. The table stays hand-built, not QueueTable,
+ *   for one reason: its columns are resized by dragging, which QueueTable cannot do.
  *
  * ⚠ CENTRAL IS NEVER WRITTEN. Items are read live from `mst_items` on the same
  *   query keys the admin screen uses, so the PF-17 realtime signal brings new
@@ -33,6 +47,8 @@ import {
  *   (lib/store.ts), and only the fields that DIFFER from central are stored — so
  *   central's later corrections to untouched fields keep flowing through.
  */
+
+const APP_NAME = appName("bushra-central-master");
 
 type Filter = "all" | "changed" | "new";
 
@@ -49,10 +65,9 @@ interface MirrorRow extends MasterItem {
   isChanged: boolean;
 }
 
-/** The value bag one row edits through — the grid's columns and the Excel columns are both built off it. */
-type Draft = Partial<Record<EditableKey, string>>;
+type ColKey = EditableKey | "item" | "company" | "unit" | "status" | "actions";
 
-const COLUMNS: { key: EditableKey | "item" | "company" | "unit" | "status" | "actions"; header: string; width: number }[] = [
+const COLUMNS: { key: ColKey; header: string; width: number }[] = [
   { key: "item", header: "Item", width: 300 },
   { key: "itemType", header: "Type", width: 150 },
   { key: "category", header: "Category", width: 180 },
@@ -63,38 +78,76 @@ const COLUMNS: { key: EditableKey | "item" | "company" | "unit" | "status" | "ac
   { key: "description", header: "Description", width: 260 },
   { key: "company", header: "Company", width: 150 },
   { key: "unit", header: "Unit", width: 80 },
-  { key: "status", header: "Status", width: 110 },
+  { key: "status", header: "Status", width: 130 },
   { key: "actions", header: "", width: 70 },
 ];
+/** Item names are unique, so its dropdown would only restate the table; search covers it. */
+const FILTER_KEYS: ColKey[] = COLUMNS.map((c) => c.key).filter((k) => k !== "item" && k !== "actions");
+const HEADER: Record<string, string> = Object.fromEntries(COLUMNS.map((c) => [c.key, c.header]));
 
 const EDIT_KEYS: EditableKey[] = ["itemType", "category", "inkType", "groupName", "color", "code", "description"];
 const FIELD_LABEL: Record<EditableKey, string> = {
   itemType: "Type", category: "Category", inkType: "Ink type", groupName: "Group",
   color: "Colour", code: "Code", description: "Description",
 };
+/** Which row field holds central's value for a mirrored column. Colour and Description have none. */
+const CENTRAL_FIELD: Partial<Record<EditableKey, keyof MirrorRow>> = {
+  itemType: "centralType", category: "centralCategory", inkType: "centralInkType",
+  groupName: "centralGroupName", code: "centralCode",
+};
+/**
+ * The Excel round trip. Each mirrored column travels with a "Central …" twin that
+ * records what Central Masters said WHEN THE FILE WAS MADE. On import, a value left
+ * equal to its twin means "I did not change this" — it follows Central as it stands
+ * today — rather than pinning a value Central may have corrected since.
+ */
+const EXCEL: { key: EditableKey; header: string; centralHeader?: string }[] = [
+  { key: "itemType", header: "Type", centralHeader: "Central Type" },
+  { key: "category", header: "Category", centralHeader: "Central Category" },
+  { key: "inkType", header: "Ink type", centralHeader: "Central Ink type" },
+  { key: "groupName", header: "Group", centralHeader: "Central Group" },
+  { key: "color", header: "Colour" },
+  { key: "code", header: "Code", centralHeader: "Central Code" },
+  { key: "description", header: "Description" },
+];
 
 const WIDTH_KEY = "bushra-central-master:colwidths:v1";
 const opts = { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false } as const;
+const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
-const isCssColor = (v: string) =>
-  typeof CSS !== "undefined" && !!v.trim() && CSS.supports("color", v.replace(/\s+/g, ""));
+const typeValueOf = (v: string): ItemType | "" | null => {
+  if (!v) return "";
+  return ITEM_TYPES.find((t) => t.label.toLowerCase() === v.toLowerCase() || t.value === v)?.value ?? null;
+};
+
+const isCssColor = (v: unknown) =>
+  typeof v === "string" && typeof CSS !== "undefined" && !!v.trim() && CSS.supports("color", v.replace(/\s+/g, ""));
 
 const cellClass =
   "w-full rounded border bg-transparent px-1.5 py-1 text-[12.5px] text-ink outline-none " +
   "focus:border-orange focus:bg-white focus:ring-2 focus:ring-orange/10";
+const filterClass =
+  "h-8 w-full min-w-0 rounded-lg border border-line bg-white px-2 text-[12px] text-ink placeholder:text-grey-2/60 " +
+  "focus:outline-none focus:ring-2 focus:ring-orange/25 focus:border-orange/50";
+
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 export default function ItemMaster() {
-  const { overrides, seen } = useMirrorStore();
+  const { user } = useSession();
+  const { overrides, seen } = useMirrorStore(user.id);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [companyFilter, setCompanyFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [note, setNote] = useState<string | null>(null);
+  const [colFilters, setColFilters] = useState<Record<string, string[]>>({});
+  const [sort, setSort] = useState<{ key: ColKey; dir: 1 | -1 } | null>(null);
+  const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
   /** Unsaved cell edits, by item id. The grid reads these over the stored values. */
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [saving, setSaving] = useState(false);
+  const [drafts, setDrafts] = useState<DraftMap>(() => loadDrafts());
+  /** False when the browser refused to keep the drafts — only then does a reload lose them. */
+  const [draftsKept, setDraftsKept] = useState(true);
   const backupRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraftsKept(saveDrafts(drafts)); }, [drafts]);
 
   // ---- column widths, dragged on the header and remembered ------------------
   const [widths, setWidths] = useState<Record<string, number>>(() => {
@@ -130,6 +183,7 @@ export default function ItemMaster() {
 
   const startResize = (key: string) => (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     drag.current = { key, startX: e.clientX, startW: widths[key] ?? 140 };
     document.body.style.cursor = "col-resize";
   };
@@ -145,6 +199,16 @@ export default function ItemMaster() {
   const companies = useQuery({ queryKey: ["masters", "companies"], queryFn: fetchMasterCompanies, ...opts });
   const groups = useQuery({ queryKey: ["masters", "item_groups"], queryFn: () => fetchMasterLookup("mst_item_groups"), ...opts });
   const units = useQuery({ queryKey: ["masters", "units"], queryFn: () => fetchMasterLookup("mst_units"), ...opts });
+
+  /**
+   * ⚠ NOTHING IS EDITED, SAVED OR MOVED UNTIL ITEMS AND GROUPS HAVE BOTH LOADED.
+   *   Central's Group comes from the groups list; before it arrives every item's
+   *   central group reads as blank, so a save, an import or an export in that window
+   *   would compare against — or write — a Group that is simply not there yet.
+   */
+  const ready = items.isSuccess && groups.isSuccess;
+  const loadError = (items.error ?? groups.error) as Error | null;
+  const sideError = (companies.error ?? units.error) as Error | null;
 
   const centralIds = useMemo(() => (items.data ?? []).map((i) => i.id), [items.data]);
   useEffect(() => { if (centralIds.length) noteCentralIds(centralIds); }, [centralIds]);
@@ -184,22 +248,19 @@ export default function ItemMaster() {
     };
   }), [items.data, overrides, seen, centralGroupOf]);
 
-  /** What a cell shows: the unsaved draft if there is one, else what is stored. */
-  const stored = (row: MirrorRow, key: EditableKey): string => {
-    switch (key) {
-      case "itemType": return row.itemType ?? "";
-      case "category": return row.category ?? "";
-      case "inkType": return row.inkType ?? "";
-      case "groupName": return row.groupName ?? "";
-      case "color": return row.color ?? "";
-      case "code": return row.code ?? "";
-      case "description": return row.description ?? "";
-    }
+  const byId = useMemo(() => new Map((items.data ?? []).map((i) => [i.id, i])), [items.data]);
+
+  /** What is stored for a cell, and what central holds for it. */
+  const storedOf = (row: MirrorRow, key: EditableKey): string => row[key] ?? "";
+  const centralOf = (row: MirrorRow, key: EditableKey): string => {
+    const f = CENTRAL_FIELD[key];
+    return f ? ((row[f] as string | null) ?? "") : "";
   };
-  const valueOf = (row: MirrorRow, key: EditableKey): string => drafts[row.id]?.[key] ?? stored(row, key);
+  /** What a cell shows: the unsaved draft if there is one, else what is stored. */
+  const valueOf = (row: MirrorRow, key: EditableKey): string => drafts[row.id]?.[key] ?? storedOf(row, key);
   const isDirty = (row: MirrorRow, key: EditableKey) => {
     const d = drafts[row.id]?.[key];
-    return d !== undefined && d !== stored(row, key);
+    return d !== undefined && d !== storedOf(row, key);
   };
 
   const setCell = (row: MirrorRow, key: EditableKey, value: string) =>
@@ -207,7 +268,7 @@ export default function ItemMaster() {
       const next = { ...(cur[row.id] ?? {}), [key]: value };
       // A cell typed back to what is stored is not an edit; drop it, and drop the
       // row once nothing is left, so the Save count never counts a no-op.
-      if (value === stored(row, key)) delete next[key];
+      if (value === storedOf(row, key)) delete next[key];
       if (Object.keys(next).length === 0) {
         const { [row.id]: _gone, ...rest } = cur;
         return rest;
@@ -215,103 +276,177 @@ export default function ItemMaster() {
       return { ...cur, [row.id]: next };
     });
 
-  // ---- filtering ------------------------------------------------------------
-  const filtered = useMemo(() => {
-    let out = rows;
-    if (filter === "changed") out = out.filter((r) => r.isChanged);
-    if (filter === "new") out = out.filter((r) => r.isNew);
-    if (companyFilter) out = out.filter((r) => r.companyId === companyFilter);
-    if (typeFilter) out = out.filter((r) => (r.itemType ?? "") === (typeFilter === "__none" ? "" : typeFilter));
-    if (q.trim()) {
-      out = out.filter((r) => matchesSearch(q, `${r.name} ${r.code ?? ""} ${itemTypeLabel(r.itemType)} ${r.category ?? ""} ${r.inkType ?? ""} ${r.groupName ?? ""} ${r.color ?? ""} ${r.description ?? ""}`));
+  // ---- filtering and sorting --------------------------------------------------
+  /** The text a column shows — what its filter lists and its sort orders by. Stored values, not drafts. */
+  const colText = useCallback((row: MirrorRow, key: ColKey): string => {
+    switch (key) {
+      case "item": return row.name;
+      case "itemType": return itemTypeLabel(row.itemType);
+      case "company": return row.companyId ? companyLabel.get(row.companyId) ?? "" : "";
+      case "unit": return row.unitId ? unitName.get(row.unitId) ?? "" : "";
+      case "status": return row.isChanged ? "Changed by me" : "Same as central";
+      case "actions": return "";
+      default: return row[key] ?? "";
+    }
+  }, [companyLabel, unitName]);
+
+  const matchesQ = useCallback(
+    (r: MirrorRow) => !q.trim() ||
+      matchesSearch(q, `${r.name} ${r.code ?? ""} ${itemTypeLabel(r.itemType)} ${r.category ?? ""} ${r.inkType ?? ""} ${r.groupName ?? ""} ${r.color ?? ""} ${r.description ?? ""}`),
+    [q],
+  );
+  const passCols = useCallback(
+    (r: MirrorRow, except?: ColKey) => FILTER_KEYS.every((k) =>
+      k === except || !colFilters[k]?.length || colFilters[k].includes(filterValueOf(colText(r, k)))),
+    [colFilters, colText],
+  );
+  const passChip = useCallback(
+    (r: MirrorRow) => (filter === "changed" ? r.isChanged : filter === "new" ? r.isNew : true),
+    [filter],
+  );
+
+  const filtered = useMemo(
+    () => rows.filter((r) => passChip(r) && matchesQ(r) && passCols(r)),
+    [rows, passChip, matchesQ, passCols],
+  );
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    return [...filtered].sort((a, b) => sort.dir * collator.compare(colText(a, sort.key), colText(b, sort.key)));
+  }, [filtered, sort, colText]);
+
+  /** Each filter lists only what the OTHER filters still allow (the house cascade), never its own pick. */
+  const options = useMemo(() => {
+    const pre = rows.filter((r) => passChip(r) && matchesQ(r));
+    const out: Record<string, string[]> = {};
+    for (const k of FILTER_KEYS) {
+      const set = new Set<string>();
+      for (const r of pre) if (passCols(r, k)) set.add(filterValueOf(colText(r, k)));
+      out[k] = sortFilterOptions([...set], collator.compare);
     }
     return out;
-  }, [rows, filter, companyFilter, typeFilter, q]);
+  }, [rows, passChip, matchesQ, passCols, colText]);
 
-  const pg = usePagination(filtered, { resetKey: `${q}|${filter}|${companyFilter}|${typeFilter}` });
+  const pg = usePagination(sorted, {
+    resetKey: `${q}|${filter}|${JSON.stringify(colFilters)}|${sort?.key}|${sort?.dir}`,
+  });
 
-  const changedCount = useMemo(() => rows.filter((r) => r.isChanged).length, [rows]);
-  const newCount = useMemo(() => rows.filter((r) => r.isNew).length, [rows]);
+  /** The chips count what the OTHER filters leave, so they agree with the table beneath them. */
+  const chipBase = useMemo(() => rows.filter((r) => matchesQ(r) && passCols(r)), [rows, matchesQ, passCols]);
+  const changedCount = useMemo(() => chipBase.filter((r) => r.isChanged).length, [chipBase]);
+  const newCount = useMemo(() => chipBase.filter((r) => r.isNew).length, [chipBase]);
+  const changedTotal = useMemo(() => rows.filter((r) => r.isChanged).length, [rows]);
+  const newTotal = useMemo(() => rows.filter((r) => r.isNew).length, [rows]);
   const dirtyCount = Object.keys(drafts).length;
 
+  const activeColFilters = FILTER_KEYS.filter((k) => colFilters[k]?.length);
+  const anyFilter = !!q.trim() || filter !== "all" || activeColFilters.length > 0;
+  const clearFilters = () => { setQ(""); setFilter("all"); setColFilters({}); };
+  const toggleSort = (key: ColKey) =>
+    setSort((s) => (s?.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
+
   // ---- suggestions for the free-text cells ----------------------------------
-  const inUse = (pick: (r: MirrorRow) => string | null) =>
-    [...new Set(rows.map(pick).filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b));
-  const suggestions: Record<string, string[]> = useMemo(() => ({
-    category: inUse((r) => r.category),
-    inkType: inUse((r) => r.inkType),
-    groupName: [...new Set([...(groups.data ?? []).map((g) => g.name), ...inUse((r) => r.groupName)])].sort((a, b) => a.localeCompare(b)),
-    color: inUse((r) => r.color),
-    description: inUse((r) => r.description),
-  }), [rows, groups.data]);
+  const suggestions: Record<string, string[]> = useMemo(() => {
+    const inUse = (pick: (r: MirrorRow) => string | null) =>
+      [...new Set(rows.map(pick).filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b));
+    return {
+      category: inUse((r) => r.category),
+      inkType: inUse((r) => r.inkType),
+      groupName: [...new Set([...(groups.data ?? []).map((g) => g.name), ...inUse((r) => r.groupName)])].sort((a, b) => a.localeCompare(b)),
+      color: inUse((r) => r.color),
+      description: inUse((r) => r.description),
+    };
+  }, [rows, groups.data]);
+  // Built once per change of the lists, not on every keystroke in a cell.
+  const datalists = useMemo(() => Object.entries(suggestions).map(([key, values]) => (
+    <datalist key={key} id={`bcm-${key}`}>
+      {values.map((s) => <option key={s} value={s} />)}
+    </datalist>
+  )), [suggestions]);
 
   // ---- save / discard -------------------------------------------------------
-  const byId = useMemo(() => new Map((items.data ?? []).map((i) => [i.id, i])), [items.data]);
-
   const save = () => {
-    if (dirtyCount === 0) return;
-    setSaving(true);
+    if (!ready || dirtyCount === 0) return;
     const edits: MirrorEdit[] = [];
     for (const [id, values] of Object.entries(drafts)) {
       const item = byId.get(id);
       if (item) edits.push({ item, centralGroupName: centralGroupOf(item), values });
     }
-    const n = saveMany(edits);
-    setDrafts({});
-    setSaving(false);
-    setNote(`Saved your changes on ${n} item${n === 1 ? "" : "s"}.`);
+    try {
+      const n = saveMany(edits);
+      setDrafts({});
+      setNote({ text: `Saved your changes on ${plural(n, "item")}.` });
+    } catch (err) {
+      // Nothing was written: the drafts stay on screen, and the note says why.
+      setNote({ text: (err as Error).message, bad: true });
+    }
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
 
-  /** ⚠ Unsaved edits live in React state only — a reload would lose them silently. */
+  /** Drafts survive a reload in the browser; only when the browser refused to keep them is one lost. */
   useEffect(() => {
-    if (dirtyCount === 0) return;
+    if (dirtyCount === 0 || draftsKept) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirtyCount]);
+  }, [dirtyCount, draftsKept]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveRef.current(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   const resetRow = (row: MirrorRow) => {
+    // A saved change is gone for good once reset, so it asks; unsaved edits are only discarded.
+    if (row.isChanged && !window.confirm(`Undo your saved changes on "${row.name}" and go back to Central's values?`)) return;
     setDrafts((cur) => { const { [row.id]: _gone, ...rest } = cur; return rest; });
-    resetOverride(row.id);
+    if (!row.isChanged) return;
+    try {
+      resetOverride(row.id);
+      setNote({ text: `"${row.name}" is back to Central's values.` });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    }
   };
 
   // ---- Excel + backup -------------------------------------------------------
+  /** Import, Restore and Export all work on SAVED values, so unsaved edits must be settled first. */
+  const blockedByDrafts = dirtyCount > 0 ? `Save or discard your ${plural(dirtyCount, "unsaved item")} first.` : undefined;
+
   const doExport = () => {
     exportRowsToXlsx({
       fileName: "Bushra_Central_Master",
       sheetName: "Items",
-      title: "Bushra Central Master — items",
+      title: `${APP_NAME} — items`,
       columns: [
         { header: "ID", width: 24, value: (r: MirrorRow) => r.id },
         { header: "Item", width: 40, value: (r: MirrorRow) => r.name },
-        { header: "Company", value: (r: MirrorRow) => (r.companyId ? companyLabel.get(r.companyId) ?? "" : "") },
-        { header: "Type", value: (r: MirrorRow) => itemTypeLabel(r.itemType) },
-        { header: "Category", value: (r: MirrorRow) => r.category ?? "" },
-        { header: "Ink type", value: (r: MirrorRow) => r.inkType ?? "" },
-        { header: "Group", value: (r: MirrorRow) => r.groupName ?? "" },
-        { header: "Colour", value: (r: MirrorRow) => r.color ?? "" },
-        { header: "Code", value: (r: MirrorRow) => r.code ?? "" },
-        { header: "Description", width: 40, value: (r: MirrorRow) => r.description ?? "" },
+        { header: "Company", value: (r: MirrorRow) => colText(r, "company") },
+        ...EXCEL.map((c) => ({
+          header: c.header,
+          width: c.key === "description" ? 40 : undefined,
+          value: (r: MirrorRow) => (c.key === "itemType" ? itemTypeLabel(r.itemType) : storedOf(r, c.key)),
+        })),
+        ...EXCEL.filter((c) => c.centralHeader).map((c) => ({
+          header: c.centralHeader!,
+          value: (r: MirrorRow) => (c.key === "itemType" ? itemTypeLabel(r.centralType) : centralOf(r, c.key)),
+        })),
       ],
-      rows: filtered,
+      rows: sorted,
       filters: [
         ...(q.trim() ? [`Search: "${q.trim()}"`] : []),
         ...(filter === "changed" ? ["Only items I changed"] : filter === "new" ? ["Only new from central"] : []),
-        ...(companyFilter ? [`Company: ${companyLabel.get(companyFilter) ?? ""}`] : []),
-        ...(typeFilter ? [`Type: ${typeFilter === "__none" ? "Not set" : itemTypeLabel(typeFilter as ItemType)}`] : []),
+        ...activeColFilters.map((k) => `${HEADER[k]}: ${colFilters[k].map(filterOptionLabel).join(", ")}`),
       ],
       notes: [
         "Keep the ID column untouched — it is what matches a row back to the item.",
         "Fill in Type, Category, Ink type, Group, Colour, Code or Description and import this file back.",
         "Type must be one of the names the Type dropdown offers. Everything else is free text.",
+        "The \"Central …\" columns record what Central Masters said when this file was made. Leave them alone:",
+        "a value you leave equal to its Central column keeps following Central, even if Central changes it later.",
         "Rows with no ID, or an ID this master does not hold, are skipped. Central Masters is never changed.",
       ],
     });
@@ -334,47 +469,41 @@ export default function ItemMaster() {
         const item = row ? byId.get(id) : undefined;
         if (!row || !item) { skipped++; continue; }
 
-        const values: Draft = {};
-        const cell = (header: string) => String(rec[header] ?? "").trim();
-        const take = (key: EditableKey, header: string) => {
-          if (!Object.prototype.hasOwnProperty.call(rec, header)) return; // column absent — never clears
-          const v = cell(header);
-          if (v !== stored(row, key)) values[key] = v;
-        };
-        if (Object.prototype.hasOwnProperty.call(rec, "Type")) {
-          const v = cell("Type");
-          const match = ITEM_TYPES.find((t) => t.label.toLowerCase() === v.toLowerCase() || t.value === v);
-          if (v && !match) bad.push(`${row.name}: "${v}" is not a Type`);
-          else if ((match?.value ?? "") !== stored(row, "itemType")) values.itemType = match?.value ?? "";
+        const values: Partial<Record<EditableKey, string>> = {};
+        const has = (h: string) => Object.prototype.hasOwnProperty.call(rec, h);
+        const cell = (h: string) => String(rec[h] ?? "").trim();
+        for (const c of EXCEL) {
+          if (!has(c.header)) continue; // column absent — never clears
+          let v = cell(c.header);
+          let was = c.centralHeader && has(c.centralHeader) ? cell(c.centralHeader) : null;
+          if (c.key === "itemType") {
+            const t = typeValueOf(v);
+            if (t === null) { bad.push(`${row.name}: "${v}" is not a Type`); continue; }
+            v = t;
+            if (was !== null) was = typeValueOf(was) ?? was;
+          }
+          // Left as Central showed it when the file was made: it follows Central as it
+          // stands TODAY, so a correction made centrally since the export is not undone.
+          if (was !== null && v === was) v = centralValue(item, c.key, centralGroupOf(item)) ?? "";
+          if (v !== storedOf(row, c.key)) values[c.key] = v;
         }
-        take("category", "Category");
-        take("inkType", "Ink type");
-        take("groupName", "Group");
-        take("color", "Colour");
-        take("code", "Code");
-        take("description", "Description");
-
         if (Object.keys(values).length) edits.push({ item, centralGroupName: centralGroupOf(item), values });
       }
 
       const n = saveMany(edits);
-      setNote(
-        `Imported ${n} item${n === 1 ? "" : "s"}.`
-        + (skipped ? ` ${skipped} row${skipped === 1 ? "" : "s"} skipped (no matching ID).` : "")
-        + (bad.length ? ` ${bad.length} rejected — ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}` : ""),
-      );
+      setNote({
+        text: `Imported ${plural(n, "item")}.`
+          + (skipped ? ` ${plural(skipped, "row")} skipped (no matching ID).` : "")
+          + (bad.length ? ` ${bad.length} rejected — ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}` : ""),
+        bad: bad.length > 0,
+      });
     } catch (err) {
-      setNote(`Import failed: ${(err as Error).message}`);
+      setNote({ text: `Import failed: ${(err as Error).message}`, bad: true });
     }
   };
 
   const downloadBackup = () => {
-    const blob = new Blob([buildBackup()], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `bushra-central-master-backup ${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    saveAs(new Blob([buildBackup()], { type: "application/json" }), `bushra-central-master-backup ${todayLocalIso()}.json`);
   };
 
   const restoreBackup = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -382,15 +511,19 @@ export default function ItemMaster() {
     e.target.value = "";
     if (!file) return;
     try {
-      const n = applyBackup(await file.text());
-      setNote(`Restored your changes on ${n} item${n === 1 ? "" : "s"}.`);
+      const backup = parseBackup(await file.text());
+      const incoming = Object.keys(backup.overrides).length;
+      const when = backup.savedAt ? ` (saved ${new Date(backup.savedAt).toLocaleString("en-IN")})` : "";
+      if (!window.confirm(
+        `Replace your saved changes on ${plural(changedTotal, "item")} with this backup's ${plural(incoming, "item")}${when}?\n\n` +
+        "This cannot be undone. Take a Backup first if you might want today's changes back.",
+      )) return;
+      replaceAllOverrides(backup.overrides);
+      setNote({ text: `Restored your changes on ${plural(incoming, "item")}.` });
     } catch (err) {
-      setNote(`Restore failed: ${(err as Error).message}`);
+      setNote({ text: `Restore failed: ${(err as Error).message}`, bad: true });
     }
   };
-
-  const loading = [items, companies, groups, units].some((query) => query.isFetching);
-  const error = [items, companies, groups, units].find((query) => query.error)?.error as Error | undefined;
 
   const chip = (value: Filter, label: string) => (
     <button
@@ -408,14 +541,7 @@ export default function ItemMaster() {
   /** One editable cell. Free-text everywhere except Type, which is a fixed vocabulary. */
   const editor = (row: MirrorRow, key: EditableKey) => {
     const dirty = isDirty(row, key);
-    const mine = row.isChanged && stored(row, key) !== (
-      key === "itemType" ? (row.centralType ?? "")
-      : key === "category" ? (row.centralCategory ?? "")
-      : key === "inkType" ? (row.centralInkType ?? "")
-      : key === "groupName" ? (row.centralGroupName ?? "")
-      : key === "code" ? (row.centralCode ?? "")
-      : ""
-    );
+    const mine = row.isChanged && storedOf(row, key) !== centralOf(row, key);
     const border = dirty ? "border-orange bg-orange/5" : mine ? "border-transparent text-orange font-semibold" : "border-transparent hover:border-line";
 
     if (key === "itemType") {
@@ -451,16 +577,12 @@ export default function ItemMaster() {
   return (
     <div className="space-y-4">
       {/* Suggestion lists, once for the whole grid rather than per cell. */}
-      {Object.entries(suggestions).map(([key, values]) => (
-        <datalist key={key} id={`bcm-${key}`}>
-          {values.map((s) => <option key={s} value={s} />)}
-        </datalist>
-      ))}
+      {datalists}
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-[17px] font-semibold text-navy">Bushra Central Master</h1>
+            <h1 className="text-[17px] font-semibold text-navy">{APP_NAME}</h1>
             <p className="mt-1 max-w-3xl text-[13px] text-grey">
               Your own copy of the items in Central Masters. Type straight into the grid — Type, Category,
               Ink type, Group, Colour, Code and Description are all yours to fill in — then press
@@ -468,20 +590,23 @@ export default function ItemMaster() {
               anything you do here, and any new item added there turns up in this list on its own.
             </p>
             <p className="mt-1 text-[11.5px] text-grey-2">
-              Saved in this browser only. Values you have changed show in orange. Drag a column edge to resize it.
+              Saved in this browser only, for your login only — take a Backup now and then. Values you have
+              changed show in orange. Unsaved edits are kept until you Save or Discard. Drag a column edge to resize it.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {dirtyCount > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setDrafts({})}>Discard {dirtyCount}</Button>
             )}
-            <Button size="sm" onClick={save} disabled={dirtyCount === 0 || saving}>
-              {saving ? "Saving…" : dirtyCount > 0 ? `Save ${dirtyCount} change${dirtyCount === 1 ? "" : "s"}` : "Save"}
+            <Button size="sm" onClick={save} disabled={!ready || dirtyCount === 0}>
+              {dirtyCount > 0 ? `Save ${plural(dirtyCount, "change")}` : "Save"}
             </Button>
           </div>
         </div>
-        {note && <p className="mt-3 rounded bg-page px-3 py-2 text-[12.5px] text-navy">{note}</p>}
-        {error && <p className="mt-3 rounded bg-orange/10 px-3 py-2 text-[12.5px] text-orange">{error.message}</p>}
+        {note && (
+          <p className={`mt-3 rounded px-3 py-2 text-[12.5px] ${note.bad ? "bg-orange/10 text-orange" : "bg-page text-navy"}`}>{note.text}</p>
+        )}
+        {sideError && <p className="mt-3 rounded bg-orange/10 px-3 py-2 text-[12.5px] text-orange">{sideError.message}</p>}
       </Card>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -493,45 +618,36 @@ export default function ItemMaster() {
             className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[14px] text-ink placeholder:text-grey-2 outline-none focus:border-orange focus:ring-4 focus:ring-orange/10"
           />
         </div>
-        <select
-          value={companyFilter}
-          onChange={(e) => setCompanyFilter(e.target.value)}
-          className="rounded-xl border border-line bg-white px-3 py-2.5 text-[13px] text-navy outline-none focus:border-orange"
-        >
-          <option value="">All companies</option>
-          {(companies.data ?? []).map((c) => <option key={c.id} value={c.id}>{companyDisplayName(c)}</option>)}
-        </select>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-xl border border-line bg-white px-3 py-2.5 text-[13px] text-navy outline-none focus:border-orange"
-        >
-          <option value="">All types</option>
-          <option value="__none">Not set</option>
-          {ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
         {chip("changed", `Changed by me ${changedCount}`)}
         {chip("new", `New from central ${newCount}`)}
-        <Button variant="ghost" size="sm" onClick={doExport}>Export</Button>
+        {anyFilter && (
+          <button onClick={clearFilters} className="rounded-lg px-2 py-1 text-[12.5px] font-semibold text-grey-2 hover:bg-page hover:text-orange">
+            Clear filters
+          </button>
+        )}
+        <Button variant="ghost" size="sm" onClick={doExport} disabled={!ready || !!blockedByDrafts} title={blockedByDrafts}>Export</Button>
         <input ref={importRef} type="file" accept=".xlsx" className="hidden" onChange={doImport} />
-        <Button variant="ghost" size="sm" onClick={() => importRef.current?.click()}>Import</Button>
+        <Button variant="ghost" size="sm" onClick={() => importRef.current?.click()} disabled={!ready || !!blockedByDrafts} title={blockedByDrafts}>Import</Button>
         <input ref={backupRef} type="file" accept=".json,application/json" className="hidden" onChange={restoreBackup} />
         <Button variant="ghost" size="sm" onClick={downloadBackup}>Backup</Button>
-        <Button variant="ghost" size="sm" onClick={() => backupRef.current?.click()}>Restore</Button>
+        <Button variant="ghost" size="sm" onClick={() => backupRef.current?.click()} disabled={!!blockedByDrafts} title={blockedByDrafts}>Restore</Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 px-1 text-[12px] text-grey-2">
-        {newCount > 0 && (
+        {newTotal > 0 && (
           <button onClick={() => markAllSeen(centralIds)} className="hover:text-orange hover:underline">Mark all as seen</button>
         )}
         <button onClick={resetWidths} className="hover:text-orange hover:underline">Reset column widths</button>
-        {changedCount > 0 && (
+        {changedTotal > 0 && (
           <button
             onClick={() => {
-              if (window.confirm(`Undo your changes on all ${changedCount} items and go back to Central's values?`)) {
+              if (!window.confirm(`Undo your changes on all ${changedTotal} items and go back to Central's values?`)) return;
+              try {
                 resetAllOverrides();
                 setDrafts({});
-                setNote("All items are back to Central's values.");
+                setNote({ text: "All items are back to Central's values." });
+              } catch (err) {
+                setNote({ text: (err as Error).message, bad: true });
               }
             }}
             className="hover:text-orange hover:underline"
@@ -539,75 +655,117 @@ export default function ItemMaster() {
             Reset all to central
           </button>
         )}
-        {loading && <span>Loading…</span>}
+        {[items, companies, groups, units].some((query) => query.isFetching) && <span>Loading…</span>}
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="text-[13px]" style={{ tableLayout: "fixed", width: COLUMNS.reduce((n, c) => n + (widths[c.key] ?? c.width), 0) }}>
-            <colgroup>
-              {COLUMNS.map((c) => <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />)}
-            </colgroup>
-            <thead>
-              <tr className="border-b border-line text-left text-grey-2">
-                {COLUMNS.map((c) => (
-                  <th key={c.key} className="relative px-3 py-2.5 font-medium whitespace-nowrap">
-                    {c.header}
-                    {/* The drag handle. Sits on the column's right edge and never
-                        moves the header text, so a mis-grab does nothing. */}
-                    <span
-                      onMouseDown={startResize(c.key)}
-                      className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-orange/40"
-                      title="Drag to resize"
-                    />
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pg.pageItems.length === 0 && (
-                <tr>
-                  <td colSpan={COLUMNS.length} className="px-4 py-10 text-center text-[13px] text-grey-2">
-                    {rows.length === 0 ? "Loading the central master…" : "No item matches these filters."}
-                  </td>
-                </tr>
-              )}
-              {pg.pageItems.map((row) => (
-                <tr key={row.id} className={`border-b border-line/70 last:border-0 ${row.active ? "" : "bg-page/60"}`}>
-                  <td className="px-3 py-1.5 align-middle">
-                    <div className="truncate font-medium text-navy" title={row.name}>{row.name}</div>
-                    {row.isNew && (
-                      <span className="rounded bg-[#DCFCE7] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#166534]">New</span>
-                    )}
-                  </td>
-                  {EDIT_KEYS.map((key) => (
-                    <td key={key} className="px-1.5 py-1 align-middle">{editor(row, key)}</td>
+      {!ready ? (
+        <Card>
+          {loadError ? (
+            <div className="flex flex-wrap items-center gap-3 text-[13px] text-orange">
+              Could not load Central Masters: {loadError.message}
+              <Button size="sm" variant="ghost" onClick={() => { void items.refetch(); void groups.refetch(); }}>Try again</Button>
+            </div>
+          ) : (
+            <p className="text-[13px] text-grey-2">Loading the central master…</p>
+          )}
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="text-[13px]" style={{ tableLayout: "fixed", width: COLUMNS.reduce((n, c) => n + (widths[c.key] ?? c.width), 0) }}>
+              <colgroup>
+                {COLUMNS.map((c) => <col key={c.key} style={{ width: widths[c.key] ?? c.width }} />)}
+              </colgroup>
+              <thead>
+                <tr className="border-b border-line text-left text-grey-2">
+                  {COLUMNS.map((c) => (
+                    <th key={c.key} className="relative px-3 py-2.5 font-medium whitespace-nowrap">
+                      {c.key === "actions" ? null : (
+                        <button
+                          onClick={() => toggleSort(c.key)}
+                          title={`Sort by ${c.header}`}
+                          className={`inline-flex items-center gap-1 hover:text-orange ${sort?.key === c.key ? "text-navy" : ""}`}
+                        >
+                          {c.header}
+                          <span className={sort?.key === c.key ? "" : "opacity-30"}>
+                            {sort?.key !== c.key ? "↕" : sort.dir === 1 ? "↑" : "↓"}
+                          </span>
+                        </button>
+                      )}
+                      {/* The drag handle. Sits on the column's right edge and never
+                          moves the header text, so a mis-grab does nothing. */}
+                      <span
+                        onMouseDown={startResize(c.key)}
+                        className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-orange/40"
+                        title="Drag to resize"
+                      />
+                    </th>
                   ))}
-                  <td className="truncate px-3 py-1.5 text-[12px] text-grey">
-                    {row.companyId ? companyLabel.get(row.companyId) ?? "—" : "—"}
-                  </td>
-                  <td className="truncate px-3 py-1.5 text-[12px] text-grey">
-                    {row.unitId ? unitName.get(row.unitId) ?? "—" : "—"}
-                  </td>
-                  <td className="px-3 py-1.5 text-[12px]">
-                    {drafts[row.id]
-                      ? <span className="text-orange">Unsaved</span>
-                      : row.isChanged
-                        ? <span className="text-orange" title={Object.keys(overrides[row.id] ?? {}).filter((k): k is EditableKey => k in FIELD_LABEL).map((k) => FIELD_LABEL[k]).join(", ")}>Changed</span>
-                        : <span className="text-grey-2">Same as central</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-[12px]">
-                    {(row.isChanged || drafts[row.id]) ? (
-                      <button onClick={() => resetRow(row)} className="font-semibold text-grey hover:text-orange">Reset</button>
-                    ) : <span className="text-grey-2/50">—</span>}
-                  </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination state={pg} rowsLabel="items" />
-      </Card>
+                {/* A searchable filter under every column; each lists only what the others still allow. */}
+                <tr className="border-b border-line bg-page/40">
+                  {COLUMNS.map((c) => (
+                    <th key={c.key} className="px-1.5 py-1.5 font-normal">
+                      {FILTER_KEYS.includes(c.key) && (
+                        <MultiSelect
+                          values={colFilters[c.key] ?? []}
+                          onChange={(next) => setColFilters((f) => ({ ...f, [c.key]: next }))}
+                          options={(options[c.key] ?? []).map((o) => ({ value: o, label: filterOptionLabel(o) }))}
+                          placeholder="All"
+                          searchable
+                          triggerClassName={filterClass}
+                        />
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pg.pageItems.length === 0 && (
+                  <tr>
+                    <td colSpan={COLUMNS.length} className="px-4 py-10 text-center text-[13px] text-grey-2">
+                      {rows.length === 0 ? "Central Masters holds no items yet." : (
+                        <span className="inline-flex items-center gap-3">
+                          No item matches these filters.
+                          <Button size="sm" variant="ghost" onClick={clearFilters}>Clear filters</Button>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                {pg.pageItems.map((row) => (
+                  <tr key={row.id} className={`border-b border-line/70 last:border-0 ${row.active ? "" : "bg-page/60"}`}>
+                    <td className="px-3 py-1.5 align-middle">
+                      <div className="truncate font-medium text-navy" title={row.name}>{row.name}</div>
+                      {row.isNew && (
+                        <span className="rounded bg-[#DCFCE7] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#166534]">New</span>
+                      )}
+                    </td>
+                    {EDIT_KEYS.map((key) => (
+                      <td key={key} className="px-1.5 py-1 align-middle">{editor(row, key)}</td>
+                    ))}
+                    <td className="truncate px-3 py-1.5 text-[12px] text-grey">{colText(row, "company") || "—"}</td>
+                    <td className="truncate px-3 py-1.5 text-[12px] text-grey">{colText(row, "unit") || "—"}</td>
+                    <td className="px-3 py-1.5 text-[12px]">
+                      {drafts[row.id]
+                        ? <span className="text-orange">Unsaved</span>
+                        : row.isChanged
+                          ? <span className="text-orange" title={Object.keys(overrides[row.id] ?? {}).filter((k): k is EditableKey => k in FIELD_LABEL).map((k) => FIELD_LABEL[k]).join(", ")}>Changed</span>
+                          : <span className="text-grey-2">Same as central</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-[12px]">
+                      {(row.isChanged || drafts[row.id]) ? (
+                        <button onClick={() => resetRow(row)} className="font-semibold text-grey hover:text-orange">Reset</button>
+                      ) : <span className="text-grey-2/50">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination state={pg} rowsLabel="items" />
+        </Card>
+      )}
 
       {dirtyCount > 0 && (
         /* The grid is 25 rows tall and the Save button is at the top, so an edit
@@ -616,8 +774,9 @@ export default function ItemMaster() {
           <div className="flex items-center gap-3 rounded-full border border-orange/30 bg-white px-4 py-2 shadow-lg">
             <span className="text-[12.5px] text-navy">
               {dirtyCount} item{dirtyCount === 1 ? "" : "s"} edited, not saved
+              <span className="text-grey-2"> · Save or Discard before Import, Export or Restore</span>
             </span>
-            <Button size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+            <Button size="sm" onClick={save} disabled={!ready}>Save</Button>
             <button onClick={() => setDrafts({})} className="text-[12.5px] text-grey hover:text-orange">Discard</button>
           </div>
         </div>
