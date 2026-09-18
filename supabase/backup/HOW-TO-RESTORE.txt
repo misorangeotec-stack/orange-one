@@ -20,11 +20,11 @@ Orange One Hub/
   Files index.csv   One line per file: where it is here, and where it lives in
                     the portal. Opens in Excel. Needed to put files back.
   Database/         A complete copy of the portal's database, one per night,
-                    the newest 7 kept. Each is LOCKED (encrypted) - see below.
+                    the newest 7 kept (files ending ".dump").
 
 Tally (ConnectWave)/
   Database/         A complete copy of the Tally mirror database, taken every
-                    Sunday, the newest 4 kept. Also locked.
+                    Sunday, the newest 4 kept.
 
 Run logs/           One short note per night: what was copied, and any problem.
 
@@ -34,28 +34,25 @@ LOOKING FOR ONE DOCUMENT (anyone with access can do this)
 
 Open Files, then the module, the step, the month, and the record number.
 Or type the order / request / PO number into Google Drive's search box.
-Nothing needs to be unlocked for this: the documents are ordinary files.
 
 
-THE DATABASE COPIES ARE LOCKED ON PURPOSE
------------------------------------------
+THE DATABASE COPIES HOLD EVERYTHING
+-----------------------------------
 
-They contain every user's login, salaries, CVs and customers' commercial terms,
-so they are encrypted before they leave the server. They can only be opened with
-the DECRYPTION KEY - a small text file starting "AGE-SECRET-KEY-". That key is
-NOT kept in Google Drive. It is held by the people named by Orange O Tec.
-Without it the database copies cannot be opened by anyone, including us.
-Keep at least two copies of the key in two safe places.
+Each database copy contains every user's login details, salaries, CVs and
+customers' commercial terms, in one file. They are NOT encrypted (Orange O Tec's
+decision, 18-09-2026), so this folder must stay shared with named people only,
+and the backup@orangeonehub.com account must keep its 2-step verification.
 
 
 RESTORING (technical - for the person rebuilding the system)
 ------------------------------------------------------------
 
-Tools: age (https://age-encryption.org), PostgreSQL 17 client tools
-(pg_restore), rclone.
+Tools: PostgreSQL 17 client tools (pg_restore), rclone.
 
-1. Unlock a database copy:
-     age --decrypt -i BACKUP-DECRYPTION-KEY.txt -o orange-one-hub.dump orange-one-hub_YYYY-MM-DD_HHMM.dump.age
+1. Download a database copy (orange-one-hub_YYYY-MM-DD_HHMM.dump).
+   (If a file name ends in ".age", it was encrypted: unlock it first with
+    age --decrypt -i <key file> -o x.dump <file>.dump.age)
 
 2. Restore it into a NEW, EMPTY Supabase project (never over the live one).
    The copy holds the schemas public, private, auth, storage, cron and
