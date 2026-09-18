@@ -21,7 +21,8 @@ import {
   type TeamRow,
 } from "../lib/team";
 import { reportQuery, useReportParams } from "../lib/useReportParams";
-import PeriodControls from "../components/PeriodControls";
+import PeriodControls, { ExcelButton } from "../components/PeriodControls";
+import { exportTeam } from "../lib/exportTeam";
 import { Breakdown, KpiTiles, LABEL, ScoreCard } from "../components/Headline";
 import Trend from "../components/Trend";
 
@@ -79,6 +80,33 @@ export default function Team() {
   }, [rows, focus]);
   const toggleFocus = (f: NonNullable<Focus>) =>
     setFocus((cur) => (cur && cur.kind === f.kind && JSON.stringify(cur) === JSON.stringify(f) ? null : f));
+
+  // The Excel pack: what the page shows, plus each person's own MIS sheet.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const runExport = async () => {
+    if (!team) return;
+    setExportError(null);
+    setProgress({ done: 0, total: gridRows.filter((r) => r.given > 0).length });
+    try {
+      await exportTeam({
+        period,
+        team,
+        rows: gridRows,
+        totals,
+        scope: isAdmin ? "Everyone" : "Your reporting chain",
+        viewing: [
+          `Admins and shared logins: ${showHidden ? "shown" : "hidden"}`,
+          ...(focus ? [`Showing only: ${focus.kind === "band" ? BAND_LABEL[focus.band] : focus.name}`] : []),
+        ],
+        onProgress: (done, total) => setProgress({ done, total }),
+      });
+    } catch (e) {
+      setExportError((e as Error).message);
+    } finally {
+      setProgress(null);
+    }
+  };
 
   const num = (key: string, header: string, get: (r: TeamRow) => number): QueueColumn<TeamRow> => ({
     key,
@@ -223,7 +251,17 @@ export default function Team() {
               Show admins and shared logins ({hiddenCount})
             </label>
           )}
+          <div className="inline-flex items-center gap-2 sm:ml-auto">
+            {progress && <span className="text-[12px] text-grey tabular-nums">Sheet {progress.done} of {progress.total}…</span>}
+            <ExcelButton
+              onClick={runExport}
+              disabled={!team || gridRows.length === 0}
+              busy={!!progress}
+              title="The summary, plus every person's MIS sheet — the whole weekly review in one file"
+            />
+          </div>
         </div>
+        {exportError && <p className="mt-2 text-[12px] text-[#c0392b]">Could not build the file: {exportError}</p>}
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-[12px] text-grey">
           <span>
             <span className="font-semibold text-navy">Work counts in the {w} it was due.</span> Each person's line is exactly their own
