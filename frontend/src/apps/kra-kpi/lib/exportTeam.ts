@@ -62,6 +62,10 @@ export async function exportTeam(o: {
 }): Promise<void> {
   const { period, team, rows, totals, scope, viewing, onProgress } = o;
   const W = periodWord(period.mode);
+  // Highest score first, as the page opens: a full workload before low volume, no work last.
+  // The personal sheets follow the same order.
+  const key = (r: TeamRow) => (r.score === null ? -2000 : r.lowVolume ? r.score - 1000 : r.score);
+  const ordered = [...rows].sort((a, b) => key(b) - key(a) || a.name.localeCompare(b.name));
 
   const summary: ExportSheet<TeamRow> = {
     sheetName: "Team",
@@ -70,39 +74,37 @@ export async function exportTeam(o: {
       ["Who", scope],
       [W, periodLabel(period)],
       ["As of", formatDateTime(team.as_of)],
-      [
-        "Team",
-        `Score ${fmtScore(totals.score)} (last ${W.toLowerCase()} ${fmtScore(totals.lastScore)}) · ${totals.given} given · ${totals.done} done · ${totals.onTime} on time`,
-      ],
+      ["Team score", `${fmtScore(totals.score)} (last ${W.toLowerCase()} ${fmtScore(totals.lastScore)})`],
       [],
     ],
     preambleStyle: (r, c) =>
       r === 0 && c === 0 ? { font: { bold: true, sz: 14, color: { rgb: "0B1F3A" } } } : c === 0 && r > 0 && r < 5 ? { font: { bold: true, color: { rgb: "5B6B7F" } } } : undefined,
     columns: [
+      // The score leads, as on the page (the user, 19-09-2026).
       { header: "Person", width: 24, value: (r) => r.name },
-      { header: "Department", width: 22, value: (r) => r.department || "—" },
-      { header: "Designation", width: 22, value: (r) => r.designation || "—" },
-      { header: "Reports to", width: 22, value: (r) => r.reportsTo || "—" },
-      { header: "Given", width: 9, value: (r) => r.given },
+      { header: "Score", width: 9, value: (r) => (r.score === null ? "—" : r.score) },
+      { header: "Low volume", width: 11, value: (r) => (r.lowVolume ? "Yes" : "") },
+      { header: "Tasks given", width: 11, value: (r) => r.given },
       { header: "Done", width: 9, value: (r) => r.done },
       { header: "On time", width: 9, value: (r) => r.onTime },
       { header: "Late", width: 9, value: (r) => r.late },
       { header: "Not done", width: 9, value: (r) => r.missed },
-      { header: "% not done", width: 11, value: (r) => (r.pct1 === null ? "—" : r.pct1) },
-      { header: "% not on time", width: 13, value: (r) => (r.pct2 === null ? "—" : r.pct2) },
-      { header: "Score", width: 9, value: (r) => (r.score === null ? "—" : r.score) },
-      { header: "Low volume", width: 11, value: (r) => (r.lowVolume ? "Yes" : "") },
       { header: `Last ${W.toLowerCase()}`, width: 11, value: (r) => (r.lastScore === null ? "—" : r.lastScore) },
       { header: "Change", width: 9, value: (r) => fmtChange(r.change) },
+      { header: "% not done", width: 11, value: (r) => (r.pct1 === null ? "—" : r.pct1) },
+      { header: "% not on time", width: 13, value: (r) => (r.pct2 === null ? "—" : r.pct2) },
+      { header: "Department", width: 22, value: (r) => r.department || "—" },
+      { header: "Designation", width: 22, value: (r) => r.designation || "—" },
+      { header: "Reports to", width: 22, value: (r) => r.reportsTo || "—" },
       { header: "Worked in", width: 40, value: (r) => r.modules.join(", ") },
     ],
-    rows,
+    rows: ordered,
     rowStyle: (r) => (r.band === "low" ? { fill: { fgColor: { rgb: "FDECEB" } } } : undefined),
     freezeCols: 1,
   };
 
   // One MIS sheet per person with work due, from their own report.
-  const withWork = rows.filter((r) => r.given > 0);
+  const withWork = ordered.filter((r) => r.given > 0);
   const reports = await reportsFor(withWork.map((r) => r.id), period, onProgress);
   const names = tabNames(withWork.map((r) => r.name));
   const personal: ExportSheet<unknown>[] = [];

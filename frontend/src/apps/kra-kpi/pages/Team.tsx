@@ -23,7 +23,7 @@ import {
 import { reportQuery, useReportParams } from "../lib/useReportParams";
 import PeriodControls, { ExcelButton } from "../components/PeriodControls";
 import { exportTeam } from "../lib/exportTeam";
-import { Breakdown, KpiTiles, LABEL, ScoreCard } from "../components/Headline";
+import { LABEL, ScoreCard } from "../components/Headline";
 import Trend from "../components/Trend";
 
 const BANDS: { band: Band; bar: string }[] = [
@@ -66,18 +66,16 @@ export default function Team() {
   const banded = BANDS.reduce((n, b) => n + bands[b.band], 0);
 
   // The grid: everyone with work this period or last; a band or department click narrows it.
-  // It OPENS on who needs attention: comparable people, lowest score first, then the low-volume
-  // ones (a handful of tasks would otherwise crowd the top), then those with nothing due. Any
-  // column header still sorts the whole list.
-  const gridRows = useMemo(() => {
-    const rank = (r: TeamRow) => (r.score === null ? 2 : r.lowVolume ? 1 : 0);
-    return rows
-      .filter((r) => r.given > 0 || r.lastScore !== null)
-      .filter((r) =>
-        !focus ? true : focus.kind === "band" ? r.band === focus.band : (r.department || "No department") === focus.name,
-      )
-      .sort((a, b) => rank(a) - rank(b) || (a.score ?? 0) - (b.score ?? 0) || a.name.localeCompare(b.name));
-  }, [rows, focus]);
+  // It opens sorted by Score, highest first (see the column's sortValue).
+  const gridRows = useMemo(
+    () =>
+      rows
+        .filter((r) => r.given > 0 || r.lastScore !== null)
+        .filter((r) =>
+          !focus ? true : focus.kind === "band" ? r.band === focus.band : (r.department || "No department") === focus.name,
+        ),
+    [rows, focus],
+  );
   const toggleFocus = (f: NonNullable<Focus>) =>
     setFocus((cur) => (cur && cur.kind === f.kind && JSON.stringify(cur) === JSON.stringify(f) ? null : f));
 
@@ -134,6 +132,16 @@ export default function Team() {
     exportValue: (r) => fmtPct(get(r)),
   });
 
+  // The score leads — the user, 19-09-2026: "show the score and properly highlight it", sorted
+  // highest first. The number itself stays the same as on the person's own scorecard.
+  const SCORE_TONE: Record<Band, string> = {
+    top: "bg-[#e7f5ec] text-[#1f8a4d]",
+    middle: "bg-[#fcf3df] text-[#B7820E]",
+    low: "bg-[#fdeceb] text-[#c0392b]",
+    low_volume: "bg-page text-grey",
+    none: "bg-page text-grey-2",
+  };
+
   const columns: QueueColumn<TeamRow>[] = [
     {
       key: "person",
@@ -152,39 +160,13 @@ export default function Team() {
       filter: { kind: "select", get: (r) => r.name },
     },
     {
-      key: "department",
-      header: "Department",
-      cell: (r) => <span className="whitespace-nowrap text-grey">{r.department || "—"}</span>,
-      sortValue: (r) => r.department,
-      filter: { kind: "select", get: (r) => r.department },
-    },
-    {
-      key: "designation",
-      header: "Designation",
-      cell: (r) => <span className="block min-w-[150px] text-grey">{r.designation || "—"}</span>,
-      sortValue: (r) => r.designation,
-      filter: { kind: "select", get: (r) => r.designation },
-    },
-    {
-      key: "reports",
-      header: "Reports to",
-      cell: (r) => <span className="block min-w-[150px] text-grey">{r.reportsTo || "—"}</span>,
-      sortValue: (r) => r.reportsTo,
-      filter: { kind: "select", get: (r) => r.reportsTo },
-    },
-    num("given", "Given", (r) => r.given),
-    num("done", "Done", (r) => r.done),
-    num("ontime", "On time", (r) => r.onTime),
-    num("late", "Late", (r) => r.late),
-    num("missed", "Not done", (r) => r.missed),
-    pct("pct1", "% not done", (r) => r.pct1),
-    pct("pct2", "% not on time", (r) => r.pct2),
-    {
       key: "score",
       header: "Score",
-      align: "right",
       cell: (r) => (
-        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className={cn("inline-block min-w-[58px] rounded-lg px-2.5 py-1 text-center text-[15px] font-bold tabular-nums", SCORE_TONE[r.band])}>
+            {fmtScore(r.score)}
+          </span>
           {r.lowVolume && (
             <span
               title={`Fewer than ${LOW_VOLUME} pieces of work this ${w} — not comparable with a full workload`}
@@ -193,14 +175,19 @@ export default function Team() {
               low volume
             </span>
           )}
-          <span className="font-bold tabular-nums text-navy">{fmtScore(r.score)}</span>
         </span>
       ),
-      // No work this period sorts after every score when sorted lowest first.
-      sortValue: (r) => r.score ?? 1e9,
+      // Highest first by default, and among people with a full workload first: a "100" earned on
+      // two tasks follows them, and those with nothing due come last.
+      sortValue: (r) => (r.score === null ? -2000 : r.lowVolume ? r.score - 1000 : r.score),
       filter: { kind: "select", get: (r) => fmtScore(r.score) },
       exportValue: (r) => fmtScore(r.score),
     },
+    num("given", "Tasks given", (r) => r.given),
+    num("done", "Done", (r) => r.done),
+    num("ontime", "On time", (r) => r.onTime),
+    num("late", "Late", (r) => r.late),
+    num("missed", "Not done", (r) => r.missed),
     {
       key: "last",
       header: `Last ${w}`,
@@ -227,6 +214,29 @@ export default function Team() {
       sortValue: (r) => r.change ?? -1e9,
       filter: { kind: "select", get: (r) => fmtChange(r.change) },
       exportValue: (r) => fmtChange(r.change),
+    },
+    pct("pct1", "% not done", (r) => r.pct1),
+    pct("pct2", "% not on time", (r) => r.pct2),
+    {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="whitespace-nowrap text-grey">{r.department || "—"}</span>,
+      sortValue: (r) => r.department,
+      filter: { kind: "select", get: (r) => r.department },
+    },
+    {
+      key: "designation",
+      header: "Designation",
+      cell: (r) => <span className="block min-w-[150px] text-grey">{r.designation || "—"}</span>,
+      sortValue: (r) => r.designation,
+      filter: { kind: "select", get: (r) => r.designation },
+    },
+    {
+      key: "reports",
+      header: "Reports to",
+      cell: (r) => <span className="block min-w-[150px] text-grey">{r.reportsTo || "—"}</span>,
+      sortValue: (r) => r.reportsTo,
+      filter: { kind: "select", get: (r) => r.reportsTo },
     },
     {
       key: "modules",
@@ -297,12 +307,10 @@ export default function Team() {
                     {withWork} {withWork === 1 ? "person" : "people"} with work due · {team.without_work} with none
                     {!showHidden && hiddenCount > 0 && ` · admins and shared logins hidden`}
                   </p>
+                  {/* The team's score only — the user, 19-09-2026: team-wide task counts and the two
+                      percentages "do not make sense" for a team; each person's are in the table below. */}
                   <div className="mt-3 flex flex-wrap items-stretch gap-3">
                     <ScoreCard score={totals.score} lastScore={totals.lastScore} w={w} />
-                    <Breakdown totals={totals} />
-                  </div>
-                  <div className="mt-3">
-                    <KpiTiles totals={totals} w={w} />
                   </div>
 
                   {/* People by score — clicking a band narrows the grid to it. */}
@@ -357,7 +365,7 @@ export default function Team() {
                               <span className="min-w-0">
                                 <span className="block truncate text-[13px] font-semibold text-navy">{d.name}</span>
                                 <span className="block text-[11.5px] text-grey tabular-nums">
-                                  {d.people} {d.people === 1 ? "person" : "people"} · {d.given} given · {d.done} done ({d.onTime} on time)
+                                  {d.people} {d.people === 1 ? "person" : "people"}
                                 </span>
                               </span>
                               <span className="shrink-0 text-right">
@@ -388,6 +396,7 @@ export default function Team() {
                       periodFrom={period.from}
                       periodTo={period.to}
                       asOf={team.as_of_date}
+                      scoreOnly
                     />
                   </div>
                 </div>
@@ -417,6 +426,7 @@ export default function Team() {
                 rowsLabel="people"
                 emptyTitle={`No work due this ${w}`}
                 emptyMessage={`Nobody in view had work due in ${periodLabel(period)}.`}
+                initialSort={{ key: "score", dir: "desc" }}
               />
             </div>
           </Card>

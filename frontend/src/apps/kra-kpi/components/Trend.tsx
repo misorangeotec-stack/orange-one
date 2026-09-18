@@ -33,6 +33,7 @@ export default function Trend({
   periodFrom,
   periodTo,
   asOf,
+  scoreOnly = false,
 }: {
   weeks: TrendWeek[];
   /** Week mode: the report's own week, drawn in orange and labelled with its score. */
@@ -42,6 +43,8 @@ export default function Trend({
   periodTo: string;
   /** The figures' as-of day: the week containing it is still running. */
   asOf: string;
+  /** The readout gives the score alone — the Team page, where team-wide counts read as noise. */
+  scoreOnly?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   if (!weeks.length) return null;
@@ -123,7 +126,11 @@ export default function Trend({
       <p className="mt-2 min-h-[18px] text-[11.5px] text-grey tabular-nums" aria-live="polite">
         <span className="font-semibold text-navy">Week {tip.iso_week}</span> · {rangeLabel(tip.from, tip.to)}
         {tip.from <= asOf && asOf <= tip.to && " (so far)"} ·{" "}
-        {tip.score === null ? "nothing due" : `score ${fmtScore(tip.score)} · ${tip.on_time} on time, ${tip.done - tip.on_time} late, ${tip.given - tip.done} not done of ${tip.given}`}
+        {tip.score === null
+          ? "nothing due"
+          : scoreOnly
+            ? `score ${fmtScore(tip.score)}`
+            : `score ${fmtScore(tip.score)} · ${tip.on_time} on time, ${tip.done - tip.on_time} late, ${tip.given - tip.done} not done of ${tip.given}`}
       </p>
       {spills && (
         <p className="mt-1 text-[11px] leading-snug text-grey">
