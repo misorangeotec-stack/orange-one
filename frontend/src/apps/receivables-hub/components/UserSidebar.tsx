@@ -85,27 +85,54 @@ function CollapsibleMenu({ item }: { item: ReceivablesMenu }) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub>
-            {(item.children ?? []).map((child) => (
-              <SidebarMenuSubItem key={child.key}>
-                <SidebarMenuSubButton
-                  asChild
-                  // A report-category child is lit by the catalogue (see above); a dashboard
-                  // group by any of the pages it holds; a plain page child by its own path.
-                  isActive={child.categoryId
-                    ? activeCategory === child.categoryId
-                    : child.matchPaths
-                      ? child.matchPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
-                        (pathname === child.url.split("?")[0] && search === `?${child.url.split("?")[1] ?? ""}`)
-                      : pathname === child.url || pathname.startsWith(`${child.url}/`)}
-                  className="text-sidebar-foreground/70 data-[active=true]:!bg-primary/15 data-[active=true]:!text-primary data-[active=true]:font-semibold"
-                >
-                  <Link to={child.url}>
-                    {child.icon && <child.icon className="h-3.5 w-3.5 shrink-0" />}
-                    <span>{child.title}</span>
-                  </Link>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
+            {(item.children ?? []).map((child) => {
+              // A report-category child is lit by the catalogue (see above); a dashboard
+              // group by any of the pages it holds; a plain page child by its own path.
+              const childActive = child.categoryId
+                ? activeCategory === child.categoryId
+                : child.matchPaths
+                  ? child.matchPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+                    (pathname === child.url.split("?")[0] && search === `?${child.url.split("?")[1] ?? ""}`)
+                  : pathname === child.url || pathname.startsWith(`${child.url}/`);
+              return (
+                <SidebarMenuSubItem key={child.key}>
+                  <SidebarMenuSubButton
+                    asChild
+                    // A group with pages shows them below instead of lighting up itself, so exactly
+                    // one row — the page you are on — carries the highlight.
+                    isActive={childActive && !(child.pages?.length && child.pages.some((p) => pathname === p.url))}
+                    className="text-sidebar-foreground/70 data-[active=true]:!bg-primary/15 data-[active=true]:!text-primary data-[active=true]:font-semibold"
+                  >
+                    <Link to={child.url}>
+                      {child.icon && <child.icon className="h-3.5 w-3.5 shrink-0" />}
+                      <span>{child.title}</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                  {/* The group's own screens, listed while you are in that group. */}
+                  {childActive && child.pages && child.pages.length > 0 && (
+                    <ul className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+                      {child.pages.map((p) => {
+                        const on = pathname === p.url || pathname.startsWith(`${p.url}/`);
+                        return (
+                          <li key={p.key}>
+                            <Link
+                              to={p.url}
+                              className={`block truncate rounded-button px-2 py-1 text-[12px] transition-colors ${
+                                on
+                                  ? "bg-primary/15 font-semibold text-primary"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                              }`}
+                            >
+                              {p.title}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </SidebarMenuSubItem>
+              );
+            })}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>

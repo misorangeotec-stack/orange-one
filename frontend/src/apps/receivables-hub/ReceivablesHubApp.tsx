@@ -55,6 +55,9 @@ import SalesRegister from "@hub/pages/SalesRegister";
 import SOARegister from "@hub/pages/SOARegister";
 import StockSummary from "@hub/pages/StockSummary";
 import BatchCosting from "@hub/pages/BatchCosting";
+import BushraSalesRegister from "@hub/pages/BushraSalesRegister";
+import BushraSalesDashboard from "@hub/pages/BushraSalesDashboard";
+import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import ProductionBatchCostingDashboard from "@hub/pages/ProductionBatchCostingDashboard";
 import ProductionExpenses from "@hub/pages/ProductionExpenses";
 import BushraDashboards from "@hub/pages/BushraDashboards";
@@ -123,6 +126,12 @@ function HubRoutes() {
             <Route path="bushra-dashboard" element={<BushraDashboards />} />
             <Route element={<RequireReportAccess />}>
               <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
+              {/* Sales → every Sales dashboard (pure sales, each product, FOC, SOA, branch &
+                  related): one screen, a preset per route (lib/bushraSalesDashboards.ts). The key
+                  resets the filters when moving between them. */}
+              {SALES_DASHBOARDS.map((p) => (
+                <Route key={p.id} path={p.path} element={<BushraSalesDashboard key={p.id} presetId={p.id} />} />
+              ))}
               {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
                   company, and the full cost of a kilogram once they are absorbed. */}
               <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
@@ -295,6 +304,9 @@ function HubRoutes() {
                   rpt_batch_line, classified per batch (lib/batchCostingRules.ts). Source-agnostic;
                   own company + FY + period pickers — see FY_PINNED_ROUTES. */}
               <Route path="reports/batch-costing" element={<BatchCosting />} />
+              {/* Reports → Bushra-Report → Sales Register. The Tally Sales Register plus Item Type,
+                  Group, Category and Colour (lib/bushraSalesRegister.ts). Own From/To window. */}
+              <Route path="reports/bushra-sales-register" element={<BushraSalesRegister />} />
             </Route>
           </Route>
           {/* Customer Creation FMS.

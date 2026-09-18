@@ -41,6 +41,7 @@ import { BadgeIndianRupee } from "lucide-react";
 // RC-13's icon, on its own line so it never collides with edits to the list above.
 import { FileWarning } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import type { Crumb } from "@/apps/currentApp";
 
 /**
@@ -247,7 +248,7 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
   {
     id: "bushra-report",
     title: "Bushra-Report",
-    blurb: "Bushra's reports — production and batch costing, read straight from the Tally books.",
+    blurb: "Bushra's reports — production, batch costing and sales, read straight from the Tally books.",
     icon: ClipboardList,
   },
 ];
@@ -856,6 +857,19 @@ export const REPORTS: ReportEntry[] = [
       "reactive", "item category", "lot", "batch", "bushra",
     ],
   },
+  {
+    id: "bushra-sales-register",
+    // Same read as the Tally Sales Register — rpt_sales_register with .in("party", …).
+    scoping: "party-server",
+    title: "Sales Register",
+    purpose: "Every sales voucher line, with sales-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-sales-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
+  },
 
   // ── Bushra-Dashboard screens ───────────────────────────────────────────────
   // The three screens under the Bushra-Dashboard MENU are catalogued here so they are granted
@@ -900,6 +914,25 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
+  // Bushra-Dashboard → Sales: one entry per dashboard, generated from lib/bushraSalesDashboards.ts so
+  // each id and path matches its screen. All built on the Bushra Sales Register (party-server scope).
+  ...SALES_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "party-server",
+    // NOT emailable yet: the figures (lib/bushraSalesSummary.ts), the PDF (lib/bushraSalesPdf.ts)
+    // and the mail setup (components/BushraSalesMailOptions.tsx) are built, but no sender reads
+    // them — the Collections runner mails zero-collections alone. Tick `emailable: true` in the
+    // commit that adds the sender, as the rule on the field says; that also brings back the
+    // dashboard's Auto email button and its switch in Settings → Permissions.
+    title: p.id === "bushra-sales-dashboard" ? p.title : `Sales — ${p.title} Dashboard`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: ShoppingCart,
+    source: "tally",
+    status: "live",
+    keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
+  })),
 ];
 
 /** Absolute URL for a report. Empty for a "soon" entry, which is never a link. */
