@@ -11,6 +11,7 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
+import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -67,6 +68,9 @@ export const apps: AppManifest[] = [
   // Production Entry FMS — separate module (own fms_production_* tables), granted per
   // user to the production team (not universal). Ink production job-card tracker.
   productionEntryApp,
+  // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
+  // central master live and keeps every change in the browser; nothing is written back.
+  bushraCentralMasterApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
