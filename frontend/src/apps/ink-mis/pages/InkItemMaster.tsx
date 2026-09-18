@@ -470,6 +470,9 @@ export default function InkItemMaster() {
     setImporting(true);
     setIoNotice(null);
     try {
+      // Matched against the WHOLE loaded set, not the filtered list. A file exported yesterday
+      // can name an ink that has since sold out, and rejecting it as unmatched would read as
+      // lost work; its number and lead time should still apply for when it comes back.
       const res = await importItemMaster(file, master, { overrides, order, plans, lines });
       setOverrides(res.overrides);
       setOrder(res.order);
@@ -595,8 +598,9 @@ export default function InkItemMaster() {
         <div>
           <h1 className="text-2xl font-semibold">Item master</h1>
           <p className="text-sm text-muted-foreground">
-            Every item in all four books. Fill in the number, code, group and description you want
-            the report to use, then press Save. Leave a box empty to keep what Tally says.
+            Items with stock, across all four books. Fill in the number, code, group and
+            description you want the report to use, then press Save. Leave a box empty to keep
+            what Tally says.
           </p>
         </div>
         <Button size="sm" asChild variant="secondary">
@@ -658,8 +662,8 @@ export default function InkItemMaster() {
           size="sm"
           variant="outline"
           disabled={!master.length}
-          title="Download every item in this scope, with its current order, code, group and description"
-          onClick={() => exportItemMaster(master, order, plans)}
+          title="Download the rows listed below, with their order, lead time, code, group, description, category and Import/Plant"
+          onClick={() => exportItemMaster(rows, order, plans)}
         >
           <Download className="mr-2 h-4 w-4" /> Export to Excel
         </Button>
