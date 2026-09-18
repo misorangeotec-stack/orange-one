@@ -134,9 +134,12 @@ export default function InkItemMaster() {
    * ONLY WHAT IS ON THE SHELF, by default.
    *
    * Tally's four books hold thousands of items, most of them long dead, and a list that long is
-   * not a working list. So the master shows what has a closing quantity — plus anything the
-   * planner has numbered or edited, which they have said they care about whether or not it is
-   * in stock today. The switch shows the rest when they need to reach one.
+   * not a working list. The master shows what carries a closing quantity and nothing else: an ink
+   * that has sold out drops off until it is bought again. The switch shows everything when the
+   * planner needs to reach an item that is out of stock.
+   *
+   * Their numbering, lead times and categories are untouched by this — the line simply is not
+   * listed while it is empty, and comes back with everything still attached.
    */
   const [stockOnly, setStockOnly] = useState(true);
   /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
@@ -303,14 +306,13 @@ export default function InkItemMaster() {
           (f.code.includes("edited") && Boolean(overrides[r.key]));
         if (!hit) return false;
       }
-      if (
-        stockOnly &&
-        !r.closingQty &&
-        (order[r.mergeKey] ?? order[r.legacyKey]) === undefined &&
-        !overrides[r.key]
-      ) {
-        return false;
-      }
+      // STOCK OR NOTHING. An ink that has sold out is off the list until it is bought again —
+      // no exemption for one already numbered or edited, which is what the planner asked for and
+      // is also the only rule that keeps the list the length of the shelf.
+      //
+      // A NEGATIVE quantity stays: it is not "no stock", it is a book that needs fixing, and
+      // hiding it would hide the error.
+      if (stockOnly && !r.closingQty) return false;
       if (f.groups.length && !f.groups.includes(r.effectiveGroup)) return false;
       // "(none)" is a real choice: finding what is not categorised yet is the point of the filter.
       if (f.categories.length && !f.categories.includes(r.category || "(none)")) return false;
@@ -376,6 +378,24 @@ export default function InkItemMaster() {
     setSeen(all);
     saveSeenLines(all);
   }, [master, seen.length]);
+
+  /**
+   * A line that has gone out of stock is forgotten, so buying it again is announced as an
+   * arrival rather than slipping back in silently.
+   *
+   * Only keys the loaded list can vouch for are dropped. A key absent from the current scope is
+   * left alone — not loaded is not the same as not in stock.
+   */
+  useEffect(() => {
+    if (!master.length || !seen.length) return;
+    const empty = new Set<string>();
+    for (const r of master) if (!r.closingQty) empty.add(r.mergeKey);
+    if (!empty.size) return;
+    const kept = seen.filter((k) => !empty.has(k));
+    if (kept.length === seen.length) return;
+    setSeen(kept);
+    saveSeenLines(kept);
+  }, [master, seen]);
 
   const dismissNewLines = () => {
     const next = [...seen, ...newLines.map((r) => r.mergeKey)];
