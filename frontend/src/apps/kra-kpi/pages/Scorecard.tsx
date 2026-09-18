@@ -14,6 +14,7 @@ import { useKpiReport, type ReportItem } from "../data/report";
 import { fmtPct, fmtScore } from "../facts/score";
 import { exportKpiScorecard } from "../lib/exportKpi";
 import {
+  canStepForward,
   isRunning,
   monthOf,
   periodFromParams,
@@ -130,7 +131,7 @@ export default function Scorecard() {
     on_time: `Done on time`,
     late: `Done late`,
     missed: `Not done`,
-    still: `Still due later this ${w}`,
+    still: `Due later this ${w} — not counted yet`,
     next: `Planned next ${w}`,
     last: `Given last ${w}`,
   };
@@ -217,7 +218,9 @@ export default function Scorecard() {
     percent("pct2", "% not on time", (r) => r.pct2, true),
     lastPercent("last2", (r) => r.last2, true),
     {
-      ...count("still", "Still due", (r) => r.stillDue, "still"),
+      // Not part of the measure: work not yet due is held against nobody. Kept as a
+      // column only so a row can show what is still to come this period.
+      ...count("still", "Due later", (r) => r.stillDue, "still"),
       cell: (r) => (
         <CountButton
           value={r.stillDue}
@@ -310,13 +313,20 @@ export default function Scorecard() {
                   type="date"
                   value={draft.to}
                   min={draft.from}
+                  max={today()}
                   onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
                   aria-label="To"
                   className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] text-ink outline-none focus:border-orange"
                 />
                 <button
                   type="button"
-                  disabled={!draft.from || !draft.to || draft.from > draft.to || (draft.from === period.from && draft.to === period.to)}
+                  disabled={
+                    !draft.from ||
+                    !draft.to ||
+                    draft.from > draft.to ||
+                    draft.to > today() ||
+                    (draft.from === period.from && draft.to === period.to)
+                  }
                   onClick={() => setPeriod({ mode: "custom", from: draft.from, to: draft.to })}
                   className="h-9 rounded-lg bg-navy px-3 text-[12.5px] font-semibold text-white transition disabled:opacity-40"
                 >
@@ -334,11 +344,14 @@ export default function Scorecard() {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
                 <span className="min-w-[170px] px-1 text-center text-[13px] font-semibold text-navy tabular-nums">{periodLabel(period)}</span>
+                {/* Stops at the current week / month: a period that has not started has no figures. */}
                 <button
                   type="button"
                   onClick={() => setPeriod(step(period, 1))}
+                  disabled={!canStepForward(period)}
                   aria-label={`Next ${w}`}
-                  className="grid h-9 w-9 place-items-center rounded-lg border border-line text-grey transition hover:border-orange/40 hover:text-orange"
+                  title={canStepForward(period) ? `Next ${w}` : `This is the current ${w}`}
+                  className="grid h-9 w-9 place-items-center rounded-lg border border-line text-grey transition enabled:hover:border-orange/40 enabled:hover:text-orange disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
@@ -372,11 +385,6 @@ export default function Scorecard() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-[12px] text-grey">
-          {report && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-orange/[0.08] px-2.5 py-0.5 font-semibold text-navy">
-              Score {fmtScore(totals.score)}
-            </span>
-          )}
           <span>
             <span className="font-semibold text-navy">Work counts in the {w} it was due.</span> It joins <em>Given</em> once it is done or its due
             date has passed.
@@ -393,6 +401,18 @@ export default function Scorecard() {
         </Card>
       ) : (
         <>
+          {/* ── The headline first: the score, the totals, each module, the trend.
+                The grid below is the detail behind it (the user, 18-09-2026). ── */}
+          {report && (
+            <Consolidated
+              period={period}
+              report={report}
+              totals={totals}
+              modules={modules}
+              onDrill={(what, module) => openDrill(what, { module })}
+            />
+          )}
+
           {/* ── The grid: one row per task / step, both KPIs side by side ── */}
           <Card className="p-0 overflow-hidden">
             <div className="flex flex-wrap gap-x-6 gap-y-1 px-4 pt-3 pb-2 text-[11.5px] text-grey">
@@ -417,16 +437,6 @@ export default function Scorecard() {
               />
             </div>
           </Card>
-
-          {report && (
-            <Consolidated
-              period={period}
-              report={report}
-              totals={totals}
-              modules={modules}
-              onDrill={(what, module) => openDrill(what, { module })}
-            />
-          )}
 
           {/* ── Small print: what the numbers do and do not count ── */}
           {report && (

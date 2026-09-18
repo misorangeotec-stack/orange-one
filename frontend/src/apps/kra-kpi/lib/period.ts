@@ -60,6 +60,15 @@ export function rangeLabel(from: string, to: string): string {
   return `${a.d}–${b.d} ${MONTHS[a.m - 1]} ${a.y}`;
 }
 
+/** "1–2 Aug", "31 Aug", "31 Aug–2 Sep" — a range without its year, for tight labels. */
+export function shortRangeLabel(from: string, to: string): string {
+  const a = parts(from);
+  const b = parts(to);
+  if (from === to) return `${a.d} ${MONTHS[a.m - 1]}`;
+  if (a.m !== b.m) return `${a.d} ${MONTHS[a.m - 1]}–${b.d} ${MONTHS[b.m - 1]}`;
+  return `${a.d}–${b.d} ${MONTHS[a.m - 1]}`;
+}
+
 /** "Week 38 · 14–20 Sep 2026", "September 2026", or the range. */
 export function periodLabel(p: Period): string {
   if (p.mode === "week") return `Week ${isoWeekOf(p.from).isoWeek} · ${rangeLabel(p.from, p.to)}`;
@@ -77,13 +86,26 @@ export const periodWord = (mode: PeriodMode): string =>
 /** Does this period contain today? Its later days' work is then still due, not missed. */
 export const isRunning = (p: Period): boolean => p.from <= today() && today() <= p.to;
 
+/**
+ * A period that has not started has nothing to report — no work in it is due yet, and the
+ * only things it could show are steps finished ahead of time, which read as a perfect score
+ * for a week nobody has worked (the user caught exactly that on 18-09-2026). Next period's
+ * work is already on the report as "Next planned", so the screen never steps into one.
+ */
+export const hasStarted = (p: Pick<Period, "from">): boolean => p.from <= today();
+export const canStepForward = (p: Period): boolean => hasStarted(step(p, 1));
+
 /** Read a period from the URL, falling back to this week. Invalid input never throws. */
 export function periodFromParams(mode: string | null, from: string | null, to: string | null): Period {
   const valid = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
-  if (mode === "month" && valid(from)) return monthOf(from);
-  if (mode === "custom" && valid(from) && valid(to) && from <= to && daysIn({ from, to }) <= 366) {
-    return { mode: "custom", from, to };
-  }
-  if (valid(from)) return weekOf(from);
-  return weekOf(today());
+  let p: Period;
+  if (mode === "month" && valid(from)) p = monthOf(from);
+  else if (mode === "custom" && valid(from) && valid(to) && from <= to && daysIn({ from, to }) <= 366) {
+    // A range may run up to today, never past it.
+    p = { mode: "custom", from, to: to > today() ? today() : to };
+  } else if (valid(from)) p = weekOf(from);
+  else p = weekOf(today());
+  // A link into the future lands on the current week or month instead.
+  if (!hasStarted(p)) return p.mode === "month" ? monthOf(today()) : weekOf(today());
+  return p;
 }

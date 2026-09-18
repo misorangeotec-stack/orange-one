@@ -71,7 +71,10 @@ export interface TrendWeek {
   to: string;
   iso_week: number;
   iso_year: number;
-  /** Clipped to the range — fewer than seven days. */
+  /**
+   * Always false since 20261128122000: every trend week is whole, Monday to Sunday, even
+   * where it reaches outside the period. Kept only because the RPC still returns it.
+   */
   partial: boolean;
   given: number;
   done: number;
