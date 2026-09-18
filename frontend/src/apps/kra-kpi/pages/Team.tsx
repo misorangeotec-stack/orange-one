@@ -1,4 +1,406 @@
-/** The Team summary (KPI-2) — built in phase 3. */
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import Card from "@/shared/components/ui/Card";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import { useSession } from "@/core/platform/session";
+import { cn } from "@/shared/lib/cn";
+import { formatDateTime } from "@/shared/lib/time";
+import { appBasePath } from "@/apps/appInfo";
+import { useKpiTeam } from "../data/team";
+import { fmtPct, fmtScore } from "../facts/score";
+import { periodLabel, periodWord } from "../lib/period";
+import {
+  BAND_LABEL,
+  LOW_VOLUME,
+  bandCounts,
+  departmentSplit,
+  teamTotals,
+  teamTrend,
+  toTeamRows,
+  type Band,
+  type TeamRow,
+} from "../lib/team";
+import { reportQuery, useReportParams } from "../lib/useReportParams";
+import PeriodControls from "../components/PeriodControls";
+import { Breakdown, KpiTiles, LABEL, ScoreCard } from "../components/Headline";
+import Trend from "../components/Trend";
+
+const BANDS: { band: Band; bar: string }[] = [
+  { band: "top", bar: "bg-ryg-green" },
+  { band: "middle", bar: "bg-ryg-yellow" },
+  { band: "low", bar: "bg-ryg-red" },
+  { band: "low_volume", bar: "bg-navy/25" },
+];
+
+type Focus = { kind: "band"; band: Band } | { kind: "department"; name: string } | null;
+
+const fmtChange = (x: number | null) => (x === null ? "—" : x === 0 ? "0.0" : `${x > 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}`);
+
+/**
+ * The Team summary (KPI-2): everyone's KRA / KPI figures side by side, for admins (everyone)
+ * and HODs / sub-HODs (their reporting chain) — kpi_team decides who, on the server.
+ *
+ * Built to the rules the user set on the individual scorecard (18-09-2026): the headline
+ * first, the figures as a tree, whole weeks, never a period that has not started. Each person's
+ * line is exactly their own scorecard's figures; their name opens that scorecard for the same
+ * period, so a director reads the summary and only drills into a row that needs explaining.
+ */
 export default function Team() {
-  return null;
+  const { isAdmin } = useSession();
+  const { period, setPeriod } = useReportParams();
+  const [showHidden, setShowHidden] = useState(false);
+  const [focus, setFocus] = useState<Focus>(null);
+  const q = useKpiTeam(period.from, period.to);
+  const team = q.data ?? null;
+  const W = periodWord(period.mode);
+  const w = W.toLowerCase();
+
+  const rows = useMemo(() => (team ? toTeamRows(team.people, showHidden) : []), [team, showHidden]);
+  const hiddenCount = useMemo(() => (team ? team.people.filter((p) => p.is_admin || p.is_excluded).length : 0), [team]);
+  const totals = useMemo(() => teamTotals(rows, team?.people ?? []), [rows, team]);
+  const bands = useMemo(() => bandCounts(rows), [rows]);
+  const depts = useMemo(() => departmentSplit(rows), [rows]);
+  const trend = useMemo(() => teamTrend(rows, team?.weeks ?? []), [rows, team]);
+  const withWork = rows.filter((r) => r.given > 0).length;
+  const banded = BANDS.reduce((n, b) => n + bands[b.band], 0);
+
+  // The grid: everyone with work this period or last; a band or department click narrows it.
+  // It OPENS on who needs attention: comparable people, lowest score first, then the low-volume
+  // ones (a handful of tasks would otherwise crowd the top), then those with nothing due. Any
+  // column header still sorts the whole list.
+  const gridRows = useMemo(() => {
+    const rank = (r: TeamRow) => (r.score === null ? 2 : r.lowVolume ? 1 : 0);
+    return rows
+      .filter((r) => r.given > 0 || r.lastScore !== null)
+      .filter((r) =>
+        !focus ? true : focus.kind === "band" ? r.band === focus.band : (r.department || "No department") === focus.name,
+      )
+      .sort((a, b) => rank(a) - rank(b) || (a.score ?? 0) - (b.score ?? 0) || a.name.localeCompare(b.name));
+  }, [rows, focus]);
+  const toggleFocus = (f: NonNullable<Focus>) =>
+    setFocus((cur) => (cur && cur.kind === f.kind && JSON.stringify(cur) === JSON.stringify(f) ? null : f));
+
+  const num = (key: string, header: string, get: (r: TeamRow) => number): QueueColumn<TeamRow> => ({
+    key,
+    header,
+    align: "right",
+    cell: (r) => <span className={cn("tabular-nums", get(r) === 0 && "text-grey-2")}>{get(r)}</span>,
+    sortValue: get,
+    filter: { kind: "select", get: (r) => String(get(r)) },
+    exportValue: get,
+  });
+  const pct = (key: string, header: string, get: (r: TeamRow) => number | null): QueueColumn<TeamRow> => ({
+    key,
+    header,
+    align: "right",
+    cell: (r) => {
+      const v = get(r);
+      return (
+        <span className={cn("tabular-nums whitespace-nowrap", v === null ? "text-grey-2" : v < 0 ? "font-semibold text-[#c0392b]" : "font-semibold text-[#1f8a4d]")}>
+          {fmtPct(v)}
+        </span>
+      );
+    },
+    sortValue: (r) => get(r) ?? -1e9,
+    filter: { kind: "select", get: (r) => fmtPct(get(r)) },
+    exportValue: (r) => fmtPct(get(r)),
+  });
+
+  const columns: QueueColumn<TeamRow>[] = [
+    {
+      key: "person",
+      header: "Person",
+      alwaysVisible: true,
+      cell: (r) => (
+        <Link
+          to={`${appBasePath("kra-kpi")}?${reportQuery(period, r.id)}`}
+          title={`Open ${r.name}'s scorecard for ${periodLabel(period)}`}
+          className="whitespace-nowrap font-semibold text-navy underline decoration-line underline-offset-2 hover:text-orange"
+        >
+          {r.name}
+        </Link>
+      ),
+      sortValue: (r) => r.name,
+      filter: { kind: "select", get: (r) => r.name },
+    },
+    {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="whitespace-nowrap text-grey">{r.department || "—"}</span>,
+      sortValue: (r) => r.department,
+      filter: { kind: "select", get: (r) => r.department },
+    },
+    {
+      key: "designation",
+      header: "Designation",
+      cell: (r) => <span className="block min-w-[150px] text-grey">{r.designation || "—"}</span>,
+      sortValue: (r) => r.designation,
+      filter: { kind: "select", get: (r) => r.designation },
+    },
+    {
+      key: "reports",
+      header: "Reports to",
+      cell: (r) => <span className="block min-w-[150px] text-grey">{r.reportsTo || "—"}</span>,
+      sortValue: (r) => r.reportsTo,
+      filter: { kind: "select", get: (r) => r.reportsTo },
+    },
+    num("given", "Given", (r) => r.given),
+    num("done", "Done", (r) => r.done),
+    num("ontime", "On time", (r) => r.onTime),
+    num("late", "Late", (r) => r.late),
+    num("missed", "Not done", (r) => r.missed),
+    pct("pct1", "% not done", (r) => r.pct1),
+    pct("pct2", "% not on time", (r) => r.pct2),
+    {
+      key: "score",
+      header: "Score",
+      align: "right",
+      cell: (r) => (
+        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+          {r.lowVolume && (
+            <span
+              title={`Fewer than ${LOW_VOLUME} pieces of work this ${w} — not comparable with a full workload`}
+              className="rounded-full bg-page px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2"
+            >
+              low volume
+            </span>
+          )}
+          <span className="font-bold tabular-nums text-navy">{fmtScore(r.score)}</span>
+        </span>
+      ),
+      // No work this period sorts after every score when sorted lowest first.
+      sortValue: (r) => r.score ?? 1e9,
+      filter: { kind: "select", get: (r) => fmtScore(r.score) },
+      exportValue: (r) => fmtScore(r.score),
+    },
+    {
+      key: "last",
+      header: `Last ${w}`,
+      align: "right",
+      cell: (r) => <span className="tabular-nums text-grey">{fmtScore(r.lastScore)}</span>,
+      sortValue: (r) => r.lastScore ?? -1,
+      filter: { kind: "select", get: (r) => fmtScore(r.lastScore) },
+      exportValue: (r) => fmtScore(r.lastScore),
+    },
+    {
+      key: "change",
+      header: "Change",
+      align: "right",
+      cell: (r) => (
+        <span
+          className={cn(
+            "tabular-nums font-semibold",
+            r.change === null || r.change === 0 ? "text-grey-2" : r.change > 0 ? "text-[#1f8a4d]" : "text-[#c0392b]",
+          )}
+        >
+          {fmtChange(r.change)}
+        </span>
+      ),
+      sortValue: (r) => r.change ?? -1e9,
+      filter: { kind: "select", get: (r) => fmtChange(r.change) },
+      exportValue: (r) => fmtChange(r.change),
+    },
+    {
+      key: "modules",
+      header: "Worked in",
+      cell: (r) => <span className="block min-w-[180px] text-[12.5px] text-grey">{r.modules.join(", ") || "—"}</span>,
+      sortValue: (r) => r.modules.join(", "),
+      filter: { kind: "select", get: (r) => r.modules.join(", ") },
+    },
+  ];
+
+  const refused = q.isError && /no one in your reporting chain/i.test((q.error as Error).message);
+
+  return (
+    <div className="space-y-4">
+      {/* ── Header ── */}
+      <Card className="p-4 sm:p-5">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <PeriodControls period={period} onChange={setPeriod} />
+          {hiddenCount > 0 && (
+            <label className="inline-flex h-9 cursor-pointer items-center gap-2 text-[12.5px] text-grey">
+              <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} className="h-4 w-4 accent-orange" />
+              Show admins and shared logins ({hiddenCount})
+            </label>
+          )}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-[12px] text-grey">
+          <span>
+            <span className="font-semibold text-navy">Work counts in the {w} it was due.</span> Each person's line is exactly their own
+            scorecard; click a name to open it.
+          </span>
+          {team && <span className="text-grey-2">As of {formatDateTime(team.as_of)}</span>}
+        </div>
+      </Card>
+
+      {refused ? (
+        <Card className="p-5 text-[13px] text-grey">
+          There is no one in your reporting chain yet, so there is no team to summarise. Your own figures are on the{" "}
+          <Link to={appBasePath("kra-kpi")} className="font-semibold text-orange hover:underline">
+            Scorecard
+          </Link>
+          .
+        </Card>
+      ) : q.isError ? (
+        <Card className="p-5 text-[13px] text-[#c0392b]">Could not load the team: {(q.error as Error).message}</Card>
+      ) : !q.isLoading && !team ? (
+        <Card className="p-5 text-[13px] text-grey">No figures yet. They are worked out every night; the first set appears after the first nightly run.</Card>
+      ) : (
+        <>
+          {/* ── Headline ── */}
+          {team && (
+            <Card className="p-4 sm:p-5">
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
+                <div>
+                  <h3 className="text-[15px] font-bold text-navy">
+                    This {w}, {isAdmin ? "everyone" : "your team"}
+                  </h3>
+                  <p className="text-[11.5px] text-grey-2">
+                    {withWork} {withWork === 1 ? "person" : "people"} with work due · {team.without_work} with none
+                    {!showHidden && hiddenCount > 0 && ` · admins and shared logins hidden`}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-stretch gap-3">
+                    <ScoreCard score={totals.score} lastScore={totals.lastScore} w={w} />
+                    <Breakdown totals={totals} />
+                  </div>
+                  <div className="mt-3">
+                    <KpiTiles totals={totals} w={w} />
+                  </div>
+
+                  {/* People by score — clicking a band narrows the grid to it. */}
+                  {banded > 0 && (
+                    <div className="mt-5">
+                      <h4 className={LABEL}>People by score</h4>
+                      <div className="mt-2 flex h-2.5 gap-0.5 overflow-hidden rounded-[4px] bg-page" aria-hidden>
+                        {BANDS.map(({ band, bar }) =>
+                          bands[band] > 0 ? <span key={band} className={bar} style={{ flexGrow: bands[band], flexBasis: 0 }} /> : null,
+                        )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {BANDS.map(({ band, bar }) => {
+                          const on = focus?.kind === "band" && focus.band === band;
+                          return (
+                            <button
+                              key={band}
+                              type="button"
+                              disabled={bands[band] === 0}
+                              onClick={() => toggleFocus({ kind: "band", band })}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition disabled:opacity-40",
+                                on ? "border-orange bg-orange/[0.08] text-navy" : "border-line text-grey enabled:hover:border-orange/40",
+                              )}
+                            >
+                              <span className={cn("h-2 w-2 rounded-full", bar)} />
+                              {BAND_LABEL[band]}
+                              <span className="font-bold tabular-nums text-navy">{bands[band]}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {depts.length > 0 && (
+                    <>
+                      <h4 className={cn(LABEL, "mt-5")}>By department</h4>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {depts.map((d) => {
+                          const on = focus?.kind === "department" && focus.name === d.name;
+                          return (
+                            <button
+                              key={d.name}
+                              type="button"
+                              onClick={() => toggleFocus({ kind: "department", name: d.name })}
+                              className={cn(
+                                "flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition",
+                                on ? "border-orange bg-orange/[0.05]" : "border-line hover:border-orange/40",
+                              )}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-[13px] font-semibold text-navy">{d.name}</span>
+                                <span className="block text-[11.5px] text-grey tabular-nums">
+                                  {d.people} {d.people === 1 ? "person" : "people"} · {d.given} given · {d.done} done ({d.onTime} on time)
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-right">
+                                <span className="block text-[18px] font-bold text-navy tabular-nums">{fmtScore(d.score)}</span>
+                                <span className="block text-[10px] text-grey-2">score</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="text-[15px] font-bold text-navy">Score by week</h3>
+                  <p className="text-[11.5px] text-grey-2">
+                    {period.mode === "week"
+                      ? "The last eight weeks, this one in orange."
+                      : period.mode === "month"
+                        ? "Every week of the month."
+                        : "Every week in the range."}
+                  </p>
+                  <div className="mt-3">
+                    <Trend
+                      weeks={trend}
+                      highlight={period.mode === "week" ? period.from : undefined}
+                      periodFrom={period.from}
+                      periodTo={period.to}
+                      asOf={team.as_of_date}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ── The grid: one line per person ── */}
+          <Card className="p-0 overflow-hidden">
+            {focus && (
+              <div className="flex flex-wrap items-center gap-2 px-4 pt-3 text-[12.5px] text-grey">
+                Showing only
+                <span className="rounded-full bg-orange/[0.08] px-2.5 py-0.5 font-semibold text-navy">
+                  {focus.kind === "band" ? BAND_LABEL[focus.band] : focus.name}
+                </span>
+                <button type="button" onClick={() => setFocus(null)} className="font-semibold text-orange hover:underline">
+                  Show everyone
+                </button>
+              </div>
+            )}
+            <div className="px-2 pb-2 sm:px-3">
+              <QueueTable
+                rows={gridRows}
+                rowKey={(r) => r.id}
+                columns={columns}
+                loading={q.isLoading}
+                rowsLabel="people"
+                emptyTitle={`No work due this ${w}`}
+                emptyMessage={`Nobody in view had work due in ${periodLabel(period)}.`}
+              />
+            </div>
+          </Card>
+
+          {team && (
+            <div className="space-y-1 px-1 text-[11.5px] leading-relaxed text-grey-2">
+              <p>
+                <span className="font-semibold text-grey">The team score</span> adds up everyone's work first (on time 1, late ½, not done 0,
+                over everything given) — it is not an average of people's scores, so a person with more work weighs more.
+              </p>
+              <p>
+                <span className="font-semibold text-grey">Low volume</span> marks fewer than {LOW_VOLUME} pieces of work in the {w}: the score is
+                shown, but kept out of the score bands, since a handful of tasks is not comparable with a full workload.
+              </p>
+              <p>
+                Admins and the shared QC / QA logins are hidden unless switched on: an admin who closes someone's step gets the credit, so their
+                figures do not read like anyone else's.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
