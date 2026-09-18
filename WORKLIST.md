@@ -8730,37 +8730,70 @@ day of closure. **Test on `abs(credit_limit)`, always.**
 
 *(cross-ref: **PC-1** above — decide whether this stays alongside the new dashboard)*
 
-### CC-1 · Ranking on the master control center  🟢  `[ ]`
-*Raised 2026-08-20 · **Low priority, confirmed 04-09-2026.** Nothing depends on it and it is a real
-build — a person dimension threaded through all nine adapters, not a widget. Park it.*
+### CC-1 · Ranking on the master control center  🟢  `[x]`
+*Raised 2026-08-20 · planned and **LIVE 18-09-2026** (master `37fe245`). One step left: **arm the nightly
+run** — the file is written, not applied, awaiting the user's yes (see below).*
 
-Add a gamification layer to the master control center: **a user sees their ranking** and
-understands where they stand against everyone else using the Orange One hub.
+**What it is.** A monthly ranking of how well each person keeps their FMS steps on time. Every step a
+person is given scores **1 on time · ½ late · 0 missed**; score = points ÷ steps, one decimal, one
+company-wide ladder, calendar months. **10 steps** to be on the ladder. A finished month is **frozen**;
+its top three are the **employees of the month**. August 2026 is frozen: 🥇 Jyoti 99.8 · 🥈 Ravina 96.7 ·
+🥉 Lalit Sharma 95.9 (13 ranked). September to date: 20 ranked, recomputed on each run.
 
-**Notes:** the board has **no person dimension at all** today, and that is the size of this job.
-[MasterControlCenter.tsx](frontend/src/apps/fms-control-center/pages/MasterControlCenter.tsx) is
-process-shaped — one row per FMS — and every adapter returns an `FmsSnapshot` of totals plus
-step/stage breakdowns, counts only, nobody's name in it
-([adapters/types.ts](frontend/src/apps/fms-control-center/adapters/types.ts)). So a ranking means
-threading a per-person dimension through all nine adapters, not adding a widget to existing data.
+**Where people see it.** On the **home screen (My Control Center)** — a rank chip in the greeting banner
+("#9 of 20 · 23 on-time steps to pass #8") and a **My work | Ranking** tab (`/home?view=ranking`). The same
+panel also sits on `/fms-control-center`. Every internal staff login can read it (no Control Center grant
+needed); customer logins cannot.
 
-The raw material does exist per FMS: steps stamp who completed them and when (Order to Dispatch
-carries `actorId` per step, Production stamps `mhAt` / `qcAt` / `pkAt` and the rest), and every FMS
-carries a step-SLA model, so **on-time vs late per person** is derivable rather than invented.
-Nothing ranks anyone today — no leaderboard, no score, anywhere in the codebase. The nearest
-existing per-user read is the Master Report's `UserAccess` page, but that is access and last-seen,
-not throughput.
+**Decided by the user, 18-09-2026**
+| Question | Answer |
+|---|---|
+| What is scored | FMS steps: on time 1, late ½, missed 0; score = points ÷ steps given |
+| Ladder | One, company-wide |
+| Minimum | 10 steps in the month; below it, a **provisional place** ("#21 of 21, provisional") — off the official ladder, podium and employees of the month |
+| Who sees what | **Everyone sees the full ladder** (rank, name, score, step count). A person's split by process and step-by-step detail stay private; **admins can see anyone's steps** |
+| Window | Calendar month, resets on the 1st; last month's top 3 on the page, earlier months on a wall |
+| Where | Home screen (banner chip + Ranking tab), and the FMS Control Center page |
+| Idle modules | An admin switch per module; **Travel Desk, Employee Exit, Asset Maintenance start switched off** (not in use on 18-09) |
+| Credit check (Dispatch) | **Left out**: deciding credit restarts its own clock, so every decided check reads on time (840 in Aug) |
+| Stand-ins | Follow each module's own Completed list (HR onboarding → whoever set the joining date; General Purchase handover → first handover phase) |
+| OCPI (no My Work rule) | Overdue steps charged to its step owners + the deal's own raiser, with an edit grant |
 
-**Worth settling before building:**
-- [ ] What the rank actually measures — steps closed, steps closed **on time**, or something that
-      cannot be won by picking easy work. Counting volume alone rewards whoever handles the
-      fastest steps, not whoever keeps the process moving.
-- [ ] Ranked across everyone, or within a department / module / role? Comparing a dispatch clerk
-      with a QC checker on one ladder may not mean anything.
-- [ ] Does everyone see the full table, or only their own position and the top few?
-- [ ] Over what window — this week, this month, rolling?
-- [ ] Does this belong on the existing board, or on **PC-1**'s new coordinator dashboard? Both
-      screens are in play at once.
+**Built on the recommended rules:** (1) a month scores steps **closed in it** plus steps **still overdue at its
+end**; (2) the closer gets the credit, an overdue open step is charged to **everyone whose My Work lists it**;
+(3) held, cancelled, untimed, "raised"/"submitted" steps and edits count for nobody; (4) **admins are not
+ranked**, plus an admin-kept exclusion list — started with **Quality Control** and **Quality Assurance**
+(shared logins); (5) FMS steps only, no Task Management; (6) nightly, finished months frozen; (7) one-decimal
+scores, ties share a rank; (8) privacy enforced in the RPC. A frozen month is only charged to people whose
+account existed on its last day.
+
+**How it works.** No due date is stored anywhere, so SQL never recomputes one. The `fms-ranking` edge
+function runs each module's own code (`frontend/src/apps/fms-control-center/ranking/modules/`, bundled by
+`supabase/ranking/build.mjs` with the IST clock shims) — one call per module, because all of them in one
+request needs ~2.3 s of CPU against the ~2 s cap. It writes one row per scored step (`fms_rank_steps`); SQL
+adds them up (`fms_rank_rescore`). The build **fails** if a Control Center FMS is neither scored nor excused
+(Employee Exit is excused: 0 cases, and its Completed builder still lives in its store).
+
+**Verified 18-09-2026:** the dispatch register's days-late (6,828 steps) and Production's Cycle Time (1,405)
+agree exactly; every module's due dates agree browser (IST) vs server (UTC + shims); a step closed at 00:15
+IST the day after its due date is late; a re-run leaves frozen August byte-identical; the Purchase / Import /
+HR refactors change no existing answer (1,017 PO due dates, 162 candidates, the HR queue compared old vs new);
+RPC privacy tested as a non-admin in rolled-back transactions.
+
+**Counted for nobody (August):** 876 credit checks · 32 HR disqualifications (no actor recorded) · 17 HR
+Revise & Resubmit / Collect Resumes · test records 15 dispatch, 9 HR (MRF-2627-0019), 35 OCPI (`ZZ TEST` +
+QT-M0040/42/45/53) · 75 untimed (Inward, Log Book) · 1 Purchase rejection with no time.
+
+**Operating it**
+- ⏳ **Arm the nightly run** — `supabase/migrations/20261127130000_cc1_fms_ranking_nightly.sql`, `22 19 * * *`
+  (00:52 IST; minute 22 was free on 18-09 — re-check `cron.job`). Until then run it by hand: POST `{run:true}`
+  to `fms-ranking` with the `x-dispatch-secret` header (`{run:true,dryRun:true}` writes nothing).
+- Admins: exclusions and per-module switches in the Ranking panel's admin section; "Preview as" shows any
+  employee's exact view.
+- Migrations applied: `20261127120000/121000/122000/123000_cc1_*` (each has a `_rollback.sql`). ⚠ The first
+  rollback deletes every ranking, frozen months included.
+- Follow-ups worth a task of their own: Dispatch should keep credit check's original clock start so it can
+  count; Employee Exit needs its Completed builder moved out of the store before it can be scored.
 
 ---
 
