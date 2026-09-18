@@ -7,13 +7,13 @@
  *
  * ─── THE SLICES ─────────────────────────────────────────────────────────────────────────────────
  *
- *   Sales Dashboard     PURE sales: every line that is not FOC, not SOA, not Branch, not Related.
- *                       SALE, Sales Return, Credit Note, Debit Note of the companies' own customers.
- *   Ink / Machines /    the same pure sales, narrowed to one Sales-Type. Ink also takes Provision
+ *   Sales Dashboard     SALES: every line that is not FOC, not Branch, not Related — SALE, Sales
+ *                       Return, Credit Note, Debit Note and the still-pending SOA lines.
+ *   Ink / Machines /    the same sales, narrowed to one Sales-Type. Ink also takes Provision
  *   Heads / Spare Parts Ink and Other Ink, which Central Masters files as inks.
  *   / Papers
  *   FOC                 every FOC line — FOC SALE, Branch FOC, Related FOC.
- *   SOA                 sales on approval still pending (the register already drops billed/returned).
+ *   SOA                 the approval lines on their own, for the pending picture in one place.
  *   Branch & Related    BRANCH SALE, RELATED SALE, Related Return — inter-company sales that are
  *                       not FOC (their FOC lines are on the FOC dashboard).
  *
@@ -64,7 +64,15 @@ export type SectionDim = "type" | "salesType" | "category" | "colour" | "group" 
 
 const isFoc = (r: BushraRegisterRow) => /\bFOC\b/i.test(r.type);
 const isInterCompany = (r: BushraRegisterRow) => /^(branch|related)\b/i.test(r.type);
-export const isPureSale = (r: BushraRegisterRow) => !isFoc(r) && r.type !== "SOA" && !isInterCompany(r);
+/**
+ * SALES = what was sold to our own customers: SALE, Sales Return, Credit Note, Debit Note AND the
+ * still-pending SOA lines. Approval stock counts as sales at the business's own reading (asked for
+ * 2026-09-18); only the PENDING ones are in the register at all — once a challan is billed its
+ * invoice line is here instead, so nothing is counted twice.
+ *
+ * Out: FOC (given free) and anything Branch or Related (inter-company), each with its own dashboard.
+ */
+export const isPureSale = (r: BushraRegisterRow) => !isFoc(r) && !isInterCompany(r);
 
 const pureOf = (...salesTypes: string[]) => (r: BushraRegisterRow) =>
   isPureSale(r) && salesTypes.includes(r.sales_type);
@@ -74,12 +82,12 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     id: "bushra-sales-dashboard",
     path: "bushra-dashboard/sales-dashboard",
     title: "Sales Dashboard",
-    blurb: "pure sales — no FOC, SOA, branch or related-party lines",
+    blurb: "sales incl. pending SOA — no FOC, branch or related-party lines",
     include: isPureSale,
     primary: "salesType",
     defaultMetric: "value",
     layout: "overview",
-    qtyUnit: "none",
+    qtyUnit: "kg",
     sections: ["type", "salesType"],
   },
   {
@@ -151,18 +159,18 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     // Branch and Related FOC are booked at no value, so quantity is the honest first view.
     defaultMetric: "quantity",
     layout: "slices",
-    qtyUnit: "none",
+    qtyUnit: "kg",
   },
   {
     id: "bushra-sales-soa",
     path: "bushra-dashboard/sales-soa",
     title: "SOA",
-    blurb: "sales on approval still pending — not billed, not returned",
+    blurb: "sales on approval still pending — not billed, not returned (also counted in Sales)",
     include: (r) => r.type === "SOA",
     primary: "salesType",
     defaultMetric: "value",
     layout: "slices",
-    qtyUnit: "none",
+    qtyUnit: "kg",
   },
   {
     id: "bushra-sales-branch-related",
@@ -173,7 +181,7 @@ export const SALES_DASHBOARDS: SalesDashboardPreset[] = [
     primary: "company",
     defaultMetric: "value",
     layout: "slices",
-    qtyUnit: "none",
+    qtyUnit: "kg",
   },
 ];
 

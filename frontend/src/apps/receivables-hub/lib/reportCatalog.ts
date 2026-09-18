@@ -887,6 +887,10 @@ export const REPORTS: ReportEntry[] = [
   ...SALES_DASHBOARDS.map((p): ReportEntry => ({
     id: p.id,
     scoping: "party-server",
+    // Mailable: the figures are built by the dashboard's own code (lib/bushraSalesSummary.ts) and
+    // the PDF by lib/bushraSalesPdf.ts, both checked on screen before this was ticked. What goes
+    // in, and to whom, is chosen per dashboard in Settings → Permissions.
+    emailable: true,
     title: p.id === "bushra-sales-dashboard" ? p.title : `Sales — ${p.title} Dashboard`,
     purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
     category: "bushra-report",
