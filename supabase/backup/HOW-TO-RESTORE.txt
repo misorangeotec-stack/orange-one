@@ -56,8 +56,14 @@ Tools: PostgreSQL 17 client tools (pg_restore), rclone.
 
 2. Restore it into a NEW, EMPTY Supabase project (never over the live one).
    The copy holds the schemas public, private, auth, storage, cron and
-   supabase_migrations. In a fresh Supabase project, auth and storage already
-   exist, so restore them as data only:
+   supabase_migrations.
+   ⚠ pg_restore --schema=X restores what is INSIDE schema X but never creates
+   X itself. Create the missing ones first (a fresh Supabase project already
+   has public, auth and storage):
+     create schema if not exists private;
+     create schema if not exists supabase_migrations;
+   In a fresh Supabase project, auth and storage already exist, so restore them
+   as data only:
      pg_restore --dbname "<new project connection string>" --no-owner --schema=public --schema=private orange-one-hub.dump
      pg_restore --dbname "<new project connection string>" --no-owner --data-only --disable-triggers --schema=auth --schema=storage orange-one-hub.dump
    One table on its own (the common case: rows deleted by mistake):
@@ -72,3 +78,26 @@ Tools: PostgreSQL 17 client tools (pg_restore), rclone.
 
 Rehearse this on a scratch project before relying on it. A backup that has
 never been restored is only a hope.
+
+
+REHEARSED 18-09-2026 - BOTH COPIES RESTORED IN FULL
+---------------------------------------------------
+
+Both copies were downloaded from this folder and restored into a private
+PostgreSQL 17 test database. The test database was deleted afterwards, and the
+live system was only read from.
+
+  Orange One Hub  384 tables, 273,480 rows, 5 seconds. 358 tables identical to
+                  live; every other difference was a row added in the app after
+                  the copy was taken. 68 logins restored, and a real password was
+                  accepted against the restored copy. 27 files (3 per module)
+                  taken from Files/ and matched to their original, byte for byte,
+                  at the exact place the restored app expects them.
+  Tally           127 tables, 1,366,673 rows, about 4 minutes. 126 tables
+                  identical to live; the other had 6 rows written after the copy.
+
+Messages you WILL see, and can ignore:
+  - auth.mfa_amr_claims foreign key: live itself holds 75 old rows whose login
+    session has ended, so re-adding that constraint fails. The data is complete.
+  - (Tally) view public.rpt_cron_health and its grant: it reads cron.job and needs
+    the pg_cron extension. Enable pg_cron first, or ignore it.
