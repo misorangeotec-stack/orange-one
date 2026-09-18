@@ -1,9 +1,9 @@
 -- rpt_purchase_register — the purchase-side twin of rpt_sales_register.
 --
--- NOT YET APPLIED TO CONNECTWAVE. Written on branch Bushra-Purchase-Register (2026-09-15). Until it is
--- run, localhost reads a local snapshot built by tools/build_purchase_register_snapshot.py, which
--- implements the SAME rules in Python — keep the two in step. Apply this file when the branch ships,
--- then drop VITE_PURCHASE_REGISTER_SOURCE=local from frontend/.env.local.
+-- APPLIED TO CONNECTWAVE 18-09-2026 (first fill: 20,360 lines over 7 books, no errors), with the
+-- nightly job 'rpt-purchase-register-nightly' at 20:17 UTC. Re-applying is safe: every statement is
+-- create-if-not-exists or create-or-replace. tools/build_purchase_register_snapshot.py is the old
+-- localhost stand-in; it does NOT carry the orphan-type name rule below, so prefer the live table.
 --
 -- One row per voucher LINE, the same shape as the sales register: an item line when the voucher carries
 -- stock items, otherwise one line per expense/purchase ledger (party, GST, round-off, TDS/TCS dropped).
@@ -148,6 +148,15 @@ begin
                   and ( x.chain && array['Purchase','GST PURCHASE']
                      or ( x.chain && array['Credit Note','Debit Note']
                           and upper(x.voucher_type) like '%PURCHASE%' ) ) ) )
+         -- ...and a type NO book holds any more is judged by its name. 'GST PURCHASE - HEAD' (Enterprise
+         -- Surat 2024-25, ₹44.2 L) and 'GST PURCHASE - SPARE PARTS' (Enterprise Noida 2026-27) were
+         -- renamed out of every type list, so neither rule above could see them. Found by reconciling
+         -- against rpt_purchase_line on 18-09-2026. A purchase ORDER is not an accounting voucher.
+         or ( vn.chain is null
+              and not exists (select 1 from public.v_voucher_type_nature x
+                               where x.voucher_type = o.raw_payload->>'VOUCHERTYPENAME')
+              and upper(o.raw_payload->>'VOUCHERTYPENAME') ~ '^GST PURCHASE\M'
+              and upper(o.raw_payload->>'VOUCHERTYPENAME') !~ 'ORDER' )
       )
   ),
   inv as materialized (

@@ -7,13 +7,10 @@
  * Sales Register; the rule that keeps it out is in supabase/connectwave/rpt_purchase_register.sql.
  *
  * WHERE THE NUMBERS COME FROM
- * ConnectWave `rpt_purchase_register`, built by rpt_purchase_register_rebuild. That table is NOT APPLIED
- * YET (branch Bushra-Purchase-Register). Until it is, set VITE_PURCHASE_REGISTER_SOURCE=local in
- * frontend/.env.local and build the stand-in with
- *
- *     python tools/build_purchase_register_snapshot.py
- *
- * which writes the same rows to frontend/public/dev-data/rpt_purchase_register.json (gitignored).
+ * ConnectWave `rpt_purchase_register`, built by rpt_purchase_register_rebuild — applied 18-09-2026 and
+ * refreshed nightly (see the SQL file). VITE_PURCHASE_REGISTER_SOURCE=local still reads the old
+ * localhost stand-in built by `python tools/build_purchase_register_snapshot.py` (written to
+ * frontend/public/dev-data/rpt_purchase_register.json, gitignored), but prefer the live table.
  *
  * Everything after the read is shared with the Sales Register: winning FY-split books (rpt_sales_book),
  * company/location from ext_company_map, and the Related/Branch class shown as the company.
