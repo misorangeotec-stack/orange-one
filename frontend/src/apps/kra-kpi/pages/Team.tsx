@@ -215,21 +215,28 @@ export default function Team() {
     {
       key: "designation",
       header: "Designation",
-      cell: (r) => <span className="block min-w-[150px] text-grey">{r.designation || "—"}</span>,
+      cell: (r) => <span title={r.designation} className="block max-w-[200px] truncate text-grey">{r.designation || "—"}</span>,
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.designation,
       filter: { kind: "select", get: (r) => r.designation },
     },
     {
       key: "reports",
       header: "Reports to",
-      cell: (r) => <span className="block min-w-[150px] text-grey">{r.reportsTo || "—"}</span>,
+      cell: (r) => <span title={r.reportsTo} className="block max-w-[200px] truncate text-grey">{r.reportsTo || "—"}</span>,
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.reportsTo,
       filter: { kind: "select", get: (r) => r.reportsTo },
     },
     {
       key: "modules",
       header: "Worked in",
-      cell: (r) => <span className="block min-w-[180px] text-[12.5px] text-grey">{r.modules.join(", ") || "—"}</span>,
+      cell: (r) => (
+        <span title={r.modules.join(", ")} className="block max-w-[260px] truncate text-[12.5px] text-grey">
+          {r.modules.join(", ") || "—"}
+        </span>
+      ),
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.modules.join(", "),
       filter: { kind: "select", get: (r) => r.modules.join(", ") },
     },

@@ -52,25 +52,38 @@ export default function ItemsModal({ drill, rows, onClose }: { drill: Drill | nu
       key: "module",
       header: "Module",
       cell: (r) => <span className="text-grey">{r.moduleName}</span>,
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.moduleName,
       filter: { kind: "select", get: (r) => r.moduleName },
     },
     {
       key: "task",
       header: "Task / System",
-      cell: (r) => <span className="font-medium text-navy">{r.label}</span>,
+      // One line, like the dispatch register: a long name is cut, the whole of it on hover.
+      cell: (r) => (
+        <span title={r.label} className="block max-w-[330px] truncate font-medium text-navy">
+          {r.label}
+        </span>
+      ),
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.label,
       filter: { kind: "select", get: (r) => r.label },
     },
     {
       key: "ref",
       header: "Reference",
-      cell: (r) => (
-        <span className="whitespace-nowrap">
-          {r.ref}
-          {r.round_no > 1 && <span className="ml-1 text-[11px] text-grey-2">round {r.round_no}</span>}
-        </span>
-      ),
+      // A task's reference is its own title, already in Task / System — so only FMS steps
+      // (an order, a PO, a candidate) show one.
+      cell: (r) =>
+        r.source === "task" ? (
+          <span className="text-grey-2">—</span>
+        ) : (
+          <span className="whitespace-nowrap">
+            {r.ref}
+            {r.round_no > 1 && <span className="ml-1 text-[11px] text-grey-2">round {r.round_no}</span>}
+          </span>
+        ),
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.ref,
       filter: { kind: "select", get: (r) => r.ref },
       exportValue: (r) => r.ref,
@@ -113,7 +126,7 @@ export default function ItemsModal({ drill, rows, onClose }: { drill: Drill | nu
   const columns = drill?.scoped ? all.filter((c) => c.key !== "module" && c.key !== "task") : all;
 
   return (
-    <Modal open={!!drill} onClose={onClose} title={drill?.title ?? ""} subtitle={drill?.subtitle} size="3xl" mobileFull>
+    <Modal open={!!drill} onClose={onClose} title={drill?.title ?? ""} subtitle={drill?.subtitle} size="2xl" mobileFull>
       <QueueTable
         rows={items}
         rowKey={(r) => r.key}

@@ -173,7 +173,13 @@ export default function Scorecard() {
       header: "Task / System",
       alwaysVisible: true,
       // A floor on the width: without one the numbers take the room and a label runs to six lines.
-      cell: (r) => <span className="block min-w-[180px] max-w-[360px] font-medium text-navy sm:min-w-[240px]">{r.label}</span>,
+      // One line per row, like the dispatch register: a long name is cut, the whole of it on hover.
+      cell: (r) => (
+        <span title={r.label} className="block max-w-[380px] truncate font-medium text-navy">
+          {r.label}
+        </span>
+      ),
+      tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.label,
       filter: { kind: "select", get: (r) => r.label },
     },
