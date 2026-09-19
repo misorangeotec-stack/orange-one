@@ -62,6 +62,16 @@ export interface QueueColumn<T> {
   defaultHidden?: boolean;
   /** Cannot be hidden — the column that says WHICH ROW this is. */
   alwaysVisible?: boolean;
+  /**
+   * Let the reader DRAG this column wider or narrower: a handle on the header's right edge
+   * (double-click it to reset; arrow keys work when it has focus). The cell is then held to
+   * ONE line at that width and cut with "…", so render plain text or a single element with
+   * the full text in `title`. `width` is where it starts, in px.
+   *
+   * OPT-IN. A column without it renders exactly as before, which is why none of the existing
+   * tables change. Pass `resizeKey` on the table to remember the widths per reader.
+   */
+  resize?: { width: number; min?: number; max?: number };
 }
 
 /**
@@ -177,6 +187,11 @@ interface QueueTableProps<T> {
    * changes.
    */
   columnRules?: boolean;
+  /**
+   * Remember the widths a reader drags `resize` columns to, under this key (per browser).
+   * Without it a dragged width lasts until the page is left.
+   */
+  resizeKey?: string;
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
@@ -239,6 +254,103 @@ function writeHiddenCols(storageKey: string, hidden: Set<string>): void {
   }
 }
 
+/* ------------------------- remembered column widths ------------------------ */
+/*  Same rules as the column choice above: namespaced, every access wrapped.     */
+
+const widthsKey = (resizeKey: string) => `orangeone.table.widths.${resizeKey}`;
+
+function readWidths(resizeKey: string | undefined): Record<string, number> {
+  if (!resizeKey) return {};
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(widthsKey(resizeKey)) ?? "{}");
+    if (!parsed || typeof parsed !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === "number" && e[1] > 0),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeWidths(resizeKey: string | undefined, widths: Record<string, number>): void {
+  if (!resizeKey) return;
+  try {
+    localStorage.setItem(widthsKey(resizeKey), JSON.stringify(widths));
+  } catch {
+    /* private mode / quota — the width still holds until the page is left */
+  }
+}
+
+/**
+ * The drag handle on a resizable column's header edge. Pointer capture keeps the drag alive
+ * when the pointer leaves the thin handle; the arrow-key guard stops ScrollableTable from
+ * scrolling the table instead (the same guard Combobox and MultiSelect carry).
+ */
+function ColumnResizer({
+  label,
+  width,
+  min,
+  max,
+  onChange,
+  onCommit,
+  onReset,
+}: {
+  label: string;
+  width: number;
+  min: number;
+  max: number;
+  onChange: (w: number) => void;
+  onCommit: () => void;
+  onReset: () => void;
+}) {
+  const start = useRef<{ x: number; w: number } | null>(null);
+  const clamp = (w: number) => Math.round(Math.min(max, Math.max(min, w)));
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize the ${label} column`}
+      aria-valuenow={width}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      tabIndex={0}
+      title="Drag to resize · double-click to reset"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        start.current = { x: e.clientX, w: width };
+      }}
+      onPointerMove={(e) => {
+        if (start.current) onChange(clamp(start.current.w + e.clientX - start.current.x));
+      }}
+      onPointerUp={() => {
+        if (!start.current) return;
+        start.current = null;
+        onCommit();
+      }}
+      onPointerCancel={() => {
+        if (!start.current) return;
+        start.current = null;
+        onCommit();
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onReset();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        onChange(clamp(width + (e.key === "ArrowRight" ? 20 : -20)));
+        onCommit();
+      }}
+      className="absolute right-0 top-0 z-10 h-full w-2.5 cursor-col-resize touch-none select-none after:absolute after:right-1 after:top-1/4 after:h-1/2 after:w-0.5 after:rounded after:bg-line hover:after:bg-orange focus-visible:outline-none focus-visible:after:bg-orange"
+    />
+  );
+}
+
 const BuildingIcon = (
   <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-orange" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M6 21V7l6-4 6 4v14M10 9h.01M14 9h.01M10 13h.01M14 13h.01M10 17h.01M14 17h.01" /></svg>
 );
@@ -274,7 +386,11 @@ export default function QueueTable<T>({
   hideGroupHeaders,
   columnPicker,
   columnRules,
+  resizeKey,
 }: QueueTableProps<T>) {
+  // Widths a reader dragged `resize` columns to (see ColumnResizer). Empty unless a column opts in.
+  const [widths, setWidths] = useState<Record<string, number>>(() => readWidths(resizeKey));
+  const widthOf = (c: QueueColumn<T>) => (c.resize ? widths[c.key] ?? c.resize.width : undefined);
   // ⚠ Applied HERE, once, rather than at each of the ~80 `actions={...}` call
   //   sites. Everything below — the Actions header, the per-row cell, the
   //   checkbox column, the bulk bar and the colSpan arithmetic — already keys off
@@ -736,7 +852,7 @@ export default function QueueTable<T>({
                   )}
                   {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line w-px whitespace-nowrap">Actions</th>}
                   {shownColumns.map((c, i) => (
-                    <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${rule(i)} ${c.align === "right" ? "text-right" : ""}`}>
+                    <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${rule(i)} ${c.align === "right" ? "text-right" : ""} ${c.resize ? "relative" : ""}`}>
                       {c.sortValue ? (
                         <button onClick={() => onSort(c.key)} className={`inline-flex items-center gap-1 hover:text-navy ${sort?.key === c.key ? "text-navy" : ""}`}>
                           {c.header}
@@ -744,6 +860,24 @@ export default function QueueTable<T>({
                         </button>
                       ) : (
                         c.header
+                      )}
+                      {c.resize && (
+                        <ColumnResizer
+                          label={c.header}
+                          width={widthOf(c)!}
+                          min={c.resize.min ?? 120}
+                          max={c.resize.max ?? 900}
+                          onChange={(w) => setWidths((cur) => ({ ...cur, [c.key]: w }))}
+                          onCommit={() => setWidths((cur) => (writeWidths(resizeKey, cur), cur))}
+                          onReset={() =>
+                            setWidths((cur) => {
+                              const next = { ...cur };
+                              delete next[c.key];
+                              writeWidths(resizeKey, next);
+                              return next;
+                            })
+                          }
+                        />
                       )}
                     </th>
                   ))}
@@ -794,7 +928,14 @@ export default function QueueTable<T>({
                           {actions && <td className="px-4 py-3 border-b border-line/70 whitespace-nowrap">{actions(row)}</td>}
                           {shownColumns.map((c, i) => (
                             <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${rule(i)} ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>
-                              {c.cell(row)}
+                              {c.resize ? (
+                                // Held to the dragged width, on one line, cut with "…".
+                                <div style={{ width: widthOf(c) }} className="overflow-hidden text-ellipsis whitespace-nowrap">
+                                  {c.cell(row)}
+                                </div>
+                              ) : (
+                                c.cell(row)
+                              )}
                             </td>
                           ))}
                         </tr>

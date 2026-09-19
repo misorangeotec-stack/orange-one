@@ -172,13 +172,14 @@ export default function Scorecard() {
       key: "task",
       header: "Task / System",
       alwaysVisible: true,
-      // A floor on the width: without one the numbers take the room and a label runs to six lines.
       // One line per row, like the dispatch register: a long name is cut, the whole of it on hover.
+      // The reader can drag the header's edge to widen it (the user, 19-09-2026); the width is kept.
       cell: (r) => (
-        <span title={r.label} className="block max-w-[380px] truncate font-medium text-navy">
+        <span title={r.label} className="block truncate font-medium text-navy">
           {r.label}
         </span>
       ),
+      resize: { width: 360, min: 160, max: 900 },
       tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.label,
       filter: { kind: "select", get: (r) => r.label },
@@ -313,6 +314,7 @@ export default function Scorecard() {
                 emptyTitle={`Nothing due this ${w}`}
                 emptyMessage={`${person.name} had no FMS steps or tasks due in ${periodLabel(period)}.`}
                 initialSort={{ key: "given", dir: "desc" }}
+                resizeKey="kra-kpi.scorecard"
               />
             </div>
           </Card>

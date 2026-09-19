@@ -60,11 +60,13 @@ export default function ItemsModal({ drill, rows, onClose }: { drill: Drill | nu
       key: "task",
       header: "Task / System",
       // One line, like the dispatch register: a long name is cut, the whole of it on hover.
+      // The header's edge drags to widen it; the width is kept.
       cell: (r) => (
-        <span title={r.label} className="block max-w-[330px] truncate font-medium text-navy">
+        <span title={r.label} className="block truncate font-medium text-navy">
           {r.label}
         </span>
       ),
+      resize: { width: 320, min: 160, max: 900 },
       tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.label,
       filter: { kind: "select", get: (r) => r.label },
@@ -135,6 +137,7 @@ export default function ItemsModal({ drill, rows, onClose }: { drill: Drill | nu
         emptyTitle="Nothing here"
         emptyMessage="No work behind this count."
         initialSort={{ key: "due", dir: "asc" }}
+        resizeKey="kra-kpi.items"
       />
     </Modal>
   );
