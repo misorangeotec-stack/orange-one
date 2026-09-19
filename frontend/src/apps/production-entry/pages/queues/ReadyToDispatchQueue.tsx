@@ -100,6 +100,8 @@ export default function ReadyToDispatchQueue() {
       </div>
       {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       <QueueTable<ProductionRequest>
+        // PF-20: a fixed width key — FG Lot No. comes and goes with the data.
+        resizeKey="production-entry.ready-to-dispatch"
         rows={rows}
         rowKey={(r) => r.id}
         columns={columns}

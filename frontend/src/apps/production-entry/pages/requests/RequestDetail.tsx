@@ -7,6 +7,9 @@ import Modal from "@/shared/components/ui/Modal";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDateTime } from "@/shared/lib/time";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import StepModal from "../../components/StepModal";
 import StepDocLink from "../../components/StepDocLink";
 import ProductionStepper from "../../components/ProductionStepper";
@@ -150,6 +153,15 @@ const BULK_STEP_SLUG: Partial<Record<QueueStep, string>> = {
   fg_transfer: "fg-transfer",
 };
 
+/**
+ * The recap tables' columns, for their remembered widths (PF-20). The Additional Slip ids differ
+ * from Raw Materials' on purpose: both tables sit on one screen, and the same ids would give them
+ * the same width key.
+ */
+const PM_COLS = ["pmItem", "pmQty", "pmExtra", "pmTotal", "pmUnit"];
+const RM_COLS = ["rmItem", "rmQty", "rmUnit"];
+const AIS_COLS = ["aisItem", "aisQty", "aisUnit"];
+
 export default function RequestDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -165,6 +177,14 @@ export default function RequestDetail() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * PF-20: the recap tables are one line per row and their columns drag; item names are cut
+   * with "…" and shown whole on hover, quantities never. Above the guard, like every hook. One
+   * width set serves every Additional Slip round, so they line up with each other.
+   */
+  const pmFit = useColumnWidths("tb", PM_COLS);
+  const rmFit = useColumnWidths("tb", RM_COLS);
+  const aisFit = useColumnWidths("tb", AIS_COLS);
 
   if (!r) {
     return (
@@ -329,29 +349,33 @@ export default function RequestDetail() {
             print a row of dashes. */}
         {r.cardType === "repackaging" ? (
           <div className="mt-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">Packaging Material</div>
+            {/* PF-20: "Reset widths" shows beside the heading once a column has been dragged. */}
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Packaging Material</div>
+              <ResetWidths fit={pmFit} cols={PM_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold normal-case tracking-normal text-grey-2 hover:text-orange" />
+            </div>
             <div className="rounded-xl border border-line overflow-x-auto">
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                    <th className="font-medium px-3 py-2 min-w-[200px]">Packaging Item</th>
-                    <th className="font-medium px-3 py-2 text-right w-24">Qty</th>
-                    <th className="font-medium px-3 py-2 text-right w-24">Extra</th>
-                    <th className="font-medium px-3 py-2 text-right w-24">Total</th>
-                    <th className="font-medium px-3 py-2 w-24">Unit</th>
+                    <FitTh fit={pmFit} col="pmItem" className="font-medium px-3 py-2">Packaging Item</FitTh>
+                    <FitTh fit={pmFit} col="pmQty" className="font-medium px-3 py-2 text-right w-24">Qty</FitTh>
+                    <FitTh fit={pmFit} col="pmExtra" className="font-medium px-3 py-2 text-right w-24">Extra</FitTh>
+                    <FitTh fit={pmFit} col="pmTotal" className="font-medium px-3 py-2 text-right w-24">Total</FitTh>
+                    <FitTh fit={pmFit} col="pmUnit" className="font-medium px-3 py-2 w-24">Unit</FitTh>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody {...pmFit.tbodyProps}>
                   {r.pmhBomLines.length === 0 ? (
                     <tr><td colSpan={5} className="px-3 py-3 text-grey-2">No packaging items were recorded.</td></tr>
                   ) : (
                     r.pmhBomLines.map((l, i) => (
                       <tr key={i} className="border-b border-line/70 last:border-0">
-                        <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.qty)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.extra)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-navy">{numOrDash(packFinalQty(l))}</td>
-                        <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                        <td className="px-3 py-2 text-navy"><FitCell fit={pmFit} col="pmItem" cap={FIT.CUT}>{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</FitCell></td>
+                        <td className="px-3 py-2 text-right tabular-nums text-grey"><FitCell fit={pmFit} col="pmQty" cap={null}>{numOrDash(l.qty)}</FitCell></td>
+                        <td className="px-3 py-2 text-right tabular-nums text-grey-2"><FitCell fit={pmFit} col="pmExtra" cap={null}>{numOrDash(l.extra)}</FitCell></td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-navy"><FitCell fit={pmFit} col="pmTotal" cap={null}>{numOrDash(packFinalQty(l))}</FitCell></td>
+                        <td className="px-3 py-2 text-grey"><FitCell fit={pmFit} col="pmUnit" cap={FIT.CUT}>{s.unitById(l.unitId)?.name ?? "—"}</FitCell></td>
                       </tr>
                     ))
                   )}
@@ -369,30 +393,36 @@ export default function RequestDetail() {
         /* Raw materials — the BOM. New cards carry a line list; legacy cards
             (raised before multi-RM intake) fall back to the single-RM triple. */
         <div className="mt-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">Raw Materials</div>
+          {/* PF-20: "Reset widths" shows beside the heading once a column has been dragged. */}
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Raw Materials</div>
+            <ResetWidths fit={rmFit} cols={RM_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold normal-case tracking-normal text-grey-2 hover:text-orange" />
+          </div>
           {r.bomLines.length > 0 ? (
             <div className="rounded-xl border border-line overflow-x-auto">
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                    <th className="font-medium px-3 py-2">Raw Material</th>
-                    <th className="font-medium px-3 py-2 text-right w-28">Qty</th>
-                    <th className="font-medium px-3 py-2 w-32">Unit</th>
+                    <FitTh fit={rmFit} col="rmItem" className="font-medium px-3 py-2">Raw Material</FitTh>
+                    <FitTh fit={rmFit} col="rmQty" className="font-medium px-3 py-2 text-right w-28">Qty</FitTh>
+                    <FitTh fit={rmFit} col="rmUnit" className="font-medium px-3 py-2 w-32">Unit</FitTh>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody {...rmFit.tbodyProps}>
                   {r.bomLines.map((l, i) => (
                     <tr key={i} className="border-b border-line/70 last:border-0">
                       <td className="px-3 py-2 text-navy">
-                        {s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}
-                        {l.isAdditional && (
-                          <span className="ml-2 rounded px-1.5 py-0.5 align-middle text-[10.5px] font-semibold uppercase tracking-wide text-orange bg-orange/10">
-                            Additional
-                          </span>
-                        )}
+                        <FitCell fit={rmFit} col="rmItem" cap={FIT.CUT}>
+                          {s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}
+                          {l.isAdditional && (
+                            <span className="ml-2 rounded px-1.5 py-0.5 align-middle text-[10.5px] font-semibold uppercase tracking-wide text-orange bg-orange/10">
+                              Additional
+                            </span>
+                          )}
+                        </FitCell>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.requiredQty)}</td>
-                      <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-grey"><FitCell fit={rmFit} col="rmQty" cap={null}>{numOrDash(l.requiredQty)}</FitCell></td>
+                      <td className="px-3 py-2 text-grey"><FitCell fit={rmFit} col="rmUnit" cap={FIT.CUT}>{s.unitById(l.unitId)?.name ?? "—"}</FitCell></td>
                     </tr>
                   ))}
                 </tbody>
@@ -443,8 +473,12 @@ export default function RequestDetail() {
             from the original issue slip above. */}
         {r.aisRounds.length > 0 && (
           <div className="mt-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">
-              Additional Issue Slips <span className="text-orange normal-case tracking-normal font-medium">· QC top-ups</span>
+            {/* PF-20: one "Reset widths" for every slip — they share their widths. */}
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">
+                Additional Issue Slips <span className="text-orange normal-case tracking-normal font-medium">· QC top-ups</span>
+              </div>
+              <ResetWidths fit={aisFit} cols={AIS_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold normal-case tracking-normal text-grey-2 hover:text-orange" />
             </div>
             <div className="space-y-3">
               {r.aisRounds.map((rd, i) => (
@@ -468,17 +502,17 @@ export default function RequestDetail() {
                   <table className="w-full text-[13px]">
                     <thead>
                       <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                        <th className="font-medium px-3 py-2">Additional Raw Material</th>
-                        <th className="font-medium px-3 py-2 text-right w-28">Qty</th>
-                        <th className="font-medium px-3 py-2 w-32">Unit</th>
+                        <FitTh fit={aisFit} col="aisItem" className="font-medium px-3 py-2">Additional Raw Material</FitTh>
+                        <FitTh fit={aisFit} col="aisQty" className="font-medium px-3 py-2 text-right w-28">Qty</FitTh>
+                        <FitTh fit={aisFit} col="aisUnit" className="font-medium px-3 py-2 w-32">Unit</FitTh>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody {...aisFit.tbodyProps}>
                       {rd.aisBomLines.map((l, j) => (
                         <tr key={j} className="border-b border-line/70 last:border-0">
-                          <td className="px-3 py-2 text-navy">{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.qty)}</td>
-                          <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                          <td className="px-3 py-2 text-navy"><FitCell fit={aisFit} col="aisItem" cap={FIT.CUT}>{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</FitCell></td>
+                          <td className="px-3 py-2 text-right tabular-nums text-grey"><FitCell fit={aisFit} col="aisQty" cap={null}>{numOrDash(l.qty)}</FitCell></td>
+                          <td className="px-3 py-2 text-grey"><FitCell fit={aisFit} col="aisUnit" cap={FIT.CUT}>{s.unitById(l.unitId)?.name ?? "—"}</FitCell></td>
                         </tr>
                       ))}
                     </tbody>

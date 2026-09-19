@@ -298,6 +298,8 @@ export default function NewRequest() {
       key: "cardType",
       header: "Type",
       cell: (d) => <CardTypePill cardType={d.cardType} />,
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       sortValue: (d) => d.cardType,
       filter: { kind: "select", get: (d) => d.cardType },
     },
