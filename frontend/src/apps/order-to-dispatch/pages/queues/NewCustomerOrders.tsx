@@ -89,11 +89,12 @@ export default function NewCustomerOrders() {
     {
       key: "customer",
       header: "Customer",
+      // One line (PF-20): the location follows the name, both whole on hover when cut.
       cell: (o) => (
-        <div>
-          <div className="text-ink">{o.requesterName}</div>
-          {o.customerLocation && <div className="text-[12px] text-grey-2">{o.customerLocation}</div>}
-        </div>
+        <>
+          <span className="text-ink">{o.requesterName}</span>
+          {o.customerLocation && <span className="text-[12px] text-grey-2"> · {o.customerLocation}</span>}
+        </>
       ),
       sortValue: (o) => o.requesterName,
       filter: { kind: "select", get: (o) => o.requesterName },

@@ -22,7 +22,7 @@ import { useLocation } from "react-router-dom";
 import { currentAppId } from "@/apps/currentApp";
 
 /** Modules whose tables have the look. The last phase of PF-20 deletes this list. */
-export const TABLE_LOOK_ON: readonly string[] = ["kra-kpi"];
+export const TABLE_LOOK_ON: readonly string[] = ["kra-kpi", "order-to-dispatch"];
 
 /** Whether the tables on this URL have the look. */
 export function tableLookOn(pathname: string): boolean {

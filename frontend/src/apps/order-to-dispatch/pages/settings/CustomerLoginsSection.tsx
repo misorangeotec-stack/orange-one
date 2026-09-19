@@ -79,11 +79,12 @@ export default function CustomerLoginsSection() {
       {
         key: "name",
         header: "Customer",
+        // One line (PF-20): the location follows the name, both whole on hover when cut.
         cell: (r) => (
-          <div>
-            <div className="font-semibold text-ink">{r.displayName}</div>
-            {r.customerLocation && <div className="text-[12px] text-grey-2">{r.customerLocation}</div>}
-          </div>
+          <>
+            <span className="font-semibold text-ink">{r.displayName}</span>
+            {r.customerLocation && <span className="text-[12px] text-grey-2"> · {r.customerLocation}</span>}
+          </>
         ),
         sortValue: (r) => r.displayName,
         filter: { kind: "select", get: (r) => r.displayName },
@@ -109,11 +110,8 @@ export default function CustomerLoginsSection() {
           ) : (
             // Named, not counted. "2 things missing" makes the admin open the row
             // to find out what; the whole point of the check is to say so here.
-            <div className="space-y-0.5">
-              {r.missing.map((m) => (
-                <div key={m} className="text-[12px] text-ryg-red">{MISSING_LABEL[m]}</div>
-              ))}
-            </div>
+            // On one line since PF-20, joined with " · ", and whole on hover when cut.
+            <span className="text-[12px] text-ryg-red">{r.missing.map((m) => MISSING_LABEL[m]).join(" · ")}</span>
           ),
         sortValue: (r) => (r.missing.length === 0 ? "Yes" : "No"),
         filter: { kind: "select", get: (r) => (r.missing.length === 0 ? "Yes" : "No") },

@@ -170,6 +170,8 @@ export default function OrdersTable({
       sortValue: (o) => (isStepHeld(o) ? `${o.status} hold` : o.status),
       filter: { kind: "select", get: (o) => stepHoldLabel(o) ?? o.status },
       tdClassName: "whitespace-nowrap",
+      // Pills: never cut, no handle (PF-20).
+      resize: false,
     },
   ];
 
