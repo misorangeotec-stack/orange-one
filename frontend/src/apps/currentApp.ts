@@ -18,7 +18,7 @@
 
 import { APPS } from "./appInfo";
 import { CATEGORIES, UNCATEGORISED_LABEL } from "./categories";
-import { HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
+import { ANNOUNCEMENTS_LABEL, ANNOUNCEMENTS_PATH, HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
 
 export interface Crumb {
   label: string;
@@ -43,6 +43,9 @@ const STATIC_TRAILS: { prefix: string; crumbs: Crumb[] }[] = [
     crumbs: [{ label: "Control", collapsible: true }, { label: "Administration", to: "/admin" }],
   },
   { prefix: HOME_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: HOME_LABEL }] },
+  // PF-18's history page. A PREFIX match, which is why the posting module lives at
+  // /post-announcements and not under /announcements — it would be swallowed here.
+  { prefix: ANNOUNCEMENTS_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: ANNOUNCEMENTS_LABEL }] },
 ];
 
 /** Display label for a category key, e.g. "sales" → "Sales & Receivables". */

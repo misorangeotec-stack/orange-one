@@ -39,6 +39,73 @@ export type Database = {
   }
   public: {
     Tables: {
+      // Hand-added for migration 20261130120000 (PF-18, announcements), applied. The
+      // browser can neither read nor write these two tables (RLS on, no policies, grants
+      // revoked); everything goes through the announcement_* functions below. They are
+      // listed only so this file keeps mirroring the schema.
+      announcement_dismissals: {
+        Row: { announcement_id: string; dismissed_at: string; user_id: string }
+        Insert: { announcement_id: string; dismissed_at?: string; user_id: string }
+        Update: { announcement_id?: string; dismissed_at?: string; user_id?: string }
+        Relationships: []
+      }
+      announcements: {
+        Row: {
+          audience_modules: string[]
+          body: string | null
+          created_at: string
+          created_by: string | null
+          email_requested: boolean
+          emailed_at: string | null
+          emailed_count: number | null
+          ended_at: string | null
+          ended_by: string | null
+          ends_at: string
+          id: string
+          link_url: string | null
+          starts_at: string
+          title: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          audience_modules?: string[]
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          email_requested?: boolean
+          emailed_at?: string | null
+          emailed_count?: number | null
+          ended_at?: string | null
+          ended_by?: string | null
+          ends_at: string
+          id?: string
+          link_url?: string | null
+          starts_at?: string
+          title: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          audience_modules?: string[]
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          email_requested?: boolean
+          emailed_at?: string | null
+          emailed_count?: number | null
+          ended_at?: string | null
+          ended_by?: string | null
+          ends_at?: string
+          id?: string
+          link_url?: string | null
+          starts_at?: string
+          title?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       app_access: {
         Row: {
           access_level: string
@@ -7947,6 +8014,38 @@ export type Database = {
         Returns: string
       }
       email_module_enabled: { Args: { p_module: string }; Returns: boolean }
+      // Hand-added for migration 20261130120000 (PF-18, announcements), applied. The
+      // readers return jsonb arrays; core/announcements/data.ts gives them their shape.
+      announcements_active: { Args: Record<PropertyKey, never>; Returns: Json }
+      announcements_history: { Args: Record<PropertyKey, never>; Returns: Json }
+      announcements_manage: { Args: Record<PropertyKey, never>; Returns: Json }
+      // { shows_to, emails_to, email_enabled } through the SAME audience rule the
+      // publish enqueue uses, so the composer's number is the number of mails queued.
+      announcement_recipient_count: { Args: { p_modules: string[] }; Returns: Json }
+      // Raises when p_email is true while the announcements email switch is off.
+      announcement_publish: {
+        Args: {
+          p_body: string | null
+          p_email: boolean
+          p_ends_on: string
+          p_link: string | null
+          p_modules: string[]
+          p_title: string
+        }
+        Returns: Json
+      }
+      announcement_update: {
+        Args: {
+          p_body: string | null
+          p_ends_on: string | null
+          p_id: string
+          p_link: string | null
+          p_title: string
+        }
+        Returns: undefined
+      }
+      announcement_end: { Args: { p_id: string }; Returns: undefined }
+      announcement_dismiss: { Args: { p_id: string }; Returns: undefined }
       // Hand-added for migration 20261118120000 (DR-1, Daily Report banks), applied.
       //
       // p_closing is nullable and that is load-bearing: NULL DELETES the day's row,

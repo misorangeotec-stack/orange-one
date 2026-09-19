@@ -215,6 +215,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/process-coordinator",
     category: "control",
   },
+  // PF-18 · Where announcements are WRITTEN. Holding this module (at Full access) is
+  // what lets a non-admin post. Reading them needs no grant at all: that is the
+  // /announcements page, which is why this base is NOT /announcements (the
+  // breadcrumb matches that path by prefix and would swallow this module).
+  announcements: {
+    name: "Announcements",
+    basePath: "/post-announcements",
+    category: "control",
+  },
   // Virtual module: no web app and no route, so no basePath that resolves to a
   // page. It only gates login to the mobile Leads app. `basePath` is a dead
   // string kept so the shape stays uniform; nothing routes to it.

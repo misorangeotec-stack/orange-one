@@ -7,6 +7,7 @@ import { FYMultiSelect } from "@hub/components/FYMultiSelect";
 import { useFY } from "@hub/lib/fyContext";
 import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
+import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import CustomerBell from "@hub/components/customerOnboarding/CustomerBell";
 import { RECEIVABLES_MENUS } from "@hub/lib/menus";
@@ -230,6 +231,10 @@ export default function UserLayout() {
               />
             </div>
           </header>
+          {/* PF-18 · The hub-wide announcement strip. This module has its own shell,
+              so AppShell's copy never reaches it; without this line the Outstanding
+              Dashboard would be the one app nobody saw announcements in. */}
+          <AnnouncementStrip />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>
