@@ -8,6 +8,9 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { filterOptionLabel, filterValueOf, sortFilterOptions } from "@/shared/lib/blankFilter";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { FitCell, FitFilter, FitHead, FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
 
 /** Per-column filter behaviour. */
 export type ColumnFilter<T> =
@@ -70,8 +73,15 @@ export interface QueueColumn<T> {
    *
    * OPT-IN. A column without it renders exactly as before, which is why none of the existing
    * tables change. Pass `resizeKey` on the table to remember the widths per reader.
+   *
+   * ── PF-20: in a module that has the table look (shared/lib/tableLook.ts) ──
+   * EVERY column drags and every row is one line, with or without this. Then:
+   * - `false` — no handle and never cut. For a column of pills, buttons or inputs, which a
+   *   "…" would only mangle.
+   * - `width` — where this column's long text is cut until someone drags it (default 300 px).
+   * - `min` / `max` — the drag's limits (default 80 / 900).
    */
-  resize?: { width: number; min?: number; max?: number };
+  resize?: false | { width?: number; min?: number; max?: number };
 }
 
 /**
@@ -190,6 +200,10 @@ interface QueueTableProps<T> {
   /**
    * Remember the widths a reader drags `resize` columns to, under this key (per browser).
    * Without it a dragged width lasts until the page is left.
+   *
+   * PF-20: in a module with the table look, widths are always remembered — under an automatic
+   * key (this screen + these columns) unless this names one. Name one where two tables on one
+   * screen have the very same columns.
    */
   resizeKey?: string;
 }
@@ -391,6 +405,25 @@ export default function QueueTable<T>({
   // Widths a reader dragged `resize` columns to (see ColumnResizer). Empty unless a column opts in.
   const [widths, setWidths] = useState<Record<string, number>>(() => readWidths(resizeKey));
   const widthOf = (c: QueueColumn<T>) => (c.resize ? widths[c.key] ?? c.resize.width : undefined);
+  /**
+   * PF-20. `fit.on` is true only in a module that has the table look (shared/lib/tableLook.ts):
+   * every column drags, and every row is one line. With it off, EVERY render path below is the
+   * one this table had before PF-20, markup and all — which is what lets the look go out one
+   * module at a time.
+   */
+  const fit = useColumnWidths("qt", columns.map((c) => c.key), resizeKey);
+  /**
+   * Where a column's long text is cut, or null for one that is never cut: numbers (right-aligned,
+   * by `align` or by `tdClassName`), dates, and anything that opted out with `resize: false`.
+   */
+  const fitCap = (c: QueueColumn<T>): number | null =>
+    c.resize === false ||
+    c.align === "right" ||
+    /\btext-right\b/.test(c.tdClassName ?? "") ||
+    c.filter?.kind === "date" ||
+    c.filter?.kind === "number"
+      ? null
+      : (c.resize ? c.resize.width : undefined) ?? FIT.CUT;
   // ⚠ Applied HERE, once, rather than at each of the ~80 `actions={...}` call
   //   sites. Everything below — the Actions header, the per-row cell, the
   //   checkbox column, the bulk bar and the colSpan arithmetic — already keys off
@@ -805,6 +838,9 @@ export default function QueueTable<T>({
             Clear filters
           </button>
         )}
+        {/* PF-20: only once a column has been dragged. Beside the Columns menu rather than in
+            it — MultiSelect has no footer to put it in. */}
+        <ResetWidths fit={fit} cols={shownColumns.map((c) => c.key)} />
         <span className="ml-auto text-[12.5px] text-grey-2">{sorted.length} {rowsLabel}</span>
         {exportName && (
           <button
@@ -851,16 +887,30 @@ export default function QueueTable<T>({
                     </th>
                   )}
                   {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line w-px whitespace-nowrap">Actions</th>}
-                  {shownColumns.map((c, i) => (
+                  {shownColumns.map((c, i) => {
+                    const label = c.sortValue ? (
+                      <button onClick={() => onSort(c.key)} className={`inline-flex items-center gap-1 hover:text-navy ${sort?.key === c.key ? "text-navy" : ""}`}>
+                        {c.header}
+                        <span className="text-[9px] leading-none">{sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </button>
+                    ) : (
+                      c.header
+                    );
+                    if (fit.on) {
+                      // PF-20: the dragged width lives on this <th>; the handle sits beside the
+                      // sort button, never inside it, so a drag can never sort.
+                      return (
+                        <th key={c.key} style={thFitStyle(fit, c.key)} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${rule(i)} ${c.align === "right" ? "text-right" : ""} relative`}>
+                          <FitHead width={fit.width(c.key)}>{label}</FitHead>
+                          {c.resize !== false && (
+                            <FitResizer fit={fit} col={c.key} label={c.header} min={c.resize ? c.resize.min : undefined} max={c.resize ? c.resize.max : undefined} />
+                          )}
+                        </th>
+                      );
+                    }
+                    return (
                     <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${rule(i)} ${c.align === "right" ? "text-right" : ""} ${c.resize ? "relative" : ""}`}>
-                      {c.sortValue ? (
-                        <button onClick={() => onSort(c.key)} className={`inline-flex items-center gap-1 hover:text-navy ${sort?.key === c.key ? "text-navy" : ""}`}>
-                          {c.header}
-                          <span className="text-[9px] leading-none">{sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
-                        </button>
-                      ) : (
-                        c.header
-                      )}
+                      {label}
                       {c.resize && (
                         <ColumnResizer
                           label={c.header}
@@ -880,7 +930,8 @@ export default function QueueTable<T>({
                         />
                       )}
                     </th>
-                  ))}
+                    );
+                  })}
                 </tr>
                 {/* Typed per-column filter row */}
                 <tr className="bg-page/50">
@@ -888,12 +939,12 @@ export default function QueueTable<T>({
                   {actions && <th className="px-3 py-2.5 border-b border-line" />}
                   {shownColumns.map((c, i) => (
                     <th key={c.key} className={`px-3 py-2.5 border-b border-line align-middle font-normal ${rule(i)}`}>
-                      {renderFilter(c)}
+                      {fit.on ? <FitFilter dragged={fit.width(c.key) !== undefined}>{renderFilter(c)}</FitFilter> : renderFilter(c)}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...fit.tbodyProps}>
                 {sorted.length === 0 ? (
                   <tr>
                     <td colSpan={colSpan} className="px-4 py-12 text-center text-[13px] text-grey-2">
@@ -928,7 +979,12 @@ export default function QueueTable<T>({
                           {actions && <td className="px-4 py-3 border-b border-line/70 whitespace-nowrap">{actions(row)}</td>}
                           {shownColumns.map((c, i) => (
                             <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${rule(i)} ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>
-                              {c.resize ? (
+                              {fit.on ? (
+                                // PF-20: one line; long text cut at the column's width, whole on hover.
+                                <FitCell fit={fit} col={c.key} cap={fitCap(c)}>
+                                  {c.cell(row)}
+                                </FitCell>
+                              ) : c.resize ? (
                                 // Held to the dragged width, on one line, cut with "…".
                                 <div style={{ width: widthOf(c) }} className="overflow-hidden text-ellipsis whitespace-nowrap">
                                   {c.cell(row)}

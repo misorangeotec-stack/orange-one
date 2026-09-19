@@ -59,13 +59,9 @@ export default function ItemsModal({ drill, rows, onClose }: { drill: Drill | nu
     {
       key: "task",
       header: "Task / System",
-      // One line, like the dispatch register: a long name is cut, the whole of it on hover.
-      // The header's edge drags to widen it; the width is kept.
-      cell: (r) => (
-        <span title={r.label} className="block truncate font-medium text-navy">
-          {r.label}
-        </span>
-      ),
+      // One line, like the dispatch register: a long name is cut, the whole of it on hover — the
+      // table shows it only when it IS cut (PF-20). The header's edge drags to widen it; the width is kept.
+      cell: (r) => <span className="block truncate font-medium text-navy">{r.label}</span>,
       resize: { width: 320, min: 160, max: 900 },
       tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.label,

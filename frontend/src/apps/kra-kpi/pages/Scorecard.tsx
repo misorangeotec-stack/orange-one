@@ -172,13 +172,10 @@ export default function Scorecard() {
       key: "task",
       header: "Task / System",
       alwaysVisible: true,
-      // One line per row, like the dispatch register: a long name is cut, the whole of it on hover.
-      // The reader can drag the header's edge to widen it (the user, 19-09-2026); the width is kept.
-      cell: (r) => (
-        <span title={r.label} className="block truncate font-medium text-navy">
-          {r.label}
-        </span>
-      ),
+      // One line per row, like the dispatch register: a long name is cut, the whole of it on hover —
+      // shown by the table only when it IS cut (PF-20). The reader can drag the header's edge to
+      // widen it (the user, 19-09-2026); the width is kept.
+      cell: (r) => <span className="block truncate font-medium text-navy">{r.label}</span>,
       resize: { width: 360, min: 160, max: 900 },
       tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.label,

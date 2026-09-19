@@ -215,7 +215,9 @@ export default function Team() {
     {
       key: "designation",
       header: "Designation",
-      cell: (r) => <span title={r.designation} className="block max-w-[200px] truncate text-grey">{r.designation || "—"}</span>,
+      // One line, cut at the table's width and whole on hover (PF-20) — no cap of its own, or a
+      // column dragged wider would still cut here.
+      cell: (r) => <span className="block truncate text-grey">{r.designation || "—"}</span>,
       tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.designation,
       filter: { kind: "select", get: (r) => r.designation },
@@ -223,7 +225,7 @@ export default function Team() {
     {
       key: "reports",
       header: "Reports to",
-      cell: (r) => <span title={r.reportsTo} className="block max-w-[200px] truncate text-grey">{r.reportsTo || "—"}</span>,
+      cell: (r) => <span className="block truncate text-grey">{r.reportsTo || "—"}</span>,
       tdClassName: "whitespace-nowrap",
       sortValue: (r) => r.reportsTo,
       filter: { kind: "select", get: (r) => r.reportsTo },
@@ -232,7 +234,7 @@ export default function Team() {
       key: "modules",
       header: "Worked in",
       cell: (r) => (
-        <span title={r.modules.join(", ")} className="block max-w-[260px] truncate text-[12.5px] text-grey">
+        <span className="block truncate text-[12.5px] text-grey">
           {r.modules.join(", ") || "—"}
         </span>
       ),
