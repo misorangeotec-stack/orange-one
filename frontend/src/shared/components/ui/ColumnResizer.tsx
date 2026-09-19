@@ -69,6 +69,9 @@ export function FitResizer({
     w0: number;
     /** The header's right edge when the press began — where the edge must follow the pointer from. */
     right0: number;
+    /** The width and edge after the previous move, to measure how far the edge moves per px. */
+    lastW: number;
+    lastR: number;
     th: HTMLElement;
     prev: { width: string; boxSizing: string };
     started: boolean;
@@ -119,10 +122,14 @@ export function FitResizer({
           finish(false);
         };
         window.addEventListener("keydown", onKey, true);
+        const w0 = contentWidth(th);
+        const right0 = th.getBoundingClientRect().right;
         drag.current = {
           x: e.clientX,
-          w0: contentWidth(th),
-          right0: th.getBoundingClientRect().right,
+          w0,
+          right0,
+          lastW: w0,
+          lastR: right0,
           th,
           prev: { width: th.style.width, boxSizing: th.style.boxSizing },
           started: false,
@@ -146,22 +153,37 @@ export function FitResizer({
           const head = d.th.querySelector<HTMLElement>(":scope > [data-fit-head]");
           if (head) head.style.width = `${w}px`;
         };
+        const edge = () => d.th.getBoundingClientRect().right;
         let w = clamp(d.w0 + dx);
         apply(w);
+        let r = edge();
         // ⚠ KEEP THE EDGE UNDER THE POINTER. In a table narrower than its card the spare width
         //   is spread over the other columns, so widening this one shrinks the columns to its
         //   LEFT too and its left edge moves: measured on a four-column master, a 250 px drag
-        //   left the edge 123 px short of the pointer. Correct the width by however far the edge
-        //   landed from the pointer; it settles in a few passes. A table that overflows its card
-        //   (no spare width) is right first time and never loops.
-        for (let i = 0; i < 6; i++) {
-          const miss = d.right0 + dx - d.th.getBoundingClientRect().right;
+        //   left the edge 123 px short of the pointer. So correct the width by how far the edge
+        //   missed, scaled by how far the edge MOVES per px of width (measured, not assumed).
+        //
+        // ⚠ AND STOP WHERE THE EDGE CANNOT FOLLOW. The last column of a table that fills its card
+        //   has its right edge pinned to the card's: widening it only takes room from the others.
+        //   Chasing that edge drove the column straight to the 900 px limit on a two-row recap.
+        //   There the edge barely moves per px, so the correction stops and the column simply
+        //   widens by the drag distance. A table that overflows its card is right first time.
+        let prevW = d.lastW, prevR = d.lastR;
+        for (let i = 0; i < 5; i++) {
+          const miss = d.right0 + dx - r;
           if (Math.abs(miss) < 0.5) break;
-          const next = clamp(w + miss);
+          const gain = w !== prevW ? (r - prevR) / (w - prevW) : NaN;
+          if (!(gain > 0.15)) break;
+          const next = clamp(w + miss / gain);
           if (next === w) break;
+          prevW = w;
+          prevR = r;
           w = next;
           apply(w);
+          r = edge();
         }
+        d.lastW = w;
+        d.lastR = r;
         d.last = w;
       }}
       onPointerUp={(e) => {
