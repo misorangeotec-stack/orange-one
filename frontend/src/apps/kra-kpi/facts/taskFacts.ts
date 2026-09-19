@@ -53,10 +53,12 @@ export interface TaskFactsInput {
  * the task; with it, only 3 pairs still collide — and all three are the same task on two
  * schedules (an as-needed "when" template beside a monthly one). So where one person's
  * templates share a title and description, the schedule is added: "… · monthly".
- * Descriptions are plain single lines (144 characters at most), clipped here so a grid
- * cell stays one line.
+ *
+ * The name is stored WHOLE (descriptions are plain single lines, 144 characters at most).
+ * It used to be clipped at 70 characters here, which left the grid's hover showing a cut name
+ * too (the user, 19-09-2026); the screens now shorten a long name themselves, with the whole
+ * of it on hover.
  */
-const LABEL_DESCRIPTION_MAX = 70;
 const CADENCE: Record<string, string> = {
   daily: "daily",
   when: "as needed",
@@ -69,8 +71,7 @@ export function templateLabel(
   withCadence = false,
 ): string {
   const d = (tpl.description ?? "").replace(/\s+/g, " ").trim();
-  const clipped = d.length > LABEL_DESCRIPTION_MAX ? `${d.slice(0, LABEL_DESCRIPTION_MAX - 1).trimEnd()}…` : d;
-  const base = clipped ? `${tpl.title} · ${clipped}` : tpl.title;
+  const base = d ? `${tpl.title} · ${d}` : tpl.title;
   const cadence = withCadence && tpl.recurrenceType ? CADENCE[tpl.recurrenceType] : undefined;
   return cadence ? `${base} · ${cadence}` : base;
 }

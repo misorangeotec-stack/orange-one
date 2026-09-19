@@ -123,6 +123,8 @@ export function misSheet(o: MisInput, sheetName = "KRA KPI"): ExportSheet<SheetR
     preambleStyle: (r, c) => (r === 0 && c === 0 ? TITLE_STYLE : c === 0 && r > 0 && r < 5 ? LABEL_STYLE : undefined),
     merges,
     rowStyle: (r) => (r.band === "total" ? GROUP_ROW_STYLE : r.band === "score" ? SCORE_STYLE : undefined),
+    // Task names are stored whole; wrap them in their merged cell rather than cut them.
+    cellStyle: (_r, c) => (c === 0 ? { alignment: { wrapText: true, vertical: "center" } } : undefined),
     freezeCols: 1,
   };
 }

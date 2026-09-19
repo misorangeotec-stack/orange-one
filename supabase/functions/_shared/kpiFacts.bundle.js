@@ -330,7 +330,6 @@ var isRecurringTask = (t) => t.fromRecurring || t.recurringTaskId !== null;
 var TASK_MODULE = "task-management";
 var ONE_OFF_ROW = "one-off";
 var ONE_OFF_LABEL = "One-off tasks";
-var LABEL_DESCRIPTION_MAX = 70;
 var CADENCE = {
   daily: "daily",
   when: "as needed",
@@ -340,8 +339,7 @@ var CADENCE = {
 };
 function templateLabel(tpl, withCadence = false) {
   const d = (tpl.description ?? "").replace(/\s+/g, " ").trim();
-  const clipped = d.length > LABEL_DESCRIPTION_MAX ? `${d.slice(0, LABEL_DESCRIPTION_MAX - 1).trimEnd()}\u2026` : d;
-  const base = clipped ? `${tpl.title} \xB7 ${clipped}` : tpl.title;
+  const base = d ? `${tpl.title} \xB7 ${d}` : tpl.title;
   const cadence = withCadence && tpl.recurrenceType ? CADENCE[tpl.recurrenceType] : void 0;
   return cadence ? `${base} \xB7 ${cadence}` : base;
 }
