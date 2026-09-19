@@ -33,7 +33,8 @@ import MultiSelect from "@/shared/components/ui/MultiSelect";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   INK_COMPANIES, SHIPMENT_STATUSES, applyBackup, buildBackup, emptyShipment, fmtQty,
-  loadInkPositions, loadShipments, newId, saveShipments,
+  loadGroupFields, loadInkPositions, loadLines, loadOrder, loadOverrides, loadShipments, newId,
+  saveShipments,
   type Shipment, type ShipmentStatus,
 } from "../lib/inkMis";
 
@@ -79,12 +80,47 @@ export default function InkShipments() {
   // The item dropdown is the real ink list from Tally, not a typed-in code. A consignment
   // against a code that does not exist would never join to a stock line on the dashboard.
   const fy = useMemo(() => salesFyOptions()[0], []);
+  const [overrides] = useState(() => loadOverrides());
+  const [order] = useState(() => loadOrder());
+  const [lineFields] = useState(() => loadLines());
+  const [groupFields] = useState(() => loadGroupFields());
   const { data, isLoading } = useQuery({
     queryKey: ["inkMis", "positions", fy],
-    queryFn: () => loadInkPositions(fy),
+    // The planner's own item master, so the picker shows the codes and descriptions they set
+    // rather than Tally's raw ones — and the same merged lines the dashboard prints.
+    queryFn: () =>
+      loadInkPositions(fy, undefined, undefined, overrides, "ink", order, lineFields, groupFields),
     staleTime: 5 * 60 * 1000,
   });
-  const items = useMemo(() => data?.rows ?? [], [data]);
+  /**
+   * The inks that can be put on a consignment.
+   *
+   * ONLY CODED ONES. A consignment line stores an item CODE, which is what ties it to a line on
+   * the dashboard; an ink with no code has nothing to store and, worse, an empty value crashes
+   * the dropdown outright — a Select.Item may not carry an empty string, since that is reserved
+   * for "nothing selected". That is what took this page down.
+   *
+   * Numbered inks lead the list, because those are the ones on the planner's sheet and so the
+   * ones a consignment is usually for.
+   */
+  const items = useMemo(() => {
+    const rows = (data?.rows ?? []).filter((r) => r.itemCode);
+    return [...rows].sort((a, b) => {
+      const na = order[a.key] ?? order[a.legacyKey];
+      const nb = order[b.key] ?? order[b.legacyKey];
+      if (na !== undefined && nb !== undefined) return na - nb;
+      if (na !== undefined) return -1;
+      if (nb !== undefined) return 1;
+      return a.description.localeCompare(b.description);
+    });
+  }, [data, order]);
+
+  /** Inks Tally has no code for: they cannot be picked, so the screen says so rather than
+   *  leaving the planner hunting for one that is not in the list. */
+  const uncodedCount = useMemo(
+    () => (data?.rows ?? []).filter((r) => !r.itemCode).length,
+    [data],
+  );
 
   /* ------------------------------------------------------------------ mutators */
 
@@ -153,7 +189,10 @@ export default function InkShipments() {
     { value: "none", label: "Combined only" },
     ...INK_COMPANIES.map((c) => ({ value: c.key, label: c.label })),
   ];
-  const inkOpts = items.map((it) => ({ value: it.itemCode || it.key, label: `${it.itemCode || "(no code)"} — ${it.description}` }));
+  const inkOpts = items.map((it) => ({
+    value: it.itemCode,
+    label: `${it.description} (${it.itemCode})`,
+  }));
 
   const visibleShipments = useMemo(() => {
     const ref = pf.reference.trim().toUpperCase();
@@ -219,6 +258,14 @@ export default function InkShipments() {
           </Button>
         </div>
       </div>
+
+      {uncodedCount > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {uncodedCount} ink{uncodedCount === 1 ? " is" : "s are"} missing from the list because
+          Tally has no item code for {uncodedCount === 1 ? "it" : "them"}. Give the code in the
+          item master to put {uncodedCount === 1 ? "it" : "them"} on a consignment.
+        </p>
+      )}
 
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -408,11 +455,15 @@ export default function InkShipments() {
                           <SelectItem value="none">
                             {isLoading ? "Loading inks…" : "Choose an ink"}
                           </SelectItem>
-                          {items.map((it) => (
-                            <SelectItem key={it.itemCode} value={it.itemCode}>
-                              {it.itemCode} — {it.description}
-                            </SelectItem>
-                          ))}
+                          {items.map((it) => {
+                            const n = order[it.key] ?? order[it.legacyKey];
+                            return (
+                              <SelectItem key={it.itemCode} value={it.itemCode}>
+                                {n !== undefined ? `${n}. ` : ""}
+                                {it.description} ({it.itemCode})
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
