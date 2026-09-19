@@ -3,6 +3,10 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useImportStore } from "../../store";
 import { MASTER_TYPES, type MasterType } from "../../types";
 
@@ -13,6 +17,8 @@ import { MASTER_TYPES, type MasterType } from "../../types";
  */
 export default function MasterOwnersSection() {
   const s = useImportStore();
+  /** PF-20: one line per row, a long owner list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["master", "owners", "pending"]);
   const [editing, setEditing] = useState<MasterType | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -55,6 +61,8 @@ export default function MasterOwnersSection() {
           admins.
         </p>
       </div>
+      {/* PF-20: inside ScrollableTable like every other table, so a phone scrolls it rather than clipping it. */}
+      <ScrollableTable>
       <table className="w-full text-[13.5px]">
         <thead>
           <tr className="text-left text-grey-2 border-b border-line">
@@ -64,7 +72,7 @@ export default function MasterOwnersSection() {
             <th className="font-medium px-4 py-3">Pending requests</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody {...fit.tbodyProps}>
           {MASTER_TYPES.map((mt) => {
             const ids = s.managerIdsFor(mt.value);
             const names = ids.map((id) => s.profileById(id)?.name ?? "Unknown");
@@ -76,13 +84,15 @@ export default function MasterOwnersSection() {
                     Edit
                   </button>
                 </td>
-                <td className="px-4 py-3 font-medium text-navy">{mt.plural}</td>
+                <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{mt.plural}</td>
                 <td className="px-4 py-3">
-                  {names.length ? (
-                    <span className="text-navy">{names.join(", ")}</span>
-                  ) : (
-                    <span className="text-grey-2">Unassigned — requests fall back to the admins</span>
-                  )}
+                  <FitCell fit={fit} col="owners" cap={FIT.CUT}>
+                    {names.length ? (
+                      <span className="text-navy">{names.join(", ")}</span>
+                    ) : (
+                      <span className="text-grey-2">Unassigned — requests fall back to the admins</span>
+                    )}
+                  </FitCell>
                 </td>
                 <td className="px-4 py-3">
                   {pending ? <span className="text-orange font-semibold">{pending}</span> : <span className="text-grey-2">—</span>}
@@ -92,6 +102,7 @@ export default function MasterOwnersSection() {
           })}
         </tbody>
       </table>
+      </ScrollableTable>
 
       <Modal
         open={editing !== null}

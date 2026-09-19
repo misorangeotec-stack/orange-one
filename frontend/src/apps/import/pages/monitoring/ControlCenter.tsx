@@ -94,24 +94,27 @@ export default function ControlCenter() {
   const ownerCell = (e: QueueEntry) => {
     const ids = ownerIdsOf(e);
     if (!ids.length) return <span className="text-grey-2">Unassigned</span>;
+    // One line (PF-20): "name · phone" per owner, owners comma-separated; cut with "…" and shown
+    // whole on hover when there are several.
     return (
-      <div className="space-y-0.5">
-        {ids.map((id) => {
+      <>
+        {ids.map((id, i) => {
           // The phone only exists on a directory row, so it is shown when the
           // viewer can see one and quietly omitted when they cannot.
           const p = s.profileById(id);
           return (
-            <div key={id} className="leading-tight">
-              <div className="text-navy">{p?.name ?? s.personName(id)}</div>
+            <span key={id}>
+              {i > 0 && <span className="text-grey-2">, </span>}
+              <span className="text-navy">{p?.name ?? s.personName(id)}</span>
               {p?.phone ? (
-                <div className="text-[12px] text-grey-2 tabular-nums">{p.phone}</div>
+                <span className="text-[12px] text-grey-2 tabular-nums"> · {p.phone}</span>
               ) : (
-                <div className="text-[12px] text-grey-2/60 italic">no number</div>
+                <span className="text-[12px] text-grey-2/60 italic"> · no number</span>
               )}
-            </div>
+            </span>
           );
         })}
-      </div>
+      </>
     );
   };
 
