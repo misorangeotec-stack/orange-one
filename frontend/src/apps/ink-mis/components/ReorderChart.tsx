@@ -17,13 +17,17 @@
  * compared at a glance do not need a plot: a row of small totals says the same thing in one
  * line, and the comparison that matters — which bucket is biggest — survives fine in numbers.
  *
- * The buckets are CATEGORIES (Reactive, Sublimation, Pigment, Disperse, Chemical, Others),
- * which is how the planner buys. Groups still appear, but inside an opened bucket, where they
- * organise the list rather than setting the shape of the screen.
+ * TWO LEVELS, THEN THE ITEMS. Categories first (Reactive, Sublimation, Pigment, Disperse,
+ * Chemical, Others), because that is how the ink is bought. Opening one shows a bucket per GROUP
+ * inside it — H-Series, Eco, KY Reactive — each with its own quantity, because "Reactive needs
+ * 46,793" is not an order anybody can place. Opening a group finally lists its inks.
  *
- * Opening one shows its inks with the working, not just the answer: stock, what is on the way,
- * the target and the shortfall those produce. A bare shortfall cannot be argued with — it does
- * not say whether the number is large because stock is low or because the target is high.
+ * Each step answers the question the one before it raises, and nothing below the level in view
+ * is drawn, so the whole thing stays one or two lines tall until the planner asks for more.
+ *
+ * The item list shows the working, not just the answer: stock, what is on the way, the target
+ * and the shortfall those produce. A bare shortfall cannot be argued with — it does not say
+ * whether the number is large because stock is low or because the target is high.
  *
  * It follows the table: whatever is filtered, or whichever company tab is open, is what is
  * counted. Two different answers on one screen would be worse than none.
@@ -49,24 +53,35 @@ interface BucketItem {
   daysCover: number | null;
 }
 
-interface Bucket {
+interface Group {
   name: string;
   qty: number;
   items: BucketItem[];
 }
 
+interface Bucket {
+  name: string;
+  qty: number;
+  groups: Group[];
+}
+
 export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; unit?: string }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
 
   const buckets = useMemo<Bucket[]>(() => {
-    const by = new Map<string, Bucket>();
+    const by = new Map<string, Map<string, Group>>();
+    const totals = new Map<string, number>();
     for (const r of rows) {
       const qty = reorderQty(r);
       if (qty <= 0) continue;
-      const name = r.category?.trim() || UNSET;
-      const b = by.get(name) ?? { name, qty: 0, items: [] };
-      b.qty += qty;
-      b.items.push({
+      const category = r.category?.trim() || UNSET;
+      const groupName = r.group?.trim() || UNSET;
+      const groups = by.get(category) ?? new Map<string, Group>();
+      const g = groups.get(groupName) ?? { name: groupName, qty: 0, items: [] };
+      g.qty += qty;
+      totals.set(category, (totals.get(category) ?? 0) + qty);
+      g.items.push({
         key: r.key,
         // The description, never the code: the planner reads these lines by name.
         label: r.description || r.itemCode,
@@ -77,15 +92,21 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
         qty,
         daysCover: r.daysCover,
       });
-      by.set(name, b);
+      groups.set(groupName, g);
+      by.set(category, groups);
     }
     // The planner's own category order, so the buckets do not reshuffle as quantities move.
     // Anything uncategorised sits last, where it reads as work still to do.
     const order = [...INK_CATEGORIES, UNSET];
-    const out = [...by.values()].sort(
-      (a, b) => order.indexOf(a.name) - order.indexOf(b.name),
-    );
-    out.forEach((b) => b.items.sort((x, y) => y.qty - x.qty));
+    const out: Bucket[] = [...by.entries()].map(([name, groups]) => ({
+      name,
+      qty: totals.get(name) ?? 0,
+      // Groups by size: inside a category the biggest shortfall is the one to deal with first.
+      groups: [...groups.values()]
+        .sort((a, b) => b.qty - a.qty)
+        .map((g) => ({ ...g, items: [...g.items].sort((x, y) => y.qty - x.qty) })),
+    }));
+    out.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
     return out;
   }, [rows]);
 
@@ -101,7 +122,33 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
     );
   }
 
-  const shown = buckets.find((b) => b.name === open);
+  const shownCategory = buckets.find((b) => b.name === openCategory);
+  const shownGroup = shownCategory?.groups.find((g) => g.name === openGroup);
+
+  /** A bucket at either level: the same small box, so the drill reads as one control. */
+  const bucketButton = (
+    name: string,
+    qty: number,
+    isOpen: boolean,
+    onClick: () => void,
+    hint: string,
+  ) => (
+    <button
+      key={name}
+      type="button"
+      onClick={onClick}
+      aria-expanded={isOpen}
+      title={hint}
+      className={`rounded-md border px-3 py-1.5 text-left transition-colors ${
+        isOpen ? "border-primary bg-primary/10" : "hover:bg-muted/60"
+      }`}
+    >
+      <div className="text-[11px] text-muted-foreground">
+        {isOpen ? "▾" : "▸"} {name}
+      </div>
+      <div className="text-sm font-semibold tabular-nums">{fmtQty(qty)}</div>
+    </button>
+  );
 
   return (
     <div className="rounded-lg border bg-card">
@@ -116,35 +163,41 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
       </div>
 
       <div className="flex flex-wrap gap-2 px-3 pb-3">
-        {buckets.map((b) => {
-          const isOpen = b.name === open;
-          return (
-            <button
-              key={b.name}
-              type="button"
-              onClick={() => setOpen(isOpen ? null : b.name)}
-              aria-expanded={isOpen}
-              title={`${b.items.length} ink${b.items.length === 1 ? "" : "s"} to order`}
-              className={`rounded-md border px-3 py-1.5 text-left transition-colors ${
-                isOpen ? "border-primary bg-primary/10" : "hover:bg-muted/60"
-              }`}
-            >
-              <div className="text-[11px] text-muted-foreground">
-                {isOpen ? "▾" : "▸"} {b.name}
-              </div>
-              <div className="text-sm font-semibold tabular-nums">{fmtQty(b.qty)}</div>
-            </button>
-          );
-        })}
+        {buckets.map((b) =>
+          bucketButton(
+            b.name,
+            b.qty,
+            b.name === openCategory,
+            () => {
+              setOpenCategory(b.name === openCategory ? null : b.name);
+              setOpenGroup(null);
+            },
+            `${b.groups.length} group${b.groups.length === 1 ? "" : "s"} to order`,
+          ),
+        )}
       </div>
 
-      {shown && (
+      {shownCategory && (
+        <div className="flex flex-wrap items-center gap-2 border-t bg-muted/30 px-3 py-2">
+          <span className="text-xs text-muted-foreground">{shownCategory.name} by group</span>
+          {shownCategory.groups.map((g) =>
+            bucketButton(
+              g.name,
+              g.qty,
+              g.name === openGroup,
+              () => setOpenGroup(g.name === openGroup ? null : g.name),
+              `${g.items.length} ink${g.items.length === 1 ? "" : "s"} to order`,
+            ),
+          )}
+        </div>
+      )}
+
+      {shownGroup && (
         <div className="overflow-x-auto border-t px-3 py-2">
           <table className="w-full min-w-[40rem] text-xs">
             <thead>
               <tr className="text-muted-foreground">
                 <th className="py-1 text-left font-normal">Ink</th>
-                <th className="py-1 text-left font-normal">Group</th>
                 <th className="py-1 text-right font-normal">Stock</th>
                 <th className="py-1 text-right font-normal">On the way</th>
                 <th className="py-1 text-right font-normal">Month max</th>
@@ -153,10 +206,9 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
               </tr>
             </thead>
             <tbody>
-              {shown.items.map((it) => (
+              {shownGroup.items.map((it) => (
                 <tr key={it.key} className="border-t">
                   <td className="py-1 pr-3">{it.label}</td>
-                  <td className="py-1 pr-3 text-muted-foreground">{it.group}</td>
                   <td className="py-1 text-right tabular-nums">{fmtQty(it.stock)}</td>
                   <td className="py-1 text-right tabular-nums">{fmtQty(it.incoming)}</td>
                   <td className="py-1 text-right tabular-nums">{fmtQty(it.target)}</td>
@@ -167,21 +219,21 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
             </tbody>
             <tfoot>
               <tr className="border-t">
-                <td className="py-1 font-medium" colSpan={2}>
-                  {shown.items.length} ink{shown.items.length === 1 ? "" : "s"}
+                <td className="py-1 font-medium">
+                  {shownGroup.items.length} ink{shownGroup.items.length === 1 ? "" : "s"}
                 </td>
                 <td className="py-1 text-right tabular-nums">
-                  {fmtQty(shown.items.reduce((t, i) => t + i.stock, 0))}
+                  {fmtQty(shownGroup.items.reduce((t, i) => t + i.stock, 0))}
                 </td>
                 <td className="py-1 text-right tabular-nums">
-                  {fmtQty(shown.items.reduce((t, i) => t + i.incoming, 0))}
+                  {fmtQty(shownGroup.items.reduce((t, i) => t + i.incoming, 0))}
                 </td>
                 <td className="py-1 text-right tabular-nums">
-                  {fmtQty(shown.items.reduce((t, i) => t + i.target, 0))}
+                  {fmtQty(shownGroup.items.reduce((t, i) => t + i.target, 0))}
                 </td>
                 {/* Days of cover is a rate, not a quantity: summing it would be nonsense. */}
                 <td className="py-1 text-right text-muted-foreground">–</td>
-                <td className="py-1 text-right font-semibold tabular-nums">{fmtQty(shown.qty)}</td>
+                <td className="py-1 text-right font-semibold tabular-nums">{fmtQty(shownGroup.qty)}</td>
               </tr>
             </tfoot>
           </table>
