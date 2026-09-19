@@ -12,7 +12,6 @@ import { exportSheetsToXlsx, type ExportSheet } from "@/shared/lib/exportXlsx";
 import { formatDateTime } from "@/shared/lib/time";
 import { fetchKpiReport, type KpiReport } from "../data/report";
 import type { KpiTeam } from "../data/team";
-import { fmtScore } from "../facts/score";
 import { misNotes, misSheet } from "./exportKpi";
 import { periodLabel, periodWord, type Period } from "./period";
 import { moduleSplit, toGridRows, totalsOf } from "./rows";
@@ -55,12 +54,11 @@ export async function exportTeam(o: {
   team: KpiTeam;
   /** The rows the page shows — the admins switch and any band / department already applied. */
   rows: TeamRow[];
-  totals: { given: number; done: number; onTime: number; score: number | null; lastScore: number | null };
   scope: string;
   viewing: string[];
   onProgress: (done: number, total: number) => void;
 }): Promise<void> {
-  const { period, team, rows, totals, scope, viewing, onProgress } = o;
+  const { period, team, rows, scope, viewing, onProgress } = o;
   const W = periodWord(period.mode);
   // Highest score first, as the page opens: a full workload before low volume, no work last.
   // The personal sheets follow the same order.
@@ -74,11 +72,10 @@ export async function exportTeam(o: {
       ["Who", scope],
       [W, periodLabel(period)],
       ["As of", formatDateTime(team.as_of)],
-      ["Team score", `${fmtScore(totals.score)} (last ${W.toLowerCase()} ${fmtScore(totals.lastScore)})`],
       [],
     ],
     preambleStyle: (r, c) =>
-      r === 0 && c === 0 ? { font: { bold: true, sz: 14, color: { rgb: "0B1F3A" } } } : c === 0 && r > 0 && r < 5 ? { font: { bold: true, color: { rgb: "5B6B7F" } } } : undefined,
+      r === 0 && c === 0 ? { font: { bold: true, sz: 14, color: { rgb: "0B1F3A" } } } : c === 0 && r > 0 && r < 4 ? { font: { bold: true, color: { rgb: "5B6B7F" } } } : undefined,
     columns: [
       // The score leads, as on the page (the user, 19-09-2026).
       { header: "Person", width: 24, value: (r) => r.name },
@@ -129,7 +126,6 @@ export async function exportTeam(o: {
     filters: [`${W}: ${periodLabel(period)}`, `Who: ${scope}`, ...viewing, `As of: ${formatDateTime(team.as_of)}`],
     notes: [
       "The Team sheet has one row per person; each person with work due then has their own sheet in the weekly MIS layout, exactly as their own scorecard exports it.",
-      "The team score adds up everyone's work first (on time 1, late ½, not done 0, over everything given) — not an average of people's scores.",
       `Low volume = fewer than ${LOW_VOLUME} pieces of work in the ${W.toLowerCase()}: shown, but not comparable with a full workload. Rows below 70 (not low volume) are shaded.`,
       ...misNotes(period, null, notInUse),
     ],

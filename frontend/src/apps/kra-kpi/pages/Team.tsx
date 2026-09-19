@@ -13,9 +13,6 @@ import {
   BAND_LABEL,
   LOW_VOLUME,
   bandCounts,
-  departmentSplit,
-  teamTotals,
-  teamTrend,
   toTeamRows,
   type Band,
   type TeamRow,
@@ -23,8 +20,6 @@ import {
 import { reportQuery, useReportParams } from "../lib/useReportParams";
 import PeriodControls, { ExcelButton } from "../components/PeriodControls";
 import { exportTeam } from "../lib/exportTeam";
-import { LABEL, ScoreCard } from "../components/Headline";
-import Trend from "../components/Trend";
 
 const BANDS: { band: Band; bar: string }[] = [
   { band: "top", bar: "bg-ryg-green" },
@@ -33,7 +28,7 @@ const BANDS: { band: Band; bar: string }[] = [
   { band: "low_volume", bar: "bg-navy/25" },
 ];
 
-type Focus = { kind: "band"; band: Band } | { kind: "department"; name: string } | null;
+type Focus = Band | null;
 
 const fmtChange = (x: number | null) => (x === null ? "—" : x === 0 ? "0.0" : `${x > 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}`);
 
@@ -58,12 +53,8 @@ export default function Team() {
 
   const rows = useMemo(() => (team ? toTeamRows(team.people, showHidden) : []), [team, showHidden]);
   const hiddenCount = useMemo(() => (team ? team.people.filter((p) => p.is_admin || p.is_excluded).length : 0), [team]);
-  const totals = useMemo(() => teamTotals(rows, team?.people ?? []), [rows, team]);
   const bands = useMemo(() => bandCounts(rows), [rows]);
-  const depts = useMemo(() => departmentSplit(rows), [rows]);
-  const trend = useMemo(() => teamTrend(rows, team?.weeks ?? []), [rows, team]);
   const withWork = rows.filter((r) => r.given > 0).length;
-  const banded = BANDS.reduce((n, b) => n + bands[b.band], 0);
 
   // The grid: everyone with work this period or last; a band or department click narrows it.
   // It opens sorted by Score, highest first (see the column's sortValue).
@@ -72,12 +63,10 @@ export default function Team() {
       rows
         .filter((r) => r.given > 0 || r.lastScore !== null)
         .filter((r) =>
-          !focus ? true : focus.kind === "band" ? r.band === focus.band : (r.department || "No department") === focus.name,
+          !focus ? true : r.band === focus,
         ),
     [rows, focus],
   );
-  const toggleFocus = (f: NonNullable<Focus>) =>
-    setFocus((cur) => (cur && cur.kind === f.kind && JSON.stringify(cur) === JSON.stringify(f) ? null : f));
 
   // The Excel pack: what the page shows, plus each person's own MIS sheet.
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -91,11 +80,10 @@ export default function Team() {
         period,
         team,
         rows: gridRows,
-        totals,
         scope: isAdmin ? "Everyone" : "Your reporting chain",
         viewing: [
           `Admins and shared logins: ${showHidden ? "shown" : "hidden"}`,
-          ...(focus ? [`Showing only: ${focus.kind === "band" ? BAND_LABEL[focus.band] : focus.name}`] : []),
+          ...(focus ? [`Showing only: ${BAND_LABEL[focus]}`] : []),
         ],
         onProgress: (done, total) => setProgress({ done, total }),
       });
@@ -295,126 +283,47 @@ export default function Team() {
         <Card className="p-5 text-[13px] text-grey">No figures yet. They are worked out every night; the first set appears after the first nightly run.</Card>
       ) : (
         <>
-          {/* ── Headline ── */}
-          {team && (
-            <Card className="p-4 sm:p-5">
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
-                <div>
-                  <h3 className="text-[15px] font-bold text-navy">
-                    This {w}, {isAdmin ? "everyone" : "your team"}
-                  </h3>
-                  <p className="text-[11.5px] text-grey-2">
-                    {withWork} {withWork === 1 ? "person" : "people"} with work due · {team.without_work} with none
-                    {!showHidden && hiddenCount > 0 && ` · admins and shared logins hidden`}
-                  </p>
-                  {/* The team's score only — the user, 19-09-2026: team-wide task counts and the two
-                      percentages "do not make sense" for a team; each person's are in the table below. */}
-                  <div className="mt-3 flex flex-wrap items-stretch gap-3">
-                    <ScoreCard score={totals.score} lastScore={totals.lastScore} w={w} />
-                  </div>
-
-                  {/* People by score — clicking a band narrows the grid to it. */}
-                  {banded > 0 && (
-                    <div className="mt-5">
-                      <h4 className={LABEL}>People by score</h4>
-                      <div className="mt-2 flex h-2.5 gap-0.5 overflow-hidden rounded-[4px] bg-page" aria-hidden>
-                        {BANDS.map(({ band, bar }) =>
-                          bands[band] > 0 ? <span key={band} className={bar} style={{ flexGrow: bands[band], flexBasis: 0 }} /> : null,
-                        )}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {BANDS.map(({ band, bar }) => {
-                          const on = focus?.kind === "band" && focus.band === band;
-                          return (
-                            <button
-                              key={band}
-                              type="button"
-                              disabled={bands[band] === 0}
-                              onClick={() => toggleFocus({ kind: "band", band })}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition disabled:opacity-40",
-                                on ? "border-orange bg-orange/[0.08] text-navy" : "border-line text-grey enabled:hover:border-orange/40",
-                              )}
-                            >
-                              <span className={cn("h-2 w-2 rounded-full", bar)} />
-                              {BAND_LABEL[band]}
-                              <span className="font-bold tabular-nums text-navy">{bands[band]}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {depts.length > 0 && (
-                    <>
-                      <h4 className={cn(LABEL, "mt-5")}>By department</h4>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        {depts.map((d) => {
-                          const on = focus?.kind === "department" && focus.name === d.name;
-                          return (
-                            <button
-                              key={d.name}
-                              type="button"
-                              onClick={() => toggleFocus({ kind: "department", name: d.name })}
-                              className={cn(
-                                "flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition",
-                                on ? "border-orange bg-orange/[0.05]" : "border-line hover:border-orange/40",
-                              )}
-                            >
-                              <span className="min-w-0">
-                                <span className="block truncate text-[13px] font-semibold text-navy">{d.name}</span>
-                                <span className="block text-[11.5px] text-grey tabular-nums">
-                                  {d.people} {d.people === 1 ? "person" : "people"}
-                                </span>
-                              </span>
-                              <span className="shrink-0 text-right">
-                                <span className="block text-[18px] font-bold text-navy tabular-nums">{fmtScore(d.score)}</span>
-                                <span className="block text-[10px] text-grey-2">score</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="text-[15px] font-bold text-navy">Score by week</h3>
-                  <p className="text-[11.5px] text-grey-2">
-                    {period.mode === "week"
-                      ? "The last eight weeks, this one in orange."
-                      : period.mode === "month"
-                        ? "Every week of the month."
-                        : "Every week in the range."}
-                  </p>
-                  <div className="mt-3">
-                    <Trend
-                      weeks={trend}
-                      highlight={period.mode === "week" ? period.from : undefined}
-                      periodFrom={period.from}
-                      periodTo={period.to}
-                      asOf={team.as_of_date}
-                      scoreOnly
-                    />
-                  </div>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* ── The grid: one line per person ── */}
+          {/* ── One line per person ──
+              The team-wide block (team score, departments, weekly trend) was removed on the user's
+              review, 19-09-2026: a pooled team figure is carried by the busiest few people and does not
+              describe the team. What stays is the four score bands, as a filter over the table. */}
           <Card className="p-0 overflow-hidden">
-            {focus && (
-              <div className="flex flex-wrap items-center gap-2 px-4 pt-3 text-[12.5px] text-grey">
-                Showing only
-                <span className="rounded-full bg-orange/[0.08] px-2.5 py-0.5 font-semibold text-navy">
-                  {focus.kind === "band" ? BAND_LABEL[focus.band] : focus.name}
+            {team && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3.5">
+                <span className="text-[12.5px] text-grey">
+                  <span className="font-semibold text-navy">
+                    {withWork} {withWork === 1 ? "person" : "people"}
+                  </span>{" "}
+                  with work due this {w}
+                  {!showHidden && hiddenCount > 0 && " · admins and shared logins hidden"}
                 </span>
-                <button type="button" onClick={() => setFocus(null)} className="font-semibold text-orange hover:underline">
-                  Show everyone
-                </button>
+                <div className="flex flex-wrap gap-1.5">
+                  {BANDS.map(({ band, bar }) => {
+                    const on = focus === band;
+                    return (
+                      <button
+                        key={band}
+                        type="button"
+                        disabled={bands[band] === 0 && !on}
+                        onClick={() => setFocus(on ? null : band)}
+                        title={on ? "Show everyone" : `Show only: ${BAND_LABEL[band]}`}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition disabled:opacity-40",
+                          on ? "border-orange bg-orange/[0.08] text-navy" : "border-line text-grey enabled:hover:border-orange/40",
+                        )}
+                      >
+                        <span className={cn("h-2 w-2 rounded-full", bar)} />
+                        {BAND_LABEL[band]}
+                        <span className="font-bold tabular-nums text-navy">{bands[band]}</span>
+                      </button>
+                    );
+                  })}
+                  {focus && (
+                    <button type="button" onClick={() => setFocus(null)} className="px-1.5 text-[12px] font-semibold text-orange hover:underline">
+                      Show everyone
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             <div className="px-2 pb-2 sm:px-3">
@@ -433,10 +342,6 @@ export default function Team() {
 
           {team && (
             <div className="space-y-1 px-1 text-[11.5px] leading-relaxed text-grey-2">
-              <p>
-                <span className="font-semibold text-grey">The team score</span> adds up everyone's work first (on time 1, late ½, not done 0,
-                over everything given) — it is not an average of people's scores, so a person with more work weighs more.
-              </p>
               <p>
                 <span className="font-semibold text-grey">Low volume</span> marks fewer than {LOW_VOLUME} pieces of work in the {w}: the score is
                 shown, but kept out of the score bands, since a handful of tasks is not comparable with a full workload.
