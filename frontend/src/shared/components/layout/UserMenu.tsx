@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useAuth } from "@/core/platform/auth";
-import { HOME_LABEL, HOME_PATH, type ShellUser } from "./types";
+import { ANNOUNCEMENTS_LABEL, ANNOUNCEMENTS_PATH, HOME_LABEL, HOME_PATH, type ShellUser } from "./types";
 
 /** Topbar avatar + dropdown (account / portal home / sign out). */
 export default function UserMenu({ user }: { user: ShellUser }) {
@@ -46,6 +46,7 @@ export default function UserMenu({ user }: { user: ShellUser }) {
           <div className="py-1">
             <MenuRow label="My Account" onClick={() => navigate("/account")} />
             <MenuRow label={HOME_LABEL} onClick={() => navigate(HOME_PATH)} />
+            <MenuRow label={ANNOUNCEMENTS_LABEL} onClick={() => navigate(ANNOUNCEMENTS_PATH)} />
           </div>
           <div className="py-1 border-t border-line">
             <MenuRow label="Sign out" danger onClick={onSignOut} />

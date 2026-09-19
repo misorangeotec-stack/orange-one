@@ -23,6 +23,7 @@ import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { dailyReportApp } from "./daily-report/meta";
+import { announcementsApp } from "./announcements/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -126,6 +127,10 @@ export const apps: AppManifest[] = [
   // bank balances somebody types each evening. Granted separately from the
   // Master Report because the readers are different and this one WRITES.
   dailyReportApp,
+  // Announcements (PF-18) — where a message for the whole hub is written. Admins
+  // see it; anyone else only once granted. Every member of staff READS them with
+  // no grant, in the strip and on /announcements.
+  announcementsApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
@@ -181,7 +186,13 @@ export const grantableModules: GrantableModule[] = [
  * Remove an id from here once that app's writes actually consult
  * `public.module_level()` (see 20260906120000_add_app_access_level.sql).
  */
-export const NO_VIEW_ONLY_APP_IDS = new Set<string>(["mobile-app"]);
+export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
+  "mobile-app",
+  // PF-18: the grant means "may post", and nothing else. Reading announcements needs
+  // no grant, so a view-only Announcements grant would give nothing while looking
+  // like access. Only Full access is offered.
+  "announcements",
+]);
 
 /** The access levels a module offers, in display order. */
 export const levelsForModule = (appId: string): ("view" | "edit")[] =>

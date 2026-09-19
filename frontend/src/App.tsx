@@ -6,6 +6,8 @@ import Login from "@/core/auth/Login";
 import HomeLayout from "@/core/workspace/HomeLayout";
 import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
+import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
+import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
@@ -121,6 +123,12 @@ export default function App() {
         <Route index element={<MyWorkToday />} />
       </Route>
       <Route path="/account" element={<RequireAuth><StaffOnly><Account /></StaffOnly></RequireAuth>} />
+      {/* PF-18 · Every announcement meant for you, running or past. Staff furniture
+          like /account: no module grant (the database decides the list), and never
+          under the Announcements module's own gated basePath. Wears the home shell. */}
+      <Route path={ANNOUNCEMENTS_PATH} element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<AnnouncementsHistory />} />
+      </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}

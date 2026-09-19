@@ -18,7 +18,13 @@ import type { ReactNode } from "react";
 import type { AppManifest } from "@/apps/types";
 import { groupByCategory } from "@/apps/categories";
 import { GROUP_ICONS } from "./groupIcons";
-import { HOME_LABEL, HOME_PATH, type NavItem } from "@/shared/components/layout/types";
+import {
+  ANNOUNCEMENTS_LABEL,
+  ANNOUNCEMENTS_PATH,
+  HOME_LABEL,
+  HOME_PATH,
+  type NavItem,
+} from "@/shared/components/layout/types";
 
 const ic: Record<string, ReactNode> = {
   today: (
@@ -38,6 +44,12 @@ const ic: Record<string, ReactNode> = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
+    </svg>
+  ),
+  announcements: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
     </svg>
   ),
 };
@@ -64,7 +76,12 @@ export function buildHomeNav(
 ): NavItem[] {
   // Same label the other apps use to get here, so the place you clicked and the
   // place you land on are recognisably one destination.
-  const nav: NavItem[] = [{ label: HOME_LABEL, to: HOME_PATH, icon: ic.today, section: "Home" }];
+  const nav: NavItem[] = [
+    { label: HOME_LABEL, to: HOME_PATH, icon: ic.today, section: "Home" },
+    // PF-18: everyone's, no grant needed, so it sits under Home rather than in a
+    // category that only some people would see.
+    { label: ANNOUNCEMENTS_LABEL, to: ANNOUNCEMENTS_PATH, icon: ic.announcements },
+  ];
 
   // Every category becomes a COLLAPSIBLE group (see Sidebar), which is why these
   // carry `group` rather than `section`. An empty category never reaches here, so
