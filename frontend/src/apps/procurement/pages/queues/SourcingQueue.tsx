@@ -73,11 +73,12 @@ export default function SourcingQueue() {
       key: "items", header: "Items",
       cell: (e) => {
         const { count, text } = itemSummary(e.row);
+        // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
         return (
-          <div className="min-w-0">
+          <>
             <span className="font-medium text-navy">{count} item{count === 1 ? "" : "s"}</span>
             <span className="ml-1.5 text-[11.5px] text-grey-2">{text}</span>
-          </div>
+          </>
         );
       },
       sortValue: (e) => itemSummary(e.row).count,
@@ -115,11 +116,12 @@ export default function SourcingQueue() {
       key: "items", header: "Items",
       cell: (r) => {
         const { count, text } = itemSummary(r);
+        // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
         return (
-          <div className="min-w-0">
+          <>
             <span className="font-medium text-navy">{count} item{count === 1 ? "" : "s"}</span>
             <span className="ml-1.5 text-[11.5px] text-grey-2">{text}</span>
-          </div>
+          </>
         );
       },
       sortValue: (r) => itemSummary(r).count,

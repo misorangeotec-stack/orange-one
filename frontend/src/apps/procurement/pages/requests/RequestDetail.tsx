@@ -7,6 +7,9 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
@@ -19,6 +22,10 @@ import ActivityTimeline from "../../components/ActivityTimeline";
 import CancelLinesModal from "../../components/CancelLinesModal";
 
 /** Request Detail — header + per-line pipeline view with stage actions. */
+/** The lines table's columns, for its remembered widths (PF-20). */
+const LINE_COLS = ["item", "qty", "status", "vendor", "rate", "lead", "value", "po"];
+const TH = "font-medium px-4 py-3";
+
 export default function RequestDetail() {
   const { id } = useParams();
   const s = useProcurementStore();
@@ -26,6 +33,11 @@ export default function RequestDetail() {
   // that still reaches individual LINES, so it opens a picker rather than acting
   // on all of them — see CancelLinesModal.
   const [sourcing, setSourcing] = useState(false);
+  /**
+   * PF-20: the lines table is one line per row and its columns drag; Item and Vendor are cut
+   * with "…" and shown whole on hover. Above the guard below, like every hook.
+   */
+  const linesFit = useColumnWidths("tb", LINE_COLS);
   const [approving, setApproving] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [cancellingLines, setCancellingLines] = useState(false);
@@ -186,28 +198,34 @@ export default function RequestDetail() {
       )}
 
       <Card className="overflow-hidden">
+        {/* PF-20: only once a column has been dragged. */}
+        {linesFit.anyCustom(LINE_COLS) && (
+          <div className="flex justify-end px-4 pt-2">
+            <ResetWidths fit={linesFit} cols={LINE_COLS} />
+          </div>
+        )}
         <ScrollableTable>
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
-                <th className="font-medium px-4 py-3">Item</th>
-                <th className="font-medium px-4 py-3">Qty</th>
-                <th className="font-medium px-4 py-3">Status</th>
-                <th className="font-medium px-4 py-3">Vendor</th>
-                <th className="font-medium px-4 py-3">Rate</th>
-                <th className="font-medium px-4 py-3">Lead</th>
-                <th className="font-medium px-4 py-3">Line Value</th>
-                <th className="font-medium px-4 py-3">PO</th>
+                <FitTh fit={linesFit} col="item" className={TH}>Item</FitTh>
+                <FitTh fit={linesFit} col="qty" className={TH}>Qty</FitTh>
+                <FitTh fit={linesFit} col="status" resize={false} className={TH}>Status</FitTh>
+                <FitTh fit={linesFit} col="vendor" className={TH}>Vendor</FitTh>
+                <FitTh fit={linesFit} col="rate" className={TH}>Rate</FitTh>
+                <FitTh fit={linesFit} col="lead" className={TH}>Lead</FitTh>
+                <FitTh fit={linesFit} col="value" className={TH}>Line Value</FitTh>
+                <FitTh fit={linesFit} col="po" className={TH}>PO</FitTh>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...linesFit.tbodyProps}>
               {lines.map((l) => {
                 const poItem = s.poItemForLine(l.id);
                 const po = poItem ? s.poById(poItem.poId) : undefined;
                 return (
                   <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60 align-middle">
-                    <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
+                    <td className="px-4 py-3 font-medium text-navy"><FitCell fit={linesFit} col="item" cap={FIT.CUT}>{s.itemLabel(l.itemId)}</FitCell></td>
+                    <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={linesFit} col="qty" cap={null}>{l.quantity} {l.unit}</FitCell></td>
                     <td className="px-4 py-3">
                       {/* The reject/cancel reason used to hang off a duplicate label in
                           the Actions column; it belongs on the status itself. */}
@@ -215,12 +233,14 @@ export default function RequestDetail() {
                         {LINE_STATUS_LABEL[l.status]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.finalRate)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{l.leadTimeDays === null ? "—" : `${l.leadTimeDays}d`}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.lineValue)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={linesFit} col="vendor" cap={FIT.CUT}>{s.vendorById(l.finalVendorId)?.name ?? "—"}</FitCell></td>
+                    <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={linesFit} col="rate" cap={null}>{inr(l.finalRate)}</FitCell></td>
+                    <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={linesFit} col="lead" cap={null}>{l.leadTimeDays === null ? "—" : `${l.leadTimeDays}d`}</FitCell></td>
+                    <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={linesFit} col="value" cap={null}>{inr(l.lineValue)}</FitCell></td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {po ? <Link to={`/procurement/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
+                      <FitCell fit={linesFit} col="po" cap={FIT.CUT}>
+                        {po ? <Link to={`/procurement/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
+                      </FitCell>
                     </td>
                   </tr>
                 );
