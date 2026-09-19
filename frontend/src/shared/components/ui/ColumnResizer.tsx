@@ -67,6 +67,8 @@ export function FitResizer({
   const drag = useRef<{
     x: number;
     w0: number;
+    /** The header's right edge when the press began — where the edge must follow the pointer from. */
+    right0: number;
     th: HTMLElement;
     prev: { width: string; boxSizing: string };
     started: boolean;
@@ -120,6 +122,7 @@ export function FitResizer({
         drag.current = {
           x: e.clientX,
           w0: contentWidth(th),
+          right0: th.getBoundingClientRect().right,
           th,
           prev: { width: th.style.width, boxSizing: th.style.boxSizing },
           started: false,
@@ -136,12 +139,30 @@ export function FitResizer({
           d.started = true;
           fit.start(col, clamp(d.w0));
         }
-        d.last = clamp(d.w0 + dx);
-        d.th.style.width = `${d.last}px`;
-        d.th.style.boxSizing = "content-box";
-        // The label's wrapper (see FitHead) appears with the render `start` triggers.
-        const head = d.th.querySelector<HTMLElement>(":scope > [data-fit-head]");
-        if (head) head.style.width = `${d.last}px`;
+        const apply = (w: number) => {
+          d.th.style.width = `${w}px`;
+          d.th.style.boxSizing = "content-box";
+          // The label's wrapper (see FitHead) appears with the render `start` triggers.
+          const head = d.th.querySelector<HTMLElement>(":scope > [data-fit-head]");
+          if (head) head.style.width = `${w}px`;
+        };
+        let w = clamp(d.w0 + dx);
+        apply(w);
+        // ⚠ KEEP THE EDGE UNDER THE POINTER. In a table narrower than its card the spare width
+        //   is spread over the other columns, so widening this one shrinks the columns to its
+        //   LEFT too and its left edge moves: measured on a four-column master, a 250 px drag
+        //   left the edge 123 px short of the pointer. Correct the width by however far the edge
+        //   landed from the pointer; it settles in a few passes. A table that overflows its card
+        //   (no spare width) is right first time and never loops.
+        for (let i = 0; i < 6; i++) {
+          const miss = d.right0 + dx - d.th.getBoundingClientRect().right;
+          if (Math.abs(miss) < 0.5) break;
+          const next = clamp(w + miss);
+          if (next === w) break;
+          w = next;
+          apply(w);
+        }
+        d.last = w;
       }}
       onPointerUp={(e) => {
         e.stopPropagation();
