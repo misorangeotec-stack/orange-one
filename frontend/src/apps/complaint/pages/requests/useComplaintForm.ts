@@ -1,8 +1,13 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useComplaintStore } from "../../store";
-import { fetchPartyItems, partyItemsQueryKey, type ComplaintItem } from "../../data/complaintMasters";
+import {
+  fetchPartyItems,
+  partyItemsQueryKey,
+  searchItems,
+  type ComplaintItem,
+} from "../../data/complaintMasters";
 import {
   findLotMatches,
   lotSourceReady,
@@ -11,12 +16,19 @@ import {
   type LotMatch,
 } from "../../lib/resolveLot";
 import { futureDateError, invoiceDateLabelOf, invoiceLabelOf, lotLabelOf, partyLabelOf } from "../../lib/format";
-import type { ComplaintType, LotSource } from "../../types";
+import type { ComplaintType, LotSource, RmOrigin } from "../../types";
 import type { RequestInput } from "../../data/complaintWrites";
 
 /** The raise panel's editable state. Everything is a string — the form owns text, not types. */
 export interface ComplaintForm {
   complaintType: ComplaintType;
+  /**
+   * Domestic / Import, RAW MATERIAL ONLY — and the one field on this form that
+   * decides anything other than a label: it picks the bucket the complaint opens
+   * in. Empty string is "not answered yet", which is why it is validated rather
+   * than defaulted. See types/index.ts.
+   */
+  rmOrigin: "" | RmOrigin;
   companyId: string;
   lotNo: string;
   lotExpiryDate: string;
@@ -38,6 +50,7 @@ export interface ComplaintForm {
 
 const EMPTY: ComplaintForm = {
   complaintType: "finished_good",
+  rmOrigin: "",
   companyId: "",
   lotNo: "",
   lotExpiryDate: "",
@@ -122,7 +135,23 @@ export function useComplaintForm() {
     setForm((f) =>
       f.complaintType === t
         ? f
-        : { ...f, complaintType: t, partyId: "", partyName: "", itemId: "", itemName: "", category: "", inkType: "" },
+        : {
+            ...f,
+            complaintType: t,
+            // ⚠ CLEARED ON EVERY SWITCH, both ways. Switching to Finished Good
+            //   must not leave a Domestic/Import answer on a row that has no
+            //   such concept (the RPC ignores it, but the form would still be
+            //   showing an answer nobody gave for the type on screen); switching
+            //   BACK to Raw Material must re-ask rather than silently reuse an
+            //   answer given before the user changed their mind about the type.
+            rmOrigin: "",
+            partyId: "",
+            partyName: "",
+            itemId: "",
+            itemName: "",
+            category: "",
+            inkType: "",
+          },
     );
   }, []);
 
@@ -132,13 +161,84 @@ export function useComplaintForm() {
     [s, form.companyId, form.complaintType, form.partyId],
   );
 
-  // The chosen party's own catalogue, on its own key — see data/complaintMasters.ts.
+  /**
+   * The chosen party's own catalogue, on its own key — see data/complaintMasters.ts.
+   *
+   * ⚠ IT IS A *CUSTOMER* CATALOGUE, AND IT IS EMPTY FOR EVERY VENDOR.
+   *   `mst_party_items` is built from the SALES register (migration
+   *   20260902120900_party_items_from_sales_register) — "who bought what". We do
+   *   not sell to a supplier, so a raw-material complaint's party has no rows here
+   *   and this always returns []. That is not a bug in the sync; it is the wrong
+   *   question for the RM side, and `itemOptions` below is what answers the right
+   *   one.
+   */
   const { data: partyItems } = useQuery({
     queryKey: partyItemsQueryKey(form.partyId || null),
     queryFn: () => fetchPartyItems(form.partyId),
     enabled: !!form.partyId,
     staleTime: 5 * 60 * 1000,
   });
+
+  /**
+   * THE ESCAPE HATCH — and on a raw-material complaint it is the ONLY hatch.
+   *
+   * Driven by the typed item name, which is already on screen whenever nothing is
+   * picked: type two characters and the real `mst_items` rows matching them appear
+   * in the picker above, so a vendor's item can be chosen properly instead of only
+   * being recorded as free text.
+   *
+   * ⚠ `useDeferredValue`, not a timer. It hands React the stale value while the
+   *   user is still typing, so the query key settles on its own and there is no
+   *   debounce to get wrong; react-query then caches each term, so going back a
+   *   character is free.
+   */
+  const itemSearchTerm = useDeferredValue(form.itemId ? "" : form.itemName.trim());
+
+  const { data: itemHits } = useQuery({
+    queryKey: ["complaintItemSearch", itemSearchTerm],
+    queryFn: () => searchItems(itemSearchTerm),
+    enabled: itemSearchTerm.length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  /**
+   * What the item picker may offer: the party's catalogue, anything the search
+   * turned up, and — ALWAYS — whatever is currently selected.
+   *
+   * ⚠ THE SELECTED ITEM IS FED BACK IN, AND THAT IS THE WHOLE BUG FIX. A
+   *   `Combobox` renders a value it cannot find among its options as NOTHING
+   *   SELECTED (its own header says so). So on a raw-material complaint — where
+   *   the catalogue is structurally empty, see above — applying a LOT match set a
+   *   perfectly good `itemId`, the picker had no row to match it against, and the
+   *   field went BLANK. Worse, the typed-name fallback stayed hidden because
+   *   `itemId` was truthy, so the item vanished from the screen entirely while
+   *   still being submitted. Category, quantity and unit filled in around it,
+   *   which is what made it look like the lookup had failed on the item alone.
+   */
+  const itemOptions = useMemo<ComplaintItem[]>(() => {
+    const out: ComplaintItem[] = [];
+    const seen = new Set<string>();
+    const add = (i: ComplaintItem) => {
+      if (seen.has(i.id)) return;
+      seen.add(i.id);
+      out.push(i);
+    };
+    for (const i of partyItems ?? []) add(i);
+    for (const i of itemHits ?? []) add(i);
+    if (form.itemId && !seen.has(form.itemId)) {
+      // The row the LOT match resolved. Its category and ink type are already on
+      // the form (applyLotMatch filled them), so the synthetic option only has to
+      // carry the name the picker needs to display.
+      add({
+        id: form.itemId,
+        name: form.itemName || "Selected item",
+        category: form.category || null,
+        inkType: form.inkType || null,
+        companyId: form.companyId || null,
+      });
+    }
+    return out;
+  }, [partyItems, itemHits, form.itemId, form.itemName, form.category, form.inkType, form.companyId]);
 
   /**
    * Picking an item seeds Category of Ink and Ink type from `mst_items` — the
@@ -249,6 +349,11 @@ export function useComplaintForm() {
 
   const errors = useMemo(() => {
     const e: Partial<Record<keyof ComplaintForm, string>> = {};
+    // ⚠ MIRRORS the guard in fms_complaint_submit_request. Caught here so the
+    //   form can say WHY it matters, rather than letting the RPC throw after the
+    //   user has filled in the whole panel.
+    if (t === "raw_material" && !form.rmOrigin)
+      e.rmOrigin = "Choose Domestic or Import — it decides who handles this complaint.";
     if (!form.lotNo.trim()) e.lotNo = `${lotLabelOf(t)} is required.`;
     if (!form.itemName.trim()) e.itemName = "Item name is required.";
     if (!form.partyName.trim()) e.partyName = `${partyLabelOf(t)} is required.`;
@@ -280,6 +385,9 @@ export function useComplaintForm() {
 
   const toInput = (): RequestInput => ({
     complaintType: form.complaintType,
+    // Never sent on a finished-good complaint — `setComplaintType` clears it, and
+    // the RPC would ignore it anyway.
+    rmOrigin: form.complaintType === "raw_material" ? (form.rmOrigin || null) : null,
     companyId: form.companyId || null,
     requesterName: user.name,
     lotNo: form.lotNo.trim(),
@@ -336,7 +444,10 @@ export function useComplaintForm() {
     set,
     setComplaintType,
     partyOptions,
-    partyItems: partyItems ?? [],
+    /** Everything the item picker may offer — catalogue + search + the current value. */
+    itemOptions,
+    /** True while the search is the only thing that can populate the picker. */
+    itemCatalogueEmpty: (partyItems ?? []).length === 0,
     pickItem,
     lookupLot,
     lotMatches,

@@ -30,7 +30,12 @@ export default function ComplaintLayout() {
   const canPlant = s.canSeeQueue("plant");
   const canService = s.canSeeQueue("service");
   const canApprove = s.canSeeQueue("approval");
+  const canPurchase = s.canSeeQueue("purchase");
+  const canRmManagement = s.canSeeQueue("rm_management");
   const canReview = s.canSeeQueue("management_review");
+  // No Setup owners: this one appears only for the person management handed a
+  // complaint to. See store.canSeeQueue.
+  const canAssignee = s.canSeeQueue("assignee");
   const canMonitor = s.canMonitor;
 
   const hasRequests =
@@ -40,7 +45,10 @@ export default function ComplaintLayout() {
     canPlant ||
     canService ||
     canApprove ||
-    canReview;
+    canPurchase ||
+    canRmManagement ||
+    canReview ||
+    canAssignee;
 
   const nav = useMemo(
     () =>
@@ -50,7 +58,10 @@ export default function ComplaintLayout() {
         canPlant,
         canService,
         canApprove,
+        canPurchase,
+        canRmManagement,
         canReview,
+        canAssignee,
         canMonitor,
         canRaise: s.canRaise,
         canEdit: s.canEdit,
@@ -62,7 +73,10 @@ export default function ComplaintLayout() {
       canPlant,
       canService,
       canApprove,
+      canPurchase,
+      canRmManagement,
       canReview,
+      canAssignee,
       canMonitor,
       s.canRaise,
       s.canEdit,

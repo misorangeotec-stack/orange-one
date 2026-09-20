@@ -10,10 +10,14 @@
  * leaves every queue by construction rather than by a filter someone has to
  * remember to write.
  *
- * ⚠ RM vs FG IS NOT A BRANCH. Both run the same steps; only the raise
- *   panel's labels differ (lib/format.ts). There is deliberately no
- *   `requestBranch` here — `complaintType` is an ordinary column that the grids
- *   sort and filter on like any other.
+ * ⚠ RM vs FG IS A BRANCH — as of phase 13 — BUT NOT ONE THIS FILE BRANCHES ON.
+ *   The fork happens once, in the SQL that raises the complaint, and after that
+ *   it survives purely as the row's STATUS: a raw-material complaint is born
+ *   `awaiting_purchase` or `awaiting_rm_management` instead of `awaiting_plant`.
+ *   So `openStep` stays a lookup, no rule below reads `complaintType` or
+ *   `rmOrigin`, and a step that does not apply to a chain is simply never that
+ *   row's status. Adding a `if (r.complaintType === …)` anywhere here would be
+ *   the second answer to a question the status already answers.
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
@@ -59,8 +63,18 @@ export function openStep(r: ComplaintRequest): StepKey | null {
       return "service";
     case "awaiting_approval":
       return "approval";
+    // RM domestic.
+    case "awaiting_purchase":
+      return "purchase";
+    // RM import, first landing. ITS OWN STEP, not a second pass of the review —
+    // see lib/steps.ts for why that was split back out.
+    case "awaiting_rm_management":
+      return "rm_management";
     case "awaiting_management_review":
       return "management_review";
+    // RM import, after management handed it to somebody.
+    case "awaiting_assignee":
+      return "assignee";
     default:
       return null;
   }
@@ -77,6 +91,10 @@ export const servicePass = (r: ComplaintRequest): "first" | "close" | null =>
   r.status === "awaiting_service" ? "first"
   : r.status === "awaiting_service_close" ? "close"
   : null;
+
+/* `managementPass` used to live here, back when the two management passes shared
+   one step key. They are two steps now (lib/steps.ts), so the step key alone says
+   which question to ask and the helper had nothing left to answer. */
 
 /**
  * The anchor completion timestamp that starts a step's SLA clock.
@@ -96,8 +114,21 @@ function stepAnchorCompletedIso(r: ComplaintRequest, step: StepKey): string | nu
       return r.aprAt ?? r.plantAt;
     case "approval":
       return r.svcAt;
+    // RM domestic opens here, so the raise itself is the anchor.
+    case "purchase":
+      return r.submittedAt;
+    // RM import lands here straight off the raise.
+    case "rm_management":
+      return r.submittedAt;
+    // The assignee's clock starts when management handed it over.
+    case "assignee":
+      return r.rmAssignedAt;
+    // ⚠ ORDER MATTERS — most recent hand-off first. The review is the terminus
+    //   of THREE chains, and each arrives from a different step: the assignee
+    //   (RM import, reassigned), purchase (RM domestic), or the service team
+    //   (FG).
     case "management_review":
-      return r.svcCloseAt ?? r.svcAt;
+      return r.asgAt ?? r.purAt ?? r.svcCloseAt ?? r.svcAt;
     default:
       return null;
   }
@@ -192,6 +223,36 @@ export function approvalLockReason(r: ComplaintRequest): string | null {
   return null;
 }
 
+/** Editable while purchase has answered but management has not reviewed. */
+export function purchaseLockReason(r: ComplaintRequest): string | null {
+  const t = terminalLock(r, "purchase entry");
+  if (t) return t;
+  if (effectiveStatus(r) !== "awaiting_management_review")
+    return "Management have already reviewed this — the purchase entry can no longer be changed.";
+  return null;
+}
+
+/** Editable while the assignee has answered but management has not reviewed. */
+export function assigneeLockReason(r: ComplaintRequest): string | null {
+  const t = terminalLock(r, "response");
+  if (t) return t;
+  if (effectiveStatus(r) !== "awaiting_management_review")
+    return "Management have already reviewed this — your response can no longer be changed.";
+  return null;
+}
+
+/**
+ * Management's own entry on an imported-material complaint.
+ *
+ * Never correctable: both of its exits are final in their own way — closing ends
+ * the complaint, and assigning has already put the row on somebody else's desk.
+ */
+export function rmManagementLockReason(r: ComplaintRequest): string | null {
+  const t = terminalLock(r, "entry");
+  if (t) return t;
+  return "This has moved on — management's entry can no longer be changed.";
+}
+
 /** The review is last, so nothing downstream can lock it. */
 export function managementReviewLockReason(r: ComplaintRequest): string | null {
   return terminalLock(r, "review");
@@ -205,6 +266,12 @@ export function lockReasonFor(step: StepKey, r: ComplaintRequest): string | null
       return serviceLockReason(r);
     case "approval":
       return approvalLockReason(r);
+    case "purchase":
+      return purchaseLockReason(r);
+    case "assignee":
+      return assigneeLockReason(r);
+    case "rm_management":
+      return rmManagementLockReason(r);
     case "management_review":
       return managementReviewLockReason(r);
     default:
@@ -246,6 +313,37 @@ export const completedServiceEntries = (d: ComplaintSnapshot): StageEntry<Compla
 export const completedApprovalEntries = (d: ComplaintSnapshot): StageEntry<ComplaintRequest>[] =>
   d.requests.filter((r) => !!r.aprAt).map((r) => entryOf("approval", r, r.aprBy, r.aprAt!, approvalLockReason(r)));
 
+export const completedPurchaseEntries = (d: ComplaintSnapshot): StageEntry<ComplaintRequest>[] =>
+  d.requests.filter((r) => !!r.purAt).map((r) => entryOf("purchase", r, r.purBy, r.purAt!, purchaseLockReason(r)));
+
+export const completedAssigneeEntries = (d: ComplaintSnapshot): StageEntry<ComplaintRequest>[] =>
+  d.requests.filter((r) => !!r.asgAt).map((r) => entryOf("assignee", r, r.asgBy, r.asgAt!, assigneeLockReason(r)));
+
+/**
+ * ⚠ AN ASSIGNMENT COUNTS AS COMPLETED WORK HERE, even though it closed nothing.
+ *   This step has two exits — answer-and-close (`mgmtAt`) and hand-it-on
+ *   (`rmAssignedAt`) — and keying it on the close alone would make a complaint
+ *   management DID deal with vanish from both tabs the moment they assigned it:
+ *   gone from Pending, never in Completed.
+ *
+ * ⚠ `rmAssignedAt` FIRST, not `mgmtAt`. When a complaint comes back and is
+ *   finally reviewed, `mgmtAt` is stamped too — but what THIS step did was the
+ *   assignment, and dating it by the later review would misreport when the work
+ *   happened. The review has its own row in its own queue.
+ */
+export const completedRmManagementEntries = (d: ComplaintSnapshot): StageEntry<ComplaintRequest>[] =>
+  d.requests
+    .filter((r) => !!r.rmAssignedAt || (!!r.mgmtAt && r.rmOrigin === "import" && !r.purAt))
+    .map((r) =>
+      entryOf(
+        "rm_management",
+        r,
+        r.rmAssignedBy ?? r.mgmtBy,
+        (r.rmAssignedAt ?? r.mgmtAt)!,
+        rmManagementLockReason(r),
+      ),
+    );
+
 export const completedManagementReviewEntries = (d: ComplaintSnapshot): StageEntry<ComplaintRequest>[] =>
   d.requests.filter((r) => !!r.mgmtAt).map((r) => entryOf("management_review", r, r.mgmtBy, r.mgmtAt!, managementReviewLockReason(r)));
 
@@ -257,6 +355,12 @@ export function completedEntriesFor(step: StepKey, d: ComplaintSnapshot): StageE
       return completedServiceEntries(d);
     case "approval":
       return completedApprovalEntries(d);
+    case "purchase":
+      return completedPurchaseEntries(d);
+    case "assignee":
+      return completedAssigneeEntries(d);
+    case "rm_management":
+      return completedRmManagementEntries(d);
     case "management_review":
       return completedManagementReviewEntries(d);
     default:
