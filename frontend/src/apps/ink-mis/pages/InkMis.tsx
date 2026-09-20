@@ -254,7 +254,9 @@ export default function InkMis() {
     () =>
       shipments
         .filter((s) => !companyKey || s.company === companyKey)
-        .filter((s) => s.lines.some((l) => l.itemCode))
+        // EMPTY COLUMNS STAY. This used to drop any consignment with no quantities on it, which
+        // made a column added here invisible the moment it was created — there is nowhere to type
+        // a quantity until the column exists. An empty column is the planner's to fill or delete.
         .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")),
     [shipments, companyKey],
   );
