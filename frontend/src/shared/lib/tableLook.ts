@@ -24,9 +24,24 @@ import { currentAppId } from "@/apps/currentApp";
 /** Modules whose tables have the look. The last phase of PF-20 deletes this list. */
 export const TABLE_LOOK_ON: readonly string[] = ["kra-kpi", "order-to-dispatch", "procurement", "import", "production-entry", "sampling"];
 
-/** Whether the tables on this URL have the look. */
+/**
+ * Modules that get the DRAG ONLY — no one-line rows, no cut text, nothing moved.
+ *
+ * Task Management is here by the user's decision (20-09-2026): it is the module everyone lives
+ * in, and they did not want its rows, spacing or filters to change at all. A column still drags
+ * wider and remembers the width, so nobody who does not drag sees any difference.
+ */
+export const TABLE_DRAG_ON: readonly string[] = ["task-management"];
+
+/** Whether the tables on this URL have the one-line look (which always includes the drag). */
 export function tableLookOn(pathname: string): boolean {
   return TABLE_LOOK_ON.includes(currentAppId(pathname) ?? "core");
+}
+
+/** Whether the tables on this URL can be dragged — the look's modules, plus the drag-only ones. */
+export function tableDragOn(pathname: string): boolean {
+  const id = currentAppId(pathname) ?? "core";
+  return TABLE_LOOK_ON.includes(id) || TABLE_DRAG_ON.includes(id);
 }
 
 /**

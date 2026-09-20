@@ -256,6 +256,20 @@ export function FitFilter({ dragged, children }: { dragged: boolean; children: R
 export function FitCell({ fit, col, cap, children }: { fit: FitTable; col: string; cap: number | null; children: ReactNode }) {
   if (!fit.on) return <>{children}</>;
   const dragged = fit.width(col) !== undefined;
+  // Drag-only module (Task Management): nothing is touched until somebody drags this column, and
+  // then the cell is simply held to the width they chose, cut with "…" and whole on hover.
+  if (!fit.oneLine) {
+    if (!dragged) return <>{children}</>;
+    return (
+      <div
+        data-fit-cell=""
+        className="overflow-hidden text-ellipsis whitespace-nowrap"
+        style={{ width: 0, minWidth: "calc(100% + 4px)", margin: -2, padding: 2 }}
+      >
+        {children}
+      </div>
+    );
+  }
   if (cap === null) {
     return (
       <div data-fit-cell="" className="whitespace-nowrap" style={dragged ? { minWidth: "100%" } : undefined}>
@@ -314,13 +328,17 @@ export function FitTh({
   );
 }
 
-/** "Reset widths" — shown only once one of these columns has a dragged width. */
-export function ResetWidths({ fit, cols, className }: { fit: FitTable; cols: readonly string[]; className?: string }) {
+/**
+ * "Reset widths" — shown only once one of these columns has a dragged width.
+ * `label=""` gives the icon alone, for a table with nowhere to put the words.
+ */
+export function ResetWidths({ fit, cols, className, label = "Reset widths" }: { fit: FitTable; cols: readonly string[]; className?: string; label?: string }) {
   if (!fit.on || !fit.anyCustom(cols)) return null;
   return (
     <button
       type="button"
       onClick={fit.resetAll}
+      aria-label="Reset widths"
       title="Put every column back to its natural width"
       className={
         className ??
@@ -330,7 +348,7 @@ export function ResetWidths({ fit, cols, className }: { fit: FitTable; cols: rea
       <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 12H3M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4" />
       </svg>
-      Reset widths
+      {label}
     </button>
   );
 }

@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type MouseEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { tableLookOn, widthsKey } from "./tableLook";
+import { tableDragOn, tableLookOn, widthsKey } from "./tableLook";
 
 type Widths = Readonly<Record<string, number>>;
 const EMPTY: Widths = Object.freeze({});
@@ -118,8 +118,14 @@ const mounted = new Map<string, number>();
 /* -------------------------------- the hook -------------------------------- */
 
 export interface FitTable {
-  /** This screen's module has the look (see tableLook.ts). When false, render exactly as before. */
+  /** This screen's columns can be dragged (see tableLook.ts). When false, render exactly as before. */
   on: boolean;
+  /**
+   * …and this screen also has the ONE-LINE look: cells cut at a width and shown whole on hover.
+   * False in a drag-only module, where a cell is only ever held to a width the reader dragged it
+   * to and is otherwise left exactly as it was.
+   */
+  oneLine: boolean;
   key: string;
   /** The dragged width in content px, or undefined while the column keeps its natural width. */
   width: (col: string) => number | undefined;
@@ -143,7 +149,8 @@ export interface FitTable {
  */
 export function useColumnWidths(kind: "qt" | "mc" | "tb", ids: readonly string[], explicitKey?: string): FitTable {
   const { pathname } = useLocation();
-  const on = tableLookOn(pathname);
+  const on = tableDragOn(pathname);
+  const oneLine = tableLookOn(pathname);
   const idsSig = ids.join("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const key = useMemo(() => explicitKey ?? widthsKey(kind, pathname, ids), [explicitKey, kind, pathname, idsSig]);
@@ -168,6 +175,7 @@ export function useColumnWidths(kind: "qt" | "mc" | "tb", ids: readonly string[]
     if (!on) {
       return {
         on: false,
+        oneLine: false,
         key,
         width: () => undefined,
         anyCustom: () => false,
@@ -181,6 +189,7 @@ export function useColumnWidths(kind: "qt" | "mc" | "tb", ids: readonly string[]
     }
     return {
       on: true,
+      oneLine,
       key,
       width: (col) => (drag && drag.key === key && drag.col === col ? drag.px : stored[col]),
       anyCustom: (cols) => cols.some((c) => stored[c] !== undefined),
@@ -194,7 +203,7 @@ export function useColumnWidths(kind: "qt" | "mc" | "tb", ids: readonly string[]
       resetAll: () => clearWidths(key),
       tbodyProps: { onMouseOver: showWholeTextIfCut },
     };
-  }, [on, key, stored, drag]);
+  }, [on, oneLine, key, stored, drag]);
 }
 
 /* ---------------------------- hover on a cut cell --------------------------- */
