@@ -35,7 +35,7 @@
  * ETD IS EXCLUDED FROM COVER. Only ETA and AT PORT count towards the total, matching the
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -350,14 +350,34 @@ export default function InkMis() {
 
   /* --------------------------------------------------- consignment columns, inline */
 
+  /**
+   * A new column lands on the far right of a table thirty columns wide, which is off screen —
+   * the planner pressed the button and saw nothing happen. So the column is remembered, scrolled
+   * to, and ringed until it is touched.
+   */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const newColumnRef = useRef<HTMLTableCellElement | null>(null);
+
+  useEffect(() => {
+    if (!justAdded) return;
+    newColumnRef.current?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" });
+    const t = window.setTimeout(() => setJustAdded(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [justAdded]);
+
   const addColumn = (status: ShipmentStatus) => {
     const today = new Date().toISOString().slice(0, 10);
-    setShipments((prev) => [
-      ...prev,
-      // Scoped to the book in view, so a column added on a company tab is visible there; on
-      // Combined it stays unattached, which is how the sheet has always worked.
-      { ...emptyShipment(), status, date: today, company: companyKey ?? "", lines: [] },
-    ]);
+    // Scoped to the book in view, so a column added on a company tab is visible there; on
+    // Combined it stays unattached, which is how the sheet has always worked.
+    const column = {
+      ...emptyShipment(),
+      status,
+      date: today,
+      company: companyKey ?? "",
+      lines: [],
+    };
+    setShipments((prev) => [...prev, column]);
+    setJustAdded(column.id);
   };
 
   const patchColumn = (id: string, patch: Partial<Shipment>) =>
@@ -399,7 +419,13 @@ export default function InkMis() {
     });
 
   /** A consignment column heading: read-only until Edit values is on, then fully editable. */
-  const consignmentHeader = (s: Shipment) =>
+  const consignmentHeader = (s: Shipment) => (
+    <span ref={s.id === justAdded ? newColumnRef : undefined} className="block">
+      {consignmentHeaderBody(s)}
+    </span>
+  );
+
+  const consignmentHeaderBody = (s: Shipment) =>
     editing ? (
       <div className="space-y-1 text-left font-normal">
         <div className="flex items-center gap-1">
@@ -694,6 +720,13 @@ export default function InkMis() {
         </div>
       )}
 
+      {justAdded && (
+        <div className="rounded-md border border-primary bg-primary/10 px-3 py-2 text-sm">
+          Column added at the right-hand end of the table, after the existing consignment
+          columns. Fill in its reference, date and quantities there.
+        </div>
+      )}
+
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           Could not load stock: {error instanceof Error ? error.message : "unknown error"}
@@ -789,7 +822,12 @@ export default function InkMis() {
               </ResizableHead>
               {showShipmentCols &&
                 shipmentCols.map((s) => (
-                  <ResizableHead key={s.id} id={`ship:${s.id}`} cols={cols} className="text-right">
+                  <ResizableHead
+                    key={s.id}
+                    id={`ship:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
                     {consignmentHeader(s)}
                   </ResizableHead>
                 ))}
@@ -798,7 +836,12 @@ export default function InkMis() {
               )}
               {showPlantCols &&
                 plantCols.map((s) => (
-                  <ResizableHead key={s.id} id={`plant:${s.id}`} cols={cols} className="text-right">
+                  <ResizableHead
+                    key={s.id}
+                    id={`plant:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
                     {consignmentHeader(s)}
                   </ResizableHead>
                 ))}
