@@ -40,7 +40,7 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Download, ListChecks, Pencil, RefreshCw, Search, Ship, Wand2,
+  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, Search, Ship, Trash2, Wand2,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -54,11 +54,12 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
-  INK_CATEGORIES, INK_SOURCES, loadGroupFields, loadHolidays, loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides,
-  loadPlans, loadShipments, loadThresholds, saveHolidays, savePlans, saveThresholds, sourceLabel,
-  workingDaysElapsed,
+  INK_CATEGORIES, INK_SOURCES, SHIPMENT_STATUSES, emptyShipment, loadGroupFields, loadHolidays,
+  loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
+  loadShipments, loadThresholds, newId, saveHolidays, savePlans, saveShipments, saveThresholds,
+  sourceLabel, workingDaysElapsed,
   type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
-  type InkThresholds,
+  type InkThresholds, type Shipment, type ShipmentStatus,
 } from "../lib/inkMis";
 
 const BASE = appBasePath("ink-mis");
@@ -125,9 +126,20 @@ export default function InkMis() {
   }, [companiesOpen]);
   const [holidays, setHolidays] = useState<string[]>(() => loadHolidays());
 
-  // Consignments are read once on mount. The entry screen is a separate route, so there is no
-  // in-page edit that could leave this stale; arriving back here remounts and re-reads.
-  const [shipments] = useState(() => loadShipments());
+  /**
+   * CONSIGNMENTS ARE EDITED HERE TOO, not only on the pipeline screen.
+   *
+   * The decision to order is taken in a meeting, looking at this sheet: cover, lead time, what
+   * is already coming. Sending the planner to another tab to record what was just agreed means
+   * the sheet on screen is wrong for as long as that takes, so a column can be added, filled and
+   * deleted right here. The pipeline screen remains the fuller view — notes, per-ink lists — and
+   * both write the same store.
+   *
+   * These are NOT part of the data query's key, so typing a quantity re-renders and nothing
+   * reloads.
+   */
+  const [shipments, setShipments] = useState<Shipment[]>(() => loadShipments());
+  useEffect(() => saveShipments(shipments), [shipments]);
 
   useEffect(() => savePlans(plans), [plans]);
   useEffect(() => saveThresholds(thresholds), [thresholds]);
@@ -336,6 +348,38 @@ export default function InkMis() {
   ];
   const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
+  /* --------------------------------------------------- consignment columns, inline */
+
+  const addColumn = (status: ShipmentStatus) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setShipments((prev) => [
+      ...prev,
+      // Scoped to the book in view, so a column added on a company tab is visible there; on
+      // Combined it stays unattached, which is how the sheet has always worked.
+      { ...emptyShipment(), status, date: today, company: companyKey ?? "", lines: [] },
+    ]);
+  };
+
+  const patchColumn = (id: string, patch: Partial<Shipment>) =>
+    setShipments((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
+  const removeColumn = (id: string, label: string) => {
+    if (!window.confirm(`Delete the ${label} column? Its quantities are removed with it.`)) return;
+    setShipments((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  /** One cell: the quantity of one ink on one consignment. Blank removes the line entirely. */
+  const setCellQty = (shipmentId: string, itemCode: string, raw: string) =>
+    setShipments((prev) =>
+      prev.map((s) => {
+        if (s.id !== shipmentId) return s;
+        const qty = Number(raw);
+        const rest = s.lines.filter((l) => l.itemCode !== itemCode);
+        if (!raw.trim() || !Number.isFinite(qty) || qty === 0) return { ...s, lines: rest };
+        return { ...s, lines: [...rest, { id: newId(), itemCode, qty }] };
+      }),
+    );
+
   const setPlan = (code: string, patch: Partial<InkPlan>) =>
     setPlans((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_PLAN), ...patch } }));
 
@@ -353,6 +397,77 @@ export default function InkMis() {
         },
       };
     });
+
+  /** A consignment column heading: read-only until Edit values is on, then fully editable. */
+  const consignmentHeader = (s: Shipment) =>
+    editing ? (
+      <div className="space-y-1 text-left font-normal">
+        <div className="flex items-center gap-1">
+          <select
+            className="h-6 w-full min-w-0 rounded border bg-background px-1 text-[10px]"
+            value={s.status}
+            onChange={(e) => patchColumn(s.id, { status: e.target.value as ShipmentStatus })}
+          >
+            {SHIPMENT_STATUSES.map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            title="Delete this column"
+            aria-label="Delete this column"
+            className="shrink-0 text-muted-foreground hover:text-red-600"
+            onClick={() => removeColumn(s.id, s.reference || s.status)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <Input
+          className="h-6 w-full min-w-0 px-1 text-[11px]"
+          placeholder="Reference"
+          value={s.reference}
+          onChange={(e) => patchColumn(s.id, { reference: e.target.value })}
+        />
+        <Input
+          type="date"
+          className="h-6 w-full min-w-0 px-1 text-[10px]"
+          value={s.date}
+          onChange={(e) => patchColumn(s.id, { date: e.target.value })}
+        />
+      </div>
+    ) : (
+      <>
+        <div className="text-[10px] uppercase text-muted-foreground">
+          {s.status === "PLANT" ? "Plant week" : s.status}
+        </div>
+        <div>{s.reference || "(no ref)"}</div>
+        <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
+      </>
+    );
+
+  /** One consignment cell. Typed straight into while Edit values is on. */
+  const consignmentCell = (s: Shipment, r: InkRow) => {
+    const q = s.lines
+      .filter((l) => r.itemCode && l.itemCode === r.itemCode)
+      .reduce((t, l) => t + l.qty, 0);
+    return (
+      <TableCell key={s.id} className="text-right tabular-nums">
+        {editing && r.itemCode ? (
+          <Input
+            type="number"
+            inputMode="decimal"
+            className="h-8 w-20 text-right"
+            value={q || ""}
+            onChange={(e) => setCellQty(s.id, r.itemCode, e.target.value)}
+          />
+        ) : (
+          (q ? fmtQty(q) : "")
+        )}
+      </TableCell>
+    );
+  };
 
   /* --------------------------------------------------------------------- export */
 
@@ -484,8 +599,17 @@ export default function InkMis() {
           size="sm"
           onClick={() => setEditing((v) => !v)}
         >
-          <Pencil className="mr-2 h-4 w-4" /> {editing ? "Done editing" : "Edit planning inputs"}
+          <Pencil className="mr-2 h-4 w-4" /> {editing ? "Done editing" : "Edit values"}
         </Button>
+        {editing && (
+          <>
+            {(["ETD", "ETA", "AT PORT", "PLANT"] as ShipmentStatus[]).map((st) => (
+              <Button key={st} variant="outline" size="sm" onClick={() => addColumn(st)}>
+                <Plus className="mr-1 h-4 w-4" /> {st}
+              </Button>
+            ))}
+          </>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -666,9 +790,7 @@ export default function InkMis() {
               {showShipmentCols &&
                 shipmentCols.map((s) => (
                   <ResizableHead key={s.id} id={`ship:${s.id}`} cols={cols} className="text-right">
-                    <div className="text-[10px] uppercase text-muted-foreground">{s.status}</div>
-                    <div>{s.reference || "(no ref)"}</div>
-                    <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
+                    {consignmentHeader(s)}
                   </ResizableHead>
                 ))}
               {cols.isVisible("incoming") && (
@@ -677,11 +799,7 @@ export default function InkMis() {
               {showPlantCols &&
                 plantCols.map((s) => (
                   <ResizableHead key={s.id} id={`plant:${s.id}`} cols={cols} className="text-right">
-                    <div className="text-[10px] uppercase text-muted-foreground">Plant week</div>
-                    <div>{s.reference || "(no ref)"}</div>
-                    <div className="text-[10px] font-normal text-muted-foreground">
-                      {s.date || "no date"}
-                    </div>
+                    {consignmentHeader(s)}
                   </ResizableHead>
                 ))}
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
@@ -875,30 +993,10 @@ export default function InkMis() {
                   {r.coverPct !== null && <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>}
                 </TableCell>
 
-                {showShipmentCols &&
-                  shipmentCols.map((s) => {
-                    const q = s.lines
-                      .filter((l) => r.itemCode && l.itemCode === r.itemCode)
-                      .reduce((t, l) => t + l.qty, 0);
-                    return (
-                      <TableCell key={s.id} className="text-right tabular-nums">
-                        {q ? fmtQty(q) : ""}
-                      </TableCell>
-                    );
-                  })}
+                {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
 
                 {cols.isVisible("incoming") && <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>}
-                {showPlantCols &&
-                  plantCols.map((s) => {
-                    const q = s.lines
-                      .filter((l) => r.itemCode && l.itemCode === r.itemCode)
-                      .reduce((t, l) => t + l.qty, 0);
-                    return (
-                      <TableCell key={s.id} className="text-right tabular-nums">
-                        {q ? fmtQty(q) : ""}
-                      </TableCell>
-                    );
-                  })}
+                {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{fmtQty(r.total)}</TableCell>
                 {cols.isVisible("category") && (
