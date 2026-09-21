@@ -7775,6 +7775,10 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 | 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[x]` |
 | 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
 | 7 | 2026-09-03 | The Positions grid's **Close** button actually **cancels** — five real vacancies were cancelled through it. Filed as a **fault**, so it sits in [Fixes](#fixes) | **FIX-6** | `[x]` |
+| 8 | 2026-09-21 | At the **HR approval** gate the HR head sets three numbers and the module tracks each: the period the position must be **closed** in, the number of **new CVs** required, and how many CVs must reach the **director** round (**default 3**) — today 12 of 18 live positions have sent nobody to a director, and one sent 1 of 20 | **NR-7** | `[x]` |
+| 9 | 2026-09-21 | **Talent Equation — KRA 1 of Saloni's KPI sheet, mapped into this module.** Its six **Talent Acquisition** lines (30%): an acknowledgement stamp, the CV and shortlist targets, the 48-hour interview feedback, the role-specific TAT and the BGV checklist items | **NR-8** | `[ ]` |
+| 10 | 2026-09-21 | **The Buddy Program** (5%) — a cross-departmental buddy allocated within 24h of offer acceptance, a Buddy Passport handed over on Day 1, **8 interactions in 90 days** marked by HR, closure with probation (and extension alongside it), and the joiner's own rating. **Nothing exists today** | **NR-9** | `[ ]` |
+| 11 | 2026-09-21 | **Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90** (10%) — two-sided reviews (HR **and** the new joiner), a reminder a day before each, a concerns / grievances register on a format the client will send, and confirm-or-extend at 90 days. Built monthly today, and **never once used** | **NR-10** | `[ ]` |
 
 *More points are expected on this list, and **nothing is being built until they are all in** — the
 client wants them gathered first so they can be sequenced together. Add each here as it comes in,
@@ -9115,6 +9119,624 @@ switch.
       cross-department interviewer today, and it is the same one-line source swap.
 - [ ] Whether HR wants the *named* hiring manager corrected on live requisitions. It is effectively
       immutable after submit — only `fms_hr_resubmit_mrf` writes it, requester-only, sent-back only.
+
+---
+
+### NR-7 · HR sets the clock and the CV numbers when it approves  `[x]` — 🟢 **LIVE 21-09-2026**
+
+*Raised 2026-09-21 by Ritesh Bhai, in two messages the same day. **Not started** — logged here on the
+instruction "just add this to the worklist, don't execute". The figures below were read off
+`icutjkrqkbzwvmnfbzpr` on 21-09-2026 (30 requisitions, 179 CVs, read-only); nothing was written and no
+code was touched.*
+
+🟢 **BUILT 21-09-2026 — database LIVE, frontend on localhost only (not pushed).**
+
+*Migration `20261130120000_nr7_requisition_targets.sql` applied to `icutjkrqkbzwvmnfbzpr`, with its
+rollback written **first** and kept beside it. `npm run build` green. Walked in a real browser as a
+signed-in user (Playwright, localhost:5193) — every screen below was driven, not reasoned about.*
+
+**The module is live, so the whole change is additive and backward compatible.** Proof rather than
+intention: the row counts and two fingerprints were taken before the migration and again after the
+browser pass, and they are identical — 30 requisitions, 179 candidates, 153 interviews, 676 activity
+rows, `req_fingerprint 7fa12ef7…`, `cand_fingerprint 45e4be06…`. No requisition changed status, and
+the three sitting at `hr_review` are all still there.
+
+| What | Where |
+|---|---|
+| 4 numbers on the requisition | `target_close_days`, `cv_target`, `shortlist_target` (3), `director_cv_target` (3), `targets_set_at/by` — all nullable or defaulted, with the decisions written into the **column comments** |
+| New vs repeat CV | `fms_hr_candidates.is_repeat` + `repeat_of_candidate_id` + `repeat_signal`, decided at INSERT by the new `fms_hr_candidate_seen_before()` and stored. `duplicate_ack` is now kept on the row too — it never was |
+| Asked for at approval | `MrfDecisionModal`, HR stage only, **Confirm disabled until all four are filled**; the fields vanish on Reject / Send back |
+| Set later | `fms_hr_set_requisition_targets` + the Targets card's **Edit** — the way in for the 24 positions that were already open |
+| Tracked, one position | `TargetsCard` on the requisition page: the clock, new CVs, shortlist, directors |
+| Tracked, all positions | Two new columns on **Positions** — *Closure* and *Targets met* — both sorting, both filtering, per this file's standing rule |
+
+**What the browser pass actually proved** (as opposed to what the code says):
+
+- The **old four-argument call still resolves** to the new function — the deployed site keeps working
+  while the database is ahead of it. Probed both forms; both reached the authorisation gate, neither
+  wrote anything.
+- Saving from the UI wrote `30 days / 10 CVs`, stamped `targets_set_at` and the person, and the card
+  redrew as *25 of 30 days used · 5 left · due 26-09-2026*. **That row was then restored to null** —
+  HR should type their own numbers, not mine.
+- An approval was driven end to end on a real pending MRF with `fetch` intercepted, so the requisition
+  was **not** approved: the payload it sent was exactly
+  `{target_close_days: 21, cv_target: 8, shortlist_target: 3, director_cv_target: 4}`.
+- The gate is **not admin-only**: `fms_hr_can_act('hr_head_approval', …)` returns true for **Riya
+  Kumari (HR Head, role `hod`, not an admin)** and for Saloni Rathod. Checked in SQL rather than by
+  borrowing their login.
+
+**Two defects found by looking at the screen, which the code read as correct:**
+
+1. 🔴 **"offer accepted —" on a vacancy with no offer.** The clock note was keyed on the STATE, and a
+   position whose period runs out while it is still hunting is `missed` with no stop date — so it
+   printed an acceptance that never happened. Now keyed on whether the clock actually stopped. It
+   reads *"12 over · was due 09-09-2026"*.
+2. The approval dialog's four hints wrapped to four lines each, pushed the two inputs out of line with
+   each other and **overflowed the dialog sideways**. `FieldLabel`'s `hint` shares the label's own
+   line; the explanations now sit under each input instead.
+
+**One trap worth keeping.** `STAGE_RANK.disqualified` is **10** — above R3's 8 — so "reached the
+directors" counted by rank alone would score every dropped candidate as having met a director. The
+count reads three signals (held date, current stage excluding disqualified, and a booked round-3
+row), which is why MRF-2627-0015 reads **9**: one round held, nine booked. `interview3_at` alone
+would have said **1**.
+
+**Not built, deliberately:** the *"type why"* box when fewer than 3 reach the directors — that was the
+🟡 assumption above, and it belongs with the final-decision step rather than here.
+
+🟢 **SHIPPED 21-09-2026** — `master` at **ffea893e**, pushed as `misorangeotec-stack`, Vercel deployed
+from it. Ported onto master rather than copied: all seven touched app files were byte-identical there,
+but **`database.types.ts` was 64 lines AHEAD on master**, so its three additions were re-applied to
+master's own copy rather than overwriting it. Built and walked in the browser **again on master's
+code** in a throwaway worktree (`D:\AI Development\oo-nr7`) before the commit — the branch this was
+developed on carries three other sessions' work, so passing there proves nothing about what deploys.
+
+**The ask.** When a new requisition reaches the **HR approval** gate, the HR head sets three numbers
+alongside the approval, and the module then tracks each one against what actually happened:
+
+| # | What HR sets at approval | What gets tracked |
+|---|---|---|
+| 1 | The **period this position should be closed in** | Was the position closed inside that window? |
+| 2 | The **number of new CVs** required for this position | Did the CVs gathered match the finalised number? |
+| 3 | The **approximate number of CVs that should reach the director round** — **default 3** when HR types nothing | Did at least that many candidates get in front of a director? |
+
+Number 3 arrived with its own reason: *"even if there are many CVs uploaded at stage 1, when the stage
+progresses and reaches the final director stage, many times only 1 CV is left. This is also an
+important part of quality assurance of the CVs — we at least need 3 CVs to reach the directors."* It
+is a CV **quality** check, not a volume one, and it is the only one of the three with a default.
+
+#### What the live data says
+
+**The director-stage complaint is real, and it is worse than "often only 1".** Of the 18 live
+positions holding CVs, **12 have never put anybody in front of a director at all** — including the two
+biggest pipelines in the system. The six that did:
+
+| MRF | Position | CVs | Reached the director column | Would pass "3 must reach" |
+|---|---|---|---|---|
+| MRF-2627-0015 | Finance manager | 17 | 6 | ✅ |
+| MRF-2627-0021 | Service Coordinator | 4 | 3 | ✅ |
+| MRF-2627-0023 | Business Development Executive | 2 | 2 | ✗ — only 2 CVs ever existed |
+| MRF-2627-0017 | Electrical & Panel Technician | **20** | **1** | ✗ |
+| MRF-2627-0004 | MIS Executive / MIS Analyst | 2 | 1 | ✗ |
+| MRF-2627-0019 | *ZZ TEST — HR Executive* | 3 | 1 | ✗ (test row) |
+| — | **Never reached a director** | — | 0 | Design Engineer (**37 CVs**), Area Sales Manager (23), Marketing Executive (14), Spare Parts Executive (12), Service Engineer ×2 (10 + 6), Executive Assistant (8), Marketing Manager (8), Service Engineer (6), Ink Lab Chemist (3), Ink Production Executive (3), Credit Control Executive (2), Technical Sales Engineer (1) |
+
+Two of thirty positions would clear the rule today. MRF-2627-0017 is the client's sentence in one row:
+**20 CVs in, one candidate out the far end.**
+
+**The closure clock has no precedent to calibrate against.** In six weeks of live use **not one
+requisition has ever reached `closed`** — 0 of 30. All five ended vacancies were **cancelled**. Nobody
+has joined: `joined_at` is null on all 179 candidate rows, 3 offers are out (`finalized`), 0 `hired`.
+Meanwhile nine positions approved on **10-Aug-2026** are still `sourcing` **42 days later**, and
+MRF-2627-0002 (Sales Executive, approved 10-Aug, posted 20-Aug) still has **zero CVs** against it.
+Whatever period HR sets, most of today's live board is already outside it — so the first report this
+builds will be a wall of red unless the rollout says what it does with the 24 positions already open.
+
+**CV volume today** — 179 CVs across the board, 0 to 37 per position: 37, 23, 20, 17, 14, 12, 10, 8,
+8, 6, 4, 3, 3, 3, 2, 2, 2, 1, and **six approved positions sitting at zero**. 39 of the 179 are
+disqualified.
+
+#### Where it lands
+
+- **Capture:** [MrfModals.tsx](frontend/src/apps/hr-recruitment/components/MrfModals.tsx) —
+  `MrfDecisionModal`, and **only on `stage === "hr"`**; the same modal serves the Management gate and
+  must not grow the fields there. It is also the **edit** path (`editing`), so the three numbers have
+  to survive a corrected approval, not just the first one.
+- **Write:** `decideMrf` / `updateDecideMrf` in
+  [hrWrites.ts:342-375](frontend/src/apps/hr-recruitment/data/hrWrites.ts#L342-L375) →
+  `fms_hr_decide_mrf` / `fms_hr_update_decide_mrf`, both `(p_req, p_stage, p_decision, p_remarks)`
+  today. Three more parameters, or one payload — and the default of 3 belongs **in the RPC**, not only
+  in the form, or a row written by any other path arrives with no target at all.
+- **Store:** three new **nullable** columns on `fms_hr_requisitions` (additive only — the table has
+  none of them today: no target date, no CV target, no director target), plus the `Requisition` mirror
+  in [types/index.ts:274-383](frontend/src/apps/hr-recruitment/types/index.ts#L274-L383) and the row
+  mapper.
+- **Show and track:** Positions list, Position pipeline, MRF detail, the management pipeline dashboard
+  (NR-2) and [lib/analytics.ts](frontend/src/apps/hr-recruitment/lib/analytics.ts). If a missed target
+  should *chase* somebody it also has to reach [lib/queues.ts](frontend/src/apps/hr-recruitment/lib/queues.ts)
+  and My Work, which is a bigger change than displaying it.
+- ⚠ **This is not the step-SLA model.** [lib/sla.ts](frontend/src/apps/hr-recruitment/lib/sla.ts) +
+  Setup → Due Dates already give every *step* a due date (HR approval 2 days, posting 1, resume upload
+  7…), configurable org-wide. What is being asked for here is a **whole-vacancy** target, set per
+  requisition by a person. Two different clocks — do not collapse them, and do not let the new one
+  read `stepSla`.
+
+#### Decisions needed before this can be built
+
+🟢 **Questions 1 and 2 have a recommended answer — put to the client 21-09-2026, taken from HR's own
+two documents rather than from preference. Ritesh Bhai's instinct was "closed when the person joins";
+this keeps that and splits the scoring.**
+
+**Two bars. The position still CLOSES when the person joins — but the period HR types at approval is
+measured to OFFER ACCEPTED.** The gap between the two prints beside it as Offer-to-Join days:
+reported, not scored against HR.
+
+Why, from the instruments themselves:
+
+- **Her weekly form already separates them.** `A1.4` *Positions Closed* and `A1.5` *Offer-to-Join %*
+  are two different boxes, with `Z.2` offer drop / no-show as a third. If joining were simply part of
+  one closure number, those boxes would not exist — HR already reports the waiting time as its own
+  fact ([WEEKLY-REVIEW-REPORT.md](WEEKLY-REVIEW-REPORT.md)).
+- **The KPI sheet separates them too.** 1A.5 scores "requisition open and closure dates"; 1A.6 is a
+  *separate* line with its own 7-working-day SLA covering offer release, BGV, references and joining
+  documentation. The sheet never asks one line to carry both.
+- **1A.5 is the largest single line in the document — 10%.** A 30–90 day notice period is not HR's to
+  influence, and hanging the biggest number in someone's appraisal on it makes it a lottery.
+
+⚠ **Whatever counts a closure must exclude cancellations.** Every `closed_at` on the board today
+belongs to a **cancelled** requisition, not a filled one — so a naive count off that column reports
+five cancellations as five wins. The same trap already affects the framework lab's `closure_within_tat`
+metric, which reads `closed_at` raw.
+
+*Still open in these two questions: the exact number of days per role (Q2's other half), and whether
+the clock starts at HR approval or at job posting.*
+
+1. **What stops the closure clock? — 🟢 ANSWERED 21-09-2026, see the green block above.** The position
+   closes when the person **joins** (today's rule, `fms_hr_sync_requisition_fill`, reached zero times
+   so far); the period HR types is judged to **offer accepted**; the gap prints beside it as
+   Offer-to-Join days. Both must be named on the screen, or the report will disagree with HR's own
+   understanding of the word *closed*.
+2. **And what starts it? — 🟢 DECIDED 21-09-2026: the day the job is POSTED.** Not the approval: 0002
+   was approved 10-Aug and posted **20-Aug**, 0013 approved 21-Aug and posted **02-Sep**, and those
+   waiting days are not the hunt's.
+   - ⚠ **Which posting date.** The module keeps two and they are not the same fact: `posted_on` is the
+     business date HR typed (the sheet's *"Date of Job Posted"*) and `posted_at` is when the step was
+     completed in the hub. Use **`posted_on`**, falling back to `posted_at` — and say which on screen.
+   - ⚠ **A position that is never posted never starts its clock.** Three are sitting there now
+     (0026, 0028, 0029 — approved 18-Sep, `posted_on` still null). They are not untracked: the
+     `job_posting` step already carries its own 1-day SLA, so the chasing happens there. But the
+     closure report must show them as *not started*, never as *on time*.
+3. **A date, or N days? — 🟢 DECIDED 21-09-2026: a number of days, typed per position by the HR Head
+   at MRF approval.** *"A different number HR Head will set for each position at the time of new MRF
+   approval."* So there is **no per-role default and no master table of TATs** — the box is filled on
+   every approval, and it should be **required**, not optional, or a skipped box quietly means a
+   position nobody is tracking. ⚠ `expected_start_date` already exists on the MRF — it is the HOD's
+   wanted **joining** date, a different fact, and must not be reused for this.
+4. **Per seat or per position? — 🟢 DECIDED 21-09-2026: per position, in total.** Every number the HR
+   head types is the total for the whole requisition, however many seats it carries. MRF-2627-0007
+   wants **5** Service Engineers on one MRF and still gets one CV target, one shortlist bar and one
+   director bar — the HR head raises them by hand if the hunt needs it. **The hub must never multiply
+   a typed number by `positions_required`**, anywhere, or a 5-seat position shows a target nobody set.
+5. **What counts as a "new" CV — 🟢 DECIDED 21-09-2026: only a person the hub has never seen.** A
+   candidate already on any earlier requisition does **not** count toward the number; HR must source
+   somebody new. 🔴 **This one answer is the most expensive of the seven**, because the hub cannot
+   tell new from repeat today:
+   - `fms_hr_candidate_duplicate` looks **within one requisition only** — the server has never
+     compared a CV against the rest of the board.
+   - The *"add anyway"* reason is a gate the RPC checks and **never stores** — there is no
+     `duplicate_ack` column on `fms_hr_candidates`; only the client sends one.
+   - The cross-vacancy check in [lib/duplicates.ts](frontend/src/apps/hr-recruitment/lib/duplicates.ts)
+     is advisory, in the browser, and nothing it decides survives the save.
+   **So the verdict has to be computed at ADD time and stored on the row** — `is_repeat`,
+   `matched_candidate_id`, and which signal matched — never recomputed later from email/phone/hash. A
+   quarter of CV rows carry no email and no phone (FIX-5), so a recomputation on a later day will
+   quietly give a different answer than the one HR was shown.
+   - Right now **0 of 179** CVs appear on two vacancies, so the rule changes no number on today's
+     board. It starts to bite the first time HR re-uses a good CV.
+   - ⚠ Only the **CV number** is affected. A repeat candidate still counts for the shortlist bar and
+     the director bar — those measure how far a person **got**, not where the CV came from.
+   - ⚠ Worth telling HR plainly: re-using a strong CV from an earlier hunt is good recruiting, and
+     under this rule it earns nothing toward the number.
+6. **Do disqualified CVs count? — 🟢 DECIDED 21-09-2026: yes.** A CV counts the moment HR sourced and
+   uploaded it, whatever happens to that person afterwards — so the CV number measures **sourcing
+   effort**, which is the part HR controls, and the target never moves under them. 39 of the 179 CVs
+   on the board today are disqualified, and all 39 count. ⚠ The other two bars are unaffected and
+   stay as they are: the shortlist bar (3 to the HOD) and the director bar (3 to the directors) are
+   about how far people **got**, not how many were sent.
+7. **Is the director number a target or a gate? — 🟡 ASSUMED 21-09-2026, not confirmed.** The client's
+   words were *"3 CVs are the minimum benchmark for any position; more than 3 is always welcome"* — a
+   benchmark, so the number is a floor and never a ceiling. **The exception case was not answered, so
+   the plan assumes: nothing is blocked.** If fewer than 3 reached a director, the position shows red
+   and HR is asked to type why, and that reason is kept — the same shape as the existing duplicate-CV
+   *"add anyway, with a reason"* gate, which HR already knows. **Revisit if the client wants a hard
+   stop.** Note that two of the three live offers carry no director round result at all.
+8. 🔴 **What counts as "reached the director" — this is a measurement trap.** Three signals in the
+   same database give three different answers for the same fact:
+
+   | Signal | Says |
+   |---|---|
+   | `candidates.interview3_at` (the round **held**) | **1** candidate, ever |
+   | `fms_hr_interviews` round 3 rows | **17** booked — **16 still `scheduled` with no result recorded** |
+   | `candidates.stage` (the column the card sits in) | **14** at or past the director column (11 + 3 finalized) |
+
+   It is not confined to round 3: **43** telephonic, **40** round-1 and **29** round-2 bookings also
+   sit `scheduled` for ever with no result. Build the counter on `interview3_at` and the report says
+   *1* where HR sees *14*. Choose the signal deliberately, in writing, on the screen.
+9. **Do the already-open positions get the rules too? — 🟢 DECIDED 21-09-2026: yes, all of them.**
+   The HR Head goes back over the **24 open positions** and sets the closure period and the CV number
+   on each; the 3-to-the-HOD and 3-to-the-directors bars apply to everything from the day it ships.
+   - **So the build needs a way to set the numbers on a position that is ALREADY approved** — not
+     only inside the approval dialog. A small edit control on the position itself, admin/HR-Head only,
+     with who set it and when, or 24 positions have nowhere to receive their numbers.
+   - ⚠ **Expect red on day one, and it will be honest.** Nine of the 24 have been open since 10-Aug
+     (42 days). Whatever period is typed on them now is already spent, so the first report shows most
+     of the board overdue. Tell HR that before they open it, not after.
+   - ⚠ The CV number is the harder one to backfill: these positions already hold CVs (one holds 37),
+     so a number typed today is being set against a hunt that is half over. Setting it to what they
+     **should** have had is the honest reading; setting it to what they already have makes every old
+     position pass, which is worth nothing.
+
+---
+
+### The Talent Equation block — Saloni's KPI sheet, mapped into this module  *(raised 2026-09-21)*
+
+*Source: `files/KRA-KPI-Analysis.png` — the **KPI-3 lab's** Framework scorecard for Saloni Rathod
+(HR Executive), which is **localhost-only on branch `kpi-3-lab`** and writes nothing — read together
+with [KRA-KPI-FRAMEWORK.md](KRA-KPI-FRAMEWORK.md) at the repo root, which transcribes the source
+`.docx` line by line. Everything below was re-checked against the live database on 21-09-2026;
+read-only, nothing written.*
+
+**What the picture is.** A weighted appraisal sheet for one role — 5 KRAs, 44 KPI lines, fixed at
+100%. **KRA 1 — "Talent Acquisition, Buddy Program & Probation", 45% of the whole sheet, 18 lines —
+is this module's half of it.** The other 55% (Learning & Development 40%, attendance, task
+management) belongs elsewhere and is **not** planned here. The client calls the programme **Talent
+Equation**.
+
+🔴 **The headline from the lab: of KRA 1's 45 points, the hub can see 7. The other 38 have no data
+behind them.** Not "a report nobody wrote" — no table, no column, no screen. The Buddy Program (5%)
+has *nothing at all*, and Probation (10%) has tables that have never held a single row.
+
+| Group | Wt | Lines | Where it stands today | Entry |
+|---|---:|---|---|---|
+| **1A · Talent Acquisition** | 30% | 6 | 1 line measurable, 2 waiting on NR-7's numbers, 3 need a column or a master row | **NR-8** |
+| **1B · Buddy Program** | 5% | 5 | ❌ **no tables, no screens, nothing** | **NR-9** |
+| **1C · Probation Management** | 10% | 7 | ⚠ built, **never used** (0 probations, 0 reviews) and on the **wrong cadence** — monthly, not Day 7/15/30/60/90 | **NR-10** |
+
+#### P0 · Three things every entry below depends on
+
+1. 🔴 **A requisition has no owner.** The lab says it in its own footnote: *"the recruitment tables
+   record the requisition, not who chased it."* Every recruitment line is scored **per HR executive**,
+   and today the only reason Saloni's figures are hers is that she is the only recruiter. One column
+   (`recruiter_id` on `fms_hr_requisitions`, defaulted at HR approval, reassignable) turns the whole
+   of 1A from "the department's number" into "this person's number". **Until it exists, a second
+   recruiter makes every 1A line wrong.** It is one column and one picker, and it must come first.
+2. **Reminders have no home in this module.** The bell exists (`fms_hr_notifications` +
+   `fms_hr_announce`), but **`hr-recruitment` email has been OFF since 04-08-2026**
+   (`email_module_settings`), and NR-1 already parks the `send-email` redeploy that must happen before
+   it is ever switched on. Anything "notified a day before" needs a scheduled wake: the project
+   already runs **15 pg_cron jobs**, with `fms-asset-send-reminders` (03:30) as the working precedent —
+   copy it, and pick a minute that collides with none of them.
+3. **The new joiner is not a user — 🟢 DECIDED 21-09-2026: give them one.** Both the buddy feedback
+   (1B.5) and the joiner's half of every probation review need the *joiner* to log in and type. There
+   is **no link at all** today from a hire to a portal account — `fms_hr_onboardings` /
+   `fms_hr_probations` carry a free-text `employee_code`, and `profiles.employee_code` is filled on 44
+   of 68 people.
+
+   **The client's answer:** *"As soon as that person is onboarded we will create a login for that
+   person. That is also part of the onboarding process."* So:
+
+   - **"Create Orange One login" becomes an onboarding checklist item** — a master row in
+     `fms_hr_onboarding_items`, alongside the other nine. No migration for the item itself.
+   - **Store the link, never retype it.** The onboarding (and the probation, and the buddy row) carries
+     the new `profiles.id`. Matching a hire back to a person by employee code or by name is the trap
+     this file has already been bitten by.
+   - 🔴 **HR cannot create a login today — 🟢 DECIDED 21-09-2026: let them, but only the lowest type.**
+     The `admin-users` Edge Function refuses anyone who is not `admin` (*"admin only", 403*), and
+     **Saloni Rathod is `employee`, Riya Kumari (HR Head) is `hod`** — neither can press the button.
+     The client's answer: **HR may create `employee` logins, and nothing more.** So the function grows
+     a second, narrower gate — recruitment staff (`fms_hr_is_recruitment_staff` is the predicate that
+     already exists) may CREATE a user whose role is `employee`; they may not create an admin, a hod or
+     a sub_hod, may not change an existing person's role, may not grant module access beyond the
+     default, and may not delete anybody. ⚠ **That function serves live user management for the whole
+     portal** — the new branch must be additive and the old admin path must come out byte-identical.
+   - Note the portal's own convention: a new user's **mobile number is their initial password**
+     (CLAUDE.md), so onboarding must have collected a phone before this item can be ticked.
+
+---
+
+### NR-8 · The six Talent Acquisition lines (30% of the sheet)  `[ ]` — planned 2026-09-21, nothing built
+
+Line by line, with what exists and what each one needs. **Three of the six are already NR-7's work** —
+build NR-7 first and *extend* its form; do not put a second "targets" screen anywhere.
+
+| Line | Wt | Target on the sheet | What exists | The change |
+|---|---:|---|---|---|
+| 1A.1 Requisition acknowledgement | 3% | Within **1 working day** of an approved requisition | ❌ `hr_approved_at` is the *approval*, by the HR **Head**. The recruiter does nothing recordable between approval and posting | Two nullable columns (`acknowledged_at`, `acknowledged_by`) + an **Acknowledge** control on an approved requisition |
+| 1A.2 CV pipeline creation | 5% | CV target per requisition, **set by the HR Head while approving** | ⚠ counts exist; the target does not | **= NR-7 number 2.** Nothing further |
+| 1A.3 Quality shortlist submission | 5% | Minimum **2–3** shortlisted profiles per requisition | ⚠ `hr_shortlisted_at` exists — but **160 of 179 CVs are HR-shortlisted**, so the line as written passes on almost everything | 🟢 **DECIDED 21-09-2026: 3.** The same benchmark as the director round, so the whole pipeline reads one number. Seeded as the default on **NR-7's approval form**, overridable per position |
+| 1A.4 Interview coordination + feedback | 3% | Scheduled, and feedback closed, **within 48 hours** | ✅ the data shape is there (`scheduled_on`, `held_at`, result) — but 🔴 **128 of the 153 interviews ever booked sit `scheduled` with no result recorded** (R0 43, R1 40, R2 29, R3 16) | Not a column. The fix is making result-recording unavoidable — same defect as NR-7's measurement trap |
+| 1A.5 Position closure within approved TAT | 10% | Closed within the **role-specific** TAT | ❌ the biggest line on the sheet, and no TAT is stored anywhere | **= NR-7 number 1.** 🟢 **DECIDED 21-09-2026:** no job-title default and no `default_tat_days` — the HR Head types the days **per position, at approval**, and the box is required |
+| 1A.6 Offer, **BGV**, references, joining docs | 4% | Within **7 working days** of approval | ⚠ the onboarding checklist already does per-item due days — 9 active items — but **none is a BGV or a reference check** (`police_verification`, 7d, is the nearest) | **Master rows, no code, no migration.** Add the missing items in Setup → Masters. The cheapest 4% in the document |
+
+⚠ **Decide whether acknowledgement becomes a STEP.** A step key inherits the SLA map, My Work, the
+queues, step owners, reassignment **and the live CC-1 ranking**. A column with a due chip does not.
+Recommendation: a column first; promote it to a step only if it must actively chase somebody.
+
+---
+
+### NR-9 · The Buddy Program — a new sub-module  `[ ]` — planned 2026-09-21, nothing built
+
+*5% of the sheet, and **nothing exists**: no table, no column, no screen, no step.*
+
+**The programme, as the client described it (21-09-2026):**
+
+1. **Offer accepted → a buddy is allocated within 24 hours** (1B.1). The buddy is a **cross-departmental**
+   employee — deliberately not from the joiner's own department — who is there for the new joiner's
+   questions and general support.
+2. **Day 1 → the Buddy Passport is handed over** (1B.2). The passport carries tasks, so it is a
+   checklist, not a document.
+3. **Over 90 days → at least 8 interactions** between the buddy and the joiner (1B.3), each one
+   recorded. **HR tracks and marks them** — that is explicitly HR's job, not the buddy's.
+4. **At 90 days** the programme ends **with probation**: if the employee is confirmed, the passport
+   closes on 100% of its tasks plus a final sign-off (1B.4). **If the employee is not confirmed, the
+   buddy programme is extended by exactly the period probation is extended by** — the two clocks move
+   together, always.
+5. **The joiner then rates the experience** (1B.5). The line scores at **4 of 5 or better**.
+
+**What has to be built**
+
+- **The passport holds no task list — 🟢 DECIDED 21-09-2026: the 8 interactions ARE the passport.**
+  The client's answer to *"where does the task list come from?"* was **no task list**. So 1B.4
+  *"100% tasks and final sign-off"* means: **all 8 interactions confirmed, plus HR's sign-off.**
+  That **removes two tables** from this build (`fms_hr_buddy_passport_items` / `_checks`) and the
+  whole Setup screen behind them. The passport stays a real event — it is handed over on Day 1 and
+  that handover is stamped and scored (1B.2) — it simply carries nothing the hub has to track inside
+  it. ⚠ If the printed passport does list tasks, the hub will not know about them: HR's sign-off is
+  the only statement that they were done.
+- **Tables** (all new, additive, now three not five): `fms_hr_buddies` (one per hire — onboarding_id,
+  buddy_user_id, allocated_at/by, passport_handed_at/by, interaction target **defaulted to 8**,
+  status, closed_at/by, extension fields); `fms_hr_buddy_interactions` (buddy_id, sequence,
+  happened_on, mode, notes, logged_at/by, confirmed_at/by, optional file); `fms_hr_buddy_feedback`
+  (rating 1–5 + free text, by the joiner).
+- **HR picks the buddy — 🟢 DECIDED 21-09-2026**, within 24 hours of the offer being accepted, and it
+  is final: no HOD approval step, so the 24-hour clock HR is scored on stays in HR's own hands.
+- **The cross-department rule belongs in the RPC, not the picker.** Allocation must refuse a buddy
+  whose `profiles.department_id` equals the position's department. A picker that merely hides them is
+  not a rule — and the picker and the validator must agree.
+  - ⚠ **The picker is the work, not the rule.** It has to offer ~68 colleagues minus one department,
+    searchable, and it should show what each person already carries: somebody already buddying two
+    new joiners is the wrong third choice, and HR cannot see that from a name alone.
+- **Screens:** a **Buddy** panel on the hire's page (allocate → hand over → log interactions → close),
+  a **Buddy queue** beside the existing five, and an interactions grid — sorting and filtering on
+  every column, per this file's standing rule.
+- **Steps:** `buddy_allocation` (24h from offer acceptance) and `buddy_passport` (Day 1) are exactly
+  what the step model already does. Putting them in gets the queue, My Work and the chasing for free —
+  and **changes what the live CC-1 ranking scores**. Say that out loud before it ships.
+- **Who logs an interaction — 🟢 DECIDED 21-09-2026: the buddy logs it, HR confirms it.** The buddy
+  records the meeting they were actually in (date, how they met, a short note, optional file); HR marks
+  it **confirmed**. Two timestamps on the row — `logged_at/by` and `confirmed_at/by` — and the count
+  toward 8 is the **confirmed** ones, since HR carries the score. An unconfirmed log is a real state,
+  not a draft: it shows on HR's queue as work owed.
+  - 🔴 **This puts an ordinary employee inside the HR module.** A buddy is any cross-department
+    colleague; almost none of them hold an `hr-recruitment` grant, and the module's read gate has three
+    tiers before you reach candidate data. The buddy must reach **one screen showing only their own
+    buddy record** — most likely a My Work item plus a narrow route, **not** a module grant, or every
+    buddy silently gains sight of the whole recruitment pipeline.
+- **If the joiner leaves mid-probation — 🟢 DECIDED 21-09-2026: close the programme, reason "person
+  left", with the date.** It is a **third ending** beside *closed on confirmation* and *extended with
+  probation*, and it must exist in the status list from the start: it **stops the reminders to the
+  buddy that same day**, and it is **excluded from the KPI** rather than scored as a miss — the
+  interactions that never happened were not HR's doing. ⚠ Nothing in the hub announces a resignation
+  today, so this ending is reached by hand (or by the Employee Exit module later, if the two are ever
+  joined up).
+- ⚠ **1B.5 needs the joiner to have a login** (P0 number 3). Without one, "new joiner feedback" is HR
+  quoting the new joiner.
+
+---
+
+### NR-10 · Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90  `[ ]` — planned 2026-09-21, nothing built
+
+*10% of the sheet. The module **already has** probation — `fms_hr_probations`,
+`fms_hr_probation_reviews`, five steps, `ProbationPanel`, `ProbationQueue` — and it has **never been
+used**: **0 probations, 0 reviews**, because nobody has joined yet. **Re-cadencing it costs no data.**
+That will not be true once the first hire joins, so this is the moment.*
+
+**What changes**
+
+- **The cadence.** Today: Month 1, 2, 3, final, extension (`month` CHECK 1–4; steps
+  `probation_m1…m3`, `probation_final`, `probation_extension`). The sheet wants **Day 7 (1%), Day 15
+  (1.5%), Day 30 (1.5%), Day 60 (1.5%) and the Day-90 Confirmation Review (2%)**. Add a `day_no`
+  column (7/15/30/60/90) beside `month`, leave `month` nullable, and write a new CHECK rather than
+  dropping the old one.
+- 🔴 **"Day 7" is not 7 days in this codebase.** A day-unit SLA here counts **working days, Mon–Sat**
+  (`lib/sla.ts`), and the probation steps dodge it only by being `unit: "months"` with
+  `addMonths(joiningDate, n)` in `probationDueIso`. Set Day 7 as a plain `days: 7` and it lands on the
+  **8th calendar day**. The cadence needs a calendar-day unit, written deliberately.
+- **A review becomes two-sided — 🟢 DECIDED 21-09-2026: the HOD and the new joiner write it; HR does
+  not.** *"The joiner and both can write the probation review, not the HR. HR can just see those."* So
+  a review row grows **two sides** — the HOD's and the joiner's — each with its own `submitted_at`, and
+  the review counts as done only when **both** are in by the due date. HR reads them, chases them, and
+  is **scored on whether they arrived on time** — which is exactly what the sheet asks of HR (*"7-Day
+  Review — completed on due date"* scores completion, never content). The HOD keeps the confirm-or-
+  extend decision at Day 90, as today.
+  - ⚠ Consequence for the step model: the step stays **HOD-owned** (it is titled "(HOD)" already), so
+    the chasing in My Work and the CC-1 ranking still points at the head — but the *joiner's* half has
+    no step of its own and no owner the step model can express. Either the joiner's side hangs off the
+    same step, or it needs its own notion of "work owed by someone who is not staff".
+- **A reminder one day before** every one of the five dates, to the **HOD and the joiner**, with **HR
+  copied** since HR carries the score for it (P0 number 2). 🟢 **DECIDED 21-09-2026: bell AND email.**
+  - 🔴 **That means switching `hr-recruitment` email ON, and it does not only send reminders.** The
+    switch has been **off since 04-08-2026**, and behind it sit mails that are already built and have
+    never gone out: the **interview panel notices** and the **master-request** mail (NR-1). Flipping
+    it releases those too. Read them before, not after.
+  - 🔴 **`send-email` must be redeployed FIRST.** Its renderer already knows that an
+    `hr-recruitment_interview_*` kind is a panel notice rather than master-data governance, and that
+    change is **committed but not deployed** — the running copy serves five modules that do have email
+    on. Deploy it in the same change that flips the switch:
+    `supabase functions deploy send-email --project-ref icutjkrqkbzwvmnfbzpr` (NR-1 parks this too).
+  - ⚠ **The mailer has no Cc.** Three recipients means **three outbox rows**, one each — so every
+    reminder is HOD + joiner + HR = 3 rows, ×5 reviews, per hire. Size the sweep accordingly.
+  - ⚠ **Once it is on, testing a probation flow in the browser sends real mail** to real people.
+    Check the switch before any walkthrough.
+- **Concerns / grievances** (1C.6 — *closed within 24 hours of reporting*). **The client has a fixed
+  format and will send it.** Leave the space and build the shell now: one `fms_hr_grievances` table
+  (raised_by, about, raised_at, category, status, closed_at/by, resolution) with the format's own
+  fields in a **`jsonb` payload**, a queue, and a 24-hour clock — so the format drops in later
+  **without a migration**.
+- **Probation closure** (1C.7 — confirm or extend before the due date) exists as `probation_final` +
+  `extension_months`. Keep it, and make **extending probation extend the buddy programme by the same
+  period in the same RPC** (NR-9 point 4), or the two records will tell different stories about the
+  same person.
+- ⚠ **The knock-on is real.** `probation_m*` is referenced in **10 frontend files**, **3 SQL
+  functions**, and the **live, nightly CC-1 ranking**
+  ([hrRecruitment.ts](frontend/src/apps/fms-control-center/ranking/modules/hrRecruitment.ts)). This is
+  not a find-and-replace, and CC-1's stored history was computed on the old keys.
+
+---
+
+#### Does this block actually FILL the KRA and the weekly report?  *(cross-check, 21-09-2026)*
+
+**This is the stated goal of the whole block** — *"after this is done, all the Report and the KRA for
+this should be mapped and filled up."* So the plan was validated line by line against the two
+instruments themselves: the KPI line definitions and the weekly-review field definitions built in the
+KPI-3 lab (`framework/saloni.ts`, `report/weeklyReview.ts` on `kpi-3-lab`). The result: **it very
+nearly does — and four things are missing that nobody had listed.**
+
+**KRA 1 — 18 lines, 45 points, 7 measurable today**
+
+| Line | Wt | Lands where | After the block |
+|---|---:|---|---|
+| 1A.1 Requisition acknowledgement | 3 | NR-8 (new column) | ✅ |
+| 1A.2 CV pipeline creation | 5 | NR-7 (the CV target) | ✅ |
+| 1A.3 Quality shortlist submission | 5 | NR-7 (fixed at 3) | ✅ |
+| 1A.4 Interview coordination + 48h | 3 | already live | ⚠ **people, not code** — 128 of the 153 interviews ever booked carry no result |
+| 1A.5 Position closure within TAT | 10 | NR-7 (days + posted-date start) | ✅ |
+| 1A.6 Offer, **BGV**, references, docs | 4 | NR-8 + a **BGV result field** (gap 3) | ✅ |
+| 1B.1 Buddy allocation | 1 | NR-9 | ✅ |
+| 1B.2 Passport handover | 1 | NR-9 | ✅ |
+| 1B.3 Department interactions | 1 | NR-9 | 🔴 **stays empty** — the client's programme is 8 buddy meetings; this line asks for department sign-offs (gap 1). Only a re-wording by HR closes it |
+| 1B.4 Passport closure | 1 | NR-9 | ✅ (once 1B.3 is settled) |
+| 1B.5 New joiner feedback | 1 | NR-9 + the joiner's login | ✅ |
+| 1C.1–1C.5 the five reviews | 7.5 | NR-10 | ✅ |
+| 1C.6 Concerns / grievances | 1 | NR-10 (format awaited) | ✅ |
+| 1C.7 Probation closure | 1.5 | NR-10 + a **generated confirmation letter** (gap 4) | ✅ |
+
+**→ after the four gaps were answered on 21-09-2026: 44 of the 45 points land.** The **1 point that does not is 1B.3**, and no amount of building fixes it — the sheet asks for something the programme does not do. 1A.4 (3 points) lands only if interview results start being recorded. For the whole
+sheet that is **KRA 1 (45%) + KRA 3 (5%, already live via `kpi_report`) = half the appraisal filling
+itself.** The other half is Learning & Development (40%) and attendance (10%), which are different
+modules and are **not** in this block.
+
+**The weekly review report — 81 boxes, 28 fill themselves today**
+
+| Section | Boxes | Today | After the block |
+|---|---:|---|---|
+| A · Talent Acquisition | 24 | 14 live + 5 caveat + 5 empty | **24** — the five "empty" ones (`A1.4` Positions Closed, `A1.5` Offer-to-Join %, `A4.3` Offer Date, `A4.7` Joined, `A4.5` BGV) need **use**, not building — except `A4.5`, which needs gap 3 |
+| B · Passport To Orange | 12 | 3 live, **7 with no table at all** | **10 of 12** — NR-9 fills the buddy, the feedback and the closure, and gap 2 adds the induction date; the **two department-connect boxes stay empty** for the same reason as 1B.3 |
+| C · Learning & Development | 24 | 0 | **0** — out of scope, needs its own module |
+| Special KPI tracker | 4 | 0 | 2 (`SK-1` closures, `SK-4` probation) |
+| Flags / actions / sign-off | 9 | 1 | 3 — incl. *"Buddy not assigned before Day 1"*, which works only because NR-9 stores the allocation **date**, not just the name |
+
+**→ roughly 28 boxes today → about 57 after the block, and the 24 that stay empty are all Learning &
+Development.**
+
+#### 🔴 The four gaps this cross-check found
+
+1. **"8 interactions" — 🟡 PUT TO THE CLIENT 21-09-2026, who confirmed: EIGHT MEETINGS WITH THE
+   BUDDY.** The question was asked because both instruments say something else, independently: the
+   KPI line's evidence column reads **"Department-wise sign-offs"**, and the weekly form's own rule is
+   *"each department connect counts only when signed off in the passport **by the person met**"* — one
+   row per joiner **per department**, carrying who signed. The client's answer is the **process**, and
+   the process wins; the build follows it (8 meetings, buddy logs, HR confirms).
+   - 🟢 **RESOLVED 21-09-2026: the documents get re-worded, not the programme.** 1B.3 and the weekly
+     form's connect boxes ask for **department-wise sign-offs**, which the 8 buddy meetings cannot
+     fill. The client's answer: **Saloni and Riya Kumari re-word the line** — *"Department
+     interactions / department-wise sign-offs"* becomes **"Buddy interactions"** — and the hub then
+     fills it from what NR-9 builds. **No extra build; one edit to the KPI document and to the weekly
+     form.**
+     - ⚠ **This is a dependency on somebody outside the build, and it is invisible until the end.**
+       Until those two documents are edited, 1B.3 (1%) and `B1.4` / `B2.6` will read as failures on a
+       report that is otherwise full. **Get the re-wording confirmed in writing before NR-9 ships**,
+       and note it wherever the lab's line definitions live (`framework/saloni.ts`,
+       `report/weeklyReview.ts` on `kpi-3-lab`) — those carry the old wording today.
+2. **An INDUCTION record was missing from the plan entirely — 🟢 DECIDED 21-09-2026: add one date.**
+   The weekly form tests it at **Day 15** (`B1.3`, `B2.5`) and flags it, and nothing in the hub
+   records an induction. The answer is the smallest possible one: **`induction_on`, a single date on
+   the onboarding**, set by HR — plus `induction_by` so it is attributable, at no extra cost. It fills
+   two boxes and raises the form's own *"induction not done by Day 15"* flag without anything else
+   being built. ⚠ Put it on **`fms_hr_onboardings`**, not in the checklist: a checklist item can only
+   say done / not done, and the flag needs the **date**.
+3. **BGV has to be a RESULT, not a tick — 🟢 DECIDED 21-09-2026: clear / discrepancy / pending.**
+   NR-8's answer to 1A.6 was "add the missing checklist items", and a checklist item can only be done
+   or not done. The weekly form wants a **status** (`A4.5`), and its own analysis is blunt: *"there is
+   nowhere to record that a verification came back **with a discrepancy**, which is the only state
+   worth flagging."* So BGV gets a **three-state result** on the onboarding, with the date and who
+   recorded it.
+   - ⚠ **This is the one place the checklist pattern does not stretch**, and it is worth noticing why:
+     `fms_hr_onboarding_checks` is a fixed done/not-done shape with a file and a pending reason. A
+     result is a fourth thing. Either BGV leaves the checklist and becomes its own field on
+     `fms_hr_onboardings`, or the checklist grows a result column that only one item uses. **The
+     field is cleaner** — the reference check can stay an ordinary checklist item beside it.
+4. **Probation closure needs a LETTER — 🟢 DECIDED 21-09-2026: the hub generates it.** 1C.7's evidence
+   is *"Decision and letter issuance record"*. Confirming a person now **produces the confirmation
+   letter from a template**, stores it against them, and stamps who issued it and when.
+   - ⚠ **This module has never generated a document** — it only stores uploads (`fms-hr-docs`, and the
+     offer letter is a checklist *tick*, not a file). The generation pattern exists in the codebase,
+     in **OCPI** (jsPDF → storage → an activity row), so it is a copy rather than an invention.
+   - ⚠ Three traps this repo has already paid for, and a letter meets all three: **`drawTable`
+     ellipsizes and never wraps** (fine in a report, wrong in a letter — a long name or address is
+     silently cut); **a generated PDF must be checked with pdf.js**, because string-searching jsPDF
+     output finds nothing even for text that is there; and **deleting a draft orphans its storage**.
+   - ⚠ **The letter needs a template and an approver.** Who signs a confirmation letter, and on whose
+     letterhead, is HR's answer, not ours. Until it arrives, generate to a plain template and keep the
+     wording in one place — the same `[[if …]]` marker trap from OCPI applies if it ever becomes
+     conditional.
+   - 🟢 **Extension and non-confirmation get NO letter — decided 21-09-2026.** Only a confirmed
+     employee gets a generated letter, which is exactly what 1C.7 asks for. ⚠ Both other endings are
+     then communicated outside the hub: the **decision, the date and the reason are still recorded**
+     (they already are), but what was actually said to the person is not. That is the client's call
+     and it is the cheaper build — worth one line in the handover so nobody later reads the missing
+     letter as an oversight.
+⚠ **And one that is not a gap but will look like one:** 1A.4 (3%) is already measurable and will still
+score badly, because **results are not being recorded on interviews** — 128 of 153 bookings sit with no
+result. No amount of building fixes that line; using the screen does.
+
+#### Build order for the block  — 🟢 CONFIRMED BY THE CLIENT 21-09-2026
+
+**NR-7 → NR-8 → NR-10 → NR-9**, as set out below, and **execution is authorised to start** — every
+question in this block has an answer (see the 🟢 marks throughout; 30 decisions taken 21-09-2026).
+Two things are owed from outside the build and neither blocks a start:
+
+- **The grievance format** — the register is built now and the format drops into its `jsonb` payload
+  later, with no migration.
+- **The 1B.3 re-wording** — HR edits *"Department interactions"* to *"Buddy interactions"* on the KPI
+  sheet and the weekly form. Needed **before NR-9 ships**, not before it starts.
+
+1. **NR-7** — it is the input to 1A.2, 1A.3 and 1A.5. Everything else duplicates it if it goes second.
+2. **P0** — the requisition's owner, the reminder plumbing, and the new-joiner identity decision.
+3. **NR-8's cheap half** — 1A.6 (master rows only) and 1A.1 (two columns and a button).
+4. **NR-10** — 10% of the sheet, zero rows of data to migrate, and that window closes at the first hire.
+5. **NR-9** — the largest new build for the smallest weight (5%), so last of the four.
+
+⚠ **None of this makes the sheet score by itself.** The instrument that reads these numbers is the
+**KPI-3 lab**, which is DEV-only on `kpi-3-lab` and writes nothing; whether it graduates is a separate
+decision with its own open questions (KRA-KPI-FRAMEWORK.md §4–5). These entries make the **data**
+exist. Building them is worth doing on its own merits — a buddy programme and a probation cadence are
+real HR process, not reporting — but nobody should expect a score to move because one of them shipped.
+
+#### Open questions for the client
+
+- [x] ~~**The grievance format**~~ — **decided 21-09-2026: build it now without the format.** The register goes in with the basics (who raised it, when, about what, the 24-hour clock, who closed it and how) and the client's own questions land later in the `jsonb` payload, **with no rebuilding and no migration**. The format is still owed, but nothing waits on it.
+- [x] ~~**2 or 3** shortlisted profiles per requisition~~ — **3**, decided 21-09-2026.
+- [x] ~~**Role-specific TAT** (1A.5) — the number of days per job title~~ — **decided 21-09-2026: no per-role number. The HR Head sets the days on each MRF at approval.**
+- [x] ~~**Does the new joiner get a portal login?**~~ — **decided 21-09-2026: yes, created as part of onboarding, by HR, `employee` role only.** See P0 number 3.
+- [x] ~~**Who marks a buddy interaction**~~ — **decided 21-09-2026: the buddy logs it, HR confirms it. Only confirmed ones count toward the 8.**
+- [x] ~~**Who owns a probation review**~~ — **decided 21-09-2026: the HOD and the new joiner write it; HR reads it and is scored on whether both arrive on time.**
+- [x] ~~**What happens to the buddy programme if the hire leaves during probation**~~ — **decided 21-09-2026: closed, marked "person left", with the date. It stops counting against HR (the missing interactions were not theirs) and the buddy's reminders stop the same day.**
+- [x] ~~**Is the buddy scored too?**~~ — **decided 21-09-2026: no. Only HR carries the 5%.** Being a
+      buddy stays goodwill work with no KPI line of its own, so nothing has to be added to anybody
+      else's scorecard. ⚠ Worth saying once to HR: a buddy who never turns up costs **HR** marks and
+      costs the buddy nothing, so the only lever HR has is choosing the buddy well — which is why
+      the picker should show what each colleague is already carrying.
 
 ---
 
