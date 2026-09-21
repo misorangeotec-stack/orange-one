@@ -9988,8 +9988,21 @@ down now.
 
 ---
 
-### LD-1 · 🔴 The spine — schema, shell, steps 1–8, Setup, queues, RLS  `[ ]`
+### LD-1 · 🔴 The spine — schema, shell, steps 1–8, Setup, queues, RLS  `[~]`
 *Raised 2026-09-21 · Everything else hangs off this*
+
+> 🟢 **THE DATABASE HALF IS LIVE (21-09-2026)** — `20261215120000` (foundations) and `20261215120100`
+> (workflow), both applied to `icutjkrqkbzwvmnfbzpr` after their rollbacks were **rehearsed and run**.
+> 19 `fms_ld_*` tables · 20 functions · 39 RLS policies · the `fms-ld-docs` bucket · seeded masters.
+> The request → session flow (steps 1–8) is proved end to end by
+> `20261215120100_ld1_learning_development_workflow_verify.sql` — 20 checks driven as four real
+> **non-admin** employees, all passing, run inside a transaction that rolls back.
+> **Nothing is user-visible:** no manifest, no registry entry, no route. That is the deploy ordering
+> CLAUDE.md asks for — the migration goes ahead of the code that reads it.
+>
+> **Still to do on LD-1:** the app folder and manifest, `registry.tsx` / `appInfo.ts` / `universal.ts`,
+> `lib/steps.ts` (the 22 steps + `ROW_OWNED_STEPS`), the store, the nav, the request list and detail,
+> the New Request form, the eight step queues, and **Setup** with its ten tabs.
 
 **Module identity.** `frontend/src/apps/learning-development/`, id `learning-development`, base path
 `/learning-development`, `category: "hr"`, tables `fms_ld_*`, storage bucket `fms-ld-docs`. Registered in
