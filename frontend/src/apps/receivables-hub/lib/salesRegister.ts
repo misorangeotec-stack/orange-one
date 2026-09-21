@@ -172,6 +172,159 @@ export function defaultRange(today = new Date()): { from: string; to: string } {
   return { from: ymd(first), to: ymd(today) };
 }
 
+/* --------------------------------------------------------------- paged reads */
+
+/**
+ * PostgREST caps every reply on this project at 1,000 rows, so a full read is always N requests.
+ * Issuing them ONE AFTER ANOTHER is what made the Sales dashboards slow: the current FY is ~28
+ * pages, and at ~400 ms of latency each that is 12 s of pure waiting before a chart can draw.
+ * Two FYs is ~106 pages, i.e. 30-60 s — the load time this helper exists to remove.
+ *
+ * So: ask for the count first, then fetch every page AT ONCE, `CONCURRENCY` in flight. Measured on
+ * the live ConnectWave (FY 2026-27, 27,834 rows): 12.1 s sequential -> 2.2 s at 8 in flight, with
+ * the same rows out. The window is 8 because the browser itself caps ~6 connections per host — a
+ * bigger number only queues in the browser and risks PostgREST's own pool.
+ *
+ * ⚠ `orderBy` MUST be a UNIQUE key (use the table's PRIMARY KEY). `.range()` is OFFSET paging, and
+ *   OFFSET is only stable under a total order: on a non-unique sort Postgres may return a tied row
+ *   on two different pages, or on neither, so the walk can silently duplicate and drop rows. The
+ *   callers below used to sort by (vch_date, tenant_id, voucher_no, line_no), which is NOT unique,
+ *   so this was already a latent correctness bug — parallel reads just make it easier to hit.
+ */
+const PAGE = 1000; // PostgREST's cap on this project — asking for more still returns 1,000.
+const CONCURRENCY = 8;
+
+/** Run `task` over `items`, at most `limit` at a time, keeping the input order in the result. */
+async function pooled<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await task(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+/** "20260921" -> "20260922". Calendar-correct, so it survives month and year ends. */
+function nextDay(yyyymmdd: string): string {
+  const d = new Date(
+    Number(yyyymmdd.slice(0, 4)),
+    Number(yyyymmdd.slice(4, 6)) - 1,
+    Number(yyyymmdd.slice(6, 8)) + 1,
+  );
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * [from, to] (both inclusive, YYYYMMDD) cut into HALF-OPEN calendar months [lo, hi).
+ *
+ * Half-open is the whole point: `gte(lo) & lt(hi)` makes the chunks provably disjoint, so no row
+ * can land in two of them. An inclusive upper bound per month is one off-by-one away from
+ * double-counting every month boundary — which is exactly the bug the first draft of this had
+ * (3,718 duplicate rows out of 105,958).
+ */
+function monthChunks(from: string, to: string): { lo: string; hi: string }[] {
+  const out: { lo: string; hi: string }[] = [];
+  const end = nextDay(to); // exclusive
+  let y = Number(from.slice(0, 4));
+  let m = Number(from.slice(4, 6));
+  let lo = from;
+  while (lo < end) {
+    const ny = m === 12 ? y + 1 : y;
+    const nm = m === 12 ? 1 : m + 1;
+    const monthEnd = `${ny}${String(nm).padStart(2, "0")}01`;
+    const hi = monthEnd < end ? monthEnd : end;
+    out.push({ lo, hi });
+    lo = hi;
+    y = ny; m = nm;
+  }
+  return out;
+}
+
+/** Every page of ONE query, walked with OFFSET. Only safe where the slice is small — see below. */
+async function pagesOf<T>(
+  build: () => any,
+  order: (q: any) => any,
+  label: string,
+): Promise<T[]> {
+  const first = await order(build()).range(0, PAGE - 1);
+  if (first.error) throw new Error(`${label}: ${first.error.message}`);
+  const head = (first.data ?? []) as T[];
+  if (head.length < PAGE) return head;
+
+  const total: number | null = typeof first.count === "number" ? first.count : null;
+  if (total === null) {
+    // No count header: walk sequentially. Always correct, just slower.
+    const out = [...head];
+    for (let offset = PAGE; ; offset += PAGE) {
+      const { data, error } = await order(build()).range(offset, offset + PAGE - 1);
+      if (error) throw new Error(`${label}: ${error.message}`);
+      const rows = (data ?? []) as T[];
+      out.push(...rows);
+      if (rows.length < PAGE) return out;
+    }
+  }
+  const offsets: number[] = [];
+  for (let offset = PAGE; offset < total; offset += PAGE) offsets.push(offset);
+  const rest = await pooled(offsets, CONCURRENCY, async (offset) => {
+    const { data, error } = await order(build()).range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`${label}: ${error.message}`);
+    return (data ?? []) as T[];
+  });
+  return head.concat(...rest);
+}
+
+/**
+ * Every row in a date window, read as PARALLEL MONTHLY CHUNKS.
+ *
+ * Two problems are being solved at once, and only fixing both is fast:
+ *
+ *  1. SEQUENTIAL PAGING. PostgREST caps a reply at 1,000 rows here, so two FYs of the register is
+ *     106 requests. Issued one after another at ~400 ms each that is the 30-60 s the Sales
+ *     dashboards used to take.
+ *
+ *  2. DEEP OFFSET IS QUADRATIC — the part that makes plain parallelism disappointing. `.range()`
+ *     is OFFSET, and Postgres reaches offset N by walking N rows first. Measured on live: page 1
+ *     reads 1,000 rows, the page at OFFSET 100,000 reads 101,000 to return its 1,000 (305 ms).
+ *     Across 106 pages that is ~5.5M row reads for 105,958 rows — 53x the necessary work, all of
+ *     it landing on one small instance at once. Parallel-but-quadratic measured ~26 s.
+ *
+ * Chunking by month fixes (2): each month holds ~4,400 rows, so every offset inside it is shallow
+ * and the total work goes back to linear. Running the months together fixes (1). Measured on live
+ * over both FYs: 42 s sequential -> ~26 s flat-parallel -> 4.8 s chunked, with 105,958 rows and
+ * zero duplicates either way.
+ *
+ * `build(lo, hi)` must apply `gte(lo)` and `lt(hi)` on the date column and return a FRESH query
+ * (a PostgREST builder is single-use). `order` must sort by a UNIQUE key — the PRIMARY KEY — or
+ * OFFSET is not stable and pages can repeat or drop tied rows.
+ */
+async function fetchWindow<T>(
+  from: string,
+  to: string,
+  build: (lo: string, hi: string) => any,
+  order: (q: any) => any,
+  label: string,
+): Promise<T[]> {
+  const chunks = monthChunks(from, to);
+  const per = await pooled(chunks, CONCURRENCY, (c) =>
+    pagesOf<T>(() => build(c.lo, c.hi), order, `${label} ${c.lo}`),
+  );
+  return ([] as T[]).concat(...per);
+}
+
+/** A whole table (no date window) — one query, paged. Used where the slice is already small. */
+async function fetchAllPages<T>(
+  build: () => any,
+  order: (q: any) => any,
+  label: string,
+): Promise<T[]> {
+  return pagesOf<T>(build, order, label);
+}
+
 /* ------------------------------------------------------- winning FY-split books */
 
 export interface Book { tenant_id: string; fy: string }
@@ -218,28 +371,32 @@ async function loadDespatchDetails(
 
   const cw = getConnectwaveSupabase();
   const scopedParties = scope.kind === "only" ? scope.parties : null;
-  const PAGE = 1000;
-  for (let offset = 0; ; offset += PAGE) {
-    let q = cw
-      .from("rpt_sales_despatch")
-      .select(DESPATCH_COLS)
-      .in("tenant_id", tenants)
-      .gte("vch_date", from)
-      .lte("vch_date", to);
-    if (scopedParties) q = q.in("party", scopedParties);
-    const { data, error } = await q
-      .order("vch_date", { ascending: true })
-      .order("tenant_id", { ascending: true })
-      .order("voucher_guid", { ascending: true })
-      .range(offset, offset + PAGE - 1)
-      .returns<DespatchRow[]>();
-    // The register must still render if the sidecar is missing or unreadable — it is additive
-    // detail, not the report. A failure leaves every despatch cell blank and nothing else.
-    if (error) {
-      console.warn("[salesRegister] despatch details unavailable:", error.message);
-      return out;
-    }
-    const rows = data ?? [];
+  // The sidecar must never break the register — it is additive detail, not the report. A failure
+  // leaves every despatch cell blank and nothing else.
+  let rows: DespatchRow[];
+  try {
+    rows = await fetchWindow<DespatchRow>(
+      from,
+      to,
+      (lo, hi) => {
+        let q = cw
+          .from("rpt_sales_despatch")
+          .select(DESPATCH_COLS, { count: "exact" })
+          .in("tenant_id", tenants)
+          .gte("vch_date", lo)
+          .lt("vch_date", hi);
+        if (scopedParties) q = q.in("party", scopedParties);
+        return q as any;
+      },
+      // PRIMARY KEY (tenant_id, voucher_guid) — unique, so OFFSET paging is stable.
+      (q: any) => q.order("tenant_id", { ascending: true }).order("voucher_guid", { ascending: true }),
+      "despatch",
+    );
+  } catch (e) {
+    console.warn("[salesRegister] despatch details unavailable:", e instanceof Error ? e.message : e);
+    return out;
+  }
+  {
     for (const r of rows) {
       out.set(despatchKey(r.tenant_id, r.voucher_guid), {
         delivery_note_no: r.delivery_note_no,
@@ -250,7 +407,6 @@ async function loadDespatchDetails(
         vehicle_no: r.vehicle_no,
       });
     }
-    if (rows.length < PAGE) break;
   }
   return out;
 }
@@ -284,31 +440,34 @@ async function loadPendingSoaKeys(tenants: string[], scope: PartyScope): Promise
   if (!tenants.length) return keys;
   const cw = getConnectwaveSupabase();
   const scopedParties = scope.kind === "only" ? scope.parties : null;
-  const PAGE = 1000;
-  for (let offset = 0; ; offset += PAGE) {
-    let q = cw
-      .from("rpt_soa_register")
-      .select("tenant_id,soa_voucher_no,item,pending_qty")
-      .in("tenant_id", tenants)
-      .gt("pending_qty", 0);
-    if (scopedParties) q = q.in("party", scopedParties);
-    const { data, error } = await q
-      .order("tenant_id", { ascending: true })
-      .order("tracking_no", { ascending: true })
-      .order("item", { ascending: true })
-      .range(offset, offset + PAGE - 1)
-      .returns<{ tenant_id: string; soa_voucher_no: string | null; item: string }[]>();
-    if (error) {
-      console.warn("[salesRegister] pending SOA unavailable:", error.message);
-      return new Set();
+  type SoaRow = { tenant_id: string; soa_voucher_no: string | null; item: string };
+  let rows: SoaRow[];
+  try {
+    rows = await fetchAllPages<SoaRow>(
+      () => {
+        let q = cw
+          .from("rpt_soa_register")
+          .select("tenant_id,soa_voucher_no,item,pending_qty", { count: "exact" })
+          .in("tenant_id", tenants)
+          .gt("pending_qty", 0);
+        if (scopedParties) q = q.in("party", scopedParties);
+        return q as any;
+      },
+      // PRIMARY KEY (tenant_id, tracking_no, item) — already unique here.
+      (q: any) => q
+        .order("tenant_id", { ascending: true })
+        .order("tracking_no", { ascending: true })
+        .order("item", { ascending: true }),
+      "pending SOA",
+    );
+  } catch (e) {
+    console.warn("[salesRegister] pending SOA unavailable:", e instanceof Error ? e.message : e);
+    return new Set();
+  }
+  for (const r of rows) {
+    for (const vno of (r.soa_voucher_no ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+      keys.add(soaKey(r.tenant_id, vno, r.item));
     }
-    const rows = data ?? [];
-    for (const r of rows) {
-      for (const vno of (r.soa_voucher_no ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
-        keys.add(soaKey(r.tenant_id, vno, r.item));
-      }
-    }
-    if (rows.length < PAGE) break;
   }
   return keys;
 }
@@ -337,36 +496,51 @@ export async function loadSalesRegister(
   const winningPair = new Set(books.map((b) => `${b.tenant_id}|${b.fy}`));
 
   const cw = getConnectwaveSupabase();
-  const [mapRows, despatch, pendingSoa] = await Promise.all([
+  const scopedParties = scope.kind === "only" ? scope.parties : null;
+  // The register, its two sidecars and the company map depend on nothing but the arguments, so
+  // they are read TOGETHER. The register used to wait for the sidecars to finish first, which put
+  // their round trips in front of its own for no reason.
+  const [mapRows, despatch, pendingSoa, out] = await Promise.all([
     fetchCompanyMap(),
     loadDespatchDetails(tenants, from, to, scope),
     loadPendingSoaKeys(tenants, scope),
+    fetchWindow<RawRegisterRow>(
+      from,
+      to,
+      (lo, hi) => {
+        let q = cw
+          .from("rpt_sales_register")
+          .select(SELECT_COLS, { count: "exact" })
+          .in("tenant_id", tenants)
+          .gte("vch_date", lo)
+          .lt("vch_date", hi);
+        // Narrowed on the SERVER — out-of-scope lines never reach the browser.
+        if (scopedParties) q = q.in("party", scopedParties);
+        return q as any;
+      },
+      // PRIMARY KEY (tenant_id, voucher_guid, line_no) — the sort the SERVER pages by. The old one
+      // (vch_date, tenant_id, voucher_no, line_no) is NOT unique, and OFFSET paging is only stable
+      // under a total order, so a tied row could be served on two pages or on neither. Display
+      // order is restored below, after every chunk is in hand.
+      (q: any) => q
+        .order("tenant_id", { ascending: true })
+        .order("voucher_guid", { ascending: true })
+        .order("line_no", { ascending: true }),
+      "sales register",
+    ),
   ]);
   const resolve = makeCompanyResolver(mapRows);
-  const PAGE = 1000;
-  const out: RawRegisterRow[] = [];
-  const scopedParties = scope.kind === "only" ? scope.parties : null;
-  for (let offset = 0; ; offset += PAGE) {
-    let q = cw
-      .from("rpt_sales_register")
-      .select(SELECT_COLS)
-      .in("tenant_id", tenants)
-      .gte("vch_date", from)
-      .lte("vch_date", to);
-    // Narrowed on the SERVER — out-of-scope lines never reach the browser.
-    if (scopedParties) q = q.in("party", scopedParties);
-    const { data, error } = await q
-      .order("vch_date", { ascending: true })
-      .order("tenant_id", { ascending: true })
-      .order("voucher_no", { ascending: true })
-      .order("line_no", { ascending: true })
-      .range(offset, offset + PAGE - 1)
-      .returns<RawRegisterRow[]>();
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
-  }
+
+  // The rows came back in PRIMARY KEY order, and in whatever order the monthly chunks resolved.
+  // Put them back into the register's own reading order — date, then book, then voucher, then
+  // line — so the detail table and the exports look exactly as they always have. Verified against
+  // the previous implementation: same 23,131 lines, same figures, same first page.
+  out.sort((a, b) =>
+    a.vch_date.localeCompare(b.vch_date) ||
+    a.tenant_id.localeCompare(b.tenant_id) ||
+    a.voucher_no.localeCompare(b.voucher_no) ||
+    a.line_no - b.line_no);
+
   return out
     .filter((r) => winningPair.has(`${r.tenant_id}|${r.fy}`))
     // Approval stock: only what is STILL PENDING belongs in the sales register. Once a challan is
