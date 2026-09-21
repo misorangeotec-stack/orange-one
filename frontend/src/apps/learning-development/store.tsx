@@ -1,0 +1,240 @@
+import { createContext, useContext, useMemo } from "react";
+import type { ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/core/platform/session";
+import { useDirectory } from "@/core/platform/store";
+import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
+import type { Department, Profile } from "@/core/platform/types";
+import { fetchLdData, ldQueryKey, LD_QK, type LdData } from "./data/ldFetch";
+import * as W from "./data/ldWrites";
+import { buildQueueEntries, dueIsoFor, isOpen, stepOf } from "./lib/queues";
+import { ROW_OWNED_STEPS, type StepKey } from "./lib/steps";
+import type {
+  ApprovalRule,
+  LdNotification,
+  QueueEntry,
+  TrainingRequest,
+  TrainingSession,
+} from "./types";
+
+/**
+ * The Learning & Development store: one react-query snapshot of the module, plus
+ * the capability flags every screen and the sidebar read.
+ *
+ * ⚠ THE MODULE IS UNIVERSAL, SO "CAN OPEN IT" IS NOT A PERMISSION HERE.
+ *   Every signed-in employee loads this store — they are all potential
+ *   participants. What each person may SEE and DO is decided by the flags below
+ *   and, authoritatively, by RLS and the RPCs' own authz. A plain employee gets
+ *   an empty `requests` array and a full `sessions` array, and that is correct,
+ *   not a failure (see the ⚠ in data/ldFetch.ts).
+ */
+
+interface LdStoreValue {
+  loading: boolean;
+  error: string | null;
+
+  requests: TrainingRequest[];
+  sessions: TrainingSession[];
+  notifications: LdNotification[];
+  data: LdData | null;
+
+  profiles: Profile[];
+  orgDepartments: Department[];
+  orgPeople: OrgPerson[];
+  profileById: (id: string | null) => Profile | undefined;
+  departmentName: (id: string | null) => string;
+
+  /** Admin or a named process coordinator: oversight over every step. */
+  isProcessCoordinator: boolean;
+  /** Visibility half of the above — the Control Center link and route. */
+  canMonitor: boolean;
+  /** May this person raise a training need? */
+  canRaise: boolean;
+  /** May this person own/approve the masters, and so see the Masters screens? */
+  canSeeMasters: boolean;
+  /** Does this person own any step at all — i.e. is the request pipeline theirs? */
+  isPipelineStaff: boolean;
+
+  /** May this person ACT on one step of one request? Mirrors fms_ld_can_act(). */
+  canActOn: (stepKey: StepKey, requestId: string | null) => boolean;
+  /** Should this person be offered this step's queue at all? */
+  canSeeQueue: (stepKey: StepKey) => boolean;
+  /**
+   * Should this step's queue be OFFERED right now — `canSeeQueue` plus the
+   * conditional-gate rule.
+   *
+   * ⚠ THE SIDEBAR AND THE DASHBOARD MUST BOTH READ THIS ONE. They showed
+   *   different answers on 21-09-2026: the sidebar hid Management Approval under
+   *   a "never" rule and the dashboard strip still listed it, so the same screen
+   *   said the gate both did and did not exist. One predicate, two readers.
+   */
+  offersQueue: (stepKey: StepKey) => boolean;
+
+  stepOwnerIds: (stepKey: string) => string[];
+  approvalRule: ApprovalRule;
+  queueEntries: QueueEntry[];
+  entriesForStep: (stepKey: StepKey) => QueueEntry[];
+  dueIsoOf: (r: TrainingRequest) => string | null;
+  requestById: (id: string) => TrainingRequest | undefined;
+
+  refresh: () => Promise<void>;
+  writes: typeof W;
+  markNotificationsRead: (ids: string[]) => Promise<void>;
+}
+
+const Ctx = createContext<LdStoreValue | null>(null);
+
+export function LdStoreProvider({ children }: { children: ReactNode }) {
+  const { user, isAdmin } = useSession();
+  const dir = useDirectory();
+  const qc = useQueryClient();
+  const uid = user?.id ?? null;
+
+  const q = useQuery({
+    queryKey: ldQueryKey(uid),
+    queryFn: fetchLdData,
+    enabled: !!uid,
+    staleTime: 30_000,
+  });
+
+  const orgQ = useQuery({
+    queryKey: ["orgPeople"],
+    queryFn: fetchOrgPeople,
+    staleTime: 5 * 60_000,
+  });
+
+  const value = useMemo<LdStoreValue>(() => {
+    const d = q.data ?? null;
+    const requests = d?.requests ?? [];
+    const sessions = d?.sessions ?? [];
+    const owners = d?.stepOwners ?? [];
+    const assignees = d?.stepAssignees ?? [];
+    const sla = d?.stepSla;
+    const me = uid ?? "";
+
+    const stepOwnerIds = (stepKey: string): string[] =>
+      owners.find((o) => o.stepKey === stepKey)?.employeeIds ?? [];
+
+    const isProcessCoordinator = isAdmin || (d?.coordinatorIds ?? []).includes(me);
+    const canMonitor = isProcessCoordinator;
+
+    /**
+     * ⚠ NO OWNERS ON `need_raised` MEANS EVERYONE MAY RAISE, not nobody.
+     *   The document asks for "HOD / HR / Management creates a Training Request",
+     *   i.e. open by default; naming owners in Setup narrows it. The RPC enforces
+     *   the same rule server-side — this flag only decides whether the button is
+     *   offered, never whether the write is allowed.
+     */
+    const raiseOwners = stepOwnerIds("need_raised");
+    const canRaise = raiseOwners.length === 0 || isAdmin || raiseOwners.includes(me);
+
+    const ownsAnyStep = owners.some((o) => o.employeeIds.includes(me));
+    const isPipelineStaff = isAdmin || isProcessCoordinator || ownsAnyStep;
+
+    const canSeeMasters =
+      isAdmin || (d?.masterManagers ?? []).some((m) => m.managerUserId === me);
+
+    /**
+     * Mirrors `fms_ld_can_act()` — coordinator, then a per-row reassignment,
+     * then the raiser for `need_resubmit`, then the global step owner.
+     *
+     * ⚠ THE SERVER IS THE AUTHORITY. This exists so a screen does not offer a
+     *   button that then fails; it is not the gate. Every RPC re-checks.
+     *
+     * ⚠ ROW_OWNED_STEPS are answered `false` here for now. LD-1 implements only
+     *   the request-scoped steps; the nominee- and HOD-owned ones arrive with
+     *   LD-3 … LD-8, and claiming they are actionable before their screens exist
+     *   would offer a control that goes nowhere.
+     */
+    const canActOn = (stepKey: StepKey, requestId: string | null): boolean => {
+      if (!me) return false;
+      if (ROW_OWNED_STEPS.includes(stepKey)) return false;
+      if (isProcessCoordinator) return true;
+      if (requestId) {
+        const a = assignees.find((x) => x.requestId === requestId && x.stepKey === stepKey);
+        if (a) return a.assignedTo === me;
+        if (stepKey === "need_resubmit") {
+          return requests.find((r) => r.id === requestId)?.requestedBy === me;
+        }
+      }
+      return stepOwnerIds(stepKey).includes(me);
+    };
+
+    const canSeeQueue = (stepKey: StepKey): boolean => {
+      if (!me) return false;
+      if (isProcessCoordinator) return true;
+      if (ROW_OWNED_STEPS.includes(stepKey)) return false;
+      if (stepOwnerIds(stepKey).includes(me)) return true;
+      // Somebody handed this person one row of this step.
+      return assignees.some((a) => a.stepKey === stepKey && a.assignedTo === me);
+    };
+
+    const queueEntries = sla ? buildQueueEntries(requests, sla) : [];
+
+    /**
+     * A permanently empty gate is noise — but live work is never hidden. When the
+     * rule says Management is not required AND nothing is parked there, the queue
+     * is not offered; the moment a request frozen as needing it arrives, it is.
+     */
+    const offersQueue = (stepKey: StepKey): boolean => {
+      if (!canSeeQueue(stepKey)) return false;
+      if (stepKey !== "mgmt_approval") return true;
+      const rule = d?.approvalRule.mgmt ?? "never";
+      if (rule !== "never") return true;
+      return queueEntries.some((e) => e.stepKey === "mgmt_approval");
+    };
+
+    const byId = new Map(requests.map((r) => [r.id, r] as const));
+    const profileMap = new Map(dir.profiles.map((p) => [p.id, p] as const));
+    const deptMap = new Map(dir.departments.map((x) => [x.id, x] as const));
+
+    return {
+      loading: q.isLoading,
+      error: q.error ? (q.error as Error).message : null,
+      requests,
+      sessions,
+      notifications: d?.notifications ?? [],
+      data: d,
+
+      profiles: dir.profiles,
+      orgDepartments: dir.departments,
+      orgPeople: orgQ.data ?? [],
+      profileById: (id) => (id ? profileMap.get(id) : undefined),
+      departmentName: (id) => (id ? deptMap.get(id)?.name ?? "—" : "—"),
+
+      isProcessCoordinator,
+      canMonitor,
+      canRaise,
+      canSeeMasters,
+      isPipelineStaff,
+      canActOn,
+      canSeeQueue,
+      offersQueue,
+      stepOwnerIds,
+      approvalRule: d?.approvalRule ?? { mgmt: "never", aboveAmount: 0 },
+      queueEntries,
+      entriesForStep: (stepKey) => queueEntries.filter((e) => e.stepKey === stepKey),
+      dueIsoOf: (r) => (sla ? dueIsoFor(r, sla) : null),
+      requestById: (id) => byId.get(id),
+
+      refresh: async () => {
+        await qc.invalidateQueries({ queryKey: LD_QK });
+      },
+      writes: W,
+      markNotificationsRead: async (ids) => {
+        await W.markNotificationsRead(ids);
+        await qc.invalidateQueries({ queryKey: LD_QK });
+      },
+    };
+  }, [q.data, q.isLoading, q.error, orgQ.data, dir.profiles, dir.departments, uid, isAdmin, qc]);
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useLdStore(): LdStoreValue {
+  const v = useContext(Ctx);
+  if (!v) throw new Error("useLdStore must be used inside LdStoreProvider");
+  return v;
+}
+
+export { isOpen, stepOf };
