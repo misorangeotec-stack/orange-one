@@ -8709,6 +8709,22 @@ export type Database = {
         Args: { p?: Json; p_id: string; p_to_stage: string }
         Returns: undefined
       }
+      fms_hr_my_probation: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          probation_id: string
+          joining_date: string
+          job_title: string
+          day_no: number
+          due_on: string
+          hod_answered: boolean
+          joiner_status: string | null
+          joiner_remarks: string | null
+          joiner_at: string | null
+          completed_at: string | null
+          final_status: string | null
+        }[]
+      }
       fms_hr_next_seq: { Args: { p_scope: string }; Returns: number }
       fms_hr_notify_hod_pending: {
         Args: { p_requisition: string }

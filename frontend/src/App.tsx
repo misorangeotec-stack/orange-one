@@ -7,6 +7,7 @@ import HomeLayout from "@/core/workspace/HomeLayout";
 import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
 import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
+import MyProbation from "@/core/probation/MyProbation";
 import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
@@ -128,6 +129,14 @@ export default function App() {
           under the Announcements module's own gated basePath. Wears the home shell. */}
       <Route path={ANNOUNCEMENTS_PATH} element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
         <Route index element={<AnnouncementsHistory />} />
+      </Route>
+      {/* NR-10 · A new joiner's own half of their probation check-ins. Staff
+          furniture for the same reason as the two routes above: the joiner has no
+          hr-recruitment grant, and granting them one to reach this would hand them
+          the entire recruitment pipeline. The database decides what they see —
+          fms_hr_my_probation() returns their own check-ins and nothing else. */}
+      <Route path="/my-probation" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyProbation />} />
       </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
