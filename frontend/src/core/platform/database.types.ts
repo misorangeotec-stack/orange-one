@@ -2217,6 +2217,62 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_grievances: {
+        Row: {
+          answers: Json
+          body: string
+          category: string
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          probation_id: string | null
+          raised_at: string
+          raised_by: string
+          resolution: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          answers?: Json
+          body: string
+          category: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          probation_id?: string | null
+          raised_at?: string
+          raised_by: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          answers?: Json
+          body?: string
+          category?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          probation_id?: string | null
+          raised_at?: string
+          raised_by?: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_grievances_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_interviews: {
         Row: {
           candidate_id: string
@@ -8669,6 +8725,30 @@ export type Database = {
         Returns: undefined
       }
       fms_hr_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_hr_grievances_for_me: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          raised_at: string
+          category: string
+          body: string
+          status: string
+          closed_at: string | null
+          resolution: string | null
+        }[]
+      }
+      fms_hr_raise_grievance: {
+        Args: { p_answers?: Json; p_body: string; p_category: string }
+        Returns: string
+      }
+      fms_hr_close_grievance: {
+        Args: { p_id: string; p_resolution: string }
+        Returns: undefined
+      }
+      fms_hr_may_see_grievances: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
       fms_hr_hod_decide: {
         Args: {
           p_ids: string[]

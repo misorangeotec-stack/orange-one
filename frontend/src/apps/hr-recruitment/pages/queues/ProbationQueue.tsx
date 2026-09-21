@@ -7,6 +7,7 @@ import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import ProbationPanel from "../../components/probation/ProbationPanel";
+import GrievancesPanel from "../../components/probation/GrievancesPanel";
 import { CHECKIN_DAYS } from "../../types";
 import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
@@ -195,6 +196,10 @@ export default function ProbationQueue() {
             : "Everyone who has joined and is still on probation. Check in on Day 7, 15, 30, 60 and 90 — calendar days after they joined — then confirm, reject, or extend. Each check-in is written twice: by the head of department, and by the new joiner from their own account. It is not done until both are in."}
         </p>
       </div>
+
+      {/* KPI 1C.6 — HR's own 24-hour clock. Renders nothing for anyone else, and
+          the table's policy would return them nothing anyway. */}
+      <GrievancesPanel />
 
       <StageTabs
         mode={stage.mode}

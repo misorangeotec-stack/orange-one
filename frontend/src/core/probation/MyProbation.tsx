@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
-import EmptyState from "@/shared/components/ui/EmptyState";
 import { TextArea } from "@/shared/components/ui/Form";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
 import { supabase } from "@/core/platform/supabase";
+import MyConcerns from "./MyConcerns";
 
 /**
  * NR-10 · `/my-probation` — the new joiner's own half of their check-ins.
@@ -171,14 +171,23 @@ export default function MyProbation() {
   if (isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
 
   const rows = data ?? [];
+
+  // ⚠ No check-ins is NOT a dead end. Raising a concern is open to anybody signed
+  // in — deliberately, because somebody two years in with a problem should not be
+  // told the form is not for them — and the only door to it is on this page. An
+  // EmptyState here turned the server's "anyone may" into the UI's "only joiners".
   if (rows.length === 0) {
     return (
-      <EmptyState
-        title="Nothing here for you"
-        message="This page is for new joiners in their first three months. If you have just joined and expected to see your check-ins, ask HR to link your Orange One account to your joining record."
-        actionLabel="Back to my work"
-        actionTo="/home"
-      />
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">Raise a concern</h1>
+          <p className="mt-1 text-[13.5px] text-grey-2">
+            You have no probation check-ins — those are for people in their first three months. You can
+            still raise something with HR here.
+          </p>
+        </div>
+        <MyConcerns />
+      </div>
     );
   }
 
@@ -213,9 +222,13 @@ export default function MyProbation() {
       </Card>
 
       <p className="text-[12px] text-grey-2">
-        What you write here goes to HR and to your head of department. Their own answers are discussed
-        with you directly rather than shown here.
+        A check-in goes to HR and to your head of department. Their own answers are discussed with you
+        directly rather than shown here.
       </p>
+
+      {/* KPI 1C.6 — deliberately a SEPARATE thing from a check-in, with a different
+          audience. A check-in is seen by the head of department; a concern is not. */}
+      <MyConcerns />
     </div>
   );
 }
