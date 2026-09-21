@@ -9988,7 +9988,7 @@ down now.
 
 ---
 
-### LD-1 · 🔴 The spine — schema, shell, steps 1–8, Setup, queues, RLS  `[~]`
+### LD-1 · 🟢 The spine — schema, shell, steps 1–8, Setup, queues, RLS  `[x]`
 *Raised 2026-09-21 · Everything else hangs off this*
 
 > 🟢 **THE DATABASE HALF IS LIVE (21-09-2026)** — `20261215120000` (foundations) and `20261215120100`
@@ -10000,9 +10000,23 @@ down now.
 > **Nothing is user-visible:** no manifest, no registry entry, no route. That is the deploy ordering
 > CLAUDE.md asks for — the migration goes ahead of the code that reads it.
 >
-> **Still to do on LD-1:** the app folder and manifest, `registry.tsx` / `appInfo.ts` / `universal.ts`,
-> `lib/steps.ts` (the 22 steps + `ROW_OWNED_STEPS`), the store, the nav, the request list and detail,
-> the New Request form, the eight step queues, and **Setup** with its ten tabs.
+> 🟢 **AND THE SCREENS ARE BUILT (21-09-2026).** 28 files under
+> `frontend/src/apps/learning-development/`, registered in `registry.tsx` / `appInfo.ts` /
+> `universal.ts`. `npm run build` passes, and the module was driven on localhost **as a real
+> non-admin employee and as an admin** — no console errors in either pass. Dashboard · training
+> calendar · request list + detail with a per-request rail · Raise-a-need form · one queue component
+> serving all seven request-scoped steps · Setup (Step Owners, Approval Rules, Due Dates,
+> Coordinators, Master Owners).
+>
+> ⚠ **UNIVERSAL, and the only module here that is** — every employee is a potential participant.
+> Say this to admins once: a universal app has **no `app_access` rows**, so Module Access shows it as
+> admins-only and there is nothing to tick. That is not a bug.
+>
+> 🔴 **NOT DEPLOYED.** Nothing is pushed and `master` does not have it. The branch is
+> `learning-development` in the worktree `D:\AI Development\oo-ld`.
+>
+> **Before it can be used by anyone:** Setup → Step Owners must be seeded (nothing moves past a step
+> with no owner), and the HR Head / Management / L&D Executive names have to be confirmed — **LD-0 · 12**.
 
 **Module identity.** `frontend/src/apps/learning-development/`, id `learning-development`, base path
 `/learning-development`, `category: "hr"`, tables `fms_ld_*`, storage bucket `fms-ld-docs`. Registered in
