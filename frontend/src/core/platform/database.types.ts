@@ -2733,6 +2733,9 @@ export type Database = {
           edited_by: string | null
           employee_code: string | null
           employee_code_at: string | null
+          employee_user_id: string | null
+          employee_user_set_at: string | null
+          employee_user_set_by: string | null
           bgv_status: string | null
           bgv_note: string | null
           bgv_at: string | null
@@ -2760,6 +2763,9 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_user_id?: string | null
+          employee_user_set_at?: string | null
+          employee_user_set_by?: string | null
           bgv_status?: string | null
           bgv_note?: string | null
           bgv_at?: string | null
@@ -2787,6 +2793,9 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_user_id?: string | null
+          employee_user_set_at?: string | null
+          employee_user_set_by?: string | null
           bgv_status?: string | null
           bgv_note?: string | null
           bgv_at?: string | null
@@ -2818,6 +2827,74 @@ export type Database = {
             columns: ["requisition_id"]
             isOneToOne: false
             referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_probation_checkins: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          day_no: number
+          due_on: string
+          file_name: string | null
+          file_path: string | null
+          hod_at: string | null
+          hod_by: string | null
+          hod_remarks: string | null
+          hod_status: string | null
+          id: string
+          joiner_at: string | null
+          joiner_by: string | null
+          joiner_remarks: string | null
+          joiner_status: string | null
+          probation_id: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          day_no: number
+          due_on: string
+          file_name?: string | null
+          file_path?: string | null
+          hod_at?: string | null
+          hod_by?: string | null
+          hod_remarks?: string | null
+          hod_status?: string | null
+          id?: string
+          joiner_at?: string | null
+          joiner_by?: string | null
+          joiner_remarks?: string | null
+          joiner_status?: string | null
+          probation_id: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          day_no?: number
+          due_on?: string
+          file_name?: string | null
+          file_path?: string | null
+          hod_at?: string | null
+          hod_by?: string | null
+          hod_remarks?: string | null
+          hod_status?: string | null
+          id?: string
+          joiner_at?: string | null
+          joiner_by?: string | null
+          joiner_remarks?: string | null
+          joiner_status?: string | null
+          probation_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_probation_checkins_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
             referencedColumns: ["id"]
           },
         ]
@@ -8540,6 +8617,10 @@ export type Database = {
         Args: { p_uid: string }
         Returns: boolean
       }
+      fms_hr_is_my_probation: {
+        Args: { p_probation: string; p_uid: string }
+        Returns: boolean
+      }
       fms_hr_is_natural_step_owner: {
         Args: { p_req: string; p_step_key: string; p_uid: string }
         Returns: boolean
@@ -8763,6 +8844,10 @@ export type Database = {
         Args: { p_id: string; p_name?: string; p_path?: string; p_sha256?: string }
         Returns: undefined
       }
+      fms_hr_set_employee_user: {
+        Args: { p_onboarding: string; p_user: string | null }
+        Returns: undefined
+      }
       fms_hr_set_employee_code: {
         Args: { p_code: string; p_onb: string }
         Returns: undefined
@@ -8800,6 +8885,18 @@ export type Database = {
       fms_hr_stage_rank: { Args: { p_stage: string }; Returns: number }
       fms_hr_stage_step: { Args: { p_stage: string }; Returns: string }
       fms_hr_step_owner_ids: { Args: { p_step: string }; Returns: string[] }
+      fms_hr_submit_probation_checkin: {
+        Args: {
+          p_day: number
+          p_file_name?: string | null
+          p_file_path?: string | null
+          p_probation: string
+          p_remarks?: string
+          p_side: string
+          p_status: string
+        }
+        Returns: undefined
+      }
       fms_hr_submit_mrf: { Args: { p: Json }; Returns: string }
       fms_hr_sync_requisition_fill: {
         Args: { p_req: string }

@@ -28,6 +28,10 @@ import type {
   ProbationFinalStatus,
   ProbationOutcome,
   BgvStatus,
+  CheckinDay,
+  CheckinHodStatus,
+  CheckinJoinerStatus,
+  ProbationCheckin,
   ProbationReview,
   ProbationReviewStatus,
   Requisition,
@@ -234,6 +238,9 @@ export const mapOnboarding = (r: any): Onboarding => ({
   employeeCode: r.employee_code ?? null,
   employeeCodeAt: r.employee_code_at ?? null,
   employeeCodeBy: r.employee_code_by ?? null,
+  employeeUserId: r.employee_user_id ?? null,
+  employeeUserSetAt: r.employee_user_set_at ?? null,
+  employeeUserSetBy: r.employee_user_set_by ?? null,
   bgvStatus: (r.bgv_status ?? null) as BgvStatus | null,
   bgvNote: r.bgv_note ?? null,
   bgvAt: r.bgv_at ?? null,
@@ -288,6 +295,24 @@ export const mapProbation = (r: any): Probation => ({
   employeeCode: r.employee_code ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
+});
+
+export const mapProbationCheckin = (r: any): ProbationCheckin => ({
+  id: r.id,
+  probationId: r.probation_id,
+  dayNo: Number(r.day_no) as CheckinDay,
+  dueOn: r.due_on,
+  hodStatus: (r.hod_status ?? null) as CheckinHodStatus | null,
+  hodRemarks: r.hod_remarks ?? null,
+  hodAt: r.hod_at ?? null,
+  hodBy: r.hod_by ?? null,
+  filePath: r.file_path ?? null,
+  fileName: r.file_name ?? null,
+  joinerStatus: (r.joiner_status ?? null) as CheckinJoinerStatus | null,
+  joinerRemarks: r.joiner_remarks ?? null,
+  joinerAt: r.joiner_at ?? null,
+  joinerBy: r.joiner_by ?? null,
+  completedAt: r.completed_at ?? null,
 });
 
 export const mapProbationReview = (r: any): ProbationReview => ({

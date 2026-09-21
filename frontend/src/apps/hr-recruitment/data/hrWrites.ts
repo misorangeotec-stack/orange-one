@@ -1,6 +1,15 @@
 import { supabase } from "@/core/platform/supabase";
 import type { Json } from "@/core/platform/database.types";
-import type { BgvStatus, HrEntityType, HrMasterType, SalaryPeriod, SalaryStructure } from "../types";
+import type {
+  BgvStatus,
+  CheckinDay,
+  CheckinHodStatus,
+  CheckinJoinerStatus,
+  HrEntityType,
+  HrMasterType,
+  SalaryPeriod,
+  SalaryStructure,
+} from "../types";
 
 /**
  * HR Recruitment write layer.
@@ -374,6 +383,46 @@ export async function setInduction(onboardingId: string, on: string | null): Pro
   const { error } = await supabase.rpc("fms_hr_set_induction", {
     p_onboarding: onboardingId,
     p_on: on,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/* ------------------------- NR-10 · probation check-ins -------------------- */
+
+/**
+ * Submit ONE side of one check-in.
+ *
+ * The RPC decides who may write which side: the HOD arm goes through the step
+ * gate, and the joiner arm is refused for everyone except the account HR linked
+ * to that hire — an admin included. Somebody else typing the joiner's answer is
+ * exactly what would make it worthless.
+ */
+export async function submitProbationCheckin(
+  probationId: string,
+  day: CheckinDay,
+  side: "hod" | "joiner",
+  status: CheckinHodStatus | CheckinJoinerStatus,
+  remarks: string | null,
+  filePath: string | null = null,
+  fileName: string | null = null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_submit_probation_checkin", {
+    p_probation: probationId,
+    p_day: day,
+    p_side: side,
+    p_status: status,
+    p_remarks: remarks ?? "",
+    p_file_path: filePath,
+    p_file_name: fileName,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** NR-10 / P0 — link the hire to the Orange One account created for them. */
+export async function setEmployeeUser(onboardingId: string, userId: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_employee_user", {
+    p_onboarding: onboardingId,
+    p_user: userId,
   });
   if (error) throw new Error(error.message);
 }

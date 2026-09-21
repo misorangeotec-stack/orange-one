@@ -16,7 +16,7 @@
  */
 import { addMonths, addWorkingDays, localDateIso } from "@/shared/lib/workingDays";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
-import type { StepKey } from "./steps";
+import { checkinStepKey, type StepKey } from "./steps";
 import { REQ_STATUS_LABEL } from "./format";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type {
@@ -26,6 +26,7 @@ import type {
   Onboarding,
   OnboardingCheck,
   Probation,
+  ProbationCheckin,
   ProbationReview,
   Requisition,
 } from "../types";
@@ -49,6 +50,8 @@ export interface HrSnapshot {
   onboardingChecks: OnboardingCheck[];
   probations: Probation[];
   probationReviews: ProbationReview[];
+  /** NR-10 — the Day 7/15/30/60/90 check-ins that replaced the monthly reviews. */
+  probationCheckins: ProbationCheckin[];
   stepSla: StepSlaMap;
 }
 
@@ -485,19 +488,25 @@ export const isOpenProbation = (p: Probation): boolean => !p.finalStatus;
  * Mirrors the sequence the RPCs enforce (fms_hr_record_probation_review /
  * fms_hr_decide_probation / fms_hr_decide_extension) — keep the two in step.
  */
-export function probationPendingStep(p: Probation, reviews: ProbationReview[]): StepKey | null {
+export function probationPendingStep(p: Probation, checkins: ProbationCheckin[]): StepKey | null {
   if (p.finalStatus) return null; // decided — nothing is due
-  const has = (m: number) => reviews.some((r) => r.month === m);
 
-  if (!has(1)) return "probation_m1";
-  if (!has(2)) return "probation_m2";
-  if (!has(3)) return "probation_m3";
+  // NR-10. A check-in is owed until BOTH sides are in: the HOD's and the new
+  // joiner's. Half a check-in is not a check-in, so `completedAt` is the test
+  // rather than either side's own timestamp.
+  //
+  // Unlike the retired monthly model this does NOT insist on doing them in
+  // order: Day 7 being missed must not hide that Day 30 is now overdue too.
+  // The earliest incomplete one is what the queue chases.
+  const owed = checkins
+    .filter((c) => !c.completedAt)
+    .sort((a, b) => a.dayNo - b.dayNo)[0];
+  if (owed) return checkinStepKey(owed.dayNo);
 
-  // The three reviews are in. The three-month decision is what is owed now.
+  // All five are in. The decision is what is owed now.
   if (p.outcome === null) return "probation_final";
 
   // Extended: one more review, then the same decision maker closes it out.
-  if (!has(4)) return "probation_extension";
   return "probation_final";
 }
 
@@ -512,6 +521,14 @@ export function probationPendingStep(p: Probation, reviews: ProbationReview[]): 
  * read. That number stays admin-editable in Setup → Due Dates.
  */
 export function probationDueIso(snap: HrSnapshot, p: Probation, step: StepKey): string | null {
+  // NR-10: a check-in's due date is STAMPED on its row when the probation opens
+  // (joining date + N calendar days), so it is read, never recomputed. The SLA
+  // model below cannot express it — a day-unit SLA there counts working days.
+  const checkin = snap.probationCheckins.find(
+    (c) => c.probationId === p.id && checkinStepKey(c.dayNo) === step,
+  );
+  if (checkin) return checkin.dueOn;
+
   // Once extended, the final decision follows the MONTH-4 review, not the month-3 one —
   // otherwise an extension would be born overdue.
   const key: StepKey = step === "probation_final" && p.outcome === "extended" ? "probation_extension" : step;
@@ -609,6 +626,8 @@ export function hrSnapshotFrom(data: {
   onboardingChecks: OnboardingCheck[];
   probations: Probation[];
   probationReviews: ProbationReview[];
+  /** NR-10 — the Day 7/15/30/60/90 check-ins that replaced the monthly reviews. */
+  probationCheckins: ProbationCheckin[];
   config: { stepSla: StepSlaMap };
 }): HrSnapshot {
   return {
@@ -619,6 +638,7 @@ export function hrSnapshotFrom(data: {
     onboardingChecks: data.onboardingChecks,
     probations: data.probations,
     probationReviews: data.probationReviews,
+    probationCheckins: data.probationCheckins,
     stepSla: data.config.stepSla,
   };
 }
@@ -732,7 +752,7 @@ export function buildQueueEntries(snap: HrSnapshot): QueueEntry[] {
    */
   for (const p of snap.probations) {
     if (!isOpenProbation(p)) continue;
-    const step = probationPendingStep(p, reviewsByProbation.get(p.id) ?? []);
+    const step = probationPendingStep(p, snap.probationCheckins.filter((c) => c.probationId === p.id));
     if (!step) continue;
     const r = reqById.get(p.requisitionId);
 

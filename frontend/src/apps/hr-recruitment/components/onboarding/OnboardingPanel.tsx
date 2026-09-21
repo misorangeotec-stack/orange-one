@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import DueCell from "@/shared/components/ui/DueCell";
 import { SectionHeading } from "@/shared/components/ui/Readout";
 import { TextInput } from "@/shared/components/ui/Form";
+import Combobox from "@/shared/components/ui/Combobox";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
 import { useHrStore } from "../../store";
@@ -477,6 +478,50 @@ export default function OnboardingPanel({
                 <CheckRow key={k.id} onboarding={o} check={k} readOnly={readOnly} />
               ))}
             </ul>
+          )}
+        </div>
+
+        {/* ---- NR-10 · the hire's own Orange One account ----
+            Creating the login is part of onboarding (the client's decision), and
+            the LINK is stored here rather than matched back later by name or
+            employee code. Without it the new joiner cannot write their half of a
+            probation check-in — and nobody can write it for them. */}
+        <div className="rounded-xl border border-line p-4">
+          <SectionHeading>Orange One account</SectionHeading>
+          <p className="mt-0.5 text-[12px] text-grey-2">
+            Link the login created for this person. It is what lets them answer their own probation
+            check-ins.
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-end gap-2.5">
+            <div className="w-72">
+              <Combobox
+                value={o.employeeUserId ?? ""}
+                onChange={(v) => void run(() => s.setEmployeeUser(o.id, v || null))}
+                options={s.orgPeople.map((p) => ({ value: p.id, label: p.name }))}
+                placeholder="Search for the person…"
+                disabled={!mayAct || dropped || busy}
+              />
+            </div>
+            {o.employeeUserId && mayAct && !dropped && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void run(() => s.setEmployeeUser(o.id, null))}
+              >
+                Unlink
+              </Button>
+            )}
+          </div>
+          {o.employeeUserId ? (
+            <p className="mt-2 text-[11.5px] text-grey-2">
+              Linked to {s.personName(o.employeeUserId)}
+              {o.employeeUserSetBy ? ` · by ${s.personName(o.employeeUserSetBy)}` : ""}
+            </p>
+          ) : (
+            <p className="mt-2 text-[11.5px] text-grey-2">
+              Not linked yet — their probation check-ins will have no second side.
+            </p>
           )}
         </div>
 

@@ -60,6 +60,8 @@ import {
   acknowledgeRequisition as acknowledgeRequisitionWrite,
   setBgv as setBgvWrite,
   setInduction as setInductionWrite,
+  submitProbationCheckin as submitProbationCheckinWrite,
+  setEmployeeUser as setEmployeeUserWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
   uploadResume,
@@ -139,6 +141,10 @@ import type {
   OnboardingItem,
   Probation,
   BgvStatus,
+  CheckinDay,
+  CheckinHodStatus,
+  CheckinJoinerStatus,
+  ProbationCheckin,
   ProbationReview,
   ProbationReviewStatus,
   Requisition,
@@ -413,6 +419,20 @@ interface HrStoreValue {
   probationForOnboarding: (onboardingId: string) => Probation | undefined;
   /** This probation's reviews, month 1 first. */
   reviewsFor: (probationId: string) => ProbationReview[];
+  /** NR-10 — all five check-ins for this probation, Day 7 first. */
+  checkinsFor: (probationId: string) => ProbationCheckin[];
+  checkinOf: (probationId: string, day: CheckinDay) => ProbationCheckin | undefined;
+  submitProbationCheckin: (
+    probationId: string,
+    day: CheckinDay,
+    side: "hod" | "joiner",
+    status: CheckinHodStatus | CheckinJoinerStatus,
+    remarks: string | null,
+    filePath?: string | null,
+    fileName?: string | null,
+  ) => Promise<void>;
+  /** NR-10 / P0 — link the hire to their Orange One account. */
+  setEmployeeUser: (onboardingId: string, userId: string | null) => Promise<void>;
   reviewOf: (probationId: string, month: number) => ProbationReview | undefined;
   /** The ONE step this probation is waiting on (a review, or the decision). */
   probationPendingStep: (probation: Probation) => StepKey | null;
@@ -740,6 +760,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const onboardingChecks = data?.onboardingChecks ?? [];
   const probations = data?.probations ?? [];
   const probationReviews = data?.probationReviews ?? [];
+  const probationCheckins = data?.probationCheckins ?? [];
   const activity = data?.activity ?? [];
   const candidateScores = data?.candidateScores ?? [];
   const notifications = data?.notifications ?? [];
@@ -1171,7 +1192,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     }
     for (const list of reviewsByProb.values()) list.sort((a, b) => a.month - b.month);
 
-    const pendingStepOf = (p: Probation) => probationPendingStep(p, reviewsByProb.get(p.id) ?? []);
+    const checkinsByProb = new Map<string, ProbationCheckin[]>();
+    for (const c of probationCheckins) {
+      const list = checkinsByProb.get(c.probationId) ?? [];
+      list.push(c);
+      checkinsByProb.set(c.probationId, list);
+    }
+    for (const list of checkinsByProb.values()) list.sort((a, b) => a.dayNo - b.dayNo);
+
+    const pendingStepOf = (p: Probation) => probationPendingStep(p, checkinsByProb.get(p.id) ?? []);
 
     /**
      * Every probation step is a HOD step, so this is always the requisition's own
@@ -1253,6 +1282,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       onboardingChecks,
       probations,
       probationReviews,
+      probationCheckins,
       config: { stepSla },
     });
     const queueEntries = buildQueueEntries(snapshot);
@@ -1493,6 +1523,18 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       probationById: (id) => probById.get(id),
       probationForOnboarding: (oid) => probByOnb.get(oid),
       reviewsFor: (pid) => reviewsByProb.get(pid) ?? [],
+      checkinsFor: (pid) =>
+        probationCheckins.filter((c) => c.probationId === pid).sort((a, b) => a.dayNo - b.dayNo),
+      checkinOf: (pid, day) =>
+        probationCheckins.find((c) => c.probationId === pid && c.dayNo === day),
+      submitProbationCheckin: async (pid, day, side, status, remarks, filePath = null, fileName = null) => {
+        await submitProbationCheckinWrite(pid, day, side, status, remarks, filePath, fileName);
+        await invalidate();
+      },
+      setEmployeeUser: async (oid, uid) => {
+        await setEmployeeUserWrite(oid, uid);
+        await invalidate();
+      },
       reviewOf: (pid, month) => (reviewsByProb.get(pid) ?? []).find((r) => r.month === month),
       probationPendingStep: pendingStepOf,
       probationDueIso: (p) => {

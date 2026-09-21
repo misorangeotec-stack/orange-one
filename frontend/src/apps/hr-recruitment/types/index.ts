@@ -621,6 +621,16 @@ export interface Onboarding {
   employeeCodeAt: string | null;
   employeeCodeBy: string | null;
 
+  /**
+   * NR-10 / P0 — the Orange One account created for this hire during onboarding.
+   * The LINK, stored: matching a hire back to a person by name or employee code
+   * later is the trap. It is what lets the joiner write their own half of a
+   * probation check-in, and nothing else reads it yet.
+   */
+  employeeUserId: string | null;
+  employeeUserSetAt: string | null;
+  employeeUserSetBy: string | null;
+
   /* ---- NR-8 ------------------------------------------------------------- */
   /**
    * Background verification — a RESULT, not a tick.
@@ -744,7 +754,66 @@ export interface Probation {
   editedBy: string | null;
 }
 
-/** One monthly review. Month 4 exists only after an extension. */
+/* ---------------------------- NR-10 · check-ins --------------------------- */
+
+/** The five days a probation is checked in on. Calendar days from joining. */
+export type CheckinDay = 7 | 15 | 30 | 60 | 90;
+
+export const CHECKIN_DAYS: CheckinDay[] = [7, 15, 30, 60, 90];
+
+/** The head of department's verdict. */
+export type CheckinHodStatus = "satisfactory" | "needs_improvement" | "unsatisfactory";
+/** The new joiner's own answer, in their words rather than a manager's vocabulary. */
+export type CheckinJoinerStatus = "going_well" | "mixed" | "not_going_well";
+
+export const CHECKIN_HOD_LABEL: Record<CheckinHodStatus, string> = {
+  satisfactory: "Satisfactory",
+  needs_improvement: "Needs improvement",
+  unsatisfactory: "Unsatisfactory",
+};
+
+export const CHECKIN_JOINER_LABEL: Record<CheckinJoinerStatus, string> = {
+  going_well: "Going well",
+  mixed: "Mixed",
+  not_going_well: "Not going well",
+};
+
+/**
+ * One probation check-in — TWO-SIDED.
+ *
+ * The HOD writes one side and the new joiner writes the other, and it is not
+ * done until both are in ({@link completedAt}). HR writes neither: they chase
+ * them, and are scored on whether both arrived by {@link dueOn}.
+ *
+ * Rows are seeded when the probation opens, so all five exist — and are visible
+ * as *not yet due* — from day one.
+ */
+export interface ProbationCheckin {
+  id: string;
+  probationId: string;
+  dayNo: CheckinDay;
+  /** Joining date + dayNo, in CALENDAR days. Stamped in SQL, never recomputed here. */
+  dueOn: string;
+
+  hodStatus: CheckinHodStatus | null;
+  hodRemarks: string | null;
+  hodAt: string | null;
+  hodBy: string | null;
+  filePath: string | null;
+  fileName: string | null;
+
+  joinerStatus: CheckinJoinerStatus | null;
+  joinerRemarks: string | null;
+  joinerAt: string | null;
+  joinerBy: string | null;
+
+  /** Stamped when the SECOND side lands, and never re-dated by a later edit. */
+  completedAt: string | null;
+}
+
+/** ⚠ RETIRED by NR-10 and never written again — see {@link ProbationCheckin}.
+ *  The type and the table survive because the monthly rows would otherwise lose
+ *  their meaning; there have never been any. */
 export interface ProbationReview {
   id: string;
   probationId: string;
