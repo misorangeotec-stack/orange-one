@@ -154,6 +154,15 @@ export default function MrfDetail() {
   const canDecideHr = s.canEdit && r.status === "hr_review" && s.canActOn("hr_head_approval", r);
   const canDecideMgmt = s.canEdit && r.status === "mgmt_review" && s.canActOn("mgmt_approval", r);
   const canPost = s.canEdit && r.status === "posting" && s.canActOn("job_posting", r);
+  // NR-8 / KPI 1A.1. The recruiter picks an approved vacancy up. Offered from the
+  // moment it leaves the HR gate, and only until it is taken: an acknowledgement
+  // is one person saying "mine", so the button goes the instant it is done.
+  const canAcknowledge =
+    s.canEdit &&
+    !r.acknowledgedAt &&
+    ["mgmt_review", "posting", "sourcing"].includes(r.status) &&
+    s.canActOn("job_posting", r);
+
   // Only the person who raised it can fix a sent-back requisition and resubmit.
   const isMine = s.myRequisitions.some((m) => m.id === r.id);
   const canResubmit = s.canEdit && r.status === "sent_back" && (isMine || s.isAdmin);
@@ -224,6 +233,18 @@ export default function MrfDetail() {
             ? "resume_upload"
             : null;
 
+  const acknowledge = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await s.acknowledgeRequisition(r.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resubmit = async (input: MrfInput, jdFile: File | null) => {
     setBusy(true);
     setErr(null);
@@ -279,6 +300,11 @@ export default function MrfDetail() {
           {canDecideHr && <Button size="sm" onClick={() => setDecideStage("hr")}>HR Head decision</Button>}
           {canDecideMgmt && <Button size="sm" onClick={() => setDecideStage("mgmt")}>Management decision</Button>}
           {canPost && <Button size="sm" onClick={() => setPosting(true)}>Post the job</Button>}
+          {canAcknowledge && (
+            <Button size="sm" variant="ghost" onClick={acknowledge} disabled={busy}>
+              {busy ? "Saving…" : "Acknowledge"}
+            </Button>
+          )}
           {canResubmit && <Button size="sm" onClick={() => setEditing(true)}>Edit & resubmit</Button>}
           {/* NR-3 — the same dialog the position header opens, and the same RPC behind
               it. The MRF page is where the field is displayed, so it is where somebody
@@ -298,6 +324,17 @@ export default function MrfDetail() {
             <Button size="sm" variant="ghost" onClick={() => setHoldMode("cancel")}>Cancel</Button>
           )}
         </div>
+
+        {/* ⚠ `err` used to be rendered ONLY inside the edit-and-resubmit branch, so
+            an action taken from this row — Acknowledge, and anything added beside
+            it later — failed in complete silence: the button un-greyed and nothing
+            else happened. Every reason the server can give is worth reading:
+            "already acknowledged", "not approved yet", "only the recruiter". */}
+        {err && !editing && (
+          <p className="text-[12.5px] text-ryg-red" role="alert">
+            {err}
+          </p>
+        )}
       </div>
 
       {/* ---- Where it is ---- */}
@@ -325,6 +362,12 @@ export default function MrfDetail() {
               <Field label={`Management · ${person(r.mgmtApproverId)}`}>{r.mgmtRemarks}</Field>
             )}
           </div>
+        )}
+
+        {r.acknowledgedAt && (
+          <Field label={`Acknowledged · ${person(r.acknowledgedBy)}`}>
+            {formatDateTimeDMY(r.acknowledgedAt)}
+          </Field>
         )}
 
         {r.postedAt && (

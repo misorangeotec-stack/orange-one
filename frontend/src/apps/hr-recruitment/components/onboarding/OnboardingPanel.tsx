@@ -9,7 +9,7 @@ import { todayIso } from "@/shared/lib/time";
 import { useHrStore } from "../../store";
 import { hrDocUrl, uploadOnboardingDoc } from "../../data/hrWrites";
 import { inr } from "../../lib/format";
-import type { Onboarding, OnboardingCheck, OfferStatus } from "../../types";
+import { BGV_LABEL, type BgvStatus, type Onboarding, type OnboardingCheck, type OfferStatus } from "../../types";
 
 /**
  * Only the UNHAPPY answers are labelled here.
@@ -363,6 +363,10 @@ export default function OnboardingPanel({
 
   const [joiningDate, setJoiningDate] = useState(o.joiningDate ?? todayIso());
   const [empCode, setEmpCode] = useState(o.employeeCode ?? "");
+  // NR-8. Both are facts about the hire rather than tasks, so they sit beside the
+  // Employee ID rather than inside the checklist.
+  const [induction, setInduction] = useState(o.inductionOn ?? "");
+  const [bgvNote, setBgvNote] = useState(o.bgvNote ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -473,6 +477,109 @@ export default function OnboardingPanel({
                 <CheckRow key={k.id} onboarding={o} check={k} readOnly={readOnly} />
               ))}
             </ul>
+          )}
+        </div>
+
+        {/* ---- NR-8 · Background verification — a RESULT, not a tick. ----
+            `police_verification` stays an ordinary checklist item; this answers the
+            question a tick structurally cannot: did it come back WITH something. */}
+        <div className="rounded-xl border border-line p-4">
+          <SectionHeading>Background verification</SectionHeading>
+          <p className="mt-0.5 text-[12px] text-grey-2">
+            A discrepancy is the only result anybody has to act on, so it asks what it was.
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {(["pending", "clear", "discrepancy"] as const).map((k) => {
+              const on = o.bgvStatus === k;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  disabled={!mayAct || dropped || busy}
+                  onClick={() =>
+                    void run(() => s.setBgv(o.id, on ? null : k, k === "discrepancy" ? bgvNote.trim() : null))
+                  }
+                  className={`rounded-pill border px-3 py-1.5 text-[12.5px] font-medium transition disabled:opacity-50 ${
+                    on
+                      ? k === "discrepancy"
+                        ? "border-ryg-red bg-[#FDECEC] text-ryg-red"
+                        : k === "clear"
+                          ? "border-ryg-green bg-[#E9F7EF] text-ryg-green"
+                          : "border-orange bg-orange/5 text-navy"
+                      : "border-line text-grey hover:border-grey-2/40"
+                  }`}
+                >
+                  {BGV_LABEL[k]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* The box appears BEFORE the result is set, not after: the RPC refuses a
+              discrepancy with no note, so asking for it afterwards would be a dead end. */}
+          {(o.bgvStatus === "discrepancy" || (!o.bgvStatus && mayAct && !dropped)) && (
+            <div className="mt-2.5">
+              <TextInput
+                value={bgvNote}
+                onChange={(e) => setBgvNote(e.target.value)}
+                placeholder="What the discrepancy was — required to record one"
+                disabled={!mayAct || dropped}
+              />
+              {o.bgvStatus === "discrepancy" && bgvNote.trim() !== (o.bgvNote ?? "") && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-2"
+                  disabled={busy || !bgvNote.trim()}
+                  onClick={() => void run(() => s.setBgv(o.id, "discrepancy", bgvNote.trim()))}
+                >
+                  Save the note
+                </Button>
+              )}
+            </div>
+          )}
+
+          {o.bgvAt && (
+            <p className="mt-2 text-[11.5px] text-grey-2">
+              {BGV_LABEL[o.bgvStatus as BgvStatus]} · {s.personName(o.bgvBy ?? "")} ·{" "}
+              {formatDateTimeDMY(o.bgvAt)}
+              {o.bgvNote ? ` — ${o.bgvNote}` : ""}
+            </p>
+          )}
+        </div>
+
+        {/* ---- NR-8 · The induction date. A DATE, because the weekly report's flag
+            is "not done by Day 15" and a tick carries no date to test. ---- */}
+        <div className="rounded-xl border border-line p-4">
+          <SectionHeading>Induction</SectionHeading>
+          <p className="mt-0.5 text-[12px] text-grey-2">The day it was actually held.</p>
+          <div className="mt-2.5 flex flex-wrap items-end gap-2.5">
+            <div className="w-52">
+              <TextInput
+                type="date"
+                value={induction}
+                max={todayIso()}
+                min={o.joiningDate ?? undefined}
+                onChange={(e) => setInduction(e.target.value)}
+                disabled={!mayAct || dropped}
+              />
+            </div>
+            {mayAct && !dropped && induction !== (o.inductionOn ?? "") && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void run(() => s.setInduction(o.id, induction || null))}
+              >
+                {induction ? "Save" : "Clear"}
+              </Button>
+            )}
+          </div>
+          {o.inductionOn && (
+            <p className="mt-2 text-[11.5px] text-grey-2">
+              Held {formatDateDMY(o.inductionOn)}
+              {o.inductionBy ? ` · recorded by ${s.personName(o.inductionBy)}` : ""}
+            </p>
           )}
         </div>
 

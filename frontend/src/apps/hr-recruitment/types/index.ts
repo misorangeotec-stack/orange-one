@@ -369,6 +369,13 @@ export interface Requisition {
   hrApprovedAt: string | null;
   hrApproverId: string | null;
   hrRemarks: string | null;
+  /**
+   * NR-8 / KPI 1A.1. When the RECRUITER picked this approved vacancy up — which
+   * is not `hrApprovedAt`, the HR Head's approval. The line allows one working
+   * day between the two. Null on every requisition raised before NR-8.
+   */
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
   mgmtApprovedAt: string | null;
   mgmtApproverId: string | null;
   mgmtRemarks: string | null;
@@ -582,6 +589,18 @@ export interface Interview {
  */
 export type OfferStatus = "pending" | "accepted" | "declined" | "no_show";
 
+/**
+ * NR-8 / KPI 1A.6. `null` means nobody has started the verification — a normal
+ * state, and where every hire that predates NR-8 sits.
+ */
+export type BgvStatus = "pending" | "clear" | "discrepancy";
+
+export const BGV_LABEL: Record<BgvStatus, string> = {
+  pending: "In progress",
+  clear: "Clear",
+  discrepancy: "Discrepancy",
+};
+
 /** One onboarding per finalized candidate, created by the finalize move. */
 export interface Onboarding {
   id: string;
@@ -601,6 +620,29 @@ export interface Onboarding {
   employeeCode: string | null;
   employeeCodeAt: string | null;
   employeeCodeBy: string | null;
+
+  /* ---- NR-8 ------------------------------------------------------------- */
+  /**
+   * Background verification — a RESULT, not a tick.
+   *
+   * `police_verification` remains an ordinary checklist item; this is the
+   * separate question KPI 1A.6 and the weekly report both ask, and a checklist
+   * item structurally cannot answer it: there is nowhere in a done/not-done box
+   * to say a verification came back **with a discrepancy**, which is the only
+   * state anybody has to act on.
+   */
+  bgvStatus: BgvStatus | null;
+  /** What the discrepancy was. The RPC insists on it for `discrepancy`. */
+  bgvNote: string | null;
+  bgvAt: string | null;
+  bgvBy: string | null;
+  /**
+   * The date the induction was held — a date, not a tick, because the weekly
+   * report's flag is "induction not done by **Day 15**" and a tick carries no
+   * date to test.
+   */
+  inductionOn: string | null;
+  inductionBy: string | null;
 
   /** They joined. Set only when the offer was accepted AND every item is done. */
   completedAt: string | null;

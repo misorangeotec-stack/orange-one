@@ -1,6 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import type { Json } from "@/core/platform/database.types";
-import type { HrEntityType, HrMasterType, SalaryPeriod, SalaryStructure } from "../types";
+import type { BgvStatus, HrEntityType, HrMasterType, SalaryPeriod, SalaryStructure } from "../types";
 
 /**
  * HR Recruitment write layer.
@@ -333,6 +333,47 @@ export async function resubmitMrf(requisitionId: string, input: MrfInput): Promi
   const { error } = await supabase.rpc("fms_hr_resubmit_mrf", {
     p_req: requisitionId,
     p: mrfPayload(input) as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * NR-8 / KPI 1A.1 — the recruiter picks an approved vacancy up.
+ *
+ * Deliberately its own call rather than a flag on another write: it is one
+ * person saying "this is mine now", and the RPC refuses a second one, an
+ * unapproved requisition, and anybody who is not the recruiter on it.
+ */
+export async function acknowledgeRequisition(requisitionId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_acknowledge_requisition", { p_req: requisitionId });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * NR-8 / KPI 1A.6 — the background verification's RESULT.
+ *
+ * `null` clears it back to "not started". A `discrepancy` without a note is
+ * refused by the RPC, not just by the form: the one state anybody acts on must
+ * never arrive without saying what it was.
+ */
+export async function setBgv(
+  onboardingId: string,
+  status: BgvStatus | null,
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_bgv", {
+    p_onboarding: onboardingId,
+    p_status: status,
+    p_note: note ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** NR-8 — the date the induction was held. `null` clears it. */
+export async function setInduction(onboardingId: string, on: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_induction", {
+    p_onboarding: onboardingId,
+    p_on: on,
   });
   if (error) throw new Error(error.message);
 }

@@ -57,6 +57,9 @@ import {
   type HiringManagerPreviewRow,
   setRequisitionJd as setRequisitionJdWrite,
   setRequisitionTargets as setRequisitionTargetsWrite,
+  acknowledgeRequisition as acknowledgeRequisitionWrite,
+  setBgv as setBgvWrite,
+  setInduction as setInductionWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
   uploadResume,
@@ -135,6 +138,7 @@ import type {
   OnboardingCheck,
   OnboardingItem,
   Probation,
+  BgvStatus,
   ProbationReview,
   ProbationReviewStatus,
   Requisition,
@@ -631,6 +635,12 @@ interface HrStoreValue {
   ) => Promise<void>;
   /** NR-7 — set the numbers on a position that is already approved. */
   setRequisitionTargets: (requisitionId: string, targets: RequisitionTargets) => Promise<void>;
+  /** NR-8 — the recruiter picks an approved requisition up. Once, by them. */
+  acknowledgeRequisition: (requisitionId: string) => Promise<void>;
+  /** NR-8 — the background verification's result. `null` clears it. */
+  setBgv: (onboardingId: string, status: BgvStatus | null, note: string | null) => Promise<void>;
+  /** NR-8 — the date the induction was held. `null` clears it. */
+  setInduction: (onboardingId: string, on: string | null) => Promise<void>;
   postJob: (
     requisitionId: string,
     platformIds: string[],
@@ -1917,6 +1927,18 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       setRequisitionTargets: async (id, targets) => {
         await setRequisitionTargetsWrite(id, targets);
+        await invalidate();
+      },
+      acknowledgeRequisition: async (id) => {
+        await acknowledgeRequisitionWrite(id);
+        await invalidate();
+      },
+      setBgv: async (id, status, note) => {
+        await setBgvWrite(id, status, note);
+        await invalidate();
+      },
+      setInduction: async (id, on) => {
+        await setInductionWrite(id, on);
         await invalidate();
       },
       postJob: async (id, platformIds, postedOn, otherNote) => {

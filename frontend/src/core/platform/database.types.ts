@@ -2733,6 +2733,12 @@ export type Database = {
           edited_by: string | null
           employee_code: string | null
           employee_code_at: string | null
+          bgv_status: string | null
+          bgv_note: string | null
+          bgv_at: string | null
+          bgv_by: string | null
+          induction_on: string | null
+          induction_by: string | null
           employee_code_by: string | null
           id: string
           joining_date: string | null
@@ -2754,6 +2760,12 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          bgv_status?: string | null
+          bgv_note?: string | null
+          bgv_at?: string | null
+          bgv_by?: string | null
+          induction_on?: string | null
+          induction_by?: string | null
           employee_code_by?: string | null
           id?: string
           joining_date?: string | null
@@ -2775,6 +2787,12 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          bgv_status?: string | null
+          bgv_note?: string | null
+          bgv_at?: string | null
+          bgv_by?: string | null
+          induction_on?: string | null
+          induction_by?: string | null
           employee_code_by?: string | null
           id?: string
           joining_date?: string | null
@@ -3029,6 +3047,8 @@ export type Database = {
           key_responsibilities: string | null
           location_id: string | null
           mgmt_approved_at: string | null
+          acknowledged_at: string | null
+          acknowledged_by: string | null
           mgmt_approver_id: string | null
           mgmt_remarks: string | null
           mrf_no: string
@@ -3104,6 +3124,8 @@ export type Database = {
           key_responsibilities?: string | null
           location_id?: string | null
           mgmt_approved_at?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           mgmt_approver_id?: string | null
           mgmt_remarks?: string | null
           mrf_no: string
@@ -3179,6 +3201,8 @@ export type Database = {
           key_responsibilities?: string | null
           location_id?: string | null
           mgmt_approved_at?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           mgmt_approver_id?: string | null
           mgmt_remarks?: string | null
           mrf_no?: string
@@ -8481,6 +8505,10 @@ export type Database = {
         Args: { p_case: string; p_reason: string }
         Returns: undefined
       }
+      fms_hr_acknowledge_requisition: {
+        Args: { p_req: string }
+        Returns: undefined
+      }
       fms_hr_add_candidates: {
         Args: { p_candidates: Json; p_req: string }
         Returns: string[]
@@ -8719,6 +8747,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_hr_set_bgv: {
+        Args: { p_note?: string; p_onboarding: string; p_status: string | null }
+        Returns: undefined
+      }
       fms_hr_set_candidate_note: {
         Args: { p_id: string; p_note: string }
         Returns: undefined
@@ -8733,6 +8765,10 @@ export type Database = {
       }
       fms_hr_set_employee_code: {
         Args: { p_code: string; p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_set_induction: {
+        Args: { p_on: string | null; p_onboarding: string }
         Returns: undefined
       }
       fms_hr_set_offer_status: {
