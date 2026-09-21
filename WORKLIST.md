@@ -10220,12 +10220,16 @@ effectiveness of that training for their department."*
   **lists** that HOD's attendees by name, so the HOD knows who they are rating about, and it captures
   application observed, evidence, improvement area and follow-up required. Reminder and escalation if
   overdue (§3 step 15: *within 7 days of task creation*).
-- 🔴 **20 of 67 internal profiles have no HOD and 22 of 23 departments have none mapped** (measured
-  21-09-2026). 🟢 **Client's answer, 21-09-2026: show HR an explicit "no reviewer" list on the session
-  review** rather than quietly counting the review complete — reporting a control that does not exist is
-  worse than reporting a gap — **and get the map filled** in parallel.
-  - [ ] **Who fills the missing 20?** Likely Bushra or HR, the same way the org masters were filled. Not a
-        blocker for the build; it is a blocker for the first real effectiveness review.
+- 🔴 **19 of 67 internal profiles resolve to NO HOD AT ALL** — measured 21-09-2026 by running the
+  shipped resolver (`fms_ld_hods_of`) over every internal profile, not by counting the raw table: **48
+  resolve, 19 do not.** The raw `user_hods` count is 20; the department fallback rescues exactly one
+  person, which is also the proof that the fallback arm fires at all. `fms_hr_department_hods` holds
+  **1 row for 23 departments**, so it rescues almost nobody.
+  🟢 **Client's answer, 21-09-2026: show HR an explicit "no reviewer" list on the session review**
+  rather than quietly counting the review complete — reporting a control that does not exist is worse
+  than reporting a gap — **and get the map filled** in parallel.
+  - [ ] **Who fills the missing 19?** Likely Bushra or HR, the same way the org masters were filled. Not
+        a blocker for the build; it is a blocker for the first real effectiveness review.
 - **Follow-up decision** (§3 step 16): close, coach, reassess or refresher. An unsuccessful outcome
   **creates the linked follow-up** with an owner and a due date — a link, not a note.
 - **Closure** (§3 step 17): blocked while any mandatory evidence or open task remains; on closure the
