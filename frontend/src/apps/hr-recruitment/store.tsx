@@ -56,6 +56,7 @@ import {
   setDepartmentHods as setDepartmentHodsWrite,
   type HiringManagerPreviewRow,
   setRequisitionJd as setRequisitionJdWrite,
+  setRequisitionTargets as setRequisitionTargetsWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
   uploadResume,
@@ -76,6 +77,7 @@ import {
   type MrfDecision,
   type MrfInput,
   type MrfStage,
+  type RequisitionTargets,
   type OnboardingItemInput,
   type ProbationDecision,
   type StepOwnerInput,
@@ -611,9 +613,24 @@ interface HrStoreValue {
   resubmitMrf: (requisitionId: string, input: MrfInput) => Promise<void>;
   /** Upload a JD file to jd/<id>/… and record its path on the requisition. */
   attachRequisitionJd: (requisitionId: string, file: File) => Promise<void>;
-  decideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
+  decideMrf: (
+    requisitionId: string,
+    stage: MrfStage,
+    decision: MrfDecision,
+    remarks: string,
+    /** NR-7 — the HR Head's numbers, set in the same breath as the approval. */
+    targets?: RequisitionTargets | null,
+  ) => Promise<void>;
   /** Correct a completed approval (or flip it) while the next gate has not acted. */
-  updateDecideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
+  updateDecideMrf: (
+    requisitionId: string,
+    stage: MrfStage,
+    decision: MrfDecision,
+    remarks: string,
+    targets?: RequisitionTargets | null,
+  ) => Promise<void>;
+  /** NR-7 — set the numbers on a position that is already approved. */
+  setRequisitionTargets: (requisitionId: string, targets: RequisitionTargets) => Promise<void>;
   postJob: (
     requisitionId: string,
     platformIds: string[],
@@ -1872,8 +1889,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
-      decideMrf: async (id, stage, decision, remarks) => {
-        await decideMrfWrite(id, stage, decision, remarks);
+      decideMrf: async (id, stage, decision, remarks, targets = null) => {
+        await decideMrfWrite(id, stage, decision, remarks, targets);
         const r = reqById.get(id);
         // Approving hands the work to the NEXT gate; rejecting or sending back
         // hands it back to whoever raised it.
@@ -1894,8 +1911,12 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
-      updateDecideMrf: async (id, stage, decision, remarks) => {
-        await updateDecideMrfWrite(id, stage, decision, remarks);
+      updateDecideMrf: async (id, stage, decision, remarks, targets = null) => {
+        await updateDecideMrfWrite(id, stage, decision, remarks, targets);
+        await invalidate();
+      },
+      setRequisitionTargets: async (id, targets) => {
+        await setRequisitionTargetsWrite(id, targets);
         await invalidate();
       },
       postJob: async (id, platformIds, postedOn, otherNote) => {

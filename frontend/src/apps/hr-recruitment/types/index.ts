@@ -297,6 +297,35 @@ export interface Requisition {
   expectedStartDate: string | null;
   positionsRequired: number;
 
+  /* ---- NR-7 · the numbers the HR Head sets while approving ---------------- */
+  /**
+   * CALENDAR days this position may take. Typed per position at HR approval —
+   * there is no per-role default and no master of TATs.
+   *
+   * The clock STARTS at {@link postedOn} (the business date HR typed; `postedAt`
+   * when that is null) and STOPS when the first offer is accepted. The position
+   * itself still CLOSES when the seats are joined: a different fact, on a
+   * different date, deliberately not this clock.
+   *
+   * Null means nobody has set it — "not set", never a failure.
+   */
+  targetCloseDays: number | null;
+  /**
+   * How many NEW CVs this position should gather, in TOTAL. Never multiplied by
+   * {@link positionsRequired} — a 5-seat MRF still carries one number.
+   *
+   * *New* means a person the hub has never seen: a {@link Candidate} with
+   * `isRepeat` false. Disqualified CVs still count — the number measures
+   * sourcing effort, which is the part HR controls.
+   */
+  cvTarget: number | null;
+  /** Minimum profiles shortlisted to the HOD. Seeded at 3; overridable. */
+  shortlistTarget: number;
+  /** Minimum candidates that must reach the director round. Seeded at 3. */
+  directorCvTarget: number;
+  targetsSetAt: string | null;
+  targetsSetBy: string | null;
+
   salaryMin: number | null;
   salaryMax: number | null;
   salaryStructure: SalaryStructure;
@@ -455,6 +484,23 @@ export interface Candidate {
   resumeSha256: string | null;
   parseStatus: ParseStatus;
   parsedJson: Record<string, unknown>;
+
+  /**
+   * NR-7. True when this person was ALREADY in the hub — on any requisition —
+   * at the moment this CV was added, matched on the file hash, the email or the
+   * phone. A repeat is never refused; it simply does not count toward the
+   * requisition's {@link Requisition.cvTarget}.
+   *
+   * Decided by `fms_hr_add_candidates` at insert time and stored. Never
+   * recompute it: a quarter of rows carry no email and no phone (FIX-5), so a
+   * later recomputation would quietly disagree with what HR was shown.
+   */
+  isRepeat: boolean;
+  repeatOfCandidateId: string | null;
+  /** Which signal matched — "the same email address", "the identical CV file", … */
+  repeatSignal: string | null;
+  /** The reason typed to add this CV despite a duplicate warning on this vacancy. */
+  duplicateAck: string | null;
 
   stage: CandidateStage;
 

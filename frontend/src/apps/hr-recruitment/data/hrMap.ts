@@ -55,6 +55,14 @@ export const mapRequisition = (r: any): Requisition => ({
   previousEmployeeName: r.previous_employee_name ?? null,
   expectedStartDate: r.expected_start_date ?? null,
   positionsRequired: r.positions_required ?? 1,
+  targetCloseDays: num(r.target_close_days),
+  cvTarget: num(r.cv_target),
+  // Defaulted, not `?? null`: both columns are NOT NULL DEFAULT 3, so every row
+  // — including the 30 that existed before NR-7 — already carries a number.
+  shortlistTarget: r.shortlist_target ?? 3,
+  directorCvTarget: r.director_cv_target ?? 3,
+  targetsSetAt: r.targets_set_at ?? null,
+  targetsSetBy: r.targets_set_by ?? null,
   salaryMin: num(r.salary_min),
   salaryMax: num(r.salary_max),
   // Defaulted, not `?? null`: both columns are NOT NULL with a default, and the
@@ -163,6 +171,11 @@ export const mapCandidate = (r: any): Candidate => ({
   resumeSha256: r.resume_sha256 ?? null,
   parseStatus: (r.parse_status ?? "manual") as ParseStatus,
   parsedJson: (r.parsed_json ?? {}) as Record<string, unknown>,
+  // NOT NULL DEFAULT false, so `?? false` only covers a row read before NR-7.
+  isRepeat: r.is_repeat ?? false,
+  repeatOfCandidateId: r.repeat_of_candidate_id ?? null,
+  repeatSignal: r.repeat_signal ?? null,
+  duplicateAck: r.duplicate_ack ?? null,
   stage: toStage(r.stage),
   uploadedAt: r.uploaded_at,
   hrShortlistedAt: r.hr_shortlisted_at ?? null,

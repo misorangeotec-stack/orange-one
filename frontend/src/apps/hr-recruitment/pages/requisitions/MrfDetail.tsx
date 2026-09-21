@@ -16,6 +16,7 @@ import CandidateBoard from "../../components/kanban/CandidateBoard";
 import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
 import ProbationPanel from "../../components/probation/ProbationPanel";
 import { HoldCancelModal, JobPostingModal, MrfDecisionModal } from "../../components/MrfModals";
+import { TargetsCard } from "../../components/TargetsPanel";
 import MrfForm from "../../components/MrfForm";
 import { useHrStore } from "../../store";
 import { inr, salaryLabel } from "../../lib/format";
@@ -207,6 +208,11 @@ export default function MrfDetail() {
     .map((c) => ({ c, o: s.onboardingForCandidate(c.id) }))
     .filter((x): x is { c: Candidate; o: Onboarding } => !!x.o);
 
+  // NR-7. Everything from the HR approval onward is a position being measured;
+  // a requisition still awaiting that approval has no numbers yet, and the two
+  // ended states have nothing left to chase.
+  const showTargets = !["hr_review", "sent_back", "rejected"].includes(r.status);
+
   const dueStep: StepKey | null =
     r.status === "hr_review"
       ? "hr_head_approval"
@@ -328,6 +334,11 @@ export default function MrfDetail() {
           </div>
         )}
       </Card>
+
+      {/* ---- NR-7 · the numbers this position is being held to ----
+          Only once it is past the HR gate: before that there is nothing to
+          measure, and the numbers are asked for inside the approval itself. */}
+      {showTargets && <TargetsCard requisition={r} />}
 
       {/* ---- MRF | Pipeline ---- */}
       <Tabs

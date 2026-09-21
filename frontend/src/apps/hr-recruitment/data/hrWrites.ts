@@ -340,17 +340,69 @@ export async function resubmitMrf(requisitionId: string, input: MrfInput): Promi
 export type MrfStage = "hr" | "mgmt";
 export type MrfDecision = "approve" | "reject" | "send_back";
 
+/**
+ * NR-7 — the numbers the HR Head sets while approving.
+ *
+ * Every field is optional and **an absent key leaves the stored value alone**;
+ * the RPC never clears a number it was not sent. Passing `null` for the whole
+ * payload is how the Management stage (and any older caller) behaves exactly as
+ * it always did.
+ */
+export interface RequisitionTargets {
+  targetCloseDays?: number | null;
+  cvTarget?: number | null;
+  shortlistTarget?: number | null;
+  directorCvTarget?: number | null;
+}
+
+/** Drops the keys that carry nothing, so they cannot overwrite a stored value. */
+const targetsPayload = (t: RequisitionTargets | null): Json | null => {
+  if (!t) return null;
+  const out: Record<string, number> = {};
+  if (t.targetCloseDays != null) out.target_close_days = t.targetCloseDays;
+  if (t.cvTarget != null) out.cv_target = t.cvTarget;
+  if (t.shortlistTarget != null) out.shortlist_target = t.shortlistTarget;
+  if (t.directorCvTarget != null) out.director_cv_target = t.directorCvTarget;
+  return Object.keys(out).length ? (out as unknown as Json) : null;
+};
+
 export async function decideMrf(
   requisitionId: string,
   stage: MrfStage,
   decision: MrfDecision,
   remarks: string,
+  targets: RequisitionTargets | null = null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_decide_mrf", {
     p_req: requisitionId,
     p_stage: stage,
     p_decision: decision,
     p_remarks: remarks,
+    p_targets: targetsPayload(targets),
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Set the NR-7 numbers on a requisition that is ALREADY approved.
+ *
+ * The approval dialog is not the only way in: the client asked for the 24
+ * positions that were open before NR-7 to be brought under the same rules, and
+ * a position past `mgmt_review` can no longer be reached through
+ * {@link updateDecideMrf}'s edit window.
+ *
+ * Server-gated to the HR Head (or an admin); refused on a rejected or cancelled
+ * requisition.
+ */
+export async function setRequisitionTargets(
+  requisitionId: string,
+  targets: RequisitionTargets,
+): Promise<void> {
+  const payload = targetsPayload(targets);
+  if (!payload) throw new Error("Nothing to save");
+  const { error } = await supabase.rpc("fms_hr_set_requisition_targets", {
+    p_req: requisitionId,
+    p_targets: payload,
   });
   if (error) throw new Error(error.message);
 }
@@ -365,12 +417,14 @@ export async function updateDecideMrf(
   stage: MrfStage,
   decision: MrfDecision,
   remarks: string,
+  targets: RequisitionTargets | null = null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_update_decide_mrf", {
     p_req: requisitionId,
     p_stage: stage,
     p_decision: decision,
     p_remarks: remarks,
+    p_targets: targetsPayload(targets),
   });
   if (error) throw new Error(error.message);
 }

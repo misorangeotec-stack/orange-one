@@ -1990,6 +1990,10 @@ export type Database = {
           resume_name: string | null
           resume_path: string | null
           resume_sha256: string | null
+          duplicate_ack: string | null
+          is_repeat: boolean
+          repeat_of_candidate_id: string | null
+          repeat_signal: string | null
           shared_to_hod_at: string | null
           shared_to_hod_by: string | null
           skills: string[]
@@ -2033,6 +2037,10 @@ export type Database = {
           resume_name?: string | null
           resume_path?: string | null
           resume_sha256?: string | null
+          duplicate_ack?: string | null
+          is_repeat?: boolean
+          repeat_of_candidate_id?: string | null
+          repeat_signal?: string | null
           shared_to_hod_at?: string | null
           shared_to_hod_by?: string | null
           skills?: string[]
@@ -2076,6 +2084,10 @@ export type Database = {
           resume_name?: string | null
           resume_path?: string | null
           resume_sha256?: string | null
+          duplicate_ack?: string | null
+          is_repeat?: boolean
+          repeat_of_candidate_id?: string | null
+          repeat_signal?: string | null
           shared_to_hod_at?: string | null
           shared_to_hod_by?: string | null
           skills?: string[]
@@ -3022,6 +3034,12 @@ export type Database = {
           mrf_no: string
           position_kind: string
           positions_required: number
+          cv_target: number | null
+          director_cv_target: number
+          shortlist_target: number
+          target_close_days: number | null
+          targets_set_at: string | null
+          targets_set_by: string | null
           posted_at: string | null
           posted_by: string | null
           posted_on: string | null
@@ -3091,6 +3109,12 @@ export type Database = {
           mrf_no: string
           position_kind?: string
           positions_required?: number
+          cv_target?: number | null
+          director_cv_target?: number
+          shortlist_target?: number
+          target_close_days?: number | null
+          targets_set_at?: string | null
+          targets_set_by?: string | null
           posted_at?: string | null
           posted_by?: string | null
           posted_on?: string | null
@@ -3160,6 +3184,12 @@ export type Database = {
           mrf_no?: string
           position_kind?: string
           positions_required?: number
+          cv_target?: number | null
+          director_cv_target?: number
+          shortlist_target?: number
+          target_close_days?: number | null
+          targets_set_at?: string | null
+          targets_set_by?: string | null
           posted_at?: string | null
           posted_by?: string | null
           posted_on?: string | null
@@ -8515,6 +8545,7 @@ export type Database = {
           p_remarks?: string
           p_req: string
           p_stage: string
+          p_targets?: Json
         }
         Returns: undefined
       }
@@ -8726,6 +8757,10 @@ export type Database = {
         Args: { p_name?: string; p_path?: string; p_req: string }
         Returns: undefined
       }
+      fms_hr_set_requisition_targets: {
+        Args: { p_req: string; p_targets: Json }
+        Returns: undefined
+      }
       fms_hr_stage_rank: { Args: { p_stage: string }; Returns: number }
       fms_hr_stage_step: { Args: { p_stage: string }; Returns: string }
       fms_hr_step_owner_ids: { Args: { p_step: string }; Returns: string[] }
@@ -8759,6 +8794,7 @@ export type Database = {
           p_remarks?: string
           p_req: string
           p_stage: string
+          p_targets?: Json
         }
         Returns: undefined
       }
