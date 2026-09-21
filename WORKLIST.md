@@ -7776,7 +7776,7 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 | 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
 | 7 | 2026-09-03 | The Positions grid's **Close** button actually **cancels** — five real vacancies were cancelled through it. Filed as a **fault**, so it sits in [Fixes](#fixes) | **FIX-6** | `[x]` |
 | 8 | 2026-09-21 | At the **HR approval** gate the HR head sets three numbers and the module tracks each: the period the position must be **closed** in, the number of **new CVs** required, and how many CVs must reach the **director** round (**default 3**) — today 12 of 18 live positions have sent nobody to a director, and one sent 1 of 20 | **NR-7** | `[x]` |
-| 9 | 2026-09-21 | **Talent Equation — KRA 1 of Saloni's KPI sheet, mapped into this module.** Its six **Talent Acquisition** lines (30%): an acknowledgement stamp, the CV and shortlist targets, the 48-hour interview feedback, the role-specific TAT and the BGV checklist items | **NR-8** | `[ ]` |
+| 9 | 2026-09-21 | **Talent Equation — KRA 1 of Saloni's KPI sheet, mapped into this module.** Its six **Talent Acquisition** lines (30%): an acknowledgement stamp, the CV and shortlist targets, the 48-hour interview feedback, the role-specific TAT and the BGV checklist items | **NR-8** | `[x]` |
 | 10 | 2026-09-21 | **The Buddy Program** (5%) — a cross-departmental buddy allocated within 24h of offer acceptance, a Buddy Passport handed over on Day 1, **8 interactions in 90 days** marked by HR, closure with probation (and extension alongside it), and the joiner's own rating. **Nothing exists today** | **NR-9** | `[ ]` |
 | 11 | 2026-09-21 | **Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90** (10%) — two-sided reviews (HR **and** the new joiner), a reminder a day before each, a concerns / grievances register on a format the client will send, and confirm-or-extend at 90 days. Built monthly today, and **never once used** | **NR-10** | `[ ]` |
 
@@ -9444,7 +9444,53 @@ has *nothing at all*, and Probation (10%) has tables that have never held a sing
 
 ---
 
-### NR-8 · The six Talent Acquisition lines (30% of the sheet)  `[ ]` — planned 2026-09-21, nothing built
+### NR-8 · The six Talent Acquisition lines (30% of the sheet)  `[x]` — 🟢 **LIVE 21-09-2026**
+
+🟢 **BUILT AND SHIPPED 21-09-2026** — `master` at **30769cbd**. Migration
+`20261201120000_nr8_ack_bgv_induction.sql` applied to `icutjkrqkbzwvmnfbzpr` with its rollback written
+first; built and walked in a browser on **master's own code** before the commit.
+
+**Three of the six lines needed a column; the other three were NR-7's and are already live.**
+
+| Line | What shipped |
+|---|---|
+| 1A.1 Requisition acknowledgement | `acknowledged_at` / `_by`, an **Acknowledge** button on the requisition header, and `fms_hr_acknowledge_requisition` — which refuses a second acknowledgement, an unapproved requisition, and anybody who is not the recruiter on it |
+| 1A.6 **BGV** | A three-state **result** on the onboarding — *In progress · Clear · Discrepancy* — with a note the RPC **demands** for a discrepancy. `police_verification` is untouched and stays an ordinary checklist item |
+| 1A.6 **references** | One master row (`reference_check`, 7 days). No code, and no migration the next time HR wants an item |
+| gap 2 **induction** | `induction_on` — a DATE, so the weekly report's *"not done by Day 15"* flag can actually fire. Refused in the future, and refused before the joining date |
+
+**1A.2, 1A.3 and 1A.5 were delivered by NR-7.** 1A.4 needs no build at all — it is the interview
+results nobody records (128 of 153 bookings), and no column fixes that.
+
+#### What the browser caught, which the code read as correct
+
+🔴 **An action taken from the requisition header failed in complete silence.** `err` was rendered
+**only inside the edit-and-resubmit branch**, so `setErr` on any other action wrote to a state nothing
+displayed: the button un-greyed and nothing else happened. Every reason the server can give — *already
+acknowledged*, *not approved yet*, *only the recruiter can acknowledge it* — went nowhere. The header
+now reads them out, and the fix guards whatever gets added to that row next.
+
+Also worth keeping: the onboarding dialog has **two** date inputs, and a test that grabs
+`querySelector('input[type="date"]')` types into the **joining date**, not the induction. Nothing was
+saved, but the field sat there dirty, one click from changing a real hire's joining date. Select the
+induction input by its `min`/`max`, or by its own block.
+
+#### Proof it did not disturb the live module
+
+Counts and fingerprints identical before and after, across requisitions, candidates, interviews and
+onboardings. The BGV and induction round trip was exercised **for real** on the `ZZ TEST` onboarding
+(refused a discrepancy with no note, then recorded one, then set an induction date) and **cleared back
+to null** afterwards. The acknowledgement was driven with `fetch` intercepted, so no live requisition
+was acknowledged — all 30 still read `acknowledged_at = null`, waiting for HR.
+
+⚠ **The three onboardings already open do NOT carry the reference-check item**, by design: checks are
+seeded when an onboarding opens, and back-filling would invent work nobody was asked for. Every
+onboarding opened from now on has it.
+
+⚠ **One thing was decided rather than asked**, and is cheap to change: the acknowledgement clock is
+anchored on **`hr_approved_at`** — the HR Head's approval, the earliest moment the vacancy is genuinely
+the recruiter's to run — rather than on Management's. If HR means "approved" to be the Management gate,
+it is one line.
 
 Line by line, with what exists and what each one needs. **Three of the six are already NR-7's work** —
 build NR-7 first and *extend* its form; do not put a second "targets" screen anywhere.
