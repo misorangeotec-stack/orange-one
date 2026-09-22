@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import { formatDateDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
+import { localDateIso } from "@/shared/lib/workingDays";
 import { supabase } from "@/core/platform/supabase";
 
 /**
@@ -33,26 +34,37 @@ export default function MyProbationCard() {
   if (rows.length === 0) return null;
 
   const today = todayIso();
-  // Owed = open, and its day has arrived. A future check-in is not a nag.
+  // One day EARLY, deliberately. The nightly job reminds the HOD and HR through
+  // the module bell — which a new joiner cannot open, because they have no
+  // hr-recruitment grant and never will. This card IS their day-before reminder,
+  // so it has to appear a day before, not on the day.
+  // ⚠ localDateIso, NOT toISOString(). `new Date("…T00:00:00")` is LOCAL midnight,
+  // and toISOString() converts it back to UTC — which in IST lands on the previous
+  // day, so "tomorrow" came out equal to today and the card never appeared early.
+  const tomorrow = (() => {
+    const d = new Date(`${today}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return localDateIso(d);
+  })();
   const owed = rows
-    .filter((r) => !r.joiner_at && r.due_on <= today && !r.final_status)
+    .filter((r) => !r.joiner_at && r.due_on <= tomorrow && !r.final_status)
     .sort((a, b) => a.day_no - b.day_no);
   if (owed.length === 0) return null;
 
   const next = owed[0];
   const overdue = next.due_on < today;
+  const dueTomorrow = next.due_on > today;
 
   return (
     <Card className="p-4 border-orange/30 bg-orange-soft/25">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[14px] font-semibold text-navy">
-            Your Day-{next.day_no} check-in {overdue ? "is overdue" : "is due"}
+            Your Day-{next.day_no} check-in{" "}
+            {overdue ? "is overdue" : dueTomorrow ? "is due tomorrow" : "is due today"}
           </p>
           <p className="mt-0.5 text-[12.5px] text-grey-2">
-            {overdue
-              ? `It was due ${formatDateDMY(next.due_on)}.`
-              : `Due ${formatDateDMY(next.due_on)}.`}{" "}
+            {overdue ? `It was due ${formatDateDMY(next.due_on)}.` : `Due ${formatDateDMY(next.due_on)}.`}{" "}
             A couple of minutes — how the first {next.day_no} days have gone.
             {/* `owed` is sorted ASCENDING and `next` is the first of them, so the
                 rest are always LATER days — calling them "earlier" was simply
