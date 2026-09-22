@@ -2,6 +2,13 @@ import { supabase } from "@/core/platform/supabase";
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   ApprovalRule,
+  Assignment,
+  Attendance,
+  Effectiveness,
+  Feedback,
+  Material,
+  Nomination,
+  Submission,
   LdActivity,
   LdNotification,
   MasterRow,
@@ -45,8 +52,27 @@ type Tbl =
   | "fms_ld_requests"
   | "fms_ld_sessions"
   | "fms_ld_activity"
-  | "fms_ld_notifications";
+  | "fms_ld_notifications"
+  | "fms_ld_nominations"
+  | "fms_ld_materials"
+  | "fms_ld_attendance"
+  | "fms_ld_assignments"
+  | "fms_ld_assignment_submissions"
+  | "fms_ld_feedback"
+  | "fms_ld_effectiveness";
 
+/*
+ * ⚠ `orderBy` MUST BE A COLUMN THAT EXISTS ON THAT TABLE, and getting it wrong
+ *   takes the WHOLE MODULE down, not just one list. PostgREST answers 400 for an
+ *   unknown order column, the `Promise.all` below rejects, and every screen then
+ *   renders as though there were simply no data — an empty calendar, zero
+ *   learning hours, and an L&D executive told she has no access because her step
+ *   owners never loaded either.
+ *
+ *   That happened on 22-09-2026: `fms_ld_assignment_submissions` has no
+ *   `created_at`, only `updated_at`. Three tables here carry neither — check the
+ *   migration before adding a call.
+ */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
   const out: any[] = [];
@@ -157,6 +183,15 @@ const mapSession = (r: any): TrainingSession => ({
   actualStart: r.actual_start,
   actualEnd: r.actual_end,
   changeReason: r.change_reason,
+  readinessConfirmedAt: r.readiness_confirmed_at ?? null,
+  invitationsSentAt: r.invitations_sent_at ?? null,
+  attendanceClosedAt: r.attendance_closed_at ?? null,
+  attendanceSheetPath: r.attendance_sheet_path ?? null,
+  trainerAttended: r.trainer_attended ?? null,
+  reviewNote: r.review_note ?? null,
+  reviewActionPoints: r.review_action_points ?? null,
+  reviewedAt: r.reviewed_at ?? null,
+  actualCost: num(r.actual_cost),
   createdBy: r.created_by,
   createdAt: r.created_at,
 });
@@ -180,6 +215,13 @@ export interface LdData {
   masterRequests: any[];
   activity: LdActivity[];
   notifications: LdNotification[];
+  nominations: Nomination[];
+  materials: Material[];
+  attendance: Attendance[];
+  assignments: Assignment[];
+  submissions: Submission[];
+  feedback: Feedback[];
+  effectiveness: Effectiveness[];
   stepSla: StepSlaMap;
   coordinatorIds: string[];
   approvalRule: ApprovalRule;
@@ -192,6 +234,7 @@ export async function fetchLdData(): Promise<LdData> {
     owners, assignees, config, sessionTypes, competencies, needSources, venues,
     trainers, delayReasons, followupActions, masterManagers, masterRequests,
     requests, sessions, activity, notifications,
+    nominations, materials, attendance, assignments, submissions, feedback, effectiveness,
   ] = await Promise.all([
     fetchAll("fms_ld_step_owners"),
     fetchAll("fms_ld_step_assignees", "assigned_at"),
@@ -209,6 +252,14 @@ export async function fetchLdData(): Promise<LdData> {
     fetchAll("fms_ld_sessions"),
     fetchAll("fms_ld_activity"),
     fetchAll("fms_ld_notifications"),
+    fetchAll("fms_ld_nominations", "nominated_at"),
+    fetchAll("fms_ld_materials", "uploaded_at"),
+    fetchAll("fms_ld_attendance", "marked_at"),
+    fetchAll("fms_ld_assignments", "issued_at"),
+    // ⚠ NOT the default "created_at" — this table has none. See the note on fetchAll.
+    fetchAll("fms_ld_assignment_submissions", "updated_at"),
+    fetchAll("fms_ld_feedback", "submitted_at"),
+    fetchAll("fms_ld_effectiveness", "due_on"),
   ]);
 
   const cfg: Record<string, any> = {};
@@ -282,6 +333,45 @@ export async function fetchLdData(): Promise<LdData> {
       actorId: n.actor_id,
       readAt: n.read_at,
       createdAt: n.created_at,
+    })),
+    nominations: nominations.map((r) => ({
+      id: r.id, sessionId: r.session_id, employeeId: r.employee_id, source: r.source,
+      status: r.status, nominatedBy: r.nominated_by, nominatedAt: r.nominated_at,
+      approvedBy: r.approved_by, approvedAt: r.approved_at, rejectReason: r.reject_reason,
+      invitedAt: r.invited_at, rsvp: r.rsvp, rsvpAt: r.rsvp_at, declineReason: r.decline_reason,
+    })),
+    materials: materials.map((r) => ({
+      id: r.id, sessionId: r.session_id, title: r.title, kind: r.kind,
+      filePath: r.file_path, linkUrl: r.link_url, note: r.note,
+      uploadedBy: r.uploaded_by, uploadedAt: r.uploaded_at,
+    })),
+    attendance: attendance.map((r) => ({
+      id: r.id, sessionId: r.session_id, employeeId: r.employee_id, status: r.status,
+      minutes: r.minutes, reason: r.reason, markedBy: r.marked_by, markedAt: r.marked_at,
+      followedUpAt: r.followed_up_at,
+    })),
+    assignments: assignments.map((r) => ({
+      id: r.id, sessionId: r.session_id, title: r.title, brief: r.brief,
+      filePath: r.file_path, issuedBy: r.issued_by, issuedAt: r.issued_at, dueAt: r.due_at,
+    })),
+    submissions: submissions.map((r) => ({
+      id: r.id, assignmentId: r.assignment_id, employeeId: r.employee_id,
+      filePath: r.file_path, note: r.note, submittedAt: r.submitted_at,
+      reviewedBy: r.reviewed_by, reviewedAt: r.reviewed_at, outcome: r.outcome,
+      reviewerRemarks: r.reviewer_remarks, escalatedAt: r.escalated_at,
+    })),
+    feedback: feedback.map((r) => ({
+      id: r.id, sessionId: r.session_id, employeeId: r.employee_id,
+      contentRating: r.content_rating, trainerRating: r.trainer_rating,
+      relevanceRating: r.relevance_rating, overallRating: r.overall_rating,
+      comment: r.comment, submittedAt: r.submitted_at,
+    })),
+    effectiveness: effectiveness.map((r) => ({
+      id: r.id, sessionId: r.session_id, hodId: r.hod_id, dueOn: r.due_on,
+      rating: r.rating, outcome: r.outcome, applicationObserved: r.application_observed,
+      evidence: r.evidence, improvementArea: r.improvement_area,
+      followupRequired: r.followup_required ?? false,
+      followupActionId: r.followup_action_id, submittedAt: r.submitted_at,
     })),
     stepSla: resolveStepSla(cfg.step_sla ?? null),
     coordinatorIds: (cfg.process_coordinators?.user_ids ?? []) as string[],

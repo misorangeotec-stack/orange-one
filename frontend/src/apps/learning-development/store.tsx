@@ -81,6 +81,17 @@ interface LdStoreValue {
    *   said the gate both did and did not exist. One predicate, two readers.
    */
   offersQueue: (stepKey: StepKey) => boolean;
+  /**
+   * May this person act on a SESSION-scoped step? Mirrors
+   * `fms_ld_can_act_session()`.
+   *
+   * ⚠ KEEP IT IN STEP WITH THE SERVER. The internal-trainer arm and the
+   *   HOD-of-a-nominee arm exist in both; the server is the authority and this
+   *   only decides whether a control is offered.
+   */
+  canActOnSession: (stepKey: StepKey, sessionId: string) => boolean;
+  /** Is this person an approved nominee on that session? */
+  isParticipant: (sessionId: string) => boolean;
 
   stepOwnerIds: (stepKey: string) => string[];
   approvalRule: ApprovalRule;
@@ -140,6 +151,13 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
     const raiseOwners = stepOwnerIds("need_raised");
     const canRaise = raiseOwners.length === 0 || isAdmin || raiseOwners.includes(me);
 
+    // Is anybody's HOD this person? `orgPeople` carries no reporting line, so the
+    // directory's own downline is what we have client-side; the RPC does the real
+    // resolution against user_hods.
+    const isHod = dir.profiles.some((p) => p.id !== me && (p as { hodIds?: string[] }).hodIds?.includes(me))
+      || (dir.profiles.find((p) => p.id === me)?.role === "hod")
+      || (dir.profiles.find((p) => p.id === me)?.role === "sub_hod");
+
     const ownsAnyStep = owners.some((o) => o.employeeIds.includes(me));
     const isPipelineStaff = isAdmin || isProcessCoordinator || ownsAnyStep;
 
@@ -180,6 +198,35 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
       // Somebody handed this person one row of this step.
       return assignees.some((a) => a.stepKey === stepKey && a.assignedTo === me);
     };
+
+    const noms = d?.nominations ?? [];
+
+    const canActOnSession = (stepKey: StepKey, sessionId: string): boolean => {
+      if (!me) return false;
+      if (isProcessCoordinator) return true;
+
+      const a = assignees.find((x) => x.sessionId === sessionId && x.stepKey === stepKey);
+      if (a) return a.assignedTo === me;
+
+      // An INTERNAL trainer owns their own session's material and delivery. An
+      // external one has no login at all, so HR does it for them.
+      if (["pre_material", "conducted", "attendance", "assignment_issue"].includes(stepKey)) {
+        const sess = sessions.find((x) => x.id === sessionId);
+        const tr = (d?.trainers ?? []).find((t) => t.id === sess?.trainerId);
+        if (tr?.trainerType === "internal" && tr.employeeId === me) return true;
+      }
+
+      // Nomination is owed by the HOD of the people being nominated. The client
+      // list cannot resolve HODs (that is a server function), so it offers the
+      // screen to any HOD and lets the RPC refuse — better than hiding it from
+      // the person whose job it is.
+      if (stepKey === "nomination" && isHod) return true;
+
+      return stepOwnerIds(stepKey).includes(me);
+    };
+
+    const isParticipant = (sessionId: string): boolean =>
+      noms.some((n) => n.sessionId === sessionId && n.employeeId === me && n.status === "approved");
 
     const queueEntries = sla ? buildQueueEntries(requests, sla) : [];
 
@@ -225,6 +272,8 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
       canActOn,
       canSeeQueue,
       offersQueue,
+      canActOnSession,
+      isParticipant,
       stepOwnerIds,
       approvalRule: d?.approvalRule ?? { mgmt: "never", aboveAmount: 0 },
       queueEntries,

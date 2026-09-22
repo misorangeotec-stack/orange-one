@@ -57,6 +57,9 @@ export function buildLdNav(opts: {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     { label: "Training Calendar", to: `${B}/calendar`, icon: ic.calendar },
+    // Everybody's own page: invitations to answer, assignments owed, hours done.
+    // For most of the company this is the only L&D screen they will ever open.
+    { label: "My Learning", to: `${B}/my-learning`, icon: ic.mine },
   ];
 
   if (opts.canRaise) {
@@ -68,6 +71,7 @@ export function buildLdNav(opts: {
 
   if (opts.isPipelineStaff) {
     nav.push({ label: "All Requests", to: `${B}/requests`, icon: ic.list });
+    nav.push({ label: "All Sessions", to: `${B}/sessions`, icon: ic.calendar });
   }
 
   let queueUsed = false;

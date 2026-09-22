@@ -8120,6 +8120,14 @@ export type Database = {
       // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
       //   are admin-only and every move is an fms_ld_* RPC below. The Row types are what
       //   data/ldFetch.ts reads; Insert/Update are used only for the Setup tables.
+      // Hand-added for migrations 20261215120000 / …120100 / …120200 (LD-1 and
+      // LD-3..LD-8, Learning & Development), all applied. Taken from the live schema
+      // rather than regenerating the whole file: this one is hand-curated, and other
+      // modules' tables live on the database ahead of their code, so a wholesale
+      // regeneration would sweep in work that is not ours to ship.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below.
       fms_ld_activity: {
         Row: {
           actor_id: string | null
@@ -8152,6 +8160,167 @@ export type Database = {
           type?: string
         }
         Relationships: []
+      }
+      fms_ld_assignment_submissions: {
+        Row: {
+          assignment_id: string
+          employee_id: string
+          escalated_at: string | null
+          file_path: string | null
+          id: string
+          note: string | null
+          outcome: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewer_remarks: string | null
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          employee_id: string
+          escalated_at?: string | null
+          file_path?: string | null
+          id?: string
+          note?: string | null
+          outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_remarks?: string | null
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          employee_id?: string
+          escalated_at?: string | null
+          file_path?: string | null
+          id?: string
+          note?: string | null
+          outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_remarks?: string | null
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_assignment_submissions_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_assignment_submissions_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_assignments: {
+        Row: {
+          brief: string | null
+          due_at: string | null
+          file_path: string | null
+          id: string
+          issued_at: string
+          issued_by: string | null
+          session_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          brief?: string | null
+          due_at?: string | null
+          file_path?: string | null
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          session_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          brief?: string | null
+          due_at?: string | null
+          file_path?: string | null
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          session_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_assignments_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_attendance: {
+        Row: {
+          employee_id: string
+          followed_up_at: string | null
+          followed_up_by: string | null
+          id: string
+          marked_at: string
+          marked_by: string | null
+          minutes: number | null
+          reason: string | null
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          employee_id: string
+          followed_up_at?: string | null
+          followed_up_by?: string | null
+          id?: string
+          marked_at?: string
+          marked_by?: string | null
+          minutes?: number | null
+          reason?: string | null
+          session_id: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          employee_id?: string
+          followed_up_at?: string | null
+          followed_up_by?: string | null
+          id?: string
+          marked_at?: string
+          marked_by?: string | null
+          minutes?: number | null
+          reason?: string | null
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_attendance_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_attendance_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       fms_ld_competencies: {
         Row: {
@@ -8243,6 +8412,130 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_ld_effectiveness: {
+        Row: {
+          application_observed: string | null
+          created_at: string
+          due_on: string
+          evidence: string | null
+          followup_action_id: string | null
+          followup_required: boolean
+          hod_id: string
+          id: string
+          improvement_area: string | null
+          outcome: string | null
+          rating: number | null
+          session_id: string
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          application_observed?: string | null
+          created_at?: string
+          due_on: string
+          evidence?: string | null
+          followup_action_id?: string | null
+          followup_required?: boolean
+          hod_id: string
+          id?: string
+          improvement_area?: string | null
+          outcome?: string | null
+          rating?: number | null
+          session_id: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          application_observed?: string | null
+          created_at?: string
+          due_on?: string
+          evidence?: string | null
+          followup_action_id?: string | null
+          followup_required?: boolean
+          hod_id?: string
+          id?: string
+          improvement_area?: string | null
+          outcome?: string | null
+          rating?: number | null
+          session_id?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_effectiveness_followup_action_id_fkey"
+            columns: ["followup_action_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_followup_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_effectiveness_hod_id_fkey"
+            columns: ["hod_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_effectiveness_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_feedback: {
+        Row: {
+          comment: string | null
+          content_rating: number | null
+          employee_id: string
+          id: string
+          overall_rating: number
+          relevance_rating: number | null
+          session_id: string
+          submitted_at: string
+          trainer_rating: number | null
+        }
+        Insert: {
+          comment?: string | null
+          content_rating?: number | null
+          employee_id: string
+          id?: string
+          overall_rating: number
+          relevance_rating?: number | null
+          session_id: string
+          submitted_at?: string
+          trainer_rating?: number | null
+        }
+        Update: {
+          comment?: string | null
+          content_rating?: number | null
+          employee_id?: string
+          id?: string
+          overall_rating?: number
+          relevance_rating?: number | null
+          session_id?: string
+          submitted_at?: string
+          trainer_rating?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_feedback_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_ld_followup_actions: {
         Row: {
           active: boolean
@@ -8333,6 +8626,66 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_ld_materials: {
+        Row: {
+          file_path: string | null
+          id: string
+          kind: string
+          link_url: string | null
+          note: string | null
+          session_id: string
+          title: string
+          trainer_id: string | null
+          updated_at: string
+          uploaded_at: string
+          uploaded_by: string | null
+          version: number
+        }
+        Insert: {
+          file_path?: string | null
+          id?: string
+          kind?: string
+          link_url?: string | null
+          note?: string | null
+          session_id: string
+          title: string
+          trainer_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          version?: number
+        }
+        Update: {
+          file_path?: string | null
+          id?: string
+          kind?: string
+          link_url?: string | null
+          note?: string | null
+          session_id?: string
+          title?: string
+          trainer_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_materials_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_materials_trainer_id_fkey"
+            columns: ["trainer_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_trainers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_ld_need_sources: {
         Row: {
           active: boolean
@@ -8359,6 +8712,84 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      fms_ld_nominations: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          decline_reason: string | null
+          employee_id: string
+          id: string
+          invited_at: string | null
+          nominated_at: string
+          nominated_by: string | null
+          reject_reason: string | null
+          reminder_1_at: string | null
+          reminder_2_at: string | null
+          rsvp: string
+          rsvp_at: string | null
+          session_id: string
+          source: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          decline_reason?: string | null
+          employee_id: string
+          id?: string
+          invited_at?: string | null
+          nominated_at?: string
+          nominated_by?: string | null
+          reject_reason?: string | null
+          reminder_1_at?: string | null
+          reminder_2_at?: string | null
+          rsvp?: string
+          rsvp_at?: string | null
+          session_id: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          decline_reason?: string | null
+          employee_id?: string
+          id?: string
+          invited_at?: string | null
+          nominated_at?: string
+          nominated_by?: string | null
+          reject_reason?: string | null
+          reminder_1_at?: string | null
+          reminder_2_at?: string | null
+          rsvp?: string
+          rsvp_at?: string | null
+          session_id?: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_nominations_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_nominations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       fms_ld_notifications: {
         Row: {
@@ -8777,8 +9208,11 @@ export type Database = {
       }
       fms_ld_sessions: {
         Row: {
+          actual_cost: number | null
           actual_end: string | null
           actual_start: string | null
+          attendance_closed_at: string | null
+          attendance_sheet_path: string | null
           capacity: number | null
           change_reason: string | null
           code: string | null
@@ -8786,26 +9220,39 @@ export type Database = {
           created_by: string | null
           delivery_mode: string | null
           end_time: string | null
+          evidence_paths: string[]
           hours: number | null
           id: string
+          invitations_sent_at: string | null
           meeting_link: string | null
+          nominations_closed_at: string | null
           outcome: string | null
           plan_line_id: string | null
+          readiness_by: string | null
+          readiness_confirmed_at: string | null
           registration_cutoff: string | null
           request_id: string | null
           rescheduled_from: string | null
+          review_action_points: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
           session_date: string
           session_type_ids: string[]
           start_time: string | null
           status: string
           title: string
+          trainer_attended: boolean | null
           trainer_id: string | null
           updated_at: string
           venue_id: string | null
         }
         Insert: {
+          actual_cost?: number | null
           actual_end?: string | null
           actual_start?: string | null
+          attendance_closed_at?: string | null
+          attendance_sheet_path?: string | null
           capacity?: number | null
           change_reason?: string | null
           code?: string | null
@@ -8813,26 +9260,39 @@ export type Database = {
           created_by?: string | null
           delivery_mode?: string | null
           end_time?: string | null
+          evidence_paths?: string[]
           hours?: number | null
           id?: string
+          invitations_sent_at?: string | null
           meeting_link?: string | null
+          nominations_closed_at?: string | null
           outcome?: string | null
           plan_line_id?: string | null
+          readiness_by?: string | null
+          readiness_confirmed_at?: string | null
           registration_cutoff?: string | null
           request_id?: string | null
           rescheduled_from?: string | null
+          review_action_points?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           session_date: string
           session_type_ids?: string[]
           start_time?: string | null
           status?: string
           title: string
+          trainer_attended?: boolean | null
           trainer_id?: string | null
           updated_at?: string
           venue_id?: string | null
         }
         Update: {
+          actual_cost?: number | null
           actual_end?: string | null
           actual_start?: string | null
+          attendance_closed_at?: string | null
+          attendance_sheet_path?: string | null
           capacity?: number | null
           change_reason?: string | null
           code?: string | null
@@ -8840,19 +9300,29 @@ export type Database = {
           created_by?: string | null
           delivery_mode?: string | null
           end_time?: string | null
+          evidence_paths?: string[]
           hours?: number | null
           id?: string
+          invitations_sent_at?: string | null
           meeting_link?: string | null
+          nominations_closed_at?: string | null
           outcome?: string | null
           plan_line_id?: string | null
+          readiness_by?: string | null
+          readiness_confirmed_at?: string | null
           registration_cutoff?: string | null
           request_id?: string | null
           rescheduled_from?: string | null
+          review_action_points?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           session_date?: string
           session_type_ids?: string[]
           start_time?: string | null
           status?: string
           title?: string
+          trainer_attended?: boolean | null
           trainer_id?: string | null
           updated_at?: string
           venue_id?: string | null
@@ -10760,6 +11230,12 @@ export type Database = {
       }
       // Hand-added for migrations 20261215120000 + 20261215120100 (LD-1, Learning &
       // Development), both applied. These RPCs ARE the module's write path.
+      // Hand-added for the Learning & Development migrations (see the note above).
+      // These RPCs ARE the module's write path.
+      fms_ld_add_material: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: string
+      }
       fms_ld_announce: {
         Args: {
           p_entity_id: string
@@ -10785,14 +11261,43 @@ export type Database = {
         Args: { p_request_id: string; p_step_key: string; p_uid?: string }
         Returns: boolean
       }
+      fms_ld_can_act_session: {
+        Args: { p_session_id: string; p_step_key: string; p_uid?: string }
+        Returns: boolean
+      }
       fms_ld_can_read_request: {
         Args: { p_request_id: string; p_uid?: string }
         Returns: boolean
       }
+      fms_ld_close_attendance: { Args: { p_session_id: string }; Returns: Json }
+      fms_ld_close_request: {
+        Args: { p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
+      fms_ld_confirm_readiness: {
+        Args: { p_session_id: string }
+        Returns: undefined
+      }
       fms_ld_create_request: { Args: { p_payload: Json }; Returns: string }
       fms_ld_create_session: { Args: { p_payload: Json }; Returns: string }
+      fms_ld_decide_nomination: {
+        Args: { p_approve: boolean; p_nomination_id: string; p_reason?: string }
+        Returns: undefined
+      }
+      fms_ld_delete_material: {
+        Args: { p_material_id: string }
+        Returns: undefined
+      }
+      fms_ld_escalate_submission: {
+        Args: { p_submission_id: string }
+        Returns: undefined
+      }
       fms_ld_finalise_trainer: {
         Args: { p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
+      fms_ld_follow_up_absentee: {
+        Args: { p_attendance_id: string }
         Returns: undefined
       }
       fms_ld_fy_code: { Args: { p_d: string }; Returns: string }
@@ -10806,12 +11311,32 @@ export type Database = {
         Args: { p_master_type: string; p_uid: string }
         Returns: boolean
       }
+      fms_ld_is_participant: {
+        Args: { p_session_id: string; p_uid?: string }
+        Returns: boolean
+      }
       fms_ld_is_step_owner: {
         Args: { p_step_key: string; p_uid: string }
         Returns: boolean
       }
+      fms_ld_issue_assignment: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: string
+      }
+      fms_ld_mark_attendance: {
+        Args: { p_rows: Json; p_session_id: string }
+        Returns: number
+      }
       fms_ld_mgmt_required: { Args: { p_cost: number }; Returns: boolean }
       fms_ld_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_ld_nominate: {
+        Args: {
+          p_employee_ids: string[]
+          p_session_id: string
+          p_source?: string
+        }
+        Returns: number
+      }
       fms_ld_reassign_step: {
         Args: {
           p_note?: string
@@ -10819,6 +11344,14 @@ export type Database = {
           p_step_key: string
           p_to_user: string
         }
+        Returns: undefined
+      }
+      fms_ld_record_conduct: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_reopen_request: {
+        Args: { p_reason: string; p_request_id: string }
         Returns: undefined
       }
       fms_ld_resolve_master_request: {
@@ -10830,7 +11363,35 @@ export type Database = {
         }
         Returns: string
       }
+      fms_ld_review_session: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_review_submission: {
+        Args: { p_outcome: string; p_remarks?: string; p_submission_id: string }
+        Returns: undefined
+      }
+      fms_ld_rsvp: {
+        Args: { p_accept: boolean; p_reason?: string; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_send_invitations: {
+        Args: { p_session_id: string }
+        Returns: number
+      }
       fms_ld_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
+      fms_ld_submit_assignment: {
+        Args: { p_assignment_id: string; p_payload: Json }
+        Returns: undefined
+      }
+      fms_ld_submit_effectiveness: {
+        Args: { p_id: string; p_payload: Json }
+        Returns: undefined
+      }
+      fms_ld_submit_feedback: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: undefined
+      }
       fms_ld_submit_proposal: {
         Args: { p_payload: Json; p_request_id: string }
         Returns: undefined

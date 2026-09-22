@@ -193,6 +193,15 @@ export interface TrainingSession {
   actualStart: string | null;
   actualEnd: string | null;
   changeReason: string | null;
+  readinessConfirmedAt: string | null;
+  invitationsSentAt: string | null;
+  attendanceClosedAt: string | null;
+  attendanceSheetPath: string | null;
+  trainerAttended: boolean | null;
+  reviewNote: string | null;
+  reviewActionPoints: string | null;
+  reviewedAt: string | null;
+  actualCost: number | null;
   createdBy: string | null;
   createdAt: string;
 }
@@ -235,4 +244,109 @@ export interface QueueEntry {
   departmentId: string | null;
   priority: Priority | null;
   requestedBy: string | null;
+}
+
+/* ------------------------------------------------- participants & delivery */
+
+export type NominationStatus = "proposed" | "approved" | "rejected" | "withdrawn";
+export type Rsvp = "pending" | "accepted" | "declined";
+
+export interface Nomination {
+  id: string;
+  sessionId: string;
+  employeeId: string;
+  source: "hod" | "hr" | "self";
+  status: NominationStatus;
+  nominatedBy: string | null;
+  nominatedAt: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  rejectReason: string | null;
+  invitedAt: string | null;
+  rsvp: Rsvp;
+  rsvpAt: string | null;
+  declineReason: string | null;
+}
+
+export interface Material {
+  id: string;
+  sessionId: string;
+  title: string;
+  kind: "agenda" | "pre_read" | "slides" | "other";
+  filePath: string | null;
+  linkUrl: string | null;
+  note: string | null;
+  uploadedBy: string | null;
+  uploadedAt: string;
+}
+
+export type AttendanceStatus =
+  | "present" | "absent" | "partial" | "approved_exception" | "not_applicable";
+
+export interface Attendance {
+  id: string;
+  sessionId: string;
+  employeeId: string;
+  status: AttendanceStatus;
+  minutes: number | null;
+  reason: string | null;
+  markedBy: string | null;
+  markedAt: string;
+  followedUpAt: string | null;
+}
+
+export interface Assignment {
+  id: string;
+  sessionId: string;
+  title: string;
+  brief: string | null;
+  filePath: string | null;
+  issuedBy: string | null;
+  issuedAt: string;
+  dueAt: string | null;
+}
+
+export interface Submission {
+  id: string;
+  assignmentId: string;
+  employeeId: string;
+  filePath: string | null;
+  note: string | null;
+  /** null means NOT SUBMITTED — the row exists from the moment it was issued. */
+  submittedAt: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  outcome: "accepted" | "needs_rework" | null;
+  reviewerRemarks: string | null;
+  escalatedAt: string | null;
+}
+
+export interface Feedback {
+  id: string;
+  sessionId: string;
+  employeeId: string;
+  contentRating: number | null;
+  trainerRating: number | null;
+  relevanceRating: number | null;
+  overallRating: number;
+  comment: string | null;
+  submittedAt: string;
+}
+
+export type EffectivenessOutcome =
+  | "effective" | "partially_effective" | "not_effective" | "insufficient_evidence";
+
+export interface Effectiveness {
+  id: string;
+  sessionId: string;
+  hodId: string;
+  dueOn: string;
+  rating: number | null;
+  outcome: EffectivenessOutcome | null;
+  applicationObserved: string | null;
+  evidence: string | null;
+  improvementArea: string | null;
+  followupRequired: boolean;
+  followupActionId: string | null;
+  submittedAt: string | null;
 }

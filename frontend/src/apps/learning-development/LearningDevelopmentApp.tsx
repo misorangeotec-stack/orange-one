@@ -8,6 +8,9 @@ import TrainingCalendar from "./pages/calendar/TrainingCalendar";
 import RequestsList from "./pages/requests/RequestsList";
 import NewRequest from "./pages/requests/NewRequest";
 import RequestDetail from "./pages/requests/RequestDetail";
+import SessionDetail from "./pages/sessions/SessionDetail";
+import SessionsList from "./pages/sessions/SessionsList";
+import MyLearning from "./pages/MyLearning";
 import StepQueue from "./pages/queues/StepQueue";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
@@ -60,6 +63,12 @@ export default function LearningDevelopmentApp() {
         <Route element={<LearningDevelopmentLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="calendar" element={<TrainingCalendar />} />
+          {/* Open to everyone: a nominee has to be able to RSVP, read the
+              material, upload their assignment and give feedback. RLS decides
+              what they actually see on it. */}
+          <Route path="my-learning" element={<MyLearning />} />
+          <Route path="sessions" element={<RequirePipeline><SessionsList /></RequirePipeline>} />
+          <Route path="sessions/:id" element={<SessionDetail />} />
 
           {/* "new" must come before ":id" or "new" would be read as an id. */}
           <Route path="requests/new" element={<NewRequest />} />

@@ -88,6 +88,31 @@ export default function LearningDevelopmentLayout() {
       onMarkRead={(ids) => {
         void s.markNotificationsRead(ids);
       }}
+      /*
+       * ⚠ A LOAD FAILURE IS SHOWN, NOT SWALLOWED. The module reads its tables in
+       *   one Promise.all, so a single failing query empties every screen at
+       *   once — an empty calendar, zero learning hours, and step owners that
+       *   never arrive, so even the person who owns the process is told she has
+       *   no access. That is indistinguishable from "there is no data yet"
+       *   unless the page says so. It happened once, on 22-09-2026: one query
+       *   ordered by a column its table did not have.
+       *
+       *   A BANNER, not a replacement screen — the nav still works, so the
+       *   reader can go somewhere else instead of being stranded.
+       */
+      banner={
+        s.error ? (
+          <div className="rounded-xl border border-[#FDA29B] bg-[#FEF3F2] px-4 py-3">
+            <p className="text-[13.5px] font-semibold text-[#B42318]">
+              Learning &amp; Development could not load its data
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-[#B42318]">{s.error}</p>
+            <p className="mt-0.5 text-[12px] text-grey-2">
+              Nothing below is missing — the page could not read it. Tell IT what this says.
+            </p>
+          </div>
+        ) : undefined
+      }
     />
   );
 }

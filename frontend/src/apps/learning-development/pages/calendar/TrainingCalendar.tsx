@@ -127,7 +127,7 @@ export default function TrainingCalendar() {
                   {list.map((x) => (
                     <Link
                       key={x.id}
-                      to={x.requestId ? `${B}/requests/${x.requestId}` : `${B}/calendar`}
+                      to={`${B}/sessions/${x.id}`}
                       className={`block truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${toneFor(x)}`}
                       title={`${x.title} · ${dmy(x.sessionDate)}`}
                     >
@@ -142,8 +142,8 @@ export default function TrainingCalendar() {
       </Card>
 
       <p className="text-[12px] text-grey-2">
-        Nominations, invitations and attendance arrive with the next phase — for now this shows what is
-        scheduled and when.
+        Open a session to nominate people, send invitations, share the material, mark attendance and
+        collect feedback.
       </p>
     </div>
   );
