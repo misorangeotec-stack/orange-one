@@ -13297,6 +13297,56 @@ have dropped Complaint's email. Check the deployed bundle before any future depl
 
 ---
 
+### RC-21 · The Sales dashboards took a minute to open  🟢  `[x]`
+*Raised 2026-09-21 by Ritesh Bhai · **LIVE 22-09-2026** (master `1230b1ca`) · 58 s → 8.3 s, verified on
+orangeonehub.com*
+
+**The complaint.** `bushra-dashboard/sales-dashboard` took 30-60 s to load. First guess — "are we reading
+the base table instead of a report table?" — was wrong: `rpt_sales_register` is a precomputed table (built
+24-Jul-2026 for Tally Reports → Sales Register; the Bushra dashboards reused it on 16-Sep). Each query
+against it costs the server only ~143 ms. The time was going somewhere else entirely.
+
+**What it actually was — three things, and only fixing all three is fast.**
+
+| | Cause | Cost |
+|---|---|---|
+| 1 | **Pages fetched one at a time.** PostgREST caps a reply at 1,000 rows here, and the window is always this FY *plus last* (product performance compares them), so 105,958 rows = **106 requests**, each waiting for the last | ~42 s |
+| 2 | **Deep OFFSET is quadratic.** `.range()` is SQL OFFSET; Postgres reaches offset N by walking N rows first. Page 1 reads 1,000 rows, the page at OFFSET 100,000 reads **101,000** to return its 1,000 (305 ms measured). Across 106 pages: **~5.5M row reads for 105,958 rows — 53× the necessary work**, all landing on one instance at once | this is why parallelising *alone* only reached ~26 s |
+| 3 | **The item lookup gated everything.** The register query is `enabled: !!lookup`, and `loadItemLookup` walked ~14k Central Masters rows over **15 sequential pages** — so nothing could even be *asked for* until ~11 s in | ~7 s of dead time |
+
+**The fix** (`lib/salesRegister.ts` `fetchWindow`, `lib/bushraSalesRegister.ts` `pageAll`). The register and
+its despatch sidecar are read as **parallel monthly chunks**: half-open `[lo, hi)` months keep the chunks
+provably disjoint, each holds ~4,400 rows so every offset inside it is shallow, and the months run together.
+Total work goes back to linear. The masters pager is parallel too, moving first contact with the register
+from ~11 s to ~3.8 s. The register, its two sidecars and the company map are now read *together* rather than
+the register waiting on the sidecars.
+
+**Measured back-to-back, same browser, same account, live data:** 57.9 s → 8.5 s locally, 8.3 s on the live
+site. The rendered page is **byte-identical** — same 23,131 lines, same KPIs, same charts, same first page of
+the detail table.
+
+⚠ **Two traps this hit, worth remembering.**
+- **Order by a UNIQUE key.** The old sort (`vch_date, tenant_id, voucher_no, line_no`) is not unique, and
+  OFFSET is only stable under a total order, so a tied row could be served on two pages or on neither. *Not
+  observed biting* — old and new return the same 27,834 rows and the same revenue to the rupee — but it was a
+  real hazard and parallel reads make it easier to hit. Now sorts by the PRIMARY KEY, with display order
+  restored by an explicit sort once the chunks are in hand.
+- **Half-open chunk bounds.** The first draft used an inclusive upper bound per month and returned **3,718
+  duplicate rows out of 105,958**. `gte(lo) & lt(hi)`, never `lte`.
+
+**Considered and dropped — a summary table (`rpt_sales_summary`).** The original plan was to pre-aggregate
+to month × company × location × type × item, cutting 27,749 rows to 6,178. It does not work here: the
+dashboard carries an **invoice-line table on the same page** (Date, Voucher No., Rate, search) and two KPIs
+that count **distinct invoices** and **distinct customers**. All three need the individual lines. Keeping the
+customer dimension only collapses 105,873 → 60,293 anyway (43%), because 781 customers × 4,180 items barely
+folds. At 8 s it is not needed; if ~3 s is ever wanted, it would have to be a summary for the charts *plus*
+the detail loaded on demand — two code paths, and a real risk of the two disagreeing.
+
+**Applies to every screen sharing `loadSalesRegister`** — all 9 Bushra Sales dashboards, the Bushra Sales
+Register and the plain Sales Register. All spot-checked after the change.
+
+---
+
 ### RC-20 · A true creation date for customers from before 14-Aug-2026  🟡  `[ ]`
 *Raised 2026-09-17 out of RC-19 · Not started · Needs work in ANOTHER repo plus a full re-pull*
 
