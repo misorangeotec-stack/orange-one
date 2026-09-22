@@ -20,8 +20,22 @@ export function stepOf(r: TrainingRequest): StepKey | null {
     case "draft":
       return null; // Nobody owes anything on a draft but its author.
     case "submitted":
-    case "under_validation":
       return "need_validation";
+    /*
+     * ⚠ `under_validation` MEANS "HR HAS VALIDATED IT", not "HR is about to".
+     *   The RPC sets this status on a SUCCESSFUL validation, stamping
+     *   `validated_at` at the same time — the name is a leftover and it is a
+     *   CHECK-constrained value already stored on live rows, so it stays.
+     *
+     *   Reading it as still-at-validation left every validated request parked on
+     *   the validation queue and the Proposal queue permanently empty. Caught on
+     *   22-09-2026 by walking the flow in a browser; it is invisible from the
+     *   request page, which offers the next panel either way.
+     *
+     *   `validated_at` is the honest signal, so that is what decides.
+     */
+    case "under_validation":
+      return r.validatedAt ? "proposal" : "need_validation";
     case "returned":
       return "need_resubmit";
     case "proposed":

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
@@ -14,13 +15,36 @@ import {
   type PeriodSummary,
 } from "../../data/ldWrites";
 
-/** Monday of the current ISO week — the weekly report's own period. */
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const todayIso = () => iso(new Date());
+
+/** Monday of the current ISO week — the weekly review form's own period. */
 function weekStart(d = new Date()): string {
   const x = new Date(d);
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
-  return x.toISOString().slice(0, 10);
+  return iso(x);
 }
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const monthStart = () => {
+  const d = new Date();
+  return iso(new Date(d.getFullYear(), d.getMonth(), 1));
+};
+
+/**
+ * ⚠ THE DEFAULT IS THIS MONTH, NOT THIS WEEK.
+ *
+ * The weekly review form runs Monday to Sunday, so "this week" looks like the
+ * obvious default — and it was, until the walkthrough opened this page on a
+ * Tuesday. The window covered two days, a training run the previous Saturday
+ * fell outside it, and every figure read zero for a session that had plainly
+ * happened. A report that opens empty gets read as broken, not as "nothing
+ * this week". The weekly window is one click away instead.
+ */
+const PRESETS: { key: string; label: string; from: () => string }[] = [
+  { key: "month", label: "This month", from: monthStart },
+  { key: "week", label: "This week", from: weekStart },
+  { key: "30", label: "Last 30 days", from: () => iso(new Date(Date.now() - 30 * 864e5)) },
+  { key: "year", label: "This year", from: () => `${new Date().getFullYear()}-01-01` },
+];
 
 function Box({ label, value, note }: { label: string; value: string | number; note?: string }) {
   return (
@@ -51,7 +75,7 @@ const pct = (n: number, d: number) => (d === 0 ? "—" : `${Math.round((100 * n)
 export default function Reports() {
   const s = useLdStore();
   const [tab, setTab] = useState("weekly");
-  const [from, setFrom] = useState(weekStart());
+  const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(todayIso());
   const [sum, setSum] = useState<PeriodSummary | null>(null);
   const [hours, setHours] = useState<LearningHoursRow[]>([]);
@@ -137,13 +161,38 @@ export default function Reports() {
               <FieldLabel label="To">
                 <TextInput type="date" value={to} onChange={(e) => setTo(e.target.value)} />
               </FieldLabel>
-              <p className="pb-2 text-[12px] text-grey-2">
-                Defaults to this week, Monday to today — the weekly report&rsquo;s own period.
-              </p>
+              <div className="flex flex-wrap items-center gap-2 pb-1">
+                {PRESETS.map((p) => (
+                  <Button
+                    key={p.key}
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setFrom(p.from());
+                      setTo(todayIso());
+                    }}
+                  >
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
             </div>
           </Card>
 
-          {sum && (
+          {/* An empty window says so rather than printing a wall of zeros:
+              "nothing happened here" and "this screen is broken" produce the
+              same noughts, and only one of them is worth acting on. */}
+          {sum && sum.sessions_scheduled === 0 && (
+            <Card className="p-6 text-center">
+              <p className="text-[14px] font-semibold text-navy">No training in this period</p>
+              <p className="mt-1 text-[13px] text-grey-2">
+                Nothing was scheduled between these two dates, so every figure below would read zero.
+                Widen the period or pick one of the buttons above.
+              </p>
+            </Card>
+          )}
+
+          {sum && sum.sessions_scheduled > 0 && (
             <>
               <Card className="p-5">
                 <h2 className="text-[15px] font-semibold text-navy mb-3">C1 · Snapshot</h2>
