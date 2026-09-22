@@ -8128,6 +8128,14 @@ export type Database = {
       //
       // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
       //   are admin-only and every move is an fms_ld_* RPC below.
+      // Hand-added for the Learning & Development migrations (20261215120000 …
+      // …120300), all applied. Taken from the live schema rather than regenerating
+      // the whole file: this one is hand-curated, and other modules' tables live on
+      // the database ahead of their code, so a wholesale regeneration would sweep in
+      // work that is not ours to ship. Re-run scratchpad/refresh_types.py to update.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below.
       fms_ld_activity: {
         Row: {
           actor_id: string | null
@@ -11232,6 +11240,11 @@ export type Database = {
       // Development), both applied. These RPCs ARE the module's write path.
       // Hand-added for the Learning & Development migrations (see the note above).
       // These RPCs ARE the module's write path.
+      // Learning & Development RPCs — the module's write path. See the note above.
+      fms_ld_add_evidence: {
+        Args: { p_paths: string[]; p_session_id: string }
+        Returns: number
+      }
       fms_ld_add_material: {
         Args: { p_payload: Json; p_session_id: string }
         Returns: string
@@ -11378,6 +11391,10 @@ export type Database = {
       fms_ld_send_invitations: {
         Args: { p_session_id: string }
         Returns: number
+      }
+      fms_ld_set_attendance_sheet: {
+        Args: { p_path: string; p_session_id: string }
+        Returns: undefined
       }
       fms_ld_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
       fms_ld_submit_assignment: {

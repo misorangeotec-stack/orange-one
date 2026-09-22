@@ -9,6 +9,7 @@ import StatusPill, { PriorityPill } from "../../components/StatusPill";
 import { railStepsFor, stepOf } from "../../lib/queues";
 import { stepByKey } from "../../lib/steps";
 import StepActionPanel from "../../components/StepActionPanel";
+import DocField from "../../components/DocField";
 import NotFound from "../system/NotFound";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -125,6 +126,11 @@ export default function RequestDetail() {
               <Row label="Validated by">{s.personName(r.validatedBy)}</Row>
               <Row label="Proposed cost">{inr(r.proposedCost)}</Row>
               <Row label="Approved budget">{inr(r.approvedBudget)}</Row>
+              {r.proposalPath && (
+                <Row label="Proposal">
+                  <DocField path={r.proposalPath} disabled onUpload={async () => {}} />
+                </Row>
+              )}
               <Row label="HR Head">
                 {r.hrApprovedAt
                   ? `${s.personName(r.hrApprovedBy)} · ${dmy(r.hrApprovedAt)}`
@@ -147,6 +153,11 @@ export default function RequestDetail() {
               <Row label="Type">{trainer.trainerType === "internal" ? "Internal" : "External agency"}</Row>
               {trainer.agency && <Row label="Agency">{trainer.agency}</Row>}
               <Row label="Terms">{r.trainerTerms ?? "—"}</Row>
+              {r.quotationPath && (
+                <Row label="Quotation">
+                  <DocField path={r.quotationPath} disabled onUpload={async () => {}} />
+                </Row>
+              )}
             </Card>
           )}
 

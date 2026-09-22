@@ -187,6 +187,7 @@ const mapSession = (r: any): TrainingSession => ({
   invitationsSentAt: r.invitations_sent_at ?? null,
   attendanceClosedAt: r.attendance_closed_at ?? null,
   attendanceSheetPath: r.attendance_sheet_path ?? null,
+  evidencePaths: r.evidence_paths ?? [],
   trainerAttended: r.trainer_attended ?? null,
   reviewNote: r.review_note ?? null,
   reviewActionPoints: r.review_action_points ?? null,

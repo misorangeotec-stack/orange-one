@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useLdStore } from "../../store";
 import { dmy } from "../../lib/format";
 import { Panel, NotYours, useRun } from "./panelKit";
+import DocField from "../DocField";
 import type { TrainingSession } from "../../types";
 
 /**
@@ -35,6 +36,10 @@ export default function AssignmentPanel({
   const [note, setNote] = useState("");
   const [reworkFor, setReworkFor] = useState<string | null>(null);
   const [remarks, setRemarks] = useState("");
+  const [briefFile, setBriefFile] = useState<File | null>(null);
+  const [myFile, setMyFile] = useState<File | null>(null);
+  const briefRef = useRef<HTMLInputElement>(null);
+  const myRef = useRef<HTMLInputElement>(null);
 
   const mayIssue = s.canActOnSession("assignment_issue", x.id);
   const mayReview = s.canActOnSession("assignment_review", x.id);
@@ -63,16 +68,32 @@ export default function AssignmentPanel({
         <FieldLabel label="Brief">
           <TextArea rows={2} value={brief} onChange={(e) => setBrief(e.target.value)} />
         </FieldLabel>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => briefRef.current?.click()}>
+            {briefFile ? briefFile.name.slice(0, 26) : "Attach a handout (optional)"}
+          </Button>
+          <input
+            ref={briefRef}
+            type="file"
+            className="hidden"
+            accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+            onChange={(e) => setBriefFile(e.target.files?.[0] ?? null)}
+          />
+        </div>
         <Button
           disabled={busy || !title.trim()}
           onClick={() =>
-            void run(() =>
-              s.writes.issueAssignment(x.id, {
+            void run(async () => {
+              // Upload first, record second — an orphaned object is invisible, a
+              // saved path pointing at nothing is a link that never opens.
+              const filePath = briefFile ? await s.writes.uploadAssignmentBrief(x.id, briefFile) : null;
+              await s.writes.issueAssignment(x.id, {
                 title: title.trim(),
                 brief: brief.trim() || null,
                 dueAt: due || null,
-              }),
-            )
+                filePath,
+              });
+            })
           }
         >
           Issue it to everyone who attended
@@ -94,6 +115,12 @@ export default function AssignmentPanel({
       }`}
     >
       {assignment.brief && <p className="text-[13px] text-grey">{assignment.brief}</p>}
+      {assignment.filePath && (
+        <div className="flex items-center gap-2">
+          <span className="text-[12.5px] text-grey-2">Handout</span>
+          <DocField path={assignment.filePath} disabled onUpload={async () => {}} />
+        </div>
+      )}
 
       {/* ---- my own submission ------------------------------------------- */}
       {mine && (
@@ -110,17 +137,39 @@ export default function AssignmentPanel({
             <>
               <p className="text-[13.5px] text-navy">Your assignment is due {dmy(assignment.dueAt)}.</p>
               <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-[18rem] flex-1">
+                <div className="min-w-[16rem] flex-1">
                   <TextInput
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder="Your answer, or a note about the file you handed in"
+                    placeholder="Your answer, or a note about the file"
                   />
                 </div>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => myRef.current?.click()}>
+                  {myFile ? myFile.name.slice(0, 22) : "Attach a file"}
+                </Button>
+                <input
+                  ref={myRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+                  onChange={(e) => setMyFile(e.target.files?.[0] ?? null)}
+                />
                 <Button
                   size="sm"
-                  disabled={busy || !note.trim()}
-                  onClick={() => void run(() => s.writes.submitAssignment(assignment.id, { note }))}
+                  // Either a written answer or a file is enough — insisting on
+                  // both would block somebody whose whole answer IS the document.
+                  disabled={busy || (!note.trim() && !myFile)}
+                  onClick={() =>
+                    void run(async () => {
+                      const filePath = myFile
+                        ? await s.writes.uploadSubmission(assignment.id, myFile)
+                        : null;
+                      await s.writes.submitAssignment(assignment.id, {
+                        note: note.trim() || null,
+                        filePath,
+                      });
+                    })
+                  }
                 >
                   Submit
                 </Button>
@@ -144,6 +193,12 @@ export default function AssignmentPanel({
                 <span className="ml-2 text-[12px] text-ryg-red">not submitted</span>
               )}
               {v.escalatedAt && <span className="ml-2 text-[12px] text-yellow">escalated to their HOD</span>}
+              {v.filePath && (
+                <span className="ml-2 inline-block align-middle">
+                  <DocField path={v.filePath} disabled onUpload={async () => {}} />
+                </span>
+              )}
+              {v.note && <p className="mt-0.5 text-[12.5px] text-grey">{v.note}</p>}
             </div>
             <div className="flex items-center gap-2">
               {v.outcome && (

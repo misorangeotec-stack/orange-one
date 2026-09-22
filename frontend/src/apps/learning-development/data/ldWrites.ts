@@ -472,3 +472,84 @@ export const closeRequest = (
 
 export const reopenRequest = (requestId: string, reason: string): Promise<void> =>
   rpc("fms_ld_reopen_request", { p_request_id: requestId, p_reason: reason });
+
+/* --------------------------------- storage -------------------------------- */
+
+/**
+ * Private bucket. Nothing in it is ever public: every read goes through a short
+ * signed URL.
+ *
+ * ⚠ THIS IS THE FIRST MODULE HERE WHERE AN ORDINARY EMPLOYEE WRITES A FILE —
+ *   an assignment submission is their own work, uploaded by them. The bucket
+ *   policy allows any signed-in user to insert (as its siblings do); what keeps
+ *   a stray upload harmless is that nothing displays a file the database does
+ *   not reference, and the RPC that records the reference checks who you are.
+ */
+const BUCKET = "fms-ld-docs";
+
+const safeName = (name: string) => name.replace(/[^\w.\-]+/g, "_");
+
+async function upload(path: string, file: File): Promise<string> {
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+/** A 10-minute signed URL, or null if the object has gone. */
+export async function ldDocUrl(path: string | null | undefined): Promise<string | null> {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 10);
+  if (error) return null;
+  return data?.signedUrl ?? null;
+}
+
+/**
+ * Drop a superseded object. The ONLY storage delete in this module.
+ *
+ * ⚠ ORDER: clear the database reference FIRST, then call this. The row survives
+ *   here, so a path left behind after a failed RPC is a broken link the UI keeps
+ *   rendering; a leftover object is invisible and costs pennies. Best-effort by
+ *   design — storage failing must not undo a completed write.
+ */
+export async function removeLdDoc(path: string | null | undefined): Promise<void> {
+  if (!path) return;
+  try {
+    await supabase.storage.from(BUCKET).remove([path]);
+  } catch {
+    /* best effort — see the doc comment */
+  }
+}
+
+const stamped = (folder: string, id: string, file: File) =>
+  `${folder}/${id}/${Date.now()}-${safeName(file.name)}`;
+
+export const uploadMaterial = (sessionId: string, file: File) =>
+  upload(stamped("material", sessionId, file), file);
+
+export const uploadAttendanceSheet = (sessionId: string, file: File) =>
+  upload(stamped("attendance", sessionId, file), file);
+
+export const uploadEvidence = (sessionId: string, file: File) =>
+  upload(stamped("evidence", sessionId, file), file);
+
+export const uploadAssignmentBrief = (sessionId: string, file: File) =>
+  upload(stamped("assignment", sessionId, file), file);
+
+export const uploadSubmission = (assignmentId: string, file: File) =>
+  upload(stamped("submission", assignmentId, file), file);
+
+export const uploadProposal = (requestId: string, file: File) =>
+  upload(stamped("proposal", requestId, file), file);
+
+export const uploadQuotation = (requestId: string, file: File) =>
+  upload(stamped("quotation", requestId, file), file);
+
+/** Attach or replace the signed attendance sheet on a session. */
+export const setAttendanceSheet = (sessionId: string, path: string | null): Promise<void> =>
+  rpc("fms_ld_set_attendance_sheet", { p_session_id: sessionId, p_path: path });
+
+/** Add photos / screenshots of the session as it ran. */
+export const addEvidence = (sessionId: string, paths: string[]): Promise<void> =>
+  rpc("fms_ld_add_evidence", { p_session_id: sessionId, p_paths: paths });

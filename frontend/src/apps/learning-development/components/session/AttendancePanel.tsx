@@ -3,6 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import { useLdStore } from "../../store";
 import { dmy } from "../../lib/format";
 import { Panel, NotYours, useRun } from "./panelKit";
+import DocField from "../DocField";
 import type { AttendanceStatus, Nomination, TrainingSession } from "../../types";
 
 const CHOICES: { value: AttendanceStatus; label: string; tone: string }[] = [
@@ -163,6 +164,43 @@ export default function AttendancePanel({
               nobody can be asked about them. Their reporting line needs setting up.
             </span>
           )}
+        </div>
+      )}
+
+      {/*
+        * The signed sheet. ⚠ EVIDENCE BESIDE THE MARKS, NEVER INSTEAD OF THEM —
+        * closing still needs every nominee marked, and the KPI counts marked rows
+        * because a scan cannot be counted or turned into learning hours.
+        *
+        * Attachable AFTER closing, deliberately: the paper is signed in the room
+        * and scanned days later, and refusing it then would mean either holding
+        * the close open or losing the evidence.
+        */}
+      {(mayAct || x.attendanceSheetPath) && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+          <span className="text-[12.5px] text-grey-2">Signed attendance sheet</span>
+          <DocField
+            path={x.attendanceSheetPath}
+            label="Attach the sheet"
+            disabled={!mayAct}
+            onUpload={async (f) => {
+              const path = await s.writes.uploadAttendanceSheet(x.id, f);
+              await s.writes.setAttendanceSheet(x.id, path);
+              await s.refresh();
+            }}
+            onClear={
+              mayAct
+                ? async () => {
+                    const old = x.attendanceSheetPath;
+                    // Clear the reference first; a leftover object is invisible,
+                    // a dangling path is a broken link the page keeps rendering.
+                    await s.writes.setAttendanceSheet(x.id, null);
+                    await s.writes.removeLdDoc(old);
+                    await s.refresh();
+                  }
+                : undefined
+            }
+          />
         </div>
       )}
 

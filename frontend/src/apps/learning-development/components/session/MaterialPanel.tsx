@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useLdStore } from "../../store";
 import { dmy } from "../../lib/format";
 import { Panel, NotYours, useRun } from "./panelKit";
+import DocField from "../DocField";
 import type { TrainingSession } from "../../types";
 
 const KIND_LABEL: Record<string, string> = {
@@ -36,6 +37,8 @@ export default function MaterialPanel({
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("agenda");
   const [link, setLink] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const items = (s.data?.materials ?? []).filter((m) => m.sessionId === x.id);
   const mayEdit = s.canActOnSession("pre_material", x.id);
@@ -80,8 +83,15 @@ export default function MaterialPanel({
                     rel="noreferrer"
                     className="ml-2 text-[12.5px] font-medium text-orange hover:underline"
                   >
-                    Open
+                    Open the link
                   </a>
+                )}
+                {m.filePath && (
+                  <span className="ml-2 inline-block align-middle">
+                    {/* Read-only: the file is replaced by removing the item and
+                        adding it again, which keeps one version per row. */}
+                    <DocField path={m.filePath} disabled onUpload={async () => {}} />
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -118,18 +128,43 @@ export default function MaterialPanel({
               options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
             />
           </div>
-          <div className="min-w-[14rem] flex-1">
+          <div className="min-w-[12rem] flex-1">
             <TextInput value={link} onChange={(e) => setLink(e.target.value)} placeholder="Link (optional)" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => fileRef.current?.click()}>
+              {file ? file.name.slice(0, 22) : "Choose a file"}
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
           </div>
           <Button
             size="sm"
             disabled={busy || !title.trim()}
             onClick={() =>
               void run(
-                () => s.writes.addMaterial(x.id, { title: title.trim(), kind, linkUrl: link.trim() || null }),
+                async () => {
+                  // Upload FIRST, then record the reference. If recording fails the
+                  // object is orphaned, which is invisible; the reverse would save a
+                  // path pointing at nothing and render a broken link forever.
+                  const filePath = file ? await s.writes.uploadMaterial(x.id, file) : null;
+                  await s.writes.addMaterial(x.id, {
+                    title: title.trim(),
+                    kind,
+                    linkUrl: link.trim() || null,
+                    filePath,
+                  });
+                },
                 () => {
                   setTitle("");
                   setLink("");
+                  setFile(null);
+                  if (fileRef.current) fileRef.current.value = "";
                 },
               )
             }

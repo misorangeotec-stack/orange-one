@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { useLdStore } from "../../store";
 import { dmy } from "../../lib/format";
 import { Panel, NotYours, useRun } from "./panelKit";
+import DocField from "../DocField";
 import type { TrainingSession } from "../../types";
 
 const OUTCOMES = [
@@ -35,6 +36,8 @@ export default function ConductPanel({
   const [attended, setAttended] = useState(x.trainerAttended ?? true);
 
   const mayAct = s.canActOnSession("conducted", x.id);
+  const evidence = x.evidencePaths ?? [];
+  const evidenceRef = useRef<HTMLInputElement>(null);
   const needsReason = outcome === "cancelled" || outcome === "rescheduled";
 
   if (x.outcome) {
@@ -44,6 +47,44 @@ export default function ConductPanel({
           {OUTCOMES.find((o) => o.value === x.outcome)?.label ?? x.outcome}
           {x.trainerAttended === false && " · the trainer did not attend"}
         </p>
+
+        {/* Photos, screenshots, the trainer's log. ⚠ ADDS rather than replaces —
+            evidence arrives in ones and twos over the following days, and a
+            replace would quietly drop whatever was already there. */}
+        {(mayAct || evidence.length > 0) && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
+            <span className="text-[12.5px] text-grey-2">
+              Evidence {evidence.length > 0 && `(${evidence.length})`}
+            </span>
+            {evidence.map((path) => (
+              <DocField key={path} path={path} disabled onUpload={async () => {}} />
+            ))}
+            {mayAct && (
+              <>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => evidenceRef.current?.click()}>
+                  Add a photo or file
+                </Button>
+                <input
+                  ref={evidenceRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length === 0) return;
+                    void run(async () => {
+                      const paths: string[] = [];
+                      for (const f of files) paths.push(await s.writes.uploadEvidence(x.id, f));
+                      await s.writes.addEvidence(x.id, paths);
+                    });
+                    if (evidenceRef.current) evidenceRef.current.value = "";
+                  }}
+                />
+              </>
+            )}
+          </div>
+        )}
       </Panel>
     );
   }

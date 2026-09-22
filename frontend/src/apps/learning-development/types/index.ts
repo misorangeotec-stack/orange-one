@@ -197,6 +197,7 @@ export interface TrainingSession {
   invitationsSentAt: string | null;
   attendanceClosedAt: string | null;
   attendanceSheetPath: string | null;
+  evidencePaths: string[];
   trainerAttended: boolean | null;
   reviewNote: string | null;
   reviewActionPoints: string | null;

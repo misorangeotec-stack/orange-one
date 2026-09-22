@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -9,6 +9,7 @@ import { useLdStore } from "../store";
 import { B } from "../nav";
 import { stepByKey, type StepKey } from "../lib/steps";
 import { inr } from "../lib/format";
+import DocField from "./DocField";
 import type { TrainingRequest } from "../types";
 
 /**
@@ -54,6 +55,10 @@ export default function StepActionPanel({
   // Trainer
   const [trainerId, setTrainerId] = useState(r.trainerId ?? "");
   const [terms, setTerms] = useState(r.trainerTerms ?? "");
+  const [proposalFile, setProposalFile] = useState<File | null>(null);
+  const [quoteFile, setQuoteFile] = useState<File | null>(null);
+  const proposalRef = useRef<HTMLInputElement>(null);
+  const quoteRef = useRef<HTMLInputElement>(null);
   // Scheduling
   const [date, setDate] = useState("");
   const [start, setStart] = useState("");
@@ -202,17 +207,36 @@ export default function StepActionPanel({
               placeholder="0"
             />
           </FieldLabel>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => proposalRef.current?.click()}>
+              {proposalFile ? proposalFile.name.slice(0, 26) : "Attach the proposal (optional)"}
+            </Button>
+            <input
+              ref={proposalRef}
+              type="file"
+              className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+              onChange={(e) => setProposalFile(e.target.files?.[0] ?? null)}
+            />
+            {r.proposalPath && !proposalFile && (
+              <DocField path={r.proposalPath} disabled onUpload={async () => {}} />
+            )}
+          </div>
           <Button
             disabled={busy || !priority}
             onClick={() =>
-              void run(() =>
-                s.writes.submitProposal(r.id, {
+              void run(async () => {
+                const proposalPath = proposalFile
+                  ? await s.writes.uploadProposal(r.id, proposalFile)
+                  : r.proposalPath;
+                await s.writes.submitProposal(r.id, {
                   priority,
                   sessionTypeIds: typeIds,
                   deliveryMode: mode || null,
                   proposedCost: cost === "" ? null : Number(cost),
-                }),
-              )
+                  proposalPath,
+                });
+              })
             }
           >
             Send for approval
@@ -317,13 +341,39 @@ export default function StepActionPanel({
               <TextInput value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="e.g. 2 days on site" />
             </FieldLabel>
           </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => quoteRef.current?.click()}>
+              {quoteFile ? quoteFile.name.slice(0, 26) : "Attach their quotation (optional)"}
+            </Button>
+            <input
+              ref={quoteRef}
+              type="file"
+              className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+              onChange={(e) => setQuoteFile(e.target.files?.[0] ?? null)}
+            />
+            {r.quotationPath && !quoteFile && (
+              <DocField path={r.quotationPath} disabled onUpload={async () => {}} />
+            )}
+          </div>
           <p className="text-[12px] text-grey-2">
             An external trainer has no Orange Hub login — you upload their material and mark the session on
             their behalf.
           </p>
           <Button
             disabled={busy || !trainerId}
-            onClick={() => void run(() => s.writes.finaliseTrainer(r.id, { trainerId, trainerTerms: terms || null }))}
+            onClick={() =>
+              void run(async () => {
+                const quotationPath = quoteFile
+                  ? await s.writes.uploadQuotation(r.id, quoteFile)
+                  : r.quotationPath;
+                await s.writes.finaliseTrainer(r.id, {
+                  trainerId,
+                  trainerTerms: terms || null,
+                  quotationPath,
+                });
+              })
+            }
           >
             Confirm trainer
           </Button>
