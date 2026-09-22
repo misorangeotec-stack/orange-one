@@ -28,6 +28,10 @@ import type {
   ProbationFinalStatus,
   ProbationOutcome,
   BgvStatus,
+  Buddy,
+  BuddyInteraction,
+  BuddyInteractionMode,
+  BuddyStatus,
   CheckinDay,
   CheckinHodStatus,
   CheckinJoinerStatus,
@@ -299,6 +303,42 @@ export const mapProbation = (r: any): Probation => ({
   employeeCode: r.employee_code ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
+});
+
+export const mapBuddy = (r: any): Buddy => ({
+  id: r.id,
+  onboardingId: r.onboarding_id,
+  requisitionId: r.requisition_id,
+  candidateId: r.candidate_id,
+  buddyUserId: r.buddy_user_id,
+  allocatedAt: r.allocated_at,
+  allocatedBy: r.allocated_by ?? null,
+  offerAcceptedAt: r.offer_accepted_at ?? null,
+  passportHandedAt: r.passport_handed_at ?? null,
+  passportHandedBy: r.passport_handed_by ?? null,
+  joiningDate: r.joining_date ?? null,
+  interactionTarget: r.interaction_target ?? 8,
+  dueOn: r.due_on ?? null,
+  status: (r.status ?? "open") as BuddyStatus,
+  closedAt: r.closed_at ?? null,
+  closedBy: r.closed_by ?? null,
+  closeNote: r.close_note ?? null,
+  extendedTo: r.extended_to ?? null,
+  feedbackRating: num(r.feedback_rating),
+  feedbackRemarks: r.feedback_remarks ?? null,
+  feedbackAt: r.feedback_at ?? null,
+});
+
+export const mapBuddyInteraction = (r: any): BuddyInteraction => ({
+  id: r.id,
+  buddyId: r.buddy_id,
+  happenedOn: r.happened_on,
+  mode: (r.mode ?? "other") as BuddyInteractionMode,
+  notes: r.notes ?? null,
+  loggedAt: r.logged_at,
+  loggedBy: r.logged_by,
+  confirmedAt: r.confirmed_at ?? null,
+  confirmedBy: r.confirmed_by ?? null,
 });
 
 export const mapProbationCheckin = (r: any): ProbationCheckin => ({

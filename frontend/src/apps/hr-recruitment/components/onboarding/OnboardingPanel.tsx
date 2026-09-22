@@ -8,6 +8,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
 import { useHrStore } from "../../store";
+import BuddyPanel from "./BuddyPanel";
 import { hrDocUrl, uploadOnboardingDoc } from "../../data/hrWrites";
 import { inr } from "../../lib/format";
 import { BGV_LABEL, type BgvStatus, type Onboarding, type OnboardingCheck, type OfferStatus } from "../../types";
@@ -480,6 +481,10 @@ export default function OnboardingPanel({
             </ul>
           )}
         </div>
+
+        {/* ---- NR-9 · the buddy programme. It starts at offer acceptance, which
+            is why it sits with onboarding rather than with probation. ---- */}
+        {r && <BuddyPanel onboarding={o} requisition={r} readOnly={!mayAct || dropped} />}
 
         {/* ---- NR-10 · the hire's own Orange One account ----
             Creating the login is part of onboarding (the client's decision), and

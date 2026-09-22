@@ -765,6 +765,89 @@ export interface Probation {
   editedBy: string | null;
 }
 
+/* ------------------------------ NR-9 · buddy ------------------------------ */
+
+export type BuddyStatus = "open" | "closed" | "extended" | "person_left";
+export type BuddyInteractionMode = "in_person" | "call" | "message" | "other";
+
+export const BUDDY_MODE_LABEL: Record<BuddyInteractionMode, string> = {
+  in_person: "In person",
+  call: "Call",
+  message: "Message",
+  other: "Other",
+};
+
+export const BUDDY_STATUS_LABEL: Record<BuddyStatus, string> = {
+  open: "Running",
+  extended: "Extended with probation",
+  closed: "Closed",
+  person_left: "Closed — person left",
+};
+
+/**
+ * One hire's buddy programme.
+ *
+ * The buddy is a CROSS-DEPARTMENTAL colleague, and that is enforced in the RPC
+ * rather than merely hidden in the picker — a picker that hides somebody is a
+ * suggestion, not a rule.
+ *
+ * Only HR is scored for this. Being a buddy carries no KPI line of its own,
+ * which the client decided knowingly: the only lever HR has is choosing a buddy
+ * who will actually turn up.
+ */
+export interface Buddy {
+  id: string;
+  onboardingId: string;
+  requisitionId: string;
+  candidateId: string;
+
+  buddyUserId: string;
+  allocatedAt: string;
+  allocatedBy: string | null;
+  /** The 24-hour allocation clock runs from the offer being ACCEPTED. */
+  offerAcceptedAt: string | null;
+
+  passportHandedAt: string | null;
+  passportHandedBy: string | null;
+  joiningDate: string | null;
+
+  /** How many interactions this programme owes. Defaulted to 8, per the sheet. */
+  interactionTarget: number;
+  /** Day 90 from joining, in calendar days. */
+  dueOn: string | null;
+
+  status: BuddyStatus;
+  closedAt: string | null;
+  closedBy: string | null;
+  closeNote: string | null;
+  extendedTo: string | null;
+
+  /** 1B.5 — the joiner's own rating, which scores at 4 of 5 or better. */
+  feedbackRating: number | null;
+  feedbackRemarks: string | null;
+  feedbackAt: string | null;
+}
+
+/**
+ * One logged meeting.
+ *
+ * ⚠ It counts toward the eight only once `confirmedAt` is set. The buddy logs
+ * it and HR confirms it — so an unconfirmed row is work owed on HR's side, not
+ * a completed interaction, and counting it would flatter the number HR is
+ * actually scored on.
+ */
+export interface BuddyInteraction {
+  id: string;
+  buddyId: string;
+  happenedOn: string;
+  mode: BuddyInteractionMode;
+  notes: string | null;
+  loggedAt: string;
+  loggedBy: string;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+}
+
 /* ---------------------------- NR-10 · check-ins --------------------------- */
 
 /** The five days a probation is checked in on. Calendar days from joining. */

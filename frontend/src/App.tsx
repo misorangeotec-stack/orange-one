@@ -8,6 +8,7 @@ import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
 import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
 import MyProbation from "@/core/probation/MyProbation";
+import MyBuddy from "@/core/probation/MyBuddy";
 import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
@@ -137,6 +138,12 @@ export default function App() {
           fms_hr_my_probation() returns their own check-ins and nothing else. */}
       <Route path="/my-probation" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
         <Route index element={<MyProbation />} />
+      </Route>
+      {/* NR-9 · The buddy's own screen. Same reasoning as the route above: a buddy
+          is an ordinary colleague from another department, and granting them the
+          recruitment module to log a coffee would hand them every CV in it. */}
+      <Route path="/my-buddy" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyBuddy />} />
       </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 

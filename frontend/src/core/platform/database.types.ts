@@ -1893,6 +1893,153 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_buddies: {
+        Row: {
+          allocated_at: string
+          allocated_by: string | null
+          buddy_user_id: string
+          candidate_id: string
+          close_note: string | null
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          due_on: string | null
+          extended_to: string | null
+          feedback_at: string | null
+          feedback_rating: number | null
+          feedback_remarks: string | null
+          id: string
+          interaction_target: number
+          joining_date: string | null
+          offer_accepted_at: string | null
+          onboarding_id: string
+          passport_handed_at: string | null
+          passport_handed_by: string | null
+          requisition_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          allocated_at?: string
+          allocated_by?: string | null
+          buddy_user_id: string
+          candidate_id: string
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          due_on?: string | null
+          extended_to?: string | null
+          feedback_at?: string | null
+          feedback_rating?: number | null
+          feedback_remarks?: string | null
+          id?: string
+          interaction_target?: number
+          joining_date?: string | null
+          offer_accepted_at?: string | null
+          onboarding_id: string
+          passport_handed_at?: string | null
+          passport_handed_by?: string | null
+          requisition_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          allocated_at?: string
+          allocated_by?: string | null
+          buddy_user_id?: string
+          candidate_id?: string
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          due_on?: string | null
+          extended_to?: string | null
+          feedback_at?: string | null
+          feedback_rating?: number | null
+          feedback_remarks?: string | null
+          id?: string
+          interaction_target?: number
+          joining_date?: string | null
+          offer_accepted_at?: string | null
+          onboarding_id?: string
+          passport_handed_at?: string | null
+          passport_handed_by?: string | null
+          requisition_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_buddies_onboarding_id_fkey"
+            columns: ["onboarding_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_onboardings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_buddies_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_buddies_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_buddy_interactions: {
+        Row: {
+          buddy_id: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          happened_on: string
+          id: string
+          logged_at: string
+          logged_by: string
+          mode: string
+          notes: string | null
+        }
+        Insert: {
+          buddy_id: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          happened_on: string
+          id?: string
+          logged_at?: string
+          logged_by: string
+          mode: string
+          notes?: string | null
+        }
+        Update: {
+          buddy_id?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          happened_on?: string
+          id?: string
+          logged_at?: string
+          logged_by?: string
+          mode?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_buddy_interactions_buddy_id_fkey"
+            columns: ["buddy_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_buddies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_candidate_scores: {
         Row: {
           axes: Json
@@ -8653,6 +8800,34 @@ export type Database = {
       fms_hr_acknowledge_requisition: {
         Args: { p_req: string }
         Returns: undefined
+      }
+      fms_hr_allocate_buddy: {
+        Args: { p_buddy: string; p_onboarding: string }
+        Returns: string
+      }
+      fms_hr_hand_passport: {
+        Args: { p_buddy: string }
+        Returns: undefined
+      }
+      fms_hr_log_buddy_interaction: {
+        Args: { p_buddy: string; p_mode: string; p_notes?: string; p_on: string }
+        Returns: string
+      }
+      fms_hr_confirm_buddy_interaction: {
+        Args: { p_interaction: string }
+        Returns: undefined
+      }
+      fms_hr_rate_buddy: {
+        Args: { p_buddy: string; p_rating: number; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_hr_close_buddy: {
+        Args: { p_buddy: string; p_note?: string; p_status: string }
+        Returns: undefined
+      }
+      fms_hr_is_my_buddy_record: {
+        Args: { p_buddy: string; p_uid: string }
+        Returns: boolean
       }
       fms_hr_add_candidates: {
         Args: { p_candidates: Json; p_req: string }

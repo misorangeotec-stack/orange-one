@@ -63,6 +63,10 @@ import {
   submitProbationCheckin as submitProbationCheckinWrite,
   setEmployeeUser as setEmployeeUserWrite,
   setProbationLetter as setProbationLetterWrite,
+  allocateBuddy as allocateBuddyWrite,
+  handPassport as handPassportWrite,
+  confirmBuddyInteraction as confirmBuddyInteractionWrite,
+  closeBuddy as closeBuddyWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
   uploadResume,
@@ -142,6 +146,8 @@ import type {
   OnboardingItem,
   Probation,
   BgvStatus,
+  Buddy,
+  BuddyInteraction,
   CheckinDay,
   CheckinHodStatus,
   CheckinJoinerStatus,
@@ -432,6 +438,14 @@ interface HrStoreValue {
     filePath?: string | null,
     fileName?: string | null,
   ) => Promise<void>;
+  /* ---- NR-9 · the buddy programme ---- */
+  buddies: Buddy[];
+  buddyForOnboarding: (onboardingId: string) => Buddy | undefined;
+  buddyInteractionsFor: (buddyId: string) => BuddyInteraction[];
+  allocateBuddy: (onboardingId: string, buddyUserId: string) => Promise<void>;
+  handPassport: (buddyId: string) => Promise<void>;
+  confirmBuddyInteraction: (interactionId: string) => Promise<void>;
+  closeBuddy: (buddyId: string, status: "closed" | "person_left", note: string | null) => Promise<void>;
   /** NR-10 / KPI 1C.7 — record the confirmation letter against the probation. */
   setProbationLetter: (probationId: string, path: string, name: string) => Promise<void>;
   /** NR-10 / P0 — link the hire to their Orange One account. */
@@ -764,6 +778,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const probations = data?.probations ?? [];
   const probationReviews = data?.probationReviews ?? [];
   const probationCheckins = data?.probationCheckins ?? [];
+  const buddies = data?.buddies ?? [];
+  const buddyInteractions = data?.buddyInteractions ?? [];
   const activity = data?.activity ?? [];
   const candidateScores = data?.candidateScores ?? [];
   const notifications = data?.notifications ?? [];
@@ -1532,6 +1548,28 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         probationCheckins.find((c) => c.probationId === pid && c.dayNo === day),
       submitProbationCheckin: async (pid, day, side, status, remarks, filePath = null, fileName = null) => {
         await submitProbationCheckinWrite(pid, day, side, status, remarks, filePath, fileName);
+        await invalidate();
+      },
+      buddies,
+      buddyForOnboarding: (oid) => buddies.find((b) => b.onboardingId === oid),
+      buddyInteractionsFor: (bid) =>
+        buddyInteractions
+          .filter((i) => i.buddyId === bid)
+          .sort((a, b) => b.happenedOn.localeCompare(a.happenedOn)),
+      allocateBuddy: async (oid, uid) => {
+        await allocateBuddyWrite(oid, uid);
+        await invalidate();
+      },
+      handPassport: async (bid) => {
+        await handPassportWrite(bid);
+        await invalidate();
+      },
+      confirmBuddyInteraction: async (iid) => {
+        await confirmBuddyInteractionWrite(iid);
+        await invalidate();
+      },
+      closeBuddy: async (bid, status, note) => {
+        await closeBuddyWrite(bid, status, note);
         await invalidate();
       },
       setProbationLetter: async (pid, path, name) => {

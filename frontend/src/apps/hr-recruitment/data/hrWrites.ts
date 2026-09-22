@@ -2,6 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 import type { Json } from "@/core/platform/database.types";
 import type {
   BgvStatus,
+  BuddyInteractionMode,
   CheckinDay,
   CheckinHodStatus,
   CheckinJoinerStatus,
@@ -383,6 +384,72 @@ export async function setInduction(onboardingId: string, on: string | null): Pro
   const { error } = await supabase.rpc("fms_hr_set_induction", {
     p_onboarding: onboardingId,
     p_on: on,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/* ------------------------------ NR-9 · buddy ------------------------------ */
+
+/** Allocate the buddy. The RPC refuses the joiner's own department, and them. */
+export async function allocateBuddy(onboardingId: string, buddyUserId: string): Promise<string> {
+  const { data, error } = await supabase.rpc("fms_hr_allocate_buddy", {
+    p_onboarding: onboardingId,
+    p_buddy: buddyUserId,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+/** Day 1 — the passport is handed over. Once. */
+export async function handPassport(buddyId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_hand_passport", { p_buddy: buddyId });
+  if (error) throw new Error(error.message);
+}
+
+/** The BUDDY logs a meeting. HR cannot: the RPC refuses anyone else. */
+export async function logBuddyInteraction(
+  buddyId: string,
+  happenedOn: string,
+  mode: BuddyInteractionMode,
+  notes: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_log_buddy_interaction", {
+    p_buddy: buddyId,
+    p_on: happenedOn,
+    p_mode: mode,
+    p_notes: notes ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** HR confirms it. Only a confirmed interaction counts toward the eight. */
+export async function confirmBuddyInteraction(interactionId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_confirm_buddy_interaction", {
+    p_interaction: interactionId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** The JOINER rates the programme — nobody else, an admin included. */
+export async function rateBuddy(buddyId: string, rating: number, remarks: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_rate_buddy", {
+    p_buddy: buddyId,
+    p_rating: rating,
+    p_remarks: remarks ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Close it. `closed` insists the interactions happened; `person_left` does not. */
+export async function closeBuddy(
+  buddyId: string,
+  status: "closed" | "person_left",
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_close_buddy", {
+    p_buddy: buddyId,
+    p_status: status,
+    p_note: note ?? "",
   });
   if (error) throw new Error(error.message);
 }

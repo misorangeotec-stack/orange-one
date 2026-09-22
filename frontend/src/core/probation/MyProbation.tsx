@@ -7,6 +7,7 @@ import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
 import { supabase } from "@/core/platform/supabase";
 import MyConcerns from "./MyConcerns";
+import MyBuddyFeedback from "./MyBuddyFeedback";
 
 /**
  * NR-10 · `/my-probation` — the new joiner's own half of their check-ins.
@@ -228,6 +229,8 @@ export default function MyProbation() {
 
       {/* KPI 1C.6 — deliberately a SEPARATE thing from a check-in, with a different
           audience. A check-in is seen by the head of department; a concern is not. */}
+      <MyBuddyFeedback />
+
       <MyConcerns />
     </div>
   );
