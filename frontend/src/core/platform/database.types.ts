@@ -8136,6 +8136,14 @@ export type Database = {
       //
       // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
       //   are admin-only and every move is an fms_ld_* RPC below.
+      // Hand-added for the Learning & Development migrations (20261215120000 …
+      // …120300), all applied. Taken from the live schema rather than regenerating
+      // the whole file: this one is hand-curated, and other modules' tables live on
+      // the database ahead of their code, so a wholesale regeneration would sweep in
+      // work that is not ours to ship. Re-run scratchpad/refresh_types.py to update.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below.
       fms_ld_activity: {
         Row: {
           actor_id: string | null
@@ -8566,6 +8574,39 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_mandatory_programs: {
+        Row: {
+          active: boolean
+          created_at: string
+          cycle: string
+          id: string
+          name: string
+          session_type_code: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          cycle?: string
+          id?: string
+          name: string
+          session_type_code: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          cycle?: string
+          id?: string
+          name?: string
+          session_type_code?: string
           sort_order?: number
           updated_at?: string
         }
@@ -11241,6 +11282,7 @@ export type Database = {
       // Hand-added for the Learning & Development migrations (see the note above).
       // These RPCs ARE the module's write path.
       // Learning & Development RPCs — the module's write path. See the note above.
+      // Learning & Development RPCs — the module's write path. See the note above.
       fms_ld_add_evidence: {
         Args: { p_paths: string[]; p_session_id: string }
         Returns: number
@@ -11278,6 +11320,7 @@ export type Database = {
         Args: { p_session_id: string; p_step_key: string; p_uid?: string }
         Returns: boolean
       }
+      fms_ld_can_plan: { Args: { p_uid?: string }; Returns: boolean }
       fms_ld_can_read_request: {
         Args: { p_request_id: string; p_uid?: string }
         Returns: boolean
@@ -11291,6 +11334,7 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: undefined
       }
+      fms_ld_create_plan: { Args: { p_payload: Json }; Returns: string }
       fms_ld_create_request: { Args: { p_payload: Json }; Returns: string }
       fms_ld_create_session: { Args: { p_payload: Json }; Returns: string }
       fms_ld_decide_nomination: {
@@ -11301,6 +11345,7 @@ export type Database = {
         Args: { p_material_id: string }
         Returns: undefined
       }
+      fms_ld_delete_plan_line: { Args: { p_id: string }; Returns: undefined }
       fms_ld_escalate_submission: {
         Args: { p_submission_id: string }
         Returns: undefined
@@ -11336,6 +11381,30 @@ export type Database = {
         Args: { p_payload: Json; p_session_id: string }
         Returns: string
       }
+      fms_ld_learning_hours: {
+        Args: { p_year?: number }
+        Returns: {
+          employee: string
+          employee_id: string
+          hours: number
+          sessions: number
+        }[]
+      }
+      fms_ld_link_session_to_plan: {
+        Args: { p_plan_line_id: string; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_mandatory_status: {
+        Args: { p_year?: number }
+        Returns: {
+          applicable: number
+          completed: number
+          outstanding: Json
+          pct: number
+          program: string
+          program_id: string
+        }[]
+      }
       fms_ld_mark_attendance: {
         Args: { p_rows: Json; p_session_id: string }
         Returns: number
@@ -11350,6 +11419,12 @@ export type Database = {
         }
         Returns: number
       }
+      fms_ld_period_summary: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      fms_ld_plan_adherence: { Args: { p_fy?: string }; Returns: Json }
+      fms_ld_publish_plan: { Args: { p_plan_id: string }; Returns: undefined }
       fms_ld_reassign_step: {
         Args: {
           p_note?: string
@@ -11384,6 +11459,7 @@ export type Database = {
         Args: { p_outcome: string; p_remarks?: string; p_submission_id: string }
         Returns: undefined
       }
+      fms_ld_revise_plan: { Args: { p_plan_id: string }; Returns: string }
       fms_ld_rsvp: {
         Args: { p_accept: boolean; p_reason?: string; p_session_id: string }
         Returns: undefined
@@ -11413,6 +11489,7 @@ export type Database = {
         Args: { p_payload: Json; p_request_id: string }
         Returns: undefined
       }
+      fms_ld_upsert_plan_line: { Args: { p_payload: Json }; Returns: string }
       fms_ld_validate_request: {
         Args: {
           p_approve: boolean

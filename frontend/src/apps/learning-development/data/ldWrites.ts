@@ -553,3 +553,123 @@ export const setAttendanceSheet = (sessionId: string, path: string | null): Prom
 /** Add photos / screenshots of the session as it ran. */
 export const addEvidence = (sessionId: string, paths: string[]): Promise<void> =>
   rpc("fms_ld_add_evidence", { p_session_id: sessionId, p_paths: paths });
+
+/* ------------------------------------------- LD-2: the annual training plan */
+
+export const createPlan = (input: { title: string; fyCode?: string | null; note?: string | null }): Promise<string> =>
+  rpc("fms_ld_create_plan", {
+    p_payload: { title: input.title, fy_code: input.fyCode ?? null, note: input.note ?? null },
+  });
+
+export interface PlanLineInput {
+  id?: string | null;
+  planId?: string | null;
+  plannedMonth: string;
+  title: string;
+  sessionTypeIds?: string[];
+  departmentIds?: string[];
+  plannedHeadcount?: number | null;
+  plannedHours?: number | null;
+  estimatedCost?: number | null;
+  note?: string | null;
+}
+
+export const upsertPlanLine = (input: PlanLineInput): Promise<string> =>
+  rpc("fms_ld_upsert_plan_line", {
+    p_payload: {
+      id: input.id ?? null,
+      plan_id: input.planId ?? null,
+      planned_month: input.plannedMonth,
+      title: input.title,
+      session_type_ids: input.sessionTypeIds ?? [],
+      department_ids: input.departmentIds ?? [],
+      planned_headcount: input.plannedHeadcount ?? null,
+      planned_hours: input.plannedHours ?? null,
+      estimated_cost: input.estimatedCost ?? null,
+      note: input.note ?? null,
+    },
+  });
+
+export const deletePlanLine = (id: string): Promise<void> =>
+  rpc("fms_ld_delete_plan_line", { p_id: id });
+
+/** One-way. A published plan is frozen; `revisePlan` is how it changes. */
+export const publishPlan = (planId: string): Promise<void> =>
+  rpc("fms_ld_publish_plan", { p_plan_id: planId });
+
+export const revisePlan = (planId: string): Promise<string> =>
+  rpc("fms_ld_revise_plan", { p_plan_id: planId });
+
+export const linkSessionToPlan = (sessionId: string, planLineId: string | null): Promise<void> =>
+  rpc("fms_ld_link_session_to_plan", { p_session_id: sessionId, p_plan_line_id: planLineId });
+
+/* ------------------------------------------------ LD-9 / LD-10: the figures */
+
+export interface PeriodSummary {
+  sessions_held: number;
+  sessions_scheduled: number;
+  total_hours: number;
+  participants: number;
+  attended: number;
+  attendance_pct: number | null;
+  feedback_responses: number;
+  feedback_avg: number | null;
+  external: number;
+  technical: number;
+  internal: number;
+  absentees: number;
+  absentees_followed_up: number;
+  assignments_issued: number;
+  assignments_within_24h: number;
+  submissions_due: number;
+  submissions_made: number;
+  submissions_on_time: number;
+  submissions_reviewed: number;
+  effectiveness_due: number;
+  effectiveness_done: number;
+  cost: number;
+}
+
+/**
+ * ⚠ COMPUTED IN SQL, NOT IN THE BROWSER. The page only ever holds the rows RLS
+ *   let it see, so a percentage worked out here would be a percentage of what
+ *   this reader can see — and the nightly KPI run has no browser at all. One
+ *   definition, server-side, for both.
+ */
+export const periodSummary = (fromIso: string, toIso: string): Promise<PeriodSummary> =>
+  rpc("fms_ld_period_summary", { p_from: fromIso, p_to: toIso });
+
+export interface MandatoryStatus {
+  program_id: string;
+  program: string;
+  applicable: number;
+  completed: number;
+  pct: number;
+  outstanding: { id: string; name: string }[];
+}
+
+export const mandatoryStatus = (year?: number): Promise<MandatoryStatus[]> =>
+  rpc("fms_ld_mandatory_status", { p_year: year ?? null });
+
+export interface LearningHoursRow {
+  employee_id: string;
+  employee: string;
+  hours: number;
+  sessions: number;
+}
+
+export const learningHours = (year?: number): Promise<LearningHoursRow[]> =>
+  rpc("fms_ld_learning_hours", { p_year: year ?? null });
+
+export interface PlanAdherence {
+  published_at: string | null;
+  fy_code: string | null;
+  lines_total: number;
+  lines_due: number;
+  lines_met: number;
+  adherence_pct: number | null;
+  ad_hoc_sessions: number;
+}
+
+export const planAdherence = (fyCode?: string): Promise<PlanAdherence> =>
+  rpc("fms_ld_plan_adherence", { p_fy: fyCode ?? null });

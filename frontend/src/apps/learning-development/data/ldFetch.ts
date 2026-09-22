@@ -9,6 +9,8 @@ import type {
   Material,
   Nomination,
   Submission,
+  Plan,
+  PlanLine,
   LdActivity,
   LdNotification,
   MasterRow,
@@ -59,7 +61,10 @@ type Tbl =
   | "fms_ld_assignments"
   | "fms_ld_assignment_submissions"
   | "fms_ld_feedback"
-  | "fms_ld_effectiveness";
+  | "fms_ld_effectiveness"
+  | "fms_ld_plans"
+  | "fms_ld_plan_lines"
+  | "fms_ld_mandatory_programs";
 
 /*
  * ⚠ `orderBy` MUST BE A COLUMN THAT EXISTS ON THAT TABLE, and getting it wrong
@@ -223,6 +228,9 @@ export interface LdData {
   submissions: Submission[];
   feedback: Feedback[];
   effectiveness: Effectiveness[];
+  plans: Plan[];
+  planLines: PlanLine[];
+  mandatoryPrograms: MasterRow[];
   stepSla: StepSlaMap;
   coordinatorIds: string[];
   approvalRule: ApprovalRule;
@@ -236,6 +244,7 @@ export async function fetchLdData(): Promise<LdData> {
     trainers, delayReasons, followupActions, masterManagers, masterRequests,
     requests, sessions, activity, notifications,
     nominations, materials, attendance, assignments, submissions, feedback, effectiveness,
+    plans, planLines, mandatoryPrograms,
   ] = await Promise.all([
     fetchAll("fms_ld_step_owners"),
     fetchAll("fms_ld_step_assignees", "assigned_at"),
@@ -261,6 +270,9 @@ export async function fetchLdData(): Promise<LdData> {
     fetchAll("fms_ld_assignment_submissions", "updated_at"),
     fetchAll("fms_ld_feedback", "submitted_at"),
     fetchAll("fms_ld_effectiveness", "due_on"),
+    fetchAll("fms_ld_plans"),
+    fetchAll("fms_ld_plan_lines", "planned_month"),
+    fetchAll("fms_ld_mandatory_programs", "sort_order"),
   ]);
 
   const cfg: Record<string, any> = {};
@@ -374,6 +386,18 @@ export async function fetchLdData(): Promise<LdData> {
       followupRequired: r.followup_required ?? false,
       followupActionId: r.followup_action_id, submittedAt: r.submitted_at,
     })),
+    plans: plans.map((r) => ({
+      id: r.id, fyCode: r.fy_code, title: r.title, status: r.status,
+      revision: r.revision, supersedesId: r.supersedes_id,
+      publishedAt: r.published_at, publishedBy: r.published_by, note: r.note,
+    })),
+    planLines: planLines.map((r) => ({
+      id: r.id, planId: r.plan_id, plannedMonth: r.planned_month, title: r.title,
+      sessionTypeIds: r.session_type_ids ?? [], departmentIds: r.department_ids ?? [],
+      plannedHeadcount: r.planned_headcount, plannedHours: num(r.planned_hours),
+      estimatedCost: num(r.estimated_cost), note: r.note, sortOrder: r.sort_order ?? 0,
+    })),
+    mandatoryPrograms: mandatoryPrograms.map(master),
     stepSla: resolveStepSla(cfg.step_sla ?? null),
     coordinatorIds: (cfg.process_coordinators?.user_ids ?? []) as string[],
     approvalRule: {

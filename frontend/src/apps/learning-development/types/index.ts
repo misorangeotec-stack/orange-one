@@ -351,3 +351,33 @@ export interface Effectiveness {
   followupActionId: string | null;
   submittedAt: string | null;
 }
+
+/* ------------------------------------------------- the annual training plan */
+
+export interface Plan {
+  id: string;
+  fyCode: string;
+  title: string;
+  /** Published is FROZEN — a change makes a new revision that supersedes it. */
+  status: "draft" | "published" | "superseded";
+  revision: number;
+  supersedesId: string | null;
+  publishedAt: string | null;
+  publishedBy: string | null;
+  note: string | null;
+}
+
+export interface PlanLine {
+  id: string;
+  planId: string;
+  /** Always the first of the month. */
+  plannedMonth: string;
+  title: string;
+  sessionTypeIds: string[];
+  departmentIds: string[];
+  plannedHeadcount: number | null;
+  plannedHours: number | null;
+  estimatedCost: number | null;
+  note: string | null;
+  sortOrder: number;
+}

@@ -11,6 +11,8 @@ import RequestDetail from "./pages/requests/RequestDetail";
 import SessionDetail from "./pages/sessions/SessionDetail";
 import SessionsList from "./pages/sessions/SessionsList";
 import MyLearning from "./pages/MyLearning";
+import AnnualPlan from "./pages/plan/AnnualPlan";
+import Reports from "./pages/reports/Reports";
 import StepQueue from "./pages/queues/StepQueue";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
@@ -69,6 +71,10 @@ export default function LearningDevelopmentApp() {
           <Route path="my-learning" element={<MyLearning />} />
           <Route path="sessions" element={<RequirePipeline><SessionsList /></RequirePipeline>} />
           <Route path="sessions/:id" element={<SessionDetail />} />
+          {/* The plan is readable by anyone in the module — it is the year's
+              intentions, not a budget. Editing it is gated in the page. */}
+          <Route path="plan" element={<AnnualPlan />} />
+          <Route path="reports" element={<RequirePipeline><Reports /></RequirePipeline>} />
 
           {/* "new" must come before ":id" or "new" would be read as an id. */}
           <Route path="requests/new" element={<NewRequest />} />
