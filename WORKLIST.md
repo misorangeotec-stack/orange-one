@@ -9932,15 +9932,15 @@ already live through `kpi_report`. Add this module and the sheet reads:
 |---|---|---|---|
 | 0 | The twelve decisions — **all answered 21-09-2026**, plus the two things HR still owes | **LD-0** | `[x]` |
 | 1 | The spine: schema, app shell, steps 1–8, request list + detail, **Setup**, queues, RLS | **LD-1** | `[ ]` |
-| 2 | Annual Training Plan + the **calendar everyone sees** | **LD-2** | `[ ]` |
+| 2 | Annual Training Plan + the **calendar everyone sees** | **LD-2** | `[x]` |
 | 3 | Nomination, nomination approval, invitation and RSVP | **LD-3** | `[x]` |
 | 4 | Pre-training material and **My Learning** — the participant's door | **LD-4** | `[x]` |
 | 5 | Conduct, attendance, attendance sheet, absentee follow-up | **LD-5** | `[x]` |
 | 6 | **The assignment** — issued, submitted, reviewed (no marks, no test) | **LD-6** | `[x]` |
 | 7 | Feedback and the HR session review | **LD-7** | `[x]` |
 | 8 | 30-day effectiveness, follow-up decision and closure | **LD-8** | `[x]` |
-| 9 | POSH / Safety yearly compliance — everyone, once a year | **LD-9** | `[ ]` |
-| 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[ ]` |
+| 9 | POSH / Safety yearly compliance — everyone, once a year | **LD-9** | `[x]` |
+| 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[x]` |
 | 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) | **LD-11** | `[ ]` |
 | 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
 
@@ -10078,7 +10078,7 @@ DEFINER` function will hide that from you.
 
 ---
 
-### LD-2 · 🔴 The Annual Training Plan, and the calendar everyone sees  `[ ]`
+### LD-2 · 🟢 The Annual Training Plan, and the calendar everyone sees  `[x]`
 *Raised 2026-09-21 · **Land this with LD-1's session step**, not after it · client confirmed both doors*
 
 **The plan.** `fms_ld_plans` (financial year, status draft/published, `published_at`, who) +
@@ -10276,7 +10276,7 @@ effectiveness of that training for their department."*
 
 ---
 
-### LD-9 · 🟡 POSH and Safety — everyone, once a year  `[ ]`
+### LD-9 · 🟢 POSH and Safety — everyone, once a year  `[x]`
 *Raised 2026-09-21 · scope cut by LD-0 · 7 and · 9*
 
 `fms_ld_mandatory_programs` — POSH, Safety and whatever else HR names later. 🟢 **Applicability is
@@ -10294,7 +10294,7 @@ the working shape for "a thing with an expiry that has to be chased".
 
 ---
 
-### LD-10 · 🟡 Reports, exports, and the Weekly Review Section C feed  `[ ]`
+### LD-10 · 🟢 Reports, exports, and the Weekly Review Section C feed  `[x]`
 *Raised 2026-09-21*
 
 §10 of the document names nine dashboard views; they collapse into these screens, all flat, all sorting
@@ -10316,6 +10316,16 @@ literal** — the lab already learned that once; a box states the shape of its g
 ---
 
 ### LD-11 · 🟡 KPI and FMS-ranking wiring  `[ ]`
+
+> 🟡 **REGISTERED BUT OFF (22-09-2026).** `fms_rank_modules` carries a row set `active = false`,
+> the same state `asset-maintenance`, `hr-exit` and `travel-desk` are in — an admin switches it on
+> from the Control Center the day it is in use.
+>
+> ⚠ **It needs two things this module does not have yet:** an **FMS Control Center adapter** and
+> **My Work Today items**. The ranking scorer composes those; without them a scorer would not be
+> wireable, and `supabase/ranking/build.mjs` would have nothing to check it against. Both are
+> go-live wiring into systems 67 people use today, so they belong with the deploy rather than before
+> it.
 *Raised 2026-09-21*
 
 Three separate places, and the module is only half-built until all three are done:
