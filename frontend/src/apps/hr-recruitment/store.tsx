@@ -1432,6 +1432,11 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       cansByReq,
       ivsByCan,
       reviewsByProb,
+      checkinsByProb,
+      // The step OWNER, not whoever typed — see HrCompletedIndex for why the two
+      // differ on the check-ins alone. `stepOwnerFor` is the same Setup row the
+      // queue reads, so the Completed tab and the ranking agree by construction.
+      stepOwnerId: (stepKey) => stepOwnerFor(stepKey)?.employeeIds[0] ?? null,
     };
 
     /**

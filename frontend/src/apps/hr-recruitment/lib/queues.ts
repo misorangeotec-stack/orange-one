@@ -16,7 +16,7 @@
  */
 import { addMonths, addWorkingDays, localDateIso } from "@/shared/lib/workingDays";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
-import { checkinStepKey, type StepKey } from "./steps";
+import { CHECKIN_STEPS, checkinStepKey, type StepKey } from "./steps";
 import { REQ_STATUS_LABEL } from "./format";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type {
@@ -842,6 +842,16 @@ export function stageEntryOf<T>(
 /*  Lock reasons — each mirrors its server guard in 20260721120000. The DATABASE is
  *  the gate; these exist so the button can grey and SAY WHY. All are pure. */
 
+/**
+ * NR-11 — a finished check-in is a record, never an editor. Both answers are in;
+ * changing either afterwards is done from the probation panel while it is still the
+ * pending work, exactly as the monthly reviews were.
+ */
+export const checkinLockReason = (p: Probation): string =>
+  p.finalStatus
+    ? "This probation has been decided — its check-ins can no longer be changed."
+    : "Both answers are in. Open the probation to correct one.";
+
 /** A terminal / parked requisition bars every approval edit. */
 export function reqTerminalBar(r: Requisition, what: string): string | null {
   if (r.status === "on_hold") return `This requisition is on hold — take it off hold before editing its ${what}.`;
@@ -917,6 +927,19 @@ export interface HrCompletedIndex {
   cansByReq: Map<string, Candidate[]>;
   ivsByCan: Map<string, Interview[]>;
   reviewsByProb: Map<string, ProbationReview[]>;
+  /** NR-11 — the Day 7/15/30/60/90 rows, per probation. */
+  checkinsByProb: Map<string, ProbationCheckin[]>;
+  /**
+   * NR-11 — who a step is CONFIGURED to, not who typed.
+   *
+   * ⚠ Only the check-in steps use this, and they are the one place where the two
+   * differ on purpose. A check-in is written by the head of department and by the
+   * new joiner; HR writes neither side. What HR is answerable for — and what the
+   * client's sheet actually asks of them — is that BOTH answers arrived by the due
+   * date, which is exactly when `completedAt` is stamped. So the credit follows
+   * the owner, not the pen. Everything else here still credits whoever acted.
+   */
+  stepOwnerId: (stepKey: StepKey) => string | null;
 }
 
 /**
@@ -1008,6 +1031,30 @@ export function hrCompletedEntries(ix: HrCompletedIndex, stepKey: StepKey): Stag
             stepKey,
             { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: review.editedAt, editedById: review.editedBy, row: p },
             review.reviewerId, review.reviewedAt, reviewLockReason(p, review), false,
+          ),
+        );
+      }
+      return out;
+    }
+    case "probation_d7":
+    case "probation_d15":
+    case "probation_d30":
+    case "probation_d60":
+    case "probation_d90": {
+      // Done means BOTH sides answered: `completedAt` is stamped when the second one
+      // lands, and half a check-in is not a check-in. Neither `hodAt` nor `joinerAt`
+      // alone may stand in for it.
+      const day = CHECKIN_STEPS.find((c) => c.key === stepKey)?.day;
+      if (day == null) return [];
+      const out: StageEntry<CompletedRow>[] = [];
+      for (const p of ix.probations) {
+        const k = (ix.checkinsByProb.get(p.id) ?? []).find((c) => c.dayNo === day);
+        if (!k?.completedAt) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: null, editedById: null, row: p },
+            ix.stepOwnerId(stepKey), k.completedAt, checkinLockReason(p), false,
           ),
         );
       }
