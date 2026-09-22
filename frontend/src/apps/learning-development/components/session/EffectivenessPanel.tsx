@@ -51,6 +51,26 @@ export default function EffectivenessPanel({
     (a) => a.sessionId === x.id && ["present", "partial"].includes(a.status),
   );
 
+  /*
+   * ⚠ ONLY THIS HOD'S OWN PEOPLE, not every attendee.
+   *
+   *   The review is "one form per HOD, one overall rating for THEIR department"
+   *   (the client's decision). Listing all attendees showed Vivek Boid two names
+   *   on 22-09-2026, and one of them reported to Ritesh Tulsyan — so he was being
+   *   asked to rate the effect on somebody else's team. Caught by driving the
+   *   page as a real HOD; it reads perfectly plausibly as an admin, who is
+   *   everybody's HOD as far as the directory is concerned.
+   *
+   *   `hodIds` comes from the RLS-scoped directory, and a HOD can always see
+   *   their own reports there. If it resolves to nobody the names are dropped
+   *   rather than falling back to the full list — naming the wrong people is
+   *   worse than naming none.
+   */
+  const myPeople = attendance
+    .map((a) => s.profileById(a.employeeId))
+    .filter((p): p is NonNullable<typeof p> => !!p && p.hodIds.includes(user?.id ?? ""))
+    .map((p) => p.name);
+
   if (rows.length === 0) {
     return (
       <Panel title="Did it work?" hint="Asked of each attendee's HOD 30 days after the session.">
@@ -73,16 +93,8 @@ export default function EffectivenessPanel({
         <div className="rounded-lg border border-orange/40 bg-[#FFF8F4] p-3 space-y-3">
           <p className="text-[13.5px] text-navy">
             Your team attended this. Has it changed anything?
-            {attendance.length > 0 && (
-              <span className="text-grey-2">
-                {" "}
-                Your people on it:{" "}
-                {attendance
-                  .filter((a) => s.personName(a.employeeId) !== "—")
-                  .map((a) => s.personName(a.employeeId))
-                  .join(", ")}
-                .
-              </span>
+            {myPeople.length > 0 && (
+              <span className="text-grey-2"> Your people on it: {myPeople.join(", ")}.</span>
             )}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">

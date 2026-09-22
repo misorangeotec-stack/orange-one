@@ -49,6 +49,16 @@ export default function Dashboard() {
   );
 
   const myOpen = mine.filter(isOpen);
+
+  /*
+   * ⚠ A HOD HAS TO BE ABLE TO FIND THEIR 30-DAY REVIEW. RLS only shows a HOD
+   *   their own rows, so this list is theirs by construction. Without it the only
+   *   route to the form is the notification, and a notification read on a phone
+   *   three weeks ago is not a route.
+   */
+  const myReviews = (s.data?.effectiveness ?? []).filter(
+    (e) => e.hodId === user?.id && !e.submittedAt,
+  );
   const overdueCount = s.queueEntries.filter(
     (e) => s.canSeeQueue(e.stepKey) && e.dueIso && e.dueIso < todayIso,
   ).length;
@@ -69,6 +79,31 @@ export default function Dashboard() {
           </Link>
         )}
       </div>
+
+      {myReviews.length > 0 && (
+        <Card className="border-orange/40 bg-[#FFF8F4] p-5">
+          <h2 className="text-[15px] font-semibold text-navy">Your team was trained — did it help?</h2>
+          <p className="text-[13px] text-grey-2 mt-0.5">
+            You are asked 30 days after the session. It takes a rating and a sentence.
+          </p>
+          <div className="mt-3 space-y-1.5">
+            {myReviews.map((e) => {
+              const x = s.sessions.find((v) => v.id === e.sessionId);
+              if (!x) return null;
+              return (
+                <Link
+                  key={e.id}
+                  to={`${B}/sessions/${x.id}`}
+                  className="flex items-baseline justify-between gap-3 rounded-lg bg-white px-3 py-2 hover:text-orange"
+                >
+                  <span className="text-[13.5px] text-navy">{x.title}</span>
+                  <span className="text-[12.5px] text-grey-2">due {dmy(e.dueOn)}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {s.isPipelineStaff && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

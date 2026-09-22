@@ -151,12 +151,18 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
     const raiseOwners = stepOwnerIds("need_raised");
     const canRaise = raiseOwners.length === 0 || isAdmin || raiseOwners.includes(me);
 
-    // Is anybody's HOD this person? `orgPeople` carries no reporting line, so the
-    // directory's own downline is what we have client-side; the RPC does the real
-    // resolution against user_hods.
-    const isHod = dir.profiles.some((p) => p.id !== me && (p as { hodIds?: string[] }).hodIds?.includes(me))
-      || (dir.profiles.find((p) => p.id === me)?.role === "hod")
-      || (dir.profiles.find((p) => p.id === me)?.role === "sub_hod");
+    /*
+     * Does anybody report to this person? `Profile.hodIds` is the directory's own
+     * copy of user_hods, so this is a real check rather than a guess from the
+     * role name — a `hod` role does not by itself mean anyone reports to you, and
+     * plenty of people who ARE somebody's HOD do not carry that role.
+     *
+     * ⚠ THE DIRECTORY IS RLS-SCOPED, so this can answer false for somebody who
+     *   really is a HOD of people this reader cannot see. It only decides whether
+     *   the nominate box is offered; `fms_ld_can_act_session` does the real
+     *   resolution server-side and will accept them either way.
+     */
+    const isHod = dir.profiles.some((p) => p.id !== me && p.hodIds.includes(me));
 
     const ownsAnyStep = owners.some((o) => o.employeeIds.includes(me));
     const isPipelineStaff = isAdmin || isProcessCoordinator || ownsAnyStep;

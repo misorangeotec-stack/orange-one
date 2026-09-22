@@ -13,7 +13,10 @@ const linkFor = (n: LdNotification): string => {
     case "request":
       return `${B}/requests/${n.entityId}`;
     case "session":
-      return `${B}/calendar`;
+      // The session page, not the calendar. Every session notification is about
+      // something to DO on that session — RSVP, material, an assignment, a
+      // 30-day review — and the calendar is one more click away from all of them.
+      return `${B}/sessions/${n.entityId}`;
     default:
       return B;
   }
