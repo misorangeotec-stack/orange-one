@@ -1,6 +1,12 @@
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type { StepKey } from "./steps";
-import type { QueueEntry, TrainingRequest } from "../types";
+import type { Effectiveness, QueueEntry, TrainingRequest, TrainingSession } from "../types";
+
+/** What the closure rules need to see beyond the request itself. */
+export interface CloseContext {
+  sessions: TrainingSession[];
+  effectiveness: Effectiveness[];
+}
 
 /**
  * Where a training request is RIGHT NOW, and when that step falls due.

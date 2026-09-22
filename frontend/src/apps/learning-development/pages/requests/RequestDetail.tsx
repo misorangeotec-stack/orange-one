@@ -9,6 +9,7 @@ import StatusPill, { PriorityPill } from "../../components/StatusPill";
 import { railStepsFor, stepOf } from "../../lib/queues";
 import { stepByKey } from "../../lib/steps";
 import StepActionPanel from "../../components/StepActionPanel";
+import ClosurePanel from "../../components/ClosurePanel";
 import DocField from "../../components/DocField";
 import NotFound from "../system/NotFound";
 
@@ -178,10 +179,10 @@ export default function RequestDetail() {
       {busyErr && (
         <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#B42318]">{busyErr}</p>
       )}
+      {current && <StepActionPanel request={r} step={current} onError={setBusyErr} />}
 
-      {current && (
-        <StepActionPanel request={r} step={current} onError={setBusyErr} />
-      )}
+      {["scheduled", "closed"].includes(r.status) && <ClosurePanel request={r} />}
+
     </div>
   );
 }
