@@ -7,6 +7,7 @@ import { TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
+import CreateJoinerLogin from "./CreateJoinerLogin";
 import { useHrStore } from "../../store";
 import BuddyPanel from "./BuddyPanel";
 import { hrDocUrl, uploadOnboardingDoc } from "../../data/hrWrites";
@@ -517,6 +518,18 @@ export default function OnboardingPanel({
                 Unlink
               </Button>
             )}
+            {/* NR-13 — the joiner usually has no login yet, and until now only an
+                admin could make one. Offered only while nothing is linked: once it
+                is, creating a second account for the same person is a mistake, not
+                an option. */}
+            {!o.employeeUserId && mayAct && !dropped && (
+              <CreateJoinerLogin
+                onboarding={o}
+                requisition={r}
+                candidateName={c?.name ?? "the new joiner"}
+                onCreated={(userId) => run(() => s.setEmployeeUser(o.id, userId))}
+              />
+            )}
           </div>
           {o.employeeUserId ? (
             <p className="mt-2 text-[11.5px] text-grey-2">
@@ -525,7 +538,8 @@ export default function OnboardingPanel({
             </p>
           ) : (
             <p className="mt-2 text-[11.5px] text-grey-2">
-              Not linked yet — their probation check-ins will have no second side.
+              Not linked yet — their probation check-ins will have no second side. If they have no
+              Orange One account, create one here.
             </p>
           )}
         </div>
