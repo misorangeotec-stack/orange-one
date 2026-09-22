@@ -125,7 +125,9 @@ export default function ProbationPanel({
     { key: "reject", label: "Reject", hint: "They have not cleared probation" },
     ...(isExtensionDecision
       ? []
-      : [{ key: "extend" as const, label: "Extend by 1 month", hint: "A Month-4 review appears" }]),
+      : // The Month-4 review it used to promise was retired with the monthly
+        // cadence; an extension now buys a month and ends in approve or reject.
+        [{ key: "extend" as const, label: "Extend by 1 month", hint: "Decide again a month later" }]),
   ];
 
   const decisionBlocked = decision === "approve" && (!permanentFrom || !employeeCode.trim());
@@ -297,8 +299,8 @@ export default function ProbationPanel({
             {!decisionDue ? (
               <p className="mt-0.5 text-[12px] text-grey-2">
                 {extended
-                  ? "Record the Month-4 review first — the decision follows from it."
-                  : "Record all three monthly reviews first — the decision follows from them."}
+                  ? "Finish the outstanding check-in first — the decision follows from it."
+                  : "Finish all five check-ins first — the decision follows from them."}
               </p>
             ) : !mayAct ? (
               <p className="mt-0.5 text-[12px] text-grey-2">

@@ -8976,6 +8976,21 @@ export type Database = {
         Args: { p?: Json; p_id: string; p_to_stage: string }
         Returns: undefined
       }
+      fms_hr_my_buddy: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          buddy_id: string
+          joiner_name: string | null
+          job_title: string | null
+          joining_date: string | null
+          due_on: string | null
+          extended_to: string | null
+          interaction_target: number
+          status: string
+          feedback_rating: number | null
+          feedback_at: string | null
+        }[]
+      }
       fms_hr_my_probation: {
         Args: Record<PropertyKey, never>
         Returns: {

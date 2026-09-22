@@ -71,17 +71,24 @@ export default function MyBuddy() {
       if (mine.length === 0) return { buddy: null as Row | null, name: "", interactions: [] as Interaction[] };
 
       const b = mine[0];
-      const [{ data: who }, { data: logs }] = await Promise.all([
-        supabase.from("fms_hr_candidates").select("name").eq("id", b.candidate_id).maybeSingle(),
+      // The NAME cannot come off fms_hr_candidates: a buddy holds no grant on New
+      // Recruitment, so RLS hands back nothing and the heading read "your new
+      // joiner" for a month. fms_hr_my_buddy() is a SECURITY DEFINER reader that
+      // returns the name and the job title and nothing else — never the phone
+      // number, the expected salary or the CV that sit on the same row.
+      const [{ data: mineRpc }, { data: logs }] = await Promise.all([
+        supabase.rpc("fms_hr_my_buddy"),
         supabase
           .from("fms_hr_buddy_interactions")
           .select("id, happened_on, mode, notes, confirmed_at")
           .eq("buddy_id", b.id)
           .order("happened_on", { ascending: false }),
       ]);
+      const mineRow = ((mineRpc ?? []) as { buddy_id: string; joiner_name: string | null }[])
+        .find((x) => x.buddy_id === b.id);
       return {
         buddy: b,
-        name: (who as { name?: string } | null)?.name ?? "your new joiner",
+        name: mineRow?.joiner_name ?? "your new joiner",
         interactions: (logs ?? []) as Interaction[],
       };
     },

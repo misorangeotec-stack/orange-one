@@ -2279,7 +2279,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     // gate would keep the membership the memo was built with.
     pipelineViewerIds,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
-    probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
+    probations, probationReviews,
+    // NR-9 / NR-10, and load-bearing for the same reason as the three above: the
+    // resolvers below close over these arrays, so leaving them out freezes the
+    // buddy panel and the day check-ins at whatever the memo was first built with.
+    // Handing the passport over wrote the row, refetched it, and still left the
+    // button saying "Hand it over" until a reload — found in the browser, because
+    // tsc cannot see a missing dependency.
+    probationCheckins, buddies, buddyInteractions,
+    masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute
     // when the org roster arrives and Completed-tab "By" names would stay "Unknown user".
     orgPeople,
