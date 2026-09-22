@@ -79,7 +79,7 @@ export default function StepOwnersSection() {
     }
   };
 
-  const nameOf = (id: string) => s.profileById(id)?.name ?? "Unknown";
+  const nameOf = (id: string) => { const n = s.personName(id); return n === "—" ? "Unknown" : n; };
 
   return (
     <>
@@ -120,9 +120,13 @@ export default function StepOwnersSection() {
                       ? owners.map(nameOf).join(", ")
                       : st.key === "need_raised"
                         ? "Nobody set — anyone may raise a training need"
-                        : rowOwned
-                          ? "Nobody set — nothing to fall back on when the row names no one"
-                          : "Nobody set — this step cannot move"}
+                        : st.key === "need_resubmit"
+                          // Owed by whoever RAISED it — fms_ld_can_act has its own
+                          // branch for this one, so "cannot move" would be a lie.
+                          ? "Nobody set — the person who raised it revises it"
+                          : rowOwned
+                            ? "Nobody set — nothing to fall back on when the row names no one"
+                            : "Nobody set — this step cannot move"}
                   </div>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => open(st.key)}>

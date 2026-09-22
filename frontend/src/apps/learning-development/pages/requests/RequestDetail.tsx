@@ -95,7 +95,7 @@ export default function RequestDetail() {
       <div className="grid gap-5 lg:grid-cols-[1.4fr,1fr]">
         <Card className="p-5">
           <h2 className="text-[15px] font-semibold text-navy mb-2">The need</h2>
-          <Row label="Raised by">{s.profileById(r.requestedBy)?.name ?? "—"}</Row>
+          <Row label="Raised by">{s.personName(r.requestedBy)}</Row>
           <Row label="Department">{s.departmentName(r.departmentId)}</Row>
           <Row label="Source">{needSource?.name ?? "—"}</Row>
           <Row label="Submitted">{dmy(r.submittedAt)}</Row>
@@ -122,19 +122,19 @@ export default function RequestDetail() {
           {(r.proposedAt || r.validatedAt) && (
             <Card className="p-5">
               <h2 className="text-[15px] font-semibold text-navy mb-2">Proposal &amp; approval</h2>
-              <Row label="Validated by">{s.profileById(r.validatedBy)?.name ?? "—"}</Row>
+              <Row label="Validated by">{s.personName(r.validatedBy)}</Row>
               <Row label="Proposed cost">{inr(r.proposedCost)}</Row>
               <Row label="Approved budget">{inr(r.approvedBudget)}</Row>
               <Row label="HR Head">
                 {r.hrApprovedAt
-                  ? `${s.profileById(r.hrApprovedBy)?.name ?? "—"} · ${dmy(r.hrApprovedAt)}`
+                  ? `${s.personName(r.hrApprovedBy)} · ${dmy(r.hrApprovedAt)}`
                   : "—"}
               </Row>
               <Row label="Management">
                 {r.mgmtRequired === false
                   ? "Not required"
                   : r.mgmtApprovedAt
-                    ? `${s.profileById(r.mgmtApprovedBy)?.name ?? "—"} · ${dmy(r.mgmtApprovedAt)}`
+                    ? `${s.personName(r.mgmtApprovedBy)} · ${dmy(r.mgmtApprovedAt)}`
                     : "—"}
               </Row>
             </Card>

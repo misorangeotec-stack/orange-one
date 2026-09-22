@@ -42,6 +42,18 @@ interface LdStoreValue {
   orgDepartments: Department[];
   orgPeople: OrgPerson[];
   profileById: (id: string | null) => Profile | undefined;
+  /**
+   * A person's NAME, for display.
+   *
+   * ⚠ USE THIS, NOT `profileById(id)?.name`. `profiles` is RLS-scoped — a reader
+   *   sees themselves, their own downline and (for admins) everyone — so a
+   *   colleague in another department resolves to nothing and the cell renders
+   *   "—". That is exactly what "Raised by" did on every row of the request list
+   *   until 22-09-2026: the L&D executive could not see who had asked for any of
+   *   the training she was validating. The org-wide list (`orgPeople`, a name-only
+   *   read) is the backup.
+   */
+  personName: (id: string | null) => string;
   departmentName: (id: string | null) => string;
 
   /** Admin or a named process coordinator: oversight over every step. */
@@ -186,6 +198,7 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
 
     const byId = new Map(requests.map((r) => [r.id, r] as const));
     const profileMap = new Map(dir.profiles.map((p) => [p.id, p] as const));
+    const orgMap = new Map((orgQ.data ?? []).map((p) => [p.id, p] as const));
     const deptMap = new Map(dir.departments.map((x) => [x.id, x] as const));
 
     return {
@@ -200,6 +213,8 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
       orgDepartments: dir.departments,
       orgPeople: orgQ.data ?? [],
       profileById: (id) => (id ? profileMap.get(id) : undefined),
+      personName: (id) =>
+        !id ? "—" : profileMap.get(id)?.name ?? orgMap.get(id)?.name ?? "—",
       departmentName: (id) => (id ? deptMap.get(id)?.name ?? "—" : "—"),
 
       isProcessCoordinator,

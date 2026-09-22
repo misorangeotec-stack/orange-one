@@ -56,8 +56,8 @@ export default function StepQueue({ step }: { step: StepKey }) {
     {
       key: "raiser",
       header: "Raised by",
-      cell: (e) => s.profileById(e.requestedBy)?.name ?? "—",
-      filter: { kind: "select", get: (e) => s.profileById(e.requestedBy)?.name ?? "—" },
+      cell: (e) => s.personName(e.requestedBy),
+      filter: { kind: "select", get: (e) => s.personName(e.requestedBy) },
     },
     {
       key: "priority",

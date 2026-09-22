@@ -78,7 +78,7 @@ export default function StepActionPanel({
   };
 
   if (!mayAct) {
-    const owners = s.stepOwnerIds(step).map((id) => s.profileById(id)?.name).filter(Boolean);
+    const owners = s.stepOwnerIds(step).map((id) => s.personName(id)).filter((n) => n !== "—");
     return (
       <Card className="p-5">
         <h2 className="text-[15px] font-semibold text-navy">Waiting on {def?.title ?? step}</h2>

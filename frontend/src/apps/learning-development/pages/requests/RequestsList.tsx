@@ -65,8 +65,8 @@ export default function RequestsList({ mine = false }: { mine?: boolean }) {
     {
       key: "raiser",
       header: "Raised by",
-      cell: (r) => s.profileById(r.requestedBy)?.name ?? "—",
-      filter: { kind: "select", get: (r) => s.profileById(r.requestedBy)?.name ?? "—" },
+      cell: (r) => s.personName(r.requestedBy),
+      filter: { kind: "select", get: (r) => s.personName(r.requestedBy) },
     },
     {
       key: "status",
