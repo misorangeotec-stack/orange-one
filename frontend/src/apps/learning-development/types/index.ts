@@ -381,3 +381,76 @@ export interface PlanLine {
   note: string | null;
   sortOrder: number;
 }
+
+/* ------------------------------------------------------ masters (LD-13) */
+
+/**
+ * The seven vocabularies this module owns, in one list.
+ *
+ * ⚠ THIS IS A WIRE CONTRACT IN THREE PLACES AT ONCE. Every `value` below is
+ *   checked by a CHECK constraint on BOTH `fms_ld_master_managers.master_type`
+ *   and `fms_ld_master_requests.master_type`, and dispatched on by name inside
+ *   `fms_ld_resolve_master_request`. Adding an entry here without adding it to
+ *   all three means the owner picker offers a list nobody can be given, and a
+ *   request against it is refused by the database with "violates check
+ *   constraint" rather than anything a reader could act on.
+ *
+ * `fms_ld_mandatory_programs` is deliberately NOT here — see MANDATORY_CYCLES.
+ */
+export const LD_MASTER_TYPES = [
+  { value: "session_type", label: "Session type", plural: "Session types" },
+  { value: "competency", label: "Competency", plural: "Competencies" },
+  { value: "need_source", label: "Need source", plural: "Need sources" },
+  { value: "venue", label: "Venue", plural: "Venues" },
+  { value: "trainer", label: "Trainer", plural: "Trainers & agencies" },
+  { value: "delay_reason", label: "Delay reason", plural: "Delay reasons" },
+  { value: "followup_action", label: "Follow-up action", plural: "Follow-up actions" },
+] as const;
+
+export type LdMasterType = (typeof LD_MASTER_TYPES)[number]["value"];
+
+export const masterTypeLabel = (t: string): string =>
+  LD_MASTER_TYPES.find((m) => m.value === t)?.label ?? t;
+export const masterTypePlural = (t: string): string =>
+  LD_MASTER_TYPES.find((m) => m.value === t)?.plural ?? t;
+
+/**
+ * A mandatory programme — POSH, Safety, and anything else everyone must do once
+ * a year. It is a master, but NOT one of the seven above:
+ *
+ * ⚠ ITS GOVERNANCE IS DIFFERENT AND THE SCREEN MUST FOLLOW IT. The RLS policy on
+ *   `fms_ld_mandatory_programs` reads `is_admin OR fms_ld_is_coordinator` — not
+ *   `fms_ld_is_master_manager` — so owning "session types" does not let you edit
+ *   it. It is also absent from both master CHECK lists, which is why it cannot be
+ *   requested and has no Master Owners row.
+ *
+ * ⚠ `sessionTypeCode` MATCHES ON THE SESSION TYPE'S STABLE CODE, never its name.
+ *   Renaming "POSH" to "Prevention of Sexual Harassment" on the Session Types tab
+ *   must not break the compliance count, and matching on `code` is what stops it.
+ */
+export interface MandatoryProgram extends MasterRow {
+  sessionTypeCode: string;
+  cycle: "annual" | "on_joining" | "both";
+}
+
+export const MANDATORY_CYCLES: { value: MandatoryProgram["cycle"]; label: string }[] = [
+  { value: "annual", label: "Every year" },
+  { value: "on_joining", label: "Once, on joining" },
+  { value: "both", label: "On joining and every year" },
+];
+
+export type MasterRequestStatus = "pending" | "approved" | "rejected";
+
+/** Somebody asking for a value that is not on a list yet. */
+export interface MasterRequest {
+  id: string;
+  masterType: LdMasterType;
+  proposedPayload: Record<string, unknown>;
+  status: MasterRequestStatus;
+  requestedBy: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  resolvedMasterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

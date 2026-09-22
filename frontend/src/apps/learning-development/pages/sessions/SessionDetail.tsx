@@ -118,7 +118,23 @@ export default function SessionDetail() {
           <Fact label="Trainer">
             {trainer ? `${trainer.name}${trainer.trainerType === "external" ? " (agency)" : ""}` : "—"}
           </Fact>
-          <Fact label="Where">{venue?.name ?? (x.meetingLink ? "Online" : "—")}</Fact>
+          {/* ⚠ THE LINK IS THE WHOLE POINT OF AN ONLINE SESSION. Showing the word
+                "Online" and keeping the joining link in a column nobody renders
+                is how a nominee arrives at the hour and cannot get in. */}
+          <Fact label="Where">
+            {x.meetingLink ? (
+              <a
+                href={x.meetingLink}
+                target="_blank"
+                rel="noreferrer"
+                className="text-orange underline underline-offset-2"
+              >
+                {venue?.name ?? "Join online"}
+              </a>
+            ) : (
+              venue?.name ?? "—"
+            )}
+          </Fact>
           <Fact label="Type">{types.length ? types.join(", ") : "—"}</Fact>
           <Fact label="Capacity">{x.capacity ?? "—"}</Fact>
           <Fact label="Nominated">{approved.length}</Fact>

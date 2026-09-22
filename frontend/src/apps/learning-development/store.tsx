@@ -11,7 +11,9 @@ import { buildQueueEntries, dueIsoFor, isOpen, stepOf } from "./lib/queues";
 import { ROW_OWNED_STEPS, type StepKey } from "./lib/steps";
 import type {
   ApprovalRule,
+  LdMasterType,
   LdNotification,
+  MasterRequest,
   QueueEntry,
   TrainingRequest,
   TrainingSession,
@@ -62,8 +64,31 @@ interface LdStoreValue {
   canMonitor: boolean;
   /** May this person raise a training need? */
   canRaise: boolean;
-  /** May this person own/approve the masters, and so see the Masters screens? */
+  /** May this person own/approve ANY master, and so see the Masters screen? */
   canSeeMasters: boolean;
+  /**
+   * May this person edit ONE master, and resolve requests against it?
+   *
+   * ⚠ PER LIST, NEVER "can I see the screen". The RLS policy on each master table
+   *   is written per type, so somebody who owns Venues opens the Masters screen
+   *   and finds every other tab read-only. A single flag would offer them an Add
+   *   button that the database then refuses.
+   */
+  canManageMaster: (mt: LdMasterType) => boolean;
+  /**
+   * May this person edit the POSH / Safety programme list?
+   *
+   * ⚠ A DIFFERENT GATE. `fms_ld_mandatory_programs` is governed by
+   *   `is_admin OR fms_ld_is_coordinator`, not by the master owners — so this is
+   *   `isProcessCoordinator`, not `canManageMaster(...)`.
+   */
+  canManageMandatory: boolean;
+  /** Requests for values that are not on a list yet. */
+  masterRequests: MasterRequest[];
+  /** How many of those are still waiting on somebody — the sidebar badge. */
+  pendingMasterRequests: number;
+  /** Should this person be offered the Master Requests screen at all? */
+  canUseMasterRequests: boolean;
   /** Does this person own any step at all — i.e. is the request pipeline theirs? */
   isPipelineStaff: boolean;
 
@@ -167,8 +192,14 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
     const ownsAnyStep = owners.some((o) => o.employeeIds.includes(me));
     const isPipelineStaff = isAdmin || isProcessCoordinator || ownsAnyStep;
 
-    const canSeeMasters =
-      isAdmin || (d?.masterManagers ?? []).some((m) => m.managerUserId === me);
+    const managers = d?.masterManagers ?? [];
+    const canManageMaster = (mt: LdMasterType): boolean =>
+      isAdmin || managers.some((m) => m.masterType === mt && m.managerUserId === me);
+    const canSeeMasters = isAdmin || managers.some((m) => m.managerUserId === me);
+    const masterRequests = d?.masterRequests ?? [];
+    const pendingMasterRequests = masterRequests.filter(
+      (r) => r.status === "pending" && canManageMaster(r.masterType),
+    ).length;
 
     /**
      * Mirrors `fms_ld_can_act()` — coordinator, then a per-row reassignment,
@@ -274,6 +305,22 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
       canMonitor,
       canRaise,
       canSeeMasters,
+      canManageMaster,
+      canManageMandatory: isProcessCoordinator,
+      masterRequests,
+      pendingMasterRequests,
+      /*
+       * ⚠ NOT EVERYBODY, THOUGH THE MODULE IS UNIVERSAL. The seven lists are
+       *   picked from at HR validation, at trainer finalisation, at scheduling
+       *   and at closure — all pipeline work. A warehouse operator raising a
+       *   training need meets exactly one of them (Need source, which ships with
+       *   six entries), so offering them a screen for asking after a delay reason
+       *   would be noise. The database is more generous than this (any
+       *   authenticated user may insert a request); this only decides who is
+       *   OFFERED the screen, and a master owner sees it because resolving is
+       *   their job.
+       */
+      canUseMasterRequests: isPipelineStaff || canSeeMasters,
       isPipelineStaff,
       canActOn,
       canSeeQueue,

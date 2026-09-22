@@ -64,6 +64,8 @@ export default function StepActionPanel({
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [capacity, setCapacity] = useState("");
+  const [venueId, setVenueId] = useState("");
+  const [link, setLink] = useState("");
 
   const def = stepByKey(step);
   const mayAct = s.canActOn(step, r.id);
@@ -99,6 +101,8 @@ export default function StepActionPanel({
   const types = (s.data?.sessionTypes ?? []).filter((t) => t.active);
   const trainers = (s.data?.trainers ?? []).filter((t) => t.active);
   const competencies = (s.data?.competencies ?? []).filter((c) => c.active);
+  const venues = (s.data?.venues ?? []).filter((v) => v.active);
+  const venue = venues.find((v) => v.id === venueId);
 
   return (
     <Card className="p-5 space-y-4">
@@ -401,8 +405,49 @@ export default function StepActionPanel({
               />
             </FieldLabel>
           </div>
+          {/*
+            ⚠ WITHOUT THIS THE VENUES MASTER HAS NO READER. `createSession`,
+              `fms_ld_create_session` and Session Detail's "Where" have carried
+              venue_id and meeting_link since LD-1; nothing ever SET them, so
+              every session in the module said "Where: —" and the venue list was
+              decorative. Found while building LD-13 — the FIX-4 shape in
+              reverse: the plumbing was whole and only the control was missing.
+          */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldLabel label="Where">
+              <Combobox
+                value={venueId}
+                onChange={setVenueId}
+                options={venues.map((v) => ({
+                  value: v.id,
+                  label: v.isOnline ? `${v.name} (online)` : v.name,
+                }))}
+                placeholder={venues.length ? "Pick a venue" : "No venues on the list yet"}
+                clearable
+                autoAdvance
+              />
+            </FieldLabel>
+            {/* Asked for whenever the venue is an online one — that link is what
+                the invitation carries, and a session nobody can join is not
+                scheduled. */}
+            {venue?.isOnline && (
+              <FieldLabel label="Joining link" required>
+                <TextInput
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  placeholder="https://…"
+                />
+              </FieldLabel>
+            )}
+          </div>
+          {venue?.capacity != null && capacity !== "" && Number(capacity) > venue.capacity && (
+            <p className="text-[12.5px] text-[#B54708]">
+              {venue.name} seats {venue.capacity}. You have set capacity to {capacity} — either the
+              room is wrong or the number is.
+            </p>
+          )}
           <Button
-            disabled={busy || !date}
+            disabled={busy || !date || (venue?.isOnline === true && !link.trim())}
             onClick={() =>
               void run(async () => {
                 await s.writes.createSession({
@@ -415,6 +460,8 @@ export default function StepActionPanel({
                   startTime: start || null,
                   endTime: end || null,
                   capacity: capacity === "" ? null : Number(capacity),
+                  venueId: venueId || null,
+                  meetingLink: link.trim() || null,
                 });
                 nav(`${B}/calendar`);
               })

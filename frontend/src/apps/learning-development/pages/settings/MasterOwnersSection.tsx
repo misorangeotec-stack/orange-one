@@ -3,6 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { useLdStore } from "../../store";
+import { LD_MASTER_TYPES } from "../../types";
 
 /**
  * Master Owners (admin) — who may edit each master, and so who resolves its
@@ -13,15 +14,21 @@ import { useLdStore } from "../../store";
  *   row empty here does not make it editable by everyone — it makes it editable
  *   by nobody except admins, and any request against it waits for one.
  */
-const MASTERS: { type: string; label: string }[] = [
-  { type: "session_type", label: "Session types" },
-  { type: "competency", label: "Competencies" },
-  { type: "need_source", label: "Need sources" },
-  { type: "venue", label: "Venues" },
-  { type: "trainer", label: "Trainers & agencies" },
-  { type: "delay_reason", label: "Delay reasons" },
-  { type: "followup_action", label: "Follow-up actions" },
-];
+/*
+ * ⚠ ONE LIST, IN `types.ts` — not a second copy here. It is checked by a CHECK
+ *   constraint on `fms_ld_master_managers.master_type`, by another on
+ *   `fms_ld_master_requests.master_type`, and dispatched on by name inside
+ *   `fms_ld_resolve_master_request`. A row offered here that those do not know
+ *   fails on save with "violates check constraint", which reads as a broken
+ *   screen. The Masters page renders its tabs from the same constant.
+ *
+ * ⚠ POSH / SAFETY PROGRAMMES ARE NOT ON THIS SCREEN and must not be added to it.
+ *   `fms_ld_mandatory_programs` is governed by `is_admin OR fms_ld_is_coordinator`
+ *   — set in the Coordinators tab — and is absent from the CHECK above, so an
+ *   owner assigned here would be refused by the database and, if it were not,
+ *   would still give them nothing.
+ */
+const MASTERS = LD_MASTER_TYPES.map((m) => ({ type: m.value as string, label: m.plural }));
 
 export default function MasterOwnersSection() {
   const s = useLdStore();

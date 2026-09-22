@@ -14,6 +14,8 @@ import MyLearning from "./pages/MyLearning";
 import AnnualPlan from "./pages/plan/AnnualPlan";
 import Reports from "./pages/reports/Reports";
 import StepQueue from "./pages/queues/StepQueue";
+import Masters from "./pages/masters/Masters";
+import MasterRequests from "./pages/MasterRequests";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
@@ -46,6 +48,20 @@ function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }
 function RequirePipeline({ children }: { children: ReactNode }) {
   const s = useLdStore();
   if (!s.isPipelineStaff) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
+ * The Masters screen: anybody who owns ONE list, plus the coordinators who own
+ * the POSH / Safety programmes.
+ *
+ * ⚠ THE PAGE IS NOT THE GATE — the per-tab `canManageMaster` is, and RLS behind
+ *   it. This only stops somebody who owns nothing from landing on seven
+ *   read-only tables wondering what they are for.
+ */
+function RequireMasters({ children }: { children: ReactNode }) {
+  const s = useLdStore();
+  if (!s.canSeeMasters && !s.canManageMandatory) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -94,6 +110,12 @@ export default function LearningDevelopmentApp() {
             />
           ))}
 
+          <Route path="masters" element={<RequireMasters><Masters /></RequireMasters>} />
+          {/* Deliberately ungated beyond the module itself: asking for a value is
+              open to anyone the sidebar offers it to, and the RLS policy on
+              fms_ld_master_requests already refuses an insert that is not your
+              own. Reviewing is gated per row, inside the page. */}
+          <Route path="master-requests" element={<MasterRequests />} />
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
         </Route>

@@ -9943,7 +9943,7 @@ already live through `kpi_report`. Add this module and the sheet reads:
 | 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[x]` |
 | 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) | **LD-11** | `[ ]` |
 | 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
-| 13 | 🔴 **Masters + Master Requests** — trainers, venues, competencies. **Blocks HR running a trial alone** | **LD-13** | `[ ]` |
+| 13 | **Masters + Master Requests** — trainers, venues, competencies, POSH & Safety | **LD-13** | `[x]` |
 
 **Build order is the list order**, with two exceptions worth stating: **LD-2 must land with or before
 LD-1's session step** (a session needs somewhere to say which plan line it fulfils, and adding that column
@@ -10348,30 +10348,76 @@ like our bug.
 
 ---
 
-### LD-13 · 🔴 Masters and Master Requests — the screens HR needs to start  `[ ]`
-*Raised 2026-09-22 · **the one thing blocking HR from running a trial without us***
+### LD-13 · ✅ Masters and Master Requests — the screens HR needs to start  `[x]`
+*Raised 2026-09-22 · **BUILT AND VERIFIED 22-09-2026.** The trial is no longer blocked on us. Not
+deployed — the module is still absent from `master` entirely.*
 
-HR reaches **step 6, Trainer Finalisation, and stops.** The trainer is mandatory and the master holds
-only the one test agency we seeded — there is no screen to add another. Venues and competencies are
-empty too, but both are optional fields and degrade quietly; the trainer does not.
+HR reached **step 6, Trainer Finalisation, and stopped.** The trainer is mandatory, the master held
+the one agency LD-1 seeded, and there was no screen to add another.
 
-**What to build.** One `pages/masters/Masters.tsx` with a tab per master, each a `MasterCrud` —
-which brings sorting, cascading filters, the 25-a-page rule and the Excel round trip with no wiring.
-Seven masters: session types, competencies, need sources, venues, trainers, delay reasons,
-follow-up actions. Plus `pages/MasterRequests.tsx` over `fms_ld_master_requests`, whose approve RPC
-(`fms_ld_resolve_master_request`) is already built and applied.
+**What was built.**
+- **`pages/masters/Masters.tsx`** — eight tabs, each a `MasterCrud`, so sorting on every column,
+  a cascading searchable filter under every column, the Active/Inactive segment, 25 a page and the
+  Excel round trip all arrive with no per-tab wiring. The seven governed lists (session types,
+  competencies, need sources, venues, trainers, delay reasons, follow-up actions) **plus an eighth,
+  POSH & Safety** — see the ⚠ below.
+- **`pages/MasterRequests.tsx`** + **`components/RequestMasterModal.tsx`** — ask for a value that is
+  not on a list, and see what happened to the one you asked for. The reviewer can CORRECT the
+  proposal before approving, and the correction is what the list gets.
+- **`lib/masterFields.ts`** — the wire contract the approve RPC had been expecting since LD-1.
+- Store: `canManageMaster(type)` **per list**, `canManageMandatory`, `masterRequests`,
+  `pendingMasterRequests`, `canUseMasterRequests`. Writes: `saveMaster`, `setMasterActive`,
+  `requestMaster`, `resolveMasterRequest`, `saveMandatoryProgram`, `setMandatoryProgramActive`.
+- `MasterOwnersSection` now renders from the same `LD_MASTER_TYPES` constant the Masters tabs and the
+  request picker read, so the list that three CHECK constraints police exists once.
 
-**Copy the pattern from** `apps/complaint/pages/masters/Masters.tsx` — the most compact use of
-`MasterCrud` in the repo. The store needs a `saveMaster` / `setMasterActive` pair and a `canManage`
-per master type; `fms_ld_master_managers` and `fms_ld_is_master_manager()` already decide who may.
+⚠ **THE EIGHTH TAB HAS A DIFFERENT OWNER, AND THAT IS NOT A SLIP.**
+`fms_ld_mandatory_programs` (LD-9) was being **fetched and never rendered** — a master nobody could
+edit, holding the two rows that decide the whole POSH / Safety denominator. It is now a tab, but its
+RLS policy reads `is_admin OR fms_ld_is_coordinator`, **not** `fms_ld_is_master_manager`, so it is
+gated on `canManageMandatory` and it has no Master Owners row and no request path. Proved in a
+rolled-back transaction as the L&D executive: trainer insert ALLOWED, venue insert ALLOWED,
+mandatory-programme insert **REFUSED**, granting herself an owner row **REFUSED**.
 
-⚠ **`lib/masterFields.ts` does not exist yet and the approve RPC already expects it.** The payload
-keys in `fms_ld_resolve_master_request` are read verbatim, so a field added on the screen without
-matching there is silently dropped on approve. Change the two together.
+🔴 **A SECOND ORPHAN, FOUND ON THE WAY, NOW FIXED — the Venues master had no reader at all.**
+`venue_id` and `meeting_link` have existed on `fms_ld_sessions` since LD-1, are accepted by
+`fms_ld_create_session`, are mapped in `ldFetch` and are *read* by Session Detail's "Where" — and
+**nothing ever set them.** Every session in the module said `Where: —`, and a Venues master would have
+been decorative on arrival. This is **FIX-4 in reverse**: the whole pipe was laid and only the tap was
+missing, so nothing failed, nothing warned, and it compiled. The scheduling panel
+(`StepActionPanel`, `session_scheduling`) now carries **Where** and, when the chosen venue is an
+online one, a **required Joining link** — plus a warning when the capacity typed exceeds the room's
+seats. Session Detail renders the link as a link rather than the word "Online": a nominee who arrives
+at the hour and cannot get in is the failure that was waiting to happen.
 
-⚠ **An external trainer is a master row, never a login** (LD-0 · 5), and `fms_ld_trainers` has a
-CHECK enforcing it: internal carries `employee_id`, external must not. The form has to follow that
-or the insert fails.
+**Go-live step, done 22-09-2026:** `fms_ld_master_managers` was **empty**, which under the RLS policy
+means *admins only* — so the screen alone would not have unblocked HR. Saloni Rathod (the L&D
+executive, a plain `employee` who already owns 15 of the 17 step-owner rows) is now the owner of all
+seven lists. Changeable in Setup → Master Owners without code. **Worth a second look:** session types
+carries the report codes the KPI arithmetic matches on, and it may belong to an admin rather than to
+her.
+
+**Verified in the browser on localhost, as admin** — every tab renders; an external trainer saves; a
+duplicate name is refused with a sentence rather than an index name; an internal trainer with nobody
+picked is refused before the request is even sent; picking the employee saves; asking for a venue,
+correcting its name at review and approving lands the **corrected** row in the master; Reject stays
+disabled until a reason is typed; scheduling records the venue; an online venue blocks Create until
+the link is typed; Session Detail renders it. ⚠ **Still owed: one pass as a real non-admin master
+owner** — the database half of that gate is proved (above), the read-only rendering of the six tabs
+she owns is not.
+
+**Test rows left in place, to remove before go-live** (they join LD-1's own `ZZ TEST Numbers
+Academy`): trainers `ZZ TEST Bright Minds` and `ZZ TEST Internal Person`, venues `ZZ TEST Seminar
+Hall (2nd floor)` and `ZZ TEST Google Meet`, and one approved venue master-request. The two training
+requests walked to reach the scheduling step were deleted again.
+
+⚠ **`MasterCrud` has the `FieldLabel` bug, and this module dodged it rather than fixing it.**
+`MasterCrud` wraps every field in `FieldLabel`, which is a `<label>`, so clicking the question text
+above a `ChoiceButtons` strip silently presses the FIRST option. Over a `Combobox` the same click only
+opens the picker, which is harmless — so every fixed pair here (trainer type, venue online) is
+declared `select`, not `choice`. **The bug itself is untouched and is shared by every FMS in the hub**
+— it affects `MasterCrud`'s `choice` fields everywhere, on top of the 15 cases already logged in 5
+files. Fixing it is one branch in `MasterCrud.tsx` and belongs in its own change, not in LD-13.
 
 ---
 

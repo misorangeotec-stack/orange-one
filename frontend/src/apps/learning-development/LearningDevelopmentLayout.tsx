@@ -58,8 +58,23 @@ export default function LearningDevelopmentLayout() {
         canMonitor: s.canMonitor,
         countByStep,
         queues,
+        canSeeMasters: s.canSeeMasters,
+        canManageMandatory: s.canManageMandatory,
+        canUseMasterRequests: s.canUseMasterRequests,
+        pendingMasterRequests: s.pendingMasterRequests,
       }),
-    [isAdmin, s.canRaise, s.isPipelineStaff, s.canMonitor, countByStep, queues],
+    [
+      isAdmin,
+      s.canRaise,
+      s.isPipelineStaff,
+      s.canMonitor,
+      s.canSeeMasters,
+      s.canManageMandatory,
+      s.canUseMasterRequests,
+      s.pendingMasterRequests,
+      countByStep,
+      queues,
+    ],
   );
 
   // Who did it: the directory first, the org-wide list as backup — `profiles` is

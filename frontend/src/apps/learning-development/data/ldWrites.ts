@@ -1,6 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import type { Database, Json } from "@/core/platform/database.types";
-import type { ApprovalRule } from "../types";
+import { masterTypeLabel, type ApprovalRule, type LdMasterType } from "../types";
 
 /**
  * Only the RPCs `database.types.ts` knows about. Typing the helper against the
@@ -673,3 +673,256 @@ export interface PlanAdherence {
 
 export const planAdherence = (fyCode?: string): Promise<PlanAdherence> =>
   rpc("fms_ld_plan_adherence", { p_fy: fyCode ?? null });
+
+/* ------------------------------------------------------- LD-13: the masters */
+
+/**
+ * Master writes.
+ *
+ * ⚠ WRITTEN DIRECTLY, NOT THROUGH AN RPC — and that is the honest exception this
+ *   file's header names. A master row has no state machine: its RLS policy
+ *   (`is_admin(…) OR fms_ld_is_master_manager(<type>, …)`) already says exactly
+ *   who may write it, and wrapping that in a definer function would put one rule
+ *   in two places. RESOLVING A REQUEST is different — it re-checks authz, locks
+ *   the request row and inserts into a table the caller may not own — so that one
+ *   goes through `fms_ld_resolve_master_request`, which is its only door.
+ */
+
+/** Which table backs each list. One map, so a typo cannot invent a table name. */
+const MASTER_TABLE: Record<LdMasterType, string> = {
+  session_type: "fms_ld_session_types",
+  competency: "fms_ld_competencies",
+  need_source: "fms_ld_need_sources",
+  venue: "fms_ld_venues",
+  trainer: "fms_ld_trainers",
+  delay_reason: "fms_ld_delay_reasons",
+  followup_action: "fms_ld_followup_actions",
+};
+
+const txt = (v: unknown): string => String(v ?? "").trim();
+const orNull = (v: unknown): string | null => txt(v) || null;
+const intOrNull = (v: unknown): number | null => {
+  const s = txt(v);
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n) : null;
+};
+const numOrNull = (v: unknown): number | null => {
+  const s = txt(v).replace(/,/g, "");
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+const isYes = (v: unknown): boolean => {
+  const s = txt(v).toLowerCase();
+  return s === "yes" || s === "true" || s === "y" || s === "1";
+};
+
+/**
+ * Turn a MasterCrud value bag into the row its table expects.
+ *
+ * MasterCrud hands every field back as a STRING — that is its contract, so one
+ * form and one Excel round trip can serve seven different masters. The typing
+ * happens here, once per master, rather than in seven screens.
+ */
+function masterRow(mt: LdMasterType, v: Record<string, string>, active: boolean) {
+  const base = { name: txt(v.name), active };
+  switch (mt) {
+    case "session_type":
+      // ⚠ NULL, NOT "" — `code` is UNIQUE, and two types both carrying the empty
+      //   string collide on the second save. Nullable-unique lets any number of
+      //   types have no code, which is the intended shape.
+      return { ...base, code: orNull(v.code) };
+    case "venue":
+      return {
+        ...base,
+        address: orNull(v.address),
+        capacity: intOrNull(v.capacity),
+        is_online: isYes(v.is_online),
+      };
+    case "trainer": {
+      const internal = txt(v.trainer_type) === "internal";
+      return {
+        ...base,
+        trainer_type: internal ? "internal" : "external",
+        /*
+         * ⚠ FORCED TO NULL FOR AN EXTERNAL TRAINER RATHER THAN PASSED THROUGH.
+         *   `fms_ld_trainers_internal_has_employee` makes the two shapes mutually
+         *   exclusive, so an employee id left over from a type switch — or a
+         *   stray column in an imported sheet — would be refused by the database
+         *   with a constraint name instead of a sentence. The form checks this
+         *   too (`missingRequired`); this is the half that also covers the Excel
+         *   import, which never opens the form at all.
+         */
+        employee_id: internal ? orNull(v.employee_id) : null,
+        agency: orNull(v.agency),
+        contact_name: orNull(v.contact_name),
+        email: orNull(v.email),
+        phone: orNull(v.phone),
+        speciality: orNull(v.speciality),
+        rate: numOrNull(v.rate),
+      };
+    }
+    default:
+      return base;
+  }
+}
+
+/**
+ * The database's own messages, turned into something a person can act on.
+ *
+ * A duplicate name comes back as `duplicate key value violates unique constraint
+ * "fms_ld_venues_name_key"`, which names the index rather than the problem; the
+ * trainer CHECK is worse. Left raw, the reader's only move is to ask us.
+ */
+function readableMasterError(mt: LdMasterType, message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("fms_ld_trainers_internal_has_employee")) {
+    return "An internal trainer must be one of our own people, and an external one must not be. Fix the pair and save again.";
+  }
+  if (m.includes("fms_ld_trainers_name_type_uniq")) {
+    return "There is already a trainer with that name and that type. If it is switched off, reactivate it instead of adding it again.";
+  }
+  if (m.includes("fms_ld_session_types_code_key")) {
+    return "Another session type already carries that report code. Codes have to be unique — reports match on them.";
+  }
+  if (m.includes("duplicate key") || m.includes("23505")) {
+    return `There is already a ${masterTypeLabel(mt).toLowerCase()} with that name. If it is switched off, reactivate it instead of adding it again.`;
+  }
+  if (m.includes("row-level security") || m.includes("violates row-level")) {
+    return `You do not own the ${masterTypeLabel(mt).toLowerCase()} list. An admin assigns owners in Setup → Master Owners.`;
+  }
+  return message;
+}
+
+/** Add or edit one master row. RLS enforces that you own that list. */
+export const saveMaster = async (
+  mt: LdMasterType,
+  id: string | null,
+  values: Record<string, string>,
+  active: boolean,
+): Promise<void> => {
+  /*
+   * ⚠ CHECKED HERE, NOT ONLY IN THE FORM. `MasterCrud` validates `required` and
+   *   nothing else — it cannot know that two of a master's fields constrain each
+   *   other — so without this the Masters screen would post an impossible pair,
+   *   take a 400 back and show the database's wording. The request and review
+   *   modals call `missingRequired` instead, which says the same thing; this is
+   *   the arm that also covers the Excel import, which opens no form at all.
+   */
+  if (mt === "trainer") {
+    const internal = txt(values.trainer_type) === "internal";
+    const who = txt(values.employee_id);
+    if (internal && !who) {
+      throw new Error(
+        "An internal trainer has to be one of our own people — pick the employee, or make them External.",
+      );
+    }
+  }
+  const row = masterRow(mt, values, active);
+  const table = supabase.from(MASTER_TABLE[mt] as never);
+  const { error } = id
+    ? await (table as any).update(row).eq("id", id)
+    : await (table as any).insert(row);
+  if (error) throw new Error(readableMasterError(mt, error.message));
+};
+
+/**
+ * Switch a master row off.
+ *
+ * ⚠ DEACTIVATE, NEVER DELETE. A trainer who ran three sessions, a venue two
+ *   years of trainings happened in, a delay reason on a closed request — all of
+ *   them are history that has to keep reading correctly after the row leaves the
+ *   pickers. Every FK into these tables is `on delete restrict`, so a delete
+ *   would be refused anyway.
+ */
+export const setMasterActive = async (
+  mt: LdMasterType,
+  id: string,
+  active: boolean,
+): Promise<void> => {
+  const { error } = await (supabase.from(MASTER_TABLE[mt] as never) as any)
+    .update({ active })
+    .eq("id", id);
+  if (error) throw new Error(readableMasterError(mt, error.message));
+};
+
+/** Ask for a value that is not on a list yet. */
+export const requestMaster = async (
+  mt: LdMasterType,
+  payload: Record<string, unknown>,
+  requestedBy: string,
+): Promise<void> => {
+  const { error } = await supabase.from("fms_ld_master_requests").insert({
+    master_type: mt,
+    proposed_payload: payload as Json,
+    requested_by: requestedBy,
+    status: "pending",
+  });
+  if (error) throw new Error(error.message);
+};
+
+/**
+ * Approve or reject a request.
+ *
+ * `payload` is what lets the reviewer CORRECT what was typed before approving it
+ * — "bright minds consultng" becomes "Bright Minds Consulting", external, with an
+ * agency name — and the correction is what the master row gets. Approving a
+ * misspelling because it was quicker than fixing it is how a master list rots.
+ *
+ * ⚠ THE PAYLOAD KEYS ARE READ VERBATIM by the RPC. They come from
+ *   `lib/masterFields.ts`, which carries the contract; do not build one by hand.
+ */
+export const resolveMasterRequest = async (
+  requestId: string,
+  approve: boolean,
+  note: string | null,
+  payload: Record<string, unknown> | null,
+): Promise<string | null> => {
+  const data = await rpc("fms_ld_resolve_master_request", {
+    p_request_id: requestId,
+    p_approve: approve,
+    p_note: note ?? undefined,
+    p_payload: (payload ?? undefined) as Json | undefined,
+  });
+  return (data as string | null) ?? null;
+};
+
+/**
+ * A mandatory programme — POSH, Safety, anything everyone must do.
+ *
+ * ⚠ A DIFFERENT GATE FROM THE OTHER SEVEN. Its RLS policy reads `is_admin OR
+ *   fms_ld_is_coordinator`, not `fms_ld_is_master_manager`, so owning a master
+ *   does not open it and it has no Master Owners row. It is also absent from both
+ *   master CHECK lists, which is why nobody can request one.
+ */
+export const saveMandatoryProgram = async (
+  id: string | null,
+  values: Record<string, string>,
+  active: boolean,
+): Promise<void> => {
+  const row = {
+    name: txt(values.name),
+    session_type_code: txt(values.session_type_code),
+    cycle: txt(values.cycle) || "annual",
+    active,
+  };
+  const { error } = id
+    ? await supabase.from("fms_ld_mandatory_programs").update(row).eq("id", id)
+    : await supabase.from("fms_ld_mandatory_programs").insert(row);
+  if (error) {
+    throw new Error(
+      String(error.message).includes("duplicate key")
+        ? "There is already a mandatory programme with that name."
+        : error.message,
+    );
+  }
+};
+
+export const setMandatoryProgramActive = async (id: string, active: boolean): Promise<void> => {
+  const { error } = await supabase
+    .from("fms_ld_mandatory_programs")
+    .update({ active })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+};

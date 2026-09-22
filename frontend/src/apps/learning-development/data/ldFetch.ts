@@ -13,6 +13,8 @@ import type {
   PlanLine,
   LdActivity,
   LdNotification,
+  MandatoryProgram,
+  MasterRequest,
   MasterRow,
   SessionType,
   StepAssignee,
@@ -218,7 +220,7 @@ export interface LdData {
   delayReasons: MasterRow[];
   followupActions: MasterRow[];
   masterManagers: { masterType: string; managerUserId: string }[];
-  masterRequests: any[];
+  masterRequests: MasterRequest[];
   activity: LdActivity[];
   notifications: LdNotification[];
   nominations: Nomination[];
@@ -230,7 +232,7 @@ export interface LdData {
   effectiveness: Effectiveness[];
   plans: Plan[];
   planLines: PlanLine[];
-  mandatoryPrograms: MasterRow[];
+  mandatoryPrograms: MandatoryProgram[];
   stepSla: StepSlaMap;
   coordinatorIds: string[];
   approvalRule: ApprovalRule;
@@ -326,7 +328,20 @@ export async function fetchLdData(): Promise<LdData> {
       masterType: m.master_type,
       managerUserId: m.manager_user_id,
     })),
-    masterRequests,
+    masterRequests: masterRequests.map(
+      (r): MasterRequest => ({
+        id: r.id,
+        masterType: r.master_type,
+        proposedPayload: (r.proposed_payload ?? {}) as Record<string, unknown>,
+        status: r.status,
+        requestedBy: r.requested_by,
+        reviewedBy: r.reviewed_by,
+        reviewNote: r.review_note,
+        resolvedMasterId: r.resolved_master_id,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }),
+    ),
     activity: activity.map((a) => ({
       id: a.id,
       entityType: a.entity_type,
@@ -397,7 +412,13 @@ export async function fetchLdData(): Promise<LdData> {
       plannedHeadcount: r.planned_headcount, plannedHours: num(r.planned_hours),
       estimatedCost: num(r.estimated_cost), note: r.note, sortOrder: r.sort_order ?? 0,
     })),
-    mandatoryPrograms: mandatoryPrograms.map(master),
+    mandatoryPrograms: mandatoryPrograms.map(
+      (r): MandatoryProgram => ({
+        ...master(r),
+        sessionTypeCode: r.session_type_code,
+        cycle: r.cycle,
+      }),
+    ),
     stepSla: resolveStepSla(cfg.step_sla ?? null),
     coordinatorIds: (cfg.process_coordinators?.user_ids ?? []) as string[],
     approvalRule: {
