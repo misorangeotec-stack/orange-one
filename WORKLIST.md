@@ -9943,6 +9943,7 @@ already live through `kpi_report`. Add this module and the sheet reads:
 | 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[x]` |
 | 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) | **LD-11** | `[ ]` |
 | 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
+| 13 | 🔴 **Masters + Master Requests** — trainers, venues, competencies. **Blocks HR running a trial alone** | **LD-13** | `[ ]` |
 
 **Build order is the list order**, with two exceptions worth stating: **LD-2 must land with or before
 LD-1's session step** (a session needs somewhere to say which plan line it fulfils, and adding that column
@@ -10344,6 +10345,33 @@ Three separate places, and the module is only half-built until all three are don
 here are against lines that still say "assessment", and the adherence lines score against targets no two
 documents agree on. Shipping first means the first scorecard anybody sees is wrong in a way that looks
 like our bug.
+
+---
+
+### LD-13 · 🔴 Masters and Master Requests — the screens HR needs to start  `[ ]`
+*Raised 2026-09-22 · **the one thing blocking HR from running a trial without us***
+
+HR reaches **step 6, Trainer Finalisation, and stops.** The trainer is mandatory and the master holds
+only the one test agency we seeded — there is no screen to add another. Venues and competencies are
+empty too, but both are optional fields and degrade quietly; the trainer does not.
+
+**What to build.** One `pages/masters/Masters.tsx` with a tab per master, each a `MasterCrud` —
+which brings sorting, cascading filters, the 25-a-page rule and the Excel round trip with no wiring.
+Seven masters: session types, competencies, need sources, venues, trainers, delay reasons,
+follow-up actions. Plus `pages/MasterRequests.tsx` over `fms_ld_master_requests`, whose approve RPC
+(`fms_ld_resolve_master_request`) is already built and applied.
+
+**Copy the pattern from** `apps/complaint/pages/masters/Masters.tsx` — the most compact use of
+`MasterCrud` in the repo. The store needs a `saveMaster` / `setMasterActive` pair and a `canManage`
+per master type; `fms_ld_master_managers` and `fms_ld_is_master_manager()` already decide who may.
+
+⚠ **`lib/masterFields.ts` does not exist yet and the approve RPC already expects it.** The payload
+keys in `fms_ld_resolve_master_request` are read verbatim, so a field added on the screen without
+matching there is silently dropped on approve. Change the two together.
+
+⚠ **An external trainer is a master row, never a login** (LD-0 · 5), and `fms_ld_trainers` has a
+CHECK enforcing it: internal carries `employee_id`, external must not. The form has to follow that
+or the insert fails.
 
 ---
 
