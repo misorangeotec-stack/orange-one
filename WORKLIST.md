@@ -9933,12 +9933,12 @@ already live through `kpi_report`. Add this module and the sheet reads:
 | 0 | The twelve decisions — **all answered 21-09-2026**, plus the two things HR still owes | **LD-0** | `[x]` |
 | 1 | The spine: schema, app shell, steps 1–8, request list + detail, **Setup**, queues, RLS | **LD-1** | `[ ]` |
 | 2 | Annual Training Plan + the **calendar everyone sees** | **LD-2** | `[ ]` |
-| 3 | Nomination, nomination approval, invitation and RSVP | **LD-3** | `[ ]` |
-| 4 | Pre-training material and **My Learning** — the participant's door | **LD-4** | `[ ]` |
-| 5 | Conduct, attendance, attendance sheet, absentee follow-up | **LD-5** | `[ ]` |
-| 6 | **The assignment** — issued, submitted, reviewed (no marks, no test) | **LD-6** | `[ ]` |
-| 7 | Feedback and the HR session review | **LD-7** | `[ ]` |
-| 8 | 30-day effectiveness, follow-up decision and closure | **LD-8** | `[ ]` |
+| 3 | Nomination, nomination approval, invitation and RSVP | **LD-3** | `[x]` |
+| 4 | Pre-training material and **My Learning** — the participant's door | **LD-4** | `[x]` |
+| 5 | Conduct, attendance, attendance sheet, absentee follow-up | **LD-5** | `[x]` |
+| 6 | **The assignment** — issued, submitted, reviewed (no marks, no test) | **LD-6** | `[x]` |
+| 7 | Feedback and the HR session review | **LD-7** | `[x]` |
+| 8 | 30-day effectiveness, follow-up decision and closure | **LD-8** | `[x]` |
 | 9 | POSH / Safety yearly compliance — everyone, once a year | **LD-9** | `[ ]` |
 | 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[ ]` |
 | 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) | **LD-11** | `[ ]` |
@@ -10108,7 +10108,19 @@ telling those apart, and a rescheduled session keeps its original in the audit t
 
 ---
 
-### LD-3 · 🔴 Nomination, approval, invitation and RSVP  `[ ]`
+### LD-3 · 🟢 Nomination, approval, invitation and RSVP  `[x]`
+
+> 🟢 **LD-3 … LD-8 ARE BUILT (22-09-2026).** Migration `20261215120200` (7 tables, 22 functions)
+> applied after its rollback was rehearsed, proved by `…_verify.sql` — **26 checks driven as real
+> non-admin people**, all passing. Screens: a **Session Detail** page carrying eight panels, a
+> **My Learning** page for everybody, an **All Sessions** register, and the calendar wired to open a
+> session. `npm run build` passes; driven on localhost as the L&D executive and as a real attendee
+> with no console errors.
+>
+> 🔴 **STILL NOT DEPLOYED** — branch `learning-development`, worktree `D:\AI Development\oo-ld`.
+>
+> **What is left on the module:** LD-2's annual-plan screens, LD-9 (POSH/Safety), LD-10 (reports and
+> the weekly Section C feed), LD-11 (KPI wiring) and LD-12 (email, which ships OFF).
 *Raised 2026-09-21*
 
 `fms_ld_nominations`, one row per (session, employee): `nominated_by`, `nominated_at`, `source`
@@ -10134,7 +10146,7 @@ telling those apart, and a rescheduled session keeps its original in the audit t
 
 ---
 
-### LD-4 · 🟡 Pre-training material, and My Learning  `[ ]`
+### LD-4 · 🟢 Pre-training material, and My Learning  `[x]`
 *Raised 2026-09-21*
 
 **Material.** `fms_ld_materials` (session, title, kind — agenda / pre-read / slide deck / other, file path
@@ -10159,7 +10171,7 @@ nominee who receives an invitation to a page they cannot open.
 
 ---
 
-### LD-5 · 🟡 Conduct, attendance and the absentee follow-up  `[ ]`
+### LD-5 · 🟢 Conduct, attendance and the absentee follow-up  `[x]`
 *Raised 2026-09-21*
 
 - **Conduct:** actual start/end, session outcome (conducted / rescheduled / cancelled / partially
@@ -10179,7 +10191,7 @@ nominee who receives an invitation to a page they cannot open.
 
 ---
 
-### LD-6 · 🟡 The assignment — issued, submitted, reviewed  `[ ]`
+### LD-6 · 🟢 The assignment — issued, submitted, reviewed  `[x]`
 *Raised 2026-09-21 · 🔴 **No test, no marks, no pass mark.** Client, 21-09-2026: "We just need to track
 whether all the employees have submitted their assignment that has been provided during the training."*
 
@@ -10215,7 +10227,7 @@ above is unaffected by it.
 
 ---
 
-### LD-7 · 🟡 Feedback and the HR session review  `[ ]`
+### LD-7 · 🟢 Feedback and the HR session review  `[x]`
 *Raised 2026-09-21*
 
 `fms_ld_feedback`, one row per (session, employee), unique: `content_rating`, `trainer_rating`,
@@ -10232,7 +10244,7 @@ low score or serious feedback; the weekly form's *"Low-score session under revie
 
 ---
 
-### LD-8 · 🟡 30-day effectiveness, follow-up and closure  `[ ]`
+### LD-8 · 🟢 30-day effectiveness, follow-up and closure  `[x]`
 *Raised 2026-09-21*
 
 **The client's wording:** *"The HOD of the department, for whatsoever employees were there in this
