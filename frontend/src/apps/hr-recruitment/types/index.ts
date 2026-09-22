@@ -749,6 +749,17 @@ export interface Probation {
   permanentFrom: string | null;
   /** Captured on approval: the ID they are confirmed under. */
   employeeCode: string | null;
+  /**
+   * NR-10 / KPI 1C.7 — the confirmation letter, in `fms-hr-docs`.
+   *
+   * Null on a probation that was extended or not confirmed (neither gets one),
+   * AND on a confirmed one whose letter has not been produced — a real state,
+   * because issuing the letter must never be able to fail the confirmation.
+   */
+  letterPath: string | null;
+  letterName: string | null;
+  letterAt: string | null;
+  letterBy: string | null;
   /** When an 'extend' decision was last corrected. Distinct from updatedAt. */
   editedAt: string | null;
   editedBy: string | null;

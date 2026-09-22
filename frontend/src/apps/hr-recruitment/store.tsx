@@ -62,6 +62,7 @@ import {
   setInduction as setInductionWrite,
   submitProbationCheckin as submitProbationCheckinWrite,
   setEmployeeUser as setEmployeeUserWrite,
+  setProbationLetter as setProbationLetterWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
   uploadResume,
@@ -431,6 +432,8 @@ interface HrStoreValue {
     filePath?: string | null,
     fileName?: string | null,
   ) => Promise<void>;
+  /** NR-10 / KPI 1C.7 — record the confirmation letter against the probation. */
+  setProbationLetter: (probationId: string, path: string, name: string) => Promise<void>;
   /** NR-10 / P0 — link the hire to their Orange One account. */
   setEmployeeUser: (onboardingId: string, userId: string | null) => Promise<void>;
   reviewOf: (probationId: string, month: number) => ProbationReview | undefined;
@@ -1529,6 +1532,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         probationCheckins.find((c) => c.probationId === pid && c.dayNo === day),
       submitProbationCheckin: async (pid, day, side, status, remarks, filePath = null, fileName = null) => {
         await submitProbationCheckinWrite(pid, day, side, status, remarks, filePath, fileName);
+        await invalidate();
+      },
+      setProbationLetter: async (pid, path, name) => {
+        await setProbationLetterWrite(pid, path, name);
         await invalidate();
       },
       setEmployeeUser: async (oid, uid) => {

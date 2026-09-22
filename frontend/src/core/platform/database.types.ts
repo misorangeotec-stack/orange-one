@@ -3034,6 +3034,10 @@ export type Database = {
           outcome_by: string | null
           outcome_remarks: string | null
           permanent_from: string | null
+          letter_path: string | null
+          letter_name: string | null
+          letter_at: string | null
+          letter_by: string | null
           requisition_id: string
           updated_at: string
         }
@@ -3059,6 +3063,10 @@ export type Database = {
           outcome_by?: string | null
           outcome_remarks?: string | null
           permanent_from?: string | null
+          letter_path?: string | null
+          letter_name?: string | null
+          letter_at?: string | null
+          letter_by?: string | null
           requisition_id: string
           updated_at?: string
         }
@@ -3084,6 +3092,10 @@ export type Database = {
           outcome_by?: string | null
           outcome_remarks?: string | null
           permanent_from?: string | null
+          letter_path?: string | null
+          letter_name?: string | null
+          letter_at?: string | null
+          letter_by?: string | null
           requisition_id?: string
           updated_at?: string
         }
@@ -8968,6 +8980,10 @@ export type Database = {
           p_round: number
           p_video_url?: string
         }
+        Returns: undefined
+      }
+      fms_hr_set_probation_letter: {
+        Args: { p_name: string; p_path: string; p_probation: string }
         Returns: undefined
       }
       fms_hr_set_requisition_jd: {

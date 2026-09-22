@@ -418,6 +418,22 @@ export async function submitProbationCheckin(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * NR-10 / KPI 1C.7 — record the confirmation letter against the probation.
+ *
+ * Called AFTER the confirmation, never as part of it: the decision is the fact
+ * and the letter is a document about it, so a failed render must not be able to
+ * un-confirm somebody. The RPC refuses a probation that was not confirmed.
+ */
+export async function setProbationLetter(probationId: string, path: string, name: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_probation_letter", {
+    p_probation: probationId,
+    p_path: path,
+    p_name: name,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** NR-10 / P0 — link the hire to the Orange One account created for them. */
 export async function setEmployeeUser(onboardingId: string, userId: string | null): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_set_employee_user", {

@@ -9,7 +9,8 @@ import { todayIso } from "@/shared/lib/time";
 import CheckinRow from "./CheckinRow";
 import { checkinStepKey } from "../../lib/steps";
 import { useHrStore } from "../../store";
-import { hrDocUrl } from "../../data/hrWrites";
+import { hrDocUrl, uploadProbationDoc } from "../../data/hrWrites";
+import { buildConfirmationLetter } from "../../lib/confirmationLetter";
 import { stepByKey } from "../../lib/steps";
 import { CHECKIN_DAYS, type Probation } from "../../types";
 
@@ -67,6 +68,25 @@ export default function ProbationPanel({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  /** Build the confirmation letter, store it, and record where it landed. */
+  const issueLetter = async () => {
+    const cand = s.candidateById(p.candidateId);
+    const req = s.requisitionById(p.requisitionId);
+    const fresh = s.probationById(p.id) ?? p;
+    const file = await buildConfirmationLetter({
+      name: cand?.name ?? "The employee",
+      jobTitle: req?.jobTitle ?? "—",
+      department: req ? (s.departments.find((d) => d.id === req.departmentId)?.name ?? null) : null,
+      employeeCode: fresh.employeeCode ?? onboardingCode ?? null,
+      joiningDate: p.joiningDate,
+      confirmedOn: todayIso(),
+      permanentFrom: fresh.permanentFrom ?? permanentFrom ?? null,
+      decidedBy: fresh.outcomeBy ? s.personName(fresh.outcomeBy) : null,
+    });
+    const up = await uploadProbationDoc(p.id, 0, file);
+    await s.setProbationLetter(p.id, up.path, file.name);
+  };
+
   const submitDecision = async () => {
     setBusy(true);
     setErr(null);
@@ -80,6 +100,19 @@ export default function ProbationPanel({
         await s.decideProbation(p, decision, remarks.trim(), permFrom, code);
       }
       setRemarks("");
+
+      // NR-10 / KPI 1C.7 — the letter follows the confirmation, and ONLY a
+      // confirmation. ⚠ Deliberately AFTER the decision and outside its failure
+      // path: the decision is the fact, the letter is a document about it, and a
+      // font that would not load must never be able to un-confirm somebody. If it
+      // fails the panel offers "Issue the letter" and the record says it is missing.
+      if (decision === "approve") {
+        try {
+          await issueLetter();
+        } catch (e) {
+          setErr(`Confirmed — but the letter could not be produced: ${(e as Error).message}`);
+        }
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -155,6 +188,7 @@ export default function ProbationPanel({
             }`}
           >
             {p.finalStatus === "approved" ? (
+              <>
               <p className="text-[13px] text-navy">
                 Confirmed permanent from <strong>{formatDateDMY(p.permanentFrom)}</strong>
                 {p.employeeCode && (
@@ -165,6 +199,48 @@ export default function ProbationPanel({
                 )}
                 .
               </p>
+
+              {/* KPI 1C.7 — the letter that had to exist for this line to score.
+                  It is shown as MISSING rather than silently absent: a confirmed
+                  probation with no letter is a real state (generation runs after
+                  the decision and must never be able to fail it), and the only
+                  way anybody would notice is if the record says so. */}
+              {p.letterPath ? (
+                <button
+                  type="button"
+                  className="mt-1.5 text-[12.5px] font-medium text-orange hover:underline"
+                  onClick={() => void openDoc(p.letterPath!)}
+                >
+                  {p.letterName ?? "Confirmation letter"} →
+                </button>
+              ) : (
+                mayAct && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <span className="text-[12px] text-grey-2">No confirmation letter yet.</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() =>
+                        void (async () => {
+                          setBusy(true);
+                          setErr(null);
+                          try {
+                            await issueLetter();
+                          } catch (e) {
+                            setErr((e as Error).message);
+                          } finally {
+                            setBusy(false);
+                          }
+                        })()
+                      }
+                    >
+                      Issue the letter
+                    </Button>
+                  </div>
+                )
+              )}
+              </>
             ) : (
               <>
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-ryg-red">
