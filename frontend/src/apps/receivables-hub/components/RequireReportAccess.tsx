@@ -1,6 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { findReport, reportHref, reportsAtPath, type ReportEntry } from "@hub/lib/reportCatalog";
-import { BASE } from "@hub/lib/menus";
+import { findReport, reportHref, reportsAtPath, reportsHome, type ReportEntry } from "@hub/lib/reportCatalog";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import ScopeBanner from "@hub/components/ScopeBanner";
 
@@ -21,10 +20,17 @@ import ScopeBanner from "@hub/components/ScopeBanner";
  *     <Route element={<RequireReportAccess />}>
  *       ...every report route...
  *
+ * (Those two now sit in apps/reports/ReportsApp.tsx, where the routes moved — the guards
+ * themselves are unchanged, and deliberately so: the promotion out of the hub was a move,
+ * not a re-think of who may read what.)
+ *
  * It also renders the ScopeBanner, because it has already had to resolve the entry.
  *
- * Denied users go to the hub home rather than a wall, matching RequireHubMenu: they are
- * legitimate users of this app who were not granted this screen.
+ * Denied users go to the Reports LANDING page rather than a wall: they are legitimate users
+ * of this module who were not granted this particular screen, and the landing page is the one
+ * that can tell them which screens they do hold. (It used to be the hub home, which was the
+ * right answer while the reports lived inside the hub and is the wrong one now they don't.)
+ * The landing page is returned before any denial below, so this can never loop.
  */
 
 /**
@@ -52,7 +58,7 @@ export default function RequireReportAccess() {
   const { pathname, search } = useLocation();
   const { canSee } = useReportAccess();
 
-  const deny = <Navigate to={BASE} replace />;
+  const deny = <Navigate to={reportsHome()} replace />;
   const allow = (report: ReportEntry) => (
     <>
       <ScopeBanner report={report} />
@@ -63,12 +69,12 @@ export default function RequireReportAccess() {
   // The catalogue landing page itself is always reachable — it simply lists fewer rows, and a
   // user with nothing granted gets its empty state. Guarding it would strand them on the
   // dashboard with no way to see that they have no reports.
-  if (pathname === `${BASE}/reports`) return <Outlet />;
+  if (pathname === reportsHome()) return <Outlet />;
 
   // A detail route under a list report: judged on the parent's grant.
   for (const parentId of DETAIL_PARENTS) {
-    if (!pathname.startsWith(`${BASE}/reports/${parentId}/`)) continue;
-    const parent = findReport(`${BASE}/reports/${parentId}`, "");
+    if (!pathname.startsWith(`${reportsHome()}/${parentId}/`)) continue;
+    const parent = findReport(`${reportsHome()}/${parentId}`, "");
     if (!parent || !canSee(parent.id)) return deny;
     return allow(parent);
   }

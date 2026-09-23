@@ -297,7 +297,7 @@ export default function Dashboard() {
     { label: totalCountLabel,      value: totalCountValue,                icon: Users,         warn: false, link: buildRRUrl(riskLevels.length > 0 ? `/outstanding-dashboard/risk-register?risk=${riskLevels.join(",")}` : "/outstanding-dashboard/risk-register"), panel: null },
     { label: "Total Sales",        value: fmt(kpis.totalSales),           icon: DollarSign,    warn: false, link: null,                                                                   panel: null },
     { label: "Total Receipts",     value: fmt(kpis.totalReceipts),        icon: Receipt,       warn: false, link: null,                                                                   panel: null },
-    { label: "Total Other Payments", value: fmt(kpis.totalOtherPayments ?? 0), icon: Wallet,      warn: false, link: "/outstanding-dashboard/reports/other-payments",                       panel: null },
+    { label: "Total Other Payments", value: fmt(kpis.totalOtherPayments ?? 0), icon: Wallet,      warn: false, link: "/reports/other-payments",                       panel: null },
     { label: "Total Outstanding",  value: fmt(kpis.totalOutstanding),     icon: TrendingDown,  warn: true,  link: null,                                                                   panel: "buildup" },
     // NET of On Account — the same basis the Risk Register, Customer Detail and Salesperson
     // Collection Report show, so the four pages tie. The sub-line carries the bridge, because a
@@ -574,7 +574,7 @@ export default function Dashboard() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => navigate("/outstanding-dashboard/reports/other-payments")}
+                      onClick={() => navigate("/reports/other-payments")}
                       className="flex flex-col bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 min-w-[180px] flex-1 text-left hover:border-emerald-400 transition-colors"
                     >
                       <span className="text-[10px] text-emerald-700 font-semibold uppercase tracking-wide mb-1">

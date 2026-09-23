@@ -26,6 +26,14 @@ import type { AppCategory } from "@/apps/categories";
  * cast.
  */
 export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
+  // Bars rising out of a page — the catalogue reads the books, it does not run a process.
+  reports: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 17v-3M12 17v-5M15 17v-2" />
+    </svg>
+  ),
   // Clipboard with a tick — personal work, checked off.
   productivity: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

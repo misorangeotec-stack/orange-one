@@ -710,7 +710,7 @@ export default function CreditTermsReport() {
   if (source === "default") {
     return (
       <div className="p-6 max-w-[900px] mx-auto space-y-4">
-        <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Reports
         </Link>
         <Card className="rounded-card border-border bg-surface">
