@@ -9944,6 +9944,10 @@ already live through `kpi_report`. Add this module and the sheet reads:
 | 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) — **ships OFF**, two deploy-day steps | **LD-11** | `[x]` |
 | 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
 | 13 | **Masters + Master Requests** — trainers, venues, competencies, POSH & Safety | **LD-13** | `[x]` |
+| 14 | 🔴 **Learning hours are never captured** — every hours figure reads zero | **LD-14** | `[ ]` |
+| 15 | 🔴 **A sent-back request is stranded** — nobody can revise or resubmit it | **LD-15** | `[ ]` |
+| 16 | Three smaller things the end-to-end walk turned up | **LD-16** | `[ ]` |
+| 17 | Four questions for HR, collected with the trial feedback | **LD-17** | `[ ]` |
 
 **Build order is the list order**, with two exceptions worth stating: **LD-2 must land with or before
 LD-1's session step** (a session needs somewhere to say which plan line it fulfils, and adding that column
@@ -10513,6 +10517,84 @@ than any other FMS here has.
 `order-to-dispatch`, `hr-exit`, `ocpi` and `travel-desk` are today. Browser-testing a flow on a module
 whose switch is on **sends real mail to real employees**. Arm it only when HR says so, and say out loud
 which notice goes to whom on the day it is armed.
+
+---
+
+### LD-14 · 🔴 Learning hours are never captured, so every hours figure is zero  `[ ]`
+*Raised 2026-09-23 by the end-to-end walk. **Blocks the trial's figures, not the flow.***
+
+`fms_ld_sessions.hours` is **always null**. The scheduling form asks for a start and an end time and
+records both — and nothing ever turns them into a number. `ConductPanel` does not ask either: it sends
+`actualStart: new Date()` and never an `actualEnd`. The only writer is `createSession({hours})`, and no
+screen passes it.
+
+**What it breaks, all of it visible to HR on day one:**
+- **My Learning** — *Hours this year* reads `0.0` against a target of 10, for everybody, forever. The
+  tile beside it (*Sessions attended*) is right, which makes the zero look like a bug in the arithmetic
+  rather than a missing input.
+- **Reports → Learning hours** — all 68 employees read `0.0 · 10.0 short`.
+- **SK-3 of the weekly review report** (10 hours per employee per year) cannot be filled at all.
+
+⚠ **The number is already on the screen.** `10:00–17:00` is stored on the session. Deriving it is a few
+lines; the question is only which number HR wants — the scheduled span, or the actual one. **Ask before
+building**: a training that overran is a different figure from the one that was booked, and `partial`
+attendance already records its own minutes, so the two have to agree.
+
+---
+
+### LD-15 · 🔴 A sent-back request is stranded — nobody can revise or resubmit it  `[ ]`
+*Raised 2026-09-23 by the end-to-end walk. **Tell HR not to use Send back until this lands.***
+
+HR sends a request back at validation with a reason. The raiser **can see it and can do nothing about
+it**:
+- their only button on the request is **Back**;
+- `/queues/sent-back` answers **"No access"** for them — `canSeeQueue` returns false for a step in
+  `ROW_OWNED_STEPS`… except `need_resubmit` is *not* in that list, so the queue gate and the panel gate
+  disagree;
+- the panel does render for them and says *"This step is yours"* — above a card with no control.
+
+The request sits at `returned` indefinitely. **There is no route out for anybody**: `reopenRequest` is
+wired only into `ClosurePanel`, i.e. it reopens a **closed** request, not a returned one.
+
+The panel's own text admits it: *"Editing a returned request lands with LD-2; for now, raise it again
+with the correction, or ask HR to reopen it."* LD-2 became the annual plan, so it never landed, and
+"ask HR to reopen it" describes a control that does not exist.
+
+**What it needs:** the raiser can edit the fields and press Submit again (status → `submitted`,
+`returned_at` cleared, the SLA re-anchored on the new submission — `need_resubmit` already anchors on
+`returnedAt`, so that part is right). Plus `canSeeQueue("need_resubmit")` fixed so the queue opens for
+the person who owes it.
+
+---
+
+### LD-16 · 🟡 Three smaller things the walk turned up  `[ ]`
+*Raised 2026-09-23. None of them blocks anything; all three are visible to HR.*
+
+- **The raiser's own ticket number leaks into the UI.** The sent-back panel prints "LD-2" to whoever
+  raised the request. Remove it with LD-15's fix.
+- **"Recorded" is the moment Save was pressed**, not when the training ran. `ConductPanel` sends
+  `actualStart: new Date()` and no `actualEnd`, so a session marked conducted a week late dates every
+  downstream deadline — the assignment, the feedback — from the day of the click. The 30-day
+  effectiveness task is **not** affected: it is computed server-side from `session_date`.
+- **Department is never defaulted.** The raise form offers a department picker and leaves it blank, so
+  most requests will carry none and the reports cannot break down by department. Either default it to
+  the raiser's own department or make it required — HR's call.
+
+---
+
+### LD-17 · Questions the walk raised for HR, not defects  `[ ]`
+*Raised 2026-09-23. All four are in the trial script; collect the answers with the trial feedback.*
+
+- **Is feedback anonymous to anybody?** Today an attendee sees their own name on their own feedback, and
+  HR sees every name. LD-0 · 11 settled the *trainer's* view (internal sees names, external sees nothing)
+  but never the attendee's. Cheaper to change before people start using it.
+- **Should the HOD's 30-day note appear on their My Learning screen?** It is on the home screen (My Work
+  Today) and on the session, but *My Learning* counts only assignments and feedback, so a HOD's "things
+  you owe" reads 0 while they owe a review.
+- **Is the assignment, with no marks and no test, enough?** It is exactly what the client asked for on
+  21-09; worth confirming once they have seen it.
+- **Does the wording of the five shipped vocabularies fit Orange O Tec?** Session types, need sources,
+  delay reasons, follow-up actions, POSH & Safety all arrived seeded from the source document.
 
 ---
 
