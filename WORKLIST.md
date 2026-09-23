@@ -10393,18 +10393,27 @@ at the hour and cannot get in is the failure that was waiting to happen.
 **Go-live step, done 22-09-2026:** `fms_ld_master_managers` was **empty**, which under the RLS policy
 means *admins only* — so the screen alone would not have unblocked HR. Saloni Rathod (the L&D
 executive, a plain `employee` who already owns 15 of the 17 step-owner rows) is now the owner of all
-seven lists. Changeable in Setup → Master Owners without code. **Worth a second look:** session types
-carries the report codes the KPI arithmetic matches on, and it may belong to an admin rather than to
-her.
+seven lists. Changeable in Setup → Master Owners without code.
+- [ ] **Open, deferred to go-live:** should **session types** be admin-only? It carries the report
+      codes the KPI arithmetic matches on — editing `posh` there would silently break the compliance
+      count — and she is on it today because she is the one who would add a new type mid-year. One row
+      in Setup either way.
 
 **Verified in the browser on localhost, as admin** — every tab renders; an external trainer saves; a
 duplicate name is refused with a sentence rather than an index name; an internal trainer with nobody
 picked is refused before the request is even sent; picking the employee saves; asking for a venue,
 correcting its name at review and approving lands the **corrected** row in the master; Reject stays
 disabled until a reason is typed; scheduling records the venue; an online venue blocks Create until
-the link is typed; Session Detail renders it. ⚠ **Still owed: one pass as a real non-admin master
-owner** — the database half of that gate is proved (above), the read-only rendering of the six tabs
-she owns is not.
+the link is typed; Session Detail renders it.
+
+**And verified as the real user** — signed in as **Saloni Rathod, role `employee`, not an admin**
+(session minted from a magic link, no password touched, revoked `scope=local` afterwards). Her sidebar
+carries Masters and Master Requests and **no Setup**, and only the four queues she owns. **She added a
+trainer** — the thing that blocked the trial — through the screen, as a plain employee. The per-tab
+gate renders exactly as RLS decides it: **POSH & Safety came up read-only for her** (no Add, no
+Import, no row actions, no Actions column, and the card underneath says whose list it is), and with
+her `venue` owner row temporarily removed the **Venues tab went read-only too** while the other six
+stayed editable. The row was put straight back.
 
 **Test rows left in place, to remove before go-live** (they join LD-1's own `ZZ TEST Numbers
 Academy`): trainers `ZZ TEST Bright Minds` and `ZZ TEST Internal Person`, venues `ZZ TEST Seminar
