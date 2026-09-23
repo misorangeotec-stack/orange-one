@@ -349,8 +349,12 @@ export default function Scorecard() {
       <div className="rounded-lg border border-orange/35 bg-orange/[0.05] px-4 py-2.5 text-[12px] leading-relaxed text-navy">
         <span className="font-semibold">Nothing you type here is saved.</span> The figures the hub can read are live; a target
         or a mark you type yourself stays in THIS browser and reaches no appraisal. This is a reading of the sheet against
-        live data, not a record of anybody’s performance. Framework:{" "}
-        <span className="font-medium">{framework.role}</span> · {framework.source}
+        live data, not a record of anybody’s performance.{" "}
+        {/* Only one role's sheet has been transcribed. Whoever is chosen in the picker is scored against THAT job
+            description, so the page has to say whose it is — read without this line, another role's figures look like
+            their own appraisal against their own KRAs. */}
+        <span className="font-semibold">It scores everyone against the {framework.role} sheet</span> — the only one written
+        down so far. Another role needs its own. Source: <span className="font-medium">{framework.source}</span>
       </div>
 
       {problems.length > 0 && (

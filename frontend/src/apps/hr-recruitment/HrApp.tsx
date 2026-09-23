@@ -46,21 +46,6 @@ function RequireRealAdmin({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/**
- * Gate to admins + HODs (the Reports section). Persona-aware like RequireAdmin, so
- * "acting as" an employee in demo mode hides it exactly as it would for them.
- *
- * `hod` AND `sub_hod` both pass: the platform's own `isHod` treats the two as one
- * "team-level access" idea (core/platform/session.tsx), and a sub-HOD has a downline
- * the scorecard's person picker is built to show. Narrow it to `hod` alone here if HR
- * decides otherwise — the nav reads the same flag, so one edit moves both.
- */
-function RequireReports({ children }: { children: ReactNode }) {
-  const { isAdmin, role } = useEffectiveIdentity();
-  if (!isAdmin && role !== "hod" && role !== "sub_hod") return <AccessDenied />;
-  return <>{children}</>;
-}
-
 /** Gate to admins + process coordinators (Control Center). */
 function RequireMonitor({ children }: { children: ReactNode }) {
   const { canMonitor } = useHrStore();
@@ -123,15 +108,22 @@ export default function HrApp() {
             <Route path="sandbox" element={<RequireRealAdmin><SandboxLauncher /></RequireRealAdmin>} />
 
             {/* ---- Reports ----
-                Saloni's PMS scorecard and her Weekly Review Report, rendered from live
-                data. They WRITE NOTHING: figures a reader types stay in that browser and
-                are not saved anywhere, which every one of the pages says on its face.
-                The matching nav items in nav.tsx carry the SAME gate — change one and you
-                must change the other. Paths are siblings, not nested; see nav.tsx. */}
-            <Route path="reports/pms-scorecard" element={<RequireReports><Scorecard /></RequireReports>} />
-            <Route path="reports/pms-compare" element={<RequireReports><Compare /></RequireReports>} />
-            <Route path="reports/weekly-review" element={<RequireReports><WeeklyReview /></RequireReports>} />
-            <Route path="reports/weekly-review-fields" element={<RequireReports><FieldMap /></RequireReports>} />
+                Saloni's PMS scorecard and her Weekly Review Report, rendered from live data.
+
+                NO ROLE GATE, deliberately. Everybody reads their OWN report: the person
+                picker on both pages gives an admin everyone, a head themselves plus their
+                downline, and anyone else themselves alone (`computeDownlineIds`). A role
+                gate on top of that locked Saloni — an `employee`, and the person both
+                documents were written for — out of her own figures, which is the opposite
+                of the point. Reaching them at all still needs the New Recruitment module.
+
+                They WRITE NOTHING: figures a reader types stay in that browser and are not
+                saved anywhere, which every one of the pages says on its face. Paths are
+                siblings, not nested; see nav.tsx. */}
+            <Route path="reports/pms-scorecard" element={<Scorecard />} />
+            <Route path="reports/pms-compare" element={<Compare />} />
+            <Route path="reports/weekly-review" element={<WeeklyReview />} />
+            <Route path="reports/weekly-review-fields" element={<FieldMap />} />
 
             <Route path="*" element={<NotFound />} />
           </Route>

@@ -103,10 +103,8 @@ export default function HrLayout() {
         // Entering demo mode is for the REAL admin — a persona must not be able to
         // re-enter and nest demos.
         canDemo: realAdmin && !demoActive,
-        // Same predicate as RequireReports in HrApp.tsx, so the link and the screen agree.
-        canSeeReports: isAdmin || role === "hod" || role === "sub_hod",
       }),
-    [isAdmin, realAdmin, demoActive, role, s],
+    [isAdmin, realAdmin, demoActive, s],
   );
 
   /**

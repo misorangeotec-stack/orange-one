@@ -100,12 +100,6 @@ export function buildHrNav(opts: {
   canMonitor: boolean;
   /** Real signed-in admin, not in demo mode → show the "Demo mode" entry point. */
   canDemo: boolean;
-  /**
-   * Admins and HODs — the Reports section. A team-level gate on purpose: the PMS
-   * scorecard shows a person's performance mark, and the person picker on it is
-   * already limited to the reader and their downline.
-   */
-  canSeeReports: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -178,15 +172,15 @@ export function buildHrNav(opts: {
    *   DECLARED IMPORTANCE on an HR sheet and scores out of 100. Two different
    *   instruments, and naming them alike gets them confused in a meeting.
    *
-   * ⚠ The SAME gate is on the routes in HrApp.tsx. Change one and you must change
-   *   the other, or the sidebar offers a link that then refuses you.
+   * ⚠ NO ROLE GATE. Everybody who can reach New Recruitment sees these, and reads
+   *   their OWN report — the person picker on each page scopes it. See HrApp.tsx.
    *
    * ⚠ SIBLING PATHS, not nested. The shared Sidebar exact-matches only
    *   two-segment paths, so a child of /reports/weekly-review would light its
    *   parent's row at the same time and the reader could not tell which page
    *   they were on.
    */
-  if (opts.canSeeReports) {
+  {
     let reportSectionUsed = false;
     const report = (label: string, to: string, icon: JSX.Element) => {
       nav.push({ label, to, icon, section: reportSectionUsed ? undefined : "Reports" });
