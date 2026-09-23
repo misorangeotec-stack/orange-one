@@ -34,7 +34,7 @@ import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useSession } from "@/core/platform/session";
-import { computeDownlineIds, useDirectory } from "@/core/platform/store";
+import { useDirectory } from "@/core/platform/store";
 import type { Profile } from "@/core/platform/types";
 import { cn } from "@/shared/lib/cn";
 import { formatDate } from "@/shared/lib/time";
@@ -43,6 +43,10 @@ import { periodLabel, rangeLabel, today, weekOf, type Period } from "@/apps/kra-
 import { inr, REQ_STATUS_LABEL } from "@/apps/hr-recruitment/lib/format";
 import type { RequisitionStatus } from "@/apps/hr-recruitment/types";
 import { LD_GAP, weeklyReviewForm } from "../report/weeklyReview";
+import { formFor, jobsWithAForm } from "../framework/registry";
+import { peopleInReach, reachOf } from "../lib/scope";
+import { useViewers } from "../lib/viewers";
+import NoSheet from "../components/NoSheet";
 import { checkForm, coverageSplit, isAutoFilled, type FieldCoverage } from "../report/types";
 import { useReportData, type OfferRow, type PositionRow } from "../report/data";
 import { flagsOf, suggestedStatus, type Flag } from "../report/flags";
@@ -70,31 +74,34 @@ const STATUS_PICK: { key: WeekStatus; label: string; cls: string; on: string }[]
 const dash = (v: ReactNode | null | undefined) => (v === null || v === undefined || v === "" ? <span className="text-grey-2">—</span> : v);
 
 export default function WeeklyReview() {
-  const { user, isAdmin } = useSession();
+  const { user, isAdmin, role } = useSession();
   const { profiles, departments } = useDirectory();
+  // ⚠ The form is a CONSTANT here only so the ~80-field literal has one name. Whether
+  //   THIS person files it is `formFor` below, and the page renders the empty state
+  //   instead when they do not. Every hook underneath runs either way.
   const form = weeklyReviewForm;
 
   const [period, setPeriod] = useState<Period>(() => weekOf(today()));
   const asOf = today();
 
-  const pool = useMemo<Profile[]>(() => {
-    const byRoleThenName = (a: Profile, b: Profile) =>
-      roleMeta(a.role).rank - roleMeta(b.role).rank || a.name.localeCompare(b.name);
-    if (isAdmin) return profiles.filter((p) => !p.isExternal || p.id === user.id).sort(byRoleThenName);
-    const ids = new Set([user.id, ...computeDownlineIds(profiles, user.id)]);
-    const list = profiles.filter((p) => ids.has(p.id));
-    if (!list.some((p) => p.id === user.id)) list.push(user);
-    return list.sort(byRoleThenName);
-  }, [isAdmin, profiles, user]);
+  // Whose reports this reader may open. One rule, in one file — see lib/scope.ts.
+  const viewers = useViewers();
+  const isViewer = (viewers.data ?? []).some((v) => v.user_id === user.id);
+  const reach = reachOf({ isAdmin, isViewer, role });
+  const pool = useMemo<Profile[]>(() => peopleInReach(profiles, user, reach), [profiles, user, reach]);
 
-  // The form was written for Saloni, so open on her where the reader may see her.
-  const saloni = pool.find((p) => /saloni/i.test(p.name));
+  // ⚠ OPENS ON THE READER. It used to open on Saloni wherever she was visible, which
+  //   was right for one HR sheet on a test page and wrong once every employee could
+  //   open it — a head would land on somebody else's weekly review.
   const [personId, setPersonId] = useState<string>("");
-  const activeId = personId || saloni?.id || user.id;
+  const activeId = personId || user.id;
   const person = pool.find((p) => p.id === activeId) ?? user;
   const reviewers = profiles.filter((p) => person.hodIds.includes(p.id));
 
   const deptName = (id: string | null) => (id ? (departments.find((d) => d.id === id)?.name ?? "—") : "—");
+  const personDept = person.departmentId ? (departments.find((d) => d.id === person.departmentId)?.name ?? null) : null;
+  // The form belongs to the JOB — re-asked whenever the chosen person changes.
+  const personForm = formFor({ department: personDept, designation: person.designation });
   const personName = (id: string | null) => (id ? (profiles.find((p) => p.id === id)?.name ?? "—") : "—");
 
   /* ---------------------------------------------------------------- the notes */
@@ -725,6 +732,16 @@ export default function WeeklyReview() {
         )}
       </Card>
 
+      {!personForm ? (
+        <NoSheet
+          kind="weekly review"
+          personName={person.name}
+          department={personDept}
+          designation={person.designation}
+          jobsThatHaveOne={jobsWithAForm()}
+        />
+      ) : (
+        <>
       <FieldMeter
         counts={counts}
         total={form.fields.length}
@@ -1194,6 +1211,8 @@ export default function WeeklyReview() {
           figures anywhere would make them look like records.
         </p>
       </div>
+        </>
+      )}
     </div>
   );
 }

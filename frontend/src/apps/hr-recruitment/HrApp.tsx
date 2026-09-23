@@ -25,12 +25,6 @@ import Setup from "./pages/settings/Setup";
 import SandboxLauncher from "./sandbox/SandboxLauncher";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
-// KPI-3 reports. The pages stay in apps/kra-kpi-lab/ — they are a library of report
-// screens, not an app of their own — and HR mounts them inside its own shell.
-import Scorecard from "@/apps/kra-kpi-lab/pages/Scorecard";
-import Compare from "@/apps/kra-kpi-lab/pages/Compare";
-import WeeklyReview from "@/apps/kra-kpi-lab/pages/WeeklyReview";
-import FieldMap from "@/apps/kra-kpi-lab/pages/FieldMap";
 
 /** Gate to admins only (Setup) — persona-aware, so "acting as" a non-admin hides it. */
 function RequireAdmin({ children }: { children: ReactNode }) {
@@ -106,24 +100,6 @@ export default function HrApp() {
             <Route path="master-requests" element={<MasterRequests />} />
             <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
             <Route path="sandbox" element={<RequireRealAdmin><SandboxLauncher /></RequireRealAdmin>} />
-
-            {/* ---- Reports ----
-                Saloni's PMS scorecard and her Weekly Review Report, rendered from live data.
-
-                NO ROLE GATE, deliberately. Everybody reads their OWN report: the person
-                picker on both pages gives an admin everyone, a head themselves plus their
-                downline, and anyone else themselves alone (`computeDownlineIds`). A role
-                gate on top of that locked Saloni — an `employee`, and the person both
-                documents were written for — out of her own figures, which is the opposite
-                of the point. Reaching them at all still needs the New Recruitment module.
-
-                They WRITE NOTHING: figures a reader types stay in that browser and are not
-                saved anywhere, which every one of the pages says on its face. Paths are
-                siblings, not nested; see nav.tsx. */}
-            <Route path="reports/pms-scorecard" element={<Scorecard />} />
-            <Route path="reports/pms-compare" element={<Compare />} />
-            <Route path="reports/weekly-review" element={<WeeklyReview />} />
-            <Route path="reports/weekly-review-fields" element={<FieldMap />} />
 
             <Route path="*" element={<NotFound />} />
           </Route>

@@ -18,11 +18,14 @@ import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useSession } from "@/core/platform/session";
-import { computeDownlineIds, useDirectory } from "@/core/platform/store";
+import { useDirectory } from "@/core/platform/store";
 import type { Profile } from "@/core/platform/types";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/time";
-import { saloniFramework } from "../framework/saloni";
+import { frameworkFor, jobsWithAFramework } from "../framework/registry";
+import { peopleInReach, reachNote, reachOf } from "../lib/scope";
+import { useViewers } from "../lib/viewers";
+import NoSheet from "../components/NoSheet";
 import { checkWeights, type Coverage, type KpiLine } from "../framework/types";
 import { useLabData } from "../data/actuals";
 import { checkArithmetic, fmt, type ScoredLine } from "../lib/achievement";
@@ -88,33 +91,39 @@ function actualText(s: ScoredLine): string {
 }
 
 export default function Scorecard() {
-  const { user, isAdmin } = useSession();
-  const { profiles } = useDirectory();
-  const framework = saloniFramework;
+  const { user, isAdmin, role } = useSession();
+  const { profiles, departments } = useDirectory();
 
   const [period, setPeriod] = useState<Period>(defaultPeriod);
 
-  const pool = useMemo<Profile[]>(() => {
-    const byRoleThenName = (a: Profile, b: Profile) =>
-      roleMeta(a.role).rank - roleMeta(b.role).rank || a.name.localeCompare(b.name);
-    if (isAdmin) return profiles.filter((p) => !p.isExternal || p.id === user.id).sort(byRoleThenName);
-    const ids = new Set([user.id, ...computeDownlineIds(profiles, user.id)]);
-    const list = profiles.filter((p) => ids.has(p.id));
-    if (!list.some((p) => p.id === user.id)) list.push(user);
-    return list.sort(byRoleThenName);
-  }, [isAdmin, profiles, user]);
+  // Whose reports this reader may open. One rule, in one file — see lib/scope.ts.
+  const viewers = useViewers();
+  const isViewer = (viewers.data ?? []).some((v) => v.user_id === user.id);
+  const reach = reachOf({ isAdmin, isViewer, role });
+  const pool = useMemo<Profile[]>(() => peopleInReach(profiles, user, reach), [profiles, user, reach]);
 
-  // The sheet was written for Saloni, so open on her where the reader may see her.
-  const saloni = pool.find((p) => /saloni/i.test(p.name));
+  // ⚠ OPENS ON THE READER, always. It used to open on Saloni wherever she was visible,
+  //   which was right when this was one HR sheet on a test page and wrong the moment
+  //   every employee could open it: a head would land on somebody else's scorecard.
   const [personId, setPersonId] = useState<string>("");
-  const activeId = personId || saloni?.id || user.id;
+  const activeId = personId || user.id;
   const person = pool.find((p) => p.id === activeId) ?? user;
 
+  const deptName = (id: string | null) => (id ? (departments.find((d) => d.id === id)?.name ?? null) : null);
+  const personDept = deptName(person.departmentId);
+  // The sheet belongs to the JOB, so it is re-read whenever the chosen person changes.
+  const framework = frameworkFor({ department: personDept, designation: person.designation });
+
   // What the reader has typed, per person and per period.
+  // ⚠ EVERY HOOK BELOW RUNS WHETHER OR NOT THIS JOB HAS A SHEET. React requires the
+  //   same hooks in the same order on every render, so the "no sheet" case is handled
+  //   by what they are GIVEN (an empty key, an empty line list), never by returning
+  //   early above them. The empty state is chosen in the JSX, at the bottom.
+  const frameworkId = framework?.id ?? "no-framework";
   const [manual, setManual] = useState<ManualMap>({});
   useEffect(() => {
-    setManual(loadManual(framework.id, activeId, period.from, period.to));
-  }, [framework.id, activeId, period.from, period.to]);
+    setManual(loadManual(frameworkId, activeId, period.from, period.to));
+  }, [frameworkId, activeId, period.from, period.to]);
   const put = (code: string, patch: Partial<{ param: number | null; achievement: number | null }>) => {
     setManual((prev) => {
       const entry = { ...(prev[code] ?? {}) };
@@ -123,7 +132,7 @@ export default function Scorecard() {
         else entry[k as "param" | "achievement"] = v;
       }
       const next = { ...prev, [code]: entry };
-      saveManual(framework.id, activeId, period.from, period.to, next);
+      saveManual(frameworkId, activeId, period.from, period.to, next);
       return next;
     });
   };
@@ -137,19 +146,19 @@ export default function Scorecard() {
   const q = useLabData(activeId, period.from, period.to, params);
   const data = q.data ?? { report: null, hr: {}, hrError: null };
 
-  const scored = useMemo(() => scoreLines(framework, data, manual), [framework, data, manual]);
+  const scored = useMemo(() => (framework ? scoreLines(framework, data, manual) : []), [framework, data, manual]);
   // ⚠ Totals are ALWAYS the whole sheet's, never the visible rows'. Clicking a band on
   // the coverage meter narrows the grid so a reader can see which lines it means; a
   // score that moved with it would be answering a question nobody asked.
   const totals = useMemo(() => overallTotals(scored), [scored]);
-  const kras = useMemo(() => kraTotals(framework, scored), [framework, scored]);
+  const kras = useMemo(() => (framework ? kraTotals(framework, scored) : []), [framework, scored]);
 
   const [band, setBand] = useState<Coverage | null>(null);
   const visible = useMemo(() => (band ? scored.filter((s) => s.line.coverage === band) : scored), [scored, band]);
 
   // No test runner in this repo: the transcription and the arithmetic check themselves
   // on every render, and say so loudly rather than scoring quietly wrong.
-  const problems = useMemo(() => [...checkWeights(framework), ...checkArithmetic()], [framework]);
+  const problems = useMemo(() => (framework ? [...checkWeights(framework), ...checkArithmetic()] : []), [framework]);
 
   const columns: QueueColumn<ScoredLine>[] = [
     {
@@ -350,11 +359,16 @@ export default function Scorecard() {
         <span className="font-semibold">Nothing you type here is saved.</span> The figures the hub can read are live; a target
         or a mark you type yourself stays in THIS browser and reaches no appraisal. This is a reading of the sheet against
         live data, not a record of anybody’s performance.{" "}
-        {/* Only one role's sheet has been transcribed. Whoever is chosen in the picker is scored against THAT job
-            description, so the page has to say whose it is — read without this line, another role's figures look like
-            their own appraisal against their own KRAs. */}
-        <span className="font-semibold">It scores everyone against the {framework.role} sheet</span> — the only one written
-        down so far. Another role needs its own. Source: <span className="font-medium">{framework.source}</span>
+        {/* The sheet belongs to the JOB, so the page names the one it is applying. Read without this, a reader cannot
+            tell whether they are looking at their own targets or somebody else's. */}
+        {framework ? (
+          <>
+            <span className="font-semibold">Scored against the {framework.role} sheet.</span> Source:{" "}
+            <span className="font-medium">{framework.source}</span>
+          </>
+        ) : (
+          <span className="font-semibold">No sheet has been set up for this job yet.</span>
+        )}
       </div>
 
       {problems.length > 0 && (
@@ -388,7 +402,7 @@ export default function Scorecard() {
             <button
               type="button"
               onClick={() => {
-                clearManual(framework.id, activeId, period.from, period.to);
+                clearManual(frameworkId, activeId, period.from, period.to);
                 setManual({});
               }}
               className="rounded border border-line px-2.5 py-1 text-[12px] text-grey hover:border-orange hover:text-orange"
@@ -406,7 +420,15 @@ export default function Scorecard() {
         </div>
       </Card>
 
-      {q.isError ? (
+      {!framework ? (
+        <NoSheet
+          kind="scorecard"
+          personName={person.name}
+          department={personDept}
+          designation={person.designation}
+          jobsThatHaveOne={jobsWithAFramework()}
+        />
+      ) : q.isError ? (
         <Card className="p-5 text-[13px] text-[#c0392b]">Could not load: {(q.error as Error).message}</Card>
       ) : (
         <>

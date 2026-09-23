@@ -197,6 +197,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/hr-recruitment",
     category: "hr",
   },
+  // The HR instruments the client writes by hand — a weighted PMS sheet per job and
+  // the weekly review form — filled in from live data. Its own app rather than a
+  // corner of New Recruitment: every employee has a KPI sheet, and most of them have
+  // no business in the recruitment pipeline.
+  "hr-reports": {
+    name: "HR Reports",
+    basePath: "/hr-reports",
+    category: "hr",
+  },
   "hr-exit": {
     name: "Employee Exit",
     basePath: "/hr-exit",
