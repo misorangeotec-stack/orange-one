@@ -25,6 +25,12 @@ import Setup from "./pages/settings/Setup";
 import SandboxLauncher from "./sandbox/SandboxLauncher";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
+// KPI-3 reports. The pages stay in apps/kra-kpi-lab/ — they are a library of report
+// screens, not an app of their own — and HR mounts them inside its own shell.
+import Scorecard from "@/apps/kra-kpi-lab/pages/Scorecard";
+import Compare from "@/apps/kra-kpi-lab/pages/Compare";
+import WeeklyReview from "@/apps/kra-kpi-lab/pages/WeeklyReview";
+import FieldMap from "@/apps/kra-kpi-lab/pages/FieldMap";
 
 /** Gate to admins only (Setup) — persona-aware, so "acting as" a non-admin hides it. */
 function RequireAdmin({ children }: { children: ReactNode }) {
@@ -37,6 +43,21 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 function RequireRealAdmin({ children }: { children: ReactNode }) {
   const { isAdmin } = useSession();
   if (!isAdmin) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
+ * Gate to admins + HODs (the Reports section). Persona-aware like RequireAdmin, so
+ * "acting as" an employee in demo mode hides it exactly as it would for them.
+ *
+ * `hod` AND `sub_hod` both pass: the platform's own `isHod` treats the two as one
+ * "team-level access" idea (core/platform/session.tsx), and a sub-HOD has a downline
+ * the scorecard's person picker is built to show. Narrow it to `hod` alone here if HR
+ * decides otherwise — the nav reads the same flag, so one edit moves both.
+ */
+function RequireReports({ children }: { children: ReactNode }) {
+  const { isAdmin, role } = useEffectiveIdentity();
+  if (!isAdmin && role !== "hod" && role !== "sub_hod") return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -100,6 +121,18 @@ export default function HrApp() {
             <Route path="master-requests" element={<MasterRequests />} />
             <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
             <Route path="sandbox" element={<RequireRealAdmin><SandboxLauncher /></RequireRealAdmin>} />
+
+            {/* ---- Reports ----
+                Saloni's PMS scorecard and her Weekly Review Report, rendered from live
+                data. They WRITE NOTHING: figures a reader types stay in that browser and
+                are not saved anywhere, which every one of the pages says on its face.
+                The matching nav items in nav.tsx carry the SAME gate — change one and you
+                must change the other. Paths are siblings, not nested; see nav.tsx. */}
+            <Route path="reports/pms-scorecard" element={<RequireReports><Scorecard /></RequireReports>} />
+            <Route path="reports/pms-compare" element={<RequireReports><Compare /></RequireReports>} />
+            <Route path="reports/weekly-review" element={<RequireReports><WeeklyReview /></RequireReports>} />
+            <Route path="reports/weekly-review-fields" element={<RequireReports><FieldMap /></RequireReports>} />
+
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="*" element={<Navigate to="/hr-recruitment" replace />} />

@@ -56,6 +56,18 @@ const ic = {
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
   ),
+  scorecard: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+  ),
+  compare: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18" /><path d="M5 8 2 13h6zM19 8l-3 5h6z" /><path d="M5 8h14" /></svg>
+  ),
+  weekly: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /><path d="M9 7h6M9 11h6M9 15h3" /></svg>
+  ),
+  fieldMap: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h7v14H3zM14 5h7v14h-7z" /><path d="M10 9h4M10 15h4" /></svg>
+  ),
 };
 
 /**
@@ -88,6 +100,12 @@ export function buildHrNav(opts: {
   canMonitor: boolean;
   /** Real signed-in admin, not in demo mode → show the "Demo mode" entry point. */
   canDemo: boolean;
+  /**
+   * Admins and HODs — the Reports section. A team-level gate on purpose: the PMS
+   * scorecard shows a person's performance mark, and the person picker on it is
+   * already limited to the reader and their downline.
+   */
+  canSeeReports: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -149,6 +167,36 @@ export function buildHrNav(opts: {
   }
   if (opts.isAdmin) admin("Setup", `${B}/settings`, ic.settings);
   if (opts.canDemo) admin("Demo mode", `${B}/sandbox`, ic.demo);
+
+  /**
+   * ── Reports ────────────────────────────────────────────────────────────────
+   * Saloni's two HR instruments, rendered from live data: the weighted PMS
+   * scorecard and the Weekly Review Report.
+   *
+   * ⚠ NOT called "KRA / KPI". The hub already has a live app of that name
+   *   (apps/kra-kpi, KPI-1) which weights by VOLUME; this one weights by the
+   *   DECLARED IMPORTANCE on an HR sheet and scores out of 100. Two different
+   *   instruments, and naming them alike gets them confused in a meeting.
+   *
+   * ⚠ The SAME gate is on the routes in HrApp.tsx. Change one and you must change
+   *   the other, or the sidebar offers a link that then refuses you.
+   *
+   * ⚠ SIBLING PATHS, not nested. The shared Sidebar exact-matches only
+   *   two-segment paths, so a child of /reports/weekly-review would light its
+   *   parent's row at the same time and the reader could not tell which page
+   *   they were on.
+   */
+  if (opts.canSeeReports) {
+    let reportSectionUsed = false;
+    const report = (label: string, to: string, icon: JSX.Element) => {
+      nav.push({ label, to, icon, section: reportSectionUsed ? undefined : "Reports" });
+      reportSectionUsed = true;
+    };
+    report("PMS scorecard", `${B}/reports/pms-scorecard`, ic.scorecard);
+    report("Compare the rules", `${B}/reports/pms-compare`, ic.compare);
+    report("Weekly review report", `${B}/reports/weekly-review`, ic.weekly);
+    report("What the hub can fill", `${B}/reports/weekly-review-fields`, ic.fieldMap);
+  }
 
   nav.push({ label: "My Account", to: "/account", icon: ic.account });
   return nav;
