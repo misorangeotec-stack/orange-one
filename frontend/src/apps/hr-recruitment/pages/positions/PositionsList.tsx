@@ -14,6 +14,8 @@ import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
 import { isLivePosition, lastActivityIso, POSITION_STATUSES } from "../../lib/positions";
 import { isOpenCandidate } from "../../lib/queues";
+import { CLOCK_LABEL, outOf, targetProgress, type TargetProgress } from "../../lib/targets";
+import { todayIso } from "@/shared/lib/time";
 import { REQ_STATUS_LABEL } from "../../lib/format";
 import type { Requisition } from "../../types";
 
@@ -72,6 +74,20 @@ export default function PositionsList() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, s]);
+
+  // NR-7. Computed per row on render: the store already holds every candidate,
+  // interview and onboarding, so this is a filter over data in hand, not a fetch.
+  const today = todayIso();
+  const progressOf = (r: Requisition): TargetProgress => {
+    const cands = s.candidatesFor(r.id);
+    const obs = cands
+      .map((c) => s.onboardingForCandidate(c.id))
+      .filter((o): o is NonNullable<typeof o> => !!o);
+    return targetProgress(r, cands, s.interviews, obs, today);
+  };
+  /** How many of the three bars this position clears. A bar with no target set does not count. */
+  const barsMet = (p: TargetProgress): number =>
+    (p.cvMet ? 1 : 0) + (p.shortlistMet ? 1 : 0) + (p.directorMet ? 1 : 0);
 
   const columns: QueueColumn<Requisition>[] = useMemo(
     () => [
@@ -146,6 +162,78 @@ export default function PositionsList() {
         cell: (r) => <span className="text-grey">{jobTypeName(r.jobTypeId)}</span>,
         sortValue: (r) => jobTypeName(r.jobTypeId),
         filter: { kind: "select", get: (r) => jobTypeName(r.jobTypeId) },
+        tdClassName: "whitespace-nowrap",
+      },
+      // ---- NR-7 · how this position is doing against the numbers HR set -------
+      // Two columns, not five: the clock is one fact people sort by, and the three
+      // bars are one fact people scan. Both sort and both filter, per the standing
+      // rule for every grid in this file.
+      {
+        key: "closure",
+        header: "Closure",
+        cell: (r) => {
+          const p = progressOf(r);
+          if (p.clock === "not-set") return <span className="text-grey-2">Not set</span>;
+          if (p.clock === "not-started") return <span className="text-grey-2">Not posted</span>;
+          const tone = p.clock === "missed" ? "text-ryg-red" : p.clock === "met" ? "text-ryg-green" : "text-navy";
+          return (
+            <span className={`text-[12.5px] font-semibold tabular-nums ${tone}`}>
+              {p.daysUsed} <span className="font-normal text-grey-2">/ {r.targetCloseDays}d</span>
+            </span>
+          );
+        },
+        // Sorted by how much of the period is gone, so the ones about to break the
+        // promise sit next to the ones that already have. A position with no period
+        // set sorts last rather than pretending to be on time.
+        sortValue: (r) => {
+          const p = progressOf(r);
+          if (p.clock === "not-set" || p.daysUsed == null || !r.targetCloseDays) return -1;
+          return p.daysUsed / r.targetCloseDays;
+        },
+        filter: { kind: "select", get: (r) => CLOCK_LABEL[progressOf(r).clock] },
+        exportValue: (r) => {
+          const p = progressOf(r);
+          return p.clock === "not-set" ? "No period set" : `${p.daysUsed} of ${r.targetCloseDays} days · ${CLOCK_LABEL[p.clock]}`;
+        },
+        tdClassName: "whitespace-nowrap",
+      },
+      {
+        key: "bars",
+        header: "Targets met",
+        cell: (r) => {
+          const p = progressOf(r);
+          const chips: { k: string; text: string; ok: boolean | null }[] = [
+            { k: "cv", text: `CV ${outOf(p.newCvs, p.cvTarget)}`, ok: p.cvMet },
+            { k: "hod", text: `HOD ${p.shortlisted}/${p.shortlistTarget}`, ok: p.shortlistMet },
+            { k: "dir", text: `Dir ${p.director}/${p.directorTarget}`, ok: p.directorMet },
+          ];
+          return (
+            <span className="flex gap-1">
+              {chips.map((c) => (
+                <span
+                  key={c.k}
+                  className={
+                    c.ok === null
+                      ? "rounded-pill border border-line px-1.5 py-0.5 text-[11px] text-grey-2"
+                      : c.ok
+                        ? "rounded-pill bg-[#E9F7EF] px-1.5 py-0.5 text-[11px] font-medium text-ryg-green"
+                        : "rounded-pill bg-[#FDECEC] px-1.5 py-0.5 text-[11px] font-medium text-ryg-red"
+                  }
+                >
+                  {c.text}
+                </span>
+              ))}
+            </span>
+          );
+        },
+        sortValue: (r) => barsMet(progressOf(r)),
+        filter: { kind: "select", get: (r) => `${barsMet(progressOf(r))} of 3 met` },
+        exportValue: (r) => {
+          const p = progressOf(r);
+          return `CVs ${outOf(p.newCvs, p.cvTarget)} · HOD ${p.shortlisted}/${p.shortlistTarget} · directors ${p.director}/${p.directorTarget}`;
+        },
+        // One line, so a row stays one line high: three stacked chips made every
+        // row in the grid three times taller than it needed to be.
         tdClassName: "whitespace-nowrap",
       },
       {

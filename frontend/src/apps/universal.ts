@@ -26,6 +26,22 @@
  *     session → registry → hr-exit/meta → ExitApp → store → session
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export const UNIVERSAL_APP_IDS: readonly string[] = ["kra-kpi"];
+export const UNIVERSAL_APP_IDS: readonly string[] = [
+  "kra-kpi",
+  /*
+   * Learning & Development. Every employee is a potential PARTICIPANT — they have
+   * to accept an invitation, read the material and upload their assignment — so
+   * granting it per user would mean ticking a box for all 67 before the first
+   * invitation could go out, and a nominee without a grant would be sent a link
+   * to a page they cannot open.
+   *
+   * ⚠ Unlike HR Exit and General Purchase, which were universal and were moved
+   *   back to opt-in because admins did not want everyone SEEING them, this
+   *   module's own nav hides everything but the training calendar and the
+   *   person's own requests. The queues, the pipeline and Setup appear only for
+   *   the people who own them, and RLS withholds the rest.
+   */
+  "learning-development",
+];
 
 export const isUniversalApp = (appId: string): boolean => UNIVERSAL_APP_IDS.includes(appId);

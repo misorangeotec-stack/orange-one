@@ -183,6 +183,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/asset-maintenance",
     category: "asset",
   },
+  /**
+   * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
+   * same department's work and the same people configure it.
+   */
+  "learning-development": {
+    name: "Learning & Development",
+    basePath: "/learning-development",
+    category: "hr",
+  },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",

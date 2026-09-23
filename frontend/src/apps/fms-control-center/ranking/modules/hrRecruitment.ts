@@ -40,8 +40,8 @@ import {
   requisitionDueIso,
   type HrCompletedIndex,
 } from "@/apps/hr-recruitment/lib/queues";
-import { stepByKey, type StepKey } from "@/apps/hr-recruitment/lib/steps";
-import type { Candidate, Interview, Onboarding, OnboardingCheck, Probation, ProbationReview, Requisition } from "@/apps/hr-recruitment/types";
+import { CHECKIN_STEPS, stepByKey, type StepKey } from "@/apps/hr-recruitment/lib/steps";
+import type { Candidate, Interview, Onboarding, OnboardingCheck, Probation, ProbationCheckin, ProbationReview, Requisition } from "@/apps/hr-recruitment/types";
 import { hrWorkItems } from "@/core/workspace/mywork/items/hr";
 import type { ClosedStep, DropReason, ModuleScorer, OpenStep } from "../types";
 import { perDataset } from "../memo";
@@ -52,7 +52,16 @@ const EXCLUDED: ReadonlySet<string> = new Set(["mrf_resubmit", "resume_upload"])
 
 const REQUISITION_TAB_STEPS: StepKey[] = ["hr_head_approval", "mgmt_approval", "job_posting"];
 const INTERVIEW_TAB_STEPS: StepKey[] = ["telephonic_screening", "interview_1", "interview_2", "interview_3"];
-const PROBATION_TAB_STEPS: StepKey[] = ["probation_m1", "probation_m2", "probation_m3", "probation_extension", "probation_final"];
+// NR-11 · the Day 7/15/30/60/90 check-ins that replaced the monthly reviews in
+// b2690d30. The old `probation_m1`/`m2`/`m3` keys are deliberately NOT listed: the
+// form that wrote them was deleted with the cadence, so scanning for them scores
+// nobody and only suggests the ranking still knows about them. They stay in
+// lib/steps.ts, flagged `retired`, so an old row keeps its title.
+const PROBATION_TAB_STEPS: StepKey[] = [
+  ...CHECKIN_STEPS.map((c) => c.key),
+  "probation_extension",
+  "probation_final",
+];
 /** Candidate steps that close with a stamp but have no Completed tab. */
 const UNTABBED_CANDIDATE_STEPS: StepKey[] = ["hr_shortlist", "hod_shortlist", "final_decision"];
 
@@ -90,6 +99,15 @@ const contextOf = perDataset((data: HrData): Context => {
     cansByReq: group<Candidate>(data.candidates, (c) => c.requisitionId),
     ivsByCan: group<Interview>(data.interviews, (iv) => iv.candidateId),
     reviewsByProb: group<ProbationReview>(data.probationReviews, (rv) => rv.probationId),
+    checkinsByProb: group<ProbationCheckin>(data.probationCheckins, (c) => c.probationId),
+    // A check-in is written by the head of department and by the new joiner; HR
+    // writes neither. HR is answerable for BOTH answers arriving by the due date,
+    // which is the moment `completedAt` is stamped — so the point follows the step's
+    // owner. Configured by person in Setup; owned by a department instead and this
+    // returns null, which the ranking reports as a `no_actor` drop rather than
+    // silently crediting the wrong person.
+    stepOwnerId: (stepKey) =>
+      data.stepOwners.find((o) => o.stepKey === stepKey)?.employeeIds[0] ?? null,
   };
   const reqOf = new Map<string, string | null>();
   for (const r of data.requisitions) reqOf.set(r.id, r.id);
