@@ -7778,7 +7778,7 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 | 8 | 2026-09-21 | At the **HR approval** gate the HR head sets three numbers and the module tracks each: the period the position must be **closed** in, the number of **new CVs** required, and how many CVs must reach the **director** round (**default 3**) — today 12 of 18 live positions have sent nobody to a director, and one sent 1 of 20 | **NR-7** | `[x]` |
 | 9 | 2026-09-21 | **Talent Equation — KRA 1 of Saloni's KPI sheet, mapped into this module.** Its six **Talent Acquisition** lines (30%): an acknowledgement stamp, the CV and shortlist targets, the 48-hour interview feedback, the role-specific TAT and the BGV checklist items | **NR-8** | `[x]` |
 | 10 | 2026-09-21 | **The Buddy Program** (5%) — a cross-departmental buddy allocated within 24h of offer acceptance, a Buddy Passport handed over on Day 1, **8 interactions in 90 days** marked by HR, closure with probation (and extension alongside it), and the joiner's own rating. **Nothing exists today** | **NR-9** | `[ ]` |
-| 11 | 2026-09-21 | **Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90** (10%) — two-sided reviews (HR **and** the new joiner), a reminder a day before each, a concerns / grievances register on a format the client will send, and confirm-or-extend at 90 days. Built monthly today, and **never once used** | **NR-10** | `[ ]` |
+| 11 | 2026-09-21 | **Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90** (10%) — two-sided reviews (HR **and** the new joiner), a reminder a day before each, a concerns / grievances register on a format the client will send, and confirm-or-extend at 90 days. Built monthly today, and **never once used** | **NR-10** | `[~]` |
 
 *More points are expected on this list, and **nothing is being built until they are all in** — the
 client wants them gathered first so they can be sequenced together. Add each here as it comes in,
@@ -9580,7 +9580,75 @@ Recommendation: a column first; promote it to a step only if it must actively ch
 
 ---
 
-### NR-10 · Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90  `[ ]` — planned 2026-09-21, nothing built
+### NR-10 · Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90  `[~]` — 🟢 **LIVE 21-09-2026** except the reminders
+
+🟢 **LIVE 21-09-2026 — three of the four parts.** `master` at **b2690d30** (the cadence), **7fb6b495**
+(the joiner's own screen) and **e56cf80a** (concerns). Four migrations applied to
+`icutjkrqkbzwvmnfbzpr`, each with its rollback written first; every part built and walked in a
+browser on **master's own code** before it shipped.
+
+| Part | State |
+|---|---|
+| Day 7 / 15 / 30 / 60 / 90, two-sided | 🟢 live |
+| The new joiner's own screen (`/my-probation`) | 🟢 live |
+| Concerns & grievances, 24-hour clock | 🟢 live |
+| **Reminders a day before** | ⛔ **NOT built — needs the email switch, which is the client's call** |
+
+**Safe to re-cadence only because probation had never run:** 0 probations, 0 reviews, and **0 rows for
+this module in `fms_rank_steps` and `kpi_facts`** — so the CC-1 worry recorded earlier was empty, and
+nothing stored was computed on the old keys. The monthly model was **not altered**: its table, its
+RPC and its three step keys are untouched and retired in place. That window shuts the day somebody
+joins.
+
+**The shape, as the client decided it.** The HOD writes one side, the new joiner writes the other, and
+a check-in is not done until both are in — `completed_at` is stamped when the *second* side lands and
+never re-dated by a later edit. HR writes **neither** side: they chase both and are scored on whether
+both arrived by `due_on`. Only the linked account can write the joiner's half — an admin cannot, and
+neither can HR, because an answer typed by somebody else is what would make it worthless.
+
+**`due_on` is stamped in SQL, in CALENDAR days.** It is read, never recomputed: a day-unit SLA in this
+codebase counts **working days (Mon–Sat)**, so `days: 7` would land Day 7 on the 8th calendar day. The
+entries in `lib/sla.ts` are display only and say so.
+
+#### Five defects, none of which the build could see
+
+1. 🔴 **The new joiner could not read their own check-ins.** The policy's joiner arm queried
+   `fms_hr_probations` and `fms_hr_onboardings` inline, and **a policy is evaluated as the caller**, so
+   those reads met their own RLS — which the joiner fails. The EXISTS returned false, their page was
+   empty, and nothing errored. Moved behind a SECURITY DEFINER predicate; proven with `set local role
+   authenticated` at **0 rows before, 5 after**.
+2. 🔴 **The probation queue showed NOBODY.** `ProbationQueue.tsx` filters on its own hard-coded array
+   of step keys; until it learned the new ones every probation sat at a step it did not name and was
+   filtered out silently. Now recorded as its own memory — it applies to every FMS here.
+3. 🔴 **A grievance would have leaked to the manager it was about.** The first version announced it
+   through `fms_hr_announce`, which writes `fms_hr_activity` — readable by anyone who can read the
+   requisition, the hiring manager included. One line of notification code undid the entire point of
+   the table's narrow gate. It now writes **no activity row at all**, and the notice to HR does not say
+   what was raised, because a bell is read over shoulders. The same call also **crashed** for anybody
+   without a probation, who is expressly allowed to raise a concern.
+4. A row read **"Not due yet" beside a red "3d overdue" badge**: the wording keyed off which check-in
+   the queue was chasing rather than off the date.
+5. The page offering the concern form returned an **EmptyState** for anyone with no check-ins, turning
+   the server's *"anybody signed in may raise one"* into the UI's *"only new joiners may"*.
+
+#### What is left, and why it is not mine to do
+
+**The reminder a day before each of the five dates.** The client chose **bell AND email**. The bell
+half is ready to build; the email half means **turning on `email_module_enabled('hr-recruitment')`**,
+which has been **off since 04-08-2026** and which also releases the interview-panel notices and the
+master-request mail that have been sitting built and disarmed behind the same switch — and
+`send-email` must be redeployed in the same change (NR-1). That is a live-send decision, so it waits
+for the client's word rather than being done quietly.
+
+#### Still open on this entry
+
+- [ ] **The grievance FORM.** The register is live and its questions land in `answers` (jsonb) with no
+      migration. The client owes the format.
+- [ ] **Extending probation must extend the buddy programme by the same period** — the hook belongs in
+      the same RPC, and NR-9 does not exist yet.
+- [ ] **The confirmation letter** (1C.7) — decided as generate-on-confirm, not yet built.
+- [ ] Whether the joiner should see the HOD's actual verdict. Today they see **that** it was answered,
+      never **what** was said; that conversation belongs between the two of them. One line to change.
 
 *10% of the sheet. The module **already has** probation — `fms_hr_probations`,
 `fms_hr_probation_reviews`, five steps, `ProbationPanel`, `ProbationQueue` — and it has **never been
@@ -14062,6 +14130,56 @@ filter row), and Customer since is not shown per ledger there.
 had gone out as one escaped paragraph. ⚠ Live matched **master's** copy of that function; the
 `daily-reports` copy carries an unreleased `travel_` renderer, so deploying from that checkout would
 have dropped Complaint's email. Check the deployed bundle before any future deploy.
+
+---
+
+### RC-21 · The Sales dashboards took a minute to open  🟢  `[x]`
+*Raised 2026-09-21 by Ritesh Bhai · **LIVE 22-09-2026** (master `1230b1ca`) · 58 s → 8.3 s, verified on
+orangeonehub.com*
+
+**The complaint.** `bushra-dashboard/sales-dashboard` took 30-60 s to load. First guess — "are we reading
+the base table instead of a report table?" — was wrong: `rpt_sales_register` is a precomputed table (built
+24-Jul-2026 for Tally Reports → Sales Register; the Bushra dashboards reused it on 16-Sep). Each query
+against it costs the server only ~143 ms. The time was going somewhere else entirely.
+
+**What it actually was — three things, and only fixing all three is fast.**
+
+| | Cause | Cost |
+|---|---|---|
+| 1 | **Pages fetched one at a time.** PostgREST caps a reply at 1,000 rows here, and the window is always this FY *plus last* (product performance compares them), so 105,958 rows = **106 requests**, each waiting for the last | ~42 s |
+| 2 | **Deep OFFSET is quadratic.** `.range()` is SQL OFFSET; Postgres reaches offset N by walking N rows first. Page 1 reads 1,000 rows, the page at OFFSET 100,000 reads **101,000** to return its 1,000 (305 ms measured). Across 106 pages: **~5.5M row reads for 105,958 rows — 53× the necessary work**, all landing on one instance at once | this is why parallelising *alone* only reached ~26 s |
+| 3 | **The item lookup gated everything.** The register query is `enabled: !!lookup`, and `loadItemLookup` walked ~14k Central Masters rows over **15 sequential pages** — so nothing could even be *asked for* until ~11 s in | ~7 s of dead time |
+
+**The fix** (`lib/salesRegister.ts` `fetchWindow`, `lib/bushraSalesRegister.ts` `pageAll`). The register and
+its despatch sidecar are read as **parallel monthly chunks**: half-open `[lo, hi)` months keep the chunks
+provably disjoint, each holds ~4,400 rows so every offset inside it is shallow, and the months run together.
+Total work goes back to linear. The masters pager is parallel too, moving first contact with the register
+from ~11 s to ~3.8 s. The register, its two sidecars and the company map are now read *together* rather than
+the register waiting on the sidecars.
+
+**Measured back-to-back, same browser, same account, live data:** 57.9 s → 8.5 s locally, 8.3 s on the live
+site. The rendered page is **byte-identical** — same 23,131 lines, same KPIs, same charts, same first page of
+the detail table.
+
+⚠ **Two traps this hit, worth remembering.**
+- **Order by a UNIQUE key.** The old sort (`vch_date, tenant_id, voucher_no, line_no`) is not unique, and
+  OFFSET is only stable under a total order, so a tied row could be served on two pages or on neither. *Not
+  observed biting* — old and new return the same 27,834 rows and the same revenue to the rupee — but it was a
+  real hazard and parallel reads make it easier to hit. Now sorts by the PRIMARY KEY, with display order
+  restored by an explicit sort once the chunks are in hand.
+- **Half-open chunk bounds.** The first draft used an inclusive upper bound per month and returned **3,718
+  duplicate rows out of 105,958**. `gte(lo) & lt(hi)`, never `lte`.
+
+**Considered and dropped — a summary table (`rpt_sales_summary`).** The original plan was to pre-aggregate
+to month × company × location × type × item, cutting 27,749 rows to 6,178. It does not work here: the
+dashboard carries an **invoice-line table on the same page** (Date, Voucher No., Rate, search) and two KPIs
+that count **distinct invoices** and **distinct customers**. All three need the individual lines. Keeping the
+customer dimension only collapses 105,873 → 60,293 anyway (43%), because 781 customers × 4,180 items barely
+folds. At 8 s it is not needed; if ~3 s is ever wanted, it would have to be a summary for the charts *plus*
+the detail loaded on demand — two code paths, and a real risk of the two disagreeing.
+
+**Applies to every screen sharing `loadSalesRegister`** — all 9 Bushra Sales dashboards, the Bushra Sales
+Register and the plain Sales Register. All spot-checked after the change.
 
 ---
 

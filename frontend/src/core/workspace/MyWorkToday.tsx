@@ -31,6 +31,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
+import MyProbationCard from "@/core/probation/MyProbationCard";
 import Tabs from "@/shared/components/ui/Tabs";
 import RankingPanel from "@/apps/fms-control-center/components/ranking/RankingPanel";
 import HomeRankChip from "@/apps/fms-control-center/components/ranking/HomeRankChip";
@@ -386,6 +387,12 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         <RankingPanel />
       ) : (
       <>
+      {/* NR-10 · A new joiner's own check-in, when one is owed. It appears HERE
+          rather than in the sidebar because the sidebar cannot know who is on
+          probation: a permanent menu item would lead ~67 of 68 people to an empty
+          page, and the one person who needs it would find it no faster. */}
+      <MyProbationCard />
+
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {TILES.map((t) => (
           <KpiTile

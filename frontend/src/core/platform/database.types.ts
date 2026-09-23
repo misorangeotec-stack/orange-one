@@ -1893,6 +1893,153 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_buddies: {
+        Row: {
+          allocated_at: string
+          allocated_by: string | null
+          buddy_user_id: string
+          candidate_id: string
+          close_note: string | null
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          due_on: string | null
+          extended_to: string | null
+          feedback_at: string | null
+          feedback_rating: number | null
+          feedback_remarks: string | null
+          id: string
+          interaction_target: number
+          joining_date: string | null
+          offer_accepted_at: string | null
+          onboarding_id: string
+          passport_handed_at: string | null
+          passport_handed_by: string | null
+          requisition_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          allocated_at?: string
+          allocated_by?: string | null
+          buddy_user_id: string
+          candidate_id: string
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          due_on?: string | null
+          extended_to?: string | null
+          feedback_at?: string | null
+          feedback_rating?: number | null
+          feedback_remarks?: string | null
+          id?: string
+          interaction_target?: number
+          joining_date?: string | null
+          offer_accepted_at?: string | null
+          onboarding_id: string
+          passport_handed_at?: string | null
+          passport_handed_by?: string | null
+          requisition_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          allocated_at?: string
+          allocated_by?: string | null
+          buddy_user_id?: string
+          candidate_id?: string
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          due_on?: string | null
+          extended_to?: string | null
+          feedback_at?: string | null
+          feedback_rating?: number | null
+          feedback_remarks?: string | null
+          id?: string
+          interaction_target?: number
+          joining_date?: string | null
+          offer_accepted_at?: string | null
+          onboarding_id?: string
+          passport_handed_at?: string | null
+          passport_handed_by?: string | null
+          requisition_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_buddies_onboarding_id_fkey"
+            columns: ["onboarding_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_onboardings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_buddies_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_buddies_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_buddy_interactions: {
+        Row: {
+          buddy_id: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          happened_on: string
+          id: string
+          logged_at: string
+          logged_by: string
+          mode: string
+          notes: string | null
+        }
+        Insert: {
+          buddy_id: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          happened_on: string
+          id?: string
+          logged_at?: string
+          logged_by: string
+          mode: string
+          notes?: string | null
+        }
+        Update: {
+          buddy_id?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          happened_on?: string
+          id?: string
+          logged_at?: string
+          logged_by?: string
+          mode?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_buddy_interactions_buddy_id_fkey"
+            columns: ["buddy_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_buddies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_candidate_scores: {
         Row: {
           axes: Json
@@ -2216,6 +2363,62 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      fms_hr_grievances: {
+        Row: {
+          answers: Json
+          body: string
+          category: string
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          probation_id: string | null
+          raised_at: string
+          raised_by: string
+          resolution: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          answers?: Json
+          body: string
+          category: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          probation_id?: string | null
+          raised_at?: string
+          raised_by: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          answers?: Json
+          body?: string
+          category?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          probation_id?: string | null
+          raised_at?: string
+          raised_by?: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_grievances_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       fms_hr_interviews: {
         Row: {
@@ -2733,6 +2936,9 @@ export type Database = {
           edited_by: string | null
           employee_code: string | null
           employee_code_at: string | null
+          employee_user_id: string | null
+          employee_user_set_at: string | null
+          employee_user_set_by: string | null
           bgv_status: string | null
           bgv_note: string | null
           bgv_at: string | null
@@ -2760,6 +2966,9 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_user_id?: string | null
+          employee_user_set_at?: string | null
+          employee_user_set_by?: string | null
           bgv_status?: string | null
           bgv_note?: string | null
           bgv_at?: string | null
@@ -2787,6 +2996,9 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_user_id?: string | null
+          employee_user_set_at?: string | null
+          employee_user_set_by?: string | null
           bgv_status?: string | null
           bgv_note?: string | null
           bgv_at?: string | null
@@ -2818,6 +3030,74 @@ export type Database = {
             columns: ["requisition_id"]
             isOneToOne: false
             referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_probation_checkins: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          day_no: number
+          due_on: string
+          file_name: string | null
+          file_path: string | null
+          hod_at: string | null
+          hod_by: string | null
+          hod_remarks: string | null
+          hod_status: string | null
+          id: string
+          joiner_at: string | null
+          joiner_by: string | null
+          joiner_remarks: string | null
+          joiner_status: string | null
+          probation_id: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          day_no: number
+          due_on: string
+          file_name?: string | null
+          file_path?: string | null
+          hod_at?: string | null
+          hod_by?: string | null
+          hod_remarks?: string | null
+          hod_status?: string | null
+          id?: string
+          joiner_at?: string | null
+          joiner_by?: string | null
+          joiner_remarks?: string | null
+          joiner_status?: string | null
+          probation_id: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          day_no?: number
+          due_on?: string
+          file_name?: string | null
+          file_path?: string | null
+          hod_at?: string | null
+          hod_by?: string | null
+          hod_remarks?: string | null
+          hod_status?: string | null
+          id?: string
+          joiner_at?: string | null
+          joiner_by?: string | null
+          joiner_remarks?: string | null
+          joiner_status?: string | null
+          probation_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_probation_checkins_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
             referencedColumns: ["id"]
           },
         ]
@@ -2901,6 +3181,10 @@ export type Database = {
           outcome_by: string | null
           outcome_remarks: string | null
           permanent_from: string | null
+          letter_path: string | null
+          letter_name: string | null
+          letter_at: string | null
+          letter_by: string | null
           requisition_id: string
           updated_at: string
         }
@@ -2926,6 +3210,10 @@ export type Database = {
           outcome_by?: string | null
           outcome_remarks?: string | null
           permanent_from?: string | null
+          letter_path?: string | null
+          letter_name?: string | null
+          letter_at?: string | null
+          letter_by?: string | null
           requisition_id: string
           updated_at?: string
         }
@@ -2951,6 +3239,10 @@ export type Database = {
           outcome_by?: string | null
           outcome_remarks?: string | null
           permanent_from?: string | null
+          letter_path?: string | null
+          letter_name?: string | null
+          letter_at?: string | null
+          letter_by?: string | null
           requisition_id?: string
           updated_at?: string
         }
@@ -9993,6 +10285,34 @@ export type Database = {
         Args: { p_req: string }
         Returns: undefined
       }
+      fms_hr_allocate_buddy: {
+        Args: { p_buddy: string; p_onboarding: string }
+        Returns: string
+      }
+      fms_hr_hand_passport: {
+        Args: { p_buddy: string }
+        Returns: undefined
+      }
+      fms_hr_log_buddy_interaction: {
+        Args: { p_buddy: string; p_mode: string; p_notes?: string; p_on: string }
+        Returns: string
+      }
+      fms_hr_confirm_buddy_interaction: {
+        Args: { p_interaction: string }
+        Returns: undefined
+      }
+      fms_hr_rate_buddy: {
+        Args: { p_buddy: string; p_rating: number; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_hr_close_buddy: {
+        Args: { p_buddy: string; p_note?: string; p_status: string }
+        Returns: undefined
+      }
+      fms_hr_is_my_buddy_record: {
+        Args: { p_buddy: string; p_uid: string }
+        Returns: boolean
+      }
       fms_hr_add_candidates: {
         Args: { p_candidates: Json; p_req: string }
         Returns: string[]
@@ -10022,6 +10342,10 @@ export type Database = {
       }
       fms_hr_can_receive_reassignment: {
         Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_is_my_probation: {
+        Args: { p_probation: string; p_uid: string }
         Returns: boolean
       }
       fms_hr_is_natural_step_owner: {
@@ -10072,6 +10396,30 @@ export type Database = {
         Returns: undefined
       }
       fms_hr_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_hr_grievances_for_me: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          raised_at: string
+          category: string
+          body: string
+          status: string
+          closed_at: string | null
+          resolution: string | null
+        }[]
+      }
+      fms_hr_raise_grievance: {
+        Args: { p_answers?: Json; p_body: string; p_category: string }
+        Returns: string
+      }
+      fms_hr_close_grievance: {
+        Args: { p_id: string; p_resolution: string }
+        Returns: undefined
+      }
+      fms_hr_may_see_grievances: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
       fms_hr_hod_decide: {
         Args: {
           p_ids: string[]
@@ -10111,6 +10459,37 @@ export type Database = {
       fms_hr_move_candidate: {
         Args: { p?: Json; p_id: string; p_to_stage: string }
         Returns: undefined
+      }
+      fms_hr_my_buddy: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          buddy_id: string
+          joiner_name: string | null
+          job_title: string | null
+          joining_date: string | null
+          due_on: string | null
+          extended_to: string | null
+          interaction_target: number
+          status: string
+          feedback_rating: number | null
+          feedback_at: string | null
+        }[]
+      }
+      fms_hr_my_probation: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          probation_id: string
+          joining_date: string
+          job_title: string
+          day_no: number
+          due_on: string
+          hod_answered: boolean
+          joiner_status: string | null
+          joiner_remarks: string | null
+          joiner_at: string | null
+          completed_at: string | null
+          final_status: string | null
+        }[]
       }
       fms_hr_next_seq: { Args: { p_scope: string }; Returns: number }
       fms_hr_notify_hod_pending: {
@@ -10247,6 +10626,10 @@ export type Database = {
         Args: { p_id: string; p_name?: string; p_path?: string; p_sha256?: string }
         Returns: undefined
       }
+      fms_hr_set_employee_user: {
+        Args: { p_onboarding: string; p_user: string | null }
+        Returns: undefined
+      }
       fms_hr_set_employee_code: {
         Args: { p_code: string; p_onb: string }
         Returns: undefined
@@ -10273,6 +10656,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_hr_set_probation_letter: {
+        Args: { p_name: string; p_path: string; p_probation: string }
+        Returns: undefined
+      }
       fms_hr_set_requisition_jd: {
         Args: { p_name?: string; p_path?: string; p_req: string }
         Returns: undefined
@@ -10284,6 +10671,18 @@ export type Database = {
       fms_hr_stage_rank: { Args: { p_stage: string }; Returns: number }
       fms_hr_stage_step: { Args: { p_stage: string }; Returns: string }
       fms_hr_step_owner_ids: { Args: { p_step: string }; Returns: string[] }
+      fms_hr_submit_probation_checkin: {
+        Args: {
+          p_day: number
+          p_file_name?: string | null
+          p_file_path?: string | null
+          p_probation: string
+          p_remarks?: string
+          p_side: string
+          p_status: string
+        }
+        Returns: undefined
+      }
       fms_hr_submit_mrf: { Args: { p: Json }; Returns: string }
       fms_hr_sync_requisition_fill: {
         Args: { p_req: string }

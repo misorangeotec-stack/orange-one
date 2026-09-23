@@ -50,9 +50,21 @@ export type StepKey =
   | "interview_3"
   | "final_decision"
   | "onboarding"
+  /**
+   * NR-10 retired the MONTHLY probation reviews in favour of Day 7/15/30/60/90.
+   * The three monthly keys are kept in the union and in STEPS because the DB
+   * stores step keys as free text and `fms_hr_is_natural_step_owner` still
+   * authorises them — but nothing writes them any more, and they are marked
+   * `retired` so no screen offers them.
+   */
   | "probation_m1"
   | "probation_m2"
   | "probation_m3"
+  | "probation_d7"
+  | "probation_d15"
+  | "probation_d30"
+  | "probation_d60"
+  | "probation_d90"
   | "probation_final"
   | "probation_extension";
 
@@ -89,12 +101,36 @@ export const STEPS: StepDef[] = [
   // it is stored as free text on every historical row.
   { key: "final_decision",      index: 13, title: "Make the Offer",               short: "Offer",         scope: "candidate" },
   { key: "onboarding",          index: 14, title: "Onboarding",                   short: "Onboarding",    scope: "hire" },
-  { key: "probation_m1",        index: 15, title: "Month-1 Review (HOD)",         short: "Review M1",     scope: "hire" },
-  { key: "probation_m2",        index: 16, title: "Month-2 Review (HOD)",         short: "Review M2",     scope: "hire" },
-  { key: "probation_m3",        index: 17, title: "Month-3 Review (HOD)",         short: "Review M3",     scope: "hire" },
-  { key: "probation_final",     index: 18, title: "Probation Decision",           short: "Confirm",       scope: "hire" },
-  { key: "probation_extension", index: 19, title: "Extended Review (Month 4)",    short: "Extension",     scope: "hire" },
+  // NR-10 · Day 7/15/30/60/90, each written by the HOD and the new joiner. The
+  // Day-90 one is the confirmation review; the DECISION that follows it is
+  // `probation_final`, which is a different act on a different day.
+  { key: "probation_d7",        index: 15, title: "Day-7 Check-in",               short: "Day 7",         scope: "hire" },
+  { key: "probation_d15",       index: 16, title: "Day-15 Check-in",              short: "Day 15",        scope: "hire" },
+  { key: "probation_d30",       index: 17, title: "Day-30 Check-in",              short: "Day 30",        scope: "hire" },
+  { key: "probation_d60",       index: 18, title: "Day-60 Check-in",              short: "Day 60",        scope: "hire" },
+  { key: "probation_d90",       index: 19, title: "Day-90 Confirmation Review",   short: "Day 90",        scope: "hire" },
+  { key: "probation_final",     index: 20, title: "Probation Decision",           short: "Confirm",       scope: "hire" },
+  { key: "probation_extension", index: 21, title: "Extended Review",              short: "Extension",     scope: "hire" },
+  // Retired by NR-10, kept so an old row still resolves to a name. Never offered.
+  { key: "probation_m1",        index: 90, title: "Month-1 Review (retired)",     short: "Review M1",     scope: "hire", retired: true },
+  { key: "probation_m2",        index: 91, title: "Month-2 Review (retired)",     short: "Review M2",     scope: "hire", retired: true },
+  { key: "probation_m3",        index: 92, title: "Month-3 Review (retired)",     short: "Review M3",     scope: "hire", retired: true },
 ];
+
+/** NR-10 · the five check-in steps, in order, with the day each one falls on. */
+export const CHECKIN_STEPS: { day: 7 | 15 | 30 | 60 | 90; key: StepKey }[] = [
+  { day: 7, key: "probation_d7" },
+  { day: 15, key: "probation_d15" },
+  { day: 30, key: "probation_d30" },
+  { day: 60, key: "probation_d60" },
+  { day: 90, key: "probation_d90" },
+];
+
+export const checkinStepKey = (day: number): StepKey =>
+  (CHECKIN_STEPS.find((c) => c.day === day)?.key ?? "probation_d7");
+
+/** Retired steps still resolve to a title, but nothing may be assigned to them. */
+export const isRetiredStep = (key: string): boolean => !!stepByKey(key)?.retired;
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
 

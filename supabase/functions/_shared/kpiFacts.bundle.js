@@ -198,6 +198,15 @@ var APPS = {
     basePath: "/process-coordinator",
     category: "control"
   },
+  // PF-18 · Where announcements are WRITTEN. Holding this module (at Full access) is
+  // what lets a non-admin post. Reading them needs no grant at all: that is the
+  // /announcements page, which is why this base is NOT /announcements (the
+  // breadcrumb matches that path by prefix and would swallow this module).
+  announcements: {
+    name: "Announcements",
+    basePath: "/post-announcements",
+    category: "control"
+  },
   // Virtual module: no web app and no route, so no basePath that resolves to a
   // page. It only gates login to the mobile Leads app. `basePath` is a dead
   // string kept so the shape stays uniform; nothing routes to it.
@@ -1137,6 +1146,14 @@ var mapRequisition = (r) => ({
   previousEmployeeName: r.previous_employee_name ?? null,
   expectedStartDate: r.expected_start_date ?? null,
   positionsRequired: r.positions_required ?? 1,
+  targetCloseDays: num2(r.target_close_days),
+  cvTarget: num2(r.cv_target),
+  // Defaulted, not `?? null`: both columns are NOT NULL DEFAULT 3, so every row
+  // — including the 30 that existed before NR-7 — already carries a number.
+  shortlistTarget: r.shortlist_target ?? 3,
+  directorCvTarget: r.director_cv_target ?? 3,
+  targetsSetAt: r.targets_set_at ?? null,
+  targetsSetBy: r.targets_set_by ?? null,
   salaryMin: num2(r.salary_min),
   salaryMax: num2(r.salary_max),
   // Defaulted, not `?? null`: both columns are NOT NULL with a default, and the
@@ -1166,6 +1183,8 @@ var mapRequisition = (r) => ({
   hrApprovedAt: r.hr_approved_at ?? null,
   hrApproverId: r.hr_approver_id ?? null,
   hrRemarks: r.hr_remarks ?? null,
+  acknowledgedAt: r.acknowledged_at ?? null,
+  acknowledgedBy: r.acknowledged_by ?? null,
   mgmtApprovedAt: r.mgmt_approved_at ?? null,
   mgmtApproverId: r.mgmt_approver_id ?? null,
   mgmtRemarks: r.mgmt_remarks ?? null,
@@ -1224,6 +1243,11 @@ var mapCandidate = (r) => ({
   resumeSha256: r.resume_sha256 ?? null,
   parseStatus: r.parse_status ?? "manual",
   parsedJson: r.parsed_json ?? {},
+  // NOT NULL DEFAULT false, so `?? false` only covers a row read before NR-7.
+  isRepeat: r.is_repeat ?? false,
+  repeatOfCandidateId: r.repeat_of_candidate_id ?? null,
+  repeatSignal: r.repeat_signal ?? null,
+  duplicateAck: r.duplicate_ack ?? null,
   stage: toStage(r.stage),
   uploadedAt: r.uploaded_at,
   hrShortlistedAt: r.hr_shortlisted_at ?? null,
@@ -1277,6 +1301,15 @@ var mapOnboarding = (r) => ({
   employeeCode: r.employee_code ?? null,
   employeeCodeAt: r.employee_code_at ?? null,
   employeeCodeBy: r.employee_code_by ?? null,
+  employeeUserId: r.employee_user_id ?? null,
+  employeeUserSetAt: r.employee_user_set_at ?? null,
+  employeeUserSetBy: r.employee_user_set_by ?? null,
+  bgvStatus: r.bgv_status ?? null,
+  bgvNote: r.bgv_note ?? null,
+  bgvAt: r.bgv_at ?? null,
+  bgvBy: r.bgv_by ?? null,
+  inductionOn: r.induction_on ?? null,
+  inductionBy: r.induction_by ?? null,
   completedAt: r.completed_at ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
@@ -1320,9 +1353,64 @@ var mapProbation = (r) => ({
   finalStatus: r.final_status ?? null,
   finalStatusAt: r.final_status_at ?? null,
   permanentFrom: r.permanent_from ?? null,
+  letterPath: r.letter_path ?? null,
+  letterName: r.letter_name ?? null,
+  letterAt: r.letter_at ?? null,
+  letterBy: r.letter_by ?? null,
   employeeCode: r.employee_code ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null
+});
+var mapBuddy = (r) => ({
+  id: r.id,
+  onboardingId: r.onboarding_id,
+  requisitionId: r.requisition_id,
+  candidateId: r.candidate_id,
+  buddyUserId: r.buddy_user_id,
+  allocatedAt: r.allocated_at,
+  allocatedBy: r.allocated_by ?? null,
+  offerAcceptedAt: r.offer_accepted_at ?? null,
+  passportHandedAt: r.passport_handed_at ?? null,
+  passportHandedBy: r.passport_handed_by ?? null,
+  joiningDate: r.joining_date ?? null,
+  interactionTarget: r.interaction_target ?? 8,
+  dueOn: r.due_on ?? null,
+  status: r.status ?? "open",
+  closedAt: r.closed_at ?? null,
+  closedBy: r.closed_by ?? null,
+  closeNote: r.close_note ?? null,
+  extendedTo: r.extended_to ?? null,
+  feedbackRating: num2(r.feedback_rating),
+  feedbackRemarks: r.feedback_remarks ?? null,
+  feedbackAt: r.feedback_at ?? null
+});
+var mapBuddyInteraction = (r) => ({
+  id: r.id,
+  buddyId: r.buddy_id,
+  happenedOn: r.happened_on,
+  mode: r.mode ?? "other",
+  notes: r.notes ?? null,
+  loggedAt: r.logged_at,
+  loggedBy: r.logged_by,
+  confirmedAt: r.confirmed_at ?? null,
+  confirmedBy: r.confirmed_by ?? null
+});
+var mapProbationCheckin = (r) => ({
+  id: r.id,
+  probationId: r.probation_id,
+  dayNo: Number(r.day_no),
+  dueOn: r.due_on,
+  hodStatus: r.hod_status ?? null,
+  hodRemarks: r.hod_remarks ?? null,
+  hodAt: r.hod_at ?? null,
+  hodBy: r.hod_by ?? null,
+  filePath: r.file_path ?? null,
+  fileName: r.file_name ?? null,
+  joinerStatus: r.joiner_status ?? null,
+  joinerRemarks: r.joiner_remarks ?? null,
+  joinerAt: r.joiner_at ?? null,
+  joinerBy: r.joiner_by ?? null,
+  completedAt: r.completed_at ?? null
 });
 var mapProbationReview = (r) => ({
   id: r.id,
@@ -1357,12 +1445,29 @@ var STEPS3 = [
   // it is stored as free text on every historical row.
   { key: "final_decision", index: 13, title: "Make the Offer", short: "Offer", scope: "candidate" },
   { key: "onboarding", index: 14, title: "Onboarding", short: "Onboarding", scope: "hire" },
-  { key: "probation_m1", index: 15, title: "Month-1 Review (HOD)", short: "Review M1", scope: "hire" },
-  { key: "probation_m2", index: 16, title: "Month-2 Review (HOD)", short: "Review M2", scope: "hire" },
-  { key: "probation_m3", index: 17, title: "Month-3 Review (HOD)", short: "Review M3", scope: "hire" },
-  { key: "probation_final", index: 18, title: "Probation Decision", short: "Confirm", scope: "hire" },
-  { key: "probation_extension", index: 19, title: "Extended Review (Month 4)", short: "Extension", scope: "hire" }
+  // NR-10 · Day 7/15/30/60/90, each written by the HOD and the new joiner. The
+  // Day-90 one is the confirmation review; the DECISION that follows it is
+  // `probation_final`, which is a different act on a different day.
+  { key: "probation_d7", index: 15, title: "Day-7 Check-in", short: "Day 7", scope: "hire" },
+  { key: "probation_d15", index: 16, title: "Day-15 Check-in", short: "Day 15", scope: "hire" },
+  { key: "probation_d30", index: 17, title: "Day-30 Check-in", short: "Day 30", scope: "hire" },
+  { key: "probation_d60", index: 18, title: "Day-60 Check-in", short: "Day 60", scope: "hire" },
+  { key: "probation_d90", index: 19, title: "Day-90 Confirmation Review", short: "Day 90", scope: "hire" },
+  { key: "probation_final", index: 20, title: "Probation Decision", short: "Confirm", scope: "hire" },
+  { key: "probation_extension", index: 21, title: "Extended Review", short: "Extension", scope: "hire" },
+  // Retired by NR-10, kept so an old row still resolves to a name. Never offered.
+  { key: "probation_m1", index: 90, title: "Month-1 Review (retired)", short: "Review M1", scope: "hire", retired: true },
+  { key: "probation_m2", index: 91, title: "Month-2 Review (retired)", short: "Review M2", scope: "hire", retired: true },
+  { key: "probation_m3", index: 92, title: "Month-3 Review (retired)", short: "Review M3", scope: "hire", retired: true }
 ];
+var CHECKIN_STEPS = [
+  { day: 7, key: "probation_d7" },
+  { day: 15, key: "probation_d15" },
+  { day: 30, key: "probation_d30" },
+  { day: 60, key: "probation_d60" },
+  { day: 90, key: "probation_d90" }
+];
+var checkinStepKey = (day) => CHECKIN_STEPS.find((c) => c.day === day)?.key ?? "probation_d7";
 var stepByKey2 = (key) => STEPS3.find((s) => s.key === key);
 var HOD_STEPS = [
   "hod_shortlist",
@@ -1399,11 +1504,24 @@ var OVERRIDES = {
   interview_3: { anchor: "interview_2", days: 2 },
   final_decision: { anchor: "interview_3", days: 2 },
   onboarding: { anchor: "final_decision", days: 7 },
+  // NR-10 · the Day 7/15/30/60/90 cadence. `days` here is DISPLAY ONLY — the real
+  // due date is stamped on the check-in row (`due_on`) when the probation opens,
+  // in CALENDAR days from the joining date, and lib/queues.ts reads it from there.
+  //
+  // ⚠ It cannot be expressed in this model at all: a day-unit SLA counts WORKING
+  // days (Mon–Sat), so `days: 7` would land Day 7 on the 8th calendar day. That
+  // is exactly why the cadence is stamped in SQL and only mirrored here.
+  probation_d7: { anchor: "onboarding", days: 7 },
+  probation_d15: { anchor: "onboarding", days: 15 },
+  probation_d30: { anchor: "onboarding", days: 30 },
+  probation_d60: { anchor: "onboarding", days: 60 },
+  probation_d90: { anchor: "onboarding", days: 90 },
+  probation_final: { anchor: "onboarding", days: 3, unit: "months" },
+  probation_extension: { anchor: "onboarding", days: 4, unit: "months" },
+  // Retired by NR-10; kept so an old row still resolves.
   probation_m1: { anchor: "onboarding", days: 1, unit: "months" },
   probation_m2: { anchor: "onboarding", days: 2, unit: "months" },
-  probation_m3: { anchor: "onboarding", days: 3, unit: "months" },
-  probation_final: { anchor: "onboarding", days: 3, unit: "months" },
-  probation_extension: { anchor: "onboarding", days: 4, unit: "months" }
+  probation_m3: { anchor: "onboarding", days: 3, unit: "months" }
 };
 var model2 = createStepSlaModel(STEPS3, OVERRIDES);
 var DEFAULT_STEP_SLA2 = model2.DEFAULT_STEP_SLA;
@@ -1601,6 +1719,9 @@ async function fetchHrData() {
     onboardingChecks,
     probations,
     probationReviews,
+    probationCheckins,
+    buddies,
+    buddyInteractions,
     activity,
     candidateScores,
     notifications,
@@ -1631,6 +1752,9 @@ async function fetchHrData() {
     fetchAll3("fms_hr_onboarding_checks"),
     fetchAll3("fms_hr_probations"),
     fetchAll3("fms_hr_probation_reviews"),
+    fetchAll3("fms_hr_probation_checkins", "created_at"),
+    fetchAll3("fms_hr_buddies", "created_at"),
+    fetchAll3("fms_hr_buddy_interactions", "created_at"),
     // The trail used to come back whole, which was fine while it was pure audit —
     // a few dozen rows. Team comments live in this table too now, so it grows with
     // the conversation rather than with the process, and it is read on EVERY app load.
@@ -1693,6 +1817,9 @@ async function fetchHrData() {
     onboardingChecks: onboardingChecks.map(mapOnboardingCheck),
     probations: probations.map(mapProbation),
     probationReviews: probationReviews.map(mapProbationReview),
+    probationCheckins: probationCheckins.map(mapProbationCheckin),
+    buddies: buddies.map(mapBuddy),
+    buddyInteractions: buddyInteractions.map(mapBuddyInteraction),
     activity: activity.map(mapActivity),
     candidateScores: candidateScores.map(mapCandidateScore),
     notifications: notifications.map(mapNotification),
@@ -1861,17 +1988,18 @@ function checkDueIso(o, check) {
   return localDateIso2(addWorkingDays2(from, check.dueDays));
 }
 var isOpenProbation = (p) => !p.finalStatus;
-function probationPendingStep(p, reviews) {
+function probationPendingStep(p, checkins) {
   if (p.finalStatus) return null;
-  const has = (m) => reviews.some((r) => r.month === m);
-  if (!has(1)) return "probation_m1";
-  if (!has(2)) return "probation_m2";
-  if (!has(3)) return "probation_m3";
+  const owed = checkins.filter((c) => !c.completedAt).sort((a, b) => a.dayNo - b.dayNo)[0];
+  if (owed) return checkinStepKey(owed.dayNo);
   if (p.outcome === null) return "probation_final";
-  if (!has(4)) return "probation_extension";
   return "probation_final";
 }
 function probationDueIso(snap, p, step) {
+  const checkin = snap.probationCheckins.find(
+    (c) => c.probationId === p.id && checkinStepKey(c.dayNo) === step
+  );
+  if (checkin) return checkin.dueOn;
   const key = step === "probation_final" && p.outcome === "extended" ? "probation_extension" : step;
   const sla = snap.stepSla[key];
   if (!sla) return null;
@@ -1893,6 +2021,7 @@ function hrSnapshotFrom(data) {
     onboardingChecks: data.onboardingChecks,
     probations: data.probations,
     probationReviews: data.probationReviews,
+    probationCheckins: data.probationCheckins,
     stepSla: data.config.stepSla
   };
 }
@@ -1966,7 +2095,7 @@ function buildQueueEntries2(snap) {
   }
   for (const p of snap.probations) {
     if (!isOpenProbation(p)) continue;
-    const step = probationPendingStep(p, reviewsByProbation.get(p.id) ?? []);
+    const step = probationPendingStep(p, snap.probationCheckins.filter((c) => c.probationId === p.id));
     if (!step) continue;
     const r = reqById.get(p.requisitionId);
     out.push({
@@ -1984,6 +2113,7 @@ function buildQueueEntries2(snap) {
 function stageEntryOf(stepKey, base, actorId, atIso, lockReason, canEdit) {
   return { stepKey, ...base, actorId, atIso, lockReason, canEdit };
 }
+var checkinLockReason = (p) => p.finalStatus ? "This probation has been decided \u2014 its check-ins can no longer be changed." : "Both answers are in. Open the probation to correct one.";
 function reqTerminalBar(r, what) {
   if (r.status === "on_hold") return `This requisition is on hold \u2014 take it off hold before editing its ${what}.`;
   if (r.status === "cancelled" || r.status === "rejected" || r.status === "closed") {
@@ -2106,6 +2236,30 @@ function hrCompletedEntries(ix, stepKey) {
       }
       return out;
     }
+    case "probation_d7":
+    case "probation_d15":
+    case "probation_d30":
+    case "probation_d60":
+    case "probation_d90": {
+      const day = CHECKIN_STEPS.find((c) => c.key === stepKey)?.day;
+      if (day == null) return [];
+      const out = [];
+      for (const p of ix.probations) {
+        const k = (ix.checkinsByProb.get(p.id) ?? []).find((c) => c.dayNo === day);
+        if (!k?.completedAt) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: null, editedById: null, row: p },
+            ix.stepOwnerId(stepKey),
+            k.completedAt,
+            checkinLockReason(p),
+            false
+          )
+        );
+      }
+      return out;
+    }
     case "probation_final":
       return ix.probations.filter((p) => p.outcome).map((p) => {
         const hasM4 = (ix.reviewsByProb.get(p.id) ?? []).some((rv) => rv.month === 4);
@@ -2192,7 +2346,11 @@ var TEST_MRFS = /* @__PURE__ */ new Set(["MRF-2627-0019"]);
 var EXCLUDED = /* @__PURE__ */ new Set(["mrf_resubmit", "resume_upload"]);
 var REQUISITION_TAB_STEPS = ["hr_head_approval", "mgmt_approval", "job_posting"];
 var INTERVIEW_TAB_STEPS = ["telephonic_screening", "interview_1", "interview_2", "interview_3"];
-var PROBATION_TAB_STEPS = ["probation_m1", "probation_m2", "probation_m3", "probation_extension", "probation_final"];
+var PROBATION_TAB_STEPS = [
+  ...CHECKIN_STEPS.map((c) => c.key),
+  "probation_extension",
+  "probation_final"
+];
 var UNTABBED_CANDIDATE_STEPS = ["hr_shortlist", "hod_shortlist", "final_decision"];
 var label2 = (k) => stepByKey2(k)?.title ?? k;
 var group = (xs, key) => {
@@ -2216,7 +2374,15 @@ var contextOf = perDataset((data) => {
     canById: new Map(data.candidates.map((c) => [c.id, c])),
     cansByReq: group(data.candidates, (c) => c.requisitionId),
     ivsByCan: group(data.interviews, (iv) => iv.candidateId),
-    reviewsByProb: group(data.probationReviews, (rv) => rv.probationId)
+    reviewsByProb: group(data.probationReviews, (rv) => rv.probationId),
+    checkinsByProb: group(data.probationCheckins, (c) => c.probationId),
+    // A check-in is written by the head of department and by the new joiner; HR
+    // writes neither. HR is answerable for BOTH answers arriving by the due date,
+    // which is the moment `completedAt` is stamped — so the point follows the step's
+    // owner. Configured by person in Setup; owned by a department instead and this
+    // returns null, which the ranking reports as a `no_actor` drop rather than
+    // silently crediting the wrong person.
+    stepOwnerId: (stepKey) => data.stepOwners.find((o) => o.stepKey === stepKey)?.employeeIds[0] ?? null
   };
   const reqOf = /* @__PURE__ */ new Map();
   for (const r of data.requisitions) reqOf.set(r.id, r.id);

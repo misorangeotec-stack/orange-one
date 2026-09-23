@@ -7,6 +7,8 @@ import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import ProbationPanel from "../../components/probation/ProbationPanel";
+import GrievancesPanel from "../../components/probation/GrievancesPanel";
+import { CHECKIN_DAYS } from "../../types";
 import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
@@ -14,23 +16,35 @@ import { stepByKey } from "../../lib/steps";
 import type { Probation } from "../../types";
 
 /**
- * The HOD's monthly work: everyone who has actually JOINED and is still on probation.
+ * Everyone who has actually JOINED and is still on probation.
  *
  * Rows come from `store.queueEntries` — the SAME entries lib/queues.ts feeds the
- * Kanban and (from Phase 8) the Control Center, so this page's overdue count and
- * theirs cannot drift: there is only one due date, and it is a CALENDAR month from
- * the joining date, never a count of working days.
+ * Kanban and the Control Center, so this page's overdue count and theirs cannot
+ * drift: there is only one due date per check-in, stamped in SQL as CALENDAR days
+ * from the joining date.
  *
- * Note the probations are gathered across all five probation steps rather than one:
- * a probation sits at exactly one of them at a time (its next unwritten review, or
- * the decision), so collecting them all yields each person exactly once.
+ * Probations are gathered across ALL the probation steps rather than one: a
+ * probation sits at exactly one of them at a time (its earliest incomplete
+ * check-in, or the decision), so collecting them all yields each person once.
+ *
+ * ⚠ This list is load-bearing and easy to miss. NR-10 re-cadenced the reviews to
+ * Day 7/15/30/60/90, and until these keys were changed with it the queue silently
+ * showed NOBODY — every probation sat at a step this array did not name, so it
+ * was filtered out with no error anywhere. The retired monthly keys stay listed
+ * so a row left at one of them is still visible rather than lost.
  */
 const PROBATION_STEPS = [
+  "probation_d7",
+  "probation_d15",
+  "probation_d30",
+  "probation_d60",
+  "probation_d90",
+  "probation_final",
+  "probation_extension",
+  // retired by NR-10, kept so nothing sitting at one disappears
   "probation_m1",
   "probation_m2",
   "probation_m3",
-  "probation_final",
-  "probation_extension",
 ] as const;
 
 export default function ProbationQueue() {
@@ -141,19 +155,26 @@ export default function ProbationQueue() {
       tdClassName: "whitespace-nowrap",
     },
     {
-      key: "reviews",
-      header: "Reviews",
+      key: "checkins",
+      header: "Check-ins",
+      // NR-10: done means BOTH sides are in, which is why it counts completedAt
+      // rather than either timestamp. A check-in with only the HOD's half is
+      // outstanding work, and showing it as done would hide exactly the gap this
+      // whole cadence exists to surface.
       cell: (p) => {
-        const total = p.outcome === "extended" ? 4 : 3;
-        const done = s.reviewsFor(p.id).length;
+        const list = s.checkinsFor(p.id);
+        const done = list.filter((c) => c.completedAt).length;
+        const half = list.filter((c) => !c.completedAt && (c.hodAt || c.joinerAt)).length;
         return (
-          <span className={done === total ? "text-ryg-green font-medium" : "text-grey"}>
-            {done} / {total}
+          <span className={done === CHECKIN_DAYS.length ? "text-ryg-green font-medium" : "text-grey"}>
+            {done} / {CHECKIN_DAYS.length}
+            {half > 0 && <span className="ml-1.5 text-[11.5px] text-grey-2">{half} half-done</span>}
           </span>
         );
       },
-      sortValue: (p) => s.reviewsFor(p.id).length,
-      exportValue: (p) => `${s.reviewsFor(p.id).length} of ${p.outcome === "extended" ? 4 : 3}`,
+      sortValue: (p) => s.checkinsFor(p.id).filter((c) => c.completedAt).length,
+      exportValue: (p) =>
+        `${s.checkinsFor(p.id).filter((c) => c.completedAt).length} of ${CHECKIN_DAYS.length} complete`,
     },
     {
       key: "due",
@@ -172,9 +193,13 @@ export default function ProbationQueue() {
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
             ? "Reviews and decisions you have recorded. A recorded review stays editable until the decision closes the probation; the decision itself is taken from the panel."
-            : "Everyone who has joined and is still on probation. Review them in month 1, month 2 and month 3, then approve, reject, or extend by a month. Each review is due one calendar month after they joined — so a 31-Jan joiner is due on 28-Feb, not three days into March."}
+            : "Everyone who has joined and is still on probation. Check in on Day 7, 15, 30, 60 and 90 — calendar days after they joined — then confirm, reject, or extend. Each check-in is written twice: by the head of department, and by the new joiner from their own account. It is not done until both are in."}
         </p>
       </div>
+
+      {/* KPI 1C.6 — HR's own 24-hour clock. Renders nothing for anyone else, and
+          the table's policy would return them nothing anyway. */}
+      <GrievancesPanel />
 
       <StageTabs
         mode={stage.mode}

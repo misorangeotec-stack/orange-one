@@ -60,6 +60,13 @@ import {
   acknowledgeRequisition as acknowledgeRequisitionWrite,
   setBgv as setBgvWrite,
   setInduction as setInductionWrite,
+  submitProbationCheckin as submitProbationCheckinWrite,
+  setEmployeeUser as setEmployeeUserWrite,
+  setProbationLetter as setProbationLetterWrite,
+  allocateBuddy as allocateBuddyWrite,
+  handPassport as handPassportWrite,
+  confirmBuddyInteraction as confirmBuddyInteractionWrite,
+  closeBuddy as closeBuddyWrite,
   submitMrf as submitMrfWrite,
   uploadJd,
   uploadResume,
@@ -139,6 +146,12 @@ import type {
   OnboardingItem,
   Probation,
   BgvStatus,
+  Buddy,
+  BuddyInteraction,
+  CheckinDay,
+  CheckinHodStatus,
+  CheckinJoinerStatus,
+  ProbationCheckin,
   ProbationReview,
   ProbationReviewStatus,
   Requisition,
@@ -413,6 +426,30 @@ interface HrStoreValue {
   probationForOnboarding: (onboardingId: string) => Probation | undefined;
   /** This probation's reviews, month 1 first. */
   reviewsFor: (probationId: string) => ProbationReview[];
+  /** NR-10 — all five check-ins for this probation, Day 7 first. */
+  checkinsFor: (probationId: string) => ProbationCheckin[];
+  checkinOf: (probationId: string, day: CheckinDay) => ProbationCheckin | undefined;
+  submitProbationCheckin: (
+    probationId: string,
+    day: CheckinDay,
+    side: "hod" | "joiner",
+    status: CheckinHodStatus | CheckinJoinerStatus,
+    remarks: string | null,
+    filePath?: string | null,
+    fileName?: string | null,
+  ) => Promise<void>;
+  /* ---- NR-9 · the buddy programme ---- */
+  buddies: Buddy[];
+  buddyForOnboarding: (onboardingId: string) => Buddy | undefined;
+  buddyInteractionsFor: (buddyId: string) => BuddyInteraction[];
+  allocateBuddy: (onboardingId: string, buddyUserId: string) => Promise<void>;
+  handPassport: (buddyId: string) => Promise<void>;
+  confirmBuddyInteraction: (interactionId: string) => Promise<void>;
+  closeBuddy: (buddyId: string, status: "closed" | "person_left", note: string | null) => Promise<void>;
+  /** NR-10 / KPI 1C.7 — record the confirmation letter against the probation. */
+  setProbationLetter: (probationId: string, path: string, name: string) => Promise<void>;
+  /** NR-10 / P0 — link the hire to their Orange One account. */
+  setEmployeeUser: (onboardingId: string, userId: string | null) => Promise<void>;
   reviewOf: (probationId: string, month: number) => ProbationReview | undefined;
   /** The ONE step this probation is waiting on (a review, or the decision). */
   probationPendingStep: (probation: Probation) => StepKey | null;
@@ -740,6 +777,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const onboardingChecks = data?.onboardingChecks ?? [];
   const probations = data?.probations ?? [];
   const probationReviews = data?.probationReviews ?? [];
+  const probationCheckins = data?.probationCheckins ?? [];
+  const buddies = data?.buddies ?? [];
+  const buddyInteractions = data?.buddyInteractions ?? [];
   const activity = data?.activity ?? [];
   const candidateScores = data?.candidateScores ?? [];
   const notifications = data?.notifications ?? [];
@@ -1171,7 +1211,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     }
     for (const list of reviewsByProb.values()) list.sort((a, b) => a.month - b.month);
 
-    const pendingStepOf = (p: Probation) => probationPendingStep(p, reviewsByProb.get(p.id) ?? []);
+    const checkinsByProb = new Map<string, ProbationCheckin[]>();
+    for (const c of probationCheckins) {
+      const list = checkinsByProb.get(c.probationId) ?? [];
+      list.push(c);
+      checkinsByProb.set(c.probationId, list);
+    }
+    for (const list of checkinsByProb.values()) list.sort((a, b) => a.dayNo - b.dayNo);
+
+    const pendingStepOf = (p: Probation) => probationPendingStep(p, checkinsByProb.get(p.id) ?? []);
 
     /**
      * Every probation step is a HOD step, so this is always the requisition's own
@@ -1253,6 +1301,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       onboardingChecks,
       probations,
       probationReviews,
+      probationCheckins,
       config: { stepSla },
     });
     const queueEntries = buildQueueEntries(snapshot);
@@ -1383,6 +1432,11 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       cansByReq,
       ivsByCan,
       reviewsByProb,
+      checkinsByProb,
+      // The step OWNER, not whoever typed — see HrCompletedIndex for why the two
+      // differ on the check-ins alone. `stepOwnerFor` is the same Setup row the
+      // queue reads, so the Completed tab and the ranking agree by construction.
+      stepOwnerId: (stepKey) => stepOwnerFor(stepKey)?.employeeIds[0] ?? null,
     };
 
     /**
@@ -1493,6 +1547,44 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       probationById: (id) => probById.get(id),
       probationForOnboarding: (oid) => probByOnb.get(oid),
       reviewsFor: (pid) => reviewsByProb.get(pid) ?? [],
+      checkinsFor: (pid) =>
+        probationCheckins.filter((c) => c.probationId === pid).sort((a, b) => a.dayNo - b.dayNo),
+      checkinOf: (pid, day) =>
+        probationCheckins.find((c) => c.probationId === pid && c.dayNo === day),
+      submitProbationCheckin: async (pid, day, side, status, remarks, filePath = null, fileName = null) => {
+        await submitProbationCheckinWrite(pid, day, side, status, remarks, filePath, fileName);
+        await invalidate();
+      },
+      buddies,
+      buddyForOnboarding: (oid) => buddies.find((b) => b.onboardingId === oid),
+      buddyInteractionsFor: (bid) =>
+        buddyInteractions
+          .filter((i) => i.buddyId === bid)
+          .sort((a, b) => b.happenedOn.localeCompare(a.happenedOn)),
+      allocateBuddy: async (oid, uid) => {
+        await allocateBuddyWrite(oid, uid);
+        await invalidate();
+      },
+      handPassport: async (bid) => {
+        await handPassportWrite(bid);
+        await invalidate();
+      },
+      confirmBuddyInteraction: async (iid) => {
+        await confirmBuddyInteractionWrite(iid);
+        await invalidate();
+      },
+      closeBuddy: async (bid, status, note) => {
+        await closeBuddyWrite(bid, status, note);
+        await invalidate();
+      },
+      setProbationLetter: async (pid, path, name) => {
+        await setProbationLetterWrite(pid, path, name);
+        await invalidate();
+      },
+      setEmployeeUser: async (oid, uid) => {
+        await setEmployeeUserWrite(oid, uid);
+        await invalidate();
+      },
       reviewOf: (pid, month) => (reviewsByProb.get(pid) ?? []).find((r) => r.month === month),
       probationPendingStep: pendingStepOf,
       probationDueIso: (p) => {
@@ -2192,7 +2284,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     // gate would keep the membership the memo was built with.
     pipelineViewerIds,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
-    probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
+    probations, probationReviews,
+    // NR-9 / NR-10, and load-bearing for the same reason as the three above: the
+    // resolvers below close over these arrays, so leaving them out freezes the
+    // buddy panel and the day check-ins at whatever the memo was first built with.
+    // Handing the passport over wrote the row, refetched it, and still left the
+    // button saying "Hand it over" until a reload — found in the browser, because
+    // tsc cannot see a missing dependency.
+    probationCheckins, buddies, buddyInteractions,
+    masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute
     // when the org roster arrives and Completed-tab "By" names would stay "Unknown user".
     orgPeople,

@@ -9,6 +9,15 @@ import type { AppRole } from "./types";
  */
 
 export interface CreateUserInput {
+  /**
+   * NR-13 — the onboarding this login is being created FOR.
+   *
+   * An admin never sends it. A non-admin must: it is the whole of their
+   * authorization, checked server-side with `fms_hr_can_act('onboarding', …)` —
+   * the same predicate that decides whether the panel the button sits on is
+   * read-only. Sending it changes nothing for an admin.
+   */
+  onboardingId?: string;
   name: string;
   email: string;
   /**
