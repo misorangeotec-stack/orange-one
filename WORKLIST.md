@@ -9856,6 +9856,13 @@ real HR process, not reporting — but nobody should expect a score to move beca
 
 ## Learning & Development  *(new module)*
 
+> 🟢 **LIVE ON `orangeonehub.com` SINCE 23-09-2026** (`54d24a5e`). Verified from the deployed
+> bundle, not the build log. The module is **universal** — all 68 people can open it and there
+> are no `app_access` rows to grant, so Admin → Module Access will show it as admins-only and
+> be wrong. Ranking and KPI scoring stay **OFF** until `fms_rank_modules` is switched, and
+> **email is off**. Two blockers are live with it: **LD-14** (hours always zero) and **LD-15**
+> (Send back strands the request) — HR has been told in writing not to use Send back.
+
 *Source: `files/Orange_Hub_Learning_Development_FMS_Flow.docx` — **ORANGE HUB · LEARNING & DEVELOPMENT ·
 FMS WORKFLOW & SYSTEM MAPPING**, v1.0, "prepared for Orange O Tec Pvt. Ltd. | HR and IT Team". Fourteen
 sections; **§11 "Final Arrow-wise End-to-End Flow" — page 8 — is the spine** and is what the client walked
@@ -10460,13 +10467,13 @@ signed in as her, not as an admin — shows `TRN-2627-0017 · Follow-up · 24-09
 
 #### ⚠ Two deploy-day steps, neither of them code
 
-- [ ] 🔴 **REBUILD BOTH BUNDLES FROM `master`, after this branch merges.**
-      `node supabase/ranking/build.mjs` and `… build.mjs kpi`. They were **deliberately not committed
-      from this branch**: master is 14 commits ahead and has moved `hr-recruitment/lib/queues.ts`,
-      `lib/sla.ts`, `lib/steps.ts` and `ranking/modules/hrRecruitment.ts`, all of which the bundle
-      carries — so a bundle built here would ship **HR Recruitment's old rules**. Both build clean and
-      both guards pass (12 Control Center modules, 11 scored, 1 excused; no browser code); it is only
-      the branch they must not be built on. See build.mjs's own header.
+- [x] ✅ **Both bundles rebuilt and shipped, 23-09-2026** (`54d24a5e`). Done the safe way round:
+      `origin/master` was merged INTO the branch first, so the rebuild ran on a tree that already held
+      master's code — checked afterwards that the bundle carries New Recruitment's Day 7/15/30/60/90
+      probation cadence as well as the new L&D scorer. Both guards passed (12 Control Center modules,
+      11 scored, 1 excused; no browser code in either graph). The deployed edge functions were already
+      current on master's rules, so no function redeploy was needed; one IS needed before the switch
+      below is flipped.
 - [ ] **Switch `fms_rank_modules.learning-development` on** the day the module is in use, from the
       Control Center. Nothing else waits on it: with it off, `kpi-facts` lists L&D under `skipped` and
       the report's footer says so.
