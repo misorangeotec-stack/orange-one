@@ -9941,7 +9941,7 @@ already live through `kpi_report`. Add this module and the sheet reads:
 | 8 | 30-day effectiveness, follow-up decision and closure | **LD-8** | `[x]` |
 | 9 | POSH / Safety yearly compliance — everyone, once a year | **LD-9** | `[x]` |
 | 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[x]` |
-| 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) | **LD-11** | `[ ]` |
+| 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) — **ships OFF**, two deploy-day steps | **LD-11** | `[x]` |
 | 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
 | 13 | **Masters + Master Requests** — trainers, venues, competencies, POSH & Safety | **LD-13** | `[x]` |
 
@@ -10316,35 +10316,93 @@ literal** — the lab already learned that once; a box states the shape of its g
 
 ---
 
-### LD-11 · 🟡 KPI and FMS-ranking wiring  `[ ]`
+### LD-11 · 🟡 KPI and FMS-ranking wiring  `[x]` *(built; two deploy-day steps left)*
 
-> 🟡 **REGISTERED BUT OFF (22-09-2026).** `fms_rank_modules` carries a row set `active = false`,
-> the same state `asset-maintenance`, `hr-exit` and `travel-desk` are in — an admin switches it on
-> from the Control Center the day it is in use.
->
-> ⚠ **It needs two things this module does not have yet:** an **FMS Control Center adapter** and
-> **My Work Today items**. The ranking scorer composes those; without them a scorer would not be
-> wireable, and `supabase/ranking/build.mjs` would have nothing to check it against. Both are
-> go-live wiring into systems 67 people use today, so they belong with the deploy rather than before
-> it.
+> 🟡 **BUILT AND VERIFIED 23-09-2026, STILL SWITCHED OFF.** `fms_rank_modules` carries the row set
+> `active = false` — the same state `asset-maintenance`, `hr-exit` and `travel-desk` are in — and its
+> note now says why. An admin switches it on from the Control Center the day it is in use.
 *Raised 2026-09-21*
 
-Three separate places, and the module is only half-built until all three are done:
+The two things this entry said the module did not have, it now has. **A third is somebody else's file.**
 
-1. **`kpi_put_module` / `kpi_put_rows`** — the module writes its own facts (step, owner, due date,
-   completion) so **KPI-1 / KPI-2 score it nightly at 01:07 IST** along with every other module. KRA 5's
-   three lines are **per employee**, so the facts must be written for attendees, not only for L&D staff.
-2. **CC-1 ranking** — a `frontend/src/apps/fms-control-center/ranking/modules/learningDevelopment.ts`
-   beside the ten that exist, a row in `fms_rank_modules`, and a rebuild of
-   `supabase/functions/_shared/fmsRanking.bundle.js`. ⚠ The edge function **runs the app's own bundled
-   queue logic** — the bundle is not optional and a stale one silently scores the old shape.
-3. **KRA 2 / KRA 5 line definitions** — the 19 lines in the table at the top of this section, wired into
-   whatever the framework module becomes. Today they live only in the DEV-only KPI-3 lab.
+| # | What | State |
+|---|---|---|
+| 1 | `kpi_put_module` / `kpi_put_rows` — the module writes its own facts | ✅ **automatic** — see below |
+| 2 | CC-1 ranking: scorer, adapter, My Work items, `fms_rank_modules` row | ✅ built |
+| 3 | KRA 2 / KRA 5 line definitions | 🟡 **still only in the DEV-only KPI-3 lab** (branch `kpi-3-lab`) |
 
-⚠ **Do not ship this before LD-0's two owed document edits are confirmed.** Three of the points scored
-here are against lines that still say "assessment", and the adherence lines score against targets no two
-documents agree on. Shipping first means the first scorecard anybody sees is wrong in a way that looks
-like our bug.
+**1 needed no code at all, and that is worth knowing.** `kpi-facts` enumerates its modules from
+`RANKED_MODULES` and `apps/kra-kpi/facts/fmsFacts.ts` is entirely generic — no module is named anywhere
+in it. So the moment the scorer exists and the switch is on, the nightly 01:07 IST run writes L&D facts
+for every person alongside every other module. There was nothing to write; there was a scorer to write.
+
+#### What was built
+
+- 🔴 **`apps/learning-development/lib/work.ts` — the piece that did not exist.** `lib/queues.ts`
+  answers "where is this REQUEST", and steps 1–8 are all it *can* answer for, because a request sits at
+  exactly one step. **The other fourteen hang off a session or off one person's obligation, and a
+  session holds several at once** — nominations still open while the material is already up. One
+  "current step" cannot describe that. So this returns a LIST of open and closed steps across all three
+  scopes, and the three consumers below all read it rather than re-deriving anything.
+- `core/workspace/mywork/items/learning-development.ts` + its provider — **the only universal provider
+  in the hub.** Every other one is narrowed by `hasModule`; this one fetches for all 67 people, because
+  everybody is a potential participant. What it hands most of them back is their OWN obligation — an
+  invitation to answer, an assignment to hand in — never HR's pipeline.
+- `apps/fms-control-center/adapters/learning-development.ts` — the twelfth row on the scoreboard, and
+  the only one that counts steps its own module's sidebar does not show.
+- `apps/fms-control-center/ranking/modules/learningDevelopment.ts` + `RANKED_MODULES`.
+
+⚠ **PARTICIPANT STEPS ARE KEYED BY THE PARTICIPANT'S OWN ROW, NOT BY THE SESSION.** Twelve people
+owing a feedback form is twelve pieces of work, and KRA 5 scores each against its own name. Keying by
+the session would collide, and My Work's item id — `source:row:step`, split on the colon by
+`ranking/workItems.ts` — would hand the ranking one row where there are twelve. Same reason hr-exit
+keys by `checkId ?? entityId`.
+
+⚠ **TWO STEPS HAVE NO ACTOR COLUMN.** Training Conducted and Attendance Closure stamp a time on the
+session and nobody's name, so those two read `fms_ld_activity`, which records the actor and the moment
+for every move. Deliberate exception, not a pattern: a column is the truth wherever one exists, and the
+other twenty steps have one.
+
+#### 🔴 The bug live data found, and string-matching would not have
+
+Test rows are recognised by a `ZZ TEST` title — every request and session carries a real sequential
+code, because the seed data was made through the module's own RPCs, so there is no separate numbering.
+The scorer first matched that against **the step's displayed title**, and **a participant step does not
+show the session's title**: an assignment step is titled after the assignment. Two steps of a test
+session therefore came through as real and would have been scored. Found by compiling the scorer with
+the edge function's own shims and **running it against live data** — it does not show up in a build, a
+typecheck or a screen. `lib/work.ts` now decides once, on the owning request or session, and every step
+of that entity inherits the flag.
+
+#### Verified, 23-09-2026
+
+Compiled through `supabase/ranking/build.mjs`'s own shims and run against the live database: **20 closed
+steps across all three scopes, every one with both an actor and a time** (including the two that come
+from the activity log), **no duplicate step ids**, 4 open steps all timed, and all 20 correctly dropped
+— 19 `test_record`, 1 `excluded_step` — leaving nothing scoreable, which is right, because every row in
+the module today is seed data. Per person: 3 of 68 carry open L&D work, and they are the right three —
+a HOD's 30-day note, the L&D executive's follow-up decision, and one nominee's own feedback and
+assignment. In the browser: the **twelfth row on the FMS Control Center** reads 2 due tomorrow and
+expands to all five stages (21 steps; `need_raised` is `noQueue`), and **My Work Today as Saloni** —
+signed in as her, not as an admin — shows `TRN-2627-0017 · Follow-up · 24-09-2026 · TEAM`.
+
+#### ⚠ Two deploy-day steps, neither of them code
+
+- [ ] 🔴 **REBUILD BOTH BUNDLES FROM `master`, after this branch merges.**
+      `node supabase/ranking/build.mjs` and `… build.mjs kpi`. They were **deliberately not committed
+      from this branch**: master is 14 commits ahead and has moved `hr-recruitment/lib/queues.ts`,
+      `lib/sla.ts`, `lib/steps.ts` and `ranking/modules/hrRecruitment.ts`, all of which the bundle
+      carries — so a bundle built here would ship **HR Recruitment's old rules**. Both build clean and
+      both guards pass (12 Control Center modules, 11 scored, 1 excused; no browser code); it is only
+      the branch they must not be built on. See build.mjs's own header.
+- [ ] **Switch `fms_rank_modules.learning-development` on** the day the module is in use, from the
+      Control Center. Nothing else waits on it: with it off, `kpi-facts` lists L&D under `skipped` and
+      the report's footer says so.
+
+⚠ **Do not arm the scoring before LD-0's two owed document edits are confirmed.** Three of the points
+scored here are against KPI lines that still say "assessment", and the adherence lines score against
+targets no two documents agree on. Shipping first means the first scorecard anybody sees is wrong in a
+way that looks like our bug.
 
 ---
 

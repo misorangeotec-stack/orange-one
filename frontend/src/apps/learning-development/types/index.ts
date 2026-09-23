@@ -194,7 +194,10 @@ export interface TrainingSession {
   actualEnd: string | null;
   changeReason: string | null;
   readinessConfirmedAt: string | null;
+  /** Who confirmed the session ready — the actor on the Pre-Training Material step. */
+  readinessBy: string | null;
   invitationsSentAt: string | null;
+  nominationsClosedAt: string | null;
   attendanceClosedAt: string | null;
   attendanceSheetPath: string | null;
   evidencePaths: string[];
@@ -202,6 +205,8 @@ export interface TrainingSession {
   reviewNote: string | null;
   reviewActionPoints: string | null;
   reviewedAt: string | null;
+  /** Who wrote the HR session review — the actor on that step. */
+  reviewedBy: string | null;
   actualCost: number | null;
   createdBy: string | null;
   createdAt: string;
