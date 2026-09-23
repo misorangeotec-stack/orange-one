@@ -18,7 +18,8 @@ import type { Task } from "../types";
 type View = "received" | "given" | "all";
 
 /**
- * Peer Tasks (TM-1) — the one-off work HODs hand SIDEWAYS to each other.
+ * Peer Tasks (TM-1) — the one-off work HODs and Sub-HODs hand SIDEWAYS to each
+ * other.
  *
  * Why this screen exists at all: a peer task is nearly invisible to the person
  * who gave it. Team Tasks filters on assignedTo in [self, ...downline], and a
