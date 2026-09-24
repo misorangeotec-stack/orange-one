@@ -381,6 +381,72 @@ export default function InkMis() {
 
   // The company columns exist only on Combined, and only when the group is open.
   const cols = useTableColumns("dashboard");
+  /**
+   * ROW HEIGHT, dragged the same way column width is.
+   *
+   * Sixty-four inks at the default spacing is a lot of scrolling for a sheet whose whole job is
+   * to be read across; pulling the rows tighter fits half again as many on screen. Height is set
+   * by the cells' vertical padding, which is what actually makes a row tall — setting a height on
+   * the row itself only fights the padding and clips the text.
+   *
+   * ONE HEIGHT FOR EVERY ROW, not one per row. A report where row nine is taller than row ten
+   * reads as a mistake, and the planner wants more lines on screen, not a particular line bigger.
+   */
+  const ROW_PAD_DEFAULT = 16;
+  const [rowPad, setRowPad] = useState<number>(() => {
+    try {
+      const v = Number(window.localStorage.getItem("ink-mis:row-pad"));
+      return Number.isFinite(v) && v > 0 ? Math.min(v, 28) : ROW_PAD_DEFAULT;
+    } catch {
+      return ROW_PAD_DEFAULT;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:row-pad", String(rowPad));
+    } catch {
+      /* private mode: the height still applies for this visit */
+    }
+  }, [rowPad]);
+
+  /** Drag any row's bottom edge; double-click it to go back to the default. */
+  const startRowDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startPad = rowPad;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: MouseEvent) =>
+      // Halved: the padding sits above AND below, so a 20px drag is a 20px taller row.
+      setRowPad(Math.min(28, Math.max(2, startPad + (ev.clientY - startY) / 2)));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  /** The grab strip, in each row's first cell. */
+  const rowHandle = (
+    <span
+      role="separator"
+      aria-orientation="horizontal"
+      title="Drag to make every row taller or shorter. Double-click to reset."
+      onMouseDown={startRowDrag}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        setRowPad(ROW_PAD_DEFAULT);
+      }}
+      className="absolute inset-x-0 bottom-0 h-[5px] cursor-row-resize hover:bg-primary/30"
+    />
+  );
+
   /** Frozen by default; a narrow screen is better off without the pin eating its width. */
   const [freeze, setFreeze] = useState<boolean>(() => {
     try {
@@ -873,6 +939,10 @@ export default function InkMis() {
         height of its own fixes that, and keeps the left/right buttons above it on screen
         instead of stranded at the top of a long page.
       */}
+      <div
+        style={{ ["--ink-row-pad" as string]: `${rowPad}px` }}
+        className="[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)]"
+      >
       <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
         <Table
           className={
@@ -1097,15 +1167,24 @@ export default function InkMis() {
               <TableRow key={r.key}>
                 {on("no") && (
                   <TableCell
-                    {...pinMerge(pinCell("no"), "text-right text-xs tabular-nums text-muted-foreground")}
+                    {...pinMerge(
+                      pinCell("no"),
+                      "relative text-right text-xs tabular-nums text-muted-foreground",
+                    )}
                   >
                     {order[r.key] ?? order[r.legacyKey] ?? ""}
+                    {rowHandle}
                   </TableCell>
                 )}
                 {on("group") && (
                   <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
                 )}
-                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>{r.itemCode}</TableCell>
+                <TableCell {...pinMerge(pinCell("code"), "relative font-medium")}>
+                  {r.itemCode}
+                  {/* Second home for the grab strip: with No. hidden, the code column is the
+                      leftmost cell and the handle has to be reachable there instead. */}
+                  {!on("no") && rowHandle}
+                </TableCell>
                 {on("description") && (
                   <TableCell {...pinCell("description")}>{r.description}</TableCell>
                 )}
@@ -1188,6 +1267,7 @@ export default function InkMis() {
 
         </Table>
       </ScrollableTable>
+      </div>
 
       {/* Holidays. Sundays come out automatically; these are the extra closures. Kept visible
           rather than buried, because every date added raises every per-day average. */}
