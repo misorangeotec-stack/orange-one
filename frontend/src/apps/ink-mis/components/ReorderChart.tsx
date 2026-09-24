@@ -211,9 +211,6 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
         <span className="text-sm tabular-nums">
           {fmtQty(total)} <span className="text-xs text-muted-foreground">{unit}</span>
         </span>
-        <span className="ml-auto text-xs text-muted-foreground">
-          Target less stock and supply arranged. Click a bar for its inks.
-        </span>
       </div>
 
       <div className="grid gap-3 px-3 pb-3 [grid-template-columns:repeat(auto-fit,minmax(22rem,1fr))]">

@@ -608,11 +608,6 @@ export default function InkItemMaster() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Item master</h1>
-          <p className="text-sm text-muted-foreground">
-            Items with stock, across all four books. Fill in the number, code, group and
-            description you want the report to use, then press Save. Leave a box empty to keep
-            what Tally says.
-          </p>
         </div>
         <Button size="sm" asChild variant="secondary">
           <Link to={`${BASE}/dashboard`}>
@@ -831,11 +826,9 @@ export default function InkItemMaster() {
               <ResizableHead id="description" cols={cols} className="min-w-[18rem]">Description</ResizableHead>
               <ResizableHead id="category" cols={cols} className="min-w-[11rem]">
                 Category
-                <div className="text-[10px] font-normal text-muted-foreground">sets the group</div>
               </ResizableHead>
               <ResizableHead id="source" cols={cols} className="min-w-[10rem]">
                 Import/Plant
-                <div className="text-[10px] font-normal text-muted-foreground">sets the group</div>
               </ResizableHead>
               <ResizableHead id="weeks" cols={cols} className="w-[7rem] text-right">
                 Plant weeks

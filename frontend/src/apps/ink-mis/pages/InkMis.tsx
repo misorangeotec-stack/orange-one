@@ -747,10 +747,6 @@ export default function InkMis() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Ink MIS</h1>
-          <p className="text-sm text-muted-foreground">
-            Stock from Tally across four books, merged on item code, against the pipeline you
-            maintain by hand.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
@@ -902,13 +898,6 @@ export default function InkMis() {
         </div>
       )}
 
-      {justAdded && (
-        <div className="rounded-md border border-primary bg-primary/10 px-3 py-2 text-sm">
-          Column added at the right-hand end of the table, after the existing consignment
-          columns. Fill in its reference, date and quantities there.
-        </div>
-      )}
-
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           Could not load stock: {error instanceof Error ? error.message : "unknown error"}
@@ -1006,15 +995,11 @@ export default function InkMis() {
               {on("m3") && (
                 <ResizableHead id="m3" cols={cols} className="text-right">
                   3-month avg{colFilter("m3")}
-                  <div className="text-[10px] font-normal text-muted-foreground">last 3 months ÷ 3</div>
                 </ResizableHead>
               )}
               {on("pd") && (
                 <ResizableHead id="pd" cols={cols} className="text-right">
                   Per day avg{colFilter("pd")}
-                  <div className="text-[10px] font-normal text-muted-foreground">
-                    this month ÷ {workingDays} days
-                  </div>
                 </ResizableHead>
               )}
               {on("lead") && (

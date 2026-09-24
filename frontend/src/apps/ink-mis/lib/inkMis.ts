@@ -457,6 +457,13 @@ export async function loadInkPositions(
     else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
     if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
     if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
+    // A line merged by DESCRIPTION can be fed by books that disagree about the code, and the
+    // first row to arrive may be the one Tally has no code for — which left the Item code column
+    // blank on a line that plainly has a code in another book. The first real code fills it.
+    if (!pos.itemCode && effectiveCode) {
+      pos.itemCode = effectiveCode;
+      pos.coded = true;
+    }
     if (!pos.category) pos.category = effectiveCategory;
     if (!pos.source) pos.source = effectiveSource;
 
