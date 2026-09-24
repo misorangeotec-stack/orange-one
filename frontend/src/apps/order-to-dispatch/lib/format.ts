@@ -142,6 +142,74 @@ export const STEP_HOLD: Partial<Record<QueueStep, {
   },
 };
 
+/**
+ * What the step's own owner has already decided about this order, for the queue's
+ * Status column. Null when there is nothing to report yet.
+ *
+ * ── Why this is not just the hold ────────────────────────────────────────────
+ * Credit has THREE outcomes and only one of them used to be visible here. An
+ * order the credit desk had PARTIALLY APPROVED looked exactly like one nobody
+ * had opened, because a partial approval advances the order like a full one and
+ * says so only through `ccApprovedQty` and, eventually, a second round. People
+ * were reading the `R2` chip as the signal — but a round is a consequence of the
+ * decision, not the decision, and rounds also start for reasons that have
+ * nothing to do with credit (a short material position, a sales return).
+ *
+ * ── WHY IT FALLS BACK TO THE ARCHIVED ROUNDS ────────────────────────────────
+ * ⚠ THE HEADER IS WIPED WHEN AN ORDER COMES BACK TO CREDIT. Once everything a
+ *   partial approval released has gone out, `fms_dispatch_advance_round` sets
+ *   `cc_status`, `cc_remarks`, `cc_round_no` and the stamps back to NULL, so the
+ *   balance "reads as genuinely open again" (migration 20261104120000). Only the
+ *   cumulative `cc_approved_qty` survives.
+ *
+ *   So on exactly the rows this column was asked to explain — an R2 sitting in
+ *   the credit queue — the header says nothing at all. The decision that sent it
+ *   round again is on the ARCHIVED ROUND, which `dispatchFetch` loads for every
+ *   order. Reading the header alone printed a dash on all of them.
+ *
+ * The fallback is labelled as history ("Partially approved earlier"), because the
+ * balance in front of this person genuinely has NOT been approved by anyone yet —
+ * saying a flat "Partially approved" would invite them to treat it as decided.
+ *
+ * `rank` sorts the column: what is parked first, what was decided next, untouched
+ * last — the reading order somebody scanning the queue wants.
+ */
+export type StepStatus = { label: string; tone: Tone; reason: string | null; rank: number };
+
+/** The newest decision any earlier round recorded, or null if none ever did. */
+const lastArchivedCredit = (o: DispatchOrder): { ccStatus: CreditStatus; ccRemarks: string | null } | null => {
+  for (let i = o.rounds.length - 1; i >= 0; i--) {
+    const r = o.rounds[i];
+    if (r.ccStatus) return { ccStatus: r.ccStatus, ccRemarks: r.ccRemarks };
+  }
+  return null;
+};
+
+export const STEP_STATUS: Partial<Record<QueueStep, (o: DispatchOrder) => StepStatus | null>> = {
+  credit_check: (o) => {
+    if (isCreditHeld(o)) {
+      return { label: CREDIT_STATUS_LABEL.credit_hold, tone: "yellow", reason: o.ccRemarks, rank: 0 };
+    }
+    // A decision standing on the header governs the order right now.
+    if (o.ccStatus === "partial") {
+      return { label: CREDIT_STATUS_LABEL.partial, tone: "orange", reason: o.ccRemarks, rank: 1 };
+    }
+    if (o.ccStatus === "approved") {
+      return { label: CREDIT_STATUS_LABEL.approved, tone: "green", reason: null, rank: 2 };
+    }
+    // Header cleared — say what sent this order round again.
+    const prev = lastArchivedCredit(o);
+    if (prev?.ccStatus === "partial") {
+      return { label: "Partially approved earlier", tone: "orange", reason: prev.ccRemarks, rank: 1 };
+    }
+    return null; // never decided
+  },
+  sales_bill: (o) =>
+    isBillHeld(o)
+      ? { label: STEP_HOLD.sales_bill!.label, tone: "yellow", reason: o.sbHoldReason, rank: 0 }
+      : null,
+};
+
 /** Is this order parked at whichever step currently owes it? */
 export const isStepHeld = (o: DispatchOrder): boolean =>
   isCreditHeld(o) || isBillHeld(o);

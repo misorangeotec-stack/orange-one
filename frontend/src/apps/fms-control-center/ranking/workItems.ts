@@ -30,3 +30,20 @@ export function parseItems(items: WorkItem[]): ParsedItem[] {
   }
   return out;
 }
+
+/**
+ * A held row scores against nobody.
+ *
+ * Every `items/` rule now returns the entities its module has ON HOLD, flagged
+ * with `isHeld`, so that My Work can show parked work on its own tile instead of
+ * losing it (see `core/workspace/mywork/types.ts`). Those rows arrive here too —
+ * `openFor` asks the same rule the home screen does — and they must not be
+ * charged: somebody with the right to hold has already decided the work is not
+ * owed today, and the ranking charges an OVERDUE OPEN STEP to everyone whose My
+ * Work lists it. Without this, switching the hold tile on would have quietly
+ * started docking people for work they had correctly parked.
+ *
+ * `month.ts` skips any step carrying a `drop` and counts it under `dropped.held`,
+ * so the number is reported rather than silently absorbed.
+ */
+export const heldDrop = (item: WorkItem): "held" | undefined => (item.isHeld ? "held" : undefined);

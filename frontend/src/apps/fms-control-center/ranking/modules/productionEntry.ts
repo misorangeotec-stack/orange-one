@@ -22,7 +22,7 @@ import { completedFor, productionDueIso, productionSnapshotFrom } from "@/apps/p
 import { stepAppliesTo, stepByKey, type StepKey } from "@/apps/production-entry/lib/steps";
 import { productionWorkItems } from "@/core/workspace/mywork/items/productionEntry";
 import type { ClosedStep, ModuleScorer, OpenStep } from "../types";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const label = (k: string) => stepByKey(k)?.title ?? k;
 
@@ -63,6 +63,7 @@ export const productionEntryScorer: ModuleScorer<ProductionData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
+        drop: heldDrop(item),
       }),
     );
   },

@@ -16,7 +16,7 @@
  */
 import { addMonths, addWorkingDays, localDateIso } from "@/shared/lib/workingDays";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
-import { CHECKIN_STEPS, checkinStepKey, type StepKey } from "./steps";
+import { CHECKIN_STEPS, checkinStepKey, stepByKey, type StepKey } from "./steps";
 import { REQ_STATUS_LABEL } from "./format";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type {
@@ -641,6 +641,42 @@ export function hrSnapshotFrom(data: {
     probationCheckins: data.probationCheckins,
     stepSla: data.config.stepSla,
   };
+}
+
+/**
+ * Every HELD requisition, as one entry at the step it is parked at.
+ *
+ * `current_step` is the answer: `fms_hr_hold_requisition` sets only `status`,
+ * `hold_reason`, `hold_at` and `held_by`, and the resume branch maps that same
+ * column straight back to a status ("Resume back to whatever step it was parked
+ * at", migration 20261107160000). See `office-supplies/lib/queues.ts#heldStep`.
+ *
+ * ⚠ ONE ROW PER REQUISITION — the CANDIDATES on a held vacancy are not listed.
+ *   They are paused by the vacancy, not each on their own account, so listing
+ *   them would put a dozen rows on the hold tile that all clear by resuming a
+ *   single MRF, and bury the one row that can actually be acted on. That differs
+ *   from HR Exit, where the parallel rows really are owed by different people.
+ *   Onboardings are untouched either way: a HIRE IS NEVER PAUSED (see below).
+ *
+ * Read ONLY by My Work's `items/` rule; `buildQueueEntries` still excludes them.
+ */
+export function buildHeldEntries(snap: HrSnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const r of snap.requisitions) {
+    if (r.status !== "on_hold") continue;
+    const def = stepByKey(r.currentStep);
+    if (!def || def.noQueue || def.scope !== "requisition") continue;
+    out.push({
+      stepKey: def.key,
+      entityType: "requisition",
+      entityId: r.id,
+      ref: r.mrfNo,
+      dueIso: requisitionDueIso(snap, r, def.key),
+      departmentId: r.departmentId,
+      requisitionId: r.id,
+    });
+  }
+  return out;
 }
 
 export function buildQueueEntries(snap: HrSnapshot): QueueEntry[] {
