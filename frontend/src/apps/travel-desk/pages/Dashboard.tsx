@@ -25,14 +25,34 @@ export default function Dashboard() {
   const s = useTravelStore();
   const today = todayLocalIso();
 
+  /**
+   * The open steps THIS PERSON can actually action.
+   *
+   * ⚠ THE PAGE SAID "what should I do next" AND COUNTED EVERYBODY'S WORK. Every
+   *   bucket below read `s.entries` whole — every open step in the module — so
+   *   the travel desk's own booker opened her dashboard to "Past its due date:
+   *   14" when eleven of them were at Finance, Settlement or somebody's Claim
+   *   Approval and she could not touch one of them. Her own Control Center on
+   *   the hub home screen said 3, correctly, and two screens disagreeing about
+   *   how much a person owes is how both stop being read.
+   *
+   * ⚠ ADMINS AND COORDINATORS STILL SEE EVERYTHING, because `canActOn` returns
+   *   true for them on every step — which is also why this was invisible when
+   *   the module was only ever opened by an admin.
+   */
+  const actionable = useMemo(
+    () => s.entries.filter((e) => s.canActOn(e.stepKey, s.tripById(e.entityId))),
+    [s],
+  );
+
   const late = useMemo(
-    () => s.entries.filter((e) => bucketOf(e.dueIso, today) === "delayed"),
-    [s.entries, today],
+    () => actionable.filter((e) => bucketOf(e.dueIso, today) === "delayed"),
+    [actionable, today],
   );
 
   const dueToday = useMemo(
-    () => s.entries.filter((e) => bucketOf(e.dueIso, today) === "today"),
-    [s.entries, today],
+    () => actionable.filter((e) => bucketOf(e.dueIso, today) === "today"),
+    [actionable, today],
   );
 
   const upcoming = useMemo(() => upcomingTrips(s.trips, today), [s.trips, today]);
@@ -73,7 +93,7 @@ export default function Dashboard() {
    *   a trip that has lost its anchor stays here for ever and is invisible
    *   everywhere else.
    */
-  const stalled = useMemo(() => s.entries.filter((e) => !e.dueIso), [s.entries]);
+  const stalled = useMemo(() => actionable.filter((e) => !e.dueIso), [actionable]);
 
   /**
    * What travel cost this calendar month.
@@ -108,6 +128,9 @@ export default function Dashboard() {
       href: "/travel-desk/monitoring",
     },
     { key: "today", label: "Due today", value: dueToday.length, href: "/travel-desk/monitoring" },
+    // "Open trips" stays module-wide on purpose: it is the size of the desk's
+    // book, not a personal to-do, and the two tiles beside it are already
+    // personal. The Control Center is where the whole backlog is worked.
     { key: "open", label: "Open trips", value: s.entries.length, href: "/travel-desk/trips" },
     { key: "mine", label: "My trips", value: mine.length, href: "/travel-desk/mine" },
     {
