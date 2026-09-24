@@ -7,6 +7,7 @@ import { FYMultiSelect } from "@hub/components/FYMultiSelect";
 import { useFY } from "@hub/lib/fyContext";
 import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
+import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import CustomerBell from "@hub/components/customerOnboarding/CustomerBell";
 import { RECEIVABLES_MENUS } from "@hub/lib/menus";
@@ -106,6 +107,15 @@ const FY_PINNED_ROUTES = [
   // between the chosen FY and the one before — a topbar multi-FY selector would make "new" and
   // "non active" meaningless.
   "/outstanding-dashboard/reports/customer-profile",
+  // The Red Mark report's Received / Sales columns are the last three CALENDAR months, which no
+  // financial year can contain: in April a single-FY view would keep the receipts (not FY-windowed)
+  // and silently drop February's and March's sales. Its own nested FYProvider pins it to Both FYs.
+  "/outstanding-dashboard/reports/red-mark",
+  // Disputed Bills (RC-13) reads only open bills, which are not FY-windowed, so a selector here would
+  // change nothing on the page and read as broken. Its own nested FYProvider pins it to Both FYs.
+  "/outstanding-dashboard/reports/disputed-bills",
+  // Advances Not Applied (RC-18) reads open bills and ledger balances, neither FY-windowed — same reason.
+  "/outstanding-dashboard/reports/advances",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its
@@ -131,6 +141,14 @@ const FY_PINNED_ROUTES = [
   // band ("1-Apr-26 to 31-Mar-27") the way Tally does. A topbar FY selector would be a second,
   // disagreeing control over the same year.
   "/outstanding-dashboard/reports/stock-summary",
+  // Batch Costing — same own company + FY + period pickers as the Stock Summary, same reason.
+  "/outstanding-dashboard/reports/batch-costing",
+  // Bushra-Report → Sales Register — its own From/To window, like the Tally Sales Register.
+  "/outstanding-dashboard/reports/bushra-sales-register",
+  // Bushra-Report → Purchase Register — its own From/To window.
+  "/outstanding-dashboard/reports/bushra-purchase-register",
+  // Bushra-Dashboard → Production Batch Costing Dashboard — own company + FY + period pickers.
+  "/outstanding-dashboard/bushra-dashboard",
 ];
 
 export default function UserLayout() {
@@ -221,6 +239,10 @@ export default function UserLayout() {
               />
             </div>
           </header>
+          {/* PF-18 · The hub-wide announcement strip. This module has its own shell,
+              so AppShell's copy never reaches it; without this line the Outstanding
+              Dashboard would be the one app nobody saw announcements in. */}
+          <AnnouncementStrip />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

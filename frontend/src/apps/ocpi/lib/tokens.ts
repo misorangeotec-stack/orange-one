@@ -215,10 +215,9 @@ export function tokensFor({ deal, profile, warranty, warrantyNote }: TokenContex
          Resolving this token to "30 days" therefore printed "30 days Days from
          the date of confirmation" on a document a customer signs.
 
-      ⚠ A DIGITLESS ANSWER STILL READS WRONGLY HERE and cannot be fixed from this
-        side: the deck's suffix is literal, so a token has no way to suppress it.
-        The two PDFs drop the suffix themselves; the contract cannot. See
-        `deliveryPeriodTakesSuffix`.
+      ⚠ A DIGITLESS ANSWER CANNOT BE FIXED FROM THIS SIDE: the deck's suffix is
+        literal, so a token has no way to suppress it. The decks wrap the suffix
+        in `[[if periodInDays]]` instead (20261124120000) — see `conditionsFor`.
     */
     delivery_days: deliveryPeriodValue(deal.deliveryDays) || null,
     delivery_date: paperDate(deal.deliveryDate) || null,

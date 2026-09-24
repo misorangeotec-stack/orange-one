@@ -46,9 +46,9 @@ function LabDocLink({ path, name }: { path: string; name: string | null }) {
  *     "the lab has the sample" and leaves the request exactly where it is — it is
  *     still this step's work.
  *   pass 2: the tick is the completion switch. Left off, saving still only moves
- *     the tentative date. Turned on, comments AND a lab report become required —
- *     mirrored by the RPC, which raises on either — and the request advances to
- *     result_received.
+ *     the tentative date. Turned on, comments become required — mirrored by the
+ *     RPC — and the request advances to result_received. The lab report is
+ *     OPTIONAL since 20261125120000.
  *
  * Whom the result goes to defaults to the recipient chosen on the request form,
  * with a free-text option for someone off-system (a `free:` sentinel, exactly as
@@ -145,10 +145,7 @@ export default function LabProcessModal({
       setErr("Test comments are required to complete the lab process.");
       return;
     }
-    if (!file && !request.labDocPath) {
-      setErr("A lab testing attachment is required to complete the lab process.");
-      return;
-    }
+    // The lab testing attachment is OPTIONAL (20261125120000) — no check here.
     if (!pick.trim()) {
       setErr("Record whom the result is handed over to.");
       return;
@@ -297,8 +294,7 @@ export default function LabProcessModal({
                   </FieldLabel>
                   <FieldLabel
                     label="Lab testing attachment"
-                    required
-                    hint={request?.labDocPath ? "choose a file to replace it" : "the lab report"}
+                    hint={request?.labDocPath ? "optional — choose a file to replace it" : "optional — the lab report"}
                   >
                     <input
                       ref={fileRef}

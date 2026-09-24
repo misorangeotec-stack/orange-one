@@ -1,17 +1,21 @@
 import type { AppManifest } from "./types";
 import type { AppCategory } from "./categories";
 import { taskManagementApp } from "./task-management/meta";
+import { kraKpiApp } from "./kra-kpi/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
 import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
+import { learningDevelopmentApp } from "./learning-development/meta";
+import { hrReportsApp } from "./hr-reports/meta";
 import { travelDeskApp } from "./travel-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { inkMisApp } from "./ink-mis/meta";
+import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -21,6 +25,8 @@ import { ocpiApp } from "./ocpi/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
+import { dailyReportApp } from "./daily-report/meta";
+import { announcementsApp } from "./announcements/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -39,6 +45,10 @@ const comingSoon = (
 
 export const apps: AppManifest[] = [
   taskManagementApp,
+  // KRA / KPI Scorecard (KPI-1) — every employee's own work done / done on time, per
+  // module and step, over FMS steps and Task Management tasks. Its data is gated per
+  // person inside the kpi_report RPC, which is what makes it safe to make universal.
+  kraKpiApp,
   receivablesHubApp,
   procurementApp,
   // Import Purchase FMS — separate module (own fms_import_* tables), granted per
@@ -48,6 +58,12 @@ export const apps: AppManifest[] = [
   // Granted per user like every other module (was universal — see apps/universal.ts —
   // but that let everyone see it regardless of their grant, which admins didn't want).
   hrExitApp,
+  // Learning & Development FMS — own fms_ld_* tables. UNIVERSAL (see
+  // apps/universal.ts): every employee is a potential participant, so there are
+  // deliberately NO app_access grants for it and the Module Access matrix shows
+  // it as admins-only. The nav and RLS do the scoping instead.
+  learningDevelopmentApp,
+  hrReportsApp,
   // Travel Desk FMS — separate module (own fms_travel_* tables), granted per user
   // to whoever travels, approves, books and pays. ONE TRIP carries the request,
   // every booked leg, the advance, the expense claim and the settlement, so the
@@ -70,6 +86,9 @@ export const apps: AppManifest[] = [
   // INK IMS — ink inventory planning across the four ink books. Its own module on purpose:
   // it is not part of the Receivables Hub and must not be folded back into it.
   inkMisApp,
+  // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
+  // central master live and keeps every change in the browser; nothing is written back.
+  bushraCentralMasterApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
@@ -115,6 +134,15 @@ export const apps: AppManifest[] = [
   // question that one cannot: "is anyone actually using this module?". Counts
   // come from a single server-side RPC so the page and the 08:00 email agree.
   masterReportApp,
+  // Daily Report — the evening snapshot for management and the CFO: the day's
+  // sales, collections, payments and purchases out of the Tally mirror, plus the
+  // bank balances somebody types each evening. Granted separately from the
+  // Master Report because the readers are different and this one WRITES.
+  dailyReportApp,
+  // Announcements (PF-18) — where a message for the whole hub is written. Admins
+  // see it; anyone else only once granted. Every member of staff READS them with
+  // no grant, in the strip and on /announcements.
+  announcementsApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
@@ -170,7 +198,13 @@ export const grantableModules: GrantableModule[] = [
  * Remove an id from here once that app's writes actually consult
  * `public.module_level()` (see 20260906120000_add_app_access_level.sql).
  */
-export const NO_VIEW_ONLY_APP_IDS = new Set<string>(["mobile-app"]);
+export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
+  "mobile-app",
+  // PF-18: the grant means "may post", and nothing else. Reading announcements needs
+  // no grant, so a view-only Announcements grant would give nothing while looking
+  // like access. Only Full access is offered.
+  "announcements",
+]);
 
 /** The access levels a module offers, in display order. */
 export const levelsForModule = (appId: string): ("view" | "edit")[] =>

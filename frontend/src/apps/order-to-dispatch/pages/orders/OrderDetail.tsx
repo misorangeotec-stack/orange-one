@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -8,6 +8,9 @@ import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore, useOrderActivity } from "../../store";
 import DispatchStepper from "../../components/DispatchStepper";
@@ -17,6 +20,8 @@ import StatusPill, { OutcomePill } from "../../components/StatusPill";
 import SalesReturnModal from "../../components/SalesReturnModal";
 import ReceiverCopyCapture, { type ReceiverPage } from "../../components/ReceiverCopyCapture";
 import { uploadReceiverPages } from "../../lib/receiverPages";
+import LotAllocField, { rowsFrom, filledLots, type LotRow } from "../../components/LotAllocField";
+import { makeBookOf, useLotsForItems } from "../../lib/lotPicker";
 import type { StepDoc } from "../../types";
 import { allRoundViews, billedQtyOf, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
@@ -24,6 +29,9 @@ import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dispatchTypeText,
   dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
+
+/** The Items table's columns, for its remembered widths (PF-20). */
+const ITEM_COLS = ["item", "ordered", "dispatched", "pending", "going", "bill", "lot"];
 
 export default function OrderDetail() {
   const { id = "" } = useParams();
@@ -48,6 +56,12 @@ export default function OrderDetail() {
       value `order.id` would be, and it is available before the order has loaded.
   */
   const activity = useOrderActivity(id);
+  /**
+   * PF-20: the Items table is one line per row, and its columns drag wider. Above the guards
+   * for the same reason as `activity`. The widths are shared by every order (the key folds
+   * the id). The numbers are never cut; Item and LOT no. are, and show whole on hover.
+   */
+  const itemsFit = useColumnWidths("tb", ITEM_COLS);
 
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
@@ -280,41 +294,60 @@ export default function OrderDetail() {
 
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="p-5 space-y-3 lg:col-span-2">
-          <SectionHeading>Items</SectionHeading>
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeading>Items</SectionHeading>
+            {/* PF-20: only once a column has been dragged. */}
+            <ResetWidths fit={itemsFit} cols={ITEM_COLS} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-grey-2 hover:text-orange" />
+          </div>
           <ScrollableTable>
+            {/* PF-20: one line per row; each header's edge drags. Item and LOT no. are cut
+                with "…" and shown whole on hover; the quantities are never cut. The compact
+                py-2 pr-3 padding of this detail card is kept. */}
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="text-left text-grey-2 border-b border-line">
-                  <th className="py-2 pr-3 font-semibold min-w-[190px]">Item</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Ordered</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Dispatched</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Pending</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Going out now</th>
+                  <FitTh fit={itemsFit} col="item" className="py-2 pr-3 font-semibold">Item</FitTh>
+                  <FitTh fit={itemsFit} col="ordered" className="py-2 pr-3 font-semibold text-right">Ordered</FitTh>
+                  <FitTh fit={itemsFit} col="dispatched" className="py-2 pr-3 font-semibold text-right">Dispatched</FitTh>
+                  <FitTh fit={itemsFit} col="pending" className="py-2 pr-3 font-semibold text-right">Pending</FitTh>
+                  <FitTh fit={itemsFit} col="going" className="py-2 pr-3 font-semibold text-right">Going out now</FitTh>
                   {/* What the invoice covers. Blank until the bill is raised — see
                       the note on RefLines: a dash here would read as "nothing is
                       being billed" rather than "nobody has said yet". */}
-                  <th className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</th>
-                  <th className="py-2 pr-3 font-semibold">LOT no.</th>
+                  <FitTh fit={itemsFit} col="bill" className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</FitTh>
+                  <FitTh fit={itemsFit} col="lot" className="py-2 pr-3 font-semibold">LOT no.</FitTh>
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...itemsFit.tbodyProps}>
                 {order.lines.map((l) => {
                   const pending = pendingQtyOf(l);
                   return (
                     <tr key={l.id} className="border-b border-line/70 last:border-0">
-                      <td className="py-2 pr-3 text-navy">{s.itemName(l.itemId)}</td>
+                      <td className="py-2 pr-3 text-navy">
+                        <FitCell fit={itemsFit} col="item" cap={FIT.CUT}>{s.itemName(l.itemId)}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums whitespace-nowrap">
-                        {l.quantity} {l.unit ?? ""}
+                        <FitCell fit={itemsFit} col="ordered" cap={null}>
+                          {l.quantity} {l.unit ?? ""}
+                        </FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.dispatchedQty || "—"}</td>
+                      <td className="py-2 pr-3 text-grey text-right tabular-nums">
+                        <FitCell fit={itemsFit} col="dispatched" cap={null}>{l.dispatchedQty || "—"}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold">
-                        {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
+                        <FitCell fit={itemsFit} col="pending" cap={null}>
+                          {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
+                        </FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.shipQty ?? "—"}</td>
+                      <td className="py-2 pr-3 text-grey text-right tabular-nums">
+                        <FitCell fit={itemsFit} col="going" cap={null}>{l.shipQty ?? "—"}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold text-orange">
-                        {l.billQty ?? "—"}
+                        <FitCell fit={itemsFit} col="bill" cap={null}>{l.billQty ?? "—"}</FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey">{l.lotNo ?? "—"}</td>
+                      <td className="py-2 pr-3 text-grey">
+                        <FitCell fit={itemsFit} col="lot" cap={FIT.CUT}>{l.lotNo ?? "—"}</FitCell>
+                      </td>
                     </tr>
                   );
                 })}
@@ -728,6 +761,27 @@ function AmendRoundModal({
   const [qty, setQty] = useState<Record<string, string>>(
     () => Object.fromEntries(round.items.map((i) => [i.id, String(billedQtyOf(i))])),
   );
+  /**
+   * OD-15 · the lot split, correctable here too.
+   *
+   * A delivery corrected from 100 down to 90 leaves a 60/40 split that no longer
+   * adds up, and before this there was no door anywhere in the product to fix
+   * it: the correction screen had no LOT control at all, sent a blank one, and
+   * the RPC coalesced it back to whatever was stored.
+   *
+   * ⚠ `seeded` IS WHAT MAKES "OMITTED MEANS KEEP" WORK. Only lines whose split
+   *   actually changed send a `lots` key; every other line sends none, and the
+   *   RPC leaves the stored split and its summary alone.
+   */
+  const [lotRows, setLotRows] = useState<Record<string, LotRow[]>>(
+    () => Object.fromEntries(round.items.map((i) => [i.id, rowsFrom(i.lots, i.lotNo)])),
+  );
+  const seeded = useRef<Record<string, string>>(
+    Object.fromEntries(round.items.map((i) => [i.id, JSON.stringify(rowsFrom(i.lots, i.lotNo))])),
+  );
+  const companyGuid = s.companies.find((c) => c.id === round.companyId)?.tallyGuid ?? null;
+  const lotOptions = useLotsForItems(round.items.map((i) => i.itemName), companyGuid);
+  const bookOf = makeBookOf(s.companies);
   const [reason, setReason] = useState("");
   /**
    * Off by default, and that default is load-bearing: a quantity-only
@@ -767,9 +821,30 @@ function AmendRoundModal({
       await s.amendRound(round.roundId, {
         dcStatus: outcome === "returned" ? "returned" : "delivered",
         reason: reason.trim(),
+        /*
+          ⚠ A LOTS-ONLY CORRECTION IS A CORRECTION. This used to filter on the
+            quantity alone, so fixing a wrong split without touching the figure
+            sent no line at all and the change vanished silently on Save.
+        */
         lines: round.items
-          .filter((i) => qty[i.id] !== String(billedQtyOf(i)))
-          .map((i) => ({ id: i.id, billQty: qty[i.id] })),
+          .filter((i) =>
+            qty[i.id] !== String(billedQtyOf(i))
+            || JSON.stringify(lotRows[i.id] ?? []) !== seeded.current[i.id])
+          .map((i) => {
+            const changed = JSON.stringify(lotRows[i.id] ?? []) !== seeded.current[i.id];
+            return {
+              id: i.id,
+              billQty: qty[i.id],
+              // Omitted unless it actually changed — see the note on the state.
+              ...(changed
+                ? {
+                    lots: filledLots(lotRows[i.id] ?? []).map((r, n) => ({
+                      lot_no: r.lot_no.trim(), qty: r.qty.trim(), seq: n + 1,
+                    })),
+                  }
+                : {}),
+            };
+          }),
         receiver,
       });
       onClose();
@@ -787,7 +862,9 @@ function AmendRoundModal({
       onClose={onClose}
       title={`Correct round ${round.roundNo}`}
       subtitle={`${orderNo} · invoice ${round.sbInvoiceNo ?? "—"}`}
-      size="lg"
+      /* Widened from "lg" when the LOT column arrived: at max-w-lg the item name
+         wrapped to four lines per row and the split had nowhere to sit. */
+      size="3xl"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -819,11 +896,12 @@ function AmendRoundModal({
                 <th className="py-1.5 pr-3 font-semibold">Item</th>
                 <th className="py-1.5 pr-3 font-semibold text-right">Billed</th>
                 <th className="py-1.5 pr-3 font-semibold">Actually delivered</th>
+                <th className="py-1.5 pr-3 font-semibold min-w-[230px]">LOT no.</th>
               </tr>
             </thead>
             <tbody>
               {round.items.map((i) => (
-                <tr key={i.id} className="border-b border-line/70 last:border-0">
+                <tr key={i.id} className="border-b border-line/70 last:border-0 align-top">
                   <td className="py-1.5 pr-3 text-navy">{i.itemName}</td>
                   <td className="py-1.5 pr-3 text-grey text-right tabular-nums">
                     {billedQtyOf(i)} {i.unitName ?? ""}
@@ -834,6 +912,19 @@ function AmendRoundModal({
                       onChange={(e) => setQty((p) => ({ ...p, [i.id]: e.target.value }))}
                       inputMode="decimal"
                       className="w-28 text-right tabular-nums"
+                    />
+                  </td>
+                  {/* Totalled against the CORRECTED quantity, not the one
+                      originally shipped — re-balancing the split is the reason
+                      this column is here. */}
+                  <td className="py-1.5 pr-3">
+                    <LotAllocField
+                      rows={lotRows[i.id] ?? []}
+                      onChange={(rows) => setLotRows((p) => ({ ...p, [i.id]: rows }))}
+                      quantity={qty[i.id] ?? ""}
+                      unit={i.unitName ?? ""}
+                      options={lotOptions[i.itemName] ?? []}
+                      bookOf={bookOf}
                     />
                   </td>
                 </tr>

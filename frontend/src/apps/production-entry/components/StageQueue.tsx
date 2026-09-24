@@ -144,6 +144,8 @@ export default function StageQueue({
       sortValue: ({ request }) => CARD_TYPE_LABEL[request.cardType],
       filter: { kind: "select", get: ({ request }) => CARD_TYPE_LABEL[request.cardType] },
       tdClassName: "whitespace-nowrap",
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
     ...(hasFgLot
       ? [{
@@ -163,6 +165,8 @@ export default function StageQueue({
           header: "Status",
           cell: ({ request }: Row) => <StatusPill status={request.status} />,
           filter: { kind: "select" as const, get: ({ request }: Row) => STATUS_LABEL[request.status] },
+          // A pill: never cut, no handle (PF-20).
+          resize: false as const,
         }]
       : []),
     {
@@ -212,6 +216,8 @@ export default function StageQueue({
       cell: (e) => <CardTypePill cardType={e.row.cardType} />,
       sortValue: (e) => CARD_TYPE_LABEL[e.row.cardType],
       filter: { kind: "select", get: (e) => CARD_TYPE_LABEL[e.row.cardType] },
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       tdClassName: "whitespace-nowrap",
     },
     ...(hasCompletedFgLot
@@ -295,6 +301,10 @@ export default function StageQueue({
           rows={stage.rows}
           rowKey={(e) => e.id}
           columns={completedColumns}
+          // PF-20: a fixed width key — FG Lot No. comes and goes with the data, and a column set
+          // that changes would otherwise change the automatic key and lose the widths. One
+          // component serves eight steps, so the key names the step.
+          resizeKey={`production-entry.stage.${stepKey}.done`}
           rowsLabel="job cards"
           emptyTitle="Nothing here yet"
           emptyMessage={cfg.completedBlurb}
@@ -327,6 +337,8 @@ export default function StageQueue({
           rows={rows}
           rowKey={({ request }) => request.id}
           columns={columns}
+          // PF-20: fixed width key — see the completed table above.
+          resizeKey={`production-entry.stage.${stepKey}.pending`}
           initialSort={{ key: "due", dir: "asc" }}
           rowsLabel="job cards"
           emptyTitle="Nothing waiting on you"

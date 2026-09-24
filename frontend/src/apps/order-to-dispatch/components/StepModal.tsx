@@ -17,6 +17,7 @@ import OrderRefPanel, { OrderRefDocs } from "./OrderRefPanel";
 import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
 import BillLinesGrid, { billLinesFrom, overBilledCount, type BillLineValue } from "./BillLinesGrid";
+import { filledLots } from "./LotAllocField";
 import StepDocLink from "./StepDocLink";
 import GatePassButton from "./GatePassButton";
 import ReceiverCopyCapture, { type ReceiverPage } from "./ReceiverCopyCapture";
@@ -386,9 +387,30 @@ export default function StepModal({
       }
 
       if (cfg.lines === "ship") {
+        /*
+          OD-15 · `lots` replaces the flat `lot_no`. The server renders lot_no
+          back out of these, in one house format, so it stays the summary every
+          screen and the Order Register read before this existed.
+
+          ⚠ A ROW WITH NO LOT IS DROPPED, not sent blank: a quantity typed
+            against nothing is not an allocation, and the field always holds at
+            least one row even when it is empty.
+
+          ⚠ NO QUANTITY IS SENT FOR A SINGLE LOT, and that is the contract, not
+            an omission — one lot carries 100% of the line and the server fills
+            the figure in. It is why the common path asks for nothing extra.
+        */
         payload.lines = shipLines
           .filter((l) => Number(l.ship_qty) > 0)
-          .map((l) => ({ id: l.id, ship_qty: l.ship_qty, lot_no: l.lot_no }));
+          .map((l) => ({
+            id: l.id,
+            ship_qty: l.ship_qty,
+            lots: filledLots(l.lots).map((r, i) => ({
+              lot_no: r.lot_no.trim(),
+              qty: r.qty.trim(),
+              seq: i + 1,
+            })),
+          }));
       }
 
       /*

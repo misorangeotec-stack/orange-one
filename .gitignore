@@ -70,6 +70,8 @@ FMS/
 # Generated data extracts (.xlsx exception reports etc). Regenerate from the
 # ConnectWave mirror rather than committing a snapshot of live customer data.
 output/
+# Localhost stand-ins for ConnectWave tables not yet applied (tools/build_*_snapshot.py).
+frontend/public/dev-data/
 
 # Cora's generated analytics index — tool state, rebuilt on demand.
 .cora/

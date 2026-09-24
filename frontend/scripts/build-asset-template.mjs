@@ -63,26 +63,32 @@ const OUT = path.join(HERE, "../../Asset Data Collection Template.xlsx");
 //
 // NOTE: no people. Custodian is free text on purpose — a dropdown would mean
 // committing 60-odd staff email addresses into a tracked file.
-// Snapshot taken 29-Aug-2026.
+// Snapshot taken 14-Sep-2026, after round one (the vehicles) and the FY 2026-27
+// insurance summary were loaded. The makes and vendors of the 29-Aug snapshot were
+// seeded placeholders and were deleted that day, so a stale copy would hand out
+// names the importer rejects.
 // ===========================================================================
 const PICKLISTS = {
-  "Category": ["Vehicle", "Air Conditioner", "Machinery", "Computer & IT", "Electrical", "Furniture", "Safety Equipment"],
-  "Make": ["Blue Star", "Dell", "ELGi", "Honda", "HP", "Riko", "Safex", "Toyota", "Voltas"],
+  "Category": ["Vehicle", "Air Conditioner", "Machinery", "Computer & IT", "Electrical", "Furniture", "Safety Equipment", "Building & Property", "Company Policies"],
+  "Make": ["Ather", "Audi", "Hero", "Honda", "Kia", "Mahindra", "Maruti Suzuki", "MG Motor", "Mini", "Royal Enfield", "Skoda", "Volkswagen"],
   "Company": [
     "Orange O Tec Private Limited",
     "Orange O Tec Enterprises Private Limited",
     "Colorix Digital Printing Solutions LLP",
+    "Orange O Tec Private Limited - Delhi",
   ],
-  "Location": ["NOIDA", "SURAT-SACHIN", "SURAT-HOJIWALA"],
+  "Location": ["NOIDA", "SURAT-SACHIN", "SURAT-HOJIWALA", "SURAT-ALTHAN"],
   "Department": [
     "Accounting & Finance", "Administration", "After Sales service", "AI & tech",
     "Human Resources", "Ink Manufacturing", "M/C Manufacturing", "Management",
     "Marketing", "Quality Lab", "Sales", "Supply Chain",
   ],
   "Bought from": [
-    "Blue Star Service", "Dell India Services", "ELGi Service Centre", "Honda Prime Motors",
-    "HP Care Centre", "Riko Engineering Works", "Safex Fire Services", "Sai Toyota Service",
-    "Voltas Authorised Service",
+    "AUTONEEDS INDIA PVT LTD", "DHRU AUTOMOBILES", "HRIDAY CARS PVT LTD", "JSN MOTORS",
+    "KATARIA AUTOMOBILES PVT LTD", "KUMBHAT MOTORS LLP", "NAVJIVAN AUTOMOBILE PVT LTD",
+    "PARKLANE MOTORS PVT LTD", "PRESIDENCY CARS PVT LTD", "PRESIDENT AUTOMOBILES",
+    "RUKMARANI CARS INDORE PVT LTD", "SADGURU MOTORS", "SUPERNOVA AUTOMOBILES PVT LTD",
+    "TORQUE AUTOHAUS PVT LTD",
   ],
   "Condition": ["In Use", "Under Service", "Under Repair", "Idle", "Scrapped", "Sold"],
   "Usage unit": ["KM", "Hours", "Cycles"],
@@ -106,7 +112,7 @@ const TRACK_LEADS = [
 // ===========================================================================
 const COLUMNS = [
   { h: "Asset name", w: 30, req: true,
-    note: "REQUIRED. What the thing is called in everyday use, e.g. Toyota Innova Crysta, or Split AC 1.5T - Reception." },
+    note: "REQUIRED. What the thing is called in everyday use, e.g. Mahindra Bolero Pik-Up, or Split AC 1.5T - Reception." },
   { h: "Category", w: 18, list: "Category", strict: true,
     note: "Pick from the list. This also decides which tracks the system offers for the asset." },
   { h: "Make", w: 16, list: "Make", strict: false,
@@ -116,7 +122,7 @@ const COLUMNS = [
   { h: "Serial / registration no.", w: 26, key: true,
     note: "The number stamped on the unit: vehicle registration, machine serial, laptop service tag. MUST be unique - two different assets sharing one number means the second one is silently dropped." },
   { h: "Company", w: 38, list: "Company", strict: true,
-    note: "Which of the three group companies owns it." },
+    note: "Which group company owns it." },
   { h: "Location", w: 18, list: "Location", strict: false,
     note: "Pick from the list. If your site is not there, type it, and add it to the Values we do not have yet box." },
   { h: "Department", w: 22, list: "Department", strict: true,
@@ -165,41 +171,44 @@ const COLUMNS = [
 // Names and serials are SAMPLE- prefixed so they cannot collide with anything real
 // even if this tab is uploaded by mistake.
 // ===========================================================================
+// The vehicle rows use a make and dealer that are real masters. No Computer & IT or
+// Air Conditioner make or supplier exists yet, so those rows leave Make and Bought
+// from BLANK rather than name one the importer would reject.
 const OOTE = "Orange O Tec Enterprises Private Limited";
 const SAMPLE = [
   {
-    "Asset name": "SAMPLE - Toyota Innova Crysta", "Category": "Vehicle", "Make": "Toyota",
-    "Model": "Innova Crysta 2.4 ZX", "Serial / registration no.": "SAMPLE-MH12KJ0001",
-    "Company": OOTE, "Location": "NOIDA", "Department": "Administration",
-    "Purchase date": "12-06-2024", "Purchase cost": 2140000, "Bought from": "Sai Toyota Service",
-    "Invoice no.": "INV-TOY-4471", "Condition": "In Use",
+    "Asset name": "SAMPLE - Mahindra Bolero Pik-Up", "Category": "Vehicle", "Make": "Mahindra",
+    "Model": "Bolero Maxx Pik-Up HD 1.7L LX", "Serial / registration no.": "SAMPLE-GJ05AB0001",
+    "Company": "Orange O Tec Private Limited", "Location": "SURAT-SACHIN", "Department": "Supply Chain",
+    "Purchase date": "12-06-2024", "Purchase cost": 983000, "Bought from": "PRESIDENT AUTOMOBILES",
+    "Invoice no.": "INV-PA-4471", "Condition": "In Use",
     "Usage unit": "KM", "Current reading": 84200, "Reading as on": "20-08-2026",
-    "Remarks": "Pool car - management travel. Chassis: MBJ11JV600123456 ; Engine: 2GD1234567",
+    "Remarks": "Goods pick-up for dispatch. Chassis: MA1ZN2GHKP1234567 ; Engine: GHP4A123456",
     "Track": "Insurance", "Track next due": "04-08-2027", "Track repeats every": 1,
     "Track repeat unit": "years", "Track remind days ahead": 45,
     "Track reference no.": "POL-2027-4471", "Track provider": "ICICI Lombard", "Track amount": 31200,
   },
   {
-    "Asset name": "SAMPLE - Toyota Innova Crysta", "Serial / registration no.": "SAMPLE-MH12KJ0001",
+    "Asset name": "SAMPLE - Mahindra Bolero Pik-Up", "Serial / registration no.": "SAMPLE-GJ05AB0001",
     "Remarks": "Same serial number as the row above, so this row only ADDS a track.",
     "Track": "Periodic Service", "Track next due": "20-11-2026", "Track repeats every": 6,
     "Track repeat unit": "months", "Track remind days ahead": 15,
   },
   {
-    "Asset name": "SAMPLE - Toyota Innova Crysta", "Serial / registration no.": "SAMPLE-MH12KJ0001",
+    "Asset name": "SAMPLE - Mahindra Bolero Pik-Up", "Serial / registration no.": "SAMPLE-GJ05AB0001",
     "Track": "PUC", "Track next due": "14-02-2027", "Track repeats every": 1,
     "Track repeat unit": "years", "Track remind days ahead": 30,
   },
   {
-    "Asset name": "SAMPLE - Toyota Innova Crysta", "Serial / registration no.": "SAMPLE-MH12KJ0001",
+    "Asset name": "SAMPLE - Mahindra Bolero Pik-Up", "Serial / registration no.": "SAMPLE-GJ05AB0001",
     "Track": "RC / Fitness", "Track next due": "12-06-2029", "Track repeats every": 1,
     "Track repeat unit": "years", "Track remind days ahead": 45,
   },
   {
-    "Asset name": "SAMPLE - Dell Latitude 5440", "Category": "Computer & IT", "Make": "Dell",
+    "Asset name": "SAMPLE - Dell Latitude 5440", "Category": "Computer & IT",
     "Model": "Latitude 5440", "Serial / registration no.": "SAMPLE-DL5440-0001",
     "Company": OOTE, "Location": "NOIDA", "Department": "AI & tech",
-    "Purchase date": "20-02-2026", "Purchase cost": 82400, "Bought from": "Dell India Services",
+    "Purchase date": "20-02-2026", "Purchase cost": 82400,
     "Invoice no.": "INV-DL-7201", "Warranty months": 36, "Condition": "In Use",
     "Remarks": "Issued to the accounts desk. Warranty months is filled in, so the Warranty Expiry track is created automatically - notice there is no Warranty Expiry row for this asset.",
   },
@@ -210,10 +219,10 @@ const SAMPLE = [
     "Track reference no.": "AMC-DL-7201", "Track provider": "Dell India Services", "Track amount": 8500,
   },
   {
-    "Asset name": "SAMPLE - Voltas Split AC 1.5T", "Category": "Air Conditioner", "Make": "Voltas",
+    "Asset name": "SAMPLE - Voltas Split AC 1.5T", "Category": "Air Conditioner",
     "Model": "185V ADS", "Serial / registration no.": "SAMPLE-VLT-88213",
     "Company": OOTE, "Location": "NOIDA", "Department": "Administration",
-    "Purchase date": "18-04-2025", "Purchase cost": 42500, "Bought from": "Voltas Authorised Service",
+    "Purchase date": "18-04-2025", "Purchase cost": 42500,
     "Invoice no.": "INV-VLT-8821", "Warranty months": 24, "Condition": "In Use",
     "Remarks": "Ground floor reception. No meter, so Usage unit and Current reading are left blank.",
     "Track": "Periodic Service", "Track next due": "18-10-2026", "Track repeats every": 6,

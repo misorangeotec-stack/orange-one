@@ -11,6 +11,14 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  *   inward + lab testing:     request → sample_collect → sample_to_lab → lab_process → result_received (close)
  *   outward:                  request → send_sample → confirm_receipt → result (Result Received) → result_handover
  *
+ * …and MACHINE TESTING, which joins DIFFERENTLY depending on the lab gate:
+ *   inward + lab + machine:    a TAIL after the lab result —
+ *       … → lab_process → result_received → machine_process → machine_result
+ *   inward + no lab + machine: it REPLACES the no-lab closing step, so the
+ *       sample goes from collection straight to the machine bucket —
+ *       request → sample_collect → machine_process → machine_result
+ *   A no-lab+machine request is therefore never a no-lab-bucket request.
+ *
  * BOTH inward branches start at `sample_collect` — who collects and whom they hand
  * to is the same question either way. They diverge at the handover receipt: the
  * no-lab branch closes there, the lab branch sends the sample on.
@@ -19,8 +27,8 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * result + result_handover on the inward path):
  *   pass 1 → the tentative result date from the lab; saving it IS the signal the
  *            lab has the sample. The request does NOT move.
- *   pass 2 → testing done: comments + lab report (both required) + whom the result
- *            goes to. THAT advances to result_received.
+ *   pass 2 → testing done: comments (required) + lab report (optional) + whom the
+ *            result goes to. THAT advances to result_received.
  * Both passes share one status (`awaiting_lab_process`) because they are one step;
  * `labStartedAt` is what tells them apart. A second status would have split one
  * step across two queues.
@@ -51,6 +59,8 @@ export type StepKey =
   | "sample_to_lab"
   | "lab_process"
   | "result_received"
+  | "machine_process"
+  | "machine_result"
   | "send_sample"
   | "confirm_receipt"
   | "testing"
@@ -69,39 +79,49 @@ export type StepScope = "request";
  * and is listed under both sidebar headings. `request` is common to everything and
  * carries none.
  */
-export type StepBranch = "no_lab" | "lab" | "outward";
+export type StepBranch = "no_lab" | "lab" | "outward" | "machine";
 
 export const BRANCH_LABEL: Record<StepBranch, string> = {
   no_lab: "No Lab Testing",
   lab: "Lab Testing",
   outward: "Outward",
+  machine: "Machine Testing",
 };
 
 export type StepDef = StepDefBase<StepKey, StepScope> & { branches?: StepBranch[] };
 
 export const STEPS: StepDef[] = [
   { key: "request", index: 1, title: "Request Raised", short: "Request", scope: "request", noQueue: true },
-  { key: "sample_collect", index: 2, title: "Sample Collect & Handover", short: "Collect", scope: "request", branches: ["no_lab", "lab"] },
+  // Serves all THREE inward branches: a no-lab+machine request is collected too,
+  // and hands straight to machine_process from here.
+  { key: "sample_collect", index: 2, title: "Sample Collect & Handover", short: "Collect", scope: "request", branches: ["no_lab", "lab", "machine"] },
   { key: "sample_received", index: 3, title: "Sample Received (Handover)", short: "Sample Recd", scope: "request", branches: ["no_lab"] },
   { key: "sample_to_lab", index: 4, title: "Sample Received & Sent to Lab", short: "To Lab", scope: "request", branches: ["lab"] },
   { key: "lab_process", index: 5, title: "Lab Process", short: "Lab", scope: "request", branches: ["lab"] },
   { key: "result_received", index: 6, title: "Result Received", short: "Result Recd", scope: "request", branches: ["lab"] },
+  // MACHINE TESTING — reached from result_received on a lab request, or straight
+  // from sample_collect on a no-lab one (where it replaces sample_received). The
+  // block needs no collect entry of its own because collection already ran.
+  // Same two-pass shape as lab_process; machine_result twins result_received.
+  { key: "machine_process", index: 7, title: "Machine Testing Process", short: "Machine", scope: "request", branches: ["machine"] },
+  { key: "machine_result", index: 8, title: "Machine Result Received", short: "Machine Result", scope: "request", branches: ["machine"] },
   // ORDER MATTERS HERE. `testing` sits with the lab block because that is the only
   // branch it still serves. Leaving it after confirm_receipt (where it used to
   // live, when outward still ran it) put "Testing — Lab Testing" between two
   // outward steps in Setup, which reads like an outward step and is not one.
   // ⚠ `index` is CONTIGUOUS by contract — Dashboard's pipeline prints it, so a gap
-  // reads as 1,2,3,4,5,6,8. Renumbered 8→7…12→11 when receive_sample retired.
-  { key: "testing", index: 7, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
-  { key: "send_sample", index: 8, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
-  { key: "confirm_receipt", index: 9, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
+  // reads as 1,2,3,4,5,6,8. Renumbered 8→7…12→11 when receive_sample retired, and
+  // 7→9…11→13 when the two machine steps took 7 and 8.
+  { key: "testing", index: 9, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
+  { key: "send_sample", index: 10, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
+  { key: "confirm_receipt", index: 11, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
   // "Result Received" is also the LAB branch's step 6 title. Two different keys,
   // deliberately the same name: on both branches this is the point the result
   // comes back to us. Everywhere they could appear together they are separated by
   // branch — the sidebar blocks, the STAGES below, and the branch shown beside the
   // title in Setup (StepOwnersSection / StepDueDatesSection).
-  { key: "result", index: 10, title: "Result Received", short: "Result Recd", scope: "request", branches: ["outward"] },
-  { key: "result_handover", index: 11, title: "Result Handover", short: "Handover", scope: "request", branches: ["outward"] },
+  { key: "result", index: 12, title: "Result Received", short: "Result Recd", scope: "request", branches: ["outward"] },
+  { key: "result_handover", index: 13, title: "Result Handover", short: "Handover", scope: "request", branches: ["outward"] },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -156,6 +176,7 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   // is no longer on the outward path at all.
   { label: "Lab — Process", keys: ["lab_process", "testing"] },
   { label: "Lab — Result Received", keys: ["result_received"] },
+  { label: "Machine Testing", keys: ["machine_process", "machine_result"] },
   { label: "Outward — Movement", keys: ["send_sample", "confirm_receipt"] },
   { label: "Outward — Result Received", keys: ["result", "result_handover"] },
 ];

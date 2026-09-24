@@ -5,6 +5,7 @@
  */
 import type { Task } from "../types";
 import { isToday, isOverdue } from "@/shared/lib/time";
+import { countsTowardMetrics, type TaskCounts } from "../lib/taskCounts";
 
 // Directory-dependent selectors (directReportIds / downlineIds / assignableUsers /
 // visibleTasks) now live on the directory + task stores, since they read the live
@@ -12,65 +13,17 @@ import { isToday, isOverdue } from "@/shared/lib/time";
 // the core directory store; re-exported here for the pages that already import it.
 export { computeDownlineIds as downlineIds } from "@/core/platform/store";
 
-/** A predicate deciding which tasks a score is allowed to count. */
-export type TaskCounts = (t: Task) => boolean;
-
-/**
- * Work somebody actually OWES, whoever ends up scoring it: everything except
- * Not-Applicable ("when") instances and personal self-tracking tasks.
- *
- * This is the predicate for WORKLISTS and REMINDERS — "due today", "overdue",
- * My Work — where a peer task must still appear, because the person has to do
- * it. It is what `countsTowardMetrics` meant before TM-1 split the two, and it
- * is what `core/workspace/mywork/items/tasks.ts` inlines (deliberately; see the
- * note in its header).
- */
-export const countsTowardWorkload: TaskCounts = (t) => !t.notApplicable && !t.isPersonal;
-
-/**
- * A task counts toward a person's OWN score / RYG / report only if it is neither
- * Not Applicable, nor personal, nor **peer work**.
- *
- * ⚠ THE PEER EXCLUSION IS LOAD-BEARING AND IT LIVES HERE ON PURPOSE. Eight
- *   separate screens compute an own-score from a list that is not pre-filtered
- *   by kind — the Scorecard's total and its Planned-vs-Actual table, both
- *   Dashboard RYG panels, PlanVsActual, EmployeeReport, DepartmentReport
- *   (Master Analysis) and the scorecard export's team row. Filtering at each of
- *   them would be eight chances to miss one. Every selector below funnels
- *   through this predicate instead, so all eight are correct with no edit, and
- *   anything added later is correct by default.
- *
- *   It also fails SAFE: a surface that forgets omits peer work from a score,
- *   which is the conservative direction. The client settled (07-09-2026) that a
- *   peer task is scored in the peer block and NOWHERE else, so a HOD's own score
- *   keeps counting only their own team's work.
- *
- * Pass `countsTowardPeerMetrics` to score the peer block, and
- * `countsTowardWorkload` for a worklist.
- */
-export const countsTowardMetrics: TaskCounts = (t) =>
-  !t.notApplicable && !t.isPersonal && !t.isPeerAssignment;
-
-/**
- * The peer block's mirror of `countsTowardMetrics` — the ONLY predicate under
- * which peer work counts. Same arithmetic, opposite side of the same split, so
- * `metrics + peer = workload` for any list.
- */
-export const countsTowardPeerMetrics: TaskCounts = (t) =>
-  !t.notApplicable && !t.isPersonal && t.isPeerAssignment;
-
-/** A HOD handed this to another HOD. See tasks.is_peer_assignment (migration 20261116120000). */
-export const isPeerTask = (t: Task) => t.isPeerAssignment;
-
-/**
- * Whether a task originated from a recurring template (vs an ad-hoc one-off).
- * Prefer the durable `fromRecurring` flag (stamped at generation, survives template
- * deletion); fall back to a still-live `recurringTaskId` link so instances created
- * before the flag column existed are still classified correctly while their
- * template remains. Both false → genuine one-off (or an orphan whose template was
- * deleted before the flag shipped, which is unrecoverable).
- */
-export const isRecurringTask = (t: Task) => t.fromRecurring || t.recurringTaskId !== null;
+// Which tasks count, and what kind a task is. MOVED to lib/taskCounts.ts (KPI-1) so
+// the KRA / KPI server job can bundle them without this file's React import above;
+// re-exported here so every page that already imports them from selectors is unchanged.
+export {
+  countsTowardMetrics,
+  countsTowardPeerMetrics,
+  countsTowardWorkload,
+  isPeerTask,
+  isRecurringTask,
+  type TaskCounts,
+} from "../lib/taskCounts";
 
 export interface DashboardStats {
   dueToday: number;

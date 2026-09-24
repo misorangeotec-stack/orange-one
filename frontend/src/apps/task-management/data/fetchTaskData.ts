@@ -229,6 +229,20 @@ export async function fetchTaskData(): Promise<TaskData> {
 }
 
 /**
+ * Just the tasks and their recurring templates, mapped exactly as `fetchTaskData`
+ * maps them, for the KRA / KPI job (KPI-1) that scores them on the server.
+ *
+ * A narrower sibling rather than a second loader: the same paging and the same
+ * row mapping, minus the location checklists, weekly plans and settings that a
+ * score never reads. `task_locations` alone is the org's largest task table, and
+ * the job runs inside an edge function's ~2 s CPU budget.
+ */
+export async function fetchTaskScoringData(): Promise<Pick<TaskData, "tasks" | "recurringTasks">> {
+  const [tasksData, recData] = await Promise.all([fetchAll("tasks"), fetchAll("recurring_tasks")]);
+  return { tasks: tasksData.map(mapTask), recurringTasks: recData.map(mapRecurring) };
+}
+
+/**
  * Re-read JUST the tasks a write touched, with their location checklists.
  *
  * `fetchTaskData` above is the whole-dataset loader; awaiting it after every

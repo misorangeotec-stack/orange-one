@@ -19,21 +19,23 @@ export default function CreateTask() {
   const canAssign = assignableUsers(role, user.id);
   const reportsToSuffix = useReportsToSuffix();
 
-  // TM-1: a HOD may also hand a one-off task sideways, to another HOD.
+  // TM-1: a HOD or Sub-HOD may also hand a one-off task sideways, to a peer.
+  // One pool for both roles — every other HOD and Sub-HOD — so the right is
+  // symmetric: a Sub-HOD can hand work to a HOD and a HOD back to a Sub-HOD.
   //
-  // ⚠ HODs ONLY — an ADMIN never gets this group. That is not an oversight: the
-  //   client settled (07-09-2026) that an admin assigning to a HOD is ordinary
-  //   downward work and must keep being scored the normal way. Because the flag
-  //   is stamped only from this list, an admin assignment cannot become peer
-  //   work by construction — and the 183 such tasks already in the database are
-  //   untouched.
+  // ⚠ HOD/SUB-HOD ONLY — an ADMIN never gets this group. That is not an
+  //   oversight: the client settled (07-09-2026) that an admin assigning to a
+  //   HOD is ordinary downward work and must keep being scored the normal way.
+  //   Because the flag is stamped only from this list, an admin assignment
+  //   cannot become peer work by construction — and the 183 such tasks already
+  //   in the database are untouched.
   //
   // ⚠ Anyone already in the downline is filtered OUT. Nobody is mapped that way
   //   today (the three HODs with a boss report to admins), but user_hods is
-  //   editable, and the moment a HOD is mapped under another HOD that is a
+  //   editable, and the moment someone is mapped under this user that is a
   //   reporting line, not a peer one. "My team" wins.
   const peers = useMemo(() => {
-    if (role !== "hod") return [];
+    if (role !== "hod" && role !== "sub_hod") return [];
     const team = new Set(canAssign.map((p) => p.id));
     return peerAssignableUsers(user.id).filter((p) => !team.has(p.id));
   }, [role, user.id, canAssign.map((p) => p.id).join(","), peerAssignableUsers]);
@@ -121,7 +123,9 @@ export default function CreateTask() {
         {BackLink}
         <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
         <p className="text-grey text-[13px] mt-1">
-          {peers.length > 0 ? "Assign a task to a member of your team, or to another HOD." : "Assign a task to a member of your team."}
+          {peers.length > 0
+            ? "Assign a task to a member of your team, or to a HOD or Sub-HOD."
+            : "Assign a task to a member of your team."}
         </p>
       </div>
 
@@ -171,7 +175,7 @@ export default function CreateTask() {
                       label: p.name,
                       sublabel: sub || undefined,
                       icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-                      group: "Other HODs",
+                      group: "HODs & Sub-HODs",
                     };
                   }),
                 ]}

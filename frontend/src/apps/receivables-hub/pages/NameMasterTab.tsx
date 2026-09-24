@@ -1,22 +1,22 @@
-import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronsUpDown, Lock, Plus, Search } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Lock, Plus, Search } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
-import { Checkbox } from "@hub/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@hub/components/ui/dialog";
 import { Input } from "@hub/components/ui/input";
 import { Label } from "@hub/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@hub/components/ui/popover";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@hub/components/ui/table";
 import { useToast } from "@hub/components/ui/use-toast";
 import { cn } from "@hub/lib/utils";
 import {
   addMasterName, knownNames, renameMasterName, setMasterNameActive,
   type NameMasterKind, type NameMasterRow,
 } from "@hub/lib/nameMasters";
+// The sortable header and the column filter were lifted out of this file when the Red Mark master and
+// report needed the same two controls. The TABLE around them was lifted the same way once four screens
+// had hand-written it — this tab now renders through that shared GridTable rather than its own copy.
+import { GridTable, type TableColumn } from "@hub/components/GridTable";
+import { useColumnGrid } from "@hub/lib/useColumnGrid";
 
 /**
  * The two managed vocabularies, as a Masters tab: Salespersons and Collection Teams (RC-15).
@@ -33,79 +33,6 @@ import {
  *   an empty list over a live permission list when the tab was opened before the fetch landed.
  */
 
-// ── Small local controls ─────────────────────────────────────────────────────
-
-/**
- * A searchable, multi-value column filter.
- *
- * Searchable is not optional — the repo rule is that a table filter is never a bare dropdown, and
- * "Updated by" already runs to every steward who has ever touched a row.
- */
-function ColumnFilter({ label, options, selected, onChange }: {
-  label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void;
-}) {
-  const [q, setQ] = useState("");
-  const shown = options.filter((o) => o.toLowerCase().includes(q.trim().toLowerCase()));
-  const toggle = (o: string) =>
-    onChange(selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o]);
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className={cn(
-            "flex w-full items-center justify-between gap-1 rounded border px-1.5 py-0.5 text-[11px]",
-            selected.length
-              ? "border-primary/40 bg-primary/5 text-foreground"
-              : "border-border bg-background text-muted-foreground",
-          )}
-        >
-          <span className="truncate">
-            {selected.length === 0 ? label : selected.length === 1 ? selected[0] : `${selected.length} selected`}
-          </span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-2" align="start">
-        <div className="relative pb-2">
-          <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-7 pl-7 text-xs" />
-        </div>
-        <div className="flex items-center justify-between px-1 pb-1.5 text-[11px]">
-          <button className="underline text-muted-foreground hover:text-foreground" onClick={() => onChange([...options])}>Select all</button>
-          <button className="underline text-muted-foreground hover:text-foreground" onClick={() => onChange([])}>Clear</button>
-        </div>
-        <div className="max-h-56 space-y-0.5 overflow-auto">
-          {shown.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">Nothing matches.</p>}
-          {shown.map((o) => (
-            <label key={o} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted">
-              <Checkbox checked={selected.includes(o)} onCheckedChange={() => toggle(o)} />
-              <span className="truncate" title={o}>{o}</span>
-            </label>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-type SortDir = "asc" | "desc" | null;
-
-function SortHead({ label, dir, onToggle, className }: {
-  label: string; dir: SortDir; onToggle: () => void; className?: string;
-}) {
-  return (
-    <TableHead className={className}>
-      <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={onToggle}>
-        {label}
-        {dir === "asc" ? <ArrowUp className="h-3 w-3" />
-          : dir === "desc" ? <ArrowDown className="h-3 w-3" />
-          : <ChevronsUpDown className="h-3 w-3 opacity-40" />}
-      </button>
-    </TableHead>
-  );
-}
-
 // ── The tab ──────────────────────────────────────────────────────────────────
 
 /** How the values are actually used, so the screen can show it and spot drift. */
@@ -115,8 +42,6 @@ export interface NameMasterUsage {
   /** Every value in use ANYWHERE, including Red Mark, which the count column does not cover. */
   inUseAnywhere: Set<string>;
 }
-
-type SortKey = "name" | "status" | "customers" | "updated";
 
 interface ViewRow {
   row: NameMasterRow;
@@ -139,10 +64,6 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
-  const [fStatus, setFStatus] = useState<string[]>([]);
-  const [fUpdatedBy, setFUpdatedBy] = useState<string[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [busy, setBusy] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
@@ -156,7 +77,10 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
       row,
       status: row.is_active ? STATUS_ACTIVE : STATUS_OFF,
       customers: usage.counts.get(row.name) ?? 0,
-      updatedBy: row.updated_by ?? "—",
+      // ⚠ '' , NOT "—". An em-dash here is a value this component INVENTED, and it reached the filter
+      //   dropdown as an option literally spelled "—" where every other hub grid offers "(Blank)".
+      //   Left empty, filterValueOf folds it to the shared blank sentinel. See shared/lib/blankFilter.
+      updatedBy: row.updated_by ?? "",
     })),
     [rows, usage],
   );
@@ -173,49 +97,13 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
     return [...usage.inUseAnywhere].filter((n) => !known.has(n)).sort((a, b) => a.localeCompare(b));
   }, [rows, usage]);
 
-  // Search first, then each filter — so a column's own options come from the rows the OTHER
-  // filters still allow, and no combination a reader can assemble here returns an empty table.
-  const bySearch = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((v) =>
-      `${v.row.name} ${v.status} ${v.updatedBy} ${v.row.note ?? ""}`.toLowerCase().includes(q));
-  }, [all, search]);
-
-  const passStatus = (v: ViewRow) => fStatus.length === 0 || fStatus.includes(v.status);
-  const passUpdatedBy = (v: ViewRow) => fUpdatedBy.length === 0 || fUpdatedBy.includes(v.updatedBy);
-
-  const distinct = (list: ViewRow[], get: (v: ViewRow) => string) =>
-    [...new Set(list.map(get))].sort((a, b) => a.localeCompare(b));
-
-  // Each column is excluded from its OWN option list; narrowing to one value must still leave a way
-  // to widen again.
-  const statusOptions = distinct(bySearch.filter(passUpdatedBy), (v) => v.status);
-  const updatedByOptions = distinct(bySearch.filter(passStatus), (v) => v.updatedBy);
-
-  const filtered = bySearch.filter((v) => passStatus(v) && passUpdatedBy(v));
-
-  const view = useMemo(() => {
-    if (!sortDir) return filtered;
-    const sign = sortDir === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) => {
-      switch (sortKey) {
-        case "customers": return sign * (a.customers - b.customers);
-        case "status": return sign * a.status.localeCompare(b.status);
-        case "updated": return sign * a.row.updated_at.localeCompare(b.row.updated_at);
-        default: return sign * a.row.name.localeCompare(b.row.name);
-      }
-    });
-  }, [filtered, sortKey, sortDir]);
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); return; }
-    setSortDir(sortDir === "asc" ? "desc" : sortDir === "desc" ? null : "asc");
-  };
-  const dirFor = (key: SortKey): SortDir => (sortKey === key ? sortDir : null);
-
-  const anyFilter = search.trim() !== "" || fStatus.length > 0 || fUpdatedBy.length > 0;
-  const clearFilters = () => { setSearch(""); setFStatus([]); setFUpdatedBy([]); };
+  /**
+   * ⚠ useCallback: useColumnGrid's `base` depends on this identity and would recompute every render.
+   *   Applied BEFORE the column filters, so each dropdown's options reflect the search too.
+   */
+  const prefilter = useCallback((v: ViewRow) =>
+    `${v.row.name} ${v.status} ${v.updatedBy} ${v.row.note ?? ""}`
+      .toLowerCase().includes(search.trim().toLowerCase()), [search]);
 
   const run = async (key: string, fn: () => Promise<void>, ok: string) => {
     setBusy(key);
@@ -264,6 +152,95 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
   };
 
   const activeCount = rows.filter((r) => r.is_active).length;
+
+  /**
+   * ⚠ "Updated" and "Updated by" are TWO columns, not one cell with two lines as this table used to
+   *   render. A single column would have to sort on the timestamp and filter on the person, so its
+   *   dropdown would list names under a header reading "Updated" — and the export would label that
+   *   filter "Updated" too.
+   */
+  const columns = useMemo<TableColumn<ViewRow>[]>(() => [
+    {
+      // Every name is unique, so a dropdown here would only restate the table. It still sorts.
+      key: "name", label: "Name", head: "min-w-52", filter: false,
+      value: (v) => v.row.name,
+      cell: (v) => (
+        <>
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            {v.row.name}
+            {v.row.is_protected && <Lock className="h-3 w-3 text-muted-foreground" />}
+          </span>
+          {v.row.note && <p className="mt-0.5 text-xs font-normal text-muted-foreground">{v.row.note}</p>}
+        </>
+      ),
+    },
+    {
+      key: "status", label: "Status", head: "w-36",
+      value: (v) => v.status,
+      cell: (v) => (
+        <span className={cn(
+          "rounded px-1.5 py-0.5 text-xs",
+          v.row.is_active ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground",
+        )}>
+          {v.status}
+        </span>
+      ),
+    },
+    {
+      // A count: ordered as a number, not as "1,024" the string. No filter — it restates the column.
+      key: "customers", label: "Customers", head: "w-28", right: true, filter: false,
+      value: (v) => String(v.customers), sortValue: (v) => v.customers,
+      cell: (v) => v.customers.toLocaleString("en-IN"),
+    },
+    {
+      // Sorted on the ISO timestamp — the rendered "18-Sep-26" would sort alphabetically, putting
+      // September before March. Near-unique, so no filter.
+      key: "updated", label: "Updated", head: "w-32", filter: false,
+      value: (v) => new Date(v.row.updated_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }),
+      sortValue: (v) => v.row.updated_at,
+      cell: (v) => new Date(v.row.updated_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }),
+    },
+    {
+      key: "updatedBy", label: "Updated by", head: "w-36", cellClass: "text-muted-foreground",
+      value: (v) => v.updatedBy,
+      cell: (v) => v.updatedBy || "—",
+    },
+    {
+      key: "actions", label: "Actions", head: "w-56 text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (v) => v.row.is_protected ? (
+        <span className="text-xs text-muted-foreground" title={`Every sync writes "${v.row.name}" onto brand-new customers, so it cannot be renamed or switched off.`}>
+          Always available
+        </span>
+      ) : (
+        <div className="flex justify-end gap-1.5">
+          <Button
+            size="sm" variant="outline" className="h-7 px-2 text-xs"
+            disabled={busy !== null}
+            onClick={() => { setRenaming(v.row); setRenameTo(v.row.name); }}
+          >
+            Rename
+          </Button>
+          <Button
+            size="sm" variant="outline" className="h-7 px-2 text-xs"
+            disabled={busy === `active:${v.row.name}`}
+            onClick={() => run(
+              `active:${v.row.name}`,
+              () => setMasterNameActive({ list: kind, name: v.row.name, is_active: !v.row.is_active }),
+              v.row.is_active ? `"${v.row.name}" switched off.` : `"${v.row.name}" switched back on.`,
+            )}
+          >
+            {v.row.is_active ? "Switch off" : "Switch on"}
+          </Button>
+        </div>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [busy, kind]);
+
+  // Alphabetical, the order this list has always opened in.
+  const grid = useColumnGrid(all, columns, prefilter, { key: "name", dir: "asc" });
+  const clearFilters = () => { grid.clearFilters(); setSearch(""); };
 
   return (
     <>
@@ -324,105 +301,17 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-md border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortHead label="Name" dir={dirFor("name")} onToggle={() => toggleSort("name")} className="min-w-52" />
-                  <SortHead label="Status" dir={dirFor("status")} onToggle={() => toggleSort("status")} className="w-36" />
-                  <SortHead label="Customers" dir={dirFor("customers")} onToggle={() => toggleSort("customers")} className="w-28 text-right" />
-                  <SortHead label="Updated" dir={dirFor("updated")} onToggle={() => toggleSort("updated")} className="w-40" />
-                  <TableHead className="w-56 text-right">Actions</TableHead>
-                </TableRow>
-                <TableRow className="hover:bg-transparent">
-                  {/* Name and Customers offer no filter: every name is unique and the count is a
-                      restatement of the column, so a dropdown of either would only repeat the table. */}
-                  <TableHead className="py-1" />
-                  <TableHead className="py-1">
-                    <ColumnFilter label="Any status" options={statusOptions} selected={fStatus} onChange={setFStatus} />
-                  </TableHead>
-                  <TableHead className="py-1" />
-                  <TableHead className="py-1">
-                    <ColumnFilter label="Anyone" options={updatedByOptions} selected={fUpdatedBy} onChange={setFUpdatedBy} />
-                  </TableHead>
-                  <TableHead className="py-1" />
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {/* A filter matching nothing keeps the table, its sort toggles and its filter row
-                    standing. Swapping in a full empty state would remove the only control that could
-                    undo it. */}
-                {view.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center">
-                      <p className="text-sm text-muted-foreground">No {title}s match these filters.</p>
-                      <Button size="sm" variant="outline" className="mt-3" onClick={clearFilters}>
-                        Clear filters
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ) : view.map((v) => {
-                  const r = v.row;
-                  const locked = r.is_protected;
-                  return (
-                    <TableRow key={r.name} className={cn(!r.is_active && "opacity-60")}>
-                      <TableCell className="font-medium">
-                        <span className="inline-flex items-center gap-1.5">
-                          {r.name}
-                          {locked && <Lock className="h-3 w-3 text-muted-foreground" />}
-                        </span>
-                        {r.note && (
-                          <p className="mt-0.5 text-xs font-normal text-muted-foreground">{r.note}</p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn(
-                          "rounded px-1.5 py-0.5 text-xs",
-                          r.is_active ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground",
-                        )}>
-                          {v.status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{v.customers.toLocaleString("en-IN")}</TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {new Date(r.updated_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}
-                        <span className="block">{v.updatedBy}</span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {locked ? (
-                          <span className="text-xs text-muted-foreground" title={`Every sync writes "${r.name}" onto brand-new customers, so it cannot be renamed or switched off.`}>
-                            Always available
-                          </span>
-                        ) : (
-                          <div className="flex justify-end gap-1.5">
-                            <Button
-                              size="sm" variant="outline" className="h-7 px-2 text-xs"
-                              disabled={busy !== null}
-                              onClick={() => { setRenaming(r); setRenameTo(r.name); }}
-                            >
-                              Rename
-                            </Button>
-                            <Button
-                              size="sm" variant="outline" className="h-7 px-2 text-xs"
-                              disabled={busy === `active:${r.name}`}
-                              onClick={() => run(
-                                `active:${r.name}`,
-                                () => setMasterNameActive({ list: kind, name: r.name, is_active: !r.is_active }),
-                                r.is_active ? `"${r.name}" switched off.` : `"${r.name}" switched back on.`,
-                              )}
-                            >
-                              {r.is_active ? "Switch off" : "Switch on"}
-                            </Button>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          {/* No pagination: these lists are short enough that every row that survives the filters is
+              on screen, which is also why there is no pager below. */}
+          <GridTable
+            columns={columns} grid={grid} pageRows={grid.rows} rowKey={(v) => v.row.name}
+            rowClass={(v) => (v.row.is_active ? undefined : "opacity-60")}
+            sourceCount={all.length}
+            emptyMessage={`No ${title}s in the list yet.`}
+            emptyFilteredMessage={`No ${title}s match these filters.`}
+            onClearFilters={clearFilters}
+            maxHeight="max-h-[60vh]"
+          />
 
           <p className="pt-2 text-xs text-muted-foreground">
             Switching a name off removes it from the pickers. Customers already mapped to it keep

@@ -8,7 +8,7 @@ import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company, CompanyItem, CompanyLocation, Customer, Designation, DispatchActivity,
   DispatchMasterRequest, CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder,
-  DispatchRound, Item, MasterManager, NamedMaster, OrderLine, RoundItem, StepAssignee, StepDoc, StepOwner,
+  DispatchRound, Item, LotAllocation, MasterManager, NamedMaster, OrderLine, RoundItem, StepAssignee, StepDoc, StepOwner,
 } from "../types";
 
 /**
@@ -413,6 +413,30 @@ const mapMasterRequest = (r: any): DispatchMasterRequest => ({
   createdAt: r.created_at,
 });
 
+/**
+ * OD-15 · the lot split, embedded rather than fetched separately.
+ *
+ * PostgREST resolves these from the foreign key, so the children ride along with
+ * the parent page and there is no second round trip, no extra query key, and no
+ * second grouping pass to keep in step with the two that already exist.
+ *
+ * ⚠ THE PARENT SELECT MUST KEEP ITS "*". These tables have no narrow column
+ *   list anywhere -- see COLS, which covers the catalogue only.
+ *
+ * ⚠ THE MIGRATION MUST BE LIVE BEFORE THIS SHIPS. An embed naming a table the
+ *   database does not have is a 400 on the WHOLE request, so the dispatch fetch
+ *   fails outright rather than degrading to no lots.
+ */
+const LINE_COLS  = "*, fms_dispatch_order_item_lots(lot_no, qty, seq)";
+const RITEM_COLS = "*, fms_dispatch_round_item_lots(lot_no, qty, seq)";
+
+/** Child rows -> the ordered allocation. Absent, null or [] all mean "no split". */
+const mapLots = (rows: any): LotAllocation[] =>
+  (Array.isArray(rows) ? rows : [])
+    .map((r: any) => ({ lotNo: String(r.lot_no ?? ""), qty: num(r.qty), seq: Number(r.seq ?? 0) }))
+    .filter((l: LotAllocation) => l.lotNo !== "")
+    .sort((a: LotAllocation, b: LotAllocation) => a.seq - b.seq);
+
 const mapLine = (r: any): OrderLine => ({
   id: r.id,
   orderId: r.order_id,
@@ -425,6 +449,7 @@ const mapLine = (r: any): OrderLine => ({
   shipQty: num(r.ship_qty),
   billQty: num(r.bill_qty),
   lotNo: str(r.lot_no),
+  lots: mapLots(r.fms_dispatch_order_item_lots),
 });
 
 const mapRoundItem = (r: any): RoundItem => ({
@@ -439,6 +464,7 @@ const mapRoundItem = (r: any): RoundItem => ({
   shipQty: Number(r.ship_qty ?? 0),
   billQty: num(r.bill_qty),
   lotNo: str(r.lot_no),
+  lots: mapLots(r.fms_dispatch_round_item_lots),
 });
 
 const mapRound = (r: any): DispatchRound => ({
@@ -917,9 +943,9 @@ export async function fetchDispatchData(
     fetchAll("fms_dispatch_master_managers"),
     fetchAll("fms_dispatch_master_requests"),
     fetchAll("fms_dispatch_orders", "submitted_at"),
-    fetchAll("fms_dispatch_order_items"),
+    fetchAll("fms_dispatch_order_items", "created_at", LINE_COLS),
     fetchAll("fms_dispatch_rounds", "archived_at"),
-    fetchAll("fms_dispatch_round_items"),
+    fetchAll("fms_dispatch_round_items", "created_at", RITEM_COLS),
     // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
     //   user_id is not the signed-in user (`mineNotifications`), so fetching the
     //   whole table only ever cost bandwidth — and it cost the most for an admin,
@@ -1026,7 +1052,7 @@ async function fetchOrderChildren(orderIds: string[]) {
   const inList = (col: string) => (q: any) => q.in(col, orderIds);
 
   const [orderItems, rounds] = await Promise.all([
-    fetchWhere("fms_dispatch_order_items", inList("order_id")),
+    fetchWhere("fms_dispatch_order_items", inList("order_id"), LINE_COLS),
     pagedWalk((withCount) =>
       db.from("fms_dispatch_rounds")
         .select("*", withCount ? { count: "exact" } : undefined)
@@ -1037,7 +1063,7 @@ async function fetchOrderChildren(orderIds: string[]) {
   const roundItems = roundIds.length
     ? await pagedWalk((withCount) =>
         db.from("fms_dispatch_round_items")
-          .select("*", withCount ? { count: "exact" } : undefined)
+          .select(RITEM_COLS, withCount ? { count: "exact" } : undefined)
           .in("round_id", roundIds)
           .order("id", { ascending: true }))
     : [];

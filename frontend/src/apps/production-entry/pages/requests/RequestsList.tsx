@@ -50,6 +50,8 @@ export default function RequestsList() {
       key: "cardType",
       header: "Type",
       cell: (r) => <CardTypePill cardType={r.cardType} />,
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       sortValue: (r) => CARD_TYPE_LABEL[r.cardType],
       filter: { kind: "select", get: (r) => CARD_TYPE_LABEL[r.cardType] },
       tdClassName: "whitespace-nowrap",
@@ -80,6 +82,8 @@ export default function RequestsList() {
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       // Multiselect rather than select for two reasons: it is the only filter kind
       // that carries `initial` (which the `?status=` deep link above needs), and it
       // lets someone watch several statuses at once — something the single group

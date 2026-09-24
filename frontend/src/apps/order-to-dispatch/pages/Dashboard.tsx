@@ -652,6 +652,8 @@ export default function Dashboard() {
       ),
       sortValue: (c) => STATE_LABEL[c.state],
       filter: { kind: "multiselect", get: (c) => STATE_LABEL[c.state] },
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
   ];
 
@@ -772,6 +774,8 @@ export default function Dashboard() {
       ),
       sortValue: (o) => o.status,
       filter: { kind: "multiselect", get: (o) => stepHoldLabel(o) ?? o.status },
+      // Pills: never cut, no handle (PF-20).
+      resize: false,
     },
   ];
 

@@ -39,6 +39,73 @@ export type Database = {
   }
   public: {
     Tables: {
+      // Hand-added for migration 20261130120000 (PF-18, announcements), applied. The
+      // browser can neither read nor write these two tables (RLS on, no policies, grants
+      // revoked); everything goes through the announcement_* functions below. They are
+      // listed only so this file keeps mirroring the schema.
+      announcement_dismissals: {
+        Row: { announcement_id: string; dismissed_at: string; user_id: string }
+        Insert: { announcement_id: string; dismissed_at?: string; user_id: string }
+        Update: { announcement_id?: string; dismissed_at?: string; user_id?: string }
+        Relationships: []
+      }
+      announcements: {
+        Row: {
+          audience_modules: string[]
+          body: string | null
+          created_at: string
+          created_by: string | null
+          email_requested: boolean
+          emailed_at: string | null
+          emailed_count: number | null
+          ended_at: string | null
+          ended_by: string | null
+          ends_at: string
+          id: string
+          link_url: string | null
+          starts_at: string
+          title: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          audience_modules?: string[]
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          email_requested?: boolean
+          emailed_at?: string | null
+          emailed_count?: number | null
+          ended_at?: string | null
+          ended_by?: string | null
+          ends_at: string
+          id?: string
+          link_url?: string | null
+          starts_at?: string
+          title: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          audience_modules?: string[]
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          email_requested?: boolean
+          emailed_at?: string | null
+          emailed_count?: number | null
+          ended_at?: string | null
+          ended_by?: string | null
+          ends_at?: string
+          id?: string
+          link_url?: string | null
+          starts_at?: string
+          title?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       app_access: {
         Row: {
           access_level: string
@@ -295,6 +362,179 @@ export type Database = {
           name?: string
           sort_order?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      // Hand-added for migrations 20261118120000 / 20261118120100 (DR-1, Daily Report
+      // banks), both applied. Regenerate this file (supabase gen types) at the next
+      // convenient point and these two entries will simply be reproduced.
+      daily_report_bank_accounts: {
+        Row: {
+          account_no: string | null
+          account_type: string
+          active: boolean
+          bank_name: string
+          branch: string | null
+          cc_limit_lacs: number | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          hold_by_bank_lacs: number | null
+          id: string
+          ifsc: string | null
+          lc_bc_limit_lacs: number | null
+          location: string
+          notes: string | null
+          short_label: string
+          sort_order: number
+          tally_ledger_guid: string | null
+          tally_ledger_name: string | null
+          tally_tenant_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_no?: string | null
+          account_type?: string
+          active?: boolean
+          bank_name: string
+          branch?: string | null
+          cc_limit_lacs?: number | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          hold_by_bank_lacs?: number | null
+          id?: string
+          ifsc?: string | null
+          lc_bc_limit_lacs?: number | null
+          location: string
+          notes?: string | null
+          short_label: string
+          sort_order?: number
+          tally_ledger_guid?: string | null
+          tally_ledger_name?: string | null
+          tally_tenant_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_no?: string | null
+          account_type?: string
+          active?: boolean
+          bank_name?: string
+          branch?: string | null
+          cc_limit_lacs?: number | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          hold_by_bank_lacs?: number | null
+          id?: string
+          ifsc?: string | null
+          lc_bc_limit_lacs?: number | null
+          location?: string
+          notes?: string | null
+          short_label?: string
+          sort_order?: number
+          tally_ledger_guid?: string | null
+          tally_ledger_name?: string | null
+          tally_tenant_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_bank_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "mst_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_report_bank_balances: {
+        // closing_balance_lacs is NOT NULL on purpose. An absent ROW is the only way
+        // this table says "nobody recorded that day", which is how a Sunday stays
+        // blank while a genuinely empty account reads 0.00.
+        Row: {
+          balance_date: string
+          bank_account_id: string
+          closing_balance_lacs: number
+          entered_at: string
+          entered_by: string | null
+          lc_bc_utilised_lacs: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          balance_date: string
+          bank_account_id: string
+          closing_balance_lacs: number
+          entered_at?: string
+          entered_by?: string | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          balance_date?: string
+          bank_account_id?: string
+          closing_balance_lacs?: number
+          entered_at?: string
+          entered_by?: string | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_report_bank_balances_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "daily_report_bank_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      // Hand-added for migration 20261125120000 (DR-1, the credit-limit block), applied.
+      // Keyed on the entity ALIAS, not company_id — two Tally books share one alias.
+      // Every figure nullable; an all-null row cannot exist (CHECK), so an absent
+      // row is how a company-day says "not recorded".
+      daily_report_cc_limits: {
+        Row: {
+          balance_date: string
+          bank: string
+          cc_limit_lacs: number | null
+          entered_at: string
+          entered_by: string | null
+          entity_alias: string
+          hold_by_bank_lacs: number | null
+          lc_bc_limit_lacs: number | null
+          lc_bc_utilised_lacs: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          balance_date: string
+          bank?: string
+          cc_limit_lacs?: number | null
+          entered_at?: string
+          entered_by?: string | null
+          entity_alias: string
+          hold_by_bank_lacs?: number | null
+          lc_bc_limit_lacs?: number | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          balance_date?: string
+          bank?: string
+          cc_limit_lacs?: number | null
+          entered_at?: string
+          entered_by?: string | null
+          entity_alias?: string
+          hold_by_bank_lacs?: number | null
+          lc_bc_limit_lacs?: number | null
+          lc_bc_utilised_lacs?: number | null
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: []
       }
@@ -1653,6 +1893,153 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_buddies: {
+        Row: {
+          allocated_at: string
+          allocated_by: string | null
+          buddy_user_id: string
+          candidate_id: string
+          close_note: string | null
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          due_on: string | null
+          extended_to: string | null
+          feedback_at: string | null
+          feedback_rating: number | null
+          feedback_remarks: string | null
+          id: string
+          interaction_target: number
+          joining_date: string | null
+          offer_accepted_at: string | null
+          onboarding_id: string
+          passport_handed_at: string | null
+          passport_handed_by: string | null
+          requisition_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          allocated_at?: string
+          allocated_by?: string | null
+          buddy_user_id: string
+          candidate_id: string
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          due_on?: string | null
+          extended_to?: string | null
+          feedback_at?: string | null
+          feedback_rating?: number | null
+          feedback_remarks?: string | null
+          id?: string
+          interaction_target?: number
+          joining_date?: string | null
+          offer_accepted_at?: string | null
+          onboarding_id: string
+          passport_handed_at?: string | null
+          passport_handed_by?: string | null
+          requisition_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          allocated_at?: string
+          allocated_by?: string | null
+          buddy_user_id?: string
+          candidate_id?: string
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          due_on?: string | null
+          extended_to?: string | null
+          feedback_at?: string | null
+          feedback_rating?: number | null
+          feedback_remarks?: string | null
+          id?: string
+          interaction_target?: number
+          joining_date?: string | null
+          offer_accepted_at?: string | null
+          onboarding_id?: string
+          passport_handed_at?: string | null
+          passport_handed_by?: string | null
+          requisition_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_buddies_onboarding_id_fkey"
+            columns: ["onboarding_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_onboardings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_buddies_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_buddies_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_buddy_interactions: {
+        Row: {
+          buddy_id: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          happened_on: string
+          id: string
+          logged_at: string
+          logged_by: string
+          mode: string
+          notes: string | null
+        }
+        Insert: {
+          buddy_id: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          happened_on: string
+          id?: string
+          logged_at?: string
+          logged_by: string
+          mode: string
+          notes?: string | null
+        }
+        Update: {
+          buddy_id?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          happened_on?: string
+          id?: string
+          logged_at?: string
+          logged_by?: string
+          mode?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_buddy_interactions_buddy_id_fkey"
+            columns: ["buddy_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_buddies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_candidate_scores: {
         Row: {
           axes: Json
@@ -1750,6 +2137,10 @@ export type Database = {
           resume_name: string | null
           resume_path: string | null
           resume_sha256: string | null
+          duplicate_ack: string | null
+          is_repeat: boolean
+          repeat_of_candidate_id: string | null
+          repeat_signal: string | null
           shared_to_hod_at: string | null
           shared_to_hod_by: string | null
           skills: string[]
@@ -1793,6 +2184,10 @@ export type Database = {
           resume_name?: string | null
           resume_path?: string | null
           resume_sha256?: string | null
+          duplicate_ack?: string | null
+          is_repeat?: boolean
+          repeat_of_candidate_id?: string | null
+          repeat_signal?: string | null
           shared_to_hod_at?: string | null
           shared_to_hod_by?: string | null
           skills?: string[]
@@ -1836,6 +2231,10 @@ export type Database = {
           resume_name?: string | null
           resume_path?: string | null
           resume_sha256?: string | null
+          duplicate_ack?: string | null
+          is_repeat?: boolean
+          repeat_of_candidate_id?: string | null
+          repeat_signal?: string | null
           shared_to_hod_at?: string | null
           shared_to_hod_by?: string | null
           skills?: string[]
@@ -1964,6 +2363,62 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      fms_hr_grievances: {
+        Row: {
+          answers: Json
+          body: string
+          category: string
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          probation_id: string | null
+          raised_at: string
+          raised_by: string
+          resolution: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          answers?: Json
+          body: string
+          category: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          probation_id?: string | null
+          raised_at?: string
+          raised_by: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          answers?: Json
+          body?: string
+          category?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          probation_id?: string | null
+          raised_at?: string
+          raised_by?: string
+          resolution?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_grievances_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       fms_hr_interviews: {
         Row: {
@@ -2481,6 +2936,15 @@ export type Database = {
           edited_by: string | null
           employee_code: string | null
           employee_code_at: string | null
+          employee_user_id: string | null
+          employee_user_set_at: string | null
+          employee_user_set_by: string | null
+          bgv_status: string | null
+          bgv_note: string | null
+          bgv_at: string | null
+          bgv_by: string | null
+          induction_on: string | null
+          induction_by: string | null
           employee_code_by: string | null
           id: string
           joining_date: string | null
@@ -2502,6 +2966,15 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_user_id?: string | null
+          employee_user_set_at?: string | null
+          employee_user_set_by?: string | null
+          bgv_status?: string | null
+          bgv_note?: string | null
+          bgv_at?: string | null
+          bgv_by?: string | null
+          induction_on?: string | null
+          induction_by?: string | null
           employee_code_by?: string | null
           id?: string
           joining_date?: string | null
@@ -2523,6 +2996,15 @@ export type Database = {
           edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_user_id?: string | null
+          employee_user_set_at?: string | null
+          employee_user_set_by?: string | null
+          bgv_status?: string | null
+          bgv_note?: string | null
+          bgv_at?: string | null
+          bgv_by?: string | null
+          induction_on?: string | null
+          induction_by?: string | null
           employee_code_by?: string | null
           id?: string
           joining_date?: string | null
@@ -2548,6 +3030,74 @@ export type Database = {
             columns: ["requisition_id"]
             isOneToOne: false
             referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_probation_checkins: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          day_no: number
+          due_on: string
+          file_name: string | null
+          file_path: string | null
+          hod_at: string | null
+          hod_by: string | null
+          hod_remarks: string | null
+          hod_status: string | null
+          id: string
+          joiner_at: string | null
+          joiner_by: string | null
+          joiner_remarks: string | null
+          joiner_status: string | null
+          probation_id: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          day_no: number
+          due_on: string
+          file_name?: string | null
+          file_path?: string | null
+          hod_at?: string | null
+          hod_by?: string | null
+          hod_remarks?: string | null
+          hod_status?: string | null
+          id?: string
+          joiner_at?: string | null
+          joiner_by?: string | null
+          joiner_remarks?: string | null
+          joiner_status?: string | null
+          probation_id: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          day_no?: number
+          due_on?: string
+          file_name?: string | null
+          file_path?: string | null
+          hod_at?: string | null
+          hod_by?: string | null
+          hod_remarks?: string | null
+          hod_status?: string | null
+          id?: string
+          joiner_at?: string | null
+          joiner_by?: string | null
+          joiner_remarks?: string | null
+          joiner_status?: string | null
+          probation_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_probation_checkins_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
             referencedColumns: ["id"]
           },
         ]
@@ -2631,6 +3181,10 @@ export type Database = {
           outcome_by: string | null
           outcome_remarks: string | null
           permanent_from: string | null
+          letter_path: string | null
+          letter_name: string | null
+          letter_at: string | null
+          letter_by: string | null
           requisition_id: string
           updated_at: string
         }
@@ -2656,6 +3210,10 @@ export type Database = {
           outcome_by?: string | null
           outcome_remarks?: string | null
           permanent_from?: string | null
+          letter_path?: string | null
+          letter_name?: string | null
+          letter_at?: string | null
+          letter_by?: string | null
           requisition_id: string
           updated_at?: string
         }
@@ -2681,6 +3239,10 @@ export type Database = {
           outcome_by?: string | null
           outcome_remarks?: string | null
           permanent_from?: string | null
+          letter_path?: string | null
+          letter_name?: string | null
+          letter_at?: string | null
+          letter_by?: string | null
           requisition_id?: string
           updated_at?: string
         }
@@ -2777,11 +3339,19 @@ export type Database = {
           key_responsibilities: string | null
           location_id: string | null
           mgmt_approved_at: string | null
+          acknowledged_at: string | null
+          acknowledged_by: string | null
           mgmt_approver_id: string | null
           mgmt_remarks: string | null
           mrf_no: string
           position_kind: string
           positions_required: number
+          cv_target: number | null
+          director_cv_target: number
+          shortlist_target: number
+          target_close_days: number | null
+          targets_set_at: string | null
+          targets_set_by: string | null
           posted_at: string | null
           posted_by: string | null
           posted_on: string | null
@@ -2846,11 +3416,19 @@ export type Database = {
           key_responsibilities?: string | null
           location_id?: string | null
           mgmt_approved_at?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           mgmt_approver_id?: string | null
           mgmt_remarks?: string | null
           mrf_no: string
           position_kind?: string
           positions_required?: number
+          cv_target?: number | null
+          director_cv_target?: number
+          shortlist_target?: number
+          target_close_days?: number | null
+          targets_set_at?: string | null
+          targets_set_by?: string | null
           posted_at?: string | null
           posted_by?: string | null
           posted_on?: string | null
@@ -2915,11 +3493,19 @@ export type Database = {
           key_responsibilities?: string | null
           location_id?: string | null
           mgmt_approved_at?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           mgmt_approver_id?: string | null
           mgmt_remarks?: string | null
           mrf_no?: string
           position_kind?: string
           positions_required?: number
+          cv_target?: number | null
+          director_cv_target?: number
+          shortlist_target?: number
+          target_close_days?: number | null
+          targets_set_at?: string | null
+          targets_set_by?: string | null
           posted_at?: string | null
           posted_by?: string | null
           posted_on?: string | null
@@ -7817,6 +8403,1490 @@ export type Database = {
         }
         Relationships: []
       }
+      // Hand-added for migrations 20261215120000 + 20261215120100 (LD-1, Learning &
+      // Development), both applied. Generated from the live schema and pasted in rather
+      // than regenerating the whole file: this one is hand-curated, and several other
+      // modules' tables live on the database ahead of their code, so a wholesale
+      // regeneration would sweep in work that is not ours to ship.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below. The Row types are what
+      //   data/ldFetch.ts reads; Insert/Update are used only for the Setup tables.
+      // Hand-added for migrations 20261215120000 / …120100 / …120200 (LD-1 and
+      // LD-3..LD-8, Learning & Development), all applied. Taken from the live schema
+      // rather than regenerating the whole file: this one is hand-curated, and other
+      // modules' tables live on the database ahead of their code, so a wholesale
+      // regeneration would sweep in work that is not ours to ship.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below.
+      // Hand-added for the Learning & Development migrations (20261215120000 …
+      // …120300), all applied. Taken from the live schema rather than regenerating
+      // the whole file: this one is hand-curated, and other modules' tables live on
+      // the database ahead of their code, so a wholesale regeneration would sweep in
+      // work that is not ours to ship. Re-run scratchpad/refresh_types.py to update.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below.
+      // Hand-added for the Learning & Development migrations (20261215120000 …
+      // …120300), all applied. Taken from the live schema rather than regenerating
+      // the whole file: this one is hand-curated, and other modules' tables live on
+      // the database ahead of their code, so a wholesale regeneration would sweep in
+      // work that is not ours to ship. Re-run scratchpad/refresh_types.py to update.
+      //
+      // ⚠ Workflow WRITES do not go through these table types — the RLS write policies
+      //   are admin-only and every move is an fms_ld_* RPC below.
+      fms_ld_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
+      fms_ld_assignment_submissions: {
+        Row: {
+          assignment_id: string
+          employee_id: string
+          escalated_at: string | null
+          file_path: string | null
+          id: string
+          note: string | null
+          outcome: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewer_remarks: string | null
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          employee_id: string
+          escalated_at?: string | null
+          file_path?: string | null
+          id?: string
+          note?: string | null
+          outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_remarks?: string | null
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          employee_id?: string
+          escalated_at?: string | null
+          file_path?: string | null
+          id?: string
+          note?: string | null
+          outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_remarks?: string | null
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_assignment_submissions_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_assignment_submissions_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_assignments: {
+        Row: {
+          brief: string | null
+          due_at: string | null
+          file_path: string | null
+          id: string
+          issued_at: string
+          issued_by: string | null
+          session_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          brief?: string | null
+          due_at?: string | null
+          file_path?: string | null
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          session_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          brief?: string | null
+          due_at?: string | null
+          file_path?: string | null
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          session_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_assignments_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_attendance: {
+        Row: {
+          employee_id: string
+          followed_up_at: string | null
+          followed_up_by: string | null
+          id: string
+          marked_at: string
+          marked_by: string | null
+          minutes: number | null
+          reason: string | null
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          employee_id: string
+          followed_up_at?: string | null
+          followed_up_by?: string | null
+          id?: string
+          marked_at?: string
+          marked_by?: string | null
+          minutes?: number | null
+          reason?: string | null
+          session_id: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          employee_id?: string
+          followed_up_at?: string | null
+          followed_up_by?: string | null
+          id?: string
+          marked_at?: string
+          marked_by?: string | null
+          minutes?: number | null
+          reason?: string | null
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_attendance_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_attendance_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_competencies: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      fms_ld_counters: {
+        Row: {
+          last_value: number
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          last_value?: number
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          last_value?: number
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_delay_reasons: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_effectiveness: {
+        Row: {
+          application_observed: string | null
+          created_at: string
+          due_on: string
+          evidence: string | null
+          followup_action_id: string | null
+          followup_required: boolean
+          hod_id: string
+          id: string
+          improvement_area: string | null
+          outcome: string | null
+          rating: number | null
+          session_id: string
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          application_observed?: string | null
+          created_at?: string
+          due_on: string
+          evidence?: string | null
+          followup_action_id?: string | null
+          followup_required?: boolean
+          hod_id: string
+          id?: string
+          improvement_area?: string | null
+          outcome?: string | null
+          rating?: number | null
+          session_id: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          application_observed?: string | null
+          created_at?: string
+          due_on?: string
+          evidence?: string | null
+          followup_action_id?: string | null
+          followup_required?: boolean
+          hod_id?: string
+          id?: string
+          improvement_area?: string | null
+          outcome?: string | null
+          rating?: number | null
+          session_id?: string
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_effectiveness_followup_action_id_fkey"
+            columns: ["followup_action_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_followup_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_effectiveness_hod_id_fkey"
+            columns: ["hod_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_effectiveness_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_feedback: {
+        Row: {
+          comment: string | null
+          content_rating: number | null
+          employee_id: string
+          id: string
+          overall_rating: number
+          relevance_rating: number | null
+          session_id: string
+          submitted_at: string
+          trainer_rating: number | null
+        }
+        Insert: {
+          comment?: string | null
+          content_rating?: number | null
+          employee_id: string
+          id?: string
+          overall_rating: number
+          relevance_rating?: number | null
+          session_id: string
+          submitted_at?: string
+          trainer_rating?: number | null
+        }
+        Update: {
+          comment?: string | null
+          content_rating?: number | null
+          employee_id?: string
+          id?: string
+          overall_rating?: number
+          relevance_rating?: number | null
+          session_id?: string
+          submitted_at?: string
+          trainer_rating?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_feedback_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_followup_actions: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_mandatory_programs: {
+        Row: {
+          active: boolean
+          created_at: string
+          cycle: string
+          id: string
+          name: string
+          session_type_code: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          cycle?: string
+          id?: string
+          name: string
+          session_type_code: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          cycle?: string
+          id?: string
+          name?: string
+          session_type_code?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_master_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          master_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          master_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          master_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_master_requests: {
+        Row: {
+          created_at: string
+          id: string
+          master_type: string
+          proposed_payload: Json
+          requested_by: string | null
+          resolved_master_id: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          master_type: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          master_type?: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_materials: {
+        Row: {
+          file_path: string | null
+          id: string
+          kind: string
+          link_url: string | null
+          note: string | null
+          session_id: string
+          title: string
+          trainer_id: string | null
+          updated_at: string
+          uploaded_at: string
+          uploaded_by: string | null
+          version: number
+        }
+        Insert: {
+          file_path?: string | null
+          id?: string
+          kind?: string
+          link_url?: string | null
+          note?: string | null
+          session_id: string
+          title: string
+          trainer_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          version?: number
+        }
+        Update: {
+          file_path?: string | null
+          id?: string
+          kind?: string
+          link_url?: string | null
+          note?: string | null
+          session_id?: string
+          title?: string
+          trainer_id?: string | null
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_materials_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_materials_trainer_id_fkey"
+            columns: ["trainer_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_trainers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_need_sources: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_nominations: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          decline_reason: string | null
+          employee_id: string
+          id: string
+          invited_at: string | null
+          nominated_at: string
+          nominated_by: string | null
+          reject_reason: string | null
+          reminder_1_at: string | null
+          reminder_2_at: string | null
+          rsvp: string
+          rsvp_at: string | null
+          session_id: string
+          source: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          decline_reason?: string | null
+          employee_id: string
+          id?: string
+          invited_at?: string | null
+          nominated_at?: string
+          nominated_by?: string | null
+          reject_reason?: string | null
+          reminder_1_at?: string | null
+          reminder_2_at?: string | null
+          rsvp?: string
+          rsvp_at?: string | null
+          session_id: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          decline_reason?: string | null
+          employee_id?: string
+          id?: string
+          invited_at?: string | null
+          nominated_at?: string
+          nominated_by?: string | null
+          reject_reason?: string | null
+          reminder_1_at?: string | null
+          reminder_2_at?: string | null
+          rsvp?: string
+          rsvp_at?: string | null
+          session_id?: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_nominations_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_nominations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fms_ld_plan_lines: {
+        Row: {
+          band_ids: string[]
+          created_at: string
+          department_ids: string[]
+          designation_ids: string[]
+          estimated_cost: number | null
+          id: string
+          note: string | null
+          plan_id: string
+          planned_headcount: number | null
+          planned_hours: number | null
+          planned_month: string
+          session_type_ids: string[]
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          band_ids?: string[]
+          created_at?: string
+          department_ids?: string[]
+          designation_ids?: string[]
+          estimated_cost?: number | null
+          id?: string
+          note?: string | null
+          plan_id: string
+          planned_headcount?: number | null
+          planned_hours?: number | null
+          planned_month: string
+          session_type_ids?: string[]
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          band_ids?: string[]
+          created_at?: string
+          department_ids?: string[]
+          designation_ids?: string[]
+          estimated_cost?: number | null
+          id?: string
+          note?: string | null
+          plan_id?: string
+          planned_headcount?: number | null
+          planned_hours?: number | null
+          planned_month?: string
+          session_type_ids?: string[]
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_plan_lines_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_plans: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          fy_code: string
+          id: string
+          note: string | null
+          published_at: string | null
+          published_by: string | null
+          revision: number
+          status: string
+          supersedes_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          fy_code: string
+          id?: string
+          note?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          revision?: number
+          status?: string
+          supersedes_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          fy_code?: string
+          id?: string
+          note?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          revision?: number
+          status?: string
+          supersedes_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_plans_supersedes_id_fkey"
+            columns: ["supersedes_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_requests: {
+        Row: {
+          actual_cost: number | null
+          approved_budget: number | null
+          attachment_path: string | null
+          business_justification: string | null
+          closed_at: string | null
+          closed_by: string | null
+          closure_note: string | null
+          code: string | null
+          competency_id: string | null
+          created_at: string
+          delivery_mode: string | null
+          department_id: string | null
+          duplicate_checked: boolean
+          expected_outcome: string | null
+          final_outcome: string | null
+          held_at: string | null
+          held_by: string | null
+          held_note: string | null
+          held_reason_id: string | null
+          hr_approval_note: string | null
+          hr_approved_at: string | null
+          hr_approved_by: string | null
+          id: string
+          is_mandatory: boolean
+          mgmt_approval_note: string | null
+          mgmt_approved_at: string | null
+          mgmt_approved_by: string | null
+          mgmt_required: boolean | null
+          need_source_id: string | null
+          objective: string | null
+          priority: string | null
+          proposal_path: string | null
+          proposed_at: string | null
+          proposed_by: string | null
+          proposed_cost: number | null
+          proposed_month: string | null
+          proposed_trainer_type: string | null
+          quotation_path: string | null
+          reject_reason: string | null
+          rejected_at: string | null
+          rejected_by: string | null
+          reopen_reason: string | null
+          reopened_at: string | null
+          reopened_by: string | null
+          requested_by: string | null
+          required_by: string | null
+          return_reason: string | null
+          returned_at: string | null
+          returned_by: string | null
+          session_type_ids: string[]
+          skill_gap: string | null
+          status: string
+          submitted_at: string | null
+          target_group: string | null
+          title: string
+          trainer_confirmed_at: string | null
+          trainer_confirmed_by: string | null
+          trainer_id: string | null
+          trainer_terms: string | null
+          updated_at: string
+          validated_at: string | null
+          validated_by: string | null
+          validation_note: string | null
+        }
+        Insert: {
+          actual_cost?: number | null
+          approved_budget?: number | null
+          attachment_path?: string | null
+          business_justification?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          closure_note?: string | null
+          code?: string | null
+          competency_id?: string | null
+          created_at?: string
+          delivery_mode?: string | null
+          department_id?: string | null
+          duplicate_checked?: boolean
+          expected_outcome?: string | null
+          final_outcome?: string | null
+          held_at?: string | null
+          held_by?: string | null
+          held_note?: string | null
+          held_reason_id?: string | null
+          hr_approval_note?: string | null
+          hr_approved_at?: string | null
+          hr_approved_by?: string | null
+          id?: string
+          is_mandatory?: boolean
+          mgmt_approval_note?: string | null
+          mgmt_approved_at?: string | null
+          mgmt_approved_by?: string | null
+          mgmt_required?: boolean | null
+          need_source_id?: string | null
+          objective?: string | null
+          priority?: string | null
+          proposal_path?: string | null
+          proposed_at?: string | null
+          proposed_by?: string | null
+          proposed_cost?: number | null
+          proposed_month?: string | null
+          proposed_trainer_type?: string | null
+          quotation_path?: string | null
+          reject_reason?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          reopen_reason?: string | null
+          reopened_at?: string | null
+          reopened_by?: string | null
+          requested_by?: string | null
+          required_by?: string | null
+          return_reason?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
+          session_type_ids?: string[]
+          skill_gap?: string | null
+          status?: string
+          submitted_at?: string | null
+          target_group?: string | null
+          title: string
+          trainer_confirmed_at?: string | null
+          trainer_confirmed_by?: string | null
+          trainer_id?: string | null
+          trainer_terms?: string | null
+          updated_at?: string
+          validated_at?: string | null
+          validated_by?: string | null
+          validation_note?: string | null
+        }
+        Update: {
+          actual_cost?: number | null
+          approved_budget?: number | null
+          attachment_path?: string | null
+          business_justification?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          closure_note?: string | null
+          code?: string | null
+          competency_id?: string | null
+          created_at?: string
+          delivery_mode?: string | null
+          department_id?: string | null
+          duplicate_checked?: boolean
+          expected_outcome?: string | null
+          final_outcome?: string | null
+          held_at?: string | null
+          held_by?: string | null
+          held_note?: string | null
+          held_reason_id?: string | null
+          hr_approval_note?: string | null
+          hr_approved_at?: string | null
+          hr_approved_by?: string | null
+          id?: string
+          is_mandatory?: boolean
+          mgmt_approval_note?: string | null
+          mgmt_approved_at?: string | null
+          mgmt_approved_by?: string | null
+          mgmt_required?: boolean | null
+          need_source_id?: string | null
+          objective?: string | null
+          priority?: string | null
+          proposal_path?: string | null
+          proposed_at?: string | null
+          proposed_by?: string | null
+          proposed_cost?: number | null
+          proposed_month?: string | null
+          proposed_trainer_type?: string | null
+          quotation_path?: string | null
+          reject_reason?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          reopen_reason?: string | null
+          reopened_at?: string | null
+          reopened_by?: string | null
+          requested_by?: string | null
+          required_by?: string | null
+          return_reason?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
+          session_type_ids?: string[]
+          skill_gap?: string | null
+          status?: string
+          submitted_at?: string | null
+          target_group?: string | null
+          title?: string
+          trainer_confirmed_at?: string | null
+          trainer_confirmed_by?: string | null
+          trainer_id?: string | null
+          trainer_terms?: string | null
+          updated_at?: string
+          validated_at?: string | null
+          validated_by?: string | null
+          validation_note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_requests_competency_id_fkey"
+            columns: ["competency_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_competencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_requests_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_requests_held_reason_id_fkey"
+            columns: ["held_reason_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_delay_reasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_requests_need_source_id_fkey"
+            columns: ["need_source_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_need_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_requests_trainer_id_fkey"
+            columns: ["trainer_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_trainers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_session_types: {
+        Row: {
+          active: boolean
+          code: string | null
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_ld_sessions: {
+        Row: {
+          actual_cost: number | null
+          actual_end: string | null
+          actual_start: string | null
+          attendance_closed_at: string | null
+          attendance_sheet_path: string | null
+          capacity: number | null
+          change_reason: string | null
+          code: string | null
+          created_at: string
+          created_by: string | null
+          delivery_mode: string | null
+          end_time: string | null
+          evidence_paths: string[]
+          hours: number | null
+          id: string
+          invitations_sent_at: string | null
+          meeting_link: string | null
+          nominations_closed_at: string | null
+          outcome: string | null
+          plan_line_id: string | null
+          readiness_by: string | null
+          readiness_confirmed_at: string | null
+          registration_cutoff: string | null
+          request_id: string | null
+          rescheduled_from: string | null
+          review_action_points: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          session_date: string
+          session_type_ids: string[]
+          start_time: string | null
+          status: string
+          title: string
+          trainer_attended: boolean | null
+          trainer_id: string | null
+          updated_at: string
+          venue_id: string | null
+        }
+        Insert: {
+          actual_cost?: number | null
+          actual_end?: string | null
+          actual_start?: string | null
+          attendance_closed_at?: string | null
+          attendance_sheet_path?: string | null
+          capacity?: number | null
+          change_reason?: string | null
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          delivery_mode?: string | null
+          end_time?: string | null
+          evidence_paths?: string[]
+          hours?: number | null
+          id?: string
+          invitations_sent_at?: string | null
+          meeting_link?: string | null
+          nominations_closed_at?: string | null
+          outcome?: string | null
+          plan_line_id?: string | null
+          readiness_by?: string | null
+          readiness_confirmed_at?: string | null
+          registration_cutoff?: string | null
+          request_id?: string | null
+          rescheduled_from?: string | null
+          review_action_points?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          session_date: string
+          session_type_ids?: string[]
+          start_time?: string | null
+          status?: string
+          title: string
+          trainer_attended?: boolean | null
+          trainer_id?: string | null
+          updated_at?: string
+          venue_id?: string | null
+        }
+        Update: {
+          actual_cost?: number | null
+          actual_end?: string | null
+          actual_start?: string | null
+          attendance_closed_at?: string | null
+          attendance_sheet_path?: string | null
+          capacity?: number | null
+          change_reason?: string | null
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          delivery_mode?: string | null
+          end_time?: string | null
+          evidence_paths?: string[]
+          hours?: number | null
+          id?: string
+          invitations_sent_at?: string | null
+          meeting_link?: string | null
+          nominations_closed_at?: string | null
+          outcome?: string | null
+          plan_line_id?: string | null
+          readiness_by?: string | null
+          readiness_confirmed_at?: string | null
+          registration_cutoff?: string | null
+          request_id?: string | null
+          rescheduled_from?: string | null
+          review_action_points?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          session_date?: string
+          session_type_ids?: string[]
+          start_time?: string | null
+          status?: string
+          title?: string
+          trainer_attended?: boolean | null
+          trainer_id?: string | null
+          updated_at?: string
+          venue_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_sessions_plan_line_id_fkey"
+            columns: ["plan_line_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_plan_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_sessions_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_sessions_rescheduled_from_fkey"
+            columns: ["rescheduled_from"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_sessions_trainer_id_fkey"
+            columns: ["trainer_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_trainers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_sessions_venue_id_fkey"
+            columns: ["venue_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_venues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_step_assignees: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          assigned_to: string
+          id: string
+          note: string | null
+          request_id: string | null
+          session_id: string | null
+          step_key: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          assigned_to: string
+          id?: string
+          note?: string | null
+          request_id?: string | null
+          session_id?: string | null
+          step_key: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          assigned_to?: string
+          id?: string
+          note?: string | null
+          request_id?: string | null
+          session_id?: string | null
+          step_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_step_assignees_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_ld_step_assignees_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "fms_ld_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_step_owners: {
+        Row: {
+          created_at: string
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_step_owners_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_trainers: {
+        Row: {
+          active: boolean
+          agency: string | null
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          employee_id: string | null
+          id: string
+          name: string
+          phone: string | null
+          rate: number | null
+          sort_order: number
+          speciality: string | null
+          trainer_type: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          agency?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          employee_id?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          rate?: number | null
+          sort_order?: number
+          speciality?: string | null
+          trainer_type: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          agency?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          employee_id?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          rate?: number | null
+          sort_order?: number
+          speciality?: string | null
+          trainer_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_ld_trainers_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_ld_venues: {
+        Row: {
+          active: boolean
+          address: string | null
+          capacity: number | null
+          created_at: string
+          id: string
+          is_online: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          capacity?: number | null
+          created_at?: string
+          id?: string
+          is_online?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          capacity?: number | null
+          created_at?: string
+          id?: string
+          is_online?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -7827,6 +9897,83 @@ export type Database = {
         Returns: string
       }
       email_module_enabled: { Args: { p_module: string }; Returns: boolean }
+      // Hand-added for migration 20261130120000 (PF-18, announcements), applied. The
+      // readers return jsonb arrays; core/announcements/data.ts gives them their shape.
+      announcements_active: { Args: Record<PropertyKey, never>; Returns: Json }
+      announcements_history: { Args: Record<PropertyKey, never>; Returns: Json }
+      announcements_manage: { Args: Record<PropertyKey, never>; Returns: Json }
+      // { shows_to, emails_to, email_enabled } through the SAME audience rule the
+      // publish enqueue uses, so the composer's number is the number of mails queued.
+      announcement_recipient_count: { Args: { p_modules: string[] }; Returns: Json }
+      // Raises when p_email is true while the announcements email switch is off.
+      announcement_publish: {
+        Args: {
+          p_body: string | null
+          p_email: boolean
+          p_ends_on: string
+          p_link: string | null
+          p_modules: string[]
+          p_title: string
+        }
+        Returns: Json
+      }
+      announcement_update: {
+        Args: {
+          p_body: string | null
+          p_ends_on: string | null
+          p_id: string
+          p_link: string | null
+          p_title: string
+        }
+        Returns: undefined
+      }
+      announcement_end: { Args: { p_id: string }; Returns: undefined }
+      announcement_dismiss: { Args: { p_id: string }; Returns: undefined }
+      // Hand-added for migration 20261118120000 (DR-1, Daily Report banks), applied.
+      //
+      // p_closing is nullable and that is load-bearing: NULL DELETES the day's row,
+      // returning it to "not recorded". Typing 0 instead would record a real zero
+      // balance, which the report would then print. The two are different answers.
+      set_bank_daily_balance: {
+        Args: {
+          p_balance_date: string
+          p_bank_account_id: string
+          p_closing: number | null
+          p_lc_bc_utilised?: number | null
+        }
+        Returns: undefined
+      }
+      // The evening's entries in ONE transaction — the whole evening lands or none
+      // of it does. Returns how many rows it acted on.
+      set_bank_daily_balances: { Args: { p_rows: Json }; Returns: number }
+      // { date, expected, entered, missing[] }. The nav badge, the report's Bank KPI
+      // tile and the entry screen all read THIS, so the three cannot drift apart.
+      daily_report_balance_status: {
+        Args: { p_date?: string | null }
+        Returns: Json
+      }
+      // Hand-added for migration 20261125120000 (DR-1, the credit-limit block), applied.
+      //
+      // All four figures null DELETES the company-day row, returning it to "not
+      // recorded" — the same rule as p_closing above, spread over four inputs.
+      set_cc_daily_limit: {
+        Args: {
+          p_entity_alias: string
+          p_bank: string | null
+          p_balance_date: string
+          p_cc_limit: number | null
+          p_lc_bc_limit: number | null
+          p_lc_bc_utilised: number | null
+          p_hold_by_bank: number | null
+        }
+        Returns: undefined
+      }
+      set_cc_daily_limits: { Args: { p_rows: Json }; Returns: number }
+      // The entry screen's Save all: balances and credit-limit blocks in ONE transaction.
+      set_daily_report_evening: {
+        Args: { p_balances: Json; p_cc_limits: Json }
+        Returns: number
+      }
       set_email_module_enabled: {
         Args: { p_enabled: boolean; p_module: string }
         Returns: undefined
@@ -8134,6 +10281,38 @@ export type Database = {
         Args: { p_case: string; p_reason: string }
         Returns: undefined
       }
+      fms_hr_acknowledge_requisition: {
+        Args: { p_req: string }
+        Returns: undefined
+      }
+      fms_hr_allocate_buddy: {
+        Args: { p_buddy: string; p_onboarding: string }
+        Returns: string
+      }
+      fms_hr_hand_passport: {
+        Args: { p_buddy: string }
+        Returns: undefined
+      }
+      fms_hr_log_buddy_interaction: {
+        Args: { p_buddy: string; p_mode: string; p_notes?: string; p_on: string }
+        Returns: string
+      }
+      fms_hr_confirm_buddy_interaction: {
+        Args: { p_interaction: string }
+        Returns: undefined
+      }
+      fms_hr_rate_buddy: {
+        Args: { p_buddy: string; p_rating: number; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_hr_close_buddy: {
+        Args: { p_buddy: string; p_note?: string; p_status: string }
+        Returns: undefined
+      }
+      fms_hr_is_my_buddy_record: {
+        Args: { p_buddy: string; p_uid: string }
+        Returns: boolean
+      }
       fms_hr_add_candidates: {
         Args: { p_candidates: Json; p_req: string }
         Returns: string[]
@@ -8163,6 +10342,10 @@ export type Database = {
       }
       fms_hr_can_receive_reassignment: {
         Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_is_my_probation: {
+        Args: { p_probation: string; p_uid: string }
         Returns: boolean
       }
       fms_hr_is_natural_step_owner: {
@@ -8198,6 +10381,7 @@ export type Database = {
           p_remarks?: string
           p_req: string
           p_stage: string
+          p_targets?: Json
         }
         Returns: undefined
       }
@@ -8212,6 +10396,30 @@ export type Database = {
         Returns: undefined
       }
       fms_hr_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_hr_grievances_for_me: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          raised_at: string
+          category: string
+          body: string
+          status: string
+          closed_at: string | null
+          resolution: string | null
+        }[]
+      }
+      fms_hr_raise_grievance: {
+        Args: { p_answers?: Json; p_body: string; p_category: string }
+        Returns: string
+      }
+      fms_hr_close_grievance: {
+        Args: { p_id: string; p_resolution: string }
+        Returns: undefined
+      }
+      fms_hr_may_see_grievances: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
       fms_hr_hod_decide: {
         Args: {
           p_ids: string[]
@@ -8251,6 +10459,37 @@ export type Database = {
       fms_hr_move_candidate: {
         Args: { p?: Json; p_id: string; p_to_stage: string }
         Returns: undefined
+      }
+      fms_hr_my_buddy: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          buddy_id: string
+          joiner_name: string | null
+          job_title: string | null
+          joining_date: string | null
+          due_on: string | null
+          extended_to: string | null
+          interaction_target: number
+          status: string
+          feedback_rating: number | null
+          feedback_at: string | null
+        }[]
+      }
+      fms_hr_my_probation: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          probation_id: string
+          joining_date: string
+          job_title: string
+          day_no: number
+          due_on: string
+          hod_answered: boolean
+          joiner_status: string | null
+          joiner_remarks: string | null
+          joiner_at: string | null
+          completed_at: string | null
+          final_status: string | null
+        }[]
       }
       fms_hr_next_seq: { Args: { p_scope: string }; Returns: number }
       fms_hr_notify_hod_pending: {
@@ -8371,6 +10610,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_hr_set_bgv: {
+        Args: { p_note?: string; p_onboarding: string; p_status: string | null }
+        Returns: undefined
+      }
       fms_hr_set_candidate_note: {
         Args: { p_id: string; p_note: string }
         Returns: undefined
@@ -8383,8 +10626,16 @@ export type Database = {
         Args: { p_id: string; p_name?: string; p_path?: string; p_sha256?: string }
         Returns: undefined
       }
+      fms_hr_set_employee_user: {
+        Args: { p_onboarding: string; p_user: string | null }
+        Returns: undefined
+      }
       fms_hr_set_employee_code: {
         Args: { p_code: string; p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_set_induction: {
+        Args: { p_on: string | null; p_onboarding: string }
         Returns: undefined
       }
       fms_hr_set_offer_status: {
@@ -8405,13 +10656,33 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_hr_set_probation_letter: {
+        Args: { p_name: string; p_path: string; p_probation: string }
+        Returns: undefined
+      }
       fms_hr_set_requisition_jd: {
         Args: { p_name?: string; p_path?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_set_requisition_targets: {
+        Args: { p_req: string; p_targets: Json }
         Returns: undefined
       }
       fms_hr_stage_rank: { Args: { p_stage: string }; Returns: number }
       fms_hr_stage_step: { Args: { p_stage: string }; Returns: string }
       fms_hr_step_owner_ids: { Args: { p_step: string }; Returns: string[] }
+      fms_hr_submit_probation_checkin: {
+        Args: {
+          p_day: number
+          p_file_name?: string | null
+          p_file_path?: string | null
+          p_probation: string
+          p_remarks?: string
+          p_side: string
+          p_status: string
+        }
+        Returns: undefined
+      }
       fms_hr_submit_mrf: { Args: { p: Json }; Returns: string }
       fms_hr_sync_requisition_fill: {
         Args: { p_req: string }
@@ -8442,6 +10713,7 @@ export type Database = {
           p_remarks?: string
           p_req: string
           p_stage: string
+          p_targets?: Json
         }
         Returns: undefined
       }
@@ -9403,6 +11675,228 @@ export type Database = {
       queue_user_snapshot_email: {
         Args: { p_user_id: string; p_to_email?: string | null }
         Returns: number
+      }
+      // Hand-added for migrations 20261215120000 + 20261215120100 (LD-1, Learning &
+      // Development), both applied. These RPCs ARE the module's write path.
+      // Hand-added for the Learning & Development migrations (see the note above).
+      // These RPCs ARE the module's write path.
+      // Learning & Development RPCs — the module's write path. See the note above.
+      // Learning & Development RPCs — the module's write path. See the note above.
+      fms_ld_add_evidence: {
+        Args: { p_paths: string[]; p_session_id: string }
+        Returns: number
+      }
+      fms_ld_add_material: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: string
+      }
+      fms_ld_announce: {
+        Args: {
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
+        }
+        Returns: undefined
+      }
+      fms_ld_approve_request: {
+        Args: {
+          p_decision: string
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+          p_stage: string
+        }
+        Returns: undefined
+      }
+      fms_ld_can_act: {
+        Args: { p_request_id: string; p_step_key: string; p_uid?: string }
+        Returns: boolean
+      }
+      fms_ld_can_act_session: {
+        Args: { p_session_id: string; p_step_key: string; p_uid?: string }
+        Returns: boolean
+      }
+      fms_ld_can_plan: { Args: { p_uid?: string }; Returns: boolean }
+      fms_ld_can_read_request: {
+        Args: { p_request_id: string; p_uid?: string }
+        Returns: boolean
+      }
+      fms_ld_close_attendance: { Args: { p_session_id: string }; Returns: Json }
+      fms_ld_close_request: {
+        Args: { p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
+      fms_ld_confirm_readiness: {
+        Args: { p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_create_plan: { Args: { p_payload: Json }; Returns: string }
+      fms_ld_create_request: { Args: { p_payload: Json }; Returns: string }
+      fms_ld_create_session: { Args: { p_payload: Json }; Returns: string }
+      fms_ld_decide_nomination: {
+        Args: { p_approve: boolean; p_nomination_id: string; p_reason?: string }
+        Returns: undefined
+      }
+      fms_ld_delete_material: {
+        Args: { p_material_id: string }
+        Returns: undefined
+      }
+      fms_ld_delete_plan_line: { Args: { p_id: string }; Returns: undefined }
+      fms_ld_escalate_submission: {
+        Args: { p_submission_id: string }
+        Returns: undefined
+      }
+      fms_ld_finalise_trainer: {
+        Args: { p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
+      fms_ld_follow_up_absentee: {
+        Args: { p_attendance_id: string }
+        Returns: undefined
+      }
+      fms_ld_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_ld_hods_of: { Args: { p_employee_id: string }; Returns: string[] }
+      fms_ld_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_ld_is_hod_of: {
+        Args: { p_employee_id: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_ld_is_master_manager: {
+        Args: { p_master_type: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_ld_is_participant: {
+        Args: { p_session_id: string; p_uid?: string }
+        Returns: boolean
+      }
+      fms_ld_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_ld_issue_assignment: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: string
+      }
+      fms_ld_learning_hours: {
+        Args: { p_year?: number }
+        Returns: {
+          employee: string
+          employee_id: string
+          hours: number
+          sessions: number
+        }[]
+      }
+      fms_ld_link_session_to_plan: {
+        Args: { p_plan_line_id: string; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_mandatory_status: {
+        Args: { p_year?: number }
+        Returns: {
+          applicable: number
+          completed: number
+          outstanding: Json
+          pct: number
+          program: string
+          program_id: string
+        }[]
+      }
+      fms_ld_mark_attendance: {
+        Args: { p_rows: Json; p_session_id: string }
+        Returns: number
+      }
+      fms_ld_mgmt_required: { Args: { p_cost: number }; Returns: boolean }
+      fms_ld_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_ld_nominate: {
+        Args: {
+          p_employee_ids: string[]
+          p_session_id: string
+          p_source?: string
+        }
+        Returns: number
+      }
+      fms_ld_period_summary: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      fms_ld_plan_adherence: { Args: { p_fy?: string }; Returns: Json }
+      fms_ld_publish_plan: { Args: { p_plan_id: string }; Returns: undefined }
+      fms_ld_reassign_step: {
+        Args: {
+          p_note?: string
+          p_request_id: string
+          p_step_key: string
+          p_to_user: string
+        }
+        Returns: undefined
+      }
+      fms_ld_record_conduct: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_reopen_request: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: undefined
+      }
+      fms_ld_resolve_master_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: string
+      }
+      fms_ld_review_session: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_review_submission: {
+        Args: { p_outcome: string; p_remarks?: string; p_submission_id: string }
+        Returns: undefined
+      }
+      fms_ld_revise_plan: { Args: { p_plan_id: string }; Returns: string }
+      fms_ld_rsvp: {
+        Args: { p_accept: boolean; p_reason?: string; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_send_invitations: {
+        Args: { p_session_id: string }
+        Returns: number
+      }
+      fms_ld_set_attendance_sheet: {
+        Args: { p_path: string; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
+      fms_ld_submit_assignment: {
+        Args: { p_assignment_id: string; p_payload: Json }
+        Returns: undefined
+      }
+      fms_ld_submit_effectiveness: {
+        Args: { p_id: string; p_payload: Json }
+        Returns: undefined
+      }
+      fms_ld_submit_feedback: {
+        Args: { p_payload: Json; p_session_id: string }
+        Returns: undefined
+      }
+      fms_ld_submit_proposal: {
+        Args: { p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
+      fms_ld_upsert_plan_line: { Args: { p_payload: Json }; Returns: string }
+      fms_ld_validate_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: undefined
       }
     }
     Enums: {

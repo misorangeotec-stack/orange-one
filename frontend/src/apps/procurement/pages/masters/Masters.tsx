@@ -87,6 +87,8 @@ export default function Masters() {
                 ) : (
                   <span className="text-grey-2">No</span>
                 ),
+              // A pill: never cut, no handle (PF-20).
+              resize: false,
             },
           ] as MasterColumn<Category>[]}
           fields={masterFields("category", ctx)}

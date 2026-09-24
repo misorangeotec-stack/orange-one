@@ -1,4 +1,6 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -45,8 +47,16 @@ const roleMeta = (role: string) => ROLE_GROUP[role] ?? { label: "Employees", ran
  * an employee sees only themselves. Plan editing follows the existing rules
  * (admin, or a manager somewhere up the doer's chain) and is RLS-enforced on save.
  */
+/** The draggable columns of the bucket table, for their remembered widths (PF-20). */
+const BUCKET_COLS = ["bucket", "planned", "actual", "delta", "next"];
+
 export default function WeeklyScorecard() {
   const { user, role, isAdmin, isHod } = useSession();
+  /**
+   * PF-20 (drag only): a column's right edge drags wider, and the width is remembered per browser
+   * (double-click the edge to put it back). Nothing else about this table changes.
+   */
+  const fit = useColumnWidths("tb", BUCKET_COLS);
   const { tasks, profiles, profileById, departmentById, weeklyPlanFor } = useTaskStore();
   // Optional deep-link from Master Analysis: ?user=<id>&week=<yyyy-mm-dd>.
   const [searchParams] = useSearchParams();
@@ -296,7 +306,7 @@ export default function WeeklyScorecard() {
               which excludes it. Without it the card would render 0 of 0. */}
           <ActualScoreBlock
             title="Peer tasks"
-            subtitle="Assigned by another HOD — not counted in the total above"
+            subtitle="Assigned by another HOD or Sub-HOD — not counted in the total above"
             tasks={peerTasks}
             role={role}
             assignee={selectedId}
@@ -334,15 +344,21 @@ export default function WeeklyScorecard() {
           <h3 className="text-[15px] font-bold text-navy">Planned vs Actual vs Next</h3>
           <p className="text-[11.5px] text-grey-2">All values as % of weekly tasks.</p>
         </div>
+        {/* PF-20: appears only once a column here has been dragged. */}
+        {fit.anyCustom(BUCKET_COLS) && (
+          <div className="flex justify-end px-5 pb-2">
+            <ResetWidths fit={fit} cols={BUCKET_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
+          </div>
+        )}
         <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[10.5px] uppercase tracking-wide bg-page/50 border-t border-line">
-                <th className="text-left font-semibold px-5 py-2.5">Bucket</th>
-                <th className="text-right font-semibold px-4 py-2.5">This week planned</th>
-                <th className="text-right font-semibold px-4 py-2.5">Actual</th>
-                <th className="text-right font-semibold px-4 py-2.5">Delta</th>
-                <th className="text-right font-semibold px-5 py-2.5">Next week planned</th>
+                <FitTh fit={fit} col="bucket" className="text-left font-semibold px-5 py-2.5">Bucket</FitTh>
+                <FitTh fit={fit} col="planned" className="text-right font-semibold px-4 py-2.5">This week planned</FitTh>
+                <FitTh fit={fit} col="actual" className="text-right font-semibold px-4 py-2.5">Actual</FitTh>
+                <FitTh fit={fit} col="delta" className="text-right font-semibold px-4 py-2.5">Delta</FitTh>
+                <FitTh fit={fit} col="next" className="text-right font-semibold px-5 py-2.5">Next week planned</FitTh>
               </tr>
             </thead>
             <tbody>

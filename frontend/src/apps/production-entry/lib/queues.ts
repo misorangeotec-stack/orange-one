@@ -11,7 +11,7 @@
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
-import type { StepKey } from "./steps";
+import { stepByKey, type StepKey } from "./steps";
 import type { ProductionRequest, ProductionStatus } from "../types";
 
 /** Every step that owns a queue (all but the origin `issue_slip`). */
@@ -247,6 +247,44 @@ export const isAisLoopBlocked = (r: ProductionRequest): boolean =>
 export function trackingRequestsFor(snap: ProductionSnapshot, step: QueueStep): ProductionRequest[] {
   if (step !== "quality_check") return [];
   return snap.requests.filter(isAisLoopBlocked);
+}
+
+/**
+ * The step a HELD job card is parked at, read from `current_step`.
+ *
+ * `fms_production_hold_request` sets only `status`, `hold_at` and `hold_reason`,
+ * so the column still names the step it was parked at; resume recomputes it from
+ * `fms_production_resume_status`. See `office-supplies/lib/queues.ts#heldStep`
+ * for why the column is read rather than the SQL re-derived — this module's
+ * resume rule walks nine timestamps and has already been revised once
+ * (`rmt_at` / `awaiting_rm_transfer` were inserted into the middle of it).
+ */
+export function heldStep(r: ProductionRequest): QueueStep | null {
+  const def = stepByKey(r.currentStep);
+  if (!def || def.noQueue) return null;
+  return def.key as QueueStep;
+}
+
+/**
+ * Every HELD job card, one entry at the step it is parked at. Read ONLY by My
+ * Work's `items/` rule; `buildQueueEntries` still excludes held requests.
+ */
+export function buildHeldEntries(snap: ProductionSnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const r of snap.requests) {
+    if (r.status !== "on_hold") continue;
+    const step = heldStep(r);
+    if (!step) continue;
+    out.push({
+      stepKey: step,
+      entityType: "request",
+      entityId: r.id,
+      ref: r.reqNo,
+      dueIso: productionDueIso(snap, r, step),
+      requestId: r.id,
+    });
+  }
+  return out;
 }
 
 /** Every open work-item, one per (current step, request). */

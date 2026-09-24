@@ -6,6 +6,10 @@ import Login from "@/core/auth/Login";
 import HomeLayout from "@/core/workspace/HomeLayout";
 import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
+import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
+import MyProbation from "@/core/probation/MyProbation";
+import MyBuddy from "@/core/probation/MyBuddy";
+import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
@@ -121,6 +125,26 @@ export default function App() {
         <Route index element={<MyWorkToday />} />
       </Route>
       <Route path="/account" element={<RequireAuth><StaffOnly><Account /></StaffOnly></RequireAuth>} />
+      {/* PF-18 · Every announcement meant for you, running or past. Staff furniture
+          like /account: no module grant (the database decides the list), and never
+          under the Announcements module's own gated basePath. Wears the home shell. */}
+      <Route path={ANNOUNCEMENTS_PATH} element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<AnnouncementsHistory />} />
+      </Route>
+      {/* NR-10 · A new joiner's own half of their probation check-ins. Staff
+          furniture for the same reason as the two routes above: the joiner has no
+          hr-recruitment grant, and granting them one to reach this would hand them
+          the entire recruitment pipeline. The database decides what they see —
+          fms_hr_my_probation() returns their own check-ins and nothing else. */}
+      <Route path="/my-probation" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyProbation />} />
+      </Route>
+      {/* NR-9 · The buddy's own screen. Same reasoning as the route above: a buddy
+          is an ordinary colleague from another department, and granting them the
+          recruitment module to log a coffee would hand them every CV in it. */}
+      <Route path="/my-buddy" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyBuddy />} />
+      </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
