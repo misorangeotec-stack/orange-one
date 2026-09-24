@@ -179,7 +179,10 @@ interface TaskStoreValue {
   downlineIds: (rootId: string) => string[];
   assignableUsers: (role: AppRole, userId: string) => Profile[];
   /**
-   * The OTHER HODs, for the peer group of the Create Task picker (TM-1).
+   * The other HODs and Sub-HODs, for the peer group of the Create Task picker
+   * (TM-1). One pool for both roles: a Sub-HOD may hand work to a HOD and a HOD
+   * to a Sub-HOD, symmetrically. The CALLER decides who gets a picker at all —
+   * admins and employees never do.
    *
    * ⚠ A SECOND FUNCTION RATHER THAN A WIDER `assignableUsers`, deliberately.
    *   That one has five callers and two of them break silently if the list
@@ -488,12 +491,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     };
 
     // TM-1: any HOD may assign to any other HOD (settled 07-09-2026 — no pair
-    // master, no Setup screen), so this is simply "role is hod, minus me".
-    // Sub-HODs are out for round one; widening it later is this one line, with
-    // no data migration, because the marker is stamped per task and says
-    // nothing about roles.
+    // master, no Setup screen). Widened to Sub-HODs, symmetrically: the pool is
+    // every HOD and Sub-HOD, minus me, whichever of the two the viewer is. No
+    // data migration needed — is_peer_assignment is stamped per task and says
+    // nothing about roles, so this stays a filter change.
     const peerAssignableUsers = (userId: string): OrgPerson[] =>
-      (orgPeople ?? []).filter((p) => p.role === "hod" && p.id !== userId);
+      (orgPeople ?? []).filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== userId);
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;

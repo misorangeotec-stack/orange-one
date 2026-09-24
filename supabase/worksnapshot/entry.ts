@@ -68,6 +68,7 @@ import { fetchProductionData, type ProductionData } from "@/apps/production-entr
 import { fetchDispatchData, type DispatchData } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { fetchAssetData, type AssetData } from "@/apps/asset-maintenance/data/assetFetch";
 import { fetchTravelData, type TravelData } from "@/apps/travel-desk/data/travelFetch";
+import { fetchLdData, type LdData } from "@/apps/learning-development/data/ldFetch";
 
 // THE RULES THEMSELVES — the same files My Work Today renders from. Not copies.
 import { taskWorkItems } from "@/core/workspace/mywork/items/tasks";
@@ -81,6 +82,7 @@ import { productionWorkItems } from "@/core/workspace/mywork/items/productionEnt
 import { dispatchWorkItems } from "@/core/workspace/mywork/items/orderToDispatch";
 import { assetWorkItems } from "@/core/workspace/mywork/items/assetMaintenance";
 import { travelDeskWorkItems } from "@/core/workspace/mywork/items/travel-desk";
+import { learningDevelopmentWorkItems } from "@/core/workspace/mywork/items/learning-development";
 
 // ── What a caller gets back ───────────────────────────────────────────────────
 
@@ -146,7 +148,21 @@ export interface Datasets {
   disp?: DispatchData;
   asset?: AssetData;
   travel?: TravelData;
+  ld?: LdData;
 }
+
+/**
+ * A UNIVERSAL app is held by everyone with no `app_access` row (apps/universal.ts).
+ * Re-exported here so work-snapshot/index.ts can union it into each person's module
+ * list from the SAME source the browser reads, rather than keeping a second copy
+ * that would drift the first time another module goes universal.
+ *
+ * ⚠ Without this, adding a universal module to COVERED_APP_IDS below delivers it to
+ *   ADMINS ONLY: a non-admin's list is read straight from `app_access`, and a
+ *   universal module has no rows there at all (Learning & Development has zero).
+ *   Nothing would look wrong — the mail would just quietly count nobody's work.
+ */
+export { UNIVERSAL_APP_IDS } from "@/apps/universal";
 
 /**
  * ⚠ THIS LIST IS CHECKED AGAINST THE APP AT BUILD TIME. build.mjs reads
@@ -166,6 +182,7 @@ export const COVERED_APP_IDS = [
   "production-entry",
   "order-to-dispatch",
   "asset-maintenance",
+  "learning-development",
 ] as const;
 export type CoveredAppId = (typeof COVERED_APP_IDS)[number];
 
@@ -267,6 +284,7 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     want.has("order-to-dispatch") ? fetchDispatchData().then((d) => void (out.disp = d)) : null,
     want.has("asset-maintenance") ? fetchAssetData().then((d) => void (out.asset = d)) : null,
     want.has("travel-desk") ? fetchTravelData().then((d) => void (out.travel = d)) : null,
+    want.has("learning-development") ? fetchLdData().then((d) => void (out.ld = d)) : null,
   ]);
   assertCutoffHandled([
     out.hr?.config?.stepSla as never,
@@ -276,6 +294,7 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     out.prod?.config?.stepSla as never,
     out.disp?.config?.stepSla as never,
     out.asset?.config?.stepSla as never,
+    out.ld?.config?.step_sla as never,
   ]);
   return out;
 }
@@ -295,6 +314,7 @@ const SOURCE_APP: Record<string, string> = {
   "order-to-dispatch": "order-to-dispatch",
   "asset-maintenance": "asset-maintenance",
   "travel-desk": "travel-desk",
+  "learning-development": "learning-development",
 };
 
 /** Provider display order, matching core/workspace/mywork/registry.ts:34-46. */
@@ -310,6 +330,7 @@ const SOURCE_ORDER = [
   "order-to-dispatch",
   "asset-maintenance",
   "travel-desk",
+  "learning-development",
 ];
 
 /**
@@ -341,6 +362,7 @@ export function computeSnapshot(
   if (data.disp && has.has("order-to-dispatch")) all = all.concat(dispatchWorkItems(data.disp, userId, isAdmin));
   if (data.asset && has.has("asset-maintenance")) all = all.concat(assetWorkItems(data.asset, userId, isAdmin));
   if (data.travel && has.has("travel-desk")) all = all.concat(travelDeskWorkItems(data.travel, userId, isAdmin));
+  if (data.ld && has.has("learning-development")) all = all.concat(learningDevelopmentWorkItems(data.ld, userId, isAdmin));
 
   const scoped = isAdmin ? all.filter((i) => i.assignment === "direct") : all;
 
