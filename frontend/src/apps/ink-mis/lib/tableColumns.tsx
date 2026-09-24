@@ -85,18 +85,32 @@ export function ResizableHead({
   cols,
   className,
   colSpan,
+  stickyLeft,
+  fallbackWidth,
   children,
 }: {
   id: string;
   cols: TableColumns;
   className?: string;
   colSpan?: number;
+  /** Pixels from the left edge to pin this heading at — see the freeze notes in InkMis.tsx. */
+  stickyLeft?: number;
+  /** Width to use when the planner has not resized this column. A pinned column needs a KNOWN
+   *  width, or the offsets of the ones after it are guesses. */
+  fallbackWidth?: number;
   children?: ReactNode;
 }) {
   const ref = useRef<HTMLTableCellElement>(null);
-  const width = cols.widthOf(id);
+  const width = cols.widthOf(id) ?? fallbackWidth;
   const style: CSSProperties | undefined =
-    width !== undefined ? { width, minWidth: width, maxWidth: width } : undefined;
+    width !== undefined
+      ? {
+          width,
+          minWidth: width,
+          maxWidth: width,
+          ...(stickyLeft !== undefined ? { position: "sticky", left: stickyLeft, zIndex: 3 } : {}),
+        }
+      : undefined;
 
   const onMouseDown = (e: ReactMouseEvent) => {
     e.preventDefault();

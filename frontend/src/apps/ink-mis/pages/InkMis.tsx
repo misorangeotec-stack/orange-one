@@ -36,6 +36,7 @@
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -311,6 +312,21 @@ export default function InkMis() {
 
   // The company columns exist only on Combined, and only when the group is open.
   const cols = useTableColumns("dashboard");
+  /** Frozen by default; a narrow screen is better off without the pin eating its width. */
+  const [freeze, setFreeze] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ink-mis:freeze") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:freeze", freeze ? "1" : "0");
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }, [freeze]);
   const showCompanyCols = !companyKey && companiesOpen && cols.isVisible("companies");
   const showShipmentCols = cols.isVisible("shipments");
   const showPlantCols = cols.isVisible("plant");
@@ -319,6 +335,21 @@ export default function InkMis() {
    * The planning block, left of the stock columns. Item code is not hideable: without it a row
    * cannot be identified. Stock and Total are not hideable either — they are the answer.
    */
+  /**
+   * FROZEN LEAD COLUMNS.
+   *
+   * The sheet is thirty columns wide, so by the time the planner has scrolled out to a
+   * consignment column the ink's name is long gone and they cannot tell which row they are
+   * typing into. The identity block — number, group, code, description — is pinned to the left
+   * and the rest scrolls under it.
+   *
+   * A pinned column needs a KNOWN width, or every offset after it is a guess; these are the
+   * widths used when the planner has not resized one, and the same numbers drive both the cell
+   * and the offset of its neighbours. Resizing still works: `widthOf` wins where it is set.
+   */
+  const PINNED = ["no", "group", "code", "description"] as const;
+  const PIN_WIDTH: Record<string, number> = { no: 56, group: 160, code: 144, description: 256 };
+
   const LEAD_COLS = [
     // The planner's own row number. On the sheet because "why is this line here?" is otherwise
     // unanswerable from the dashboard — the order is theirs, and they should be able to see it
@@ -338,6 +369,29 @@ export default function InkMis() {
     { id: "dailyMax", label: "Daily max" },
   ];
   const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+
+  /** Left offset of each pinned column: the widths of the pinned columns before it. */
+  const pinLeft = useMemo(() => {
+    const out: Record<string, number> = {};
+    let x = 0;
+    for (const id of PINNED) {
+      if (!leadVisible.some((c) => c.id === id)) continue;
+      out[id] = x;
+      x += cols.widthOf(id) ?? PIN_WIDTH[id];
+    }
+    return out;
+  }, [cols, leadVisible]);
+
+  /** Everything a pinned BODY cell needs: the same offset, a solid background, and the width. */
+  const pinCell = (id: string, tone = "bg-background") => {
+    const left = pinLeft[id];
+    if (!freeze || left === undefined) return { className: "", style: undefined as CSSProperties | undefined };
+    const width = cols.widthOf(id) ?? PIN_WIDTH[id];
+    return {
+      className: `sticky z-[2] ${tone}`,
+      style: { left, width, minWidth: width, maxWidth: width } as CSSProperties,
+    };
+  };
   const on = (id: string) => leadVisible.some((c) => c.id === id);
   const columnOptions = [
     ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
@@ -419,6 +473,20 @@ export default function InkMis() {
         },
       };
     });
+
+  /** Props for a pinned HEADING: the id, its offset and the width the offset assumes. */
+  const pinHead = (id: string) => ({
+    id,
+    stickyLeft: freeze ? pinLeft[id] : undefined,
+    fallbackWidth: PIN_WIDTH[id],
+    className: freeze ? "bg-card" : "",
+  });
+
+  /** Merge a pinned cell's props with the classes the cell already wanted. */
+  const pinMerge = (
+    pinned: { className: string; style: CSSProperties | undefined },
+    extra: string,
+  ) => ({ className: `${pinned.className} ${extra}`.trim(), style: pinned.style });
 
   /** A consignment column heading: read-only until Edit values is on, then fully editable. */
   const consignmentHeader = (s: Shipment) => (
@@ -689,6 +757,10 @@ export default function InkMis() {
           triggerLabel="Columns"
           triggerClassName="py-1.5 px-2.5 text-[12.5px]"
         />
+        <label className="inline-flex items-center gap-2 text-sm" title="Keep number, group, code and description on screen while you scroll right">
+          <input type="checkbox" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} />
+          Freeze name columns
+        </label>
         {cols.customised && (
           <Button variant="ghost" size="sm" onClick={cols.reset} title="Show every column at its automatic width">
             Reset columns
@@ -783,11 +855,23 @@ export default function InkMis() {
             )}
             <TableRow>
               {on("no") && (
-                <ResizableHead id="no" cols={cols} className="w-16 text-right">No.</ResizableHead>
+                <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
+                  No.
+                </ResizableHead>
               )}
-              {on("group") && <ResizableHead id="group" cols={cols} className="min-w-[10rem]">Group</ResizableHead>}
-              <ResizableHead id="code" cols={cols} className="min-w-[9rem]">Item code</ResizableHead>
-              {on("description") && <ResizableHead id="description" cols={cols} className="min-w-[16rem]">Description</ResizableHead>}
+              {on("group") && (
+                <ResizableHead {...pinHead("group")} cols={cols}>
+                  Group
+                </ResizableHead>
+              )}
+              <ResizableHead {...pinHead("code")} cols={cols}>
+                Item code
+              </ResizableHead>
+              {on("description") && (
+                <ResizableHead {...pinHead("description")} cols={cols}>
+                  Description
+                </ResizableHead>
+              )}
               {on("remark") && <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">Remark</ResizableHead>}
               {on("m3") && (
                 <ResizableHead id="m3" cols={cols} className="text-right">
@@ -860,14 +944,14 @@ export default function InkMis() {
             </TableRow>
             {/* The table's own filter row. Same state as the bar above it. */}
             <TableRow className="hover:bg-transparent">
-              {on("no") && <TableHead className="py-2 font-normal" />}
+              {on("no") && <TableHead {...pinCell("no", "bg-card")} />}
               {on("group") && (
-                <TableHead className="py-2 font-normal">
+                <TableHead {...pinMerge(pinCell("group", "bg-card"), "py-2 font-normal")}>
                   <MultiSelect values={groupsF} onChange={setGroupsF} options={groupOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
                 </TableHead>
               )}
               {on("code") && (
-                <TableHead className="py-2 font-normal">
+                <TableHead {...pinMerge(pinCell("code", "bg-card"), "py-2 font-normal")}>
                   <Input
                     className="h-8"
                     placeholder="Code or description…"
@@ -876,7 +960,7 @@ export default function InkMis() {
                   />
                 </TableHead>
               )}
-              {on("description") && <TableHead />}
+              {on("description") && <TableHead {...pinCell("description", "bg-card")} />}
               {on("remark") && (
                 <TableHead className="py-2 font-normal">
                   <MultiSelect values={remarksF} onChange={setRemarksF} options={REMARK_OPTS} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" />
@@ -970,13 +1054,19 @@ export default function InkMis() {
             {rows.map((r) => (
               <TableRow key={r.key}>
                 {on("no") && (
-                  <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                  <TableCell
+                    {...pinMerge(pinCell("no"), "text-right text-xs tabular-nums text-muted-foreground")}
+                  >
                     {order[r.key] ?? order[r.legacyKey] ?? ""}
                   </TableCell>
                 )}
-                {on("group") && <TableCell className="text-xs">{r.group}</TableCell>}
-                <TableCell className="font-medium">{r.itemCode}</TableCell>
-                {on("description") && <TableCell>{r.description}</TableCell>}
+                {on("group") && (
+                  <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
+                )}
+                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>{r.itemCode}</TableCell>
+                {on("description") && (
+                  <TableCell {...pinCell("description")}>{r.description}</TableCell>
+                )}
                 {on("remark") && (
                   <TableCell>
                     {r.remark && (
