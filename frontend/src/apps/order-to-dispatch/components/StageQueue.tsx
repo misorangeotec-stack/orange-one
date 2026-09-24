@@ -12,7 +12,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import { STEP_CONFIG } from "../lib/stepConfig";
-import { dispatchTypeText, dmy, isoFromDmy, qtyTotals, STEP_HOLD } from "../lib/format";
+import { dispatchTypeText, dmy, isoFromDmy, qtyTotals, STEP_HOLD, STEP_STATUS } from "../lib/format";
 import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
@@ -58,6 +58,8 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       and no edit here.
   */
   const hold = STEP_HOLD[stepKey];
+  // What the Status column reports for this step. See STEP_STATUS in lib/format.
+  const status = STEP_STATUS[stepKey];
   const [heldOnly, setHeldOnly] = useState(false);
 
   const pending = s.myQueue(stepKey);
@@ -96,31 +98,46 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       sortValue: (r) => s.customerName(r.order.customerId),
       filter: { kind: "select", get: (r) => s.customerName(r.order.customerId) },
     },
-    // A hold has to be visible where the decision is made, or the remark the user
-    // made compulsory is written into a void. Next to the customer, not out at
-    // the right edge: the reason is read together with who it is about.
-    ...(hold
+    /*
+     * STATUS — what the person who owns this step has already decided about the
+     * order, in words.
+     *
+     * It was headed "On hold" and showed only that, which left the other two
+     * credit outcomes with nowhere to appear: a PARTIALLY APPROVED order looked
+     * identical to an untouched one here, and the only hint that anything had
+     * happened was a bare "R2" chip beside the order number — a round counter,
+     * which is a consequence of the decision rather than the decision itself, and
+     * unreadable to anyone who has not been told what it means.
+     *
+     * So the column reports the decision. `statusOf` is per step: credit has
+     * three outcomes to tell apart, every other step has only its hold.
+     */
+    ...(status
       ? [{
-          key: "hold",
-          header: "On hold",
-          cell: (r: PendingRow) =>
-            hold.held(r.order) ? (
+          key: "status",
+          header: "Status",
+          cell: (r: PendingRow) => {
+            const v = status(r.order);
+            if (!v) return <span className="text-grey-2">—</span>;
+            return (
               // One line (PF-20): the pill stays whole and the REASON is what gets cut, whole on
               // hover. Without max-w-full + min-w-0 a long reason made the whole inline-flex box
               // overflow, and an overflowing inline-flex is swallowed by a lone "…".
               <span className="inline-flex max-w-full items-center gap-1.5">
                 <span className="shrink-0">
-                  <OutcomePill label="On hold" tone="yellow" />
+                  <OutcomePill label={v.label} tone={v.tone} />
                 </span>
-                <span className="min-w-0 truncate text-[12.5px] text-grey">{hold.reason(r.order)}</span>
+                {v.reason && <span className="min-w-0 truncate text-[12.5px] text-grey">{v.reason}</span>}
               </span>
-            ) : (
-              <span className="text-grey-2">—</span>
-            ),
-          sortValue: (r: PendingRow) => (hold.held(r.order) ? 0 : 1),
-          filter: { kind: "select" as const, get: (r: PendingRow) => (hold.held(r.order) ? "On hold" : "—") },
-          exportValue: (r: PendingRow) =>
-            hold.held(r.order) ? `On hold: ${hold.reason(r.order) ?? ""}` : "",
+            );
+          },
+          // Held first, then decided, then untouched — the rows that need reading.
+          sortValue: (r: PendingRow) => status(r.order)?.rank ?? 9,
+          filter: { kind: "select" as const, get: (r: PendingRow) => status(r.order)?.label ?? "—" },
+          exportValue: (r: PendingRow) => {
+            const v = status(r.order);
+            return v ? (v.reason ? `${v.label}: ${v.reason}` : v.label) : "";
+          },
         }]
       : []),
     // Settled at intake, so they are known on every queue including this step's.

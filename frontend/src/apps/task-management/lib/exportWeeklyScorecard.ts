@@ -409,7 +409,7 @@ const NOTES = [
   "Total tasks = Green + Yellow + Red. Tasks marked Not Applicable, and personal (self-tracking) tasks, are excluded from every score.",
   "Pending / In progress / Shifted are the task statuses behind the Red column, and sum to it.",
   "Recurring and one-off tasks are scored independently; the Total columns are the two combined.",
-  "Peer tasks were assigned by another HOD. They are scored on their own and are NOT in the Total columns — a HOD's own score counts only their own team's work.",
+  "Peer tasks were assigned by another HOD or Sub-HOD. They are scored on their own and are NOT in the Total columns — a HOD's own score counts only their own team's work.",
   "Percentages are rounded; Red absorbs the rounding so Green + Yellow + Red = 100.",
   "A blank percentage means nothing was planned, or that slice had no tasks — it is NOT a score of 0.",
   "Other tasks are personal, self-tracking tasks. They are counted ALL-TIME (not just this week) and never affect any score.",

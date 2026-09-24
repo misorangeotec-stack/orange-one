@@ -183,9 +183,27 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/asset-maintenance",
     category: "asset",
   },
+  /**
+   * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
+   * same department's work and the same people configure it.
+   */
+  "learning-development": {
+    name: "Learning & Development",
+    basePath: "/learning-development",
+    category: "hr",
+  },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",
+    category: "hr",
+  },
+  // The HR instruments the client writes by hand — a weighted PMS sheet per job and
+  // the weekly review form — filled in from live data. Its own app rather than a
+  // corner of New Recruitment: every employee has a KPI sheet, and most of them have
+  // no business in the recruitment pipeline.
+  "hr-reports": {
+    name: "HR Reports",
+    basePath: "/hr-reports",
     category: "hr",
   },
   "hr-exit": {

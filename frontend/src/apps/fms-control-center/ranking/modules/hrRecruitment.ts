@@ -45,7 +45,7 @@ import type { Candidate, Interview, Onboarding, OnboardingCheck, Probation, Prob
 import { hrWorkItems } from "@/core/workspace/mywork/items/hr";
 import type { ClosedStep, DropReason, ModuleScorer, OpenStep } from "../types";
 import { perDataset } from "../memo";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const TEST_MRFS: ReadonlySet<string> = new Set(["MRF-2627-0019"]);
 const EXCLUDED: ReadonlySet<string> = new Set(["mrf_resubmit", "resume_upload"]);
@@ -199,7 +199,9 @@ export const hrRecruitmentScorer: ModuleScorer<HrData> = {
       stepLabel: label(stepKey),
       roundNo: 0,
       dueIso: item.dueIso,
-      drop: EXCLUDED.has(stepKey) ? "excluded_step" : isTestReq(reqOf.get(entityId) ?? null) ? "test_record" : undefined,
+      drop:
+        heldDrop(item) ??
+        (EXCLUDED.has(stepKey) ? "excluded_step" : isTestReq(reqOf.get(entityId) ?? null) ? "test_record" : undefined),
     }));
   },
 };

@@ -11,7 +11,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { AssetData } from "@/apps/asset-maintenance/data/assetFetch";
-import { assetSnapshotFrom, buildQueueEntries } from "@/apps/asset-maintenance/lib/queues";
+import { assetSnapshotFrom, buildHeldEntries, buildQueueEntries } from "@/apps/asset-maintenance/lib/queues";
 import { stepByKey } from "@/apps/asset-maintenance/lib/steps";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
 import type { WorkItem } from "../types";
@@ -29,16 +29,23 @@ export function assetWorkItems(data: AssetData, uid: string, isAdmin: boolean): 
     return !!custodian && custodian === uid;
   };
 
-  return buildQueueEntries(
-    assetSnapshotFrom({
-      jobs: data.jobs,
-      stepSla: data.config.stepSla,
-      assets: data.assets,
-      scheduleTypes: data.scheduleTypes,
-    }),
-  )
-    .filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners) || isMyAsset(e.stepKey, e.jobId))
-    .map((e) => {
+  const snap = assetSnapshotFrom({
+    jobs: data.jobs,
+    stepSla: data.config.stepSla,
+    assets: data.assets,
+    scheduleTypes: data.scheduleTypes,
+  });
+
+  // Held jobs are listed, flagged, at the step they are parked at — see
+  // ./officeSupplies.ts for why they are added back rather than dropped.
+  const entries = [
+    ...buildQueueEntries(snap).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(snap).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
+    .filter(({ e }) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners) || isMyAsset(e.stepKey, e.jobId))
+    .map(({ e, held }) => {
       const job = jobById.get(e.jobId);
       const asset = job ? assetById.get(job.assetId) : undefined;
       return {
@@ -55,6 +62,7 @@ export function assetWorkItems(data: AssetData, uid: string, isAdmin: boolean): 
             ? ("direct" as const)
             : ("team" as const),
         isApproval: false,
+        ...(held ? { isHeld: true, holdReason: job?.holdReason ?? null } : {}),
       };
     });
 }

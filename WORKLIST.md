@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-09-21
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -9851,6 +9851,849 @@ real HR process, not reporting — but nobody should expect a score to move beca
       else's scorecard. ⚠ Worth saying once to HR: a buddy who never turns up costs **HR** marks and
       costs the buddy nothing, so the only lever HR has is choosing the buddy well — which is why
       the picker should show what each colleague is already carrying.
+
+---
+
+## Learning & Development  *(new module)*
+
+> 🟢 **LIVE ON `orangeonehub.com` SINCE 23-09-2026** (`54d24a5e`). Verified from the deployed
+> bundle, not the build log. The module is **universal** — all 68 people can open it and there
+> are no `app_access` rows to grant, so Admin → Module Access will show it as admins-only and
+> be wrong. Ranking and KPI scoring stay **OFF** until `fms_rank_modules` is switched, and
+> **email is off**. Two blockers are live with it: **LD-14** (hours always zero) and **LD-15**
+> (Send back strands the request) — HR has been told in writing not to use Send back.
+
+*Source: `files/Orange_Hub_Learning_Development_FMS_Flow.docx` — **ORANGE HUB · LEARNING & DEVELOPMENT ·
+FMS WORKFLOW & SYSTEM MAPPING**, v1.0, "prepared for Orange O Tec Pvt. Ltd. | HR and IT Team". Fourteen
+sections; **§11 "Final Arrow-wise End-to-End Flow" — page 8 — is the spine** and is what the client walked
+through on 21-09-2026. Read with [KRA-KPI-FRAMEWORK.md](KRA-KPI-FRAMEWORK.md) (**KRA 2 of Saloni's
+appraisal sheet IS this module — 40% of it, plus KRA 5's 5%**) and
+[WEEKLY-REVIEW-REPORT.md](WEEKLY-REVIEW-REPORT.md) (**Section C is this module — 24 boxes, none of them
+fillable today**). Every figure below was re-checked against the live database on 21-09-2026; read-only,
+nothing written.*
+
+*(cross-ref: the **Talent Equation block** is KRA 1 of the same sheet — **NR-7 and NR-8 are LIVE**
+(21-09-2026), **NR-9 / NR-10** planned. This section is KRA 2 + KRA 5. Between them the two blocks
+close the appraisal. · **PF-13 / PF-14** — approvals that
+rest on one person, and modules shipped with no step owners configured at all. Do not repeat that here.)*
+
+**Nothing exists.** Not "a screen nobody built" — the live database was swept on 21-09-2026 for any table
+matching `train`, `learn`, `ld_`, `session`, `nomin`, `attend`, `feedback`, `certif` or `posh`: **zero
+rows returned**. No code on any branch, no migration, no manifest. This is a module from a blank page.
+
+🟢 **ALL TWELVE OPEN DECISIONS WERE ANSWERED BY THE CLIENT ON 21-09-2026** — see **LD-0**, which is now a
+record rather than a question list. The plan below is written to those answers. **Two things still owed by
+HR, both outside the build**, are carried at the foot of LD-0.
+
+---
+
+### The flow, as the client stated it and as the document draws it
+
+The client's walkthrough and §11 agree on the sequence. They differ in the places below, and the client's
+reading wins in every one:
+
+| | Document §11 | The client, 21-09-2026 | Taken as |
+|---|---|---|---|
+| Approval | **one** stage — "HR Head / Approver" | **two** — HR Head, then Management… | **…but configurable.** HR Head always; Management **never / always / above ₹X**, set in Setup |
+| Nomination | HOD nominates, "HR checks target group and capacity" | HOD nominates **and HR/L&D is the final authority to approve them** | **A step of its own** — `nomination_approval` |
+| Post-assessment | pre-score, post-score, pass mark, result, attempt | 🔴 **"We don't have to do the proper assessment, like a test or marks. We just need to track whether all the employees have submitted their assignment."** | **Scoring dropped entirely.** The assignment — issued, submitted, reviewed — is the whole of it |
+
+**The 22 steps.** §11's 17 arrows, plus the nomination-approval split, plus a sent-back step (every other
+FMS here has one), plus the assignment broken into issue → submit → review because **each of those three
+has its own deadline** on Saloni's sheet and one field cannot carry three.
+
+| # | Step key | Title | Scope | Owner |
+|---:|---|---|---|---|
+| 1 | `need_raised` | Training Need Raised | request | anyone (`noQueue` — raising *is* the event) |
+| 2 | `need_resubmit` | Sent Back — Revise & Resubmit | request | the raiser |
+| 3 | `need_validation` | HR Validation | request | HR/L&D Executive |
+| 4 | `proposal` | Proposal, Priority & Budget | request | HR/L&D Executive |
+| 5 | `hr_head_approval` | HR Head Approval | request | HR Head |
+| 6 | `mgmt_approval` | Management Approval | request | Management — **conditional, see Setup** |
+| 7 | `trainer_finalization` | Trainer Finalisation | request | HR/L&D Executive |
+| 8 | `session_scheduling` | Calendar & Session Creation | request → session | HR/L&D Executive |
+| 9 | `nomination` | Employee Nomination | session | **HOD (row-owned)** / HR |
+| 10 | `nomination_approval` | Nomination Approval | session | HR/L&D Executive |
+| 11 | `invitation` | Invitation & RSVP | participant | **the nominee (row-owned)** |
+| 12 | `pre_material` | Pre-Training Material | session | Trainer (internal) / HR |
+| 13 | `conducted` | Training Conducted | session | Trainer (internal) / HR |
+| 14 | `attendance` | Attendance Closure | session | HR / Trainer |
+| 15 | `assignment_issue` | Assignment Issued | session | Trainer / HR |
+| 16 | `assignment_submit` | Assignment Submission | participant | **the nominee (row-owned)** |
+| 17 | `assignment_review` | Assignment Reviewed | participant | HR/L&D Executive |
+| 18 | `feedback` | Employee Feedback | participant | **the nominee (row-owned)** |
+| 19 | `session_review` | HR Session Review | session | HR/L&D Executive |
+| 20 | `effectiveness` | 30-Day Effectiveness | session × HOD | **the attendee's HOD (row-owned)** |
+| 21 | `followup_decision` | Follow-up Decision | request | HR/L&D Executive |
+| 22 | `closure` | Closure & KPI | request | HR/L&D Executive / HR Head |
+
+⚠ **Five of these are ROW-OWNED, not owned by the step-owner table** — the same structural thing New
+Recruitment's `HOD_STEPS` does. A nominee's RSVP, assignment and feedback are owed by *that person*; the
+effectiveness review is owed by *that attendee's* HOD. `fms_ld_can_act()` on the server and the
+`ROW_OWNED_STEPS` list in the client **must be the same list**. Change one, change the other — recruitment
+has already shipped that disagreement twice (`fms_hr_can_act`, 20260712170000).
+
+---
+
+### 🔴 The gap the document does not have: there are TWO doors, not one
+
+The SOP is **bottom-up** — somebody spots a need, raises a request, it is approved, it becomes a session.
+Saloni's KPI sheet is **top-down** and scores something the SOP never mentions:
+
+> *"Annual training calendar publication — **2%** — Uploaded by January with session dates and participant
+> plan."*  ·  *"Training calendar adherence — **5%** — Planned sessions completed as scheduled."*
+> *"Minimum 15 internal trainings annually"* · *"Minimum 48 external trainings annually."*
+
+**Adherence has no meaning without a plan to adhere to.** 🟢 **Client, 21-09-2026: BOTH doors** — HR
+publishes the year's plan up front, *and* anyone can still raise a fresh need mid-year. So an
+**Annual Training Plan** is a first-class object (**LD-2**), and a session is born from *either* an
+approved request *or* a plan line — the plan line it fulfils being what makes adherence measurable.
+
+### 🔴 The second thing the document gets wrong for us: training type is a SET, not one value
+
+The weekly form states its own rule in a footnote, and it decides the schema:
+
+> *"External consultant / agency training and technical training are counted separately — **a technical
+> session run by an external agency is reported under both lines and once in the Total**."*
+
+A single `type` column cannot do that. It is `session_types text[]` over a master — *External Agency ·
+Technical · Internal · Functional · Behavioural · Leadership · POSH · Safety · Compliance · Induction ·
+Mandatory/Statutory* — with `delivery_mode` (classroom / online / hybrid / on-the-job) and `trainer_type`
+(internal / external) as **separate** columns. Get this wrong at table-creation time and C2 is
+unbuildable without a migration on live data.
+
+---
+
+### What this module has to feed, and what it closes
+
+**Saloni's appraisal sheet** — KRA 2 is 16 lines / 40%, KRA 5 is 3 lines / 5%:
+
+| Line | Wt | Computed from |
+|---|---:|---|
+| 2A Annual calendar publication | 2% | `fms_ld_plans.published_at` ≤ 31-Jan, with session dates and a participant plan |
+| 2A Calendar adherence | 5% | plan lines fulfilled by a conducted session ÷ plan lines due in period |
+| 2B Internal target · adherence | 9% | sessions tagged Internal, conducted ÷ target; plan-linked ÷ planned |
+| 2C External target · adherence | 11% | sessions tagged External Agency, same two arithmetics |
+| 2D Attendance capture (100% of sessions) | 1% | sessions with every nominee carrying an attendance status |
+| 2D Feedback capture (100%) · quality (≥4/5) | 2% | feedback rows ÷ attendees; mean `overall_rating` |
+| 2D Assignment circulation ≤24h | 1% | `issued_at` − session end |
+| 2D Submission rate ≥80% · evaluation ≤7 days | 2% | `submitted_at` ≤ `due_at`; `reviewed_at` − `submitted_at` |
+| 2D **"Assessment completion ≥90% of nominated"** | 2% | ⚠ **no assessment exists any more** — needs HR's re-wording, see LD-0 |
+| 2E POSH 100% · Safety 100% · record update | 5% | everyone, once a year (client's rule) — completed ÷ active employees |
+| 5 Assigned training attendance 100% | 2% | per employee: attended ÷ nominated |
+| 5 Assignment completion within due date | 2% | per employee: on-time submissions ÷ assignments |
+| 5 **"Assessment and learning closure within SLA"** | 1% | ⚠ same — needs re-wording to the assignment |
+
+**The weekly review report** — Section C's 24 boxes, plus `SK-3` and two of the form's flags. 🟢 **23 of
+the 24 now fill.** The one that does not is C5's *"Certifications due for renewal — zero overdue"*, because
+the client parked the certificate register (**LD-0 · 9**).
+
+**The arithmetic, stated once so it can be checked later.** [WORKLIST's own Talent Equation
+cross-check](#new-recruitment) puts **44 of KRA 1's 45 points** landing after NR-8/9/10, and KRA 3's 5% is
+already live through `kpi_report`. Add this module and the sheet reads:
+
+| | Points |
+|---|---:|
+| System-measured after the NR block + this module | **91** |
+| Lands **only if HR re-words two lines** from "assessment" to "assignment" | **3** |
+| Typed by design (KRA 4's HOD feedback, collaboration, discipline) | 3 |
+| **Cannot be measured at all** — 1B.3 (needs HR's re-wording) 1% + attendance/punctuality 2% (no biometric feed) | 3 |
+
+---
+
+### The change list
+
+| # | What | Entry | Status |
+|---|---|---|---|
+| 0 | The twelve decisions — **all answered 21-09-2026**, plus the two things HR still owes | **LD-0** | `[x]` |
+| 1 | The spine: schema, app shell, steps 1–8, request list + detail, **Setup**, queues, RLS | **LD-1** | `[ ]` |
+| 2 | Annual Training Plan + the **calendar everyone sees** | **LD-2** | `[x]` |
+| 3 | Nomination, nomination approval, invitation and RSVP | **LD-3** | `[x]` |
+| 4 | Pre-training material and **My Learning** — the participant's door | **LD-4** | `[x]` |
+| 5 | Conduct, attendance, attendance sheet, absentee follow-up | **LD-5** | `[x]` |
+| 6 | **The assignment** — issued, submitted, reviewed (no marks, no test) | **LD-6** | `[x]` |
+| 7 | Feedback and the HR session review | **LD-7** | `[x]` |
+| 8 | 30-day effectiveness, follow-up decision and closure | **LD-8** | `[x]` |
+| 9 | POSH / Safety yearly compliance — everyone, once a year | **LD-9** | `[x]` |
+| 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[x]` |
+| 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) — **ships OFF**, two deploy-day steps | **LD-11** | `[x]` |
+| 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
+| 13 | **Masters + Master Requests** — trainers, venues, competencies, POSH & Safety | **LD-13** | `[x]` |
+| 14 | 🔴 **Learning hours are never captured** — every hours figure reads zero | **LD-14** | `[ ]` |
+| 15 | 🔴 **A sent-back request is stranded** — nobody can revise or resubmit it | **LD-15** | `[ ]` |
+| 16 | Three smaller things the end-to-end walk turned up | **LD-16** | `[ ]` |
+| 17 | Four questions for HR, collected with the trial feedback | **LD-17** | `[ ]` |
+
+**Build order is the list order**, with two exceptions worth stating: **LD-2 must land with or before
+LD-1's session step** (a session needs somewhere to say which plan line it fulfils, and adding that column
+later means a migration against live sessions), and **LD-12 is last on purpose** — see its ⚠.
+
+---
+
+### LD-0 · ✅ The twelve decisions — answered by the client, 21-09-2026  `[x]`
+*Raised and closed 2026-09-21. Kept as the record of WHY the module is shaped this way; each line changes
+a table or a gate, so anything re-opened here re-opens a build entry.*
+
+| # | Decision | Answer | Lands in |
+|---:|---|---|---|
+| 1 | Post-assessment — marks, or an online test? | 🔴 **Neither. No test and no marks.** Track only whether each employee submitted the assignment | **LD-6** |
+| 2 | Who can open the module? | **Everyone in the company**, with the nav scoping what each person gets | **LD-1** |
+| 3 | Must every training clear both approvals? | **Configurable in Setup** — HR Head always; Management **never / always / above ₹X** | **LD-1** |
+| 4 | What does the HOD fill at 30 days? | **One form per HOD, one overall rating** for their department, plus a comment — not a rating per attendee | **LD-8** |
+| 5 | External trainers — logins? | **No.** No outsider gets an Orange Hub account; HR uploads material and marks the session on their behalf | **LD-4, LD-5** |
+| 6 | Annual plan, or only ad-hoc requests? | **Both** — a published yearly plan *and* mid-year requests | **LD-2** |
+| 7 | Who must do POSH / Safety? | **Everyone, once a year** | **LD-9** |
+| 8 | Budget — annual pot or per training? | **Per training.** Proposed → approved → actual → cost per participant. No yearly pot to maintain | **LD-1** |
+| 9 | Certificates with expiry and renewal chasing? | 🟡 **Skipped for now.** C5's renewal box stays empty and no certificate register is built | *(dropped)* |
+| 10 | Which training targets govern? | **Build them as settings**, monthly and yearly, and ask HR to reconcile their two documents | **LD-1, LD-11** |
+| 11 | Can the trainer see who gave which feedback? | **An internal trainer can** (they have a login). **An external trainer sees nothing** — decision 5 means they have no account at all. HR/L&D and HR Head always see names | **LD-7** |
+| 12 | Who are the HR Head, the Management approver and the L&D Executive? | **Confirmed at test time**, set in Setup, changeable without code | **LD-1** |
+
+#### 🟡 Two things HR still owes, and neither one blocks the build
+
+Both are **document edits, not development** — the same shape as the 1B.3 re-wording already carried in
+the Talent Equation block. Both stay invisible until the very end, which is exactly why they are written
+down now.
+
+- [ ] **1 · Re-word two KPI lines from "assessment" to "assignment".** Decision 1 removed scoring, but
+      Saloni's sheet still carries *"Assessment completion — at least 90% of nominated participants"* (2%)
+      and KRA 5's *"Assessment and learning closure within SLA"* (1%). **3 points** that will read as
+      permanent failures on an otherwise full scorecard until the two lines are re-worded to the
+      assignment. Get it confirmed in writing **before LD-11 ships**.
+- [ ] **2 · Reconcile the training targets across the two documents.** The KPI sheet says **15 internal +
+      48 external per year**; the weekly report says **minimum 3 external + 2 technical + 5 total per
+      month** — which is 36 external a year, not 48. Three sets of numbers, no two of which agree. The
+      module takes whatever is typed into Setup, so nothing waits on this; but until HR picks, the
+      adherence lines are scoring against a number nobody has agreed.
+
+---
+
+### LD-1 · 🟢 The spine — schema, shell, steps 1–8, Setup, queues, RLS  `[x]`
+*Raised 2026-09-21 · Everything else hangs off this*
+
+> 🟢 **THE DATABASE HALF IS LIVE (21-09-2026)** — `20261215120000` (foundations) and `20261215120100`
+> (workflow), both applied to `icutjkrqkbzwvmnfbzpr` after their rollbacks were **rehearsed and run**.
+> 19 `fms_ld_*` tables · 20 functions · 39 RLS policies · the `fms-ld-docs` bucket · seeded masters.
+> The request → session flow (steps 1–8) is proved end to end by
+> `20261215120100_ld1_learning_development_workflow_verify.sql` — 20 checks driven as four real
+> **non-admin** employees, all passing, run inside a transaction that rolls back.
+> **Nothing is user-visible:** no manifest, no registry entry, no route. That is the deploy ordering
+> CLAUDE.md asks for — the migration goes ahead of the code that reads it.
+>
+> 🟢 **AND THE SCREENS ARE BUILT (21-09-2026).** 28 files under
+> `frontend/src/apps/learning-development/`, registered in `registry.tsx` / `appInfo.ts` /
+> `universal.ts`. `npm run build` passes, and the module was driven on localhost **as a real
+> non-admin employee and as an admin** — no console errors in either pass. Dashboard · training
+> calendar · request list + detail with a per-request rail · Raise-a-need form · one queue component
+> serving all seven request-scoped steps · Setup (Step Owners, Approval Rules, Due Dates,
+> Coordinators, Master Owners).
+>
+> ⚠ **UNIVERSAL, and the only module here that is** — every employee is a potential participant.
+> Say this to admins once: a universal app has **no `app_access` rows**, so Module Access shows it as
+> admins-only and there is nothing to tick. That is not a bug.
+>
+> 🔴 **NOT DEPLOYED.** Nothing is pushed and `master` does not have it. The branch is
+> `learning-development` in the worktree `D:\AI Development\oo-ld`.
+>
+> **Before it can be used by anyone:** Setup → Step Owners must be seeded (nothing moves past a step
+> with no owner), and the HR Head / Management / L&D Executive names have to be confirmed — **LD-0 · 12**.
+
+**Module identity.** `frontend/src/apps/learning-development/`, id `learning-development`, base path
+`/learning-development`, `category: "hr"`, tables `fms_ld_*`, storage bucket `fms-ld-docs`. Registered in
+`apps/registry.tsx`; name/path/category in `apps/appInfo.ts` — **never typed in a component**.
+
+**Built to the same engine as Order to Dispatch and New Recruitment**, because that is what the client
+asked for and because the parts already exist: `@/shared/lib/fmsQueue`, `@/shared/lib/stepSla`,
+`@/shared/lib/fmsOwners`, `QueueTable`, `MasterCrud`, `StepPipeline`, `AppShell`.
+
+**Tables (phase 1).**
+
+| Table | Holds |
+|---|---|
+| `fms_ld_requests` | the Training Request ID, need source, department, requester, title, skill gap, objective, target group, required-by date, priority, competency, category, mandatory/optional, justification, expected outcome, **proposed / approved / actual cost**, decision stamps, status |
+| `fms_ld_sessions` | session ID, `request_id` **and** `plan_line_id` (either may be null), `session_types text[]`, delivery mode, trainer, date, start/end, duration, hours, venue/link, capacity, registration cut-off, outcome, actual start/end, cancellation-or-reschedule reason, `rescheduled_from` |
+| `fms_ld_trainers` | internal person **or** external agency, contact, speciality, rate, active. ⚠ An external trainer is a **master row, never a login** (LD-0 · 5) |
+| `fms_ld_activity` | user, timestamp, old value, new value, reason — §13's audit-trail acceptance item |
+| `fms_ld_step_owners` · `fms_ld_step_assignees` | who owns each step; the reassignment pool |
+| `fms_ld_config` | key/value; holds `step_sla`, the **approval rule**, the nomination rules, the windows and the targets |
+| `fms_ld_notifications` | in-app bell rows, same shape as `fms_hr_notifications` |
+| `fms_ld_master_managers` · `fms_ld_master_requests` | master governance, same as every other FMS |
+
+Masters (all `MasterCrud`, all owner-governed): training categories · competencies · trainers/agencies ·
+venues · **delay reasons** · session outcomes · attendance statuses · effectiveness outcomes · follow-up
+actions — §7 of the document lists the exact values to seed for the last five. *(Assessment results was
+the sixth and is dropped with LD-0 · 1.)*
+
+**Setup (admin only), following Order to Dispatch's and New Recruitment's tab layout:**
+
+`Step Owners` · `Reassignment` · `Due Dates` · `Coordinators` · `Master Owners` · `Notifications` ·
+**`Approval Rules`** (Management approval: *never / always / above ₹X* — **LD-0 · 3**) ·
+**`Nomination Rules`** (who may nominate, default capacity, cut-off days) ·
+**`Feedback & Assignments`** (feedback window, assignment due days, review SLA, trainer visibility) ·
+**`Effectiveness`** (30 days, reminder lead) ·
+**`Targets`** (internal / external, **monthly and yearly** — LD-0 · 10 — plus 85% attendance, 80%
+assignments, 10 hours per head).
+
+⚠ **`mgmt_approval` is a CONDITIONAL step, and that is not the same as an optional one.** When the rule
+says it is not required, the request must move from HR Head approval straight to trainer finalisation with
+the skip **recorded on the row** — not left sitting in a queue nobody owns, and not silently absent from
+the audit trail. The SLA engine must also not count a skipped step as overdue.
+
+**Due dates.** §3's recommended TATs seeded as the defaults in `fms_ld_config.step_sla`, every one of them
+admin-editable on the Due Dates tab — the document itself says they *"are recommended configuration values
+and may be changed by HR before development sign-off"*, so none of them is hard-coded. Working days
+Mon–Sat as elsewhere; `effectiveness` is **calendar days from the session**, not working days — the same
+`unit: "months"` escape hatch recruitment's probation steps use.
+
+🟢 **Module access: UNIVERSAL** (`apps/universal.ts`), per LD-0 · 2 — the nav does the scoping. Everyone
+gets *Training Calendar* and *My Learning*; queues, reports and Setup appear only for the people who own
+them. ⚠ **Say this out loud to admins once:** a universal app has **no `app_access` rows**, so the Module
+Access matrix will show it as admins-only and there is nothing to tick. That has surprised people before.
+
+⚠ **RLS is the boundary, the nav is only politeness.** A participant reads the sessions they are nominated
+to plus the public calendar; a HOD reads their own people; L&D, HR Head, coordinators and admins read all.
+Writes go through `fms_ld_*` RPCs with `fms_ld_can_act()` in front. Note that **a policy is evaluated as
+the caller** — inner reads inside a policy meet their own RLS, and the same SQL inside a `SECURITY
+DEFINER` function will hide that from you.
+
+---
+
+### LD-2 · 🟢 The Annual Training Plan, and the calendar everyone sees  `[x]`
+*Raised 2026-09-21 · **Land this with LD-1's session step**, not after it · client confirmed both doors*
+
+**The plan.** `fms_ld_plans` (financial year, status draft/published, `published_at`, who) +
+`fms_ld_plan_lines` (month, title, types, target audience — department / designation / band / named list,
+planned participants, estimated cost, estimated hours). Published once; edits after publication are
+versioned rather than silent, because 2A is scored on *"uploaded by January"* and an un-versioned plan can
+be back-fitted to whatever happened.
+
+**Adherence** = plan lines whose fulfilling session was conducted ÷ plan lines due in the period. A session
+carries `plan_line_id`; a session with none is ad-hoc and counts toward the volume targets but not toward
+adherence.
+
+**The calendar.** A month grid — `apps/asset-maintenance/pages/Calendar.tsx` is the working shape to copy
+(Monday-first, lead-padding, per-day cells) — plus a flat list view that obeys the house rules (**every
+column sorts, every column filters, cascading, 25 a page, no `groupBy`**). What each reader sees:
+
+- **Everyone:** every scheduled session, with the ones they are nominated to marked, and their own RSVP
+  state on the cell.
+- **HODs:** additionally, which of their people are nominated to each — that is the screen they nominate
+  from (**LD-3**).
+- **HR/L&D:** additionally, planned-but-not-yet-scheduled plan lines shown as ghosts on their target month,
+  so the gap between the plan and the calendar is visible on the calendar rather than in a report.
+
+Filters: type, department, trainer, mode, status, month. Statuses rendered distinctly — **planned ·
+scheduled · conducted · rescheduled · cancelled** — because C2 and the KPI adherence lines all turn on
+telling those apart, and a rescheduled session keeps its original in the audit trail (§6).
+
+---
+
+### LD-3 · 🟢 Nomination, approval, invitation and RSVP  `[x]`
+
+> 🟢 **LD-3 … LD-8 ARE BUILT (22-09-2026).** Migration `20261215120200` (7 tables, 22 functions)
+> applied after its rollback was rehearsed, proved by `…_verify.sql` — **26 checks driven as real
+> non-admin people**, all passing. Screens: a **Session Detail** page carrying eight panels, a
+> **My Learning** page for everybody, an **All Sessions** register, and the calendar wired to open a
+> session. `npm run build` passes; driven on localhost as the L&D executive and as a real attendee
+> with no console errors.
+>
+> 🔴 **STILL NOT DEPLOYED** — branch `learning-development`, worktree `D:\AI Development\oo-ld`.
+>
+> **What is left on the module:** LD-2's annual-plan screens, LD-9 (POSH/Safety), LD-10 (reports and
+> the weekly Section C feed), LD-11 (KPI wiring) and LD-12 (email, which ships OFF).
+*Raised 2026-09-21*
+
+`fms_ld_nominations`, one row per (session, employee): `nominated_by`, `nominated_at`, `source`
+(hod | hr | self), `status` (proposed | approved | rejected | withdrawn), `approved_by/at`, `reject_reason`,
+`invited_at`, `rsvp` (pending | accepted | declined), `rsvp_at`, `decline_reason`, `reminder_1_at`,
+`reminder_2_at`. Unique on (session, employee) — §4's *"unique employee per session"*.
+
+- **Who nominates:** the HOD from the calendar or the session, or HR directly. **HR/L&D approves either
+  way** — the client's explicit instruction, and `nomination_approval` exists for it. HR's own nominations
+  are auto-approved by the same hand that made them, and the row still records it.
+- **🔴 Only people who exist in the system can be nominated** — the client's own rule. The picker reads
+  `profiles` where `is_external = false`. Somebody who is not there **cannot be typed in as free text**;
+  the picker offers a *"this person is not in Orange Hub yet"* line that takes an admin straight to
+  `/admin/users` and tells everybody else who to ask. A free-text nominee would break attendance, the
+  assignment, the per-employee learning hours and KRA 5 all at once.
+- **Capacity and cut-off:** nominations beyond `capacity` are refused with the number, not silently
+  dropped; nominations after the registration cut-off need HR.
+- **Invitation & RSVP:** on nomination approval the invitation goes out (in-app always, email when
+  **LD-12** is armed). RSVP is accept/decline with a **mandatory reason on decline** (§4). Reminders at
+  48 and 24 hours (§3 step 8).
+- ⚠ **The nominee's RSVP is a row-owned step.** It cannot be owned by a step-owner row; see LD-1's
+  `ROW_OWNED_STEPS` note.
+
+---
+
+### LD-4 · 🟢 Pre-training material, and My Learning  `[x]`
+*Raised 2026-09-21*
+
+**Material.** `fms_ld_materials` (session, title, kind — agenda / pre-read / slide deck / other, file path
+in `fms-ld-docs`, version, uploaded_by/at, `visible_from`). Uploaded by the trainer **if internal**; for an
+external trainer HR uploads it on their behalf (**LD-0 · 5**), and the row records whose material it is so
+the credit is not lost. §3 step 9 wants a readiness checklist and blocks the session moving to *Ready*
+until it is complete — that is a `readiness_confirmed_at` plus the checklist rows, and the block is
+enforced in the RPC, not only in the UI.
+
+⚠ **Write-once attachments are a known fault in this codebase** — NR-5 exists because every HR attachment
+was write-once and the RPCs structurally could not clear a value. Build edit, replace and delete into
+`fms_ld_materials` from the first migration.
+
+**My Learning** — the screen every employee opens, and for most people the *only* one:
+
+*My invitations (RSVP here)* · *My sessions — upcoming and past* · *My material* · *My assignments, with
+due dates and the upload* · *My feedback forms* · *My learning hours this year (against 10)* ·
+*My POSH / Safety status for the year*.
+
+🟢 Reachable by everybody because the module is universal (LD-0 · 2) — no grant, no tick-box, and no
+nominee who receives an invitation to a page they cannot open.
+
+---
+
+### LD-5 · 🟢 Conduct, attendance and the absentee follow-up  `[x]`
+*Raised 2026-09-21*
+
+- **Conduct:** actual start/end, session outcome (conducted / rescheduled / cancelled / partially
+  conducted), trainer attendance, evidence upload (photos, screenshots, trainer log). A cancellation or
+  reschedule needs a **reason and a revised date**, and the original stays in the audit trail (§6).
+  Marked by the internal trainer, or by HR for an external one.
+- **Attendance:** `fms_ld_attendance`, one row per (session, employee) — `status` (present / absent /
+  partial / approved exception / not applicable), `minutes`, `reason`, `marked_by`, `marked_at`,
+  `followed_up_at`. **Closure is blocked until every nominee carries a status** (§3 step 11, §13).
+- **The attendance sheet** the client asked for: a scan uploaded against the session
+  (`attendance_sheet_path`) — evidence *beside* the marked rows, never instead of them. The KPI line
+  *"attendance capture — 100% of sessions"* counts marked rows; a PDF cannot be counted.
+- **Absentee follow-up within 24 hours** — weekly form C4 asks for it and nothing else in the hub records
+  it. `followed_up_at` on the attendance row is the whole feature.
+- **Learning hours** fall out here: present → the session's hours; partial → `minutes ÷ 60`. That single
+  rule feeds C5, `SK-3` and KRA 5.
+
+---
+
+### LD-6 · 🟢 The assignment — issued, submitted, reviewed  `[x]`
+*Raised 2026-09-21 · 🔴 **No test, no marks, no pass mark.** Client, 21-09-2026: "We just need to track
+whether all the employees have submitted their assignment that has been provided during the training."*
+
+The whole of the post-training evaluation is three timestamps and a file:
+
+**Per session** — `fms_ld_assignments`: title, brief, attachment, `issued_at`, `due_at` (default: session
+end + the days set in Setup). Issued by the trainer if internal, by HR otherwise.
+
+**Per participant** — `fms_ld_assignment_submissions`: file, `submitted_at`, `reviewed_at`, `outcome`
+(accepted / needs rework / not submitted), `reviewer_remarks`, `escalated_at`.
+
+Every KPI line this module owes on the subject is then a subtraction of two of those timestamps, which is
+the point of building it this way:
+
+| Line | Arithmetic |
+|---|---|
+| Assignment circulated within 24h of the session | `issued_at` − session end |
+| Submission rate ≥ 80%, and on time | `submitted_at` ≤ `due_at` |
+| Review closed within 7 days of submission | `reviewed_at` − `submitted_at` |
+| Pending submissions escalated to HOD | `escalated_at` — weekly form C4 |
+| KRA 5 · per-employee assignment completion | that employee's on-time submissions ÷ their assignments |
+
+⚠ **Two KPI lines on Saloni's sheet still say "assessment"** and will read as permanent failures until HR
+re-words them — **3 points**, tracked in LD-0's owed list. Nothing to build; somebody has to edit a
+document.
+
+⚠ Employees upload to `fms-ld-docs` here, which is the **first place a non-admin writes a file** in this
+module. The bucket policy has to allow it for their own submission only, and nothing else.
+
+🟡 **Parked, not refused:** an online test taken inside the portal (question bank, timing, re-attempts) was
+considered and dropped on 21-09-2026. If HR ever wants it, it is a build of its own and the assignment
+above is unaffected by it.
+
+---
+
+### LD-7 · 🟢 Feedback and the HR session review  `[x]`
+*Raised 2026-09-21*
+
+`fms_ld_feedback`, one row per (session, employee), unique: `content_rating`, `trainer_rating`,
+`relevance_rating`, `overall_rating` (1–5), `comment`, `submitted_at`. Window 48 hours (§3 step 13),
+configurable. A reminder fires inside the window; a non-response is **marked**, not assumed.
+
+🟢 **Who sees the names** (LD-0 · 11): **HR/L&D and the HR Head always.** An **internal trainer sees the
+names** on their own sessions. An **external trainer sees nothing at all** — by decision 5 they have no
+account, so this needs no code, only a note in the design so nobody later "fixes" it by inviting them.
+
+**HR session review** (`session_review`): attendance, assignment submission rate, feedback, cost against
+approved budget, cost per participant, exceptions — with a review note and action points. §6 escalates a
+low score or serious feedback; the weekly form's *"Low-score session under review"* flag reads exactly this.
+
+---
+
+### LD-8 · 🟢 30-day effectiveness, follow-up and closure  `[x]`
+*Raised 2026-09-21*
+
+**The client's wording:** *"The HOD of the department, for whatsoever employees were there in this
+training, after the session is conducted, should be notified. After 30 days, the HOD should add the
+effectiveness of that training for their department."*
+
+- **On attendance closure**, resolve every attendee's HOD — `user_hods` first, `fms_hr_department_hods` as
+  the fallback — and **notify each one immediately** that their people attended. That is the client's ask
+  and it is also the only warning a HOD gets before a task lands on them 30 days later.
+- **At session date + 30 calendar days**, one effectiveness task per **(session, HOD)**. 🟢 **One overall
+  rating for the department, plus a comment** (LD-0 · 4) — *not* a rating per attendee. The task still
+  **lists** that HOD's attendees by name, so the HOD knows who they are rating about, and it captures
+  application observed, evidence, improvement area and follow-up required. Reminder and escalation if
+  overdue (§3 step 15: *within 7 days of task creation*).
+- 🔴 **19 of 67 internal profiles resolve to NO HOD AT ALL** — measured 21-09-2026 by running the
+  shipped resolver (`fms_ld_hods_of`) over every internal profile, not by counting the raw table: **48
+  resolve, 19 do not.** The raw `user_hods` count is 20; the department fallback rescues exactly one
+  person, which is also the proof that the fallback arm fires at all. `fms_hr_department_hods` holds
+  **1 row for 23 departments**, so it rescues almost nobody.
+  🟢 **Client's answer, 21-09-2026: show HR an explicit "no reviewer" list on the session review**
+  rather than quietly counting the review complete — reporting a control that does not exist is worse
+  than reporting a gap — **and get the map filled** in parallel.
+  - [ ] **Who fills the missing 19?** Likely Bushra or HR, the same way the org masters were filled. Not
+        a blocker for the build; it is a blocker for the first real effectiveness review.
+- **Follow-up decision** (§3 step 16): close, coach, reassess or refresher. An unsuccessful outcome
+  **creates the linked follow-up** with an owner and a due date — a link, not a note.
+- **Closure** (§3 step 17): blocked while any mandatory evidence or open task remains; on closure the
+  record locks, TAT/SLA compute, and **only the HR Head may reopen it, with a reason**, audit trail kept.
+
+---
+
+### LD-9 · 🟢 POSH and Safety — everyone, once a year  `[x]`
+*Raised 2026-09-21 · scope cut by LD-0 · 7 and · 9*
+
+`fms_ld_mandatory_programs` — POSH, Safety and whatever else HR names later. 🟢 **Applicability is
+"every active internal employee, once per year"** (LD-0 · 7), which makes the arithmetic honest and needs
+no per-person applicability list to maintain: *completed this year ÷ active internal employees*. A session
+tagged POSH or Safety and marked conducted credits every attendee for that cycle.
+
+Feeds KRA 2E (5%), C5's *"Mandatory & statutory training completion — 100%"*, and the weekly form's
+*"Mandatory training overdue"* flag.
+
+🟡 **The certificate register is NOT built** (LD-0 · 9 — client parked it). Consequences, so nobody hunts
+for the feature later: C5's *"Certifications due for renewal — zero overdue"* box stays empty, and there is
+no expiry chasing of any kind. If it is ever wanted, **copy the Asset module's insurance tracks** — that is
+the working shape for "a thing with an expiry that has to be chased".
+
+---
+
+### LD-10 · 🟢 Reports, exports, and the Weekly Review Section C feed  `[x]`
+*Raised 2026-09-21*
+
+§10 of the document names nine dashboard views; they collapse into these screens, all flat, all sorting
+and filtering on every column, all exporting to Excel:
+
+**Training Register** (the whole request → closure record, one row per request) · **Session Register**
+(C3's exact columns: topic, type, trainer/agency, date, participants, hours, feedback /5) ·
+**Attendance Register** · **Assignments** (issued, submitted, on time, reviewed) · **Feedback** (rate and
+averages) · **Effectiveness** (pending / overdue / done) · **Budget vs Actual** (proposed, approved,
+actual, cost per participant) · **Learning Hours per Employee** (against 10/yr) · **POSH / Safety
+Compliance** · **Owner-wise SLA** (given, done, on time, overdue — per step, per owner).
+
+**And the Section C feed.** The weekly report view already exists in the KPI-3 lab
+(`kra-kpi-lab/report/`, DEV-only on `kpi-3-lab`) and prints all 24 C boxes as unfillable. This entry is
+what makes **23 of them** fill: C1's five figures, C2's four-row mix with its monthly targets, C3's session
+list, C4's seven items, and three of C5's four. ⚠ **Row counts must not be written into the field
+literal** — the lab already learned that once; a box states the shape of its gap and reads its figure live.
+
+---
+
+### LD-11 · 🟡 KPI and FMS-ranking wiring  `[x]` *(built; two deploy-day steps left)*
+
+> 🟡 **BUILT AND VERIFIED 23-09-2026, STILL SWITCHED OFF.** `fms_rank_modules` carries the row set
+> `active = false` — the same state `asset-maintenance`, `hr-exit` and `travel-desk` are in — and its
+> note now says why. An admin switches it on from the Control Center the day it is in use.
+*Raised 2026-09-21*
+
+The two things this entry said the module did not have, it now has. **A third is somebody else's file.**
+
+| # | What | State |
+|---|---|---|
+| 1 | `kpi_put_module` / `kpi_put_rows` — the module writes its own facts | ✅ **automatic** — see below |
+| 2 | CC-1 ranking: scorer, adapter, My Work items, `fms_rank_modules` row | ✅ built |
+| 3 | KRA 2 / KRA 5 line definitions | 🟡 **still only in the DEV-only KPI-3 lab** (branch `kpi-3-lab`) |
+
+**1 needed no code at all, and that is worth knowing.** `kpi-facts` enumerates its modules from
+`RANKED_MODULES` and `apps/kra-kpi/facts/fmsFacts.ts` is entirely generic — no module is named anywhere
+in it. So the moment the scorer exists and the switch is on, the nightly 01:07 IST run writes L&D facts
+for every person alongside every other module. There was nothing to write; there was a scorer to write.
+
+#### What was built
+
+- 🔴 **`apps/learning-development/lib/work.ts` — the piece that did not exist.** `lib/queues.ts`
+  answers "where is this REQUEST", and steps 1–8 are all it *can* answer for, because a request sits at
+  exactly one step. **The other fourteen hang off a session or off one person's obligation, and a
+  session holds several at once** — nominations still open while the material is already up. One
+  "current step" cannot describe that. So this returns a LIST of open and closed steps across all three
+  scopes, and the three consumers below all read it rather than re-deriving anything.
+- `core/workspace/mywork/items/learning-development.ts` + its provider — **the only universal provider
+  in the hub.** Every other one is narrowed by `hasModule`; this one fetches for all 67 people, because
+  everybody is a potential participant. What it hands most of them back is their OWN obligation — an
+  invitation to answer, an assignment to hand in — never HR's pipeline.
+- `apps/fms-control-center/adapters/learning-development.ts` — the twelfth row on the scoreboard, and
+  the only one that counts steps its own module's sidebar does not show.
+- `apps/fms-control-center/ranking/modules/learningDevelopment.ts` + `RANKED_MODULES`.
+
+⚠ **PARTICIPANT STEPS ARE KEYED BY THE PARTICIPANT'S OWN ROW, NOT BY THE SESSION.** Twelve people
+owing a feedback form is twelve pieces of work, and KRA 5 scores each against its own name. Keying by
+the session would collide, and My Work's item id — `source:row:step`, split on the colon by
+`ranking/workItems.ts` — would hand the ranking one row where there are twelve. Same reason hr-exit
+keys by `checkId ?? entityId`.
+
+⚠ **TWO STEPS HAVE NO ACTOR COLUMN.** Training Conducted and Attendance Closure stamp a time on the
+session and nobody's name, so those two read `fms_ld_activity`, which records the actor and the moment
+for every move. Deliberate exception, not a pattern: a column is the truth wherever one exists, and the
+other twenty steps have one.
+
+#### 🔴 The bug live data found, and string-matching would not have
+
+Test rows are recognised by a `ZZ TEST` title — every request and session carries a real sequential
+code, because the seed data was made through the module's own RPCs, so there is no separate numbering.
+The scorer first matched that against **the step's displayed title**, and **a participant step does not
+show the session's title**: an assignment step is titled after the assignment. Two steps of a test
+session therefore came through as real and would have been scored. Found by compiling the scorer with
+the edge function's own shims and **running it against live data** — it does not show up in a build, a
+typecheck or a screen. `lib/work.ts` now decides once, on the owning request or session, and every step
+of that entity inherits the flag.
+
+#### Verified, 23-09-2026
+
+Compiled through `supabase/ranking/build.mjs`'s own shims and run against the live database: **20 closed
+steps across all three scopes, every one with both an actor and a time** (including the two that come
+from the activity log), **no duplicate step ids**, 4 open steps all timed, and all 20 correctly dropped
+— 19 `test_record`, 1 `excluded_step` — leaving nothing scoreable, which is right, because every row in
+the module today is seed data. Per person: 3 of 68 carry open L&D work, and they are the right three —
+a HOD's 30-day note, the L&D executive's follow-up decision, and one nominee's own feedback and
+assignment. In the browser: the **twelfth row on the FMS Control Center** reads 2 due tomorrow and
+expands to all five stages (21 steps; `need_raised` is `noQueue`), and **My Work Today as Saloni** —
+signed in as her, not as an admin — shows `TRN-2627-0017 · Follow-up · 24-09-2026 · TEAM`.
+
+#### ⚠ Two deploy-day steps, neither of them code
+
+- [x] ✅ **Both bundles rebuilt and shipped, 23-09-2026** (`54d24a5e`). Done the safe way round:
+      `origin/master` was merged INTO the branch first, so the rebuild ran on a tree that already held
+      master's code — checked afterwards that the bundle carries New Recruitment's Day 7/15/30/60/90
+      probation cadence as well as the new L&D scorer. Both guards passed (12 Control Center modules,
+      11 scored, 1 excused; no browser code in either graph). The deployed edge functions were already
+      current on master's rules, so no function redeploy was needed; one IS needed before the switch
+      below is flipped.
+- [ ] **Switch `fms_rank_modules.learning-development` on** the day the module is in use, from the
+      Control Center. Nothing else waits on it: with it off, `kpi-facts` lists L&D under `skipped` and
+      the report's footer says so.
+
+⚠ **Do not arm the scoring before LD-0's two owed document edits are confirmed.** Three of the points
+scored here are against KPI lines that still say "assessment", and the adherence lines score against
+targets no two documents agree on. Shipping first means the first scorecard anybody sees is wrong in a
+way that looks like our bug.
+
+---
+
+### LD-13 · ✅ Masters and Master Requests — the screens HR needs to start  `[x]`
+*Raised 2026-09-22 · **BUILT AND VERIFIED 22-09-2026.** The trial is no longer blocked on us. Not
+deployed — the module is still absent from `master` entirely.*
+
+HR reached **step 6, Trainer Finalisation, and stopped.** The trainer is mandatory, the master held
+the one agency LD-1 seeded, and there was no screen to add another.
+
+**What was built.**
+- **`pages/masters/Masters.tsx`** — eight tabs, each a `MasterCrud`, so sorting on every column,
+  a cascading searchable filter under every column, the Active/Inactive segment, 25 a page and the
+  Excel round trip all arrive with no per-tab wiring. The seven governed lists (session types,
+  competencies, need sources, venues, trainers, delay reasons, follow-up actions) **plus an eighth,
+  POSH & Safety** — see the ⚠ below.
+- **`pages/MasterRequests.tsx`** + **`components/RequestMasterModal.tsx`** — ask for a value that is
+  not on a list, and see what happened to the one you asked for. The reviewer can CORRECT the
+  proposal before approving, and the correction is what the list gets.
+- **`lib/masterFields.ts`** — the wire contract the approve RPC had been expecting since LD-1.
+- Store: `canManageMaster(type)` **per list**, `canManageMandatory`, `masterRequests`,
+  `pendingMasterRequests`, `canUseMasterRequests`. Writes: `saveMaster`, `setMasterActive`,
+  `requestMaster`, `resolveMasterRequest`, `saveMandatoryProgram`, `setMandatoryProgramActive`.
+- `MasterOwnersSection` now renders from the same `LD_MASTER_TYPES` constant the Masters tabs and the
+  request picker read, so the list that three CHECK constraints police exists once.
+
+⚠ **THE EIGHTH TAB HAS A DIFFERENT OWNER, AND THAT IS NOT A SLIP.**
+`fms_ld_mandatory_programs` (LD-9) was being **fetched and never rendered** — a master nobody could
+edit, holding the two rows that decide the whole POSH / Safety denominator. It is now a tab, but its
+RLS policy reads `is_admin OR fms_ld_is_coordinator`, **not** `fms_ld_is_master_manager`, so it is
+gated on `canManageMandatory` and it has no Master Owners row and no request path. Proved in a
+rolled-back transaction as the L&D executive: trainer insert ALLOWED, venue insert ALLOWED,
+mandatory-programme insert **REFUSED**, granting herself an owner row **REFUSED**.
+
+🔴 **A SECOND ORPHAN, FOUND ON THE WAY, NOW FIXED — the Venues master had no reader at all.**
+`venue_id` and `meeting_link` have existed on `fms_ld_sessions` since LD-1, are accepted by
+`fms_ld_create_session`, are mapped in `ldFetch` and are *read* by Session Detail's "Where" — and
+**nothing ever set them.** Every session in the module said `Where: —`, and a Venues master would have
+been decorative on arrival. This is **FIX-4 in reverse**: the whole pipe was laid and only the tap was
+missing, so nothing failed, nothing warned, and it compiled. The scheduling panel
+(`StepActionPanel`, `session_scheduling`) now carries **Where** and, when the chosen venue is an
+online one, a **required Joining link** — plus a warning when the capacity typed exceeds the room's
+seats. Session Detail renders the link as a link rather than the word "Online": a nominee who arrives
+at the hour and cannot get in is the failure that was waiting to happen.
+
+**Go-live step, done 22-09-2026:** `fms_ld_master_managers` was **empty**, which under the RLS policy
+means *admins only* — so the screen alone would not have unblocked HR. Saloni Rathod (the L&D
+executive, a plain `employee` who already owns 15 of the 17 step-owner rows) is now the owner of all
+seven lists. Changeable in Setup → Master Owners without code.
+- [ ] **Open, deferred to go-live:** should **session types** be admin-only? It carries the report
+      codes the KPI arithmetic matches on — editing `posh` there would silently break the compliance
+      count — and she is on it today because she is the one who would add a new type mid-year. One row
+      in Setup either way.
+
+**Verified in the browser on localhost, as admin** — every tab renders; an external trainer saves; a
+duplicate name is refused with a sentence rather than an index name; an internal trainer with nobody
+picked is refused before the request is even sent; picking the employee saves; asking for a venue,
+correcting its name at review and approving lands the **corrected** row in the master; Reject stays
+disabled until a reason is typed; scheduling records the venue; an online venue blocks Create until
+the link is typed; Session Detail renders it.
+
+**And verified as the real user** — signed in as **Saloni Rathod, role `employee`, not an admin**
+(session minted from a magic link, no password touched, revoked `scope=local` afterwards). Her sidebar
+carries Masters and Master Requests and **no Setup**, and only the four queues she owns. **She added a
+trainer** — the thing that blocked the trial — through the screen, as a plain employee. The per-tab
+gate renders exactly as RLS decides it: **POSH & Safety came up read-only for her** (no Add, no
+Import, no row actions, no Actions column, and the card underneath says whose list it is), and with
+her `venue` owner row temporarily removed the **Venues tab went read-only too** while the other six
+stayed editable. The row was put straight back.
+
+**Test rows left in place, to remove before go-live** (they join LD-1's own `ZZ TEST Numbers
+Academy`): trainers `ZZ TEST Bright Minds` and `ZZ TEST Internal Person`, venues `ZZ TEST Seminar
+Hall (2nd floor)` and `ZZ TEST Google Meet`, and one approved venue master-request. The two training
+requests walked to reach the scheduling step were deleted again.
+
+⚠ **`MasterCrud` has the `FieldLabel` bug, and this module dodged it rather than fixing it.**
+`MasterCrud` wraps every field in `FieldLabel`, which is a `<label>`, so clicking the question text
+above a `ChoiceButtons` strip silently presses the FIRST option. Over a `Combobox` the same click only
+opens the picker, which is harmless — so every fixed pair here (trainer type, venue online) is
+declared `select`, not `choice`. **The bug itself is untouched and is shared by every FMS in the hub**
+— it affects `MasterCrud`'s `choice` fields everywhere, on top of the 15 cases already logged in 5
+files. Fixing it is one branch in `MasterCrud.tsx` and belongs in its own change, not in LD-13.
+
+---
+
+### LD-12 · 🟡 Email, reminders and escalation — ships OFF  `[ ]`
+*Raised 2026-09-21 · **Last on purpose.** Read all three ⚠ before writing a line of it*
+
+§6 of the document is the whole specification: a task on every status movement, a reminder at **50% of
+SLA**, another **24 hours** before the due date, **Overdue** at breach notifying the owner and L&D, and
+escalation to HR Head / HOD after one working day. Plus the invitation, the 48/24-hour RSVP reminders, the
+material-ready notice, the absentee follow-up, the assignment reminder, the feedback reminder and the
+30-day effectiveness task.
+
+⚠ **`send-email` will silently drop every one of these until it is changed and redeployed.**
+`supabase/functions/send-email/index.ts:1187` carries a **hard-coded list of module prefixes**
+(`import_`, `procurement_`, `sampling_`, `office-supplies_`, `production-entry_`, `order-to-dispatch_`,
+`asset-maintenance_`, `hr-recruitment_`, `hr-exit_`, `ocpi_`, `travel_`). A kind that matches none of them
+falls through to `markSkipped(row, "unknown kind")` at line 1281 — it does not error, it does not retry,
+and the outbox row looks handled. `learning-development_` has to be added **and the function deployed**.
+
+⚠ **The mailer has no Cc.** Several recipients means one outbox row each. A session with 30 nominees is 30
+rows per notice, and the reminder rules above fire several times per session — size this before arming it.
+⚠ Everybody in the company can now be a recipient (the module is universal), which is a wider blast radius
+than any other FMS here has.
+
+⚠ **Ship with `email_module_settings('learning-development') = false`**, like `hr-recruitment`,
+`order-to-dispatch`, `hr-exit`, `ocpi` and `travel-desk` are today. Browser-testing a flow on a module
+whose switch is on **sends real mail to real employees**. Arm it only when HR says so, and say out loud
+which notice goes to whom on the day it is armed.
+
+---
+
+### LD-14 · 🔴 Learning hours are never captured, so every hours figure is zero  `[ ]`
+*Raised 2026-09-23 by the end-to-end walk. **Blocks the trial's figures, not the flow.***
+
+`fms_ld_sessions.hours` is **always null**. The scheduling form asks for a start and an end time and
+records both — and nothing ever turns them into a number. `ConductPanel` does not ask either: it sends
+`actualStart: new Date()` and never an `actualEnd`. The only writer is `createSession({hours})`, and no
+screen passes it.
+
+**What it breaks, all of it visible to HR on day one:**
+- **My Learning** — *Hours this year* reads `0.0` against a target of 10, for everybody, forever. The
+  tile beside it (*Sessions attended*) is right, which makes the zero look like a bug in the arithmetic
+  rather than a missing input.
+- **Reports → Learning hours** — all 68 employees read `0.0 · 10.0 short`.
+- **SK-3 of the weekly review report** (10 hours per employee per year) cannot be filled at all.
+
+⚠ **The number is already on the screen.** `10:00–17:00` is stored on the session. Deriving it is a few
+lines; the question is only which number HR wants — the scheduled span, or the actual one. **Ask before
+building**: a training that overran is a different figure from the one that was booked, and `partial`
+attendance already records its own minutes, so the two have to agree.
+
+---
+
+### LD-15 · 🔴 A sent-back request is stranded — nobody can revise or resubmit it  `[ ]`
+*Raised 2026-09-23 by the end-to-end walk. **Tell HR not to use Send back until this lands.***
+
+HR sends a request back at validation with a reason. The raiser **can see it and can do nothing about
+it**:
+- their only button on the request is **Back**;
+- `/queues/sent-back` answers **"No access"** for them — `canSeeQueue` returns false for a step in
+  `ROW_OWNED_STEPS`… except `need_resubmit` is *not* in that list, so the queue gate and the panel gate
+  disagree;
+- the panel does render for them and says *"This step is yours"* — above a card with no control.
+
+The request sits at `returned` indefinitely. **There is no route out for anybody**: `reopenRequest` is
+wired only into `ClosurePanel`, i.e. it reopens a **closed** request, not a returned one.
+
+The panel's own text admits it: *"Editing a returned request lands with LD-2; for now, raise it again
+with the correction, or ask HR to reopen it."* LD-2 became the annual plan, so it never landed, and
+"ask HR to reopen it" describes a control that does not exist.
+
+**What it needs:** the raiser can edit the fields and press Submit again (status → `submitted`,
+`returned_at` cleared, the SLA re-anchored on the new submission — `need_resubmit` already anchors on
+`returnedAt`, so that part is right). Plus `canSeeQueue("need_resubmit")` fixed so the queue opens for
+the person who owes it.
+
+---
+
+### LD-16 · 🟡 Three smaller things the walk turned up  `[ ]`
+*Raised 2026-09-23. None of them blocks anything; all three are visible to HR.*
+
+- **The raiser's own ticket number leaks into the UI.** The sent-back panel prints "LD-2" to whoever
+  raised the request. Remove it with LD-15's fix.
+- **"Recorded" is the moment Save was pressed**, not when the training ran. `ConductPanel` sends
+  `actualStart: new Date()` and no `actualEnd`, so a session marked conducted a week late dates every
+  downstream deadline — the assignment, the feedback — from the day of the click. The 30-day
+  effectiveness task is **not** affected: it is computed server-side from `session_date`.
+- **Department is never defaulted.** The raise form offers a department picker and leaves it blank, so
+  most requests will carry none and the reports cannot break down by department. Either default it to
+  the raiser's own department or make it required — HR's call.
+
+---
+
+### LD-17 · Questions the walk raised for HR, not defects  `[ ]`
+*Raised 2026-09-23. All four are in the trial script; collect the answers with the trial feedback.*
+
+- **Is feedback anonymous to anybody?** Today an attendee sees their own name on their own feedback, and
+  HR sees every name. LD-0 · 11 settled the *trainer's* view (internal sees names, external sees nothing)
+  but never the attendee's. Cheaper to change before people start using it.
+- **Should the HOD's 30-day note appear on their My Learning screen?** It is on the home screen (My Work
+  Today) and on the session, but *My Learning* counts only assignments and feedback, so a HOD's "things
+  you owe" reads 0 while they owe a review.
+- **Is the assignment, with no marks and no test, enough?** It is exactly what the client asked for on
+  21-09; worth confirming once they have seen it.
+- **Does the wording of the five shipped vocabularies fit Orange O Tec?** Session types, need sources,
+  delay reasons, follow-up actions, POSH & Safety all arrived seeded from the source document.
+
+---
+
+### How this gets built — the rules that apply to all of it
+
+- **Additive-only on Supabase.** New tables and nullable columns; nothing existing is mutated or dropped.
+  Every migration in `supabase/migrations/` gets a **rollback file, and the rollback is rehearsed on live
+  data before the cutover** — a rollback that has only been read is not a rollback.
+- **Never `supabase db push`** from here; it would replay every local migration onto live data. Apply
+  through the SQL editor or the management API.
+- **Deploy ordering:** the migration goes live **before** the frontend that reads it. New Vite env vars
+  (none expected) would go into Vercel before the merge.
+- **The build is the gate.** `npm run build` runs strict `tsc` over all of `src`; there is no test runner
+  and no lint script.
+- **House rules on every grid**, not on request: sort on every column, a cascading searchable filter under
+  every column, 25 a page, flat (no `groupBy`), a *Clear filters* row rather than an `EmptyState` when a
+  filter matches nothing, and focus advancing to the next field after every selection.
+- **Test as the real user, not as an admin.** Admins bypass every gate. The three audiences that must each
+  be driven end to end on localhost are the **HR/L&D Executive**, a **HOD**, and a plain **employee
+  nominee** — the last one is the whole of LD-4 and half of LD-6, and an admin-only pass has already
+  hidden a control from the person it was built for once.
+- **Removing anything? Account for every control inside it.** `noUnusedLocals` is false and there is no
+  test runner, so an orphaned handler still compiles, still looks present, and is invisible until somebody
+  needs it. See **FIX-4**.
 
 ---
 

@@ -11,7 +11,7 @@
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
-import type { StepBranch, StepKey } from "./steps";
+import { stepByKey, type StepBranch, type StepKey } from "./steps";
 import type { SamplingRequest } from "../types";
 
 export interface SamplingSnapshot {
@@ -459,6 +459,49 @@ export const completedMachineResultEntries = (data: SamplingSnapshot): StageEntr
   data.requests
     .filter((r) => !!r.machineResultReceivedAt)
     .map((r) => entryOf("machine_result", r, r.machineResultReceivedBy, r.machineResultReceivedAt!, machineResultLockReason(r)));
+
+/**
+ * The step a HELD request is parked at, read from `current_step`.
+ *
+ * `fms_sampling_hold_request` sets only `status`, `hold_at` and `hold_reason`, so
+ * the column still names the step the request was parked at; resume recomputes it.
+ * Reading it is deliberate — see the long note on `heldStep` in
+ * `office-supplies/lib/queues.ts` for why mirroring `fms_sampling_resume_status`
+ * in TypeScript is the wrong move. This module is the strongest case for that:
+ * its resume rule spans the lab branch, the machine-testing branch, the
+ * optional-collector path and a legacy tail, and it has been rewritten three
+ * times (20260903120000, 20261125130000).
+ */
+export function heldStep(r: SamplingRequest): StepKey | null {
+  const def = stepByKey(r.currentStep);
+  if (!def || def.noQueue) return null;
+  return def.key;
+}
+
+/**
+ * Every HELD request, one entry at the step it is parked at.
+ *
+ * Read ONLY by My Work's `items/` rule. `buildQueueEntries` — which feeds the step
+ * pages, the Control Center and the Master Report — deliberately still excludes
+ * held requests, because none of those asks the question this answers.
+ */
+export function buildHeldEntries(snap: SamplingSnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const r of snap.requests) {
+    if (r.status !== "on_hold") continue;
+    const step = heldStep(r);
+    if (!step) continue;
+    out.push({
+      stepKey: step,
+      entityType: "request",
+      entityId: r.id,
+      ref: r.reqNo,
+      dueIso: samplingDueIso(snap, r, step),
+      requestId: r.id,
+    });
+  }
+  return out;
+}
 
 /** Every open work-item, one per (current step, request). */
 export function buildQueueEntries(snap: SamplingSnapshot): QueueEntry[] {
