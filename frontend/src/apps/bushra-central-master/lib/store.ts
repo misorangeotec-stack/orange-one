@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ITEM_TYPES, type ItemType, type MasterItem } from "@/core/platform/liveMasters";
+import { colourFromDescription } from "./itemColour";
 
 /**
  * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items.
@@ -33,10 +34,11 @@ import { ITEM_TYPES, type ItemType, type MasterItem } from "@/core/platform/live
 /**
  * The fields that can be changed here.
  *
- * `groupName`, `color` and `description` have no central column behind them at
- * all — Central Masters holds an item's group as a per-company id, and carries
- * neither a colour nor a description (MS-1). They are mine outright. The rest
- * mirror a central column and are stored only while they disagree with it.
+ * Every one of them now has a value behind it, so every one is stored only while
+ * it DISAGREES with that value. `groupName` resolves Central's per-company group
+ * id to its name. Central Masters carries neither a colour nor a description
+ * column (MS-1), so those two are taken from Tally instead: the description is
+ * Tally's own item name, and the colour is read out of it (lib/itemColour.ts).
  */
 export interface MirrorOverride {
   itemType?: ItemType | null;
@@ -237,7 +239,16 @@ function commit(next: OverrideMap) {
 
 const norm = (v: string | null | undefined) => (v ?? "").trim() || null;
 
-/** The value central holds for an editable field; groupName is resolved by the caller. */
+/**
+ * The value an editable field starts at; groupName is resolved by the caller.
+ *
+ * ⚠ THIS IS WHAT "UNCHANGED" MEANS. A cell equal to this is not stored at all, so
+ *   the field keeps following its source — which is what lets a Tally rename reach
+ *   a description nobody has overwritten. Type over it and only then is it yours.
+ *
+ * Description is Tally's own item name: it IS the description, and the item has no
+ * other. Colour is read back out of that same text, so the two always agree.
+ */
 export function centralValue(item: MasterItem, key: EditableKey, centralGroupName: string | null): string | null {
   switch (key) {
     case "itemType": return item.itemType;
@@ -245,8 +256,8 @@ export function centralValue(item: MasterItem, key: EditableKey, centralGroupNam
     case "inkType": return item.inkType;
     case "groupName": return centralGroupName;
     case "code": return item.code;
-    case "color": return null;
-    case "description": return null;
+    case "description": return item.name;
+    case "color": return colourFromDescription(item.name);
   }
 }
 
