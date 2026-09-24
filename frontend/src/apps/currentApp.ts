@@ -114,7 +114,11 @@ export function buildTrail(pathname: string, pageLabel?: string | Crumb[] | null
 
   const crumbs: Crumb[] = [];
   const family = categoryLabel(app.category);
-  if (family) crumbs.push({ label: family, collapsible: true });
+  // A family step that just repeats the module name is a stutter, not a path: Reports is a
+  // category of one app with the same name, and "Reports → Reports → Finance" reads as a
+  // bug. `trimPrefix` below already handles the near-miss case ("Purchase" + "Purchase RM
+  // Import"); this is the exact-match one it cannot express, because trimming leaves nothing.
+  if (family && family !== app.name) crumbs.push({ label: family, collapsible: true });
   if (app.subGroup) crumbs.push({ label: app.subGroup, collapsible: true });
   crumbs.push({ label: trimPrefix(app.name, app.subGroup ?? family), to: app.basePath });
 

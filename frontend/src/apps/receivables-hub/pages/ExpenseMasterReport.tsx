@@ -50,7 +50,12 @@ import {
  */
 
 const NOIDA_GUID = "53d35745-5246-4e1a-a27a-d4769f245b50";
-const BASE = appBasePath("outstanding-dashboard");
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so reading the hub's base here
+ * would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 
 /** FY month order — Indian FY runs Apr → Mar. */
 const FY_MONTHS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
@@ -584,7 +589,7 @@ export default function ExpenseMasterReport() {
                                   <Td right><ChangeCell current={Number(l.ytd)} prior={Number(l.pytd)} /></Td>
                                   <Td right>
                                     {l.ledger_id && (
-                                      <Link to={`${BASE}/reports/ledger-voucher/${l.ledger_id}`}
+                                      <Link to={`${BASE}/ledger-voucher/${l.ledger_id}`}
                                             title="View ledger vouchers"
                                             className="inline-flex text-navy/60 hover:text-orange">
                                         <Eye className="h-4 w-4" />
