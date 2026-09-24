@@ -33,11 +33,28 @@
  * It follows the table: whatever is filtered, or whichever company tab is open, is what is
  * counted. Two different answers on one screen would be worse than none.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { INK_CATEGORIES, fmtDays, fmtQty, type InkRow } from "../lib/inkMis";
 
 /** Bars per panel before the tail is folded away. */
 const BARS = 5;
+
+/**
+ * Width of the name column beside the bars — PER PANEL.
+ *
+ * Group names run long — "REACTIVE H SERIES", "EP SUBLIMATION SUPER HD" — and at the old 80px
+ * every one of them ended in an ellipsis, which is the one thing a label must never do: a chart
+ * whose bars are unlabelled is a row of shapes.
+ *
+ * Each category keeps its OWN width, because the names are different lengths in each and one
+ * shared setting meant widening Reactive to fit its names also widened Chemical, whose names
+ * are short, wasting the room its bars needed. Stored by category name, so a panel remembers
+ * its width across visits.
+ */
+const LABEL_KEY = "ink-mis:chart-label-width";
+const LABEL_MIN = 80;
+const LABEL_MAX = 340;
+const LABEL_DEFAULT = 150;
 const BAR_COLOR = "#FF6A1F"; // the Hub's accent, and the only hue here — a single series
 
 export function reorderQty(r: InkRow): number {
@@ -69,6 +86,50 @@ interface Panel {
 
 export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; unit?: string }) {
   const [open, setOpen] = useState<{ category: string; group: string } | null>(null);
+
+  const [labelWidths, setLabelWidths] = useState<Record<string, number>>(() => {
+    try {
+      const raw = window.localStorage.getItem(LABEL_KEY);
+      const v = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      return v && typeof v === "object" ? v : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LABEL_KEY, JSON.stringify(labelWidths));
+    } catch {
+      /* private mode: the widths still apply for this visit */
+    }
+  }, [labelWidths]);
+
+  const widthOf = (category: string) => labelWidths[category] ?? LABEL_DEFAULT;
+
+  /** Drag one panel's divider; double-click puts that panel back. Panels are independent. */
+  const startLabelDrag = (category: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widthOf(category);
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: MouseEvent) =>
+      setLabelWidths((prev) => ({
+        ...prev,
+        [category]: Math.min(LABEL_MAX, Math.max(LABEL_MIN, startW + (ev.clientX - startX))),
+      }));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const { panels, uncategorised } = useMemo(() => {
     const by = new Map<string, Map<string, Group>>();
@@ -155,7 +216,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
         </span>
       </div>
 
-      <div className="grid gap-3 px-3 pb-3 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
+      <div className="grid gap-3 px-3 pb-3 [grid-template-columns:repeat(auto-fit,minmax(22rem,1fr))]">
         {panels.map((p) => {
           const max = p.groups[0]?.qty ?? 0;
           return (
@@ -182,9 +243,30 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
                         isOpen ? "bg-primary/10" : "hover:bg-muted/60"
                       }`}
                     >
-                      <span className="w-20 shrink-0 truncate text-[10px] text-muted-foreground">
+                      <span
+                        className="shrink-0 truncate text-[10px] text-muted-foreground"
+                        style={{ width: widthOf(p.name) }}
+                        title={g.name}
+                      >
                         {g.name}
                       </span>
+                      {/* The divider. Sits between the names and the bars, drags either way, and
+                          double-clicks back to the default. */}
+                      <span
+                        role="separator"
+                        aria-orientation="vertical"
+                        title="Drag to widen or narrow the names. Double-click to reset."
+                        onMouseDown={startLabelDrag(p.name)}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setLabelWidths((prev) => {
+                            const next = { ...prev };
+                            delete next[p.name];
+                            return next;
+                          });
+                        }}
+                        className="-mx-[3px] h-4 w-[6px] shrink-0 cursor-col-resize rounded-sm hover:bg-primary/30"
+                      />
                       <span className="relative h-3 flex-1">
                         <span
                           className="absolute left-0 top-0 h-3 rounded-r"

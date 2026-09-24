@@ -108,7 +108,9 @@ export function ResizableHead({
           width,
           minWidth: width,
           maxWidth: width,
-          ...(stickyLeft !== undefined ? { position: "sticky", left: stickyLeft, zIndex: 3 } : {}),
+          // 6 beats the 4 that plain headings carry, so a pinned heading stays on top where the
+          // two cross — the corner where the frozen block meets the frozen header row.
+          ...(stickyLeft !== undefined ? { position: "sticky", left: stickyLeft, zIndex: 6 } : {}),
         }
       : undefined;
 

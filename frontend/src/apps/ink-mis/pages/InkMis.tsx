@@ -715,36 +715,6 @@ export default function InkMis() {
           <Wand2 className="mr-2 h-4 w-4" />
           {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
-        <MultiSelect
-          values={groupsF}
-          onChange={setGroupsF}
-          options={groupOpts}
-          triggerLabel="Group"
-          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
-          searchable
-        />
-        <MultiSelect
-          values={categoriesF}
-          onChange={setCategoriesF}
-          options={categoryOpts}
-          triggerLabel="Category"
-          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
-          searchable
-        />
-        <MultiSelect
-          values={sourcesF}
-          onChange={setSourcesF}
-          options={sourceOpts}
-          triggerLabel="Import/Plant"
-          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
-        />
-        <MultiSelect
-          values={remarksF}
-          onChange={setRemarksF}
-          options={REMARK_OPTS}
-          triggerLabel="Remark"
-          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
-        />
         {filtersOn && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
@@ -824,11 +794,25 @@ export default function InkMis() {
 
       <ReorderChart rows={rows} />
 
-      <ScrollableTable>
-        <Table>
+      {/*
+        THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
+        A sticky heading pins to its scrolling ancestor, so with the page doing the scrolling
+        there was nothing for it to pin to and the headings simply left. Giving the table a
+        height of its own fixes that, and keeps the left/right buttons above it on screen
+        instead of stranded at the top of a long page.
+      */}
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
+        <Table
+          className={
+            // Every heading sticks to the top of that box. The two rows that must NOT stick —
+            // the company band above and the filter row below — switch it back off, or all
+            // three would pile up at the same offset.
+            "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-[4] [&_thead_th]:bg-card"
+          }
+        >
           <TableHeader>
             {!companyKey && cols.isVisible("companies") && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow className="bg-card hover:bg-card [&>th]:!static">
                 {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
                 <TableHead
                   colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1}
@@ -942,8 +926,8 @@ export default function InkMis() {
                 <ResizableHead id="source" cols={cols} className="min-w-[9rem]">Import/Plant</ResizableHead>
               )}
             </TableRow>
-            {/* The table's own filter row. Same state as the bar above it. */}
-            <TableRow className="hover:bg-transparent">
+            {/* The table's own filter row — the ONLY place these filters live now. */}
+            <TableRow className="bg-card hover:bg-card [&>th]:!static">
               {on("no") && <TableHead {...pinCell("no", "bg-card")} />}
               {on("group") && (
                 <TableHead {...pinMerge(pinCell("group", "bg-card"), "py-2 font-normal")}>
