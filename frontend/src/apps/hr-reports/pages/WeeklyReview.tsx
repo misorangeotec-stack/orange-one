@@ -101,7 +101,11 @@ export default function WeeklyReview() {
   const deptName = (id: string | null) => (id ? (departments.find((d) => d.id === id)?.name ?? "—") : "—");
   const personDept = person.departmentId ? (departments.find((d) => d.id === person.departmentId)?.name ?? null) : null;
   // The form belongs to the JOB — re-asked whenever the chosen person changes.
-  const personForm = formFor({ department: personDept, designation: person.designation });
+  const personForm = formFor({
+    department: personDept,
+    designation: person.designation,
+    email: person.email,
+  });
   const personName = (id: string | null) => (id ? (profiles.find((p) => p.id === id)?.name ?? "—") : "—");
 
   /* ---------------------------------------------------------------- the notes */

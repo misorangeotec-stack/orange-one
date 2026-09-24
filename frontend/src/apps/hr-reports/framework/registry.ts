@@ -144,17 +144,46 @@ export function jobsWithAFramework(): string[] {
 export interface FormEntry {
   form: ReportForm;
   appliesTo: { department: string; designation: string }[];
+  /** Named people this form is for, by email, checked BEFORE `appliesTo`. */
+  people?: string[];
 }
 
+/**
+ * ⚠ THE SAME HR COLLISION AS `FRAMEWORKS`, AND IT BITES HARDER HERE.
+ *
+ * This form is "HR — Talent Acquisition & Learning and Development | Weekly Review
+ * Report": Saloni's job, question for question. Keyed on "Human Resources · Executive"
+ * it also matched Tanisha and Khushi, who share that designation and do neither of those
+ * jobs — so the travel desk was being asked, every week, how many CVs it had sourced.
+ *
+ * A scorecard scoring the wrong targets is visible the moment somebody reads it. A weekly
+ * FORM asking the wrong questions gets filled in, week after week, and the answers look
+ * like data.
+ *
+ * Pinned by person for the same reason and with the same exit: when HR gives these roles
+ * distinct designations, delete `people` and put the real designation in `appliesTo`.
+ * Tanisha's sheet contains no weekly review form at all, so she correctly gets the empty
+ * state rather than somebody else's questions.
+ */
 export const FORMS: FormEntry[] = [
   {
     form: weeklyReviewForm,
     // "HR — Talent Acquisition & Learning and Development | Weekly Review Report".
-    appliesTo: [{ department: "Human Resources", designation: "Executive" }],
+    appliesTo: [],
+    people: ["recruitment@orangeotec.com"],
   },
 ];
 
-export function formFor(person: { department: string | null; designation: string | null }): ReportForm | null {
+export function formFor(person: {
+  department: string | null;
+  designation: string | null;
+  email?: string | null;
+}): ReportForm | null {
+  const mail = norm(person.email);
+  if (mail) {
+    const pinned = FORMS.find((e) => e.people?.some((p) => norm(p) === mail));
+    if (pinned) return pinned.form;
+  }
   const dep = norm(person.department);
   const des = norm(person.designation);
   if (!dep || !des) return null;
@@ -164,5 +193,11 @@ export function formFor(person: { department: string | null; designation: string
 
 /** Every job that files a weekly review, for the empty state to name them. */
 export function jobsWithAForm(): string[] {
-  return FORMS.flatMap((e) => e.appliesTo.map((a) => `${a.department} · ${a.designation}`)).sort();
+  // A form pinned to named people has no job to print, so it is listed by the role its
+  // own document states — see jobsWithAFramework, same reason.
+  return FORMS.flatMap((e) =>
+    e.appliesTo.length
+      ? e.appliesTo.map((a) => `${a.department} · ${a.designation}`)
+      : [e.form.role],
+  ).sort();
 }
