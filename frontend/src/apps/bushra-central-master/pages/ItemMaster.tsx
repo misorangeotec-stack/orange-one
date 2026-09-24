@@ -19,6 +19,7 @@ import {
 } from "@/core/platform/liveMasters";
 import { appName } from "../../appInfo";
 import { fetchClosingStock, fmtClosingQty, stockKey } from "../lib/closingStock";
+import { colourFromDescription } from "../lib/itemColour";
 import {
   buildBackup, centralValue, loadDrafts, markAllSeen, noteCentralIds, parseBackup, replaceAllOverrides,
   resetAllOverrides, resetOverride, saveDrafts, saveMany, useMirrorStore,
@@ -48,6 +49,14 @@ import {
  *   (lib/store.ts), and only the fields that DIFFER from central are stored — so
  *   central's later corrections to untouched fields keep flowing through.
  *
+ * ⚠ DESCRIPTION AND COLOUR ARE FILLED IN FROM TALLY, not left blank. Central Masters
+ *   carries neither column (MS-1), and the pair sat empty on every row — 5,500 cells
+ *   each, to be typed by hand, when Tally's own item name already held both answers.
+ *   The description IS that name, and the colour is the shade named in it (788 of
+ *   4,744 names carry one; lib/itemColour.ts). They are DEFAULTS in the same sense
+ *   Central's Type or Code is: shown until typed over, stored only once they differ,
+ *   and reset back by the row's Reset. Nothing is written to Tally.
+ *
  * ⚠ ONLY ITEMS HOLDING CLOSING STOCK ARE LISTED — asked for on 23-09-2026, and the
  *   one place this mirror is NOT a copy of Central Masters. Central carries every item
  *   a book has ever filed (14,242 of them); this screen is for the ones Tally is
@@ -68,6 +77,8 @@ interface MirrorRow extends MasterItem {
   centralInkType: string | null;
   centralGroupName: string | null;
   centralCode: string | null;
+  centralColor: string | null;
+  centralDescription: string | null;
   groupName: string | null;
   color: string | null;
   description: string | null;
@@ -99,9 +110,13 @@ const COLUMNS: { key: ColKey; header: string; width: number }[] = [
  * Closing stock is left out for the same reason and not a different one — it is a
  * quantity, near-unique across 5,500 rows, so its filter would be a list of 5,500
  * numbers. Its sort (numeric, see `sorted`) is what reads that column.
+ *
+ * DESCRIPTION JOINED THEM once it began defaulting to the item's own name: its list
+ * would be the Item list a second time. Colour is exactly why the rule is per-column
+ * and not a guess — two dozen shades across 5,500 rows is the most useful filter here.
  */
 const FILTER_KEYS: ColKey[] = COLUMNS.map((c) => c.key)
-  .filter((k) => k !== "item" && k !== "actions" && k !== "stock");
+  .filter((k) => k !== "item" && k !== "actions" && k !== "stock" && k !== "description");
 const HEADER: Record<string, string> = Object.fromEntries(COLUMNS.map((c) => [c.key, c.header]));
 
 const EDIT_KEYS: EditableKey[] = ["itemType", "category", "inkType", "groupName", "color", "code", "description"];
@@ -109,10 +124,16 @@ const FIELD_LABEL: Record<EditableKey, string> = {
   itemType: "Type", category: "Category", inkType: "Ink type", groupName: "Group",
   color: "Colour", code: "Code", description: "Description",
 };
-/** Which row field holds central's value for a mirrored column. Colour and Description have none. */
-const CENTRAL_FIELD: Partial<Record<EditableKey, keyof MirrorRow>> = {
+/**
+ * Which row field holds the value a column starts at — Central's for the mirrored
+ * columns, and Tally's for the two Central does not carry: Description is the item's
+ * own name, Colour is read out of it (lib/itemColour.ts). Every column has one now,
+ * so "changed by me" and Reset mean the same thing in all seven.
+ */
+const CENTRAL_FIELD: Record<EditableKey, keyof MirrorRow> = {
   itemType: "centralType", category: "centralCategory", inkType: "centralInkType",
   groupName: "centralGroupName", code: "centralCode",
+  color: "centralColor", description: "centralDescription",
 };
 /**
  * The Excel round trip. Each mirrored column travels with a "Central …" twin that
@@ -125,9 +146,12 @@ const EXCEL: { key: EditableKey; header: string; centralHeader?: string }[] = [
   { key: "category", header: "Category", centralHeader: "Central Category" },
   { key: "inkType", header: "Ink type", centralHeader: "Central Ink type" },
   { key: "groupName", header: "Group", centralHeader: "Central Group" },
-  { key: "color", header: "Colour" },
+  // Colour and Description travel with a twin like the rest: theirs records what TALLY
+  // said when the file was made, so a value left equal to it keeps following Tally
+  // rather than pinning today's name onto an item that may be renamed tomorrow.
+  { key: "color", header: "Colour", centralHeader: "Tally Colour" },
   { key: "code", header: "Code", centralHeader: "Central Code" },
-  { key: "description", header: "Description" },
+  { key: "description", header: "Description", centralHeader: "Tally Description" },
 ];
 
 const WIDTH_KEY = "bushra-central-master:colwidths:v1";
@@ -287,6 +311,14 @@ export default function ItemMaster() {
       const o = overrides[item.id] ?? {};
       const centralGroupName = centralGroupOf(item);
       const has = (k: EditableKey) => Object.prototype.hasOwnProperty.call(o, k);
+      /*
+        Description and Colour come from Tally, because Central Masters has neither
+        (MS-1): the description IS the item's name, and the colour is the shade named
+        in it. Both fall back the same way every other column does — an override only
+        when one exists — so a Tally rename still reaches a cell nobody has typed over.
+      */
+      const centralDescription = item.name;
+      const centralColor = colourFromDescription(item.name);
       out.push({
         ...item,
         centralType: item.itemType,
@@ -294,13 +326,15 @@ export default function ItemMaster() {
         centralInkType: item.inkType,
         centralGroupName,
         centralCode: item.code,
+        centralColor,
+        centralDescription,
         itemType: has("itemType") ? (o.itemType ?? null) : item.itemType,
         category: has("category") ? (o.category ?? null) : item.category,
         inkType: has("inkType") ? (o.inkType ?? null) : item.inkType,
         groupName: has("groupName") ? (o.groupName ?? null) : centralGroupName,
         code: has("code") ? (o.code ?? null) : item.code,
-        color: o.color ?? null,
-        description: o.description ?? null,
+        color: has("color") ? (o.color ?? null) : centralColor,
+        description: has("description") ? (o.description ?? null) : centralDescription,
         active: o.active ?? item.active,
         closingQty: held ? held.qty : null,
         isNew: !!seen && !seen.has(item.id),
@@ -326,10 +360,8 @@ export default function ItemMaster() {
 
   /** What is stored for a cell, and what central holds for it. */
   const storedOf = (row: MirrorRow, key: EditableKey): string => row[key] ?? "";
-  const centralOf = (row: MirrorRow, key: EditableKey): string => {
-    const f = CENTRAL_FIELD[key];
-    return f ? ((row[f] as string | null) ?? "") : "";
-  };
+  const centralOf = (row: MirrorRow, key: EditableKey): string =>
+    (row[CENTRAL_FIELD[key]] as string | null) ?? "";
   /** What a cell shows: the unsaved draft if there is one, else what is stored. */
   const valueOf = (row: MirrorRow, key: EditableKey): string => drafts[row.id]?.[key] ?? storedOf(row, key);
   const isDirty = (row: MirrorRow, key: EditableKey) => {
@@ -446,7 +478,12 @@ export default function ItemMaster() {
       inkType: inUse((r) => r.inkType),
       groupName: [...new Set([...(groups.data ?? []).map((g) => g.name), ...inUse((r) => r.groupName)])].sort((a, b) => a.localeCompare(b)),
       color: inUse((r) => r.color),
-      description: inUse((r) => r.description),
+      /*
+        NO LIST FOR DESCRIPTION, deliberately. It defaults to the item's own name, so
+        every row now holds a distinct one — the list would be ~4,700 options, one per
+        item, rendered into the DOM for a suggestion that only ever offers some other
+        item's name back. Colour is the opposite case: two dozen repeated shades.
+      */
     };
   }, [rows, groups.data]);
   // Built once per change of the lists, not on every keystroke in a cell.
@@ -542,8 +579,9 @@ export default function ItemMaster() {
         "Keep the ID column untouched — it is what matches a row back to the item.",
         "Fill in Type, Category, Ink type, Group, Colour, Code or Description and import this file back.",
         "Type must be one of the names the Type dropdown offers. Everything else is free text.",
-        "The \"Central …\" columns record what Central Masters said when this file was made. Leave them alone:",
-        "a value you leave equal to its Central column keeps following Central, even if Central changes it later.",
+        "Description starts as Tally's own item name, and Colour as the shade named in it — correct either.",
+        "The \"Central …\" and \"Tally …\" columns record what those sources said when this file was made.",
+        "Leave them alone: a value you leave equal to its twin keeps following the source, even if it changes later.",
         "Rows with no ID, or an ID this master does not hold, are skipped. Central Masters is never changed.",
         "Closing stock is Tally's own balance at the last sync, for reference only — editing it changes nothing.",
       ],
@@ -686,6 +724,11 @@ export default function ItemMaster() {
               not the whole catalogue. Type straight into the grid — Type, Category, Ink type, Group, Colour,
               Code and Description are all yours to fill in — then press <strong>Save</strong> once for
               everything you changed. Central Masters is never changed by anything you do here.
+            </p>
+            <p className="mt-1 max-w-3xl text-[12px] text-grey">
+              <strong>Description</strong> starts as Tally's own name for the item, and <strong>Colour</strong> as
+              the shade named in it — so both arrive filled in rather than blank. Type over either one to correct
+              it; until you do, they follow Tally, and a row's <strong>Reset</strong> puts them back.
             </p>
             <p className="mt-1 max-w-3xl text-[12px] text-grey-2">
               Closing stock is Tally's own balance for the item in its own company's book, as at the last
