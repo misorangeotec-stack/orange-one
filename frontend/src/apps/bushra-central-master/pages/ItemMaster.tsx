@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { saveAs } from "file-saver";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -21,8 +21,9 @@ import { appName } from "../../appInfo";
 import { fetchClosingStock, fmtClosingQty, stockKey } from "../lib/closingStock";
 import { colourFromDescription } from "../lib/itemColour";
 import {
-  buildBackup, centralValue, loadDrafts, markAllSeen, noteCentralIds, parseBackup, replaceAllOverrides,
-  resetAllOverrides, resetOverride, saveDrafts, saveMany, useMirrorStore,
+  adoptLocalOverrides, APP_ID, buildBackup, centralValue, hasLocalOverrides, loadDrafts, markAllSeen,
+  noteCentralIds, OVERRIDES_KEY, parseBackup, replaceAllOverrides, resetAllOverrides, resetOverride,
+  saveDrafts, saveMany, useOverrides, useSeen,
   type DraftMap, type EditableKey, type MirrorEdit,
 } from "../lib/store";
 
@@ -45,9 +46,17 @@ import {
  *
  * ⚠ CENTRAL IS NEVER WRITTEN. Items are read live from `mst_items` on the same
  *   query keys the admin screen uses, so the PF-17 realtime signal brings new
- *   central items in here on its own. Everything typed here stays in this browser
- *   (lib/store.ts), and only the fields that DIFFER from central are stored — so
- *   central's later corrections to untouched fields keep flowing through.
+ *   central items in here on its own. Only the fields that DIFFER from central are
+ *   stored — so central's later corrections to untouched fields keep flowing through.
+ *
+ * ⚠ THE SAVED VALUES ARE THE TEAM'S, SHARED — asked for on 24-09-2026, replacing the
+ *   browser-only store this app shipped with. They live in
+ *   `bushra_central_master_overrides`; everyone granted the module reads them, and
+ *   only an 'edit' grant may change them (RLS enforces it, `canEdit` mirrors it).
+ *   A save therefore replaces what EVERYONE sees, and two people on one cell resolve
+ *   last-save-wins — which is why every destructive control here says whose data it
+ *   is before it acts. Unsaved drafts and the "New from central" flags stay on this
+ *   browser, per person: they are about one reader, not about the item (lib/store.ts).
  *
  * ⚠ DESCRIPTION AND COLOUR ARE FILLED IN FROM TALLY, not left blank. Central Masters
  *   carries neither column (MS-1), and the pair sat empty on every row — 5,500 cells
@@ -128,7 +137,7 @@ const FIELD_LABEL: Record<EditableKey, string> = {
  * Which row field holds the value a column starts at — Central's for the mirrored
  * columns, and Tally's for the two Central does not carry: Description is the item's
  * own name, Colour is read out of it (lib/itemColour.ts). Every column has one now,
- * so "changed by me" and Reset mean the same thing in all seven.
+ * so "Changed" and Reset mean the same thing in all seven.
  */
 const CENTRAL_FIELD: Record<EditableKey, keyof MirrorRow> = {
   itemType: "centralType", category: "centralCategory", inkType: "centralInkType",
@@ -176,8 +185,19 @@ const filterClass =
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 export default function ItemMaster() {
-  const { user } = useSession();
-  const { overrides, seen } = useMirrorStore(user.id);
+  const { user, canEditModule } = useSession();
+  /**
+   * May this person change anything? The client-side twin of the RLS rule on
+   * `bushra_central_master_overrides` — a view-only reader sees the team's values in
+   * full and is simply not offered the controls that would fail at the database.
+   */
+  const canEdit = canEditModule(APP_ID);
+  const qc = useQueryClient();
+  /** The TEAM's saved values, shared by everyone. A refetch is what picks up their edits. */
+  const overridesQ = useOverrides();
+  const overrides = useMemo(() => overridesQ.data ?? {}, [overridesQ.data]);
+  const seen = useSeen(user.id);
+  const refreshOverrides = useCallback(() => qc.invalidateQueries({ queryKey: OVERRIDES_KEY }), [qc]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [colFilters, setColFilters] = useState<Record<string, string[]>>({});
@@ -187,10 +207,39 @@ export default function ItemMaster() {
   const [drafts, setDrafts] = useState<DraftMap>(() => loadDrafts());
   /** False when the browser refused to keep the drafts — only then does a reload lose them. */
   const [draftsKept, setDraftsKept] = useState(true);
+  /** A save is in flight. The server round trip is no longer instant, so the button says so. */
+  const [saving, setSaving] = useState(false);
   const backupRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setDraftsKept(saveDrafts(drafts)); }, [drafts]);
+
+  /*
+    ONE-TIME ADOPTION of the edits this browser kept before the store was shared.
+    Runs once the team's values have loaded, because it must know which items already
+    carry someone else's answer and leave those alone. Skipped for a view-only reader:
+    they cannot write, and their old private values are not theirs to publish for
+    everyone. A failure is left to the next open — the local copy is removed only
+    after the write lands, so nothing is lost by trying again.
+  */
+  const adopted = useRef(false);
+  useEffect(() => {
+    if (adopted.current || !canEdit || !overridesQ.isSuccess) return;
+    if (!hasLocalOverrides(user.id)) return;
+    adopted.current = true;
+    (async () => {
+      try {
+        const n = await adoptLocalOverrides(user.id, user.id);
+        if (n > 0) {
+          await refreshOverrides();
+          setNote({ text: `Moved your ${plural(n, "saved item")} from this browser to the shared list — everyone can see them now.` });
+        }
+      } catch (err) {
+        adopted.current = false; // let the next open try again
+        setNote({ text: `Your earlier edits are still only in this browser — ${(err as Error).message}`, bad: true });
+      }
+    })();
+  }, [canEdit, overridesQ.isSuccess, user.id, refreshOverrides]);
 
   // ---- column widths, dragged on the header and remembered ------------------
   const [widths, setWidths] = useState<Record<string, number>>(() => {
@@ -275,7 +324,13 @@ export default function ItemMaster() {
    * thirds of the master.
    */
   const stockRunning = companies.isPending || (companyGuids.length > 0 && stock.isPending);
-  const ready = items.isSuccess && groups.isSuccess && !stockRunning;
+  /*
+    ⚠ THE TEAM'S OVERRIDES MUST BE LOADED BEFORE ANYTHING MAY BE SAVED. `saveMany`
+      folds each edit into what is already stored for that item; against a map that
+      has not arrived yet, every OTHER field on an edited row would read as unset and
+      be dropped. So the shared read joins the gate rather than being awaited later.
+  */
+  const ready = items.isSuccess && groups.isSuccess && overridesQ.isSuccess && !stockRunning;
   const loadError = (items.error ?? groups.error) as Error | null;
   const sideError = (companies.error ?? units.error) as Error | null;
 
@@ -391,7 +446,7 @@ export default function ItemMaster() {
       case "company": return row.companyId ? companyLabel.get(row.companyId) ?? "" : "";
       case "unit": return row.unitId ? unitName.get(row.unitId) ?? "" : "";
       case "stock": return fmtClosingQty(row.closingQty);
-      case "status": return row.isChanged ? "Changed by me" : "Same as central";
+      case "status": return row.isChanged ? "Changed" : "Same as central";
       case "actions": return "";
       default: return row[key] ?? "";
     }
@@ -494,20 +549,24 @@ export default function ItemMaster() {
   )), [suggestions]);
 
   // ---- save / discard -------------------------------------------------------
-  const save = () => {
-    if (!ready || dirtyCount === 0) return;
+  const save = async () => {
+    if (!ready || dirtyCount === 0 || !canEdit || saving) return;
     const edits: MirrorEdit[] = [];
     for (const [id, values] of Object.entries(drafts)) {
       const item = byId.get(id);
       if (item) edits.push({ item, centralGroupName: centralGroupOf(item), values });
     }
+    setSaving(true);
     try {
-      const n = saveMany(edits);
+      const n = await saveMany(edits, overrides, user.id);
       setDrafts({});
-      setNote({ text: `Saved your changes on ${plural(n, "item")}.` });
+      await refreshOverrides();
+      setNote({ text: `Saved changes on ${plural(n, "item")} — everyone can see them.` });
     } catch (err) {
-      // Nothing was written: the drafts stay on screen, and the note says why.
-      setNote({ text: (err as Error).message, bad: true });
+      // The drafts stay on screen, so nothing typed is lost and the save can be retried.
+      setNote({ text: `Not saved — ${(err as Error).message}`, bad: true });
+    } finally {
+      setSaving(false);
     }
   };
   const saveRef = useRef(save);
@@ -523,20 +582,25 @@ export default function ItemMaster() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveRef.current(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void saveRef.current(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const resetRow = (row: MirrorRow) => {
-    // A saved change is gone for good once reset, so it asks; unsaved edits are only discarded.
-    if (row.isChanged && !window.confirm(`Undo your saved changes on "${row.name}" and go back to Central's values?`)) return;
+  const resetRow = async (row: MirrorRow) => {
+    // The saved value belongs to the team now, so the warning says whose it is. Unsaved
+    // edits are only this person's and are discarded without asking.
+    if (row.isChanged && !window.confirm(
+      `Undo the saved changes on "${row.name}" and go back to Central and Tally's values?\n\n` +
+      "This affects everyone, not only you, and cannot be undone.",
+    )) return;
     setDrafts((cur) => { const { [row.id]: _gone, ...rest } = cur; return rest; });
-    if (!row.isChanged) return;
+    if (!row.isChanged || !canEdit) return;
     try {
-      resetOverride(row.id);
-      setNote({ text: `"${row.name}" is back to Central's values.` });
+      await resetOverride(row.id);
+      await refreshOverrides();
+      setNote({ text: `"${row.name}" is back to Central and Tally's values.` });
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
     }
@@ -572,7 +636,7 @@ export default function ItemMaster() {
       rows: sorted,
       filters: [
         ...(q.trim() ? [`Search: "${q.trim()}"`] : []),
-        ...(filter === "changed" ? ["Only items I changed"] : filter === "new" ? ["Only new from central"] : []),
+        ...(filter === "changed" ? ["Only changed items"] : filter === "new" ? ["Only new from central"] : []),
         ...activeColFilters.map((k) => `${HEADER[k]}: ${colFilters[k].map(filterOptionLabel).join(", ")}`),
       ],
       notes: [
@@ -626,9 +690,10 @@ export default function ItemMaster() {
         if (Object.keys(values).length) edits.push({ item, centralGroupName: centralGroupOf(item), values });
       }
 
-      const n = saveMany(edits);
+      const n = await saveMany(edits, overrides, user.id);
+      await refreshOverrides();
       setNote({
-        text: `Imported ${plural(n, "item")}.`
+        text: `Imported ${plural(n, "item")} — everyone can see them.`
           + (skipped ? ` ${plural(skipped, "row")} skipped (no matching ID).` : "")
           + (bad.length ? ` ${bad.length} rejected — ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}` : ""),
         bad: bad.length > 0,
@@ -639,7 +704,7 @@ export default function ItemMaster() {
   };
 
   const downloadBackup = () => {
-    saveAs(new Blob([buildBackup()], { type: "application/json" }), `bushra-central-master-backup ${todayLocalIso()}.json`);
+    saveAs(new Blob([buildBackup(overrides)], { type: "application/json" }), `bushra-central-master-backup ${todayLocalIso()}.json`);
   };
 
   const restoreBackup = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -650,12 +715,15 @@ export default function ItemMaster() {
       const backup = parseBackup(await file.text());
       const incoming = Object.keys(backup.overrides).length;
       const when = backup.savedAt ? ` (saved ${new Date(backup.savedAt).toLocaleString("en-IN")})` : "";
+      // It replaces the TEAM's values, not one person's, so the warning says so plainly.
       if (!window.confirm(
-        `Replace your saved changes on ${plural(changedTotal, "item")} with this backup's ${plural(incoming, "item")}${when}?\n\n` +
-        "This cannot be undone. Take a Backup first if you might want today's changes back.",
+        `Replace the saved changes on ${plural(changedTotal, "item")} with this backup's ${plural(incoming, "item")}${when}?\n\n` +
+        "This replaces what EVERYONE sees, not only your own view, and cannot be undone. " +
+        "Take a Backup first if today's changes might still be wanted.",
       )) return;
-      replaceAllOverrides(backup.overrides);
-      setNote({ text: `Restored your changes on ${plural(incoming, "item")}.` });
+      await replaceAllOverrides(backup.overrides, user.id);
+      await refreshOverrides();
+      setNote({ text: `Restored changes on ${plural(incoming, "item")} for everyone.` });
     } catch (err) {
       setNote({ text: `Restore failed: ${(err as Error).message}`, bad: true });
     }
@@ -679,6 +747,21 @@ export default function ItemMaster() {
     const dirty = isDirty(row, key);
     const mine = row.isChanged && storedOf(row, key) !== centralOf(row, key);
     const border = dirty ? "border-orange bg-orange/5" : mine ? "border-transparent text-orange font-semibold" : "border-transparent hover:border-line";
+
+    /*
+      A view-only reader gets the VALUE, not a disabled input. A greyed-out box reads
+      as "broken" and still invites the click that does nothing; plain text reads as
+      what it is. The orange still marks a value the team has changed from its source.
+    */
+    if (!canEdit) {
+      const v = storedOf(row, key);
+      const label = key === "itemType" ? itemTypeLabel(row.itemType) : v;
+      return (
+        <span className={`block px-1.5 py-1 text-[12.5px] ${mine ? "font-semibold text-orange" : "text-ink"}`}>
+          {label || <span className="text-grey-2">—</span>}
+        </span>
+      );
+    }
 
     if (key === "itemType") {
       return (
@@ -720,10 +803,12 @@ export default function ItemMaster() {
           <div>
             <h1 className="text-[17px] font-semibold text-navy">{APP_NAME}</h1>
             <p className="mt-1 max-w-3xl text-[13px] text-grey">
-              Your own copy of the items in Central Masters that are <strong>holding closing stock</strong> —
-              not the whole catalogue. Type straight into the grid — Type, Category, Ink type, Group, Colour,
+              The items in Central Masters that are <strong>holding closing stock</strong> — not the whole
+              catalogue. {canEdit ? <>Type straight into the grid — Type, Category, Ink type, Group, Colour,
               Code and Description are all yours to fill in — then press <strong>Save</strong> once for
-              everything you changed. Central Masters is never changed by anything you do here.
+              everything you changed.</> : <>You have this module at <strong>view only</strong>, so the values
+              are shown as saved and cannot be changed here.</>} Central Masters is never changed by anything
+              done here.
             </p>
             <p className="mt-1 max-w-3xl text-[12px] text-grey">
               <strong>Description</strong> starts as Tally's own name for the item, and <strong>Colour</strong> as
@@ -736,21 +821,39 @@ export default function ItemMaster() {
               it is next received; whatever you typed against it is kept in the meantime.
             </p>
             <p className="mt-1 text-[11.5px] text-grey-2">
-              Saved in this browser only, for your login only — take a Backup now and then. Values you have
-              changed show in orange. Unsaved edits are kept until you Save or Discard. Drag a column edge to resize it.
+              <strong>Saved values are shared.</strong> Everyone with this module sees what is saved here, and
+              a save replaces what they see — so if two people change the same cell, the later save is the one
+              that stands. Changed values show in orange. Unsaved edits stay on this browser, yours alone,
+              until you Save or Discard. Drag a column edge to resize it.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {dirtyCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setDrafts({})}>Discard {dirtyCount}</Button>
-            )}
-            <Button size="sm" onClick={save} disabled={!ready || dirtyCount === 0}>
-              {dirtyCount > 0 ? `Save ${plural(dirtyCount, "change")}` : "Save"}
-            </Button>
-          </div>
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-2">
+              {dirtyCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => setDrafts({})} disabled={saving}>Discard {dirtyCount}</Button>
+              )}
+              <Button size="sm" onClick={save} disabled={!ready || dirtyCount === 0 || saving}>
+                {saving ? "Saving…" : dirtyCount > 0 ? `Save ${plural(dirtyCount, "change")}` : "Save"}
+              </Button>
+            </div>
+          )}
         </div>
         {note && (
           <p className={`mt-3 rounded px-3 py-2 text-[12.5px] ${note.bad ? "bg-orange/10 text-orange" : "bg-page text-navy"}`}>{note.text}</p>
+        )}
+        {/*
+          The shared values could not be read. Said loudly and NOT silently swallowed:
+          an empty map means "nobody has changed anything", a failed read means "we do
+          not know what anyone changed" — and showing the second as the first would
+          display Central's values as though the team's work had been wiped. `ready`
+          stays false meanwhile, so nothing can be saved over what was not loaded.
+        */}
+        {overridesQ.isError && (
+          <p className="mt-3 flex flex-wrap items-center gap-3 rounded bg-orange/10 px-3 py-2 text-[12.5px] text-orange">
+            The saved values could not be read ({(overridesQ.error as Error).message}). The grid below shows
+            Central and Tally's own values only — nothing has been lost, and saving is off until this loads.
+            <Button size="sm" variant="ghost" onClick={() => void overridesQ.refetch()}>Try again</Button>
+          </p>
         )}
         {stockWarning && (
           <p className="mt-3 flex flex-wrap items-center gap-3 rounded bg-orange/10 px-3 py-2 text-[12.5px] text-orange">
@@ -770,19 +873,26 @@ export default function ItemMaster() {
             className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[14px] text-ink placeholder:text-grey-2 outline-none focus:border-orange focus:ring-4 focus:ring-orange/10"
           />
         </div>
-        {chip("changed", `Changed by me ${changedCount}`)}
+        {chip("changed", `Changed ${changedCount}`)}
         {chip("new", `New from central ${newCount}`)}
         {anyFilter && (
           <button onClick={clearFilters} className="rounded-lg px-2 py-1 text-[12.5px] font-semibold text-grey-2 hover:bg-page hover:text-orange">
             Clear filters
           </button>
         )}
+        {/* Export and Backup only READ, so a view-only reader keeps both. Import and
+            Restore write for everyone, and are not offered to someone the database
+            would refuse anyway. */}
         <Button variant="ghost" size="sm" onClick={doExport} disabled={!ready || !!blockedByDrafts} title={blockedByDrafts}>Export</Button>
-        <input ref={importRef} type="file" accept=".xlsx" className="hidden" onChange={doImport} />
-        <Button variant="ghost" size="sm" onClick={() => importRef.current?.click()} disabled={!ready || !!blockedByDrafts} title={blockedByDrafts}>Import</Button>
-        <input ref={backupRef} type="file" accept=".json,application/json" className="hidden" onChange={restoreBackup} />
         <Button variant="ghost" size="sm" onClick={downloadBackup}>Backup</Button>
-        <Button variant="ghost" size="sm" onClick={() => backupRef.current?.click()} disabled={!!blockedByDrafts} title={blockedByDrafts}>Restore</Button>
+        {canEdit && (
+          <>
+            <input ref={importRef} type="file" accept=".xlsx" className="hidden" onChange={doImport} />
+            <Button variant="ghost" size="sm" onClick={() => importRef.current?.click()} disabled={!ready || !!blockedByDrafts} title={blockedByDrafts}>Import</Button>
+            <input ref={backupRef} type="file" accept=".json,application/json" className="hidden" onChange={restoreBackup} />
+            <Button variant="ghost" size="sm" onClick={() => backupRef.current?.click()} disabled={!!blockedByDrafts} title={blockedByDrafts}>Restore</Button>
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3 px-1 text-[12px] text-grey-2">
@@ -790,14 +900,21 @@ export default function ItemMaster() {
           <button onClick={() => markAllSeen(centralIds)} className="hover:text-orange hover:underline">Mark all as seen</button>
         )}
         <button onClick={resetWidths} className="hover:text-orange hover:underline">Reset column widths</button>
-        {changedTotal > 0 && (
+        {canEdit && changedTotal > 0 && (
           <button
-            onClick={() => {
-              if (!window.confirm(`Undo your changes on all ${changedTotal} items and go back to Central's values?`)) return;
+            onClick={async () => {
+              // The single most destructive button here: it throws away the whole team's
+              // work, not this person's. The warning has to say that before it is pressed.
+              if (!window.confirm(
+                `Undo the changes on all ${changedTotal} items and go back to Central and Tally's values?\n\n` +
+                "This deletes what EVERYONE has typed, for every item, and cannot be undone. " +
+                "Take a Backup first if any of it might still be wanted.",
+              )) return;
               try {
-                resetAllOverrides();
+                await resetAllOverrides();
                 setDrafts({});
-                setNote({ text: "All items are back to Central's values." });
+                await refreshOverrides();
+                setNote({ text: "All items are back to Central and Tally's values." });
               } catch (err) {
                 setNote({ text: (err as Error).message, bad: true });
               }
@@ -914,8 +1031,8 @@ export default function ItemMaster() {
                           : <span className="text-grey-2">Same as central</span>}
                     </td>
                     <td className="px-3 py-1.5 text-[12px]">
-                      {(row.isChanged || drafts[row.id]) ? (
-                        <button onClick={() => resetRow(row)} className="font-semibold text-grey hover:text-orange">Reset</button>
+                      {canEdit && (row.isChanged || drafts[row.id]) ? (
+                        <button onClick={() => void resetRow(row)} className="font-semibold text-grey hover:text-orange">Reset</button>
                       ) : <span className="text-grey-2/50">—</span>}
                     </td>
                   </tr>
