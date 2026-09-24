@@ -87,6 +87,7 @@ export function ResizableHead({
   colSpan,
   stickyLeft,
   fallbackWidth,
+  measureRef,
   children,
 }: {
   id: string;
@@ -98,9 +99,14 @@ export function ResizableHead({
   /** Width to use when the planner has not resized this column. A pinned column needs a KNOWN
    *  width, or the offsets of the ones after it are guesses. */
   fallbackWidth?: number;
+  /** Handed the cell so the page can MEASURE it — a frozen column's offset has to be the
+   *  width the browser actually gave the one before it, not the width we asked for. */
+  measureRef?: (el: HTMLTableCellElement | null) => void;
   children?: ReactNode;
 }) {
-  const ref = useRef<HTMLTableCellElement>(null);
+  // Not useRef<T>(null), whose `current` React types as read-only: this ref is assigned by hand
+  // in the callback below so the cell can be both measured and dragged.
+  const ref = useRef<HTMLTableCellElement | null>(null);
   const width = cols.widthOf(id) ?? fallbackWidth;
   const style: CSSProperties | undefined =
     width !== undefined
@@ -136,7 +142,15 @@ export function ResizableHead({
   };
 
   return (
-    <TableHead ref={ref} style={style} colSpan={colSpan} className={`relative ${className ?? ""}`}>
+    <TableHead
+      ref={(el) => {
+        ref.current = el;
+        measureRef?.(el);
+      }}
+      style={style}
+      colSpan={colSpan}
+      className={`relative ${className ?? ""}`}
+    >
       {children}
       <span
         role="separator"

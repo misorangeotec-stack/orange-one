@@ -35,7 +35,7 @@
  * ETD IS EXCLUDED FROM COVER. Only ETA and AT PORT count towards the total, matching the
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
@@ -505,26 +505,58 @@ export default function InkMis() {
   ];
   const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
 
-  /** Left offset of each pinned column: the widths of the pinned columns before it. */
-  const pinLeft = useMemo(() => {
+  /**
+   * Offsets are MEASURED, never assumed.
+   *
+   * The first version added up the widths it had asked for, but a table lays its columns out to
+   * fit their contents and hands back something else — so every frozen column after the first
+   * sat at the wrong offset and the block overlapped itself, which is exactly what it looked
+   * like. Each frozen heading is measured and the next one starts where that one really ends.
+   *
+   * Body cells get the offset and a solid background, and NO width: the column's width belongs
+   * to the table, and forcing a second opinion on it is what pulled them out of line.
+   */
+  const pinEls = useRef<Record<string, HTMLTableCellElement | null>>({});
+  const [pinLeft, setPinLeft] = useState<Record<string, number>>({});
+
+  const measurePins = useCallback(() => {
     const out: Record<string, number> = {};
     let x = 0;
     for (const id of PINNED) {
-      if (!leadVisible.some((c) => c.id === id)) continue;
+      const el = pinEls.current[id];
+      if (!el) continue;
       out[id] = x;
-      x += cols.widthOf(id) ?? PIN_WIDTH[id];
+      x += el.getBoundingClientRect().width;
     }
-    return out;
-  }, [cols, leadVisible]);
+    setPinLeft((prev) => {
+      const same =
+        Object.keys(out).length === Object.keys(prev).length &&
+        Object.entries(out).every(([k, v]) => Math.abs((prev[k] ?? -1) - v) < 0.5);
+      return same ? prev : out;
+    });
+  }, []);
 
-  /** Everything a pinned BODY cell needs: the same offset, a solid background, and the width. */
+  useLayoutEffect(measurePins);
+  useEffect(() => {
+    const els = Object.values(pinEls.current).filter(Boolean) as HTMLTableCellElement[];
+    if (!els.length) return;
+    const ro = new ResizeObserver(measurePins);
+    els.forEach((el) => ro.observe(el));
+    window.addEventListener("resize", measurePins);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measurePins);
+    };
+  }, [measurePins, rows.length, freeze, cols.hidden.length]);
+
   const pinCell = (id: string, tone = "bg-background") => {
     const left = pinLeft[id];
-    if (!freeze || left === undefined) return { className: "", style: undefined as CSSProperties | undefined };
-    const width = cols.widthOf(id) ?? PIN_WIDTH[id];
+    if (!freeze || left === undefined) {
+      return { className: "", style: undefined as CSSProperties | undefined };
+    }
     return {
       className: `sticky z-[2] ${tone}`,
-      style: { left, width, minWidth: width, maxWidth: width } as CSSProperties,
+      style: { left } as CSSProperties,
     };
   };
   const on = (id: string) => leadVisible.some((c) => c.id === id);
@@ -609,11 +641,14 @@ export default function InkMis() {
       };
     });
 
-  /** Props for a pinned HEADING: the id, its offset and the width the offset assumes. */
+  /** Props for a pinned HEADING: its id, its measured offset, and the cell to measure. */
   const pinHead = (id: string) => ({
     id,
     stickyLeft: freeze ? pinLeft[id] : undefined,
     fallbackWidth: PIN_WIDTH[id],
+    measureRef: (el: HTMLTableCellElement | null) => {
+      pinEls.current[id] = el;
+    },
     className: freeze ? "bg-card" : "",
   });
 
