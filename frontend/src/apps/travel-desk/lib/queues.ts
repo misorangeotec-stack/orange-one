@@ -1,7 +1,7 @@
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom } from "@/shared/lib/stepSla";
 import { addWorkingDaysSigned, localDateIso } from "@/shared/lib/workingDays";
-import type { StepKey } from "./steps";
+import { stepByKey, type StepKey } from "./steps";
 import { TRIGGER_STEPS, type StepSlaMap } from "./sla";
 import { STATUS_STEP, type Trip } from "../types";
 
@@ -210,6 +210,43 @@ export function buildQueueEntries(trips: Trip[], stepSla: StepSlaMap | null | un
     });
   }
 
+  return out;
+}
+
+/**
+ * Every HELD trip, as one entry at the step it is parked at.
+ *
+ * `current_step` is the answer: `fms_travel_hold_trip` stashes `hold_from_status`
+ * and sets `status = 'on_hold'` without touching `current_step`; only the resume
+ * branch rewrites both. See `office-supplies/lib/queues.ts#heldStep`.
+ *
+ * This is the same population as `parkedTrips` below, in the shape My Work needs.
+ * That one hands the Control Center whole trips for its "Parked" strip; this one
+ * addresses each to the step — and so to the people — it is parked on. Read ONLY
+ * by My Work's `items/` rule; `buildQueueEntries` still excludes held trips.
+ */
+export function buildHeldEntries(trips: Trip[], stepSla: StepSlaMap | null | undefined): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const t of trips) {
+    if (t.status !== "on_hold") continue;
+    const def = t.currentStep ? stepByKey(t.currentStep) : undefined;
+    if (!def || def.noQueue) continue;
+    const step = def.key as QueueStep;
+    out.push({
+      stepKey: step,
+      entityId: t.id,
+      ref: t.tripNo ?? t.travellerName,
+      dueIso: tripDueIso(t, step, stepSla),
+      tripId: t.id,
+      travellerId: t.travellerId,
+      travellerName: t.travellerName,
+      departmentId: t.snapDepartmentId,
+      destinationCityId: t.destinationCityId,
+      departureIso: t.plannedDepartureDate,
+      status: t.status,
+      approverManagerIds: t.approverManagerIds,
+    });
+  }
   return out;
 }
 

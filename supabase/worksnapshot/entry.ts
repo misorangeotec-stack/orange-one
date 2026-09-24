@@ -51,7 +51,7 @@
 
 // ── IMPORTED, NOT COPIED — this is the screen's real logic ────────────────────
 import { appName, appBasePath } from "@/apps/appInfo";
-import { bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
+import { holdAwareBucketOf, todayLocalIso, type WorkBucket } from "@/shared/lib/dueBuckets";
 import { toIst } from "./istWorkingDays";
 import { dueIsoFrom } from "./istStepSla";
 import { isMineByStepOwners, stepOwnerIdsFor, type StepOwnerRow } from "@/shared/lib/fmsOwners";
@@ -97,15 +97,28 @@ export interface SourceSummary {
   dueToday: number;
   next2: number;
   noDate: number;
+  /** Parked by someone with the right to hold it. Never part of the four above. */
+  hold: number;
 }
 
-/** The four tiles at the top of My Work Today, in the same order and arithmetic. */
+/** The tiles at the top of My Work Today, in the same order and arithmetic. */
 export interface Tiles {
   overdue: number;
   dueToday: number;
   /** "Next 2 days" is tomorrow + the day after — one tile, two buckets. */
   next2: number;
   noDate: number;
+  /**
+   * ON HOLD — parked work, counted apart from all four.
+   *
+   * It has to be here and not folded into `overdue`, because this mail and the
+   * home screen run the SAME `items/` rules and must not disagree about the same
+   * person: the screen stopped counting held rows as due, so the mail has to as
+   * well. Held rows are also excluded from `totalItems` and from a source's
+   * `items`, for the same reason the screen keeps them out of its list — the mail
+   * says "what you owe today", and a parked row is not that.
+   */
+  hold: number;
 }
 
 export interface WorkSnapshot {
@@ -331,12 +344,15 @@ export function computeSnapshot(
 
   const scoped = isAdmin ? all.filter((i) => i.assignment === "direct") : all;
 
-  const tiles: Tiles = { overdue: 0, dueToday: 0, next2: 0, noDate: 0 };
+  const tiles: Tiles = { overdue: 0, dueToday: 0, next2: 0, noDate: 0, hold: 0 };
   const per = new Map<string, SourceSummary>();
 
   for (const item of scoped) {
-    const b: Bucket | null = bucketOf(item.dueIso, today);
-    if (b === "delayed") tiles.overdue++;
+    // `holdAwareBucketOf` sends a held row to `hold` whatever its due date says —
+    // the same one function the home screen buckets with.
+    const b: WorkBucket | null = holdAwareBucketOf(item, today);
+    if (b === "hold") tiles.hold++;
+    else if (b === "delayed") tiles.overdue++;
     else if (b === "today") tiles.dueToday++;
     else if (b === "tomorrow" || b === "dayAfter") tiles.next2++;
     else if (b === "noDate") tiles.noDate++;
@@ -354,20 +370,26 @@ export function computeSnapshot(
         dueToday: 0,
         next2: 0,
         noDate: 0,
+        hold: 0,
       };
       per.set(item.source, s);
     }
-    s.items++;
-    if (b === "delayed") s.overdue++;
-    else if (b === "today") s.dueToday++;
-    else if (b === "tomorrow" || b === "dayAfter") s.next2++;
-    else if (b === "noDate") s.noDate++;
+    if (b === "hold") {
+      s.hold++;
+    } else {
+      s.items++;
+      if (b === "delayed") s.overdue++;
+      else if (b === "today") s.dueToday++;
+      else if (b === "tomorrow" || b === "dayAfter") s.next2++;
+      else if (b === "noDate") s.noDate++;
+    }
   }
 
   // Worst first: overdue by how late, then dated, then undated. The mail lists a
   // capped slice, so the cap must take the rows that matter rather than the head
   // of an arbitrary order.
-  const sorted = [...scoped].sort((a, b) => {
+  const live = scoped.filter((i) => !i.isHeld);
+  const sorted = [...live].sort((a, b) => {
     const ax = a.dueIso ?? "9999-12-31";
     const bx = b.dueIso ?? "9999-12-31";
     return ax === bx ? a.ref.localeCompare(b.ref) : ax < bx ? -1 : 1;
@@ -380,7 +402,7 @@ export function computeSnapshot(
   return {
     userId,
     forDate: today,
-    totalItems: scoped.length,
+    totalItems: live.length,
     tiles,
     sources,
     items: sorted.slice(0, maxItems),
