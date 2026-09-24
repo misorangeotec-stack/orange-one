@@ -39,7 +39,7 @@ import { stepByKey } from "@/apps/import/lib/steps";
 import type { RequestItem } from "@/apps/import/types";
 import { importWorkItems } from "@/core/workspace/mywork/items/import";
 import type { ClosedStep, DropReason, ModuleScorer, OpenStep } from "../types";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const label = (k: string) => stepByKey(k)?.title ?? k;
 const earliest = (xs: (string | null)[]): string | null =>
@@ -122,11 +122,10 @@ export const importScorer: ModuleScorer<ImportData> = {
   },
 
   openFor(data, uid) {
-    return parseItems(importWorkItems(data, uid, false)).map(({ entityId, stepKey, item }): OpenStep => {
-      const underDecision =
-        stepKey === "approval" ? data.requestItems.filter((l) => l.requestId === entityId && lineInApproval(l)) : [];
-      const held = underDecision.length > 0 && underDecision.every((l) => l.status === "on_hold");
-      return {
+    // The hold rule lives in the `items/` rule now, shared with My Work and the
+    // 9am mail — see ./purchase.ts.
+    return parseItems(importWorkItems(data, uid, false)).map(
+      ({ entityId, stepKey, item }): OpenStep => ({
         stepId: `${entityId}:${stepKey}`,
         entityId,
         ref: item.ref,
@@ -134,8 +133,8 @@ export const importScorer: ModuleScorer<ImportData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
-        drop: held ? "held" : undefined,
-      };
-    });
+        drop: heldDrop(item),
+      }),
+    );
   },
 };

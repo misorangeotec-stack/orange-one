@@ -18,7 +18,7 @@
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
-import type { StepKey } from "./steps";
+import { stepByKey, type StepKey } from "./steps";
 import type { Asset, JobStatus, ServiceJob } from "../types";
 
 /** Every step that owns a queue (all but the origin `service_due`). */
@@ -197,6 +197,47 @@ export function completedFor(snap: AssetSnapshot, step: QueueStep): StageEntry<S
       lockReason: lockReasonFor(step, j),
       row: j,
     }));
+}
+
+/**
+ * The step a HELD job is parked at, read from `current_step`.
+ *
+ * `fms_asset_hold_job` stashes `hold_from_status` and sets `status = 'on_hold'`,
+ * leaving `current_step` alone; only `fms_asset_resume_job` rewrites both. So the
+ * column still names the step the job was parked at. (This module is one of two
+ * that DO stash a from-status — but it stashes the STATUS, and the queue is keyed
+ * on the step, so the column is still the direct answer.)
+ *
+ * `current_step` is nullable here, unlike the other modules, and `service_due` is
+ * `noQueue`; either yields null rather than a row owed by nobody.
+ */
+export function heldStep(j: ServiceJob): QueueStep | null {
+  const def = j.currentStep ? stepByKey(j.currentStep) : undefined;
+  if (!def || def.noQueue) return null;
+  return def.key as QueueStep;
+}
+
+/**
+ * Every HELD job, one entry at the step it is parked at. Read ONLY by My Work's
+ * `items/` rule; `buildQueueEntries` still excludes held jobs.
+ */
+export function buildHeldEntries(snap: AssetSnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const j of snap.jobs) {
+    if (j.status !== "on_hold") continue;
+    const step = heldStep(j);
+    if (!step) continue;
+    out.push({
+      stepKey: step,
+      entityType: "job",
+      entityId: j.id,
+      ref: jobRef(snap, j),
+      dueIso: jobDueIso(snap, j, step),
+      jobId: j.id,
+      assetId: j.assetId,
+    });
+  }
+  return out;
 }
 
 /** Every open work-item, one per (current step, job). */

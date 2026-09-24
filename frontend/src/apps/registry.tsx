@@ -7,6 +7,8 @@ import { procurementApp } from "./procurement/meta";
 import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
+import { learningDevelopmentApp } from "./learning-development/meta";
+import { hrReportsApp } from "./hr-reports/meta";
 import { travelDeskApp } from "./travel-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
@@ -56,6 +58,12 @@ export const apps: AppManifest[] = [
   // Granted per user like every other module (was universal — see apps/universal.ts —
   // but that let everyone see it regardless of their grant, which admins didn't want).
   hrExitApp,
+  // Learning & Development FMS — own fms_ld_* tables. UNIVERSAL (see
+  // apps/universal.ts): every employee is a potential participant, so there are
+  // deliberately NO app_access grants for it and the Module Access matrix shows
+  // it as admins-only. The nav and RLS do the scoping instead.
+  learningDevelopmentApp,
+  hrReportsApp,
   // Travel Desk FMS — separate module (own fms_travel_* tables), granted per user
   // to whoever travels, approves, books and pays. ONE TRIP carries the request,
   // every booked leg, the advance, the expense claim and the settlement, so the

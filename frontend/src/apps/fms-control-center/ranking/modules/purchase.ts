@@ -60,7 +60,7 @@ import type { RequestItem } from "@/apps/procurement/types";
 import { purchaseWorkItems } from "@/core/workspace/mywork/items/purchase";
 import type { ClosedStep, DropReason, ModuleScorer, OpenStep } from "../types";
 import { perDataset } from "../memo";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const indexOf = perDataset(buildProcIndex);
 
@@ -152,10 +152,15 @@ export const purchaseScorer: ModuleScorer<ProcurementData> = {
 
   openFor(data, uid) {
     const idx = indexOf(data);
-    return parseItems(purchaseWorkItems(data, uid, false)).map(({ entityId, stepKey, item }): OpenStep => {
-      const underDecision = stepKey === "approval" ? linesOf(idx, entityId).filter(lineInApproval) : [];
-      const held = underDecision.length > 0 && underDecision.every((l) => l.status === "on_hold");
-      return {
+    /*
+     * The "every line under decision is on hold" rule used to live HERE, and it was
+     * the only place that knew it — which is why the ranking correctly ignored a
+     * held requisition while My Work Today and the 9am mail went on calling it
+     * overdue. It now lives in the `items/` rule all three read, and arrives as
+     * `isHeld`. One rule, one answer.
+     */
+    return parseItems(purchaseWorkItems(data, uid, false)).map(
+      ({ entityId, stepKey, item }): OpenStep => ({
         stepId: `${entityId}:${stepKey}`,
         entityId,
         ref: item.ref,
@@ -163,8 +168,8 @@ export const purchaseScorer: ModuleScorer<ProcurementData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
-        drop: held ? "held" : undefined,
-      };
-    });
+        drop: heldDrop(item),
+      }),
+    );
   },
 };
