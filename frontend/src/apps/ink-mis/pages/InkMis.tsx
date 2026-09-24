@@ -432,6 +432,65 @@ export default function InkMis() {
     window.addEventListener("mouseup", up);
   };
 
+  /**
+   * The HEADING row has its own height, dragged the same way.
+   *
+   * Its cells wrap onto two or three lines — "3-month avg", "Per day avg" — so the heading is
+   * the tallest row on the sheet and costs the most to leave alone.
+   */
+  const HEAD_PAD_DEFAULT = 16;
+  const [headPad, setHeadPad] = useState<number>(() => {
+    try {
+      const v = Number(window.localStorage.getItem("ink-mis:head-pad"));
+      return Number.isFinite(v) && v > 0 ? Math.min(v, 28) : HEAD_PAD_DEFAULT;
+    } catch {
+      return HEAD_PAD_DEFAULT;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:head-pad", String(headPad));
+    } catch {
+      /* private mode: the height still applies for this visit */
+    }
+  }, [headPad]);
+
+  const startHeadDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startPad = headPad;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: MouseEvent) =>
+      setHeadPad(Math.min(28, Math.max(2, startPad + (ev.clientY - startY) / 2)));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  /** The heading's own grab strip, along the bottom of the first frozen heading. */
+  const headHandle = (
+    <span
+      role="separator"
+      aria-orientation="horizontal"
+      title="Drag to make the heading row taller or shorter. Double-click to reset."
+      onMouseDown={startHeadDrag}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        setHeadPad(HEAD_PAD_DEFAULT);
+      }}
+      className="absolute inset-x-0 bottom-0 h-[5px] cursor-row-resize hover:bg-primary/30"
+    />
+  );
+
   /** The grab strip, in each row's first cell. */
   const rowHandle = (
     <span
@@ -549,11 +608,18 @@ export default function InkMis() {
     };
   }, [measurePins, rows.length, freeze, cols.hidden.length]);
 
+  /**
+   * `relative` and `sticky` are both position rules, and the one that wins is whichever CSS
+   * loads last — not the one written last in the class list. Adding "relative" to these cells
+   * for the row-height grab strip quietly UNSTUCK them, so Item code scrolled away under the
+   * frozen Description beside it and the column read as empty.
+   *
+   * So position is decided in one place: sticky when frozen, relative when not. Either way the
+   * cell is positioned, which is all the grab strip needs.
+   */
   const pinCell = (id: string, tone = "bg-background") => {
     const left = pinLeft[id];
-    if (!freeze || left === undefined) {
-      return { className: "", style: undefined as CSSProperties | undefined };
-    }
+    if (!freeze || left === undefined) return { className: "relative", style: undefined as CSSProperties | undefined };
     return {
       className: `sticky z-[2] ${tone}`,
       style: { left } as CSSProperties,
@@ -964,8 +1030,11 @@ export default function InkMis() {
         instead of stranded at the top of a long page.
       */}
       <div
-        style={{ ["--ink-row-pad" as string]: `${rowPad}px` }}
-        className="[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)]"
+        style={{
+          ["--ink-row-pad" as string]: `${rowPad}px`,
+          ["--ink-head-pad" as string]: `${headPad}px`,
+        }}
+        className="[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] [&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)]"
       >
       <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
         <Table
@@ -1007,6 +1076,7 @@ export default function InkMis() {
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
                   No.{colFilter("no")}
+                  {headHandle}
                 </ResizableHead>
               )}
               {on("group") && (
@@ -1016,6 +1086,8 @@ export default function InkMis() {
               )}
               <ResizableHead {...pinHead("code")} cols={cols}>
                 Item code{colFilter("code")}
+                {/* Second home for the heading's grab strip, for when No. is hidden. */}
+                {!on("no") && headHandle}
               </ResizableHead>
               {on("description") && (
                 <ResizableHead {...pinHead("description")} cols={cols}>
@@ -1187,10 +1259,7 @@ export default function InkMis() {
               <TableRow key={r.key}>
                 {on("no") && (
                   <TableCell
-                    {...pinMerge(
-                      pinCell("no"),
-                      "relative text-right text-xs tabular-nums text-muted-foreground",
-                    )}
+                    {...pinMerge(pinCell("no"), "text-right text-xs tabular-nums text-muted-foreground")}
                   >
                     {order[r.key] ?? order[r.legacyKey] ?? ""}
                     {rowHandle}
@@ -1199,7 +1268,7 @@ export default function InkMis() {
                 {on("group") && (
                   <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
                 )}
-                <TableCell {...pinMerge(pinCell("code"), "relative font-medium")}>
+                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
                   {r.itemCode}
                   {/* Second home for the grab strip: with No. hidden, the code column is the
                       leftmost cell and the handle has to be reachable there instead. */}
