@@ -51,6 +51,7 @@ import {
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import ReorderChart, { reorderQty } from "../components/ReorderChart";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import HeaderFilter, { isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
@@ -90,15 +91,21 @@ export default function InkMis() {
   const [tab, setTab] = useState<string>("combined");
   const [search, setSearch] = useState("");
   /**
-   * Group, Category and Import/Plant, as page filters AND as the table's own filter row — the
-   * same state behind both, so whichever the planner reaches for, the other shows what is on.
-   * An empty selection means "no filter", never "match nothing".
+   * A FILTER ON EVERY HEADING, keyed by column id.
+   *
+   * The old filter row could only carry four of them, so the columns a planner most wants to
+   * narrow — stock, days of cover, a consignment's quantities — could not be filtered at all. A
+   * funnel on each heading scales to thirty columns and costs no screen.
+   *
+   * An empty entry means "no filter", never "match nothing".
    */
-  const [groupsF, setGroupsF] = useState<string[]>([]);
-  const [categoriesF, setCategoriesF] = useState<string[]>([]);
-  const [sourcesF, setSourcesF] = useState<string[]>([]);
-  /** Remark is derived, not typed, so it filters on the three states the column can show. */
-  const [remarksF, setRemarksF] = useState<string[]>([]);
+  const [colFilters, setColFilters] = useState<Record<string, ColumnFilter>>({});
+  const setColFilter = (id: string, next: ColumnFilter) =>
+    setColFilters((prev) => {
+      const out = { ...prev, [id]: next };
+      if (!isFilterActive(next)) delete out[id];
+      return out;
+    });
   const [editing, setEditing] = useState(false);
   const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
@@ -230,20 +237,29 @@ export default function InkMis() {
     // to watch — so no stock filter second-guesses it. `positions` is already numbered-only.
     const scoped = built;
     const q = search.trim().toUpperCase();
-    const narrowed = scoped.filter((r) => {
-      if (groupsF.length && !groupsF.includes(r.group || "(none)")) return false;
-      if (categoriesF.length && !categoriesF.includes(r.category || "(none)")) return false;
-      if (sourcesF.length && !sourcesF.includes(r.source || "(none)")) return false;
-      if (remarksF.length && !remarksF.includes(r.remark || "(none)")) return false;
-      return true;
-    });
-    if (!q) return narrowed;
-    return narrowed.filter(
-      (r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q),
+    const searched = q
+      ? scoped.filter((r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q))
+      : scoped;
+    return searched.filter((r) =>
+      Object.entries(colFilters).every(([id, f]) => {
+        if (!isFilterActive(f)) return true;
+        const v = cellValue(r, id);
+        if (typeof v === "number" || v === null) {
+          // A blank cell fails any range: "20 and over" is not a claim an unknown can satisfy.
+          if (v === null) return false;
+          if (f.min !== undefined && v < f.min) return false;
+          if (f.max !== undefined && v > f.max) return false;
+          return true;
+        }
+        const text = v ?? "";
+        if (f.text?.trim() && !text.toUpperCase().includes(f.text.trim().toUpperCase())) return false;
+        if (f.list?.length && !f.list.includes(text)) return false;
+        return true;
+      }),
     );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, groupsF, categoriesF, sourcesF, remarksF]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, colFilters, order]);
 
   /**
    * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
@@ -283,32 +299,85 @@ export default function InkMis() {
   const reorderCount = rows.filter((r) => r.band === "low" || r.band === "mid").length;
 
 
-  const optionsFrom = (pick: (p: (typeof positions)[number]) => string) =>
-    [
-      { value: "(none)", label: "Not set" },
-      ...[...new Set(positions.map(pick).filter(Boolean))].sort().map((v) => ({ value: v, label: v })),
-    ];
-  const groupOpts = useMemo(() => optionsFrom((p) => p.group), [positions]);
-  const categoryOpts = [
-    { value: "(none)", label: "Not set" },
-    ...INK_CATEGORIES.map((c) => ({ value: c, label: c })),
-  ];
-  const sourceOpts = [
-    { value: "(none)", label: "Not set" },
-    ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),
-  ];
-  const REMARK_OPTS = [
-    { value: "NEW ORDER REQUIRED", label: "New order required" },
-    { value: "EXCESS STOCK", label: "Excess stock" },
-    { value: "(none)", label: "No remark" },
-  ];
-  const filtersOn = groupsF.length + categoriesF.length + sourcesF.length + remarksF.length > 0;
-  const clearFilters = () => {
-    setGroupsF([]);
-    setCategoriesF([]);
-    setSourcesF([]);
-    setRemarksF([]);
+  /**
+   * What one column holds for one row. A string for the columns you read, a number for the ones
+   * you compare, null where a figure has not been worked out — the single place that knows how
+   * a column id maps to a value, used by the filters and by nothing else.
+   */
+  const cellValue = (r: InkRow, id: string): string | number | null => {
+    if (id.startsWith("co:")) return r.byCompany[id.slice(3)] ?? 0;
+    if (id.startsWith("ship:") || id.startsWith("plant:")) {
+      const sid = id.slice(id.indexOf(":") + 1);
+      const ship = shipments.find((x) => x.id === sid);
+      if (!ship || !r.itemCode) return 0;
+      return ship.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0);
+    }
+    switch (id) {
+      case "no": return order[r.key] ?? order[r.legacyKey] ?? null;
+      case "group": return r.group;
+      case "code": return r.itemCode;
+      case "description": return r.description;
+      case "remark": return r.remark;
+      case "category": return r.category;
+      case "source": return sourceLabel(r.source);
+      case "m3": return r.plan.threeMonthAvg;
+      case "pd": return r.plan.perDayAvg;
+      case "lead": return r.plan.leadTime;
+      case "safety": return r.plan.safetyFactor;
+      case "days": return r.daysCover;
+      case "withEta": return r.daysCoverWithIncoming;
+      case "monthMax": return r.monthMaxLevel;
+      case "dailyMax": return r.dailyMaxLevel;
+      case "stock": return r.stock;
+      case "incoming": return r.incoming;
+      case "plantTotal": return r.plant;
+      case "total": return r.total;
+      default: return null;
+    }
   };
+
+  /** Which control a heading's funnel opens. Everything else is a number range. */
+  const FILTER_KIND: Record<string, "text" | "list" | "number"> = {
+    group: "list",
+    code: "text",
+    description: "text",
+    remark: "list",
+    category: "list",
+    source: "list",
+  };
+
+  /**
+   * The values a list filter offers, taken from every line the tab shows — NOT from the rows
+   * left after filtering, or the value you just picked would be the only one left to pick.
+   */
+  const listOptions = useMemo(() => {
+    const cache: Record<string, string[]> = {};
+    return (id: string) => {
+      if (cache[id]) return cache[id];
+      const seen = new Set<string>();
+      for (const p of positions) {
+        if (id === "group") seen.add(p.group);
+        else if (id === "category") seen.add(p.category);
+        else if (id === "source") seen.add(sourceLabel(p.source));
+      }
+      if (id === "remark") ["NEW ORDER REQUIRED", "EXCESS STOCK", ""].forEach((v) => seen.add(v));
+      cache[id] = [...seen].sort((a, b) => a.localeCompare(b));
+      return cache[id];
+    };
+  }, [positions]);
+
+  /** The funnel itself, dropped into a heading. */
+  const colFilter = (id: string) => (
+    <HeaderFilter
+      kind={FILTER_KIND[id] ?? "number"}
+      value={colFilters[id]}
+      options={FILTER_KIND[id] === "list" ? listOptions(id) : undefined}
+      onChange={(next) => setColFilter(id, next)}
+    />
+  );
+
+  const filtersOn = Object.keys(colFilters).length > 0;
+  const clearFilters = () => setColFilters({});
 
   // The company columns exist only on Combined, and only when the group is open.
   const cols = useTableColumns("dashboard");
@@ -538,7 +607,10 @@ export default function InkMis() {
         <div className="text-[10px] uppercase text-muted-foreground">
           {s.status === "PLANT" ? "Plant week" : s.status}
         </div>
-        <div>{s.reference || "(no ref)"}</div>
+        <div>
+          {s.reference || "(no ref)"}
+          {colFilter(`${s.status === "PLANT" ? "plant" : "ship"}:${s.id}`)}
+        </div>
         <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
       </>
     );
@@ -840,47 +912,76 @@ export default function InkMis() {
             <TableRow>
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
-                  No.
+                  No.{colFilter("no")}
                 </ResizableHead>
               )}
               {on("group") && (
                 <ResizableHead {...pinHead("group")} cols={cols}>
-                  Group
+                  Group{colFilter("group")}
                 </ResizableHead>
               )}
               <ResizableHead {...pinHead("code")} cols={cols}>
-                Item code
+                Item code{colFilter("code")}
               </ResizableHead>
               {on("description") && (
                 <ResizableHead {...pinHead("description")} cols={cols}>
-                  Description
+                  Description{colFilter("description")}
                 </ResizableHead>
               )}
-              {on("remark") && <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">Remark</ResizableHead>}
+              {on("remark") && (
+                <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">
+                  Remark{colFilter("remark")}
+                </ResizableHead>
+              )}
               {on("m3") && (
                 <ResizableHead id="m3" cols={cols} className="text-right">
-                  3-month avg
+                  3-month avg{colFilter("m3")}
                   <div className="text-[10px] font-normal text-muted-foreground">last 3 months ÷ 3</div>
                 </ResizableHead>
               )}
               {on("pd") && (
                 <ResizableHead id="pd" cols={cols} className="text-right">
-                  Per day avg
+                  Per day avg{colFilter("pd")}
                   <div className="text-[10px] font-normal text-muted-foreground">
                     this month ÷ {workingDays} days
                   </div>
                 </ResizableHead>
               )}
-              {on("lead") && <ResizableHead id="lead" cols={cols} className="text-right">Lead time</ResizableHead>}
-              {on("safety") && <ResizableHead id="safety" cols={cols} className="text-right">Safety</ResizableHead>}
-              {on("days") && <ResizableHead id="days" cols={cols} className="text-right">Days cover</ResizableHead>}
-              {on("withEta") && <ResizableHead id="withEta" cols={cols} className="text-right">With ETA</ResizableHead>}
-              {on("monthMax") && <ResizableHead id="monthMax" cols={cols} className="text-right">Month max</ResizableHead>}
-              {on("dailyMax") && <ResizableHead id="dailyMax" cols={cols} className="text-right">Daily max</ResizableHead>}
+              {on("lead") && (
+                <ResizableHead id="lead" cols={cols} className="text-right">
+                  Lead time{colFilter("lead")}
+                </ResizableHead>
+              )}
+              {on("safety") && (
+                <ResizableHead id="safety" cols={cols} className="text-right">
+                  Safety{colFilter("safety")}
+                </ResizableHead>
+              )}
+              {on("days") && (
+                <ResizableHead id="days" cols={cols} className="text-right">
+                  Days cover{colFilter("days")}
+                </ResizableHead>
+              )}
+              {on("withEta") && (
+                <ResizableHead id="withEta" cols={cols} className="text-right">
+                  With ETA{colFilter("withEta")}
+                </ResizableHead>
+              )}
+              {on("monthMax") && (
+                <ResizableHead id="monthMax" cols={cols} className="text-right">
+                  Month max{colFilter("monthMax")}
+                </ResizableHead>
+              )}
+              {on("dailyMax") && (
+                <ResizableHead id="dailyMax" cols={cols} className="text-right">
+                  Daily max{colFilter("dailyMax")}
+                </ResizableHead>
+              )}
               {showCompanyCols &&
                 INK_COMPANIES.map((c) => (
                   <ResizableHead key={c.key} id={`co:${c.key}`} cols={cols} className="text-right">
                     {c.label}
+                    {colFilter(`co:${c.key}`)}
                   </ResizableHead>
                 ))}
               <ResizableHead
@@ -889,6 +990,7 @@ export default function InkMis() {
                 className={`text-right font-semibold ${!companyKey && !showCompanyCols ? "border-x" : ""}`}
               >
                 {companyKey ? "Stock" : showCompanyCols ? "Total stock" : "Stock (4 companies)"}
+                {colFilter("stock")}
               </ResizableHead>
               {showShipmentCols &&
                 shipmentCols.map((s) => (
@@ -902,7 +1004,9 @@ export default function InkMis() {
                   </ResizableHead>
                 ))}
               {cols.isVisible("incoming") && (
-                <ResizableHead id="incoming" cols={cols} className="text-right">ETA + at port</ResizableHead>
+                <ResizableHead id="incoming" cols={cols} className="text-right">
+                  ETA + at port{colFilter("incoming")}
+                </ResizableHead>
               )}
               {showPlantCols &&
                 plantCols.map((s) => (
@@ -916,66 +1020,20 @@ export default function InkMis() {
                   </ResizableHead>
                 ))}
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
-                Plant total
+                Plant total{colFilter("plantTotal")}
               </ResizableHead>
-              <ResizableHead id="total" cols={cols} className="text-right font-semibold">Total</ResizableHead>
+              <ResizableHead id="total" cols={cols} className="text-right font-semibold">
+                Total{colFilter("total")}
+              </ResizableHead>
               {cols.isVisible("category") && (
-                <ResizableHead id="category" cols={cols} className="min-w-[10rem]">Category</ResizableHead>
+                <ResizableHead id="category" cols={cols} className="min-w-[10rem]">
+                  Category{colFilter("category")}
+                </ResizableHead>
               )}
               {cols.isVisible("source") && (
-                <ResizableHead id="source" cols={cols} className="min-w-[9rem]">Import/Plant</ResizableHead>
-              )}
-            </TableRow>
-            {/* The table's own filter row — the ONLY place these filters live now. */}
-            <TableRow className="bg-card hover:bg-card [&>th]:!static">
-              {on("no") && <TableHead {...pinCell("no", "bg-card")} />}
-              {on("group") && (
-                <TableHead {...pinMerge(pinCell("group", "bg-card"), "py-2 font-normal")}>
-                  <MultiSelect values={groupsF} onChange={setGroupsF} options={groupOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
-                </TableHead>
-              )}
-              {on("code") && (
-                <TableHead {...pinMerge(pinCell("code", "bg-card"), "py-2 font-normal")}>
-                  <Input
-                    className="h-8"
-                    placeholder="Code or description…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </TableHead>
-              )}
-              {on("description") && <TableHead {...pinCell("description", "bg-card")} />}
-              {on("remark") && (
-                <TableHead className="py-2 font-normal">
-                  <MultiSelect values={remarksF} onChange={setRemarksF} options={REMARK_OPTS} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" />
-                </TableHead>
-              )}
-              <TableHead
-                colSpan={
-                  leadVisible.length -
-                  (on("no") ? 1 : 0) -
-                  (on("group") ? 1 : 0) -
-                  (on("code") ? 1 : 0) -
-                  (on("description") ? 1 : 0) -
-                  (on("remark") ? 1 : 0)
-                }
-              />
-              {showCompanyCols && <TableHead colSpan={INK_COMPANIES.length} />}
-              <TableHead />
-              {showShipmentCols && shipmentCols.length > 0 && <TableHead colSpan={shipmentCols.length} />}
-              {cols.isVisible("incoming") && <TableHead />}
-              {showPlantCols && plantCols.length > 0 && <TableHead colSpan={plantCols.length} />}
-              <TableHead />
-              <TableHead />
-              {cols.isVisible("category") && (
-                <TableHead className="py-2 font-normal">
-                  <MultiSelect values={categoriesF} onChange={setCategoriesF} options={categoryOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" searchable />
-                </TableHead>
-              )}
-              {cols.isVisible("source") && (
-                <TableHead className="py-2 font-normal">
-                  <MultiSelect values={sourcesF} onChange={setSourcesF} options={sourceOpts} placeholder="All" className="w-full" triggerClassName="py-1.5 px-2.5 text-[12.5px]" />
-                </TableHead>
+                <ResizableHead id="source" cols={cols} className="min-w-[9rem]">
+                  Import/Plant{colFilter("source")}
+                </ResizableHead>
               )}
             </TableRow>
           </TableHeader>
