@@ -12,7 +12,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import { STEP_CONFIG } from "../lib/stepConfig";
-import { dispatchTypeText, dmy, isoFromDmy, qtyTotals, STEP_HOLD } from "../lib/format";
+import { dispatchTypeText, dmy, isoFromDmy, qtyTotals, STEP_HOLD, STEP_STATUS } from "../lib/format";
 import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
@@ -58,6 +58,8 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       and no edit here.
   */
   const hold = STEP_HOLD[stepKey];
+  // What the Status column reports for this step. See STEP_STATUS in lib/format.
+  const status = STEP_STATUS[stepKey];
   const [heldOnly, setHeldOnly] = useState(false);
 
   const pending = s.myQueue(stepKey);
@@ -71,17 +73,19 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     {
       key: "orderNo",
       header: "Order",
+      // Plain inline, not inline-flex (PF-20): a column dragged narrow cuts the round chip
+      // first. An inline-flex box that overflows is swallowed whole by the "…".
       cell: (r) => (
-        <span className="inline-flex items-center gap-2">
+        <>
           <Link to={`${B}/orders/${r.order.id}`} className="font-semibold text-navy hover:text-orange">
             {r.order.orderNo}
           </Link>
           {r.order.roundNo > 1 && (
-            <span className="rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
+            <span className="ml-2 inline-block rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
               R{r.order.roundNo}
             </span>
           )}
-        </span>
+        </>
       ),
       sortValue: (r) => r.order.orderNo,
       filter: { kind: "text", get: (r) => r.order.orderNo },
@@ -94,26 +98,46 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       sortValue: (r) => s.customerName(r.order.customerId),
       filter: { kind: "select", get: (r) => s.customerName(r.order.customerId) },
     },
-    // A hold has to be visible where the decision is made, or the remark the user
-    // made compulsory is written into a void. Next to the customer, not out at
-    // the right edge: the reason is read together with who it is about.
-    ...(hold
+    /*
+     * STATUS — what the person who owns this step has already decided about the
+     * order, in words.
+     *
+     * It was headed "On hold" and showed only that, which left the other two
+     * credit outcomes with nowhere to appear: a PARTIALLY APPROVED order looked
+     * identical to an untouched one here, and the only hint that anything had
+     * happened was a bare "R2" chip beside the order number — a round counter,
+     * which is a consequence of the decision rather than the decision itself, and
+     * unreadable to anyone who has not been told what it means.
+     *
+     * So the column reports the decision. `statusOf` is per step: credit has
+     * three outcomes to tell apart, every other step has only its hold.
+     */
+    ...(status
       ? [{
-          key: "hold",
-          header: "On hold",
-          cell: (r: PendingRow) =>
-            hold.held(r.order) ? (
-              <span className="inline-flex items-center gap-1.5">
-                <OutcomePill label="On hold" tone="yellow" />
-                <span className="text-[12.5px] text-grey">{hold.reason(r.order)}</span>
+          key: "status",
+          header: "Status",
+          cell: (r: PendingRow) => {
+            const v = status(r.order);
+            if (!v) return <span className="text-grey-2">—</span>;
+            return (
+              // One line (PF-20): the pill stays whole and the REASON is what gets cut, whole on
+              // hover. Without max-w-full + min-w-0 a long reason made the whole inline-flex box
+              // overflow, and an overflowing inline-flex is swallowed by a lone "…".
+              <span className="inline-flex max-w-full items-center gap-1.5">
+                <span className="shrink-0">
+                  <OutcomePill label={v.label} tone={v.tone} />
+                </span>
+                {v.reason && <span className="min-w-0 truncate text-[12.5px] text-grey">{v.reason}</span>}
               </span>
-            ) : (
-              <span className="text-grey-2">—</span>
-            ),
-          sortValue: (r: PendingRow) => (hold.held(r.order) ? 0 : 1),
-          filter: { kind: "select" as const, get: (r: PendingRow) => (hold.held(r.order) ? "On hold" : "—") },
-          exportValue: (r: PendingRow) =>
-            hold.held(r.order) ? `On hold: ${hold.reason(r.order) ?? ""}` : "",
+            );
+          },
+          // Held first, then decided, then untouched — the rows that need reading.
+          sortValue: (r: PendingRow) => status(r.order)?.rank ?? 9,
+          filter: { kind: "select" as const, get: (r: PendingRow) => status(r.order)?.label ?? "—" },
+          exportValue: (r: PendingRow) => {
+            const v = status(r.order);
+            return v ? (v.reason ? `${v.label}: ${v.reason}` : v.label) : "";
+          },
         }]
       : []),
     // Settled at intake, so they are known on every queue including this step's.
@@ -194,17 +218,18 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     {
       key: "orderNo",
       header: "Order",
+      // Plain inline, not inline-flex — see the pending Order column.
       cell: (e) => (
-        <span className="inline-flex items-center gap-2">
+        <>
           <Link to={`${B}/orders/${e.orderId}`} className="font-semibold text-navy hover:text-orange">
             {e.ref}
           </Link>
           {e.roundNo > 0 && (e.row.rounds.length > 0 || e.row.roundNo > 1) && (
-            <span className="rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
+            <span className="ml-2 inline-block rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
               R{e.roundNo}
             </span>
           )}
-        </span>
+        </>
       ),
       sortValue: (e) => `${e.ref}-${String(e.roundNo).padStart(3, "0")}`,
       filter: { kind: "text", get: (e) => e.ref },
@@ -271,6 +296,8 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       key: "status",
       header: "Order status",
       cell: (e) => <StatusPill status={e.row.status} />,
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       sortValue: (e) => e.row.status,
       filter: { kind: "select", get: (e) => e.row.status },
     },

@@ -11,7 +11,7 @@
  * fast as it did for Reports.
  *
  * ADDING A DASHBOARD LATER: add a page to an existing group, or a new group with its pages, then
- * add the <Route> in ReceivablesHubApp.tsx. The menu, the landing page and the trail follow.
+ * add the <Route> in apps/reports/ReportsApp.tsx. The menu, the landing page and the trail follow.
  *
  * PERMISSIONS: EVERY LIVE PAGE IS ALSO A REPORT. Each page has a twin entry in lib/reportCatalog.ts
  * with the SAME id and path, so it is granted per screen through profiles.receivables_allowed_reports
@@ -19,10 +19,21 @@
  * only the pages the viewer holds (groupPageIds below). A new page therefore also needs its catalogue
  * entry, or nobody but an admin can open it.
  */
-import { Factory, LayoutDashboard, Package, Receipt, type LucideIcon } from "lucide-react";
+import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, type LucideIcon } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
+import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 
-const BASE = appBasePath("outstanding-dashboard");
+/**
+ * The app that serves these screens. They were a menu inside the Outstanding Dashboard until
+ * they moved into the Reports app with the rest of the reporting (apps/reports/), so every
+ * page's `path` is now read against /reports rather than /outstanding-dashboard.
+ *
+ * ONE constant does the whole move because every href in this file is built from it — which
+ * is exactly what it was written for. The paths themselves are untouched, and they are the
+ * same strings lib/reportCatalog.ts files these screens under; see the ROUTING table there.
+ */
+const BASE = appBasePath("reports");
 
 /** "live" = built; "soon" = catalogued but not built, so the row is listed and inert. */
 export type DashboardStatus = "live" | "soon";
@@ -33,7 +44,7 @@ export interface BushraDashboardPage {
   title: string;
   /** ONE line: what this screen answers. */
   purpose: string;
-  /** Path RELATIVE to the hub base. Absent when status is "soon". */
+  /** Path relative to the PORTAL ROOT, as lib/reportCatalog.ts writes it. Absent when "soon". */
   path?: string;
   icon: LucideIcon;
   status: DashboardStatus;
@@ -79,6 +90,36 @@ export const BUSHRA_DASHBOARDS: BushraDashboardGroup[] = [
         status: "live",
       },
     ],
+  },
+  {
+    id: "sales",
+    title: "Sales",
+    blurb: "Pure sales, each product line, FOC, SOA and branch & related-party sales — by sales-type and category.",
+    icon: ShoppingCart,
+    // Generated from the preset list, so each page's id and path cannot drift from its screen.
+    pages: SALES_DASHBOARDS.map((p) => ({
+      id: p.id,
+      title: p.id === "bushra-sales-dashboard" ? p.title : `${p.title} Dashboard`,
+      purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+      path: p.path,
+      icon: p.id === "bushra-sales-dashboard" ? LayoutDashboard : ShoppingCart,
+      status: "live" as const,
+    })),
+  },
+  {
+    id: "purchase",
+    title: "Purchase",
+    blurb: "Every purchase, and machines, spare parts, service and everything else — by purchase-type, category and group.",
+    icon: Truck,
+    // Generated from the preset list, so each page's id and path cannot drift from its screen.
+    pages: PURCHASE_DASHBOARDS.map((p) => ({
+      id: p.id,
+      title: purchaseDashboardTitle(p),
+      purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+      path: p.path,
+      icon: p.id === "bushra-purchase-dashboard" ? LayoutDashboard : Truck,
+      status: "live" as const,
+    })),
   },
 ];
 

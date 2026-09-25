@@ -123,16 +123,10 @@ export default function LotCycleTime() {
         key: "fg",
         header: "Item",
         // Ink names run to four words ("KY SUBLIMATION INK BLACK") and were setting
-        // the height of every row. One line, with the full name on hover.
-        tdClassName: "max-w-[170px]",
-        cell: (c) => {
-          const name = store.fgItemById(c.request.fgItemId)?.name ?? "—";
-          return (
-            <span className="block truncate" title={name}>
-              {name}
-            </span>
-          );
-        },
+        // the height of every row. One line, with the full name on hover — cut at
+        // 170 px by the table itself since PF-20, and draggable wider.
+        cell: (c) => store.fgItemById(c.request.fgItemId)?.name ?? "—",
+        resize: { width: 170 },
         sortValue: (c) => store.fgItemById(c.request.fgItemId)?.name ?? "",
         filter: { kind: "select", get: (c) => store.fgItemById(c.request.fgItemId)?.name ?? "—" },
       },
@@ -194,6 +188,8 @@ export default function LotCycleTime() {
         header: "Status",
         defaultHidden: true,
         cell: (c) => <StatusPill status={c.request.status} />,
+        // A pill: never cut, no handle (PF-20).
+        resize: false,
         sortValue: (c) => STATUS_LABEL[c.request.status],
         filter: { kind: "select", get: (c) => STATUS_LABEL[c.request.status] },
       },
@@ -265,6 +261,9 @@ export default function LotCycleTime() {
       <LotStageChart cycles={r.rows} />
 
       <QueueTable
+        // PF-20: a fixed width key — the stage / step columns swap with the toggle, which
+        // would otherwise change the automatic key and lose the widths.
+        resizeKey="production-entry.lot-cycle"
         rows={r.rows}
         rowKey={(c) => c.request.id}
         columns={columns}

@@ -15,7 +15,7 @@ import { cn } from "@hub/lib/utils";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
-import { BASE } from "@hub/lib/menus";
+import { appBasePath } from "@/apps/appInfo";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -28,6 +28,10 @@ import {
 import { exportCustomerProfileXlsx } from "@hub/lib/exportCustomerProfile";
 import { useReceivablesScope } from "@hub/lib/scope";
 import { filterByScope, useScopedParties } from "@hub/lib/scopeParties";
+
+// The app that serves this screen, not the hub it came out of: Customer Profile moved to
+// apps/reports/ and its one outgoing link (to the Ledger Vouchers report) moved with it.
+const BASE = appBasePath("reports");
 
 /**
  * Reports → Insights → Customer Profile.
@@ -460,7 +464,7 @@ export default function CustomerProfile() {
   /** The eye drills into the ledger's voucher statement — disabled when the GUID is unknown. */
   const viewProfile = (guid: string | null, name: string) =>
     guid ? (
-      <Link to={`${BASE}/reports/ledger-voucher/${encodeURIComponent(guid)}`}
+      <Link to={`${BASE}/ledger-voucher/${encodeURIComponent(guid)}`}
             title={`Open ${name}'s ledger`}
             className="inline-flex h-7 w-7 items-center justify-center rounded-full text-grey-2 transition hover:bg-page hover:text-navy">
         <Eye className="h-4 w-4" />

@@ -15,7 +15,7 @@ import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
-import type { PurchaseRequest, RequestItem } from "../../types";
+import type { PoCancelRequest, PurchaseRequest, RequestItem } from "../../types";
 
 /**
  * Approvals Stage — REQUISITIONS routed to me, plus the decisions already made.
@@ -110,11 +110,12 @@ export default function ApprovalsQueue() {
     const lines = s.itemsForRequest(r.id);
     const names = lines.slice(0, 2).map((l) => s.itemById(l.itemId)?.name ?? "—");
     const rest = lines.length - names.length;
+    // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
     return (
-      <div className="min-w-0">
+      <>
         <span className="font-medium text-navy">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
         <span className="ml-1.5 text-[11.5px] text-grey-2">{names.join(", ")}{rest > 0 ? ` +${rest} more` : ""}</span>
-      </div>
+      </>
     );
   };
   const itemsText = (r: PurchaseRequest) => s.itemsForRequest(r.id).map((l) => s.itemById(l.itemId)?.name ?? "").join(", ");
@@ -153,6 +154,47 @@ export default function ApprovalsQueue() {
       sortValue: (e) => s.personName(e.actorId),
       filter: { kind: "select", get: (e) => (e.actorId ? s.personName(e.actorId) : "Not recorded") },
       tdClassName: "whitespace-nowrap",
+    },
+  ];
+
+  /** Vendor-requested PO cancellations (PF-20: moved from a hand-built table onto QueueTable). */
+  const cancelPoNo = (r: PoCancelRequest) => s.poById(r.poId)?.poNo ?? "—";
+  const cancelBy = (r: PoCancelRequest) => (r.requestedBy ? s.profileById(r.requestedBy)?.name ?? "—" : "—");
+  const cancelReason = (r: PoCancelRequest) => (r.vendorRef ? `${r.reason} · ${r.vendorRef}` : r.reason);
+  const cancelColumns: QueueColumn<PoCancelRequest>[] = [
+    {
+      key: "po",
+      header: "PO",
+      cell: (r) => <span className="font-semibold text-navy">{cancelPoNo(r)}</span>,
+      sortValue: (r) => cancelPoNo(r),
+      filter: { kind: "select", get: (r) => cancelPoNo(r) },
+    },
+    {
+      key: "requestedBy",
+      header: "Requested by",
+      cell: (r) => cancelBy(r),
+      sortValue: (r) => cancelBy(r),
+      filter: { kind: "select", get: (r) => cancelBy(r) },
+    },
+    {
+      key: "reason",
+      header: "Reason",
+      cell: (r) => (
+        <>
+          <span className="text-navy">{r.reason}</span>
+          {r.vendorRef ? <span className="text-grey-2"> · {r.vendorRef}</span> : null}
+        </>
+      ),
+      sortValue: (r) => cancelReason(r),
+      filter: { kind: "text", get: (r) => cancelReason(r) },
+    },
+    {
+      key: "requested",
+      header: "Requested",
+      cell: (r) => formatDate(r.createdAt),
+      sortValue: (r) => r.createdAt,
+      filter: { kind: "date", get: (r) => r.createdAt.slice(0, 10) },
+      exportValue: (r) => formatDate(r.createdAt),
     },
   ];
 
@@ -222,24 +264,23 @@ export default function ApprovalsQueue() {
         <div>
           <h2 className="text-[16px] font-bold text-navy">PO cancellation requests</h2>
           <p className="text-[13px] text-grey-2 mt-0.5 mb-2.5">Vendor-requested PO cancellations awaiting your decision.</p>
-          <Card className="overflow-hidden">
-            <table className="w-full text-[13.5px]">
-              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th><th className="font-medium px-4 py-3">PO</th><th className="font-medium px-4 py-3">Requested by</th><th className="font-medium px-4 py-3">Reason</th><th className="font-medium px-4 py-3">Requested</th></tr></thead>
-              <tbody>
-                {s.pendingPoCancelRequests.map((r) => {
-                  const po = s.poById(r.poId);
-                  return (
-                    <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                      <td className="px-4 py-3 whitespace-nowrap"><Link to={`/procurement/pos/${r.poId}`} className="text-[12.5px] font-semibold text-orange hover:underline">Review PO →</Link></td>
-                      <td className="px-4 py-3 font-semibold text-navy whitespace-nowrap">{po?.poNo ?? "—"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{r.requestedBy ? s.profileById(r.requestedBy)?.name ?? "—" : "—"}</td>
-                      <td className="px-4 py-3 text-navy min-w-[180px] max-w-[360px]"><span title={r.reason}>{r.reason}</span>{r.vendorRef ? <span className="text-grey-2"> · {r.vendorRef}</span> : null}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          {/* A QueueTable since PF-20 (it was hand-built, with no sort or filter): every column
+              sorts and filters, one line per row, the reason cut and whole on hover. Its one
+              control, "Review PO →", is the row action. */}
+          <Card className="p-4">
+            <QueueTable
+              rows={s.pendingPoCancelRequests}
+              rowKey={(r) => r.id}
+              columns={cancelColumns}
+              rowsLabel="requests"
+              emptyTitle="No cancellation requests"
+              emptyMessage="Vendor-requested PO cancellations awaiting your decision appear here."
+              actions={(r) => (
+                <Link to={`/procurement/pos/${r.poId}`} className="text-[12.5px] font-semibold text-orange hover:underline">
+                  Review PO →
+                </Link>
+              )}
+            />
           </Card>
         </div>
       )}

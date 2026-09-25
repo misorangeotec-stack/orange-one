@@ -1,19 +1,24 @@
 import type { AppManifest } from "./types";
 import type { AppCategory } from "./categories";
 import { taskManagementApp } from "./task-management/meta";
+import { kraKpiApp } from "./kra-kpi/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
 import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
+import { learningDevelopmentApp } from "./learning-development/meta";
+import { hrReportsApp } from "./hr-reports/meta";
 import { travelDeskApp } from "./travel-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
+import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
+import { reportsApp } from "./reports/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { ocpiApp } from "./ocpi/meta";
@@ -21,6 +26,7 @@ import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { dailyReportApp } from "./daily-report/meta";
+import { announcementsApp } from "./announcements/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -39,6 +45,10 @@ const comingSoon = (
 
 export const apps: AppManifest[] = [
   taskManagementApp,
+  // KRA / KPI Scorecard (KPI-1) — every employee's own work done / done on time, per
+  // module and step, over FMS steps and Task Management tasks. Its data is gated per
+  // person inside the kpi_report RPC, which is what makes it safe to make universal.
+  kraKpiApp,
   receivablesHubApp,
   procurementApp,
   // Import Purchase FMS — separate module (own fms_import_* tables), granted per
@@ -48,6 +58,12 @@ export const apps: AppManifest[] = [
   // Granted per user like every other module (was universal — see apps/universal.ts —
   // but that let everyone see it regardless of their grant, which admins didn't want).
   hrExitApp,
+  // Learning & Development FMS — own fms_ld_* tables. UNIVERSAL (see
+  // apps/universal.ts): every employee is a potential participant, so there are
+  // deliberately NO app_access grants for it and the Module Access matrix shows
+  // it as admins-only. The nav and RLS do the scoping instead.
+  learningDevelopmentApp,
+  hrReportsApp,
   // Travel Desk FMS — separate module (own fms_travel_* tables), granted per user
   // to whoever travels, approves, books and pays. ONE TRIP carries the request,
   // every booked leg, the advance, the expense claim and the settlement, so the
@@ -67,6 +83,9 @@ export const apps: AppManifest[] = [
   // Production Entry FMS — separate module (own fms_production_* tables), granted per
   // user to the production team (not universal). Ink production job-card tracker.
   productionEntryApp,
+  // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
+  // central master live and keeps every change in the browser; nothing is written back.
+  bushraCentralMasterApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
@@ -93,6 +112,12 @@ export const apps: AppManifest[] = [
   // because they are hub-native components; this manifest mounts that subtree
   // under its own basePath and chrome. See customer-onboarding/meta.tsx.
   customerOnboardingApp,
+  // Reports — the Outstanding Dashboard's report catalogue, promoted to the main
+  // menu the same way Customer Onboarding was, and with the same arrangement: its
+  // pages still live under apps/receivables-hub/ because they are hub-native
+  // components, and this manifest mounts that subtree under its own basePath and
+  // chrome. It carries NO grant of its own (`accessAppId`) — see reports/meta.tsx.
+  reportsApp,
   leadsDashboardApp,
   // OCPI — the machine SALE before there is an order to dispatch: a quotation
   // drafted and revised through the negotiation, approved, then turned into an
@@ -117,14 +142,18 @@ export const apps: AppManifest[] = [
   // bank balances somebody types each evening. Granted separately from the
   // Master Report because the readers are different and this one WRITES.
   dailyReportApp,
+  // Announcements (PF-18) — where a message for the whole hub is written. Admins
+  // see it; anyone else only once granted. Every member of staff READS them with
+  // no grant, in the strip and on /announcements.
+  announcementsApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
 
 /**
  * A grantable "module" is anything an admin can switch on per user in Module
- * Access / the User form. That's every web app PLUS virtual modules that aren't
- * web launcher cards — e.g. the mobile app, whose grant (`app_id: "mobile-app"`)
+ * Access / the User form. That's every INDEPENDENTLY GRANTED web app PLUS virtual
+ * modules that aren't web launcher cards — e.g. the mobile app, whose grant (`app_id: "mobile-app"`)
  * gates login to the Orange One mobile Leads app. Kept separate from `apps` so
  * the workspace launcher and router (which use `apps`/`liveApps`) never render or
  * mount it as a web app.
@@ -142,15 +171,21 @@ export interface GrantableModule {
 }
 
 export const grantableModules: GrantableModule[] = [
-  ...apps.map((a) => ({
-    id: a.id,
-    name: a.name,
-    status: a.status,
-    universal: isUniversalApp(a.id),
-    category: a.category,
-    order: a.order,
-    subGroup: a.subGroup,
-  })),
+  // `accessAppId` apps are skipped: they ride another module's grant, so a row here would
+  // offer a switch writing an app_access id that nothing ever reads — and the module the
+  // switch appeared to control would carry on following the grant it actually rides.
+  // Reports is the one such app today (it rides `outstanding-dashboard`).
+  ...apps
+    .filter((a) => !a.accessAppId)
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      status: a.status,
+      universal: isUniversalApp(a.id),
+      category: a.category,
+      order: a.order,
+      subGroup: a.subGroup,
+    })),
   // Virtual module: no web app, no launcher entry, no menu item — it only gates
   // login to the mobile Leads app. Categorised so it isn't stranded in "Other".
   { id: "mobile-app", name: appName("mobile-app"), status: "live", category: appCategory("mobile-app"), order: 10 },
@@ -172,7 +207,13 @@ export const grantableModules: GrantableModule[] = [
  * Remove an id from here once that app's writes actually consult
  * `public.module_level()` (see 20260906120000_add_app_access_level.sql).
  */
-export const NO_VIEW_ONLY_APP_IDS = new Set<string>(["mobile-app"]);
+export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
+  "mobile-app",
+  // PF-18: the grant means "may post", and nothing else. Reading announcements needs
+  // no grant, so a view-only Announcements grant would give nothing while looking
+  // like access. Only Full access is offered.
+  "announcements",
+]);
 
 /** The access levels a module offers, in display order. */
 export const levelsForModule = (appId: string): ("view" | "edit")[] =>

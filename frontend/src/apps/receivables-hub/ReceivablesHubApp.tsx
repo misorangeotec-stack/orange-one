@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { appBasePath } from "@/apps/appInfo";
 import { Toaster as Sonner } from "@hub/components/ui/sonner";
 import { Toaster } from "@hub/components/ui/toaster";
 import { TooltipProvider } from "@hub/components/ui/tooltip";
@@ -9,8 +10,6 @@ import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
 import RequireHubMenu from "@hub/components/RequireHubMenu";
 import RequireReportAccess from "@hub/components/RequireReportAccess";
 import UserLayout from "@hub/layouts/UserLayout";
-import CLevelDashboard from "@hub/pages/CLevelDashboard";
-import ExecDashboard from "@hub/pages/ExecDashboard";
 import Dashboard from "@hub/pages/Dashboard";
 import AlertsPage from "@hub/pages/Alerts";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
@@ -20,45 +19,6 @@ import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport"
 import CustomerDetail from "@hub/pages/CustomerDetail";
 import DebtorAnalysis from "@hub/pages/DebtorAnalysis";
 import ImportDashboard from "@hub/pages/ImportDashboard";
-import Reports from "@hub/pages/Reports";
-import SalesReport from "@hub/pages/SalesReport";
-import DayBook from "@hub/pages/DayBook";
-import PurchaseReport from "@hub/pages/PurchaseReport";
-import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
-import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
-import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
-import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
-import SalesGainReport from "@hub/pages/SalesGainReport";
-import SalesDashboard from "@hub/pages/SalesDashboard";
-import PurchaseDashboard from "@hub/pages/PurchaseDashboard";
-import StockAnalysis from "@hub/pages/StockAnalysis";
-import CustomerProfile from "@hub/pages/CustomerProfile";
-import AgingReport from "@hub/pages/AgingReport";
-import TopExposureReport from "@hub/pages/TopExposureReport";
-import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
-import RedMarkCustomersReport from "@hub/pages/RedMarkCustomersReport";
-import DisputedBillsReport from "@hub/pages/DisputedBillsReport";
-import AdvancesReport from "@hub/pages/AdvancesReport";
-import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
-import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
-import CustomerCategoryReport from "@hub/pages/CustomerCategoryReport";
-import DsoReport from "@hub/pages/DsoReport";
-import CreditTermsReport from "@hub/pages/CreditTermsReport";
-import BalanceSheetReport from "@hub/pages/BalanceSheetReport";
-import ProfitLossReport from "@hub/pages/ProfitLossReport";
-import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
-import LedgerOutstandingList from "@hub/pages/LedgerOutstandingList";
-import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
-import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
-import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
-import SalesRegister from "@hub/pages/SalesRegister";
-import SOARegister from "@hub/pages/SOARegister";
-import StockSummary from "@hub/pages/StockSummary";
-import BatchCosting from "@hub/pages/BatchCosting";
-import ProductionBatchCostingDashboard from "@hub/pages/ProductionBatchCostingDashboard";
-import ProductionExpenses from "@hub/pages/ProductionExpenses";
-import BushraDashboards from "@hub/pages/BushraDashboards";
-import PackingMaterial from "@hub/pages/PackingMaterial";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -76,6 +36,38 @@ function CustomerOnboardingRedirect() {
   const { pathname, search } = useLocation();
   const rest = pathname.split("/customer-onboarding/")[1] ?? "";
   return <Navigate to={`/customer-onboarding/${rest}${search}`} replace />;
+}
+
+/**
+ * Old /outstanding-dashboard/reports/* → the catalogue's new home at /reports/*, path and
+ * query string intact.
+ *
+ * ⚠ THE QUERY STRING IS NOT OPTIONAL. `?below=0` and `?below=30` are two different reports
+ *   sharing one page, and `?over=` is the cutoff on the overdue and DSO reports. A redirect
+ *   that kept only the path would silently serve a different report than the link named.
+ *
+ * `slice`, not `split`: the bare "/outstanding-dashboard/reports" is handled by its own
+ * route below, but a sub-path has to keep every segment after the prefix — and the prefix
+ * is read from `appInfo` rather than retyped, so if either base ever moves again this one
+ * line follows it.
+ */
+function ReportsRedirect() {
+  const { pathname, search } = useLocation();
+  const rest = pathname.slice(`${appBasePath("outstanding-dashboard")}/reports`.length);
+  return <Navigate to={`${appBasePath("reports")}${rest}${search}`} replace />;
+}
+
+/**
+ * Old /outstanding-dashboard/bushra-dashboard/* → /reports/bushra-dashboard/*.
+ *
+ * A straight re-parenting: only the app base changes, the "bushra-dashboard" segment and
+ * everything after it carry through, query string included (the Sales and Purchase
+ * dashboards are one screen per preset and several of them read filters from the query).
+ */
+function DashboardsRedirect() {
+  const { pathname, search } = useLocation();
+  const rest = pathname.slice(appBasePath("outstanding-dashboard").length);
+  return <Navigate to={`${appBasePath("reports")}${rest}${search}`} replace />;
 }
 
 // Customer Creation FMS moved to its own app on 29-07-2026; the hub keeps only
@@ -110,27 +102,6 @@ function HubRoutes() {
           <Route element={<RequireHubMenu menu="alerts" />}>
             <Route path="alerts" element={<AlertsPage />} />
           </Route>
-          {/* Bushra-Dashboard — its own sidebar menu. Two gates, the same pair Reports has:
-                RequireHubMenu       may they see the menu at all?  (receivables_hidden_menus)
-                RequireReportAccess  may they open THIS screen?     (receivables_allowed_reports)
-              Each screen is catalogued as a report (lib/reportCatalog.ts), so it is granted per
-              screen and a URL typed without the grant goes back to the hub home. */}
-          <Route element={<RequireHubMenu menu="bushra-dashboard" />}>
-            {/* The landing page lists the dashboard groups (lib/bushraDashboards.ts), the way
-                /reports lists report categories. Deliberately OUTSIDE RequireReportAccess, like
-                the /reports landing: it shows only the screens the viewer holds, or says there
-                are none. */}
-            <Route path="bushra-dashboard" element={<BushraDashboards />} />
-            <Route element={<RequireReportAccess />}>
-              <Route path="bushra-dashboard/production-batch-costing" element={<ProductionBatchCostingDashboard />} />
-              {/* The overhead half of batch costing: Direct & Indirect Expenses of the same
-                  company, and the full cost of a kilogram once they are absorbed. */}
-              <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
-              {/* The third leg of the cost: caps, cans and stickers, which never touch a
-                  production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
-              <Route path="bushra-dashboard/packing-material" element={<PackingMaterial />} />
-            </Route>
-          </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
           {/* Follow-ups force the pipeline source internally — see pages/Followups.tsx. */}
           <Route path="followups" element={<FollowupsPage />} />
@@ -151,152 +122,37 @@ function HubRoutes() {
           <Route path="customer/:id/analysis" element={<DebtorAnalysis />} />
           <Route path="group/:id/analysis" element={<DebtorAnalysis />} />
           <Route path="import" element={<ImportDashboard />} />
-          {/* Alias kept for old bookmarks. Deliberately OUTSIDE RequireReportAccess: it has no
-              catalogue entry of its own, so a fail-closed guard would bounce it to the hub home
-              instead of to the report it names. The target it redirects to is guarded. */}
-          <Route
-            path="reports/zero-collections"
-            element={<Navigate to="/outstanding-dashboard/reports/collections?below=0" replace />}
-          />
           {/* ── Reports ────────────────────────────────────────────────────────────
-              EVERY reports/* route sits inside these guards, not just the landing page. A grant
-              that only filtered the sidebar would leave /reports/aging reachable by URL — see
-              components/RequireHubMenu.
+              MOVED OUT on 23-09-2026 to its own top-level app at /reports
+              (apps/reports/). Everything that was here — the landing page, the forty
+              report routes, and both guards around them — went across unchanged; the
+              screens themselves are still FILED under this folder, because they are
+              hub-native components (see apps/reports/ReportsApp.tsx).
 
-              TWO guards, asking different questions:
-                RequireHubMenu       may this user see the Reports menu at all?
-                RequireReportAccess  may they open THIS report? (profiles.receivables_allowed_reports)
+              ⚠ THE REDIRECT IS LOAD-BEARING, NOT A COURTESY, and for two reasons beyond
+                bookmarks. Reports are the hub's most-linked pages: a queued email_outbox
+                row carries the `ctaPath` it was authored with — frozen at enqueue time,
+                not built at render — so every report mail already sent points at the old
+                base, and Saved Views written before today hold the old path too.
 
-              The inner one resolves the URL against the catalogue rather than wrapping each
-              route, so a newly catalogued report is guarded with no edit here. Don't add a
-              per-route guard alongside it — that is the pattern that let sales-dashboard and
-              purchase-dashboard escape the old `full` wrapper. */}
-          <Route element={<RequireHubMenu menu="reports" />}>
-            <Route element={<RequireReportAccess />}>
-              <Route path="reports" element={<Reports />} />
-              {/* Master Reports. Reads the precomputed rpt_sales_* snapshot of the Tally mirror,
-                  so it is source-agnostic — no Live/pipeline gate, same as the financial
-                  statements. It carries its own company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/sales" element={<SalesReport />} />
-              {/* Purchase Report — purchase-side twin of the Sales Report, same source-agnostic
-                  rpt_purchase_* snapshot, own company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/purchase" element={<PurchaseReport />} />
-              {/* Day Book — single-company single-day dashboard on the rpt_day_book snapshot;
-                  source-agnostic, carries its own company + date pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/day-book" element={<DayBook />} />
-              {/* Finance → Receivables — Talligence receivables clone on the rpt_receivables_*
-                  snapshot; own company + FY pickers. */}
-              <Route path="reports/finance-receivables" element={<ReceivablesMasterReport />} />
-              {/* Finance → Payables — sign-mirror of Receivables (Sundry Creditors) on the
-                  rpt_payables_* snapshot; own company + FY pickers, same as Receivables. */}
-              <Route path="reports/finance-payables" element={<PayablesMasterReport />} />
-              {/* Finance → Income — Talligence income clone on the rpt_income_* P&L-movement snapshot
-                  (Sales Accounts + Direct/Indirect Incomes); own company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/finance-income" element={<IncomeMasterReport />} />
-              {/* Finance → Expense — sign-mirror of Income on the rpt_expense_* P&L-movement snapshot
-                  (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
-                  pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/finance-expense" element={<ExpenseMasterReport />} />
-              {/* Finance → Sales Gain — margin on the sales book, over the rpt_sales_gain_* snapshot.
-                  Gain is DERIVED (Tally stores no cost): cost is priced per item from that item's own
-                  VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own
-                  company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/finance-sales-gain" element={<SalesGainReport />} />
-              {/* Dashboards → Sales Dashboard — the Talligence composite screen. Unlike every master
-                  report it spans FOUR spines (sales / income / expense / receivables), so its RPC
-                  returns meta.tie_* and the page warns when two separately-crons'd snapshots drift.
-                  Own company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/sales-dashboard" element={<SalesDashboard />} />
-              {/* Dashboards → Purchase Dashboard — the purchase-side twin. Rides rpt_purchase_line for
-                  KPI / monthly / geography / vendors (ONE spine, so there is no tie_geo to report),
-                  plus a new rpt_purchase_dashboard_ap ledger walk for month-end payables — the only
-                  precomputed piece, and the month-end AP source Finance → Payables never had.
-                  Own company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/purchase-dashboard" element={<PurchaseDashboard />} />
-              {/* Inventory → Stock Analysis — the Talligence inventory clone, and the FIRST report on
-                  the inventory spine rather than a ledger one. Rides two new precomputed tables
-                  (rpt_stock_analysis_item / _move) because nothing existing could answer "when did this
-                  item last move": rpt_sales_item / rpt_purchase_item / rpt_day_book_item each see one
-                  family of voucher natures and none sees stock journals, delivery challans, credit
-                  notes or rejections. Own company + FY pickers (see FY_PINNED_ROUTES). */}
-              <Route path="reports/stock-analysis" element={<StockAnalysis />} />
-              <Route path="reports/aging" element={<AgingReport />} />
-              {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
-              <Route path="reports/top-exposure" element={<TopExposureReport />} />
-              <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
-              {/* One page, two reports: ?below=0 is "Zero Collections", ?below=30 is "Below 30%".
-                  Zero collection is the 0% case, so they share an engine — see lib/collections.ts.
-                  The page pins itself to the pipeline source (the Live/Tally toggle can't reach it). */}
-              <Route path="reports/collections" element={<CollectionPerformanceReport />} />
-              {/* Same page, third report: customers who owe money and have STOPPED BUYING. It is the
-                  exact complement of the other two reports' "Still Buying" lens, so it reuses their
-                  engine — but it asks a sales question, not a collections one, so it has no ?below=
-                  threshold and arrives by route instead. Pinned to the pipeline source AND to Both
-                  FYs (a 6-month window can't live inside a 3-month-old FY) — see the page header. */}
-              <Route path="reports/dormant" element={<CollectionPerformanceReport variant="dormant" />} />
-              {/* Aged debt: ?over=120 (the card), 90 / 180 / any custom cutoff. Pinned to the pipeline
-                  source AND to Both FYs — see the header of pages/OverdueAgingReport.tsx. */}
-              <Route path="reports/overdue" element={<OverdueAgingReport />} />
-              {/* The book pivoted by the A/B/C/D/E tier, plus the tag-hygiene lens. Pinned to the
-                  pipeline source AND to Both FYs — see the header of pages/CustomerCategoryReport.tsx. */}
-              <Route path="reports/category" element={<CustomerCategoryReport />} />
-              <Route path="reports/red-mark" element={<RedMarkCustomersReport />} />
-              <Route path="reports/disputed-bills" element={<DisputedBillsReport />} />
-              {/* Money received that no open invoice has absorbed, per salesperson (RC-18). Live (Tally)
-                  only; pinned to Both FYs — see the header of pages/AdvancesReport.tsx. */}
-              <Route path="reports/advances" element={<AdvancesReport />} />
-              {/* How long each customer takes to turn a sale into cash: ?over=90 (the card), 60 / 120 /
-                  any custom cutoff. A COUNTBACK, not AR/Sales — and a group's DSO is never the average
-                  of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
-                  a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
-              <Route path="reports/dso" element={<DsoReport />} />
-              {/* Which customers carry no credit limit / credit days in Tally, company by company.
-                  Live (Tally) only — both fields are ledger master data. Treats a limit of ₹1 as NOT
-                  set: it is the legacy "blocked" marker, not a limit. See pages/CreditTermsReport.tsx. */}
-              <Route path="reports/credit-terms" element={<CreditTermsReport />} />
-              {/* These three used to sit behind an extra `RequireHubMenu menu="reports" full`
-                  wrapper (and before that, role = admin). Both gates are gone: withholding the
-                  per-report grant IS the restriction now, and it applies to every report rather
-                  than the handful somebody remembered to flag. */}
-              {/* The Talligence "Insights → Customer Profile" clone, the first report in
-                  the Insights category. Needed a new table (rpt_customer_profile_year): nothing
-                  precomputed a per-customer, per-FY sales aggregate, and the lifecycle buckets are a
-                  year-over-year comparison that on FY-split books has to reach ACROSS tenants (the
-                  prior year lives in a different book). Own company + FY pickers — see
-                  FY_PINNED_ROUTES. */}
-              <Route path="reports/customer-profile" element={<CustomerProfile />} />
-              {/* The executive dashboard — the Talligence C-Level clone, 22 panels on the
-                  nightly rpt_clevel_dashboard_cache snapshot. Own company + FY pickers (see
-                  FY_PINNED_ROUTES). */}
-              <Route path="reports/c-level-dashboard" element={<ExecDashboard />} />
-              {/* The 2026-07-23 original, superseded by the route above. Its clevel_pl_monthly /
-                  mv_clevel_ledger source has a DISABLED refresh cron, so it reports stale figures;
-                  routed only until the replacement is signed off, then deleted along with
-                  supabase/clevel-mirror/. */}
-              <Route path="reports/c-level" element={<CLevelDashboard />} />
-              <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
-              <Route path="reports/profit-loss" element={<ProfitLossReport />} />
-              <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
-              <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
-              <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
-              {/* Live (Tally) only — the pages render a "Not applicable" panel on the default pipeline. */}
-              <Route path="reports/ledger-voucher" element={<LedgerVoucherList />} />
-              <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
-              {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
-              <Route path="reports/sales-register" element={<SalesRegister />} />
-              {/* Sales on approval, split out of the Sales Register — approval stock is not revenue
-                  until it is billed. Reads the precomputed rpt_soa_register snapshot. */}
-              <Route path="reports/soa-sales-register" element={<SOARegister />} />
-              {/* Tally Reports → Inventory Books. Reads the precomputed rpt_stock_summary_* snapshot
-                  through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
-                  own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
-              <Route path="reports/stock-summary" element={<StockSummary />} />
-              {/* Reports → Bushra-Report. Stock Journal-Production vouchers off ConnectWave
-                  rpt_batch_line, classified per batch (lib/batchCostingRules.ts). Source-agnostic;
-                  own company + FY + period pickers — see FY_PINNED_ROUTES. */}
-              <Route path="reports/batch-costing" element={<BatchCosting />} />
-            </Route>
-          </Route>
+              `*` carries the rest of the path through, and the QUERY STRING with it. That
+              matters as much as the path here: ?below=0 and ?below=30 are two different
+              reports on one page, and ?over= is the cutoff on the overdue and DSO reports.
+              Dropping the search would land the reader on a different report than the link
+              promised — see ReportsRedirect. */}
+          <Route path="reports" element={<Navigate to="/reports" replace />} />
+          <Route path="reports/*" element={<ReportsRedirect />} />
+
+          {/* ── Bushra-Dashboard ───────────────────────────────────────────────────
+              Moved the same day, to the same app, and for the same reason: its screens
+              are catalogued as reports (category "bushra-report" in lib/reportCatalog),
+              so leaving them behind would have split one section across two modules.
+              They keep their own URL segment under the new base — /reports/bushra-dashboard/*
+              — because they are a section of the catalogue, not reports in the flat
+              /reports/<slug> shape. */}
+          <Route path="bushra-dashboard" element={<Navigate to="/reports/bushra-dashboard" replace />} />
+          <Route path="bushra-dashboard/*" element={<DashboardsRedirect />} />
+
           {/* Customer Creation FMS.
               Deliberately NOT wrapped in RequireRole: authorization here is
               per-step, not per-role. Who may verify / approve / create a

@@ -8,6 +8,9 @@ import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore, useOrderActivity } from "../../store";
 import DispatchStepper from "../../components/DispatchStepper";
@@ -26,6 +29,9 @@ import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dispatchTypeText,
   dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
+
+/** The Items table's columns, for its remembered widths (PF-20). */
+const ITEM_COLS = ["item", "ordered", "dispatched", "pending", "going", "bill", "lot"];
 
 export default function OrderDetail() {
   const { id = "" } = useParams();
@@ -50,6 +56,12 @@ export default function OrderDetail() {
       value `order.id` would be, and it is available before the order has loaded.
   */
   const activity = useOrderActivity(id);
+  /**
+   * PF-20: the Items table is one line per row, and its columns drag wider. Above the guards
+   * for the same reason as `activity`. The widths are shared by every order (the key folds
+   * the id). The numbers are never cut; Item and LOT no. are, and show whole on hover.
+   */
+  const itemsFit = useColumnWidths("tb", ITEM_COLS);
 
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
@@ -282,41 +294,60 @@ export default function OrderDetail() {
 
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="p-5 space-y-3 lg:col-span-2">
-          <SectionHeading>Items</SectionHeading>
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeading>Items</SectionHeading>
+            {/* PF-20: only once a column has been dragged. */}
+            <ResetWidths fit={itemsFit} cols={ITEM_COLS} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-grey-2 hover:text-orange" />
+          </div>
           <ScrollableTable>
+            {/* PF-20: one line per row; each header's edge drags. Item and LOT no. are cut
+                with "…" and shown whole on hover; the quantities are never cut. The compact
+                py-2 pr-3 padding of this detail card is kept. */}
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="text-left text-grey-2 border-b border-line">
-                  <th className="py-2 pr-3 font-semibold min-w-[190px]">Item</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Ordered</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Dispatched</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Pending</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Going out now</th>
+                  <FitTh fit={itemsFit} col="item" className="py-2 pr-3 font-semibold">Item</FitTh>
+                  <FitTh fit={itemsFit} col="ordered" className="py-2 pr-3 font-semibold text-right">Ordered</FitTh>
+                  <FitTh fit={itemsFit} col="dispatched" className="py-2 pr-3 font-semibold text-right">Dispatched</FitTh>
+                  <FitTh fit={itemsFit} col="pending" className="py-2 pr-3 font-semibold text-right">Pending</FitTh>
+                  <FitTh fit={itemsFit} col="going" className="py-2 pr-3 font-semibold text-right">Going out now</FitTh>
                   {/* What the invoice covers. Blank until the bill is raised — see
                       the note on RefLines: a dash here would read as "nothing is
                       being billed" rather than "nobody has said yet". */}
-                  <th className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</th>
-                  <th className="py-2 pr-3 font-semibold">LOT no.</th>
+                  <FitTh fit={itemsFit} col="bill" className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</FitTh>
+                  <FitTh fit={itemsFit} col="lot" className="py-2 pr-3 font-semibold">LOT no.</FitTh>
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...itemsFit.tbodyProps}>
                 {order.lines.map((l) => {
                   const pending = pendingQtyOf(l);
                   return (
                     <tr key={l.id} className="border-b border-line/70 last:border-0">
-                      <td className="py-2 pr-3 text-navy">{s.itemName(l.itemId)}</td>
+                      <td className="py-2 pr-3 text-navy">
+                        <FitCell fit={itemsFit} col="item" cap={FIT.CUT}>{s.itemName(l.itemId)}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums whitespace-nowrap">
-                        {l.quantity} {l.unit ?? ""}
+                        <FitCell fit={itemsFit} col="ordered" cap={null}>
+                          {l.quantity} {l.unit ?? ""}
+                        </FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.dispatchedQty || "—"}</td>
+                      <td className="py-2 pr-3 text-grey text-right tabular-nums">
+                        <FitCell fit={itemsFit} col="dispatched" cap={null}>{l.dispatchedQty || "—"}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold">
-                        {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
+                        <FitCell fit={itemsFit} col="pending" cap={null}>
+                          {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
+                        </FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.shipQty ?? "—"}</td>
+                      <td className="py-2 pr-3 text-grey text-right tabular-nums">
+                        <FitCell fit={itemsFit} col="going" cap={null}>{l.shipQty ?? "—"}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold text-orange">
-                        {l.billQty ?? "—"}
+                        <FitCell fit={itemsFit} col="bill" cap={null}>{l.billQty ?? "—"}</FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey">{l.lotNo ?? "—"}</td>
+                      <td className="py-2 pr-3 text-grey">
+                        <FitCell fit={itemsFit} col="lot" cap={FIT.CUT}>{l.lotNo ?? "—"}</FitCell>
+                      </td>
                     </tr>
                   );
                 })}

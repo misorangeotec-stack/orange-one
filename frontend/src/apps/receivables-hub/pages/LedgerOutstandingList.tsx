@@ -23,8 +23,14 @@ import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
 import { loadLedgerList, type LedgerListRow } from "@hub/lib/ledgerOutstanding";
 import { filterByScope, useScopedParties } from "@hub/lib/scopeParties";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 const PAGE_SIZE = 25;
 
 /** Dr-positive amount → "<n> Dr"/"<n> Cr", blank at zero. */
@@ -129,7 +135,7 @@ export default function LedgerOutstandingList() {
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
       <div>
-        <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+        <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
           Tally Reports
         </Link>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -204,7 +210,7 @@ export default function LedgerOutstandingList() {
                   shown.map((l) => (
                     <tr key={`${l.companyGuid}-${l.guid}`} className="border-b border-border/40 hover:bg-muted/40">
                       <td className="py-1.5 px-3 text-sm">
-                        <Link to={`${BASE}/reports/ledger-outstanding/${l.guid}`} className="text-foreground hover:text-primary font-medium">
+                        <Link to={`${BASE}/ledger-outstanding/${l.guid}`} className="text-foreground hover:text-primary font-medium">
                           {l.ledger}
                         </Link>
                       </td>
@@ -212,7 +218,7 @@ export default function LedgerOutstandingList() {
                       <td className="py-1.5 px-3 text-sm text-muted-foreground whitespace-nowrap">{companyName(l.companyGuid)}</td>
                       <td className="py-1.5 px-3 text-right text-sm tabular-nums whitespace-nowrap">{drcr(l.closing)}</td>
                       <td className="py-1.5 px-2 text-right">
-                        <Link to={`${BASE}/reports/ledger-outstanding/${l.guid}`}>
+                        <Link to={`${BASE}/ledger-outstanding/${l.guid}`}>
                           <ChevronRight className="h-4 w-4 text-muted-foreground inline" />
                         </Link>
                       </td>

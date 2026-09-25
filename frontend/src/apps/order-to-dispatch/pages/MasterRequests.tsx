@@ -148,6 +148,8 @@ export default function MasterRequests() {
       ),
       sortValue: (r) => r.status,
       filter: { kind: "select", get: (r) => r.status },
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
     {
       key: "note",

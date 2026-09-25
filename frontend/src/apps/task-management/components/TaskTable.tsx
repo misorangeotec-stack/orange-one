@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
@@ -28,6 +30,9 @@ export type TaskSort = { key: TaskSortKey; dir: SortDir };
 export type TaskFilterCells = Partial<Record<TaskSortKey, ReactNode>>;
 
 export const DEFAULT_TASK_SORT: TaskSort = { key: "dueDate", dir: "asc" };
+
+/** The draggable columns, for their remembered widths (PF-20). */
+const TASK_COLS: TaskSortKey[] = ["title", "department", "createdBy", "assignedTo", "createdAt", "dueDate", "status"];
 
 /** Toggle direction when re-clicking the active column; otherwise default a new
  *  column to ascending (A→Z / earliest-first). */
@@ -77,17 +82,27 @@ export function sortTasks(
 
 /** Clickable column header that drives the table sort and shows the active
  *  direction. Mirrors the SortTh used in the report tables. */
-function SortTh({ label, sortKey, sort, onSort, align = "left", className }: {
+function SortTh({ label, sortKey, sort, onSort, align = "left", className, fit }: {
   label: string;
   sortKey: TaskSortKey;
   sort: TaskSort;
   onSort: (k: TaskSortKey) => void;
   align?: "left" | "center" | "right";
   className?: string;
+  /**
+   * PF-20 (drag only). The reader can drag this column's right edge; the width is remembered per
+   * browser, and double-clicking the edge puts it back. NOTHING else about the table changes —
+   * the user asked for the module everyone lives in to look and behave exactly as it did.
+   */
+  fit?: FitTable;
 }) {
   const active = sort.key === sortKey;
   return (
-    <th className={cn("font-semibold px-3 py-2.5 select-none", align === "left" ? "text-left" : align === "right" ? "text-right" : "text-center", className)}>
+    <th
+      className={cn("font-semibold px-3 py-2.5 select-none", align === "left" ? "text-left" : align === "right" ? "text-right" : "text-center", className, fit?.on && "relative")}
+      style={fit ? thFitStyle(fit, sortKey) : undefined}
+    >
+      {fit?.on && <FitResizer fit={fit} col={sortKey} label={label} />}
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -188,6 +203,12 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
   const editTask = editId ? tasks.find((t) => t.id === editId) : undefined;
   const personalEditTask = personalEditId ? tasks.find((t) => t.id === personalEditId) : undefined;
 
+  /**
+   * PF-20: the widths a reader drags columns to. The Department column only exists on All Tasks,
+   * and that is its own route, so the automatic key separates the two.
+   */
+  const fit = useColumnWidths("tb", showDepartment ? TASK_COLS : TASK_COLS.filter((c) => c !== "department"));
+
   const colCount = showDepartment ? 8 : 7;
   // Three configurations, three minimums — a single value would either crush the
   // search box in the Task cell or give Tagged Tasks (no filter row) horizontal
@@ -200,14 +221,17 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
       <table className={cn("w-full text-[13px] border-collapse table-fixed", minWidth)}>
         <thead>
           <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50 border-b border-line">
-            <SortTh label="Task" sortKey="title" sort={sort} onSort={onSort} className="px-4" />
-            {showDepartment && <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className="w-[150px]" />}
-            <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[160px]" />
-            <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[160px]" />
-            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" />
-            <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" />
-            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" />
-            <th className="w-[90px]" />
+            <SortTh label="Task" sortKey="title" sort={sort} onSort={onSort} className="px-4" fit={fit} />
+            {showDepartment && <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className="w-[150px]" fit={fit} />}
+            <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[160px]" fit={fit} />
+            <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[160px]" fit={fit} />
+            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
+            <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
+            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" fit={fit} />
+            {/* PF-20: the icon appears here only once a column has been dragged. */}
+            <th className="w-[90px] text-right pr-2">
+              <ResetWidths fit={fit} cols={TASK_COLS} label="" className="inline-flex items-center text-grey-2 hover:text-orange align-middle" />
+            </th>
           </tr>
           {filterRow && (
             /*
@@ -232,7 +256,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
             </tr>
           )}
         </thead>
-        <tbody className="divide-y divide-line">
+        <tbody className="divide-y divide-line" {...fit.tbodyProps}>
           {tasks.length === 0 && emptyMessage && (
             <tr>
               <td colSpan={colCount} className="px-4 py-10 text-center text-[13px] text-grey">{emptyMessage}</td>
@@ -298,7 +322,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                     )}
                     {task.isPeerAssignment && (
                       <span
-                        title="Assigned by another HOD — scored on the Peer Tasks board, not in your own weekly score."
+                        title="Assigned by another HOD or Sub-HOD — scored on the Peer Tasks board, not in your own weekly score."
                         className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#5b52c9] bg-[#EEECFB] rounded-pill px-1.5 py-0.5"
                       >
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><polyline points="8 7 17 7 17 16" /></svg>
@@ -350,34 +374,44 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                 {/* Department (All Tasks only — elsewhere it's in the Task subtitle) */}
                 {showDepartment && (
                   <td className="px-3 py-3 align-middle">
-                    <span className="text-[12.5px] text-navy truncate block">{dept?.name ?? "—"}</span>
+                    <FitCell fit={fit} col="department" cap={null}>
+                      <span className="text-[12.5px] text-navy truncate block">{dept?.name ?? "—"}</span>
+                    </FitCell>
                   </td>
                 )}
 
                 {/* Created By */}
                 <td className="px-3 py-3 align-middle">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {creator && <Avatar name={creator.name} color={creator.avatarColor} size={24} />}
-                    <span className="text-[12.5px] text-navy truncate">{creator?.name ?? "—"}</span>
-                  </div>
+                  <FitCell fit={fit} col="createdBy" cap={null}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {creator && <Avatar name={creator.name} color={creator.avatarColor} size={24} />}
+                      <span className="text-[12.5px] text-navy truncate">{creator?.name ?? "—"}</span>
+                    </div>
+                  </FitCell>
                 </td>
 
                 {/* Assigned To */}
                 <td className="px-3 py-3 align-middle">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={24} />}
-                    <span className="text-[12.5px] text-navy truncate">{assignee?.name ?? "Unassigned"}</span>
-                  </div>
+                  <FitCell fit={fit} col="assignedTo" cap={null}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={24} />}
+                      <span className="text-[12.5px] text-navy truncate">{assignee?.name ?? "Unassigned"}</span>
+                    </div>
+                  </FitCell>
                 </td>
 
                 {/* Assigned (task creation date) */}
                 <td className="px-3 py-3 align-middle">
-                  <span className="text-[12.5px] text-navy">{dateLabel(task.createdAt)}</span>
+                  <FitCell fit={fit} col="createdAt" cap={null}>
+                    <span className="text-[12.5px] text-navy">{dateLabel(task.createdAt)}</span>
+                  </FitCell>
                 </td>
 
                 {/* Due */}
                 <td className="px-3 py-3 align-middle">
-                  <span className={cn("text-[12.5px] font-medium", overdue ? "text-[#d4493f]" : "text-navy")}>{dateLabel(task.dueDate)}</span>
+                  <FitCell fit={fit} col="dueDate" cap={null}>
+                    <span className={cn("text-[12.5px] font-medium", overdue ? "text-[#d4493f]" : "text-navy")}>{dateLabel(task.dueDate)}</span>
+                  </FitCell>
                 </td>
 
                 {/* Status — the Overdue pill sits BESIDE the status, not instead of

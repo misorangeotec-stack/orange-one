@@ -6,11 +6,17 @@ import Login from "@/core/auth/Login";
 import HomeLayout from "@/core/workspace/HomeLayout";
 import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
+import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
+import MyProbation from "@/core/probation/MyProbation";
+import MyBuddy from "@/core/probation/MyBuddy";
+import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
+import type { AppManifest } from "@/apps/types";
+import { canOpenApp } from "@/core/workspace/homeNav";
 import { appBasePath } from "@/apps/appInfo";
 
 /**
@@ -36,20 +42,32 @@ const VISIT_THROTTLE_MS = 30 * 60_000;
  *   Fire-and-forget and throttled: telemetry hanging off a route guard must
  *   never be able to delay or break navigation.
  */
-function RequireModule({ appId, children }: { appId: string; children: ReactNode }) {
-  const { hasModule } = useSession();
-  const allowed = hasModule(appId);
+function RequireModule({ app, children }: { app: AppManifest; children: ReactNode }) {
+  const session = useSession();
+  // ONE rule, shared with the launcher menu (core/workspace/homeNav) rather than restated
+  // here — a hidden menu entry is not access control, so the two have to agree.
+  const allowed = canOpenApp(app, session);
+
+  /**
+   * Stamped under the GRANT id, not the route id, on the one app where they differ.
+   *
+   * Reports is the most-read part of the Outstanding Dashboard, whose whole usage signal is
+   * this ping (nobody writes to it — see above). Stamping "reports" instead would post the
+   * traffic against a module_visits app_id that no master_report_modules row claims, and
+   * read the hub back as Dormant while it is in daily use.
+   */
+  const visitId = app.accessAppId ?? app.id;
 
   useEffect(() => {
     if (!allowed) return;
     const now = Date.now();
-    if (now - (stampedAt.get(appId) ?? 0) < VISIT_THROTTLE_MS) return;
-    stampedAt.set(appId, now);
-    void supabase.rpc("touch_module_visit", { p_app_id: appId }).then(
+    if (now - (stampedAt.get(visitId) ?? 0) < VISIT_THROTTLE_MS) return;
+    stampedAt.set(visitId, now);
+    void supabase.rpc("touch_module_visit", { p_app_id: visitId }).then(
       () => {},
       () => {}
     );
-  }, [appId, allowed]);
+  }, [visitId, allowed]);
 
   if (!allowed) return <Navigate to="/home" replace />;
   return <>{children}</>;
@@ -121,6 +139,26 @@ export default function App() {
         <Route index element={<MyWorkToday />} />
       </Route>
       <Route path="/account" element={<RequireAuth><StaffOnly><Account /></StaffOnly></RequireAuth>} />
+      {/* PF-18 · Every announcement meant for you, running or past. Staff furniture
+          like /account: no module grant (the database decides the list), and never
+          under the Announcements module's own gated basePath. Wears the home shell. */}
+      <Route path={ANNOUNCEMENTS_PATH} element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<AnnouncementsHistory />} />
+      </Route>
+      {/* NR-10 · A new joiner's own half of their probation check-ins. Staff
+          furniture for the same reason as the two routes above: the joiner has no
+          hr-recruitment grant, and granting them one to reach this would hand them
+          the entire recruitment pipeline. The database decides what they see —
+          fms_hr_my_probation() returns their own check-ins and nothing else. */}
+      <Route path="/my-probation" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyProbation />} />
+      </Route>
+      {/* NR-9 · The buddy's own screen. Same reasoning as the route above: a buddy
+          is an ordinary colleague from another department, and granting them the
+          recruitment module to log a coffee would hand them every CV in it. */}
+      <Route path="/my-buddy" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyBuddy />} />
+      </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
@@ -130,7 +168,7 @@ export default function App() {
           <Route
             key={app.id}
             path={`${app.basePath}/*`}
-            element={<RequireAuth><RequireModule appId={app.id}><Component /></RequireModule></RequireAuth>}
+            element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
           />
         );
       })}

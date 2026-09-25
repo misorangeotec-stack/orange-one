@@ -40,22 +40,79 @@ import { Package, Receipt } from "lucide-react";
 import { BadgeIndianRupee } from "lucide-react";
 // RC-13's icon, on its own line so it never collides with edits to the list above.
 import { FileWarning } from "lucide-react";
+// The Purchase dashboards' icon, on its own line for the same reason.
+import { Truck } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
+import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 import type { Crumb } from "@/apps/currentApp";
 
 /**
- * The report catalogue — ONE source of truth for every report in this app.
+ * The report catalogue — ONE source of truth for every report in the portal.
  *
- * The landing page (pages/Reports.tsx), the sidebar's Reports sub-nav (lib/menus.tsx)
- * and the breadcrumb trail (layouts/UserLayout.tsx) all read this list. Adding a report
- * here makes it appear in all three; there is no second place to register it.
+ * The landing page (pages/Reports.tsx), the Reports app's sidebar and home-menu rows
+ * (apps/reports/) and the breadcrumb trail all read this list. Adding a report here makes it
+ * appear in all of them; there is no second place to register it.
  *
- * Reads `appBasePath` directly rather than lib/menus' BASE re-export: menus.tsx imports
- * REPORT_CATEGORIES from here to build its sub-nav, so importing BASE back from menus
- * would be a cycle. `appInfo` is an import-free leaf, which is what makes this safe.
+ * ⚠ IT STILL LIVES UNDER receivables-hub/ although most of what it describes does not. The
+ *   file did not move with the screens for the same reason they did not move out of this
+ *   folder: a hundred hub modules import it by its @hub path, and relocating it would be a
+ *   rename with no reader-visible gain. What DID have to change is the routing table below —
+ *   see it for which app now serves what.
+ *
+ * Reads `appBasePath` directly rather than lib/menus' BASE re-export: appInfo is an
+ * import-free leaf, which is what makes it safe to read from a module this widely imported.
  */
 
-const BASE = appBasePath("outstanding-dashboard");
+/**
+ * WHICH APP SERVES WHICH CATALOGUE PATH.
+ *
+ * Every `path` below stays written the way it always was — relative to the PORTAL ROOT of
+ * whichever app owned the screen when it was catalogued — and this table maps the prefix to
+ * the URL it is served at today. Resolving per entry rather than flipping one constant is
+ * what lets ONE catalogue keep describing screens that now live in two apps.
+ */
+const HUB_BASE = appBasePath("outstanding-dashboard");
+const REPORTS_BASE = appBasePath("reports");
+
+const ROUTING: { path: string; url: string }[] = [
+  // The Reports app's own pages. Its basePath IS "/reports", so the segment is not repeated:
+  // "reports/aging" is served at "/reports/aging", not "/reports/reports/aging".
+  { path: "reports/", url: `${REPORTS_BASE}/` },
+  // Bushra-Dashboard moved into the Reports app too, but KEPT its own segment: its screens are
+  // a section of the app, not reports in the flat /reports/<slug> shape, and their catalogue
+  // paths are shared verbatim with lib/bushraDashboards.ts.
+  { path: "bushra-dashboard/", url: `${REPORTS_BASE}/bushra-dashboard/` },
+  // Whatever is left is still a Receivables hub page — today just the two Sales & Team
+  // reports, which have their own top-level menu over there and never moved.
+  { path: "", url: `${HUB_BASE}/` },
+];
+
+/** Catalogue path → absolute URL. First match wins, so the table is ordered most specific first. */
+function absoluteHref(path: string): string {
+  const r = ROUTING.find((x) => path.startsWith(x.path))!;
+  return r.url + path.slice(r.path.length);
+}
+
+/**
+ * The inverse. Matched LONGEST URL FIRST, not in table order — "/reports/bushra-dashboard/x"
+ * starts with "/reports/" too, and reading it as the report "reports/bushra-dashboard/x"
+ * would find nothing in the catalogue and fail the route guard closed.
+ */
+const BY_URL_LENGTH = [...ROUTING].sort((a, b) => b.url.length - a.url.length);
+
+/**
+ * Absolute URL → the catalogue path it would be written as, or null when the URL belongs to
+ * neither app. "/reports" itself maps to the landing page's own path, "reports".
+ */
+function cataloguePath(pathname: string): string | null {
+  if (pathname === REPORTS_BASE) return "reports";
+  const r = BY_URL_LENGTH.find((x) => pathname.startsWith(x.url));
+  return r ? r.path + pathname.slice(r.url.length) : null;
+}
+
+/** Absolute URL of the Reports landing page. Exported so the guards and the shell agree. */
+export const reportsHome = (): string => REPORTS_BASE;
 
 /**
  * Which pipeline a report's numbers come from.
@@ -126,7 +183,11 @@ export interface ReportEntry {
   category: ReportCategoryId;
   /** Only meaningful inside the "tally" category today. */
   subcategory?: string;
-  /** Path RELATIVE to BASE, query string included. Absent when status is "soon". */
+  /**
+ * Path relative to the PORTAL ROOT, query string included — "reports/aging",
+ * "bushra-dashboard/packing-material". `absoluteHref` turns it into a URL on
+ * whichever app owns it. Absent when status is "soon".
+ */
   path?: string;
   icon: LucideIcon;
   source: ReportSource;
@@ -247,7 +308,7 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
   {
     id: "bushra-report",
     title: "Bushra-Report",
-    blurb: "Bushra's reports — production and batch costing, read straight from the Tally books.",
+    blurb: "Bushra's reports — production, batch costing and sales, read straight from the Tally books.",
     icon: ClipboardList,
   },
 ];
@@ -856,6 +917,36 @@ export const REPORTS: ReportEntry[] = [
       "reactive", "item category", "lot", "batch", "bushra",
     ],
   },
+  {
+    id: "bushra-sales-register",
+    // Same read as the Tally Sales Register — rpt_sales_register with .in("party", …).
+    scoping: "party-server",
+    title: "Sales Register",
+    purpose: "Every sales voucher line, with sales-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-sales-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
+  },
+  {
+    id: "bushra-purchase-register",
+    // Vendors, not customers — the salesperson scope does not apply.
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
+    title: "Purchase Register",
+    purpose: "Every purchase, purchase return and purchase debit note line, with purchase-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-purchase-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "purchase register", "purchase", "purchase return", "debit note", "inward service", "vendor",
+      "colour", "color", "item group", "item category", "bushra",
+    ],
+  },
 
   // ── Bushra-Dashboard screens ───────────────────────────────────────────────
   // The three screens under the Bushra-Dashboard MENU are catalogued here so they are granted
@@ -900,16 +991,50 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
+  // Bushra-Dashboard → Sales: one entry per dashboard, generated from lib/bushraSalesDashboards.ts so
+  // each id and path matches its screen. All built on the Bushra Sales Register (party-server scope).
+  ...SALES_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "party-server",
+    // NOT emailable yet: the figures (lib/bushraSalesSummary.ts), the PDF (lib/bushraSalesPdf.ts)
+    // and the mail setup (components/BushraSalesMailOptions.tsx) are built, but no sender reads
+    // them — the Collections runner mails zero-collections alone. Tick `emailable: true` in the
+    // commit that adds the sender, as the rule on the field says; that also brings back the
+    // dashboard's Auto email button and its switch in Settings → Permissions.
+    title: p.id === "bushra-sales-dashboard" ? p.title : `Sales — ${p.title} Dashboard`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: ShoppingCart,
+    source: "tally",
+    status: "live",
+    keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
+  })),
+  // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
+  // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
+  ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
+    title: p.id === "bushra-purchase-dashboard" ? p.title : `Purchase — ${purchaseDashboardTitle(p)}`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: Truck,
+    source: "tally",
+    status: "live",
+    keywords: ["purchase dashboard", p.title.toLowerCase(), "purchase type", "category", "vendor", "bushra"],
+  })),
 ];
 
 /** Absolute URL for a report. Empty for a "soon" entry, which is never a link. */
 export function reportHref(r: ReportEntry): string {
-  return r.path ? `${BASE}/${r.path}` : "";
+  return r.path ? absoluteHref(r.path) : "";
 }
 
 /** Absolute URL for a category — a filter on the landing page, not a route of its own. */
 export function categoryHref(id: ReportCategoryId): string {
-  return `${BASE}/reports?cat=${id}`;
+  return `${REPORTS_BASE}?cat=${id}`;
 }
 
 export function categoryById(id: string): ReportCategory | undefined {
@@ -971,7 +1096,7 @@ export function reportCategoriesFor(allowed: ReadonlySet<string>): ReportCategor
  * uses this to ask "does the viewer hold ANY report at this path?" instead.
  */
 export function reportsAtPath(pathname: string): ReportEntry[] {
-  const rel = pathname.startsWith(`${BASE}/`) ? pathname.slice(BASE.length + 1) : null;
+  const rel = cataloguePath(pathname);
   if (!rel) return [];
   return REPORTS.filter((r) => r.path && r.path.split("?")[0] === rel);
 }
@@ -989,7 +1114,7 @@ export function reportsAtPath(pathname: string): ReportEntry[] {
  * Hence: exact `path + query` first, then fall back to the first entry with a matching path.
  */
 export function findReport(pathname: string, search: string): ReportEntry | null {
-  const rel = pathname.startsWith(`${BASE}/`) ? pathname.slice(BASE.length + 1) : null;
+  const rel = cataloguePath(pathname);
   if (!rel) return null;
 
   const query = new URLSearchParams(search);
@@ -1014,9 +1139,9 @@ export function findReport(pathname: string, search: string): ReportEntry | null
  * so keying only on the path would silently drop the category step.
  */
 export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
-  const root: Crumb = { label: "Reports", to: `${BASE}/reports` };
+  const root: Crumb = { label: "Reports", to: REPORTS_BASE };
 
-  if (pathname === `${BASE}/reports`) {
+  if (pathname === REPORTS_BASE) {
     const cat = categoryById(new URLSearchParams(search).get("cat") ?? "");
     return cat ? [root, { label: cat.title }] : null;
   }
@@ -1029,7 +1154,7 @@ export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
     { id: "ledger-outstanding", fallback: "Ledger Outstandings" },
     { id: "ledger-voucher", fallback: "Ledger Vouchers" },
   ]) {
-    const listPath = `${BASE}/reports/${detail.id}`;
+    const listPath = `${REPORTS_BASE}/${detail.id}`;
     if (pathname.startsWith(`${listPath}/`)) {
       const entry = REPORTS.find((r) => r.id === detail.id);
       const cat = entry ? categoryById(entry.category) : undefined;

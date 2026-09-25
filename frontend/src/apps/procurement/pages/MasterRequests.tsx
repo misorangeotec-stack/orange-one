@@ -3,12 +3,9 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import Tabs from "@/shared/components/ui/Tabs";
-import EmptyState from "@/shared/components/ui/EmptyState";
-import Pagination from "@/shared/components/ui/Pagination";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { usePagination } from "@/shared/lib/usePagination";
 import { formatDate } from "@/shared/lib/time";
 import RequestMasterModal from "../components/RequestMasterModal";
 import { useProcurementStore } from "../store";
@@ -61,7 +58,6 @@ export default function MasterRequests() {
     return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [tab, s.resolvableRequests, s.myMasterRequests, s.masterRequests]);
 
-  const pg = usePagination(rows, { resetKey: tab });
 
   /** Masters nobody owns — their requests land with the admins until someone is assigned. */
   const unassigned = MASTER_TYPES.filter((m) => s.isMasterUnassigned(m.value));
@@ -135,6 +131,74 @@ export default function MasterRequests() {
       ]
     : [{ key: "mine", label: "My requests", count: s.myMasterRequests.length }];
 
+  const personName = (id: string | null | undefined) => (id ? s.profileById(id)?.name ?? "—" : "—");
+  const outcomeText = (r: MasterRequest) =>
+    r.status === "approved" ? `Added to ${masterTypePlural(r.masterType)}` : r.reviewNote || "—";
+
+  const columns: QueueColumn<MasterRequest>[] = [
+    {
+      key: "type",
+      header: "Type",
+      cell: (r) => <span className="font-medium text-navy">{masterTypeLabel(r.masterType)}</span>,
+      sortValue: (r) => masterTypeLabel(r.masterType),
+      filter: { kind: "select", get: (r) => masterTypeLabel(r.masterType) },
+    },
+    {
+      key: "proposed",
+      header: "Proposed",
+      cell: (r) => describe(r),
+      sortValue: (r) => describe(r),
+      // Free text, a different value on every row — a search box, not a list that
+      // would only restate the table.
+      filter: { kind: "text", get: (r) => describe(r) },
+    },
+    {
+      key: "requestedBy",
+      header: "Requested by",
+      cell: (r) => personName(r.requestedBy),
+      sortValue: (r) => personName(r.requestedBy),
+      filter: { kind: "select", get: (r) => personName(r.requestedBy) },
+    },
+    {
+      key: "date",
+      header: "Date",
+      cell: (r) => formatDate(r.createdAt),
+      sortValue: (r) => r.createdAt,
+      filter: { kind: "date", get: (r) => r.createdAt.slice(0, 10) },
+      exportValue: (r) => formatDate(r.createdAt),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (r) => statusBadge(r.status),
+      sortValue: (r) => r.status,
+      filter: { kind: "select", get: (r) => r.status },
+      // A pill: never cut, no handle.
+      resize: false,
+    },
+    {
+      key: "reviewedBy",
+      header: "Reviewed by",
+      cell: (r) => (r.reviewedBy ? personName(r.reviewedBy) : <span className="text-grey-2">—</span>),
+      sortValue: (r) => (r.reviewedBy ? personName(r.reviewedBy) : ""),
+      filter: { kind: "select", get: (r) => (r.reviewedBy ? personName(r.reviewedBy) : "—") },
+    },
+    {
+      key: "outcome",
+      header: "Outcome",
+      cell: (r) =>
+        r.status === "approved" ? (
+          <span className="text-ryg-green">Added to {masterTypePlural(r.masterType)}</span>
+        ) : r.reviewNote ? (
+          <span className="text-grey">{r.reviewNote}</span>
+        ) : (
+          <span className="text-grey-2">—</span>
+        ),
+      sortValue: (r) => outcomeText(r),
+      filter: { kind: "text", get: (r) => outcomeText(r) },
+    },
+  ];
+
   const approveFields = approving ? masterFields(approving.masterType, ctx) : [];
 
   const emptyMessage =
@@ -174,72 +238,34 @@ export default function MasterRequests() {
 
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
-      <Card className="overflow-hidden">
-        {rows.length === 0 ? (
-          <EmptyState title="No requests" message={emptyMessage} />
-        ) : (
-          <>
-            <ScrollableTable>
-              <table className="w-full text-[13.5px]">
-                <thead>
-                  <tr className="text-left text-grey-2 border-b border-line">
-                    <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
-                    <th className="font-medium px-4 py-3">Type</th>
-                    <th className="font-medium px-4 py-3">Proposed</th>
-                    <th className="font-medium px-4 py-3">Requested by</th>
-                    <th className="font-medium px-4 py-3">Date</th>
-                    <th className="font-medium px-4 py-3">Status</th>
-                    <th className="font-medium px-4 py-3">Reviewed by</th>
-                    <th className="font-medium px-4 py-3">Outcome</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pg.pageItems.map((r) => {
-                    const canResolve = r.status === "pending" && s.canManage(r.masterType);
-                    return (
-                      <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {canResolve ? (
-                            <>
-                              <button onClick={() => openApprove(r)} className="text-[12.5px] font-semibold text-ryg-green hover:underline mr-3">
-                                Approve
-                              </button>
-                              <button onClick={() => openReject(r)} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
-                                Reject
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-grey-2 text-[12.5px]">
-                              {r.status === "pending" ? "Awaiting review" : "—"}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
-                        <td className="px-4 py-3">{describe(r)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{s.profileById(r.requestedBy)?.name ?? "—"}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
-                        <td className="px-4 py-3">{statusBadge(r.status)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {r.reviewedBy ? s.profileById(r.reviewedBy)?.name ?? "—" : <span className="text-grey-2">—</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {r.status === "approved" ? (
-                            <span className="text-ryg-green">Added to {masterTypePlural(r.masterType)}</span>
-                          ) : r.reviewNote ? (
-                            <span className="text-grey">{r.reviewNote}</span>
-                          ) : (
-                            <span className="text-grey-2">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </ScrollableTable>
-            <Pagination state={pg} rowsLabel="requests" />
-          </>
-        )}
+      {/* A QueueTable since PF-20 (it was a hand-built table with no sort or filter): every
+          column sorts and filters, rows are one line. Keyed by tab so a filter set on one
+          list does not silently narrow the next. Every control it had is still here —
+          Approve / Reject per row, "Awaiting review", the empty message, 25 a page. */}
+      <Card className="p-4">
+        <QueueTable
+          key={tab}
+          rows={rows}
+          rowKey={(r) => r.id}
+          columns={columns}
+          rowsLabel="requests"
+          emptyTitle="No requests"
+          emptyMessage={emptyMessage}
+          actions={(r) =>
+            r.status === "pending" && s.canManage(r.masterType) ? (
+              <>
+                <button onClick={() => openApprove(r)} className="text-[12.5px] font-semibold text-ryg-green hover:underline mr-3">
+                  Approve
+                </button>
+                <button onClick={() => openReject(r)} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
+                  Reject
+                </button>
+              </>
+            ) : (
+              <span className="text-grey-2 text-[12.5px]">{r.status === "pending" ? "Awaiting review" : "—"}</span>
+            )
+          }
+        />
       </Card>
 
       {/* Raise a request for any master, from one place. */}

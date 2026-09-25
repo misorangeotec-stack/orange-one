@@ -74,6 +74,14 @@ export interface NotificationItem {
 export const HOME_PATH = "/home";
 export const HOME_LABEL = "My Control Center";
 
+/**
+ * PF-18 · The announcement history page, open to all staff. Named here, beside the
+ * home, because the leaf-only modules that build menus and breadcrumbs need it too.
+ * It must never sit under the Announcements module's own basePath, which is gated.
+ */
+export const ANNOUNCEMENTS_PATH = "/announcements";
+export const ANNOUNCEMENTS_LABEL = "Announcements";
+
 /** Minimal current-user info the shell needs to render. */
 export interface ShellUser {
   name: string;

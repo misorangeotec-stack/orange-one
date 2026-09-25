@@ -1,4 +1,6 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -18,9 +20,17 @@ import ReportsToTag from "./ReportsToTag";
  * An employee's own Reports view: this-week RYG performance shown in the same columns as the
  * admin / HOD views, followed by their monthly Plan vs Actual breakdown.
  */
+/** The draggable columns, for their remembered widths (PF-20). */
+const WEEK_COLS = ["week", "performance", "planned", "green", "yellow", "red"];
+
 export default function EmployeeReport({ user, weekStart = WEEK_START }: { user: Profile; weekStart?: string }) {
   const { role } = useSession();
   const { tasks } = useTaskStore();
+  /**
+   * PF-20 (drag only): a column's right edge drags wider, and the width is remembered per browser
+   * (double-click the edge to put it back). Nothing else about this table changes.
+   */
+  const fit = useColumnWidths("tb", WEEK_COLS);
   const weekTasks = useMemo(() => tasks.filter((t) => t.weekStart === weekStart), [tasks, weekStart]);
 
   const r = useMemo(() => reportFor(weekTasks, user.id), [weekTasks, user.id]);
@@ -41,16 +51,22 @@ export default function EmployeeReport({ user, weekStart = WEEK_START }: { user:
     <div className="space-y-5">
       {/* this week — same RYG columns as the manager views */}
       <Card className="p-0 overflow-hidden">
+      {/* PF-20: appears only once a column here has been dragged. */}
+      {fit.anyCustom(WEEK_COLS) && (
+        <div className="flex justify-end px-4 pt-2">
+          <ResetWidths fit={fit} cols={WEEK_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
+        </div>
+      )}
         <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50">
-                <th className="text-left font-semibold px-4 py-2.5 min-w-[200px]">This week</th>
-                <th className="text-left font-semibold px-3 py-2.5 w-[200px]">Performance</th>
-                <th className="text-center font-semibold px-3 py-2.5">Planned</th>
-                <th className="text-center font-semibold px-3 py-2.5 text-[#1f8a4d]">Green</th>
-                <th className="text-center font-semibold px-3 py-2.5 text-[#B7820E]">Yellow</th>
-                <th className="text-center font-semibold px-3 py-2.5 text-[#c0392b]">Red</th>
+                <FitTh fit={fit} col="week" className="text-left font-semibold px-4 py-2.5 min-w-[200px]">This week</FitTh>
+                <FitTh fit={fit} col="performance" className="text-left font-semibold px-3 py-2.5 w-[200px]">Performance</FitTh>
+                <FitTh fit={fit} col="planned" className="text-center font-semibold px-3 py-2.5">Planned</FitTh>
+                <FitTh fit={fit} col="green" className="text-center font-semibold px-3 py-2.5 text-[#1f8a4d]">Green</FitTh>
+                <FitTh fit={fit} col="yellow" className="text-center font-semibold px-3 py-2.5 text-[#B7820E]">Yellow</FitTh>
+                <FitTh fit={fit} col="red" className="text-center font-semibold px-3 py-2.5 text-[#c0392b]">Red</FitTh>
               </tr>
             </thead>
             <tbody>
