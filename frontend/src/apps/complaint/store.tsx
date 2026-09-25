@@ -152,6 +152,9 @@ interface ComplaintStoreValue {
   recordService: (id: string, input: W.ServiceInput) => Promise<void>;
   recordServiceClose: (id: string, input: W.ServiceCloseInput) => Promise<void>;
   recordApproval: (id: string, input: W.ApprovalInput) => Promise<void>;
+  recordPurchase: (id: string, input: W.PurchaseInput) => Promise<void>;
+  recordRmManagement: (id: string, input: W.RmManagementInput) => Promise<void>;
+  recordAssignee: (id: string, input: W.AssigneeInput) => Promise<void>;
   recordManagementReview: (id: string, input: W.ManagementReviewInput) => Promise<void>;
   holdRequest: (id: string, hold: boolean, reason?: string) => Promise<void>;
   cancelRequest: (id: string, reason: string) => Promise<void>;
@@ -277,16 +280,21 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
     const canRaise = canEdit && (isAdmin || raiseOwners.length === 0 || raiseOwners.includes(uid));
 
     /**
-     * ⚠ MIRRORS `fms_complaint_can_act(step, req, uid)`, which is now three lines
-     *   long: this chain routes to BUCKETS — plant, service, management — not to
-     *   people named on the complaint. Authorization is entirely the step's owners
-     *   in Setup, plus admins and coordinators.
+     * ⚠ MIRRORS `fms_complaint_can_act(step, req, uid)` ARM FOR ARM. Keep them in
+     *   step — the SQL is the gate, this is what decides whether a button appears.
      *
-     * The `r` argument is kept because the SQL still takes the complaint and a
-     * future rule may need it; today nothing in the predicate reads it.
+     * Almost every step routes to a BUCKET — plant, service, purchase,
+     * management — whose members are the step's owners in Setup. `assignee` is
+     * the one exception: management NAME the person when they reassign an
+     * imported-material complaint, so that step is owned by whoever is on the row
+     * and by nobody else. That arm is why `r` is read here at all (it was `_r`
+     * while the chain was buckets-only).
      */
-    const canActOn = (stepKey: StepKey, _r: ComplaintRequest): boolean =>
-      isAdmin || isProcessCoordinator || isStepOwner(stepKey);
+    const canActOn = (stepKey: StepKey, r: ComplaintRequest): boolean =>
+      isAdmin ||
+      isProcessCoordinator ||
+      isStepOwner(stepKey) ||
+      (stepKey === "assignee" && !!uid && r.rmAssigneeId === uid);
 
     const managerIdsFor = (mt: ComplaintMasterType) =>
       masterManagers.filter((x) => x.masterType === mt).map((x) => x.managerUserId);
@@ -347,15 +355,29 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
 
 
     /**
+     * Has this person EVER been handed an imported-material complaint?
+     *
+     * ⚠ THE ONE `ever*` FLAG IN THIS MODULE, and it exists because `assignee` is
+     *   the one step with no Setup owners: membership of that queue is a column
+     *   on a row. Without this the "Assigned to Me" link — and with it the
+     *   Completed tab holding everything the person has answered — would vanish
+     *   from the sidebar the instant they cleared their last one.
+     */
+    const everAssignee = !!uid && requests.some((r) => r.rmAssigneeId === uid);
+
+    /**
      * May this person see the step's QUEUE at all — the nav link, the route, the page?
      *
-     * Simple now that the chain routes to buckets: you see a queue if you own the
-     * step, coordinate the process, or read the whole module. The earlier chain
-     * needed `ever*` flags because its actors were named per complaint and owned
-     * no step; none of that applies here.
+     * You see a queue if you own the step, coordinate the process, read the whole
+     * module, or have work sitting in it. `assignee` adds the `everAssignee` arm
+     * above, for the reason given there.
      */
     const canSeeQueue = (stepKey: StepKey): boolean =>
-      isModuleViewer || isProcessCoordinator || isStepOwner(stepKey) || myQueue(stepKey).length > 0;
+      isModuleViewer ||
+      isProcessCoordinator ||
+      isStepOwner(stepKey) ||
+      myQueue(stepKey).length > 0 ||
+      (stepKey === "assignee" && everAssignee);
 
     const queueOwnerIds = (e: QueueEntry): string[] => ownerFor(e.stepKey)?.employeeIds ?? [];
 
@@ -438,6 +460,9 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       recordService: w(W.recordService),
       recordServiceClose: w(W.recordServiceClose),
       recordApproval: w(W.recordApproval),
+      recordPurchase: w(W.recordPurchase),
+      recordRmManagement: w(W.recordRmManagement),
+      recordAssignee: w(W.recordAssignee),
       recordManagementReview: w(W.recordManagementReview),
       holdRequest: w(W.holdRequest),
       cancelRequest: w(W.cancelRequest),
