@@ -331,6 +331,7 @@ export default function InkMis() {
       case "stock": return r.stock;
       case "incoming": return r.incoming;
       case "plantTotal": return r.plant;
+      case "committed": return r.committed;
       case "total": return r.total;
       default: return null;
     }
@@ -631,7 +632,7 @@ export default function InkMis() {
     if (id === "category") return 130;
     if (id === "source") return 110;
     if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
-    if (id === "stock" || id === "total") return 110;
+    if (id === "stock" || id === "total" || id === "committed") return 110;
     return 90;
   };
 
@@ -666,7 +667,9 @@ export default function InkMis() {
     if (showShipmentCols) ids.push(...shipmentCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("incoming")) ids.push("incoming");
     if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
-    ids.push("plantTotal", "total");
+    ids.push("plantTotal");
+    if (cols.isVisible("committed")) ids.push("committed");
+    ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
     return ids;
@@ -753,6 +756,7 @@ export default function InkMis() {
     { value: "shipments", label: "Consignment columns" },
     { value: "plant", label: "Plant weekly columns" },
     { value: "incoming", label: "ETA + at port" },
+    { value: "committed", label: "Stock + ETA" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
   ];
@@ -934,7 +938,8 @@ export default function InkMis() {
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
-      "ETD", "ETA + at port", "Plant total", "Total", "Category", "Import/Plant", "To order",
+      "ETD", "ETA + at port", "Plant total", "Stock + ETA + plant", "Total", "Category",
+      "Import/Plant", "To order",
     ];
     const body = rows.map((r) => [
       order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
@@ -945,7 +950,8 @@ export default function InkMis() {
       ...shipmentCols.map((s) =>
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
-      r.etd, r.incoming, r.plant, r.total, r.category, sourceLabel(r.source), reorderQty(r),
+      r.etd, r.incoming, r.plant, r.committed, r.total, r.category, sourceLabel(r.source),
+      reorderQty(r),
     ]);
     const esc = (v: unknown) => {
       const s = String(v ?? "");
@@ -1363,6 +1369,12 @@ export default function InkMis() {
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
                 Plant total{colFilter("plantTotal")}
               </ResizableHead>
+              {cols.isVisible("committed") && (
+                <ResizableHead id="committed" cols={cols} className="text-right">
+                  <span className="text-[10px] font-normal">Stock + ETA + plant</span>
+                  {colFilter("committed")}
+                </ResizableHead>
+              )}
               <ResizableHead id="total" cols={cols} className="text-right font-semibold">
                 Total{colFilter("total")}
               </ResizableHead>
@@ -1414,6 +1426,11 @@ export default function InkMis() {
                     </TableCell>
                   ))}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
+                {cols.isVisible("committed") && (
+                  <TableCell className="text-right tabular-nums">
+                    {fmtQty(rows.reduce((t, r) => t + r.committed, 0))}
+                  </TableCell>
+                )}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.total)}</TableCell>
                 {cols.isVisible("category") && <TableCell />}
                 {cols.isVisible("source") && <TableCell />}
@@ -1532,13 +1549,30 @@ export default function InkMis() {
                     </TableCell>
                   ))}
 
-                <TableCell className="text-right tabular-nums">{fmtQty(r.stock)}</TableCell>
+                <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.stockBand]}`}>
+                  {fmtQty(r.stock)}
+                  {r.stockPct !== null && (
+                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.stockPct)}</div>
+                  )}
+                </TableCell>
 
                 {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
 
-                {cols.isVisible("incoming") && <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>}
+                {cols.isVisible("incoming") && (
+                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.incomingBand]}`}>
+                    {fmtQty(r.incoming)}
+                  </TableCell>
+                )}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
+                {cols.isVisible("committed") && (
+                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.committedBand]}`}>
+                    {fmtQty(r.committed)}
+                    {r.committedPct !== null && (
+                      <div className="text-[10px] font-normal opacity-70">{fmtPct(r.committedPct)}</div>
+                    )}
+                  </TableCell>
+                )}
                 <TableCell className={`text-right font-semibold tabular-nums ${BAND_CLASS[r.band]}`}>
                   {fmtQty(r.total)}
                   {r.coverPct !== null && (

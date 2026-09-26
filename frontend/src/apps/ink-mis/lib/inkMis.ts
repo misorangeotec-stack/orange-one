@@ -753,9 +753,21 @@ export interface InkRow extends InkPosition {
   /** Days of cover on stock alone, and with incoming. Null when no per-day average is set. */
   daysCover: number | null;
   daysCoverWithIncoming: number | null;
-  /** Stock as a percentage of month max level. Null when no month max is set. */
-  coverPct: number | null;
+  /**
+   * The same target read at four points, because the planner judges the line four times: what is
+   * on the shelf, what is arriving, what those come to together, and what everything they have
+   * arranged comes to. One colour on one column answered only one of those questions.
+   */
+  coverPct: number | null;          // the headline: everything arranged, against the target
   band: InkBand;
+  stockPct: number | null;          // shelf only
+  stockBand: InkBand;
+  incomingPct: number | null;       // ETA + at port only
+  incomingBand: InkBand;
+  /** Stock + ETA + at port + plant — the sheet's old "ETA + AT PORT + STOCK". */
+  committed: number;
+  committedPct: number | null;
+  committedBand: InkBand;
   remark: "NEW ORDER REQUIRED" | "EXCESS STOCK" | "";
 }
 
@@ -822,7 +834,11 @@ export function deriveInkRow(
    * that reading would be a second order for ink already bought. The total is what the planner
    * has arranged: stock, ETA, at port, plant orders and what is on order but not yet shipped.
    */
-  const coverPct = monthMaxLevel > 0 ? ((stock + committed + etd) / monthMaxLevel) * 100 : null;
+  const pctOf = (qty: number) => (monthMaxLevel > 0 ? (qty / monthMaxLevel) * 100 : null);
+  const stockPct = pctOf(stock);
+  const incomingPct = pctOf(incoming);
+  const committedPct = pctOf(stock + committed);
+  const coverPct = pctOf(stock + committed + etd);
 
   let remark: InkRow["remark"] = "";
   if (coverPct !== null) {
@@ -847,6 +863,13 @@ export function deriveInkRow(
     daysCoverWithIncoming,
     coverPct,
     band: bandFor(coverPct, thresholds),
+    stockPct,
+    stockBand: bandFor(stockPct, thresholds),
+    incomingPct,
+    incomingBand: bandFor(incomingPct, thresholds),
+    committed: stock + committed,
+    committedPct,
+    committedBand: bandFor(committedPct, thresholds),
     remark,
   };
 }
