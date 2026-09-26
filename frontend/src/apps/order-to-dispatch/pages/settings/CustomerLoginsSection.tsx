@@ -11,11 +11,27 @@ import { useDispatchStore } from "../../store";
 import CustomerOrgItemsSection, {
   NO_ITEM_EDITS, type OrgItemEdits,
 } from "../../components/CustomerOrgItemsSection";
+import CustomerOrgFormsSection from "../../components/CustomerOrgFormsSection";
 import {
   CUSTOMER_ORGS_QK, MISSING_LABEL, addCustomer, fetchCustomerOrgs, orgItemsQueryKey,
   saveCustomerOrg, setCustomerOrgItems,
   type CustomerOrg,
 } from "../../data/customerOrgs";
+
+/**
+ * A Tally ledger that exists to hold MACHINE sales, not consumable ones.
+ *
+ * ⚠ A WORD MATCH, NOT A SUBSTRING ONE, and the difference is a real customer.
+ *   `includes("MACHINE")` also catches "MACHINEWALA TEXTILES" and would quietly
+ *   make that customer unaddable with nothing on screen to say why. The boundary
+ *   keeps it to the naming convention actually in use — "A.N.CREATION - MACHINE",
+ *   "… OLD MACHINE".
+ *
+ * ⚠ IF A LEDGER IS WRONGLY EXCLUDED, THIS IS WHERE TO LOOK. The symptom is a
+ *   customer who cannot be found in the ledger picker at all, which looks like
+ *   missing master data rather than a filter.
+ */
+const isMachineLedger = (name: string) => /\bMACHINES?\b/.test(name.toUpperCase());
 
 /**
  * Setup → Customer Logins. Who may place their own orders through the Orange
@@ -201,20 +217,78 @@ export default function CustomerLoginsSection() {
 
   function useOrgFormOptions() {
     /**
-     * ⚠ The ledger picker offers ONE ROW PER TALLY BOOK, and the label has to say
-     *   which book — "BISHEN DYEING PRINTING & WEAVING MILLS" is five identical
-     *   strings otherwise, and the person ticking them has no way to tell which
-     *   five they picked or whether they missed one.
+     * ⚠ ONE ROW PER CUSTOMER, NOT PER TALLY BOOK (OD-16). It used to be one row per
+     *   book, because a ledger name alone is five identical strings and the label
+     *   had to disambiguate them. That was true and was solving the wrong problem:
+     *   the person adding a customer does not think "Ganga in O-tec AND Ganga in
+     *   Enterprise", they think "Ganga", and ticking the same name three times is
+     *   three chances to miss one — after which that book silently cannot supply
+     *   them.
+     *
+     *   So the picker collapses by NAME and the tick expands back to every ledger
+     *   carrying it. The books are shown in the label, as information rather than
+     *   as something to choose between.
+     *
+     * ⚠ MACHINE LEDGERS ARE NOT OFFERED AT ALL. The field hint used to ask people
+     *   to leave them out by hand, which is a rule enforced by remembering. The
+     *   Order Desk sells ink, heads and spares; a machine ledger on a customer's
+     *   ordering access is always a mistake, so it is not in the list to be made.
+     *
+     * ⚠ AND AT MOST ONE LEDGER PER BOOK SURVIVES THE EXPANSION, because
+     *   `fms_dispatch_save_customer_org` refuses a second and would reject the save
+     *   with an error naming a ledger the admin never picked. Where a name really
+     *   does carry two in one book, the first by id wins and `multiPerBook` flags
+     *   it so the dialog can say so rather than choosing in silence.
      */
-    const partyOptions: MultiOption[] = useMemo(() => {
+    const { partyOptions, partyIdsForNames, namesForPartyIds } = useMemo(() => {
       const companyName = new Map(s.companies.map((c) => [c.id, c.name]));
-      return [...s.customers]
+      const nameKey = (n: string) => n.trim().toUpperCase();
+
+      const rows = [...s.customers]
         .filter((c) => c.active)
-        .sort((a, b) => a.name.localeCompare(b.name) || (companyName.get(a.companyId ?? "") ?? "").localeCompare(companyName.get(b.companyId ?? "") ?? ""))
-        .map((c) => ({
-          value: c.id,
-          label: `${c.name} · ${companyName.get(c.companyId ?? "") ?? "no company"}`,
+        .filter((c) => !isMachineLedger(c.name));
+
+      /** name key → its ledgers, at most one per book. */
+      const byName = new Map<string, { ids: string[]; label: string; books: string[] }>();
+      const perBook = new Map<string, Set<string>>();
+
+      for (const c of [...rows].sort((a, b) => a.id.localeCompare(b.id))) {
+        const key = nameKey(c.name);
+        const book = c.companyId ?? "";
+        const seen = perBook.get(key) ?? new Set<string>();
+        if (seen.has(book)) continue; // second ledger in the same book — see above
+        seen.add(book);
+        perBook.set(key, seen);
+
+        const entry = byName.get(key) ?? { ids: [], label: c.name, books: [] };
+        entry.ids.push(c.id);
+        const bookName = companyName.get(book) ?? "no company";
+        if (!entry.books.includes(bookName)) entry.books.push(bookName);
+        byName.set(key, entry);
+      }
+
+      const options: MultiOption[] = [...byName.entries()]
+        .sort((a, b) => a[1].label.localeCompare(b[1].label))
+        .map(([key, e]) => ({
+          value: key,
+          label: e.label,
+          /* The books are the answer to "did this pick up both?", which is the one
+             thing the old per-book rows did well and must not be lost. */
+          sublabel: [...e.books].sort().join(" · "),
         }));
+
+      return {
+        partyOptions: options,
+        partyIdsForNames: (keys: readonly string[]) =>
+          keys.flatMap((k) => byName.get(k)?.ids ?? []),
+        /** Which names a saved `partyIds` list represents. */
+        namesForPartyIds: (ids: readonly string[]) => {
+          const idSet = new Set(ids);
+          return [...byName.entries()]
+            .filter(([, e]) => e.ids.some((id) => idSet.has(id)))
+            .map(([k]) => k);
+        },
+      };
     }, []);
 
     /**
@@ -233,7 +307,7 @@ export default function CustomerLoginsSection() {
       [],
     );
 
-    return { partyOptions, notifyOptions };
+    return { partyOptions, partyIdsForNames, namesForPartyIds, notifyOptions };
   }
 
   function OrgFields({
@@ -245,7 +319,34 @@ export default function CustomerLoginsSection() {
     defaultDispatchType, setDefaultDispatchType,
     active, setActive,
   }: OrgFieldProps) {
-    const { partyOptions, notifyOptions } = useOrgFormOptions();
+    const { partyOptions, partyIdsForNames, namesForPartyIds, notifyOptions } = useOrgFormOptions();
+
+    /**
+     * The picker works in NAME space; `partyIds` stays in ID space.
+     *
+     * ⚠ THE CHANGE IS APPLIED AS A DIFF, NOT AS A REPLACEMENT, and that is what
+     *   protects orgs saved before OD-16. Re-expanding the whole selection on every
+     *   keystroke would take an existing customer deliberately ticked into ONE book
+     *   and silently add the other the first time somebody opened the dialog to fix
+     *   a phone number — a change nobody asked for, in a field nobody looked at,
+     *   saved by a button that says "Save".
+     *
+     *   So: names newly ticked contribute all their ledgers; names unticked remove
+     *   all of theirs; names already present are left exactly as they were stored.
+     */
+    const selectedNames = useMemo(() => namesForPartyIds(partyIds), [partyIds, namesForPartyIds]);
+
+    const onNamesChange = (nextNames: string[]) => {
+      const before = new Set(selectedNames);
+      const after = new Set(nextNames);
+      const added = nextNames.filter((n) => !before.has(n));
+      const removed = selectedNames.filter((n) => !after.has(n));
+      const removedIds = new Set(partyIdsForNames(removed));
+      setPartyIds([
+        ...partyIds.filter((id) => !removedIds.has(id)),
+        ...partyIdsForNames(added).filter((id) => !partyIds.includes(id)),
+      ]);
+    };
 
     /**
      * The optional dispatch-site pre-fill, offered across every ticked ledger's
@@ -297,15 +398,15 @@ export default function CustomerLoginsSection() {
         </div>
 
         <FieldLabel
-          label="Their ledgers"
+          label="The customer"
           required
-          hint="Every Tally ledger that IS this customer. One per company book — leave out machine and old-machine ledgers. These are the companies they may order from."
+          hint="Tick them once. Every book they exist in comes with it — O-tec, Enterprise or both — and those are the forms they may order on. Machine ledgers are not offered."
         >
           <MultiSelect
-            values={partyIds}
-            onChange={setPartyIds}
+            values={selectedNames}
+            onChange={onNamesChange}
             options={partyOptions}
-            placeholder="Tick their ledgers"
+            placeholder="Search the customer"
             searchable
           />
         </FieldLabel>
@@ -424,6 +525,7 @@ export default function CustomerLoginsSection() {
                   active, setActive }}
           />
           <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
+          <CustomerOrgFormsSection partyIds={partyIds} />
         </div>
       </Modal>
     );
@@ -493,6 +595,7 @@ export default function CustomerLoginsSection() {
                   active, setActive }}
           />
           <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
+          <CustomerOrgFormsSection partyIds={partyIds} />
           <div className="border-t border-line pt-4 space-y-4">
             <div className="text-[13px] font-semibold text-navy">Their login</div>
             <p className="text-[12px] text-grey-2">

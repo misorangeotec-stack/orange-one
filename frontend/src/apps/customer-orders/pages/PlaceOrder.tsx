@@ -18,15 +18,21 @@ import { deskPaths } from "../lib/paths";
  * fields (Q2). The site the goods leave from and how they travel are ours to
  * decide and are filled in at our end; neither appears here.
  *
- * ⚠ WHICH OF OUR COMPANIES THEY ARE BUYING FROM IS THEIRS TO ANSWER (OD-14).
+ * ⚠ WHICH FORM THEY ARE ORDERING ON IS THEIRS TO ANSWER (OD-14, renamed OD-16).
  *   Decision Q1 sent that question to credit check on the grounds that guessing it
  *   would be wrong half the time — both named customers split roughly 50/50 across
- *   two books. Asking the customer is not a guess: they know who invoices them, and
- *   the answer decides which items can be billed to them at all.
+ *   two books. Asking the customer is not a guess: they know which form they order
+ *   on, and the answer decides which items can be billed to them at all.
  *
- * ⚠ Q11 STILL STANDS. They see our COMPANY names, which are on every invoice we
- *   send them. The ticked LEDGER list behind those companies never leaves the
- *   server, and this app still reads no table.
+ * ⚠ THE COMPANY PICKER IS STILL THE SAME PICKER, RENAMED (OD-16). What travels is
+ *   unchanged — `companyId`, our book — and only the words changed: the customer
+ *   reads the FORM name agreed with them, never "O-tec - Surat". One form is
+ *   printed as a sentence, several become a choice; that shape predates OD-16 and
+ *   is why this needed no new branch.
+ *
+ * ⚠ Q11 STILL STANDS. The form name is ours to choose and agreed with this
+ *   customer; it carries no ledger id and no ledger name. The ticked LEDGER list
+ *   never leaves the server, and this app still reads no table.
  */
 export default function PlaceOrder() {
   const customer = useCustomer();
@@ -83,10 +89,17 @@ export default function PlaceOrder() {
             </svg>
           </div>
           <p className="text-[16px] font-semibold">We have your order.</p>
+          {/*
+            ⚠ "UNTIL WE ACCEPT IT" IS THE DEADLINE, and it has to be the same words
+              the order page uses. It used to read "until we start preparing it",
+              which named one of our steps and, worse, named the wrong moment — the
+              window shuts when we ACCEPT the order, which is before anybody starts
+              preparing anything.
+          */}
           <p className="text-[14px] text-grey mt-2 leading-relaxed">
             Our team has been told and will get on with it. You can follow it, change it
             or cancel it under <span className="font-semibold text-ink">My orders</span> until
-            we start preparing it.
+            we accept it.
           </p>
           <div className="flex gap-3 mt-6">
             <button

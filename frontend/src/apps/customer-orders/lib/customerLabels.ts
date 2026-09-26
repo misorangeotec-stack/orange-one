@@ -43,22 +43,26 @@ export const callUs = (lead = "Please call us"): string =>
 /* -------------------------------------------------------------------------- */
 
 /**
- * The eight states, and they come from the SERVER.
+ * The FOUR states the customer lives in, plus Cancelled. They come from the SERVER.
  *
  * `fms_dispatch_my_orders` returns `status_key` already collapsed, which is what
  * keeps the browser from ever holding our step names. This map only turns that
  * key into English — it makes no decision.
  *
- * ⚠ THE SERVER TESTS ROUNDS BEFORE IT TESTS THE STEP, and that ordering is the
- *   whole reason `part_dispatched` exists. When a part-delivered order uses up
- *   its approved quantity it is sent back to the start and its decision is wiped,
- *   so by step alone it would read "Placed" to a customer already holding half
- *   their goods. Do not re-derive any of this here from a step name; there is no
- *   step name to re-derive it from.
+ * ⚠ IT USED TO BE EIGHT, AND THE FOUR ARE NOT A TIDY-UP. "Being prepared",
+ *   "Partly dispatched" and "Paused" each described where an order sat in OUR
+ *   process, which is the one thing Q6 says the customer should not be reading.
+ *   The four here are the words the customer uses: have you got it, have you
+ *   taken it on, has it left, did it arrive.
+ *
+ * ⚠ A PART-DISPATCHED ORDER READS "Out for delivery", NOT a state of its own.
+ *   That is deliberate and the server's round-table test is what makes it true
+ *   across a loop-back — see the CASE in the migration. The customer holding half
+ *   an order and waiting for the rest learns which half from `dispatchNotes`,
+ *   which names each consignment, rather than from a pill that cannot say it.
  */
 export type CustomerStatusKey =
-  | "placed" | "preparing" | "part_dispatched" | "dispatched"
-  | "delivered" | "paused" | "cancelling" | "cancelled";
+  | "request_raised" | "accepted" | "out_for_delivery" | "delivered" | "cancelled";
 
 export interface CustomerStatus {
   label: string;
@@ -78,40 +82,25 @@ const PILL = {
 } as const;
 
 export const CUSTOMER_STATUS: Record<CustomerStatusKey, CustomerStatus> = {
-  placed: {
-    label: "Placed",
-    blurb: "We have your order and are checking it now.",
+  request_raised: {
+    label: "Request raised",
+    blurb: "We have your request. You can still change or cancel it until we accept it.",
     tone: PILL.blue,
   },
-  preparing: {
-    label: "Being prepared",
-    blurb: "Your order is approved and we are getting the goods ready.",
+  accepted: {
+    label: "Accepted",
+    blurb: "We have taken this on and are working on it.",
     tone: PILL.orange,
   },
-  part_dispatched: {
-    label: "Partly dispatched",
-    blurb: "Part of this order has been sent. The rest is still with us.",
-    tone: PILL.orange,
-  },
-  dispatched: {
-    label: "Dispatched",
-    blurb: "Your order has left our premises.",
+  out_for_delivery: {
+    label: "Out for delivery",
+    blurb: "Your goods have left our premises.",
     tone: PILL.green,
   },
   delivered: {
     label: "Delivered",
     blurb: "This order is complete.",
     tone: PILL.green,
-  },
-  paused: {
-    label: "Paused — we will call you",
-    blurb: "This order is on hold at the moment.",
-    tone: PILL.yellow,
-  },
-  cancelling: {
-    label: "Cancellation in progress",
-    blurb: "We are working through the cancellation.",
-    tone: PILL.grey,
   },
   cancelled: {
     label: "Cancelled",
@@ -161,16 +150,21 @@ export const customerStatus = (key: string): CustomerStatus =>
  *   eight lines under a pill reading "We have your order and are checking it now"
  *   — two answers to one question, disagreeing. The window shuts on ANY recorded
  *   credit decision, and a HOLD is one: the decision is stamped, the buttons go,
- *   and the status deliberately stays "Placed" because Q6 forbids telling them a
- *   hold happened. So the old sentence was guaranteed to contradict the pill on
- *   every held order — and to assert something false, since a held order is
- *   sitting still, not being prepared.
+ *   and the status deliberately stays put because Q6 forbids telling them a hold
+ *   happened. So the old sentence was guaranteed to contradict the pill on every
+ *   held order — and to assert something false, since a held order is sitting
+ *   still, not being prepared.
  *
  *   The customer asked whether they can change their order. The answer they need
  *   is about the order, not about which of our steps it is sitting in.
+ *
+ * ⚠ IT NAMES BOTH VERBS, because the window governs both. `can_change` gates the
+ *   Change button AND the Cancel button — one window, shutting on both at the
+ *   same moment — so a sentence mentioning only changing would leave a customer
+ *   who came to cancel with no answer at all.
  */
 export const WINDOW_SHUT =
-  `This order has gone past the point where it can be changed. ${callUs()} if something needs to move.`;
+  `We have accepted this order, so it can no longer be changed or cancelled here. ${callUs()} if something needs to move.`;
 
 /* -------------------------------------------------------------------------- */
 /*  Item types                                                                 */

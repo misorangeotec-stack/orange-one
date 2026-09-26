@@ -98,6 +98,7 @@ export interface RoundView {
   goActualDate: string | null;
   goOutwardNo: string | null;
   goRemarks: string | null;
+  goCustomerRemark: string | null;
   goAt: string | null;
   goBy: string | null;
 
@@ -240,6 +241,7 @@ export function currentRoundView(order: DispatchOrder): RoundView | null {
     goActualDate: order.goActualDate,
     goOutwardNo: order.goOutwardNo,
     goRemarks: order.goRemarks,
+    goCustomerRemark: order.goCustomerRemark,
     goAt: order.goAt,
     goBy: order.goBy,
 
@@ -301,6 +303,7 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     goActualDate: r.goActualDate,
     goOutwardNo: r.goOutwardNo,
     goRemarks: r.goRemarks,
+    goCustomerRemark: r.goCustomerRemark,
     goAt: r.goAt,
     goBy: r.goBy,
 
