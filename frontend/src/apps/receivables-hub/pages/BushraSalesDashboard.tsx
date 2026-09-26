@@ -49,11 +49,10 @@ import {
   SALES_DASHBOARDS, salesPresetById, type Metric, type PrimaryDim, type QtyUnit, type SectionDim,
 } from "@hub/lib/bushraSalesDashboards";
 import {
-  DIMS, MAIN_PRODUCTS, MONTHS, OTHER_PRODUCT, QUARTER_MONTHS, SALES_TYPE_UNIT, compareBy, fmtInt,
-  fmtQty, fyOfDate, growth, isDiscountLine, makeQtyFmt, monthName, monthsOfFy, orNotSet, pairBy, quarterOf,
-  salesKpis, yearBefore, type Cmp, type Pair, type QtyFmt,
+  DIMS, DISCOUNT_TYPE, MAIN_PRODUCTS, MONTHS, NOT_SET, OTHER_PRODUCT, QUARTER_MONTHS, SALES_TYPE_UNIT,
+  compareBy, fmtInt, fmtQty, fyOfDate, growth, isDiscountLine, makeQtyFmt, monthName, monthsOfFy, orNotSet,
+  pairBy, quarterOf, salesKpis, yearBefore, type Cmp, type Pair, type QtyFmt,
 } from "@hub/lib/bushraSalesFigures";
-import { SERIES_1, SERIES_2 } from "@hub/lib/batchCostingDashboard";
 import { useScopedParties } from "@hub/lib/scopeParties";
 import { EMAILABLE_REPORTS, useReportAccess } from "@hub/lib/reportAccess";
 import { useSession } from "@/core/platform/session";
@@ -355,6 +354,15 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
 
   const byPrimary = useMemo(() => sliceBy(rows, FILTERS[preset.primary].get, measure), [rows, preset, metric]); // eslint-disable-line react-hooks/exhaustive-deps
   const byCategory = useMemo(() => sliceBy(rows, FILTERS.category.get, measure), [rows, metric]); // eslint-disable-line react-hooks/exhaustive-deps
+  // One colour per value on these two bar charts as well, off the UNFILTERED rows so a bar keeps
+  // its colour when a click narrows the chart. Product and Company already have a fixed colour.
+  const primaryColor = useMemo(
+    () => (preset.primary === "salesType" ? salesTypeColor
+      : preset.primary === "company" ? companyColor
+      : makeMixColors(base, FILTERS[preset.primary].get)),
+    [base, preset],
+  );
+  const categoryColor = useMemo(() => makeMixColors(base, FILTERS.category.get), [base]);
 
   /**
    * The PDF the scheduled mail will carry, built from exactly what the reader is looking at —
@@ -631,13 +639,13 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
       <Section id={`slices:${preset.id}`} title={`${metricWord} by ${primaryTitle} & Category`}>
       <div className="grid gap-3 lg:grid-cols-2">
         <SliceChart
-          title={`${metricWord} by ${primaryTitle}`} icon={ShoppingCart} color={SERIES_1}
+          title={`${metricWord} by ${primaryTitle}`} icon={ShoppingCart} colorOf={primaryColor}
           slices={byPrimary} total={total} fmt={fmtMeasure} selected={sel[preset.primary]}
           onPick={toggle(preset.primary)} what={primaryTitle} note={pickedNote(preset.primary, primaryTitle.toLowerCase())}
           loading={loading} empty={empty} emptyMessage={emptyMsg}
         />
         <SliceChart
-          title={`${metricWord} by Category`} icon={Layers} color={SERIES_2}
+          title={`${metricWord} by Category`} icon={Layers} colorOf={categoryColor}
           slices={byCategory} total={total} fmt={fmtMeasure} selected={sel.category}
           onPick={toggle("category")} what="Category" note={pickedNote("category", "category")}
           loading={loading} empty={empty} emptyMessage={emptyMsg}
@@ -665,16 +673,25 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
  * report. Never both measures on one plot — they have different units, and a second y-axis is how
  * a chart lies; two panels with the SAME bar order read across just as easily.
  */
-/** How each Mix section is titled and coloured. The filter key is the section's own name. */
-const SECTION_META: Record<SectionDim, { heading: string; subtitle: string; colorOf: (name: string) => string }> = {
+/**
+ * How each Mix section is titled and coloured. The filter key is the section's own name.
+ *
+ * `colorOf: null` means "no fixed colour per value" — Category, Group and Ink Type are whatever
+ * Central Masters holds, so the section is painted by makeMixColors() from the dashboard's own
+ * rows instead. They used to take ONE hue for every value, which left the reader with nothing but
+ * bar length to tell the biggest category from the smallest.
+ */
+const SECTION_META: Record<SectionDim, { heading: string; subtitle: string; colorOf: ((name: string) => string) | null }> = {
   type: { heading: "By Type", subtitle: "by transaction type", colorOf: (n) => typeColor(n) },
   salesType: { heading: "By Product", subtitle: "by product", colorOf: (n) => salesTypeColor(n) },
-  // Many values, no fixed identity per value — one hue; the name and the bar carry the reading.
-  category: { heading: "By Category", subtitle: "by category", colorOf: () => CAT[0] },
-  group: { heading: "By Group", subtitle: "by group", colorOf: () => CAT[2] },
-  inkType: { heading: "By Ink Type", subtitle: "by ink type", colorOf: () => CAT[6] },
+  category: { heading: "By Category", subtitle: "by category", colorOf: null },
+  group: { heading: "By Group", subtitle: "by group", colorOf: null },
+  inkType: { heading: "By Ink Type", subtitle: "by ink type", colorOf: null },
   // The ink's own colour, so CYAN reads cyan. (A pale swatch still has its name beside it.)
-  colour: { heading: "By Colour", subtitle: "by colour", colorOf: (n) => INK_SWATCH[n] ?? OTHER_COLOR },
+  colour: {
+    heading: "By Colour", subtitle: "by colour",
+    colorOf: (n) => FIXED_MIX_COLORS[n] ?? INK_SWATCH[n] ?? OTHER_COLOR,
+  },
 };
 
 function Overview({ rows, base, from, to, fys, sections, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, focPair, onFocClick, grain, setGrain, periodMonths, onPickMonths, loading, empty, emptyMessage }: {
@@ -695,16 +712,19 @@ function Overview({ rows, base, from, to, fys, sections, sel, toggle, noteFor, f
       // FOC RIDES ALONG IN THE TYPE MIX, though it is not a sale and never reaches the cards: the
       // reader wants "what went out free" beside "what was billed", which is what this ring is for.
       if (s === "type" && focPair && (focPair.qty !== 0 || focPair.value !== 0)) data.push(focPair);
-      return { dim: s, data: data.sort((a, b) => b.value - a.value) };
+      // Built from `base`, not `rows`: the colour of a category must not change when a filter
+      // takes its neighbours off the card.
+      const colorOf = SECTION_META[s].colorOf ?? makeMixColors(base, FILTERS[s].get);
+      return { dim: s, colorOf, data: data.sort((a, b) => b.value - a.value) };
     }),
-    [rows, sections, focPair],
+    [rows, base, sections, focPair],
   );
   const common = { loading, empty, emptyMessage, fmtQ };
   void fys;
 
   return (
     <>
-      {bySection.map(({ dim, data }) => {
+      {bySection.map(({ dim, data, colorOf }) => {
         const meta = SECTION_META[dim];
         return (
           <Section key={dim} id={`mix:${dim}`} title={meta.heading}>
@@ -715,7 +735,7 @@ function Overview({ rows, base, from, to, fys, sections, sel, toggle, noteFor, f
                   title={measure === "qty" ? "Quantity Mix" : "Revenue Mix"}
                   subtitle={meta.subtitle} data={data} measure={measure}
                   note={noteFor(dim, meta.subtitle.replace("by ", ""))}
-                  colorOf={meta.colorOf} selected={sel[dim]}
+                  colorOf={colorOf} selected={sel[dim]}
                   // The FOC row is not one of this dashboard's lines, so it opens the FOC dashboard
                   // instead of filtering a set it does not belong to.
                   onPick={(name) => (name === FOC_ROW ? onFocClick() : toggle(dim)(name))}
@@ -782,6 +802,62 @@ const LOCATION_COLORS: Record<string, string> = { Surat: CAT[0], Noida: CAT[1] }
 const locationColor = (name: string) => LOCATION_COLORS[name] ?? OTHER_COLOR;
 const typeColor = (name: string) => TYPE_COLORS[name] ?? OTHER_COLOR;
 const salesTypeColor = (name: string) => SALES_TYPE_COLORS[name] ?? OTHER_COLOR;
+
+/**
+ * Values that mean the same thing on every dimension keep ONE colour, wherever they turn up.
+ *
+ * "(Not set)" takes the palette's neutral, the one slot that carries no identity — which is the
+ * honest reading of "the master is not filled in", and keeps it from borrowing a real category's
+ * hue. Grey is not a lesser row: it is a full slice of the ring and a full line of the total, the
+ * same as any other.
+ */
+const FIXED_MIX_COLORS: Record<string, string> = {
+  [NOT_SET]: OTHER_COLOR,
+  // The same amber the Type mix already gives it, so one entity is never two colours on one page.
+  [DISCOUNT_TYPE]: CAT[3],
+};
+
+/**
+ * The seven hues, in the order they are handed out. CAT's own order minus the amber CAT[3] held
+ * for Discount — and then RE-ORDERED, because dropping one hue put the green and the pink side by
+ * side and neighbouring slots have to stay apart for a deuteranope. Validated with the dataviz
+ * skill's validator (`scripts/validate_palette.js`, light surface): all checks pass, worst adjacent
+ * pair ΔE 7.2, and that pair is the last two slots — the smallest values on the card. Re-run it
+ * before changing this order.
+ */
+const MIX_WHEEL = [CAT[0], CAT[1], CAT[2], CAT[6], CAT[7], CAT[5], CAT[4]];
+
+/**
+ * TYPE, PRODUCT, COMPANY and LOCATION have a fixed colour per value above. CATEGORY, GROUP and INK
+ * TYPE cannot: their values are whatever Central Masters holds, and they differ per dashboard. So
+ * the hues are handed out per dashboard, from `base` — every line the dashboard covers BEFORE any
+ * filter — biggest first, and the map is then fixed:
+ *
+ *   · colour follows the ENTITY, never its rank in the current view (the dataviz rule). Clicking a
+ *     bar or a dropdown narrows the set; it must not repaint the survivors, and building the map
+ *     from the unfiltered rows is what guarantees that.
+ *   · hues are taken in the palette's fixed order and NEVER cycled. Past the seventh value colour
+ *     has stopped telling them apart, so the tail takes the same neutral as "(Not set)" — one grey,
+ *     not two, because two greys cannot be told apart either — and the name, bar and amount beside
+ *     them carry the reading. Every row on these cards is directly labelled, so nothing rests on
+ *     colour alone. On a card with seven categories or fewer, "(Not set)" is the only grey.
+ */
+function makeMixColors(rows: Row[], get: (r: Row) => string): (name: string) => string {
+  const weight = new Map<string, number>();
+  for (const r of rows) {
+    const k = get(r);
+    weight.set(k, (weight.get(k) ?? 0) + Math.abs(r.revenue));
+  }
+  // Ties broken by name, so the map cannot come out differently on two identical loads.
+  const ranked = [...weight.entries()].sort((a, b) => b[1] - a[1] || collator.compare(a[0], b[0]));
+  const map = new Map<string, string>();
+  let next = 0;
+  for (const [name] of ranked) {
+    const fixed = FIXED_MIX_COLORS[name];
+    map.set(name, fixed ?? (next < MIX_WHEEL.length ? MIX_WHEEL[next++] : OTHER_COLOR));
+  }
+  return (name) => FIXED_MIX_COLORS[name] ?? map.get(name) ?? OTHER_COLOR;
+}
 
 /**
  * "Mix" card — one row per value: colour dot · name · a bar · amount · share. The share is of the
@@ -1689,12 +1765,20 @@ function PairTooltip({ active, payload, fmtQ }: { active?: boolean; payload?: { 
   );
 }
 
+/**
+ * A ROW'S CELL, not a chart's bucket. The charts must name the blank — a reader has to be able to
+ * see and click "(Not set)" — but a table row with nothing in the column says that by itself, and
+ * printing "(Not set)" down four columns of a few thousand lines only crowds them. So the cell
+ * shows what the filter shows EXCEPT for "(Not set)", which stays an empty cell as before.
+ */
+const itemCell = (v: string) => (v === NOT_SET ? "" : v);
+
 const REPORT_EXTRA: ExtraColumn<Row>[] = [
   { header: "SALES-TYPE", width: 16, get: (r) => r.sales_type },
-  { header: "INK TYPE", width: 22, get: (r) => r.ink_type },
-  { header: "GROUP", width: 22, get: (r) => r.item_group },
-  { header: "CATEGORY", width: 22, get: (r) => r.item_category },
-  { header: "COLOUR", width: 12, get: (r) => r.colour },
+  { header: "INK TYPE", width: 22, get: (r) => itemCell(FILTERS.inkType.get(r)) },
+  { header: "GROUP", width: 22, get: (r) => itemCell(FILTERS.group.get(r)) },
+  { header: "CATEGORY", width: 22, get: (r) => itemCell(FILTERS.category.get(r)) },
+  { header: "COLOUR", width: 12, get: (r) => itemCell(FILTERS.colour.get(r)) },
 ];
 const nf2 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
@@ -1731,10 +1815,10 @@ const REPORT_COLUMNS: {
   { header: "Customer Name", filter: { dash: "party" }, sort: (r) => r.party },
   { header: "Particulars", filter: { table: "particulars" }, sort: (r) => r.particulars },
   { header: "Product", filter: { dash: "salesType" }, sort: FILTERS.salesType.get },
-  { header: "Category", filter: { dash: "category" }, sort: (r) => r.item_category },
-  { header: "Group", filter: { dash: "group" }, sort: (r) => r.item_group },
-  { header: "Ink Type", filter: { dash: "inkType" }, sort: (r) => r.ink_type },
-  { header: "Colour", filter: { dash: "colour" }, sort: (r) => r.colour },
+  { header: "Category", filter: { dash: "category" }, sort: (r) => itemCell(FILTERS.category.get(r)) },
+  { header: "Group", filter: { dash: "group" }, sort: (r) => itemCell(FILTERS.group.get(r)) },
+  { header: "Ink Type", filter: { dash: "inkType" }, sort: (r) => itemCell(FILTERS.inkType.get(r)) },
+  { header: "Colour", filter: { dash: "colour" }, sort: (r) => itemCell(FILTERS.colour.get(r)) },
   { header: "Quantity", filter: null, right: true, sort: (r) => r.quantity },
   { header: "Rate", filter: null, right: true, sort: (r) => r.rate },
   { header: "Revenue", filter: null, right: true, sort: (r) => r.revenue },
@@ -1898,10 +1982,10 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                 <td className="px-3 py-1.5">{r.party}</td>
                 <td className="px-3 py-1.5">{r.particulars}</td>
                 <td className="whitespace-nowrap px-3 py-1.5">{FILTERS.salesType.get(r)}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.item_category}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.item_group}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.ink_type}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.colour}</td>
+                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.category.get(r))}</td>
+                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.group.get(r))}</td>
+                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.inkType.get(r))}</td>
+                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.colour.get(r))}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.quantity ? nf2.format(r.quantity) : "—"}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.rate ? nf2.format(r.rate) : "—"}</td>
                 <td className={cn("whitespace-nowrap px-3 py-1.5 text-right tabular-nums", r.revenue < 0 && "text-destructive")}>{nf2.format(r.revenue)}</td>
@@ -1916,8 +2000,8 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
 }
 
 /** One horizontal, single-series bar chart. Tall lists scroll inside the panel. */
-function SliceChart({ title, icon, color, slices, total, fmt, selected, onPick, what, note, loading, empty, emptyMessage }: {
-  title: string; icon: typeof Layers; color: string; slices: Slice[]; total: number;
+function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick, what, note, loading, empty, emptyMessage }: {
+  title: string; icon: typeof Layers; colorOf: (name: string) => string; slices: Slice[]; total: number;
   fmt: (n: number) => string; selected: string[]; onPick: (name: string) => void; what: string; note: string;
   loading: boolean; empty: boolean; emptyMessage: string;
 }) {
@@ -1941,7 +2025,7 @@ function SliceChart({ title, icon, color, slices, total, fmt, selected, onPick, 
                  e?.stopPropagation?.();
                  if (d?.name) onPick(d.name);
                }}>
-            {slices.map((s) => <Cell key={s.name} fill={color} fillOpacity={dim(selected, s.name)} />)}
+            {slices.map((s) => <Cell key={s.name} fill={colorOf(s.name)} fillOpacity={dim(selected, s.name)} />)}
             <LabelList dataKey="value" position="right"
                        formatter={(v: number) => `${fmt(v)}  ${pct(v, total)}`}
                        style={{ fontSize: 10.5, fill: LABEL_FILL, fontWeight: 600 }} />

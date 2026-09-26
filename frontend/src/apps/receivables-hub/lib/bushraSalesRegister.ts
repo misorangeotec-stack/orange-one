@@ -10,7 +10,8 @@
  *   Ink Type     Central Masters → Items → Ink type    (mst_items.ink_type) — ONLY on an Ink line
  *   Group        Central Masters → Items → Group       (mst_items.group_id → mst_item_groups.name)
  *   Category     Central Masters → Items → Category    (mst_items.category)
- *   Colour       the colour word in the item description, via Batch Costing's colourOf()
+ *   Colour       Bushra Central Master's own Colour for the item if one is set there, else the
+ *                colour word in the item description, via Batch Costing's colourOf()
  *
  * ─── HOW A REGISTER LINE FINDS ITS ITEM ─────────────────────────────────────────────────────────
  *
@@ -63,7 +64,48 @@ interface MasterItemInfo {
   category: string | null;
   group: string | null;
   unit: string | null;
+  /** Set ONLY by a Bushra Central Master override; otherwise the colour is read off the description. */
+  colour: string | null;
 }
+
+/**
+ * BUSHRA CENTRAL MASTER — the corrections laid over Central Masters.
+ *
+ * `bushra_central_master_overrides` (migration 20261212120000) holds one shared row per
+ * item somebody has corrected on the Bushra Central Master screen, its `fields` object
+ * carrying ONLY what differs from `mst_items`. This report reads central first and lays
+ * those on top, so a Category filled in there stops being "(Not set)" here — on every
+ * dashboard, in the report, in the Excel export and in the scheduled mail, for everyone.
+ *
+ * The app's own reader is apps/bushra-central-master/lib/overridesDb.ts. This is a
+ * second, much smaller reader rather than an import of that one, on purpose: this side
+ * only ever READS, it needs four of the eight keys, and receivables-hub must not take a
+ * dependency on another app's store to draw a dashboard.
+ *
+ * ⚠ ABSENT AND NULL ARE DIFFERENT. A key that is not in the row means "this field
+ *   still follows Central Masters"; a key present and null means "cleared on purpose".
+ *   `?? central` would collapse the two and quietly undo every deliberate blanking, so
+ *   the test is `in`, never a nullish fallback.
+ *
+ * Only the fields this report reads are taken. `description` is not one of them — the
+ * register's Particulars is Tally's own item name, which is what the line was billed
+ * as, and no master may rewrite that.
+ */
+interface ItemOverride {
+  itemType?: ItemType | null;
+  category?: string | null;
+  inkType?: string | null;
+  groupName?: string | null;
+  color?: string | null;
+}
+
+/** Central's value unless the override names that field — including naming it as blank. */
+const laidOver = <T,>(o: ItemOverride | undefined, key: keyof ItemOverride, central: T): T =>
+  (o && key in o ? (o[key] as unknown as T) : central);
+
+/** PostgREST for "there is no such table": the old relation error, and the schema-cache miss. */
+const NO_SUCH_TABLE = (e: { code?: string; message?: string }) =>
+  e.code === "42P01" || e.code === "PGRST205" || /does not exist|schema cache/i.test(e.message ?? "");
 
 const db = supabase as any;
 const PAGE = 1000;
@@ -196,22 +238,77 @@ export interface ItemLookup {
 }
 
 /** Every Central Masters item, keyed by name. ~14k rows over 15 pages; cached by the page. */
+const OVERRIDES_TABLE = "bushra_central_master_overrides";
+
+/**
+ * The overrides, or none — and NEVER an error that takes the report down with it.
+ *
+ * Code reaches an environment before a migration does, and it has here: 20261212120000
+ * is written but not yet applied to live. Every figure on these dashboards was correct
+ * before the Bushra Central Master existed and is still correct without it — the
+ * overrides sharpen the classification, they are not load-bearing. So a missing table
+ * means "no corrections yet", exactly as an empty one does.
+ *
+ * Only that one failure is swallowed. A permission refusal or a network fault still
+ * throws, because those mean the corrections EXIST and are not reaching the figures —
+ * and a dashboard quietly dropping somebody's work is the failure worth being loud about.
+ */
+async function loadItemOverrides(): Promise<Map<string, ItemOverride>> {
+  const out = new Map<string, ItemOverride>();
+  // Paged like every other master read here: a bulk Excel import can correct thousands
+  // of items at once, and PostgREST would hand back only the first 1,000 of them.
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db.from(OVERRIDES_TABLE)
+      .select("item_id,fields").order("item_id", { ascending: true }).range(from, from + PAGE - 1);
+    if (error) {
+      if (from === 0 && NO_SUCH_TABLE(error)) return out;
+      throw new Error(`${OVERRIDES_TABLE}: ${error.message}`);
+    }
+    const rows = (data ?? []) as { item_id: string; fields: ItemOverride | null }[];
+    for (const r of rows) out.set(r.item_id, r.fields ?? {});
+    if (rows.length < PAGE) return out;
+  }
+}
+
 export async function loadItemLookup(): Promise<ItemLookup> {
-  const [items, groups, companies, units] = await Promise.all([
-    pageAll<{ name: string; company_id: string | null; group_id: string | null; unit_id: string | null; item_type: ItemType | null; category: string | null; ink_type: string | null }>(
+  const [items, groups, companies, units, overrideOf] = await Promise.all([
+    pageAll<{ id: string; name: string; company_id: string | null; group_id: string | null; unit_id: string | null; item_type: ItemType | null; category: string | null; ink_type: string | null }>(
       "mst_items", "id,name,company_id,group_id,unit_id,item_type,category,ink_type"),
     pageAll<{ id: string; name: string }>("mst_item_groups", "id,name"),
     pageAll<{ id: string; tally_guid: string | null }>("mst_companies", "id,tally_guid"),
     pageAll<{ id: string; name: string }>("mst_units", "id,name"),
+    loadItemOverrides(),
   ]);
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
   const unitName = new Map(units.map((u) => [u.id, u.name]));
   const companyGuid = new Map(companies.map((c) => [c.id, c.tally_guid ?? ""]));
 
   const groupOf = (id: string | null) => (id && groupName.get(id)) || null;
-  const canonInk = makeCanon("inkType", items.map((i) => i.ink_type));
-  const canonCategory = makeCanon("category", items.map((i) => i.category));
-  const canonGroup = makeCanon("group", items.map((i) => groupOf(i.group_id)));
+
+  /**
+   * Central laid under Bushra's corrections, resolved ONCE per item and before
+   * anything else reads it — so the near-duplicate merge below votes on the values
+   * the report will actually show. Canonicalising central first and the override
+   * afterwards would let a corrected "S3200" escape the merge that folds it into
+   * "SUBLIMATION S3200".
+   */
+  const settled = items.map((i) => {
+    const o = overrideOf.get(i.id);
+    return {
+      name: i.name,
+      companyGuid: (i.company_id && companyGuid.get(i.company_id)) || "",
+      itemType: laidOver<ItemType | null>(o, "itemType", i.item_type),
+      inkType: laidOver<string | null>(o, "inkType", i.ink_type),
+      category: laidOver<string | null>(o, "category", i.category),
+      group: laidOver<string | null>(o, "groupName", groupOf(i.group_id)),
+      unit: (i.unit_id && unitName.get(i.unit_id)) || null,
+      colour: laidOver<string | null>(o, "color", null),
+    };
+  });
+
+  const canonInk = makeCanon("inkType", settled.map((i) => i.inkType));
+  const canonCategory = makeCanon("category", settled.map((i) => i.category));
+  const canonGroup = makeCanon("group", settled.map((i) => i.group));
 
   const exact = new Map<string, MasterItemInfo[]>();
   const folded = new Map<string, MasterItemInfo[]>();
@@ -219,14 +316,15 @@ export async function loadItemLookup(): Promise<ItemLookup> {
     const list = m.get(k);
     if (list) list.push(v); else m.set(k, [v]);
   };
-  for (const i of items) {
+  for (const i of settled) {
     const info: MasterItemInfo = {
-      companyGuid: (i.company_id && companyGuid.get(i.company_id)) || "",
-      itemType: i.item_type,
-      inkType: canonInk(i.ink_type),
+      companyGuid: i.companyGuid,
+      itemType: i.itemType,
+      inkType: canonInk(i.inkType),
       category: canonCategory(i.category),
-      group: canonGroup(groupOf(i.group_id)),
-      unit: (i.unit_id && unitName.get(i.unit_id)) || null,
+      group: canonGroup(i.group),
+      unit: i.unit,
+      colour: i.colour ? i.colour.trim().toUpperCase() : null,
     };
     const k = wsKey(i.name);
     push(exact, k, info);
@@ -364,7 +462,10 @@ export function classifyRegisterRow(
     ink_type: itemType === "ink" && sales_type === "Ink" ? pick(copies, guid, "inkType") ?? "" : "",
     item_group: pick(copies, guid, "group") ?? "",
     item_category: pick(copies, guid, "category") ?? "",
-    colour: colourOf(r.particulars, SALES_REGISTER_COLOURS),
+    // A colour typed on the Bushra Central Master wins: it is somebody's correction of
+    // exactly this reading. Otherwise the shade is taken out of the item's own name,
+    // which is where every colour came from before that screen existed.
+    colour: pick(copies, guid, "colour") ?? colourOf(r.particulars, SALES_REGISTER_COLOURS),
     unit: pick(copies, guid, "unit") ?? "",
     in_masters: copies.length > 0,
   };
