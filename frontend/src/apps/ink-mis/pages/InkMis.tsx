@@ -1304,7 +1304,8 @@ export default function InkMis() {
               )}
               {on("withEta") && (
                 <ResizableHead id="withEta" cols={cols} className="text-right">
-                  With ETA{colFilter("withEta")}
+                  <span className="text-[10px] font-normal">Days cover with ETA</span>
+                  {colFilter("withEta")}
                 </ResizableHead>
               )}
               {on("monthMax") && (
@@ -1499,8 +1500,28 @@ export default function InkMis() {
                     </TableCell>
                   ))}
 
-                {on("days") && <TableCell className="text-right tabular-nums">{fmtDays(r.daysCover)}</TableCell>}
-                {on("withEta") && <TableCell className="text-right tabular-nums">{fmtDays(r.daysCoverWithIncoming)}</TableCell>}
+                {on("days") && (
+                  <TableCell
+                    className={`text-right tabular-nums ${
+                      r.daysCover !== null && r.daysCover < thresholds.daysRed
+                        ? "bg-red-100 font-semibold text-red-900"
+                        : ""
+                    }`}
+                  >
+                    {fmtDays(r.daysCover)}
+                  </TableCell>
+                )}
+                {on("withEta") && (
+                  <TableCell
+                    className={`text-right tabular-nums ${
+                      r.daysCoverWithIncoming !== null && r.daysCoverWithIncoming < thresholds.daysRed
+                        ? "bg-red-100 font-semibold text-red-900"
+                        : ""
+                    }`}
+                  >
+                    {fmtDays(r.daysCoverWithIncoming)}
+                  </TableCell>
+                )}
                 {on("monthMax") && <TableCell className="text-right tabular-nums">{fmtQty(r.monthMaxLevel)}</TableCell>}
                 {on("dailyMax") && <TableCell className="text-right tabular-nums">{fmtQty(r.dailyMaxLevel)}</TableCell>}
 
@@ -1511,17 +1532,19 @@ export default function InkMis() {
                     </TableCell>
                   ))}
 
-                <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.band]}`}>
-                  {fmtQty(r.stock)}
-                  {r.coverPct !== null && <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>}
-                </TableCell>
+                <TableCell className="text-right tabular-nums">{fmtQty(r.stock)}</TableCell>
 
                 {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
 
                 {cols.isVisible("incoming") && <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{fmtQty(r.total)}</TableCell>
+                <TableCell className={`text-right font-semibold tabular-nums ${BAND_CLASS[r.band]}`}>
+                  {fmtQty(r.total)}
+                  {r.coverPct !== null && (
+                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>
+                  )}
+                </TableCell>
                 {cols.isVisible("category") && (
                   <TableCell className="text-xs">{r.category}</TableCell>
                 )}
@@ -1593,6 +1616,7 @@ export default function InkMis() {
               ["mid", "Amber below", thresholds.mid],
               ["excess", "Purple at or above", thresholds.excess],
               ["excessRemark", "Excess remark at or above", thresholds.excessRemark],
+              ["daysRed", "Days cover red below (days)", thresholds.daysRed],
             ] as [keyof InkThresholds, string, number][]
           ).map(([field, label, value]) => (
             <label key={field} className="space-y-1">

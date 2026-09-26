@@ -718,6 +718,9 @@ export interface InkThresholds {
   mid: number;
   excess: number;
   excessRemark: number;
+  /** Days of cover below which the Days cover cell turns red. The planner's own number: how
+   *  long they are willing to be exposed, which no formula here can know. */
+  daysRed: number;
 }
 
 export const DEFAULT_THRESHOLDS: InkThresholds = {
@@ -725,6 +728,7 @@ export const DEFAULT_THRESHOLDS: InkThresholds = {
   mid: 66,
   excess: 120,
   excessRemark: 100,
+  daysRed: 30,
 };
 
 /* ------------------------------------------------------------------ derivation */
@@ -804,9 +808,21 @@ export function deriveInkRow(
   const committed = incoming + plant;
   const monthMaxLevel = plan.threeMonthAvg * plan.leadTime * plan.safetyFactor;
   const dailyMaxLevel = plan.perDayAvg * plan.leadTime * plan.safetyFactor;
-  const daysCover = plan.perDayAvg > 0 ? stock / plan.perDayAvg : null;
-  const daysCoverWithIncoming = plan.perDayAvg > 0 ? (stock + committed) / plan.perDayAvg : null;
-  const coverPct = monthMaxLevel > 0 ? (stock / monthMaxLevel) * 100 : null;
+  // Days are whole days. A cover of 30.4 is not a more precise answer than 30, it is a
+  // decimal place nobody can act on.
+  const daysCover = plan.perDayAvg > 0 ? Math.round(stock / plan.perDayAvg) : null;
+  const daysCoverWithIncoming =
+    plan.perDayAvg > 0 ? Math.round((stock + committed) / plan.perDayAvg) : null;
+
+  /*
+   * COVER IS JUDGED ON THE TOTAL, not on stock alone.
+   *
+   * The colour band and the remark used to read stock against the target, so an ink with 3,000
+   * kilos on the water still showed "new order required" in red — and an order placed against
+   * that reading would be a second order for ink already bought. The total is what the planner
+   * has arranged: stock, ETA, at port, plant orders and what is on order but not yet shipped.
+   */
+  const coverPct = monthMaxLevel > 0 ? ((stock + committed + etd) / monthMaxLevel) * 100 : null;
 
   let remark: InkRow["remark"] = "";
   if (coverPct !== null) {
