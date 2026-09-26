@@ -24,6 +24,7 @@ import type {
   MasterRequestStatus,
   RequestStatus,
   ResolutionType,
+  RmOrigin,
   RootCause,
   Severity,
   StepOwner,
@@ -183,6 +184,9 @@ const mapRequest = (r: any): ComplaintRequest => ({
   id: r.id,
   complaintNo: r.complaint_no,
   complaintType: r.complaint_type as ComplaintType,
+  // Null on every FG row, and on RM rows raised before the branch existed —
+  // which is why it is `?? null` rather than defaulted to a side.
+  rmOrigin: (r.rm_origin ?? null) as RmOrigin | null,
   status: r.status as RequestStatus,
   currentStep: r.current_step ?? "",
   raisedBy: r.raised_by ?? null,
@@ -229,6 +233,22 @@ const mapRequest = (r: any): ComplaintRequest => ({
   svcCloseDate: r.svc_close_date ?? null,
   svcCloseAt: r.svc_close_at ?? null,
   svcCloseBy: r.svc_close_by ?? null,
+
+  purRemarks: r.pur_remarks ?? null,
+  purDate: r.pur_date ?? null,
+  purAt: r.pur_at ?? null,
+  purBy: r.pur_by ?? null,
+
+  rmAssigneeId: r.rm_assignee_id ?? null,
+  rmAssigneeName: r.rm_assignee_name ?? null,
+  rmAssignNote: r.rm_assign_note ?? null,
+  rmAssignedAt: r.rm_assigned_at ?? null,
+  rmAssignedBy: r.rm_assigned_by ?? null,
+
+  asgRemarks: r.asg_remarks ?? null,
+  asgDate: r.asg_date ?? null,
+  asgAt: r.asg_at ?? null,
+  asgBy: r.asg_by ?? null,
 
   mgmtNote: r.mgmt_note ?? null,
   mgmtDate: r.mgmt_date ?? null,

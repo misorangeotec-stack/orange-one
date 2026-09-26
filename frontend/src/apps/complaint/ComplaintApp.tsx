@@ -12,6 +12,9 @@ import RequestDetail from "./pages/requests/RequestDetail";
 import PlantQueue from "./pages/queues/PlantQueue";
 import ServiceQueue from "./pages/queues/ServiceQueue";
 import ApprovalQueue from "./pages/queues/ApprovalQueue";
+import PurchaseQueue from "./pages/queues/PurchaseQueue";
+import RmManagementQueue from "./pages/queues/RmManagementQueue";
+import AssigneeQueue from "./pages/queues/AssigneeQueue";
 import ManagementReviewQueue from "./pages/queues/ManagementReviewQueue";
 import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
@@ -92,7 +95,12 @@ export default function ComplaintApp() {
           <Route path="queues/plant" element={<RequireQueue step="plant"><PlantQueue /></RequireQueue>} />
           <Route path="queues/service" element={<RequireQueue step="service"><ServiceQueue /></RequireQueue>} />
           <Route path="queues/approval" element={<RequireQueue step="approval"><ApprovalQueue /></RequireQueue>} />
+          <Route path="queues/purchase" element={<RequireQueue step="purchase"><PurchaseQueue /></RequireQueue>} />
+          {/* Management's two jobs are two queues: reading an imported-material
+              complaint, and signing off a settled one. See lib/steps.ts. */}
+          <Route path="queues/rm-management" element={<RequireQueue step="rm_management"><RmManagementQueue /></RequireQueue>} />
           <Route path="queues/management-review" element={<RequireQueue step="management_review"><ManagementReviewQueue /></RequireQueue>} />
+          <Route path="queues/assignee" element={<RequireQueue step="assignee"><AssigneeQueue /></RequireQueue>} />
           <Route path="master-requests" element={<RequireMasterAccess><MasterRequests /></RequireMasterAccess>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />

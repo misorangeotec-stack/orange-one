@@ -43,9 +43,10 @@ const RELATION_OPTIONS: { value: Relation; label: string }[] = [
 export default function TasksList() {
   const { user, role } = useSession();
   const { tasks, canCreateTask, actorById, assignableUsers, peerAssignableUsers } = useTaskStore();
-  // ...or to a peer HOD. Four HODs have no downline at all, so without the peer
-  // arm the New Task button stays hidden from exactly the people TM-1 is for.
-  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || (role === "hod" && peerAssignableUsers(user.id).length > 0));
+  // ...or to a peer HOD/Sub-HOD. Four HODs have no downline at all, so without
+  // the peer arm the New Task button stays hidden from exactly the people TM-1
+  // is for.
+  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || ((role === "hod" || role === "sub_hod") && peerAssignableUsers(user.id).length > 0));
   const [params] = useSearchParams();
   const location = useLocation();
   // Seed status + an exact week from a deep-link (e.g. a RYG number on the scorecard).

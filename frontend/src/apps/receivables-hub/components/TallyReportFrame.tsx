@@ -118,7 +118,7 @@ export default function TallyReportFrame<C extends TallyCompanyLike>({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <Link
-            to="/outstanding-dashboard/reports?cat=tally"
+            to="/reports?cat=tally"
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1"
           >
             <ArrowLeft className="h-3 w-3" /> Tally Reports

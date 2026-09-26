@@ -15,6 +15,8 @@ import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
+import type { AppManifest } from "@/apps/types";
+import { canOpenApp } from "@/core/workspace/homeNav";
 import { appBasePath } from "@/apps/appInfo";
 
 /**
@@ -40,20 +42,32 @@ const VISIT_THROTTLE_MS = 30 * 60_000;
  *   Fire-and-forget and throttled: telemetry hanging off a route guard must
  *   never be able to delay or break navigation.
  */
-function RequireModule({ appId, children }: { appId: string; children: ReactNode }) {
-  const { hasModule } = useSession();
-  const allowed = hasModule(appId);
+function RequireModule({ app, children }: { app: AppManifest; children: ReactNode }) {
+  const session = useSession();
+  // ONE rule, shared with the launcher menu (core/workspace/homeNav) rather than restated
+  // here — a hidden menu entry is not access control, so the two have to agree.
+  const allowed = canOpenApp(app, session);
+
+  /**
+   * Stamped under the GRANT id, not the route id, on the one app where they differ.
+   *
+   * Reports is the most-read part of the Outstanding Dashboard, whose whole usage signal is
+   * this ping (nobody writes to it — see above). Stamping "reports" instead would post the
+   * traffic against a module_visits app_id that no master_report_modules row claims, and
+   * read the hub back as Dormant while it is in daily use.
+   */
+  const visitId = app.accessAppId ?? app.id;
 
   useEffect(() => {
     if (!allowed) return;
     const now = Date.now();
-    if (now - (stampedAt.get(appId) ?? 0) < VISIT_THROTTLE_MS) return;
-    stampedAt.set(appId, now);
-    void supabase.rpc("touch_module_visit", { p_app_id: appId }).then(
+    if (now - (stampedAt.get(visitId) ?? 0) < VISIT_THROTTLE_MS) return;
+    stampedAt.set(visitId, now);
+    void supabase.rpc("touch_module_visit", { p_app_id: visitId }).then(
       () => {},
       () => {}
     );
-  }, [appId, allowed]);
+  }, [visitId, allowed]);
 
   if (!allowed) return <Navigate to="/home" replace />;
   return <>{children}</>;
@@ -154,7 +168,7 @@ export default function App() {
           <Route
             key={app.id}
             path={`${app.basePath}/*`}
-            element={<RequireAuth><RequireModule appId={app.id}><Component /></RequireModule></RequireAuth>}
+            element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
           />
         );
       })}

@@ -238,6 +238,28 @@ export function openSteps(
   skipped: ReadonlySet<StepKey> = NO_SKIPS,
 ): StepKey[] {
   if (!isOpenCase(c)) return []; // withdrawn | rejected | archived | on_hold
+  return stepsByProgress(c, checks, skipped);
+}
+
+/**
+ * The steps this case owes BY ITS PROGRESS ALONE, ignoring its status.
+ *
+ * Split out of `openSteps` so a HELD case can be asked the same question. Every
+ * line below reads timestamps through `stepDone` and never the status, so the
+ * answer for a held case is exactly where it will pick up when it resumes — which
+ * is what My Work's hold tile needs in order to address the row to the right
+ * people. `openSteps` remains the only thing the queues, the Control Center and
+ * the Master Report call, and it still returns nothing for a held case.
+ *
+ * ⚠ NOT a general-purpose export. Calling this instead of `openSteps` anywhere
+ *   that counts owed work would put withdrawn, rejected and archived cases back
+ *   into the queues — the exact bug `isOpenCase` exists to prevent.
+ */
+export function stepsByProgress(
+  c: ExitCase,
+  checks: ClearanceCheck[],
+  skipped: ReadonlySet<StepKey> = NO_SKIPS,
+): StepKey[] {
   const done = (k: StepKey) => stepDone(c, k, skipped);
 
   // ---- 1. the sequential approval prefix ----
@@ -432,7 +454,10 @@ export function daysToLwd(c: ExitCase, today: string = todayLocalIso()): number 
  * Cloned from `procurement/lib/queues.ts`: no `break`, no `else if`. A case that owes
  * clearance and assets and handover emits three entries, and that is the point.
  */
-export function buildQueueEntries(snap: ExitSnapshot): QueueEntry[] {
+/** Chooses which steps a case contributes. See the two builders below. */
+type StepPicker = (c: ExitCase, checks: ClearanceCheck[], skipped: ReadonlySet<StepKey>) => StepKey[];
+
+function collectEntries(snap: ExitSnapshot, pick: StepPicker): QueueEntry[] {
   const out: QueueEntry[] = [];
 
   // Index once — scanning the flat arrays per case turns this into an O(n²) walk.
@@ -450,11 +475,10 @@ export function buildQueueEntries(snap: ExitSnapshot): QueueEntry[] {
   }
 
   for (const c of snap.cases) {
-    if (!isOpenCase(c)) continue;
     const skipped = skipsByCase.get(c.id) ?? NO_SKIPS;
     const checks = checksByCase.get(c.id) ?? [];
 
-    for (const step of openSteps(c, checks, skipped)) {
+    for (const step of pick(c, checks, skipped)) {
       /**
        * ⭐ `clearance` expands to ONE ENTRY PER OUTSTANDING CHECK — each carrying its
        * own `checkId`, its own `ownerIds` and ITS OWN due date.
@@ -518,6 +542,28 @@ export function buildQueueEntries(snap: ExitSnapshot): QueueEntry[] {
   }
 
   return out;
+}
+
+/** Every open work-item. `openSteps` returns nothing for a held or closed case. */
+export function buildQueueEntries(snap: ExitSnapshot): QueueEntry[] {
+  return collectEntries(snap, openSteps);
+}
+
+/**
+ * Every HELD case, as the entries it would have if it were not on hold.
+ *
+ * Unlike the single-step modules, a held exit case cannot be read off one
+ * `current_step` column: past the approval prefix this flow runs SIX steps in
+ * parallel, and clearance expands to one row per outstanding check with its own
+ * owners. So it asks `stepsByProgress` — the same derivation `openSteps` uses,
+ * minus the status gate — and gets every parked row, each addressed to whoever
+ * would owe it. Read ONLY by My Work's `items/` rule; `buildQueueEntries` still
+ * excludes held cases, as the step pages and the Control Center require.
+ */
+export function buildHeldEntries(snap: ExitSnapshot): QueueEntry[] {
+  return collectEntries(snap, (c, checks, skipped) =>
+    c.status === "on_hold" ? stepsByProgress(c, checks, skipped) : [],
+  );
 }
 
 /* -------------------------------------------------------------------------- */

@@ -27,7 +27,7 @@ import { stepByKey } from "@/apps/travel-desk/lib/steps";
 import type { Trip } from "@/apps/travel-desk/types";
 import { travelDeskWorkItems } from "@/core/workspace/mywork/items/travel-desk";
 import type { ClosedStep, DropReason, ModuleScorer, OpenStep } from "../types";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const STEPS: QueueStep[] = [
   "manager_approval",
@@ -93,7 +93,7 @@ export const travelDeskScorer: ModuleScorer<TravelData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
-        drop: isTestTrip(item.ref) ? "test_record" : undefined,
+        drop: heldDrop(item) ?? (isTestTrip(item.ref) ? "test_record" : undefined),
       }),
     );
   },

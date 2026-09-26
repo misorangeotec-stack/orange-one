@@ -54,7 +54,7 @@ export default function TripDetail() {
 
   // Deep-linked confirmation from the form: it names the number that was minted,
   // which is what somebody quotes when they chase it.
-  const justSubmitted = params.get("submitted");
+  const submittedParam = params.get("submitted");
 
   if (!trip) return <NotFound />;
 
@@ -85,6 +85,20 @@ export default function TripDetail() {
   const approverNames = trip.approverManagerIds
     .map((x) => personById(x)?.name)
     .filter(Boolean) as string[];
+
+  /*
+    ⚠ THE BANNER IS ABOUT A MOMENT, AND THE URL IT LIVES IN OUTLASTS IT. It was
+      rendered on the `?submitted=` parameter alone, which nothing ever clears —
+      so approve the trip, pay the advance, book it, and six steps later a booked
+      trip still announced "has gone for approval. It is with Riya Kumari", who
+      by then owed it nothing. It survived a reload too, because the parameter
+      is in the address. Gate it on the trip still being where submit left it.
+  */
+  const justSubmitted =
+    submittedParam &&
+    (trip.status === "awaiting_manager_approval" || trip.status === "awaiting_director_approval")
+      ? submittedParam
+      : null;
 
   /*
     ⚠ A RETURNED TRIP IS EDITABLE, AND WITHOUT THIS "send back for clarification"

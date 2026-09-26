@@ -13,7 +13,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { SuppliesData } from "@/apps/office-supplies/data/suppliesFetch";
-import { buildQueueEntries, supplySnapshotFrom } from "@/apps/office-supplies/lib/queues";
+import { buildHeldEntries, buildQueueEntries, supplySnapshotFrom } from "@/apps/office-supplies/lib/queues";
 import { stepByKey } from "@/apps/office-supplies/lib/steps";
 import { requestHref } from "@/apps/office-supplies/lib/routes";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
@@ -46,11 +46,27 @@ export function officeSuppliesWorkItems(
     return myHodDepartmentIds.has(departmentId);
   };
 
-  return buildQueueEntries(
-    supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla }),
-  )
-    .filter((e) => isAdmin || mine(e.stepKey, e.departmentId, e.assignedApproverId))
-    .map((e) => ({
+  const snap = supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla });
+  const reasonById = new Map(data.requests.map((r) => [r.id, r.holdReason]));
+
+  /*
+   * HELD REQUESTS ARE LISTED TOO, flagged rather than dropped.
+   *
+   * `openStep()` returns null for `on_hold`, so a held request leaves every queue
+   * — correct for the step pages and the Control Center, but on the home screen it
+   * meant parked work simply disappeared: not overdue, not due, not anywhere, with
+   * no way for the person who parked it to find it again. `buildHeldEntries` puts
+   * it back at the step it would resume at, owned by the same person, and `isHeld`
+   * keeps it out of every due tile and out of the ranking.
+   */
+  const entries = [
+    ...buildQueueEntries(snap).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(snap).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
+    .filter(({ e }) => isAdmin || mine(e.stepKey, e.departmentId, e.assignedApproverId))
+    .map(({ e, held }) => ({
       id: `office-supplies:${e.requestId}:${e.stepKey}`,
       source: "office-supplies",
       sourceLabel: appName("office-supplies"),
@@ -60,5 +76,6 @@ export function officeSuppliesWorkItems(
       to: requestHref(e.requestId),
       assignment: mine(e.stepKey, e.departmentId, e.assignedApproverId) ? ("direct" as const) : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
+      ...(held ? { isHeld: true, holdReason: reasonById.get(e.requestId) ?? null } : {}),
     }));
 }

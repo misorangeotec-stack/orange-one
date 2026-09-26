@@ -33,6 +33,9 @@ export type QueueSlug =
   | "plant"
   | "service"
   | "approval"
+  | "purchase"
+  | "rm-management"
+  | "assignee"
   | "management-review";
 
 export const queueHref = (step: QueueSlug) => `${B}/queues/${step}`;

@@ -243,6 +243,31 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/master-report",
     category: "control",
   },
+  /**
+   * Promoted OUT of the Outstanding Dashboard to the main menu, exactly as
+   * Customer Onboarding was above — the reports had become the larger half of
+   * that app, and burying a finance catalogue two clicks inside a receivables
+   * module is how people stop finding it.
+   *
+   * ⚠ ITS PAGES STILL LIVE UNDER apps/receivables-hub/, for the same reason
+   *   Customer Onboarding's do: every one of them is a hub-native (shadcn)
+   *   component, and `.hub-root` is what makes their colour tokens resolve.
+   *   apps/reports/ is a SHELL — its own basePath, sidebar and chrome — mounting
+   *   the existing subtree.
+   *
+   * ⚠ NOT SEPARATELY GRANTED. The key below is a routing id, not an app_access
+   *   id: the module is still gated by `outstanding-dashboard` plus the `reports`
+   *   menu key and the per-report grants it always had. See apps/reports/meta.tsx.
+   */
+  reports: {
+    name: "Reports",
+    basePath: "/reports",
+    // Its OWN top-level category, not Sales & Receivables. The catalogue reaches
+    // well past receivables — Finance, Inventory, Dashboards, Tally — and parking
+    // it under the department it happened to grow inside is the filing the move
+    // was meant to undo. See the note beside it in apps/categories.ts.
+    category: "reports",
+  },
   // The evening snapshot for management and the CFO: what was sold, collected,
   // paid and purchased today, and what is in the bank. Its own module rather
   // than a page inside the Master Report — a CFO should not have to hold the

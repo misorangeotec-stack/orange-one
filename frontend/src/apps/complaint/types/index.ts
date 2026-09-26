@@ -40,6 +40,35 @@ export const COMPLAINT_TYPE_LABEL: Record<ComplaintType, string> = {
 export const COMPLAINT_TYPES: ComplaintType[] = ["finished_good", "raw_material"];
 
 /**
+ * A RAW-MATERIAL complaint's supply route — the ONE field that forks the chain.
+ *
+ * ⚠ IT IS NOT A LABEL SWITCH, unlike `complaintType`. Domestic opens the
+ *   complaint in the PURCHASE bucket; import opens it in the MANAGEMENT bucket,
+ *   where management may close it or reassign it to a named person. That is why
+ *   it is asked immediately before the RM Lot No. rather than buried lower down:
+ *   it decides whose screen the complaint lands on the moment Submit is pressed.
+ *
+ * ⚠ NULL ON EVERY FINISHED-GOOD COMPLAINT, and on the raw-material rows raised
+ *   before phase 13. Nullable rather than defaulted, deliberately — a default
+ *   would claim those old rows were domestic, and nothing downstream could tell
+ *   the claim from an answer.
+ */
+export type RmOrigin = "domestic" | "import";
+
+export const RM_ORIGIN_LABEL: Record<RmOrigin, string> = {
+  domestic: "Domestic",
+  import: "Import",
+};
+
+export const RM_ORIGINS: RmOrigin[] = ["domestic", "import"];
+
+/** Which bucket each route opens in. Mirrors the fork in fms_complaint_submit_request. */
+export const RM_ORIGIN_DESTINATION: Record<RmOrigin, string> = {
+  domestic: "Purchase department",
+  import: "Management",
+};
+
+/**
  * Where the raise panel's facts came from.
  *
  * `manual` on every row today, and that is the measured answer rather than a
@@ -110,11 +139,18 @@ export const CAUSE_GROUPS: CauseGroup[] = [
  * so no complaint number is ever burnt on something nobody submitted.
  */
 export type RequestStatus =
-  // the live chain
+  // the finished-good chain
   | "awaiting_plant"
   | "awaiting_service"
   | "awaiting_approval"
   | "awaiting_service_close"
+  // the raw-material branch (phase 13). `awaiting_rm_management` is the FIRST
+  // management pass on an imported-material complaint — the same bucket as the
+  // review below, asked a different question. See lib/queues.ts `managementPass`.
+  | "awaiting_purchase"
+  | "awaiting_rm_management"
+  | "awaiting_assignee"
+  // the shared terminus
   | "awaiting_management_review"
   | "closed"
   | "on_hold"
@@ -136,6 +172,11 @@ export interface ComplaintRequest {
   id: string;
   complaintNo: string;
   complaintType: ComplaintType;
+  /**
+   * RAW MATERIAL ONLY, and the fork itself — see RmOrigin. Null on every
+   * finished-good complaint.
+   */
+  rmOrigin: RmOrigin | null;
   status: RequestStatus;
   currentStep: string;
   raisedBy: string | null;
@@ -207,7 +248,32 @@ export interface ComplaintRequest {
   svcCloseAt: string | null;
   svcCloseBy: string | null;
 
-  /* ---- management review ---- */
+  /* ---- purchase (RM domestic) ---- */
+  purRemarks: string | null;
+  purDate: string | null;
+  purAt: string | null;
+  purBy: string | null;
+
+  /* ---- management's reassignment (RM import, first pass) ---- */
+  /**
+   * THE ONE PER-REQUEST ACTOR IN THE LIVE CHAIN. Every other step routes to a
+   * bucket configured in Setup; this one is whoever management named, which is
+   * what `canActOn("assignee", r)` and the SQL `fms_complaint_can_act` read.
+   */
+  rmAssigneeId: string | null;
+  /** FROZEN AT ASSIGN TIME, like itemName and partyName — never re-joined. */
+  rmAssigneeName: string | null;
+  rmAssignNote: string | null;
+  rmAssignedAt: string | null;
+  rmAssignedBy: string | null;
+
+  /* ---- the assignee's own entry ---- */
+  asgRemarks: string | null;
+  asgDate: string | null;
+  asgAt: string | null;
+  asgBy: string | null;
+
+  /* ---- management review (and the import close, which reuses it) ---- */
   mgmtNote: string | null;
   mgmtDate: string | null;
   mgmtAt: string | null;
