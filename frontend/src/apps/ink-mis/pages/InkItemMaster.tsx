@@ -291,7 +291,9 @@ export default function InkItemMaster() {
     const filtered = master.filter((r) => {
       if (f.books.length && !f.books.includes(r.companyKey)) return false;
       if (f.order.length) {
-        const placed = (order[r.mergeKey] ?? order[r.legacyKey]) !== undefined;
+        // SAVED, not the draft: a row must not disappear out of "No position yet" the instant a
+        // number is typed into it, while the change is still unsaved.
+        const placed = (savedOrder[r.mergeKey] ?? savedOrder[r.legacyKey]) !== undefined;
         if (!f.order.includes(placed ? "placed" : "unplaced")) return false;
       }
       if (f.closing.length) {
@@ -321,11 +323,17 @@ export default function InkItemMaster() {
       if (descQ && !r.effectiveDescription.toUpperCase().includes(descQ)) return false;
       return true;
     });
-    // Same order as the dashboard, so a line moved here is seen to move there. Rows sharing a
-    // merge key stay together, since they are one printed line fed by several books.
+    /*
+     * SORTED BY WHAT IS SAVED, never by the draft.
+     *
+     * Typing a number used to move the row to its new place at once, so the planner lost sight of
+     * what they had just changed and of where they were working — the list reshuffled under the
+     * cursor while half the numbers were still unsaved. Numbers now change in place and the list
+     * re-orders on Save, which is also when they reach the dashboard.
+     */
     return filtered.sort((a, b) => {
-      const pa = order[a.mergeKey];
-      const pb = order[b.mergeKey];
+      const pa = savedOrder[a.mergeKey] ?? savedOrder[a.legacyKey];
+      const pb = savedOrder[b.mergeKey] ?? savedOrder[b.legacyKey];
       if (pa !== undefined && pb !== undefined && pa !== pb) return pa - pb;
       if (pa !== undefined && pb === undefined) return -1;
       if (pa === undefined && pb !== undefined) return 1;
@@ -334,7 +342,7 @@ export default function InkItemMaster() {
         a.company.localeCompare(b.company)
       );
     });
-  }, [master, f, overrides, order, stockOnly]);
+  }, [master, f, overrides, savedOrder, stockOnly]);
 
   // The hook resets to page 1 when resetKey changes, so a narrower filter never strands you on
   // a page that no longer exists.
