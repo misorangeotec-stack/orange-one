@@ -673,6 +673,19 @@ export default function InkMis() {
   }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
 
   /**
+   * The table is EXACTLY as wide as its columns, set inline.
+   *
+   * The shared Table component hard-codes `w-full`, and its class joiner does not resolve
+   * conflicts, so a `w-auto` of mine simply lost. A full-width fixed table spreads whatever
+   * space is left over across the columns — so narrowing one silently widened the rest and the
+   * drag looked dead. An inline width beats any class, and the leftover space becomes scroll.
+   */
+  const tableWidth = useMemo(
+    () => columnPlan.reduce((t, id) => t + (cols.widthOf(id) ?? DEFAULT_WIDTH(id)), 0),
+    [columnPlan, cols],
+  );
+
+  /**
    * Offsets are MEASURED, never assumed.
    *
    * The first version added up the widths it had asked for, but a table lays its columns out to
@@ -1196,11 +1209,9 @@ export default function InkMis() {
       >
       <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
         <Table
+          style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
-            // FIXED layout, and w-auto rather than the default w-full: a fixed table told to
-            // fill its box stretches the columns to do it, and a width the planner set would not
-            // survive. Headings clip like the cells do.
-            "table-fixed w-auto [&_thead_th]:overflow-hidden " +
+            "table-fixed [&_thead_th]:overflow-hidden " +
             // Every heading sticks to the top of that box. The two rows that must NOT stick —
             // the company band above and the filter row below — switch it back off, or all
             // three would pile up at the same offset.
