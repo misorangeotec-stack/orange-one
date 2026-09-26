@@ -491,20 +491,90 @@ export default function InkMis() {
     />
   );
 
-  /** The grab strip, in each row's first cell. */
-  const rowHandle = (
-    <span
-      role="separator"
-      aria-orientation="horizontal"
-      title="Drag to make every row taller or shorter. Double-click to reset."
-      onMouseDown={startRowDrag}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        setRowPad(ROW_PAD_DEFAULT);
-      }}
-      className="absolute inset-x-0 bottom-0 h-[5px] cursor-row-resize hover:bg-primary/30"
-    />
-  );
+  /**
+   * ROW HEIGHT IS DRAGGED FROM ANYWHERE IN THE TABLE, the way a spreadsheet does it.
+   *
+   * The grab strip used to live only in the leftmost cell, so the planner had to scroll back to
+   * the left edge to reach it. Rather than put a strip in all thirty cells of every row, the
+   * whole body listens: a press within a few pixels of a row's bottom edge starts the drag, and
+   * the cursor changes there so the edge announces itself.
+   *
+   * It stays clear of inputs, or a click into a quantity box near the edge of a row would begin
+   * a resize instead of putting the caret where it was aimed.
+   */
+  const EDGE = 4;
+
+  const nearRowEdge = (e: React.MouseEvent) => {
+    const el = e.target as HTMLElement | null;
+    if (!el || el.closest("input, select, textarea, button, [role=separator]")) return false;
+    const row = el.closest("tr");
+    if (!row) return false;
+    return e.clientY >= row.getBoundingClientRect().bottom - EDGE;
+  };
+
+  /**
+   * COLUMN WIDTH IS DRAGGED FROM ANYWHERE TOO.
+   *
+   * A body cell does not know which column it is in, so it asks: the heading at the same cell
+   * index carries the id (data-col-id), which keeps one copy of the column order instead of two
+   * that can drift apart.
+   */
+  const columnAt = (e: React.MouseEvent): string | null => {
+    const el = e.target as HTMLElement | null;
+    if (!el || el.closest("input, select, textarea, button, [role=separator]")) return null;
+    const td = el.closest("td");
+    const table = td?.closest("table");
+    if (!td || !table) return null;
+    if (e.clientX < td.getBoundingClientRect().right - EDGE) return null;
+    // The heading row is the one with as many cells as the body row — not the company band.
+    const cells = td.parentElement?.children.length ?? 0;
+    const head = [...(table.tHead?.rows ?? [])].find((r) => r.cells.length === cells);
+    const th = head?.cells[td.cellIndex] as HTMLElement | undefined;
+    return th?.dataset.colId ?? null;
+  };
+
+  const startColumnDrag = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    const td = (e.target as HTMLElement).closest("td");
+    const startX = e.clientX;
+    const startW = td?.getBoundingClientRect().width ?? 120;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.cursor = "col-resize";
+    const move = (ev: MouseEvent) => cols.setWidth(id, startW + (ev.clientX - startX));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  const bodyMouseMove = (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    e.currentTarget.style.cursor = nearRowEdge(e)
+      ? "row-resize"
+      : columnAt(e)
+        ? "col-resize"
+        : "";
+  };
+
+  const bodyMouseDown = (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    if (nearRowEdge(e)) {
+      startRowDrag(e);
+      return;
+    }
+    const id = columnAt(e);
+    if (id) startColumnDrag(e, id);
+  };
+
+  const bodyDoubleClick = (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    if (nearRowEdge(e)) {
+      setRowPad(ROW_PAD_DEFAULT);
+      return;
+    }
+    const id = columnAt(e);
+    if (id) cols.setWidth(id, undefined);
+  };
 
   /** Frozen by default; a narrow screen is better off without the pin eating its width. */
   const [freeze, setFreeze] = useState<boolean>(() => {
@@ -1034,7 +1104,15 @@ export default function InkMis() {
           ["--ink-row-pad" as string]: `${rowPad}px`,
           ["--ink-head-pad" as string]: `${headPad}px`,
         }}
-        className="[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] [&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)]"
+        className={
+          // ONE ROW, ONE LINE. A long item code wrapped onto a second line and that row alone
+          // grew, so the sheet read as if two items shared a bucket. Cells now stay on one line
+          // and clip with an ellipsis; the full text is a column-width drag away, and the row
+          // height the planner set is the height every row keeps.
+          "[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] " +
+          "[&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)] " +
+          "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap"
+        }
       >
       <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
         <Table
@@ -1200,7 +1278,11 @@ export default function InkMis() {
             </TableRow>
           </TableHeader>
 
-          <TableBody>
+          <TableBody
+            onMouseMove={bodyMouseMove}
+            onMouseDown={bodyMouseDown}
+            onDoubleClick={bodyDoubleClick}
+          >
             {/* TOTALS FIRST. They were in a footer, which on a table this tall meant scrolling
                 past every row to read the one line that summarises them. */}
             {rows.length > 0 && (
@@ -1262,7 +1344,6 @@ export default function InkMis() {
                     {...pinMerge(pinCell("no"), "text-right text-xs tabular-nums text-muted-foreground")}
                   >
                     {order[r.key] ?? order[r.legacyKey] ?? ""}
-                    {rowHandle}
                   </TableCell>
                 )}
                 {on("group") && (
@@ -1270,9 +1351,6 @@ export default function InkMis() {
                 )}
                 <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
                   {r.itemCode}
-                  {/* Second home for the grab strip: with No. hidden, the code column is the
-                      leftmost cell and the handle has to be reachable there instead. */}
-                  {!on("no") && rowHandle}
                 </TableCell>
                 {on("description") && (
                   <TableCell {...pinCell("description")}>{r.description}</TableCell>

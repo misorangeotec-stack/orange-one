@@ -149,6 +149,9 @@ export function ResizableHead({
       }}
       style={style}
       colSpan={colSpan}
+      // Stamped so a BODY cell can find its column: the page matches cell index to this heading
+      // and reads the id off it, rather than keeping a second copy of the column order.
+      data-col-id={id}
       className={`relative ${className ?? ""}`}
     >
       {children}
