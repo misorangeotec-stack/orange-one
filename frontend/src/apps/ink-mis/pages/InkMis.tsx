@@ -502,7 +502,7 @@ export default function InkMis() {
    * It stays clear of inputs, or a click into a quantity box near the edge of a row would begin
    * a resize instead of putting the caret where it was aimed.
    */
-  const EDGE = 4;
+  const EDGE = 8;
 
   const nearRowEdge = (e: React.MouseEvent) => {
     const el = e.target as HTMLElement | null;
@@ -1070,6 +1070,48 @@ export default function InkMis() {
           triggerLabel="Columns"
           triggerClassName="py-1.5 px-2.5 text-[12.5px]"
         />
+        <span className="inline-flex items-center gap-1 text-sm" title="Row height">
+          <span className="text-muted-foreground">Rows</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Shorter rows"
+            onClick={() => setRowPad((v) => Math.max(2, v - 3))}
+          >
+            −
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Taller rows"
+            onClick={() => setRowPad((v) => Math.min(28, v + 3))}
+          >
+            +
+          </Button>
+        </span>
+        <span className="inline-flex items-center gap-1 text-sm" title="Heading height">
+          <span className="text-muted-foreground">Heading</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Shorter heading"
+            onClick={() => setHeadPad((v) => Math.max(2, v - 3))}
+          >
+            −
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Taller heading"
+            onClick={() => setHeadPad((v) => Math.min(28, v + 3))}
+          >
+            +
+          </Button>
+        </span>
         <label className="inline-flex items-center gap-2 text-sm" title="Keep number, group, code and description on screen while you scroll right">
           <input type="checkbox" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} />
           Freeze name columns
