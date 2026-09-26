@@ -55,13 +55,14 @@ import HeaderFilter, { isFilterActive, type ColumnFilter } from "../components/H
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
-  DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, deriveInkRow, fmtDays, fmtPct, fmtQty,
+  DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, fmtDays, fmtPct,
+  fmtQty,
   INK_CATEGORIES, INK_SOURCES, SHIPMENT_STATUSES, emptyShipment, loadGroupFields, loadHolidays,
   loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
   loadShipments, loadThresholds, newId, saveHolidays, savePlans, saveShipments, saveThresholds,
   sourceLabel, workingDaysElapsed,
   type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
-  type InkThresholds, type Shipment, type ShipmentStatus,
+  type InkThresholds, type LeadDaysRule, type Shipment, type ShipmentStatus,
 } from "../lib/inkMis";
 
 const BASE = appBasePath("ink-mis");
@@ -331,7 +332,7 @@ export default function InkMis() {
       case "stock": return r.stock;
       case "incoming": return r.incoming;
       case "plantTotal": return r.plant;
-      case "committed": return r.committed;
+      case "etdTotal": return r.etd;
       case "total": return r.total;
       default: return null;
     }
@@ -632,7 +633,7 @@ export default function InkMis() {
     if (id === "category") return 130;
     if (id === "source") return 110;
     if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
-    if (id === "stock" || id === "total" || id === "committed") return 110;
+    if (id === "stock" || id === "total" || id === "etdTotal") return 110;
     return 90;
   };
 
@@ -668,7 +669,7 @@ export default function InkMis() {
     if (cols.isVisible("incoming")) ids.push("incoming");
     if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
     ids.push("plantTotal");
-    if (cols.isVisible("committed")) ids.push("committed");
+    if (cols.isVisible("etdTotal")) ids.push("etdTotal");
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
@@ -756,7 +757,7 @@ export default function InkMis() {
     { value: "shipments", label: "Consignment columns" },
     { value: "plant", label: "Plant weekly columns" },
     { value: "incoming", label: "ETA + at port" },
-    { value: "committed", label: "Stock + ETA" },
+    { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
   ];
@@ -938,7 +939,7 @@ export default function InkMis() {
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
-      "ETD", "ETA + at port", "Plant total", "Stock + ETA + plant", "Total", "Category",
+      "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
       "Import/Plant", "To order",
     ];
     const body = rows.map((r) => [
@@ -950,7 +951,7 @@ export default function InkMis() {
       ...shipmentCols.map((s) =>
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
-      r.etd, r.incoming, r.plant, r.committed, r.total, r.category, sourceLabel(r.source),
+      r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
       reorderQty(r),
     ]);
     const esc = (v: unknown) => {
@@ -1369,10 +1370,9 @@ export default function InkMis() {
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
                 Plant total{colFilter("plantTotal")}
               </ResizableHead>
-              {cols.isVisible("committed") && (
-                <ResizableHead id="committed" cols={cols} className="text-right">
-                  <span className="text-[10px] font-normal">Stock + ETA + plant</span>
-                  {colFilter("committed")}
+              {cols.isVisible("etdTotal") && (
+                <ResizableHead id="etdTotal" cols={cols} className="text-right">
+                  ETD total{colFilter("etdTotal")}
                 </ResizableHead>
               )}
               <ResizableHead id="total" cols={cols} className="text-right font-semibold">
@@ -1426,10 +1426,8 @@ export default function InkMis() {
                     </TableCell>
                   ))}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
-                {cols.isVisible("committed") && (
-                  <TableCell className="text-right tabular-nums">
-                    {fmtQty(rows.reduce((t, r) => t + r.committed, 0))}
-                  </TableCell>
+                {cols.isVisible("etdTotal") && (
+                  <TableCell className="text-right tabular-nums">{fmtQty(totals.etd)}</TableCell>
                 )}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.total)}</TableCell>
                 {cols.isVisible("category") && <TableCell />}
@@ -1520,7 +1518,7 @@ export default function InkMis() {
                 {on("days") && (
                   <TableCell
                     className={`text-right tabular-nums ${
-                      r.daysCover !== null && r.daysCover < thresholds.daysRed
+                      r.daysCover !== null && r.daysCover < daysRedFor(r.plan.leadTime, thresholds)
                         ? "bg-red-100 font-semibold text-red-900"
                         : ""
                     }`}
@@ -1531,7 +1529,8 @@ export default function InkMis() {
                 {on("withEta") && (
                   <TableCell
                     className={`text-right tabular-nums ${
-                      r.daysCoverWithIncoming !== null && r.daysCoverWithIncoming < thresholds.daysRed
+                      r.daysCoverWithIncoming !== null &&
+                      r.daysCoverWithIncoming < daysRedFor(r.plan.leadTime, thresholds)
                         ? "bg-red-100 font-semibold text-red-900"
                         : ""
                     }`}
@@ -1565,13 +1564,8 @@ export default function InkMis() {
                 )}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
-                {cols.isVisible("committed") && (
-                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.committedBand]}`}>
-                    {fmtQty(r.committed)}
-                    {r.committedPct !== null && (
-                      <div className="text-[10px] font-normal opacity-70">{fmtPct(r.committedPct)}</div>
-                    )}
-                  </TableCell>
+                {cols.isVisible("etdTotal") && (
+                  <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
                 )}
                 <TableCell className={`text-right font-semibold tabular-nums ${BAND_CLASS[r.band]}`}>
                   {fmtQty(r.total)}
@@ -1650,7 +1644,7 @@ export default function InkMis() {
               ["mid", "Amber below", thresholds.mid],
               ["excess", "Purple at or above", thresholds.excess],
               ["excessRemark", "Excess remark at or above", thresholds.excessRemark],
-              ["daysRed", "Days cover red below (days)", thresholds.daysRed],
+              ["daysRed", "Days cover red below, when no rule matches (days)", thresholds.daysRed],
             ] as [keyof InkThresholds, string, number][]
           ).map(([field, label, value]) => (
             <label key={field} className="space-y-1">
@@ -1672,6 +1666,72 @@ export default function InkMis() {
             onClick={() => setThresholds(DEFAULT_THRESHOLDS)}
           >
             Reset
+          </Button>
+        </div>
+
+        {/* The red line per lead time: a table the planner keeps, not arithmetic. */}
+        <div className="mt-4">
+          <div className="text-xs font-medium">Red line by lead time</div>
+          <div className="mt-2 space-y-1">
+            {thresholds.daysRules.map((rule, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Lead time</span>
+                <Input
+                  type="number"
+                  className="h-8 w-20"
+                  value={rule.lead}
+                  onChange={(e) =>
+                    setThresholds((t) => ({
+                      ...t,
+                      daysRules: t.daysRules.map((x, j) =>
+                        j === i ? { ...x, lead: Number(e.target.value) || 0 } : x,
+                      ),
+                    }))
+                  }
+                />
+                <span className="text-muted-foreground">red below</span>
+                <Input
+                  type="number"
+                  className="h-8 w-20"
+                  value={rule.days}
+                  onChange={(e) =>
+                    setThresholds((t) => ({
+                      ...t,
+                      daysRules: t.daysRules.map((x, j) =>
+                        j === i ? { ...x, days: Number(e.target.value) || 0 } : x,
+                      ),
+                    }))
+                  }
+                />
+                <span className="text-muted-foreground">days</span>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-red-600"
+                  aria-label="Remove this rule"
+                  onClick={() =>
+                    setThresholds((t) => ({
+                      ...t,
+                      daysRules: t.daysRules.filter((_, j) => j !== i),
+                    }))
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() =>
+              setThresholds((t) => ({
+                ...t,
+                daysRules: [...t.daysRules, { lead: 0, days: t.daysRed } as LeadDaysRule],
+              }))
+            }
+          >
+            <Plus className="mr-1 h-4 w-4" /> Add a lead time
           </Button>
         </div>
       </details>

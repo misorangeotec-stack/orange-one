@@ -718,10 +718,27 @@ export interface InkThresholds {
   mid: number;
   excess: number;
   excessRemark: number;
-  /** Days of cover below which the Days cover cell turns red. The planner's own number: how
-   *  long they are willing to be exposed, which no formula here can know. */
+  /** Days of cover below which the Days cover cell turns red, when no rule below matches. */
   daysRed: number;
+  /**
+   * The red line PER LEAD TIME.
+   *
+   * How exposed the planner can afford to be depends on how long a replacement takes: three
+   * months' lead wants thirty days in hand, a month and a half wants twenty. That is a table of
+   * their own, not arithmetic — so they keep it, and anything without a rule falls back to
+   * `daysRed`.
+   */
+  daysRules: LeadDaysRule[];
 }
+
+export interface LeadDaysRule {
+  lead: number;
+  days: number;
+}
+
+/** The red line for one line's lead time. */
+export const daysRedFor = (leadTime: number, t: InkThresholds): number =>
+  t.daysRules.find((r) => r.lead === leadTime)?.days ?? t.daysRed;
 
 export const DEFAULT_THRESHOLDS: InkThresholds = {
   low: 33,
@@ -729,6 +746,10 @@ export const DEFAULT_THRESHOLDS: InkThresholds = {
   excess: 120,
   excessRemark: 100,
   daysRed: 30,
+  daysRules: [
+    { lead: 1.5, days: 20 },
+    { lead: 3, days: 30 },
+  ],
 };
 
 /* ------------------------------------------------------------------ derivation */
@@ -764,10 +785,6 @@ export interface InkRow extends InkPosition {
   stockBand: InkBand;
   incomingPct: number | null;       // ETA + at port only
   incomingBand: InkBand;
-  /** Stock + ETA + at port + plant — the sheet's old "ETA + AT PORT + STOCK". */
-  committed: number;
-  committedPct: number | null;
-  committedBand: InkBand;
   remark: "NEW ORDER REQUIRED" | "EXCESS STOCK" | "";
 }
 
@@ -837,7 +854,6 @@ export function deriveInkRow(
   const pctOf = (qty: number) => (monthMaxLevel > 0 ? (qty / monthMaxLevel) * 100 : null);
   const stockPct = pctOf(stock);
   const incomingPct = pctOf(incoming);
-  const committedPct = pctOf(stock + committed);
   const coverPct = pctOf(stock + committed + etd);
 
   let remark: InkRow["remark"] = "";
@@ -867,9 +883,6 @@ export function deriveInkRow(
     stockBand: bandFor(stockPct, thresholds),
     incomingPct,
     incomingBand: bandFor(incomingPct, thresholds),
-    committed: stock + committed,
-    committedPct,
-    committedBand: bandFor(committedPct, thresholds),
     remark,
   };
 }
@@ -925,10 +938,15 @@ export const loadShipments = (): Shipment[] => {
 };
 export const saveShipments = (s: Shipment[]) => writeJson(KEY_SHIPMENTS, s);
 
-export const loadThresholds = (): InkThresholds => ({
-  ...DEFAULT_THRESHOLDS,
-  ...readJson<Partial<InkThresholds>>(KEY_THRESHOLDS, {}),
-});
+export const loadThresholds = (): InkThresholds => {
+  const stored = readJson<Partial<InkThresholds>>(KEY_THRESHOLDS, {});
+  return {
+    ...DEFAULT_THRESHOLDS,
+    ...stored,
+    // A copy saved before the rules existed comes back without them; the defaults stand in.
+    daysRules: Array.isArray(stored.daysRules) ? stored.daysRules : DEFAULT_THRESHOLDS.daysRules,
+  };
+};
 export const saveThresholds = (t: InkThresholds) => writeJson(KEY_THRESHOLDS, t);
 
 /**
