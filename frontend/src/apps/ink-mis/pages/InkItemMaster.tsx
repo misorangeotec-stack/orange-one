@@ -42,6 +42,7 @@ import { salesFyOptions } from "@hub/lib/salesReport";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
+import { loadGodownChoice } from "../lib/godowns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder,
@@ -145,6 +146,8 @@ export default function InkItemMaster() {
   /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
   const [seen, setSeen] = useState<string[]>(() => loadSeenLines());
   const [showNewDialog, setShowNewDialog] = useState(true);
+  /** The same godown filter the dashboard uses, so Closing means the same on both screens. */
+  const [godownChoice] = useState(() => loadGodownChoice());
   const [ioNotice, setIoNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -275,10 +278,14 @@ export default function InkItemMaster() {
   }, [dirty]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["inkMis", "positions", fy, savedOverrides, scope, savedOrder, savedLines, savedGroupFields],
+    queryKey: [
+      "inkMis", "positions", fy, savedOverrides, scope, savedOrder, savedLines, savedGroupFields,
+      godownChoice,
+    ],
     queryFn: () =>
       loadInkPositions(
         fy, undefined, undefined, savedOverrides, scope, savedOrder, savedLines, savedGroupFields,
+        godownChoice,
       ),
     staleTime: 5 * 60 * 1000,
   });

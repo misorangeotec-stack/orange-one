@@ -53,6 +53,7 @@ import ReorderChart, { reorderQty } from "../components/ReorderChart";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
+import { loadGodownChoice } from "../lib/godowns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, fmtDays, fmtPct,
@@ -116,6 +117,8 @@ export default function InkMis() {
   const [order] = useState<InkOrder>(() => loadOrder());
   const [lineFields] = useState(() => loadLines());
   const [groupFields] = useState(() => loadGroupFields());
+  /** Which godowns count, per book — set on the Godowns tab, read here. */
+  const [godownChoice] = useState(() => loadGodownChoice());
   const [scope, setScope] = useState<InkScope>("ink");
   // Four company columns collapse into one group. Remembered per browser; starts collapsed,
   // because the merged Stock column is the number the planner reads first.
@@ -155,9 +158,11 @@ export default function InkMis() {
   useEffect(() => saveHolidays(holidays), [holidays]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["inkMis", "positions", fy, overrides, scope, order, lineFields, groupFields],
+    queryKey: ["inkMis", "positions", fy, overrides, scope, order, lineFields, groupFields, godownChoice],
     queryFn: () =>
-      loadInkPositions(fy, undefined, undefined, overrides, scope, order, lineFields, groupFields),
+      loadInkPositions(
+        fy, undefined, undefined, overrides, scope, order, lineFields, groupFields, godownChoice,
+      ),
     staleTime: 5 * 60 * 1000,
   });
 

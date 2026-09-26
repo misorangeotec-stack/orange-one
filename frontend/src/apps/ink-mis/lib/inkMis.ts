@@ -59,6 +59,7 @@
  * let the two drift apart silently, which is worse than a read-only import.
  */
 import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
+import { godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit } from "./godowns";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
 /* ------------------------------------------------------------------- the books */
@@ -295,6 +296,8 @@ export interface InkPositionsResult {
   master: InkMasterRow[];
   /** Newest mirror build time across the four books. */
   builtAt: string | null;
+  /** Items in a godown-filtered book with no lot evidence, so shown at their company figure. */
+  unsplitItems: number;
   /** `<companyKey>|<ITEM NAME>` → merge key. The Sales Register carries names, not codes,
    *  so this is the bridge `loadInkConsumption` joins on. Per book, because the same name
    *  can be a different code in a different company. */
@@ -352,14 +355,42 @@ export async function loadInkPositions(
   order: InkOrder = {},
   lines: InkLines = {},
   groups: InkGroupFields = {},
+  godownChoice: GodownChoice = {},
 ): Promise<InkPositionsResult> {
   const raw = await loadStockSummary(INK_COMPANY_GUIDS, fy, from, to);
+
+  /*
+   * GODOWN FILTER, where the planner has set one.
+   *
+   * Only the books with a choice are read, so a sheet with no godown filter costs nothing. The
+   * split itself is a SHARE applied to Tally's closing — see lib/godowns.ts for why it cannot be
+   * a balance, and for the measurements behind that.
+   */
+  const splits = new Map<string, GodownSplit>();
+  let unsplitItems = 0;
+  await Promise.all(
+    INK_COMPANIES.filter((c) => (godownChoice[c.key] ?? []).length).map(async (c) => {
+      try {
+        splits.set(c.key, await loadGodownSplit(c.guid));
+      } catch {
+        // A godown read that fails must not take the whole sheet down; the book simply shows
+        // its company total, which is what it did before any of this existed.
+      }
+    }),
+  );
   const inScope = scope === "all" ? raw.filter((r) => BY_GUID.has(r.company_guid)) : raw.filter(isInk);
 
   const merged = new Map<string, InkPosition>();
   const master: InkMasterRow[] = [];
   const nameToCode = new Map<string, string>();
   let builtAt: string | null = null;
+
+  /** The same godown-filtered figure the dashboard uses, for the item master's Closing column. */
+  const qtyForMaster = (row: StockSummaryRow, companyKey: string) => {
+    const chosen = godownChoice[companyKey] ?? [];
+    if (!chosen.length) return Number(row.closing_qty) || 0;
+    return (Number(row.closing_qty) || 0) * godownShare(splits.get(companyKey), row.item, chosen);
+  };
 
   for (const row of inScope) {
     if (row.built_at && (!builtAt || row.built_at > builtAt)) builtAt = row.built_at;
@@ -408,9 +439,9 @@ export async function loadInkPositions(
       tallyDescription: tallyName,
       baseUnit: row.base_unit || "",
       // Tally sends no quantity at all for an item that has never moved, and the mirror passes
-      // that through as null. Typed as a number, it slips past a `=== 0` test and such rows kept
-      // showing in a list meant to hold only stock. Coerced here, once, so every reader is safe.
-      closingQty: Number(row.closing_qty) || 0,
+      // that through as null, which slips past a `=== 0` test. Coerced once, and carrying the
+      // same godown filter the dashboard uses, so both screens agree on what is on the shelf.
+      closingQty: qtyForMaster(row, company.key),
       effectiveCode,
       effectiveGroup,
       category: effectiveCategory,
@@ -467,8 +498,15 @@ export async function loadInkPositions(
     if (!pos.category) pos.category = effectiveCategory;
     if (!pos.source) pos.source = effectiveSource;
 
-    pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + row.closing_qty;
-    pos.stock += row.closing_qty;
+    const chosen = godownChoice[company.key] ?? [];
+    const split = splits.get(company.key);
+    const qty = chosen.length ? row.closing_qty * godownShare(split, row.item, chosen) : row.closing_qty;
+    if (chosen.length && split && row.closing_qty !== 0 && !hasGodownEvidence(split, row.item)) {
+      unsplitItems++;
+    }
+
+    pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + qty;
+    pos.stock += qty;
     pos.consumedByCompany[company.key] =
       (pos.consumedByCompany[company.key] ?? 0) + row.outward_qty;
     pos.consumed += row.outward_qty;
@@ -490,7 +528,7 @@ export async function loadInkPositions(
   master.sort(
     (a, b) => a.company.localeCompare(b.company) || a.item.localeCompare(b.item),
   );
-  return { rows, master, builtAt, nameToCode };
+  return { rows, master, builtAt, nameToCode, unsplitItems };
 }
 
 /* ---------------------------------------------------------------- consumption */
