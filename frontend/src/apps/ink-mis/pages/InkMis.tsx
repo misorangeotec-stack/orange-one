@@ -614,6 +614,27 @@ export default function InkMis() {
   const PINNED = ["no", "group", "code", "description"] as const;
   const PIN_WIDTH: Record<string, number> = { no: 56, group: 160, code: 144, description: 256 };
 
+  /**
+   * EVERY COLUMN HAS A WIDTH, and the table is laid out FIXED.
+   *
+   * Dragging a column narrower did nothing before: with the browser's automatic layout a column
+   * can never be thinner than its widest cell, so a width was a suggestion the table declined.
+   * Fixed layout obeys the width and the cell clips — which is what the planner asked for, and
+   * what a spreadsheet does.
+   *
+   * The widths ride a <colgroup>. Fixed layout otherwise takes them from the table's FIRST row,
+   * which here is the company band with its colspans, and the columns would land anywhere.
+   */
+  const DEFAULT_WIDTH = (id: string): number => {
+    if (PIN_WIDTH[id] !== undefined) return PIN_WIDTH[id];
+    if (id === "remark") return 150;
+    if (id === "category") return 130;
+    if (id === "source") return 110;
+    if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
+    if (id === "stock" || id === "total") return 110;
+    return 90;
+  };
+
   const LEAD_COLS = [
     // The planner's own row number. On the sheet because "why is this line here?" is otherwise
     // unanswerable from the dashboard — the order is theirs, and they should be able to see it
@@ -633,6 +654,23 @@ export default function InkMis() {
     { id: "dailyMax", label: "Daily max" },
   ];
   const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+
+  /**
+   * The columns actually rendered, in order. Mirrors the heading row exactly — if one changes,
+   * so must the other, and a mismatch shows up immediately as columns of the wrong width.
+   */
+  const columnPlan = useMemo(() => {
+    const ids = leadVisible.map((c) => c.id);
+    if (showCompanyCols) ids.push(...INK_COMPANIES.map((c) => `co:${c.key}`));
+    ids.push("stock");
+    if (showShipmentCols) ids.push(...shipmentCols.map((x) => `ship:${x.id}`));
+    if (cols.isVisible("incoming")) ids.push("incoming");
+    if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
+    ids.push("plantTotal", "total");
+    if (cols.isVisible("category")) ids.push("category");
+    if (cols.isVisible("source")) ids.push("source");
+    return ids;
+  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
 
   /**
    * Offsets are MEASURED, never assumed.
@@ -1117,12 +1155,21 @@ export default function InkMis() {
       <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
         <Table
           className={
+            // FIXED layout, and w-auto rather than the default w-full: a fixed table told to
+            // fill its box stretches the columns to do it, and a width the planner set would not
+            // survive. Headings clip like the cells do.
+            "table-fixed w-auto [&_thead_th]:overflow-hidden " +
             // Every heading sticks to the top of that box. The two rows that must NOT stick —
             // the company band above and the filter row below — switch it back off, or all
             // three would pile up at the same offset.
             "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-[4] [&_thead_th]:bg-card"
           }
         >
+          <colgroup>
+            {columnPlan.map((id) => (
+              <col key={id} style={{ width: cols.widthOf(id) ?? DEFAULT_WIDTH(id) }} />
+            ))}
+          </colgroup>
           <TableHeader>
             {!companyKey && cols.isVisible("companies") && (
               <TableRow className="bg-card hover:bg-card [&>th]:!static">
