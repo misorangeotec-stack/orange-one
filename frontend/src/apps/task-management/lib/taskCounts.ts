@@ -61,7 +61,7 @@ export const countsTowardMetrics: TaskCounts = (t) =>
 export const countsTowardPeerMetrics: TaskCounts = (t) =>
   !t.notApplicable && !t.isPersonal && t.isPeerAssignment;
 
-/** A HOD handed this to another HOD. See tasks.is_peer_assignment (migration 20261116120000). */
+/** A HOD/Sub-HOD handed this to a peer. See tasks.is_peer_assignment (migration 20261116120000). */
 export const isPeerTask = (t: Task) => t.isPeerAssignment;
 
 /**

@@ -108,10 +108,39 @@ export default function LegRows({ trip }: { trip: Trip }) {
     () => s.airlines.filter((a) => a.active).map((a) => ({ value: a.id, label: a.name })),
     [s.airlines],
   );
-  const hotelOptions = useMemo(
-    () => s.hotels.filter((h) => h.active).map((h) => ({ value: h.id, label: h.name })),
-    [s.hotels],
-  );
+  /**
+   * Hotels, with the ones in the city being stayed in FIRST and every option
+   * carrying its own city.
+   *
+   * ⚠ THE MASTER HAS ALWAYS CARRIED `city_id`; this picker ignored it. Every
+   *   hotel in the company was offered for every stay, unlabelled, so booking a
+   *   Mumbai night against "Courtyard by Marriott, Ahmedabad" took one click and
+   *   nothing on the screen disagreed. The row then reads Ahmedabad in the
+   *   Carrier column and Mumbai in the Route column, and only a human notices.
+   *
+   * ⚠ GROUPED, NOT FILTERED. A hard filter would hide a hotel whose city is
+   *   blank or recorded wrong, and the booker would have no way to pick the one
+   *   they actually booked — the picker and the data must agree even when the
+   *   data is untidy. So the right city floats to the top and the rest stay
+   *   reachable under a heading that says what they are.
+   */
+  const hotelOptions = useMemo(() => {
+    const cityName = new Map(s.cities.map((c) => [c.id, c.name]));
+    const stayCityId = form.kind === "hotel" ? form.toCityId : null;
+    const stayCityName = stayCityId ? cityName.get(stayCityId) : null;
+    const rows = s.hotels
+      .filter((h) => h.active)
+      .map((h) => ({
+        value: h.id,
+        label: h.name,
+        sublabel: h.cityId ? (cityName.get(h.cityId) ?? undefined) : "No city on the master",
+        here: !!stayCityId && h.cityId === stayCityId,
+      }));
+    if (!stayCityName) return rows.map(({ here: _here, ...o }) => o);
+    return [...rows]
+      .sort((a, b) => (a.here === b.here ? 0 : a.here ? -1 : 1))
+      .map(({ here, ...o }) => ({ ...o, group: here ? `In ${stayCityName}` : "Other cities" }));
+  }, [s.hotels, s.cities, form.kind, form.toCityId]);
   const busOptions = useMemo(
     () => s.busOperators.filter((b) => b.active).map((b) => ({ value: b.id, label: b.name })),
     [s.busOperators],
@@ -391,18 +420,29 @@ export default function LegRows({ trip }: { trip: Trip }) {
               </Select>
             </FieldLabel>
 
-            <FieldLabel label="Direction">
-              <Select
-                value={form.direction}
-                onChange={(e) => set({ direction: e.target.value as LegDirection })}
-              >
-                {DIRECTION_OPTIONS.map((d) => (
-                  <option key={d.value} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </Select>
-            </FieldLabel>
+            {/*
+              ⚠ A HOTEL HAS NO DIRECTION. Switching the kind to Hotel already
+                forces `direction` to "local" above, but the control stayed on
+                screen and stayed editable — so a booker could set a hotel to
+                Outbound and it saved that way, which is the one value the
+                kind-change guard exists to prevent. Every other leg-shaped
+                field (From, Departure time, Arrival time) is conditioned on
+                the kind; this one was missed.
+            */}
+            {form.kind !== "hotel" && (
+              <FieldLabel label="Direction">
+                <Select
+                  value={form.direction}
+                  onChange={(e) => set({ direction: e.target.value as LegDirection })}
+                >
+                  {DIRECTION_OPTIONS.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </Select>
+              </FieldLabel>
+            )}
 
             <FieldLabel
               label={form.kind === "hotel" ? "Hotel" : form.kind === "flight" ? "Airline" : form.kind === "bus" ? "Operator" : "Carrier"}

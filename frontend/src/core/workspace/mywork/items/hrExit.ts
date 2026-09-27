@@ -15,7 +15,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { ExitData } from "@/apps/hr-exit/data/exitFetch";
-import { buildQueueEntries, exitSnapshotFrom, type QueueEntry } from "@/apps/hr-exit/lib/queues";
+import { buildHeldEntries, buildQueueEntries, exitSnapshotFrom, type QueueEntry } from "@/apps/hr-exit/lib/queues";
 import { stepByKey } from "@/apps/hr-exit/lib/steps";
 import { stepOwnerIdsFor, type StepOwnerRow } from "@/shared/lib/fmsOwners";
 import type { WorkItem } from "../types";
@@ -47,9 +47,23 @@ export function hrExitWorkItems(data: ExitData, uid: string, isAdmin: boolean): 
   const assigneeByKey = new Map(
     data.stepAssignees.map((a) => [`${a.caseId}|${a.stepKey}`, a.assignedTo]),
   );
-  return buildQueueEntries(exitSnapshotFrom(data))
-    .filter((e) => isAdmin || ownersOf(e, stepOwners, assigneeByKey).includes(uid))
-    .map((e) => ({
+  const snap = exitSnapshotFrom(data);
+  const reasonById = new Map(data.cases.map((c) => [c.id, c.holdReason]));
+
+  /*
+   * Held cases are listed, flagged, at every step they are parked on — see
+   * ./officeSupplies.ts for why they are added back rather than dropped. One held
+   * case can contribute several rows here, exactly as a live one can: the parallel
+   * block runs six steps at once and clearance expands per outstanding check.
+   */
+  const entries = [
+    ...buildQueueEntries(snap).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(snap).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
+    .filter(({ e }) => isAdmin || ownersOf(e, stepOwners, assigneeByKey).includes(uid))
+    .map(({ e, held }) => ({
       // A clearance check is its own work-item, so the check id has to be part of
       // the key — otherwise four open checks on one case collapse into one row.
       id: `hr-exit:${e.checkId ?? e.entityId}:${e.stepKey}`,
@@ -61,5 +75,6 @@ export function hrExitWorkItems(data: ExitData, uid: string, isAdmin: boolean): 
       to: `/hr-exit/exits/${e.caseId}`,
       assignment: ownersOf(e, stepOwners, assigneeByKey).includes(uid) ? ("direct" as const) : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
+      ...(held ? { isHeld: true, holdReason: reasonById.get(e.caseId) ?? null } : {}),
     }));
 }

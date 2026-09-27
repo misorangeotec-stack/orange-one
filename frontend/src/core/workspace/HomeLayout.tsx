@@ -26,7 +26,10 @@ export default function HomeLayout() {
   const { items: notifications, onMarkRead } = useTaskNotifications();
 
   // Rebuilt only when the user's access changes, not on every render.
-  const nav = useMemo(() => buildHomeNav(apps, { hasModule, isAdmin }), [hasModule, isAdmin]);
+  const nav = useMemo(
+    () => buildHomeNav(apps, { hasModule, isAdmin, user }),
+    [hasModule, isAdmin, user],
+  );
 
   /**
    * A customer never sees the staff portal — not even for a frame.

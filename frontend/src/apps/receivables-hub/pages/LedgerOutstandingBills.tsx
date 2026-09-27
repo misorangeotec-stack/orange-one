@@ -280,7 +280,7 @@ export default function LedgerOutstandingBills() {
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
       <div>
         <Link
-          to="/outstanding-dashboard/reports/ledger-outstanding"
+          to="/reports/ledger-outstanding"
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1"
         >
           <ArrowLeft className="h-3 w-3" /> Ledger Outstandings

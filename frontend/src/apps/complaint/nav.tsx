@@ -58,6 +58,12 @@ const ic = {
   settings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 13.4H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 5 6.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10.6 3H11a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8Z" /></svg>
   ),
+  purchase: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6h15l-1.5 9h-12z" /><path d="M6 6 5 3H2" /><circle cx="9" cy="20" r="1.5" /><circle cx="18" cy="20" r="1.5" /></svg>
+  ),
+  assignee: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="8" r="4" /><path d="M3 20c0-3.6 3.1-5.5 7-5.5" /><path d="M14 18h7" /><path d="m18 15 3 3-3 3" /></svg>
+  ),
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
   ),
@@ -68,12 +74,20 @@ const ic = {
  * which every granted user gets — their own history is theirs to read whatever
  * their grant.
  *
- * ⚠ NO BRANCH BLOCKS, unlike Sampling. RM and FG run the SAME seven steps and are
- *   handled by the same queues; splitting the sidebar by type would double every
- *   entry and imply two processes where there is one. The type is a column and a
- *   filter on the lists instead.
+ * ⚠ STILL NO BRANCH BLOCKS, unlike Sampling — and the raw-material branch did
+ *   NOT change that. The two chains share this sidebar because a person is on
+ *   one DESK, not on one chain: the plant sees Plant Action whether or not a
+ *   raw-material complaint exists, Purchase sees Purchase, and management see one
+ *   Management Review holding both of their passes. Splitting the sidebar by
+ *   complaint type would show every one of them a heading they never use. The
+ *   type and the Domestic/Import route are a column and a filter on the lists
+ *   instead.
  *
- * Order: Workspace → Actions → the six step queues in workflow order →
+ * ⚠ EVERY QUEUE IS ALREADY CAPABILITY-GATED, which is what makes that work: a
+ *   site that never raises a raw-material complaint simply has nobody owning
+ *   `purchase`, so the entry never appears.
+ *
+ * Order: Workspace → Actions → the step queues in workflow order →
  * Administration. Every item here is routed in ComplaintApp.tsx.
  */
 export function buildComplaintNav(opts: {
@@ -82,7 +96,15 @@ export function buildComplaintNav(opts: {
   canPlant: boolean;
   canService: boolean;
   canApprove: boolean;
+  canPurchase: boolean;
+  /** Management's RM bucket — where imported-material complaints land. */
+  canRmManagement: boolean;
   canReview: boolean;
+  /**
+   * Not a Setup role — true only while a complaint management assigned to this
+   * person is (or has been) theirs. See store.canSeeQueue.
+   */
+  canAssignee: boolean;
   canMonitor: boolean;
   /** False on a view-only grant, and false when Setup restricts who may raise. */
   canRaise: boolean;
@@ -115,9 +137,16 @@ export function buildComplaintNav(opts: {
     queueUsed = true;
   };
 
+  // Workflow order, both chains interleaved: the finished-good desks, then the
+  // raw-material ones, then the review every chain ends on.
   if (opts.canPlant) queue("Plant Action", queueHref("plant"), ic.capa);
   if (opts.canService) queue("Service Team", queueHref("service"), ic.resolution);
   if (opts.canApprove) queue("Management Approval", queueHref("approval"), ic.approval);
+  if (opts.canPurchase) queue("Purchase Department", queueHref("purchase"), ic.purchase);
+  // TWO MANAGEMENT ENTRIES, NOT ONE. Reading an imported-material complaint is
+  // work; signing off a settled one is not. See lib/steps.ts.
+  if (opts.canRmManagement) queue("RM-Complaint View (MGT)", queueHref("rm-management"), ic.investigation);
+  if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
   if (opts.canReview) queue("Management Review", queueHref("management-review"), ic.close);
 
   let adminUsed = false;

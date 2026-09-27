@@ -6,204 +6,18 @@ import { SectionHeading, SECTION_HEADING_CLASS } from "@/shared/components/ui/Re
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
-import { addMonths, localDateIso } from "@/shared/lib/workingDays";
+import CheckinRow from "./CheckinRow";
+import { checkinStepKey } from "../../lib/steps";
 import { useHrStore } from "../../store";
 import { hrDocUrl, uploadProbationDoc } from "../../data/hrWrites";
+import { buildConfirmationLetter } from "../../lib/confirmationLetter";
 import { stepByKey } from "../../lib/steps";
-import type { Probation, ProbationReview, ProbationReviewStatus } from "../../types";
-
-const REVIEW_LABEL: Record<ProbationReviewStatus, string> = {
-  satisfactory: "Satisfactory",
-  needs_improvement: "Needs improvement",
-  unsatisfactory: "Unsatisfactory",
-};
-
-const REVIEW_CLASS: Record<ProbationReviewStatus, string> = {
-  satisfactory: "bg-[#E9F7EF] text-ryg-green",
-  needs_improvement: "bg-[#FFF7E6] text-yellow",
-  unsatisfactory: "bg-[#FDECEC] text-ryg-red",
-};
+import { CHECKIN_DAYS, type Probation } from "../../types";
 
 /** Open the private file in a new tab. Nothing in the fms-hr-docs bucket is public. */
 async function openDoc(path: string) {
   const url = await hrDocUrl(path);
   if (url) window.open(url, "_blank", "noreferrer");
-}
-
-/**
- * When month N's review is due. The same rule the queue uses — N CALENDAR months
- * after joining, clamped at a short month end (31-Jan + 1 = 28-Feb).
- */
-const monthDueIso = (joiningDate: string, month: number): string | null => {
-  const from = new Date(`${joiningDate}T00:00:00`);
-  if (Number.isNaN(from.getTime())) return null;
-  return localDateIso(addMonths(from, month));
-};
-
-/**
- * One month's review: the status, the HOD's remarks, and an optional file.
- *
- * `reviewed_at` is stamped by the RPC — the HOD never types a date. Re-recording a
- * month is allowed (a correction) right up until the final decision closes it.
- */
-function ReviewRow({
-  probation,
-  month,
-  review,
-  isPending,
-  readOnly,
-}: {
-  probation: Probation;
-  month: number;
-  review: ProbationReview | undefined;
-  isPending: boolean;
-  readOnly: boolean;
-}) {
-  const s = useHrStore();
-  const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState<ProbationReviewStatus>(review?.status ?? "satisfactory");
-  const [remarks, setRemarks] = useState(review?.remarks ?? "");
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const save = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      // Upload first, so a review can never be recorded against a file that isn't there.
-      let filePath = review?.filePath ?? null;
-      let fileName = review?.fileName ?? null;
-      if (file) {
-        const up = await uploadProbationDoc(probation.id, month, file);
-        filePath = up.path;
-        fileName = up.name;
-      }
-      await s.recordProbationReview(probation, month, status, remarks.trim(), filePath, fileName);
-      setFile(null);
-      setOpen(false);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const done = !!review;
-  const editable = !readOnly && (isPending || done);
-
-  return (
-    <li
-      className={`rounded-xl border px-4 py-3 ${
-        done ? "border-ryg-green/30 bg-[#E9F7EF]/40" : isPending ? "border-orange/40" : "border-line bg-page/40"
-      }`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border text-[10px] font-bold ${
-                done ? "border-ryg-green bg-ryg-green text-white" : "border-grey-2/50 text-transparent"
-              }`}
-              aria-hidden
-            >
-              ✓
-            </span>
-            <span className="text-[13.5px] font-semibold text-navy">
-              {month === 4 ? "Month-4 review (extended)" : `Month-${month} review`}
-            </span>
-            {review && (
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${REVIEW_CLASS[review.status]}`}>
-                {REVIEW_LABEL[review.status]}
-              </span>
-            )}
-          </div>
-
-          {review ? (
-            <>
-              <p className="mt-1 pl-6 text-[12px] text-grey-2">
-                Reviewed {formatDateTimeDMY(review.reviewedAt)}
-                {review.reviewerId && ` · ${s.profileById(review.reviewerId)?.name ?? "Unknown"}`}
-              </p>
-              {review.remarks && <p className="mt-1 pl-6 text-[13px] text-navy">{review.remarks}</p>}
-              {review.filePath && (
-                <button
-                  type="button"
-                  onClick={() => void openDoc(review.filePath!)}
-                  className="mt-1 pl-6 text-[12px] font-semibold text-orange hover:underline"
-                >
-                  {review.fileName ?? "Open file"} →
-                </button>
-              )}
-            </>
-          ) : (
-            <p className="mt-1 pl-6 text-[12px] text-grey-2">
-              {isPending ? "This is the review you owe now." : "Not due yet — the earlier months come first."}
-            </p>
-          )}
-        </div>
-
-        <span className="shrink-0 text-[12px] text-grey-2">
-          Due <DueCell dueIso={monthDueIso(probation.joiningDate, month)} />
-        </span>
-      </div>
-
-      {editable && !open && (
-        <div className="mt-2 pl-6">
-          <Button size="sm" variant={done ? "ghost" : "primary"} onClick={() => setOpen(true)}>
-            {done ? "Edit this review" : "Record this review"}
-          </Button>
-        </div>
-      )}
-
-      {editable && open && (
-        <div className="mt-3 grid gap-2.5 pl-6">
-          <div className="grid gap-2 sm:grid-cols-3">
-            {(Object.keys(REVIEW_LABEL) as ProbationReviewStatus[]).map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setStatus(k)}
-                className={`rounded-xl border px-3 py-2 text-left transition ${
-                  status === k ? "border-orange bg-orange/5" : "border-line hover:border-grey-2/40"
-                }`}
-              >
-                <div className="text-[13px] font-semibold text-navy">{REVIEW_LABEL[k]}</div>
-              </button>
-            ))}
-          </div>
-
-          <FieldLabel label="Remarks">
-            <TextArea
-              rows={3}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="How is this person doing in their first months?"
-            />
-          </FieldLabel>
-
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] font-medium text-navy">Attach a file (optional)</span>
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="w-full text-[12px] text-grey file:mr-2 file:rounded-lg file:border-0 file:bg-page file:px-2.5 file:py-1.5 file:text-[12px] file:font-semibold file:text-navy"
-            />
-          </label>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => void save()} disabled={busy}>
-              {busy ? "Saving…" : "Save the review"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-          </div>
-          {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
-        </div>
-      )}
-    </li>
-  );
 }
 
 /**
@@ -231,13 +45,12 @@ export default function ProbationPanel({
   const p = s.probationById(probation.id) ?? probation;
   const c = s.candidateById(p.candidateId);
   const r = s.requisitionById(p.requisitionId);
-  const reviews = s.reviewsFor(p.id);
+  const checkins = s.checkinsFor(p.id);
   const pendingStep = s.probationPendingStep(p);
   const mayAct = s.canEdit && s.canActOnProbation(p);
 
   const extended = p.outcome === "extended";
   const decided = !!p.finalStatus;
-  const months = extended ? [1, 2, 3, 4] : [1, 2, 3];
 
   // Which decision is on the table: the three-month one, or the one that closes an
   // extension? They are different RPCs because they are different facts.
@@ -255,6 +68,25 @@ export default function ProbationPanel({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  /** Build the confirmation letter, store it, and record where it landed. */
+  const issueLetter = async () => {
+    const cand = s.candidateById(p.candidateId);
+    const req = s.requisitionById(p.requisitionId);
+    const fresh = s.probationById(p.id) ?? p;
+    const file = await buildConfirmationLetter({
+      name: cand?.name ?? "The employee",
+      jobTitle: req?.jobTitle ?? "—",
+      department: req ? (s.departments.find((d) => d.id === req.departmentId)?.name ?? null) : null,
+      employeeCode: fresh.employeeCode ?? onboardingCode ?? null,
+      joiningDate: p.joiningDate,
+      confirmedOn: todayIso(),
+      permanentFrom: fresh.permanentFrom ?? permanentFrom ?? null,
+      decidedBy: fresh.outcomeBy ? s.personName(fresh.outcomeBy) : null,
+    });
+    const up = await uploadProbationDoc(p.id, 0, file);
+    await s.setProbationLetter(p.id, up.path, file.name);
+  };
+
   const submitDecision = async () => {
     setBusy(true);
     setErr(null);
@@ -268,6 +100,19 @@ export default function ProbationPanel({
         await s.decideProbation(p, decision, remarks.trim(), permFrom, code);
       }
       setRemarks("");
+
+      // NR-10 / KPI 1C.7 — the letter follows the confirmation, and ONLY a
+      // confirmation. ⚠ Deliberately AFTER the decision and outside its failure
+      // path: the decision is the fact, the letter is a document about it, and a
+      // font that would not load must never be able to un-confirm somebody. If it
+      // fails the panel offers "Issue the letter" and the record says it is missing.
+      if (decision === "approve") {
+        try {
+          await issueLetter();
+        } catch (e) {
+          setErr(`Confirmed — but the letter could not be produced: ${(e as Error).message}`);
+        }
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -280,7 +125,9 @@ export default function ProbationPanel({
     { key: "reject", label: "Reject", hint: "They have not cleared probation" },
     ...(isExtensionDecision
       ? []
-      : [{ key: "extend" as const, label: "Extend by 1 month", hint: "A Month-4 review appears" }]),
+      : // The Month-4 review it used to promise was retired with the monthly
+        // cadence; an extension now buys a month and ends in approve or reject.
+        [{ key: "extend" as const, label: "Extend by 1 month", hint: "Decide again a month later" }]),
   ];
 
   const decisionBlocked = decision === "approve" && (!permanentFrom || !employeeCode.trim());
@@ -343,6 +190,7 @@ export default function ProbationPanel({
             }`}
           >
             {p.finalStatus === "approved" ? (
+              <>
               <p className="text-[13px] text-navy">
                 Confirmed permanent from <strong>{formatDateDMY(p.permanentFrom)}</strong>
                 {p.employeeCode && (
@@ -353,6 +201,48 @@ export default function ProbationPanel({
                 )}
                 .
               </p>
+
+              {/* KPI 1C.7 — the letter that had to exist for this line to score.
+                  It is shown as MISSING rather than silently absent: a confirmed
+                  probation with no letter is a real state (generation runs after
+                  the decision and must never be able to fail it), and the only
+                  way anybody would notice is if the record says so. */}
+              {p.letterPath ? (
+                <button
+                  type="button"
+                  className="mt-1.5 text-[12.5px] font-medium text-orange hover:underline"
+                  onClick={() => void openDoc(p.letterPath!)}
+                >
+                  {p.letterName ?? "Confirmation letter"} →
+                </button>
+              ) : (
+                mayAct && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <span className="text-[12px] text-grey-2">No confirmation letter yet.</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() =>
+                        void (async () => {
+                          setBusy(true);
+                          setErr(null);
+                          try {
+                            await issueLetter();
+                          } catch (e) {
+                            setErr((e as Error).message);
+                          } finally {
+                            setBusy(false);
+                          }
+                        })()
+                      }
+                    >
+                      Issue the letter
+                    </Button>
+                  </div>
+                )
+              )}
+              </>
             ) : (
               <>
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-ryg-red">
@@ -376,20 +266,22 @@ export default function ProbationPanel({
           </div>
         )}
 
-        {/* ---- The monthly reviews ---- */}
+        {/* ---- NR-10 · the Day 7/15/30/60/90 check-ins ---- */}
         <div>
-          <SectionHeading>Monthly reviews</SectionHeading>
+          <SectionHeading>Check-ins</SectionHeading>
           <p className="mt-1.5 text-[12px] text-grey">
-            Each review is due one calendar month after the joining date — not a count of working days.
+            Day 7, 15, 30, 60 and 90 — <strong>calendar</strong> days after joining, not working days.
+            Each one is written twice: by the head of department, and by the new joiner from their own
+            account. It counts as done only when both are in.
           </p>
           <ul className="mt-2 space-y-2.5">
-            {months.map((m) => (
-              <ReviewRow
-                key={m}
+            {CHECKIN_DAYS.map((d) => (
+              <CheckinRow
+                key={d}
                 probation={p}
-                month={m}
-                review={reviews.find((rv) => rv.month === m)}
-                isPending={pendingStep === (m === 4 ? "probation_extension" : `probation_m${m}`)}
+                day={d}
+                checkin={checkins.find((c) => c.dayNo === d)}
+                isPending={pendingStep === checkinStepKey(d)}
                 readOnly={!mayAct || decided}
               />
             ))}
@@ -407,8 +299,8 @@ export default function ProbationPanel({
             {!decisionDue ? (
               <p className="mt-0.5 text-[12px] text-grey-2">
                 {extended
-                  ? "Record the Month-4 review first — the decision follows from it."
-                  : "Record all three monthly reviews first — the decision follows from them."}
+                  ? "Finish the outstanding check-in first — the decision follows from it."
+                  : "Finish all five check-ins first — the decision follows from them."}
               </p>
             ) : !mayAct ? (
               <p className="mt-0.5 text-[12px] text-grey-2">

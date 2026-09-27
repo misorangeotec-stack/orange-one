@@ -18,7 +18,7 @@
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import { allRoundViews, currentRoundView, type RoundView } from "./rounds";
-import type { StepKey } from "./steps";
+import { stepByKey, type StepKey } from "./steps";
 import type { DispatchOrder, DispatchStatus } from "../types";
 
 /** Every step that owns a queue (all but the origin `sales_order`). */
@@ -280,6 +280,47 @@ export function completedFor(snap: DispatchSnapshot, step: QueueStep): StageEntr
         row: o,
       });
     }
+  }
+  return out;
+}
+
+/**
+ * The step a HELD order is parked at, read from `current_step`.
+ *
+ * `fms_dispatch_hold_order`'s hold branch sets only `status`, `hold_at` and
+ * `hold_reason` (migration 20260827120000); only the RESUME branch recomputes
+ * `current_step`, from `fms_dispatch_resume_status`. So the column still names
+ * the step the order was parked at. See `office-supplies/lib/queues.ts#heldStep`
+ * for why this is read rather than re-derived.
+ *
+ * `sales_order` is `noQueue` — the origin step owes nobody anything — so an order
+ * somehow parked there yields null rather than a row addressed to no one.
+ */
+export function heldStep(o: DispatchOrder): QueueStep | null {
+  const def = stepByKey(o.currentStep);
+  if (!def || def.noQueue) return null;
+  return def.key as QueueStep;
+}
+
+/**
+ * Every HELD order, one entry at the step it is parked at. Read ONLY by My Work's
+ * `items/` rule — `buildQueueEntries` still excludes held orders, as the step
+ * pages, the Control Center and the Master Report all require.
+ */
+export function buildHeldEntries(snap: DispatchSnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const o of snap.orders) {
+    if (o.status !== "on_hold") continue;
+    const step = heldStep(o);
+    if (!step) continue;
+    out.push({
+      stepKey: step,
+      entityType: "order",
+      entityId: o.id,
+      ref: o.orderNo,
+      dueIso: dispatchDueIso(snap, o, step),
+      orderId: o.id,
+    });
   }
   return out;
 }

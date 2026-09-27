@@ -46,8 +46,14 @@ import {
 } from "@hub/lib/bushraPurchaseDashboards";
 import { SERIES_1, SERIES_2 } from "@hub/lib/batchCostingDashboard";
 import { useReportAccess } from "@hub/lib/reportAccess";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 const CHART_GRID = "hsl(220 15% 92%)";
 const AXIS_TICK = { fontSize: 11, fill: "hsl(220 10% 45%)" };
 const LABEL_FILL = "hsl(220 20% 30%)";
@@ -243,7 +249,7 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
           </div>
         </div>
         {canSee("bushra-purchase-register") && (
-          <Link to={`${BASE}/reports/bushra-purchase-register`} className="text-[11px] text-primary hover:underline">Purchase Register</Link>
+          <Link to={`${BASE}/bushra-purchase-register`} className="text-[11px] text-primary hover:underline">Purchase Register</Link>
         )}
       </div>
 

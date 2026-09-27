@@ -1,6 +1,16 @@
 import { supabase } from "@/core/platform/supabase";
 import type { Json } from "@/core/platform/database.types";
-import type { HrEntityType, HrMasterType, SalaryPeriod, SalaryStructure } from "../types";
+import type {
+  BgvStatus,
+  BuddyInteractionMode,
+  CheckinDay,
+  CheckinHodStatus,
+  CheckinJoinerStatus,
+  HrEntityType,
+  HrMasterType,
+  SalaryPeriod,
+  SalaryStructure,
+} from "../types";
 
 /**
  * HR Recruitment write layer.
@@ -337,20 +347,235 @@ export async function resubmitMrf(requisitionId: string, input: MrfInput): Promi
   if (error) throw new Error(error.message);
 }
 
+/**
+ * NR-8 / KPI 1A.1 — the recruiter picks an approved vacancy up.
+ *
+ * Deliberately its own call rather than a flag on another write: it is one
+ * person saying "this is mine now", and the RPC refuses a second one, an
+ * unapproved requisition, and anybody who is not the recruiter on it.
+ */
+export async function acknowledgeRequisition(requisitionId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_acknowledge_requisition", { p_req: requisitionId });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * NR-8 / KPI 1A.6 — the background verification's RESULT.
+ *
+ * `null` clears it back to "not started". A `discrepancy` without a note is
+ * refused by the RPC, not just by the form: the one state anybody acts on must
+ * never arrive without saying what it was.
+ */
+export async function setBgv(
+  onboardingId: string,
+  status: BgvStatus | null,
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_bgv", {
+    p_onboarding: onboardingId,
+    p_status: status,
+    p_note: note ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** NR-8 — the date the induction was held. `null` clears it. */
+export async function setInduction(onboardingId: string, on: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_induction", {
+    p_onboarding: onboardingId,
+    p_on: on,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/* ------------------------------ NR-9 · buddy ------------------------------ */
+
+/** Allocate the buddy. The RPC refuses the joiner's own department, and them. */
+export async function allocateBuddy(onboardingId: string, buddyUserId: string): Promise<string> {
+  const { data, error } = await supabase.rpc("fms_hr_allocate_buddy", {
+    p_onboarding: onboardingId,
+    p_buddy: buddyUserId,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+/** Day 1 — the passport is handed over. Once. */
+export async function handPassport(buddyId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_hand_passport", { p_buddy: buddyId });
+  if (error) throw new Error(error.message);
+}
+
+/** The BUDDY logs a meeting. HR cannot: the RPC refuses anyone else. */
+export async function logBuddyInteraction(
+  buddyId: string,
+  happenedOn: string,
+  mode: BuddyInteractionMode,
+  notes: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_log_buddy_interaction", {
+    p_buddy: buddyId,
+    p_on: happenedOn,
+    p_mode: mode,
+    p_notes: notes ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** HR confirms it. Only a confirmed interaction counts toward the eight. */
+export async function confirmBuddyInteraction(interactionId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_confirm_buddy_interaction", {
+    p_interaction: interactionId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** The JOINER rates the programme — nobody else, an admin included. */
+export async function rateBuddy(buddyId: string, rating: number, remarks: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_rate_buddy", {
+    p_buddy: buddyId,
+    p_rating: rating,
+    p_remarks: remarks ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Close it. `closed` insists the interactions happened; `person_left` does not. */
+export async function closeBuddy(
+  buddyId: string,
+  status: "closed" | "person_left",
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_close_buddy", {
+    p_buddy: buddyId,
+    p_status: status,
+    p_note: note ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/* ------------------------- NR-10 · probation check-ins -------------------- */
+
+/**
+ * Submit ONE side of one check-in.
+ *
+ * The RPC decides who may write which side: the HOD arm goes through the step
+ * gate, and the joiner arm is refused for everyone except the account HR linked
+ * to that hire — an admin included. Somebody else typing the joiner's answer is
+ * exactly what would make it worthless.
+ */
+export async function submitProbationCheckin(
+  probationId: string,
+  day: CheckinDay,
+  side: "hod" | "joiner",
+  status: CheckinHodStatus | CheckinJoinerStatus,
+  remarks: string | null,
+  filePath: string | null = null,
+  fileName: string | null = null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_submit_probation_checkin", {
+    p_probation: probationId,
+    p_day: day,
+    p_side: side,
+    p_status: status,
+    p_remarks: remarks ?? "",
+    p_file_path: filePath,
+    p_file_name: fileName,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * NR-10 / KPI 1C.7 — record the confirmation letter against the probation.
+ *
+ * Called AFTER the confirmation, never as part of it: the decision is the fact
+ * and the letter is a document about it, so a failed render must not be able to
+ * un-confirm somebody. The RPC refuses a probation that was not confirmed.
+ */
+export async function setProbationLetter(probationId: string, path: string, name: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_probation_letter", {
+    p_probation: probationId,
+    p_path: path,
+    p_name: name,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** NR-10 / P0 — link the hire to the Orange One account created for them. */
+export async function setEmployeeUser(onboardingId: string, userId: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_employee_user", {
+    p_onboarding: onboardingId,
+    p_user: userId,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export type MrfStage = "hr" | "mgmt";
 export type MrfDecision = "approve" | "reject" | "send_back";
+
+/**
+ * NR-7 — the numbers the HR Head sets while approving.
+ *
+ * Every field is optional and **an absent key leaves the stored value alone**;
+ * the RPC never clears a number it was not sent. Passing `null` for the whole
+ * payload is how the Management stage (and any older caller) behaves exactly as
+ * it always did.
+ */
+export interface RequisitionTargets {
+  targetCloseDays?: number | null;
+  cvTarget?: number | null;
+  shortlistTarget?: number | null;
+  directorCvTarget?: number | null;
+}
+
+/** Drops the keys that carry nothing, so they cannot overwrite a stored value. */
+const targetsPayload = (t: RequisitionTargets | null): Json | null => {
+  if (!t) return null;
+  const out: Record<string, number> = {};
+  if (t.targetCloseDays != null) out.target_close_days = t.targetCloseDays;
+  if (t.cvTarget != null) out.cv_target = t.cvTarget;
+  if (t.shortlistTarget != null) out.shortlist_target = t.shortlistTarget;
+  if (t.directorCvTarget != null) out.director_cv_target = t.directorCvTarget;
+  return Object.keys(out).length ? (out as unknown as Json) : null;
+};
 
 export async function decideMrf(
   requisitionId: string,
   stage: MrfStage,
   decision: MrfDecision,
   remarks: string,
+  targets: RequisitionTargets | null = null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_decide_mrf", {
     p_req: requisitionId,
     p_stage: stage,
     p_decision: decision,
     p_remarks: remarks,
+    p_targets: targetsPayload(targets),
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Set the NR-7 numbers on a requisition that is ALREADY approved.
+ *
+ * The approval dialog is not the only way in: the client asked for the 24
+ * positions that were open before NR-7 to be brought under the same rules, and
+ * a position past `mgmt_review` can no longer be reached through
+ * {@link updateDecideMrf}'s edit window.
+ *
+ * Server-gated to the HR Head (or an admin); refused on a rejected or cancelled
+ * requisition.
+ */
+export async function setRequisitionTargets(
+  requisitionId: string,
+  targets: RequisitionTargets,
+): Promise<void> {
+  const payload = targetsPayload(targets);
+  if (!payload) throw new Error("Nothing to save");
+  const { error } = await supabase.rpc("fms_hr_set_requisition_targets", {
+    p_req: requisitionId,
+    p_targets: payload,
   });
   if (error) throw new Error(error.message);
 }
@@ -365,12 +590,14 @@ export async function updateDecideMrf(
   stage: MrfStage,
   decision: MrfDecision,
   remarks: string,
+  targets: RequisitionTargets | null = null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_update_decide_mrf", {
     p_req: requisitionId,
     p_stage: stage,
     p_decision: decision,
     p_remarks: remarks,
+    p_targets: targetsPayload(targets),
   });
   if (error) throw new Error(error.message);
 }

@@ -35,6 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
   COVERED_APP_IDS,
   DELIBERATELY_UNCOVERED,
+  UNIVERSAL_APP_IDS,
   assertIstClock,
   computeSnapshot,
   loadDatasets,
@@ -119,7 +120,14 @@ async function loadPeople(): Promise<Person[]> {
       name: (p.name as string) ?? "",
       email: (p.email as string) ?? null,
       isAdmin,
-      appIds: isAdmin ? [...COVERED_APP_IDS] : byUser.get(p.id as string) ?? [],
+      // A universal app is held by everyone and has NO `app_access` row, so a
+      // non-admin's grants alone would leave it out and the mail would count
+      // nobody's work in it. Union it in from apps/universal.ts (re-exported by
+      // the bundle) — `countableFor` still intersects with COVERED_APP_IDS, so
+      // a universal module that is not wired here changes nothing.
+      appIds: isAdmin
+        ? [...COVERED_APP_IDS]
+        : [...new Set([...(byUser.get(p.id as string) ?? []), ...UNIVERSAL_APP_IDS])],
     };
   });
 }

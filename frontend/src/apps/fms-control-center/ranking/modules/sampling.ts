@@ -30,7 +30,7 @@ import {
 import { stepByKey } from "@/apps/sampling/lib/steps";
 import { samplingWorkItems } from "@/core/workspace/mywork/items/sampling";
 import type { ClosedStep, ModuleScorer, OpenStep } from "../types";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const BUILDERS = [
   completedCollectEntries,
@@ -83,6 +83,7 @@ export const samplingScorer: ModuleScorer<SamplingData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
+        drop: heldDrop(item),
       }),
     );
   },

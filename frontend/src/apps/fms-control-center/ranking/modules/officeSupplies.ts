@@ -24,7 +24,7 @@ import {
 import { stepByKey } from "@/apps/office-supplies/lib/steps";
 import { officeSuppliesWorkItems } from "@/core/workspace/mywork/items/officeSupplies";
 import type { ClosedStep, ModuleScorer, OpenStep } from "../types";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const label = (k: string) => stepByKey(k)?.title ?? k;
 
@@ -66,6 +66,7 @@ export const officeSuppliesScorer: ModuleScorer<SuppliesData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
+        drop: heldDrop(item),
       }),
     );
   },

@@ -68,15 +68,56 @@ interface MasterItemInfo {
 const db = supabase as any;
 const PAGE = 1000;
 
+/**
+ * Every row of a Central Masters table, read in PARALLEL pages.
+ *
+ * `mst_items` alone is ~14k rows = 15 pages, and walking them one after another cost ~7 s before a
+ * single sales row could be asked for — the dashboard's register query is gated on this lookup
+ * (`enabled: !!lookup`), so every one of those round trips is dead time on first paint. Ask for the
+ * count with the first page, then fetch the rest together.
+ *
+ * `order("id")` is the PRIMARY KEY on all four tables, so OFFSET paging is stable — see the note on
+ * fetchAllPages in lib/salesRegister.ts for why a non-unique sort here would be a bug.
+ */
+const MASTERS_CONCURRENCY = 6;
+
 async function pageAll<T>(table: string, columns: string): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await db.from(table).select(columns).order("id", { ascending: true }).range(from, from + PAGE - 1);
-    if (error) throw new Error(`${table}: ${error.message}`);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < PAGE) return out;
+  const q = () => db.from(table).select(columns, { count: "exact" }).order("id", { ascending: true });
+  const first = await q().range(0, PAGE - 1);
+  if (first.error) throw new Error(`${table}: ${first.error.message}`);
+  const head = (first.data ?? []) as T[];
+  const total: number | null = typeof first.count === "number" ? first.count : null;
+  if (head.length < PAGE) return head;
+
+  // No count header (an older PostgREST, or a view that cannot count): fall back to the sequential
+  // walk, which is slower but always correct.
+  if (total === null) {
+    const out = [...head];
+    for (let from = PAGE; ; from += PAGE) {
+      const { data, error } = await q().range(from, from + PAGE - 1);
+      if (error) throw new Error(`${table}: ${error.message}`);
+      const rows = (data ?? []) as T[];
+      out.push(...rows);
+      if (rows.length < PAGE) return out;
+    }
   }
+
+  const offsets: number[] = [];
+  for (let from = PAGE; from < total; from += PAGE) offsets.push(from);
+  const pages = new Array<T[]>(offsets.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(MASTERS_CONCURRENCY, offsets.length) }, async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= offsets.length) return;
+        const { data, error } = await q().range(offsets[i], offsets[i] + PAGE - 1);
+        if (error) throw new Error(`${table}: ${error.message}`);
+        pages[i] = (data ?? []) as T[];
+      }
+    }),
+  );
+  return head.concat(...pages);
 }
 
 const wsKey = (s: string) => s.replace(/\s+/g, " ").trim();

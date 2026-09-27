@@ -57,8 +57,14 @@ import {
 } from "@hub/lib/productionExpenses";
 import { loadPackingMaterial, packingFor, packingTotals } from "@hub/lib/packingMaterial";
 import { useReportAccess } from "@hub/lib/reportAccess";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 const CHART_GRID = "hsl(220 15% 92%)";
 const AXIS_TICK = { fontSize: 11, fill: "hsl(220 10% 45%)" };
 const LABEL_FILL = "hsl(220 20% 30%)";
@@ -383,7 +389,7 @@ export default function ProductionBatchCostingDashboard() {
             <Link to={`${BASE}/bushra-dashboard/production-expenses`} className="text-primary hover:underline">Expenses</Link>
           )}
           {canSee("batch-costing") && (
-            <Link to={`${BASE}/reports/batch-costing`} className="text-primary hover:underline">Register</Link>
+            <Link to={`${BASE}/batch-costing`} className="text-primary hover:underline">Register</Link>
           )}
         </div>
       </div>
@@ -1048,7 +1054,7 @@ function BatchSheet({ batch, lines, onClose }: {
           </span>
           {canSee("batch-costing") && (
             <Link
-              to={`${BASE}/reports/batch-costing?fy=${batch.fy}&from=${batch.vch_date}&to=${batch.vch_date}&q=${encodeURIComponent(batch.voucher_no)}`}
+              to={`${BASE}/batch-costing?fy=${batch.fy}&from=${batch.vch_date}&to=${batch.vch_date}&q=${encodeURIComponent(batch.voucher_no)}`}
               className="text-primary hover:underline"
             >
               Open in the register

@@ -26,6 +26,35 @@
  *     session → registry → hr-exit/meta → ExitApp → store → session
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export const UNIVERSAL_APP_IDS: readonly string[] = ["kra-kpi"];
+export const UNIVERSAL_APP_IDS: readonly string[] = [
+  "kra-kpi",
+  /*
+   * HR Reports (HRREP-1). Universal for the same reason as the scorecard above it:
+   * EVERY employee has their own KPI sheet and their own weekly review, so a per-user
+   * grant would mean an admin ticking 67 boxes before anybody could read their own
+   * figures — and ticking one more for every joiner, forever.
+   *
+   * Safe where HR Exit and General Purchase were not, because opening the app grants
+   * nobody any data: `kpi_report` checks the caller itself, the recruitment tables are
+   * read under the reader’s own RLS, and the person picker offers only the people
+   * that reader may choose between (apps/hr-reports/lib/scope.ts). A reader with no
+   * sheet for their job is told so rather than scored against somebody else’s.
+   */
+  "hr-reports",
+  /*
+   * Learning & Development. Every employee is a potential PARTICIPANT — they have
+   * to accept an invitation, read the material and upload their assignment — so
+   * granting it per user would mean ticking a box for all 67 before the first
+   * invitation could go out, and a nominee without a grant would be sent a link
+   * to a page they cannot open.
+   *
+   * ⚠ Unlike HR Exit and General Purchase, which were universal and were moved
+   *   back to opt-in because admins did not want everyone SEEING them, this
+   *   module's own nav hides everything but the training calendar and the
+   *   person's own requests. The queues, the pipeline and Setup appear only for
+   *   the people who own them, and RLS withholds the rest.
+   */
+  "learning-development",
+];
 
 export const isUniversalApp = (appId: string): boolean => UNIVERSAL_APP_IDS.includes(appId);

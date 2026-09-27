@@ -140,6 +140,39 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storedKey]);
 
+  /**
+   * How many nights the BOOKINGS say this trip stayed.
+   *
+   * ⚠ A BLANK `nights` PRICES AS ONE, AND THAT IS A CLAIMANT'S MONEY. The cap is
+   *   per night (§7.2), the box starts empty, and the engine reads empty as a
+   *   single night — so a two-night stay in Mumbai showed "₹1,750 allowed,
+   *   ₹3,250 disallowed" when the right answer was ₹3,500, and the only thing
+   *   standing between the traveller and the loss was noticing a small box.
+   *   The hotel booking on this very trip already carries the check-in and
+   *   check-out dates.
+   *
+   * ⚠ THIS DEFAULTS A QUANTITY, NEVER A CAP. The rule that turns nights into
+   *   money stays in `fms_travel_check_claim` and only there; this fills in a
+   *   count the claimant can still overtype, exactly as the City field already
+   *   infers where they were from the bookings.
+   *
+   * ⚠ ONLY WHEN THERE IS EXACTLY ONE HOTEL BOOKING. Two hotels on one trip means
+   *   two stays, and silently summing them onto whichever line was added first
+   *   would be a guess about which nights this bill covers. Then it only tells
+   *   them what the bookings say and leaves the box alone.
+   */
+  const hotelLegs = useMemo(
+    () => s.legsOf(trip.id).filter((l) => l.kind === "hotel" && l.startOn && l.endOn),
+    [s, trip.id],
+  );
+  const bookedNights = useMemo(() => {
+    const nights = (from: string, to: string) =>
+      Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000);
+    const total = hotelLegs.reduce((n, l) => n + Math.max(0, nights(l.startOn!, l.endOn!)), 0);
+    return total > 0 ? total : null;
+  }, [hotelLegs]);
+  const defaultNights = hotelLegs.length === 1 ? bookedNights : null;
+
   const categories = useMemo(
     () => s.expenseCategories.filter((c) => c.active),
     [s.expenseCategories],
@@ -465,7 +498,16 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                       options={categoryOptions}
                       disabled={!editable}
                       placeholder="Pick one…"
-                      onChange={(v) => set(l.key, { categoryId: v || null })}
+                      onChange={(v) =>
+                        set(l.key, {
+                          categoryId: v || null,
+                          // Seed the night count off the booking the moment the
+                          // line becomes a hotel — see `defaultNights` above.
+                          ...(catById.get(v)?.kind === "hotel" && l.nights == null && defaultNights
+                            ? { nights: defaultNights }
+                            : {}),
+                        })
+                      }
                     />
                   </FieldLabel>
                   <FieldLabel label="Date">
@@ -537,7 +579,14 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                     on a taxi fare is a box somebody fills in wrongly. */}
                 <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {isHotel && (
-                    <FieldLabel label="Nights" hint="The cap is per night, per city (§7.2)">
+                    <FieldLabel
+                      label="Nights"
+                      hint={
+                        bookedNights
+                          ? `The cap is per night, per city (§7.2). The booking shows ${bookedNights} night${bookedNights === 1 ? "" : "s"}.`
+                          : "The cap is per night, per city (§7.2). Blank counts as one night."
+                      }
+                    >
                       <TextInput
                         inputMode="numeric"
                         value={l.nights ?? ""}

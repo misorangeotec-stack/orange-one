@@ -1,5 +1,6 @@
+import { useState } from "react";
 import Card from "@/shared/components/ui/Card";
-import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { money } from "../lib/format";
 import { CATEGORY_LABEL, TIER_LABEL } from "../lib/format";
 import type { Entitlement, ResolvedRate } from "../lib/entitlement";
@@ -21,6 +22,14 @@ import type { CityTier, TravelRateCard } from "../types";
  *   disallows. The caps are applied in SQL and only in SQL (phase 7), because a
  *   cap enforced in two languages is a cap with two authors, and on somebody's
  *   reimbursement the two will eventually disagree.
+ *
+ * ⚠ SIX FIGURES BY DEFAULT, THE REST BEHIND "Policy detail". The first build put
+ *   every rate on the card on screen with its section reference underneath, and
+ *   a panel meant to answer "what may I spend" took eleven rows and four grey
+ *   paragraphs to do it — so it read as fine print and got skipped, which is the
+ *   exact failure it exists to prevent. The rest is COLLAPSED, never deleted:
+ *   Rate Cards sits behind `RequireMasterOwner`, so for an ordinary traveller
+ *   this panel is the only place those figures exist at all.
  */
 
 /** A missing row and a deliberate no-cap must not read the same. */
@@ -40,6 +49,7 @@ function Row({
   label: string;
   rate: ResolvedRate | null;
   kind?: "money" | "text";
+  /** Shown only while the panel is expanded — see the note on the default six. */
   hint?: string;
   /**
    * The figure exists but cannot be looked up yet, because the axis it varies on
@@ -55,11 +65,17 @@ function Row({
 }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-line py-1.5 last:border-b-0">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-medium text-navy">{label}</div>
         {hint && <div className="text-[11.5px] text-grey-2">{hint}</div>}
       </div>
-      <div className="shrink-0 text-right">
+      {/*
+        ⚠ NO `shrink-0` ON THE VALUE. A long entitlement — "Business class
+          permitted; the upgrade is reimbursed" — kept its full width against a
+          label that could not shrink past its own text, and the two printed on
+          top of each other. It wraps inside its own column instead.
+      */}
+      <div className="min-w-0 max-w-[58%] break-words text-right">
         <div className={`text-[13px] ${pending ? "font-normal text-grey-2" : rate ? "font-semibold text-navy" : "font-semibold text-grey-2"}`}>
           {pending ?? rateText(rate, kind)}
         </div>
@@ -70,6 +86,8 @@ function Row({
     </div>
   );
 }
+
+const GROUP_HEADING_CLASS = "mb-1 text-[11px] font-semibold uppercase tracking-wide text-grey";
 
 export default function EntitlementPanel({
   entitlement: e,
@@ -85,6 +103,8 @@ export default function EntitlementPanel({
   bandNo: number | null;
   cityName: string | null;
 }) {
+  const [detail, setDetail] = useState(false);
+
   if (bandNo === null || bandNo === undefined) {
     return (
       <Card className="p-4">
@@ -128,9 +148,7 @@ export default function EntitlementPanel({
     <Card className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className={SECTION_HEADING_CLASS}>Your entitlement</h2>
-        <span className="text-[11.5px] text-grey-2">
-          Band {bandNo} · {card.label}
-        </span>
+        <span className="text-[11.5px] text-grey-2">Band {bandNo}</span>
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -143,24 +161,21 @@ export default function EntitlementPanel({
             {TIER_LABEL[tier]}
           </span>
         ) : (
-          <span className="text-[11.5px] text-grey-2">
-            Choose a destination for the hotel and conveyance caps
-          </span>
+          <span className="text-[11.5px] text-grey-2">Destination sets the hotel cap</span>
         )}
       </div>
 
       {/*
-        ⚠ AN UNCONFIRMED CARD ADVISES; IT DOES NOT ENFORCE. Saying so here is not
-          a disclaimer — it is the difference between a traveller treating ₹1,750
-          as a rule and treating it as a proposal that has not been signed off.
+        ⚠ AN UNCONFIRMED CARD ADVISES; IT DOES NOT ENFORCE. Saying so is not a
+          disclaimer — it is the difference between a traveller treating ₹1,750
+          as a rule and treating it as a proposal nobody has signed off.
           `fms_travel_confirm_rate_card` is what flips that, and it refuses while
-          any figure is still disputed.
+          any figure is still disputed. One line, because the four-line tinted
+          box that said it was the first thing the eye learned to skip.
       */}
       {card.status !== "confirmed" && (
-        <p className="mt-2 rounded-lg bg-page px-3 py-2 text-[12px] text-grey">
-          These figures are from a <strong>draft</strong> rate card. They are what the policy
-          proposes and what your claim will be measured against for guidance, but they are not yet
-          signed off, so nothing is refused on their basis.
+        <p className="mt-2 text-[11.5px] text-grey-2">
+          <strong className="font-semibold">Draft figures</strong> — guidance, not yet signed off.
         </p>
       )}
 
@@ -169,60 +184,80 @@ export default function EntitlementPanel({
           2 of the policy holds two tables that disagree one row apart, and 23 of
           59 live employees sit in the two bands they disagree about. Showing a
           figure without this line would quote somebody a hotel cap that is wrong
-          by ₹1,500 a night and let them plan around it.
+          by ₹1,500 a night and let them plan around it. It keeps its tint: this
+          one is about somebody booking to the wrong number.
       */}
       {e.anyDisputed && (
         <p className="mt-2 rounded-lg bg-[#FDECEC] px-3 py-2 text-[12px] text-ryg-red">
-          <strong>At least one figure below is disputed.</strong> The source policy gives two
-          different answers for it, and HR has not yet said which one applies. Book to the lower
-          reading and flag it — the rate card cannot be signed off until this is settled.
+          <strong>A figure below is disputed</strong> — the policy gives two answers and HR has not
+          said which applies. Book to the lower one.
         </p>
       )}
 
       <div className="mt-3 space-y-3">
         <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-grey">
-            Money
-          </div>
+          <div className={GROUP_HEADING_CLASS}>Money</div>
           <Row
             label="Hotel, per night"
             rate={e.hotelCap}
             pending={tier ? undefined : "Choose a destination"}
             hint={
-              tier
+              detail
                 ? "including GST (§7.2). Over-cap needs evidence plus HOD approval, and never above 1.5×."
-                : "the cap varies by the destination's tier"
+                : undefined
             }
           />
-          <Row label="Daily allowance" rate={e.da} hint="per calendar day away, no receipts (§8)" />
+          <Row
+            label="Daily allowance"
+            rate={e.da}
+            hint={detail ? "per calendar day away, no receipts (§8)" : undefined}
+          />
           <Row
             label="Local conveyance"
             rate={e.conveyanceCap}
             /* TC-A is uncapped on every tier, so it is answerable without one. */
             pending={tier || e.conveyanceCap?.amount === null ? undefined : "Choose a destination"}
-            hint="per day at the destination (§10), separate from the daily allowance"
+            hint={detail ? "per day at the destination (§10), separate from the daily allowance" : undefined}
           />
-          {e.conveyanceSelfDec && (
+          {detail && e.conveyanceSelfDec && (
             <Row
               label="Conveyance without a receipt"
               rate={e.conveyanceSelfDec}
               hint="per trip, self-declared (§10)"
             />
           )}
-          <Row label="Full-day vehicle hire" rate={e.rentalCap} hint="including driver (§10.1), HOD pre-approved" />
+          {detail && (
+            <Row
+              label="Full-day vehicle hire"
+              rate={e.rentalCap}
+              hint="including driver (§10.1), HOD pre-approved"
+            />
+          )}
         </div>
 
         <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-grey">
-            How you may travel
-          </div>
-          <Row label="Air" rate={e.air.travelClass} kind="text" hint={e.air.bookingType?.textValue ?? undefined} />
-          {e.air.upgrade?.textValue && (
+          <div className={GROUP_HEADING_CLASS}>How you may travel</div>
+          <Row
+            label="Air"
+            rate={e.air.travelClass}
+            kind="text"
+            hint={detail ? e.air.bookingType?.textValue ?? undefined : undefined}
+          />
+          {detail && e.air.upgrade?.textValue && (
             <Row label="Air — upgrades" rate={e.air.upgrade} kind="text" />
           )}
-          <Row label="Train" rate={e.train.travelClass} kind="text" hint={e.train.overnight?.textValue ? `Overnight: ${e.train.overnight.textValue}` : undefined} />
+          <Row
+            label="Train"
+            rate={e.train.travelClass}
+            kind="text"
+            hint={
+              detail && e.train.overnight?.textValue
+                ? `Overnight: ${e.train.overnight.textValue}`
+                : undefined
+            }
+          />
           <Row label="Road" rate={e.road.mode} kind="text" />
-          {(e.mileage.fourWheeler || e.mileage.twoWheeler) && (
+          {detail && (e.mileage.fourWheeler || e.mileage.twoWheeler) && (
             <Row
               label="Own vehicle, per km"
               rate={e.mileage.fourWheeler ?? e.mileage.twoWheeler}
@@ -242,18 +277,25 @@ export default function EntitlementPanel({
             the test they will be measured against, at the moment they are asking
             — which is the whole difference between a rule and an ambush.
         */}
-        {airRule && (
-          <div className="rounded-lg bg-page px-3 py-2">
-            <Field label="When you may fly" value={airRule} emphasis="quiet" />
-            {e.air.advanceBookingDays?.amount && (
-              <p className="mt-1 text-[11.5px] text-grey">
-                Tickets are booked at least {e.air.advanceBookingDays.amount} days ahead; later than
-                that needs approval with a reason in writing.
-              </p>
-            )}
-          </div>
+        {detail && airRule && (
+          <p className="text-[11.5px] leading-5 text-grey">
+            {airRule}
+            {e.air.advanceBookingDays?.amount
+              ? ` Tickets are booked at least ${e.air.advanceBookingDays.amount} days ahead; later than that needs approval with a reason in writing.`
+              : ""}
+          </p>
         )}
+
+        {detail && <p className="text-[11.5px] text-grey-2">Rate card: {card.label}</p>}
       </div>
+
+      <button
+        type="button"
+        onClick={() => setDetail((v) => !v)}
+        className="mt-3 text-[11.5px] font-semibold text-orange hover:underline"
+      >
+        {detail ? "Hide policy detail" : "Policy detail"}
+      </button>
     </Card>
   );
 }

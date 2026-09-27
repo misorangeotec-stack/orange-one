@@ -17,7 +17,7 @@ import { assetSnapshotFrom, completedFor, jobDueIso, type QueueStep } from "@/ap
 import { stepByKey } from "@/apps/asset-maintenance/lib/steps";
 import { assetWorkItems } from "@/core/workspace/mywork/items/assetMaintenance";
 import type { ClosedStep, ModuleScorer, OpenStep } from "../types";
-import { parseItems } from "../workItems";
+import { heldDrop, parseItems } from "../workItems";
 
 const STEPS: QueueStep[] = ["schedule", "service_done", "verify_close"];
 const label = (k: string) => stepByKey(k)?.title ?? k;
@@ -63,6 +63,7 @@ export const assetMaintenanceScorer: ModuleScorer<AssetData> = {
         stepLabel: label(stepKey),
         roundNo: 0,
         dueIso: item.dueIso,
+        drop: heldDrop(item),
       }),
     );
   },

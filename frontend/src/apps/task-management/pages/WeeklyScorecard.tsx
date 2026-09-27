@@ -306,7 +306,7 @@ export default function WeeklyScorecard() {
               which excludes it. Without it the card would render 0 of 0. */}
           <ActualScoreBlock
             title="Peer tasks"
-            subtitle="Assigned by another HOD — not counted in the total above"
+            subtitle="Assigned by another HOD or Sub-HOD — not counted in the total above"
             tasks={peerTasks}
             role={role}
             assignee={selectedId}

@@ -297,6 +297,35 @@ export interface Requisition {
   expectedStartDate: string | null;
   positionsRequired: number;
 
+  /* ---- NR-7 · the numbers the HR Head sets while approving ---------------- */
+  /**
+   * CALENDAR days this position may take. Typed per position at HR approval —
+   * there is no per-role default and no master of TATs.
+   *
+   * The clock STARTS at {@link postedOn} (the business date HR typed; `postedAt`
+   * when that is null) and STOPS when the first offer is accepted. The position
+   * itself still CLOSES when the seats are joined: a different fact, on a
+   * different date, deliberately not this clock.
+   *
+   * Null means nobody has set it — "not set", never a failure.
+   */
+  targetCloseDays: number | null;
+  /**
+   * How many NEW CVs this position should gather, in TOTAL. Never multiplied by
+   * {@link positionsRequired} — a 5-seat MRF still carries one number.
+   *
+   * *New* means a person the hub has never seen: a {@link Candidate} with
+   * `isRepeat` false. Disqualified CVs still count — the number measures
+   * sourcing effort, which is the part HR controls.
+   */
+  cvTarget: number | null;
+  /** Minimum profiles shortlisted to the HOD. Seeded at 3; overridable. */
+  shortlistTarget: number;
+  /** Minimum candidates that must reach the director round. Seeded at 3. */
+  directorCvTarget: number;
+  targetsSetAt: string | null;
+  targetsSetBy: string | null;
+
   salaryMin: number | null;
   salaryMax: number | null;
   salaryStructure: SalaryStructure;
@@ -340,6 +369,13 @@ export interface Requisition {
   hrApprovedAt: string | null;
   hrApproverId: string | null;
   hrRemarks: string | null;
+  /**
+   * NR-8 / KPI 1A.1. When the RECRUITER picked this approved vacancy up — which
+   * is not `hrApprovedAt`, the HR Head's approval. The line allows one working
+   * day between the two. Null on every requisition raised before NR-8.
+   */
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
   mgmtApprovedAt: string | null;
   mgmtApproverId: string | null;
   mgmtRemarks: string | null;
@@ -456,6 +492,23 @@ export interface Candidate {
   parseStatus: ParseStatus;
   parsedJson: Record<string, unknown>;
 
+  /**
+   * NR-7. True when this person was ALREADY in the hub — on any requisition —
+   * at the moment this CV was added, matched on the file hash, the email or the
+   * phone. A repeat is never refused; it simply does not count toward the
+   * requisition's {@link Requisition.cvTarget}.
+   *
+   * Decided by `fms_hr_add_candidates` at insert time and stored. Never
+   * recompute it: a quarter of rows carry no email and no phone (FIX-5), so a
+   * later recomputation would quietly disagree with what HR was shown.
+   */
+  isRepeat: boolean;
+  repeatOfCandidateId: string | null;
+  /** Which signal matched — "the same email address", "the identical CV file", … */
+  repeatSignal: string | null;
+  /** The reason typed to add this CV despite a duplicate warning on this vacancy. */
+  duplicateAck: string | null;
+
   stage: CandidateStage;
 
   /** One authoritative timestamp per stage, stamped inside the RPC that moved the card. */
@@ -536,6 +589,18 @@ export interface Interview {
  */
 export type OfferStatus = "pending" | "accepted" | "declined" | "no_show";
 
+/**
+ * NR-8 / KPI 1A.6. `null` means nobody has started the verification — a normal
+ * state, and where every hire that predates NR-8 sits.
+ */
+export type BgvStatus = "pending" | "clear" | "discrepancy";
+
+export const BGV_LABEL: Record<BgvStatus, string> = {
+  pending: "In progress",
+  clear: "Clear",
+  discrepancy: "Discrepancy",
+};
+
 /** One onboarding per finalized candidate, created by the finalize move. */
 export interface Onboarding {
   id: string;
@@ -555,6 +620,39 @@ export interface Onboarding {
   employeeCode: string | null;
   employeeCodeAt: string | null;
   employeeCodeBy: string | null;
+
+  /**
+   * NR-10 / P0 — the Orange One account created for this hire during onboarding.
+   * The LINK, stored: matching a hire back to a person by name or employee code
+   * later is the trap. It is what lets the joiner write their own half of a
+   * probation check-in, and nothing else reads it yet.
+   */
+  employeeUserId: string | null;
+  employeeUserSetAt: string | null;
+  employeeUserSetBy: string | null;
+
+  /* ---- NR-8 ------------------------------------------------------------- */
+  /**
+   * Background verification — a RESULT, not a tick.
+   *
+   * `police_verification` remains an ordinary checklist item; this is the
+   * separate question KPI 1A.6 and the weekly report both ask, and a checklist
+   * item structurally cannot answer it: there is nowhere in a done/not-done box
+   * to say a verification came back **with a discrepancy**, which is the only
+   * state anybody has to act on.
+   */
+  bgvStatus: BgvStatus | null;
+  /** What the discrepancy was. The RPC insists on it for `discrepancy`. */
+  bgvNote: string | null;
+  bgvAt: string | null;
+  bgvBy: string | null;
+  /**
+   * The date the induction was held — a date, not a tick, because the weekly
+   * report's flag is "induction not done by **Day 15**" and a tick carries no
+   * date to test.
+   */
+  inductionOn: string | null;
+  inductionBy: string | null;
 
   /** They joined. Set only when the offer was accepted AND every item is done. */
   completedAt: string | null;
@@ -651,12 +749,165 @@ export interface Probation {
   permanentFrom: string | null;
   /** Captured on approval: the ID they are confirmed under. */
   employeeCode: string | null;
+  /**
+   * NR-10 / KPI 1C.7 — the confirmation letter, in `fms-hr-docs`.
+   *
+   * Null on a probation that was extended or not confirmed (neither gets one),
+   * AND on a confirmed one whose letter has not been produced — a real state,
+   * because issuing the letter must never be able to fail the confirmation.
+   */
+  letterPath: string | null;
+  letterName: string | null;
+  letterAt: string | null;
+  letterBy: string | null;
   /** When an 'extend' decision was last corrected. Distinct from updatedAt. */
   editedAt: string | null;
   editedBy: string | null;
 }
 
-/** One monthly review. Month 4 exists only after an extension. */
+/* ------------------------------ NR-9 · buddy ------------------------------ */
+
+export type BuddyStatus = "open" | "closed" | "extended" | "person_left";
+export type BuddyInteractionMode = "in_person" | "call" | "message" | "other";
+
+export const BUDDY_MODE_LABEL: Record<BuddyInteractionMode, string> = {
+  in_person: "In person",
+  call: "Call",
+  message: "Message",
+  other: "Other",
+};
+
+export const BUDDY_STATUS_LABEL: Record<BuddyStatus, string> = {
+  open: "Running",
+  extended: "Extended with probation",
+  closed: "Closed",
+  person_left: "Closed — person left",
+};
+
+/**
+ * One hire's buddy programme.
+ *
+ * The buddy is a CROSS-DEPARTMENTAL colleague, and that is enforced in the RPC
+ * rather than merely hidden in the picker — a picker that hides somebody is a
+ * suggestion, not a rule.
+ *
+ * Only HR is scored for this. Being a buddy carries no KPI line of its own,
+ * which the client decided knowingly: the only lever HR has is choosing a buddy
+ * who will actually turn up.
+ */
+export interface Buddy {
+  id: string;
+  onboardingId: string;
+  requisitionId: string;
+  candidateId: string;
+
+  buddyUserId: string;
+  allocatedAt: string;
+  allocatedBy: string | null;
+  /** The 24-hour allocation clock runs from the offer being ACCEPTED. */
+  offerAcceptedAt: string | null;
+
+  passportHandedAt: string | null;
+  passportHandedBy: string | null;
+  joiningDate: string | null;
+
+  /** How many interactions this programme owes. Defaulted to 8, per the sheet. */
+  interactionTarget: number;
+  /** Day 90 from joining, in calendar days. */
+  dueOn: string | null;
+
+  status: BuddyStatus;
+  closedAt: string | null;
+  closedBy: string | null;
+  closeNote: string | null;
+  extendedTo: string | null;
+
+  /** 1B.5 — the joiner's own rating, which scores at 4 of 5 or better. */
+  feedbackRating: number | null;
+  feedbackRemarks: string | null;
+  feedbackAt: string | null;
+}
+
+/**
+ * One logged meeting.
+ *
+ * ⚠ It counts toward the eight only once `confirmedAt` is set. The buddy logs
+ * it and HR confirms it — so an unconfirmed row is work owed on HR's side, not
+ * a completed interaction, and counting it would flatter the number HR is
+ * actually scored on.
+ */
+export interface BuddyInteraction {
+  id: string;
+  buddyId: string;
+  happenedOn: string;
+  mode: BuddyInteractionMode;
+  notes: string | null;
+  loggedAt: string;
+  loggedBy: string;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+}
+
+/* ---------------------------- NR-10 · check-ins --------------------------- */
+
+/** The five days a probation is checked in on. Calendar days from joining. */
+export type CheckinDay = 7 | 15 | 30 | 60 | 90;
+
+export const CHECKIN_DAYS: CheckinDay[] = [7, 15, 30, 60, 90];
+
+/** The head of department's verdict. */
+export type CheckinHodStatus = "satisfactory" | "needs_improvement" | "unsatisfactory";
+/** The new joiner's own answer, in their words rather than a manager's vocabulary. */
+export type CheckinJoinerStatus = "going_well" | "mixed" | "not_going_well";
+
+export const CHECKIN_HOD_LABEL: Record<CheckinHodStatus, string> = {
+  satisfactory: "Satisfactory",
+  needs_improvement: "Needs improvement",
+  unsatisfactory: "Unsatisfactory",
+};
+
+export const CHECKIN_JOINER_LABEL: Record<CheckinJoinerStatus, string> = {
+  going_well: "Going well",
+  mixed: "Mixed",
+  not_going_well: "Not going well",
+};
+
+/**
+ * One probation check-in — TWO-SIDED.
+ *
+ * The HOD writes one side and the new joiner writes the other, and it is not
+ * done until both are in ({@link completedAt}). HR writes neither: they chase
+ * them, and are scored on whether both arrived by {@link dueOn}.
+ *
+ * Rows are seeded when the probation opens, so all five exist — and are visible
+ * as *not yet due* — from day one.
+ */
+export interface ProbationCheckin {
+  id: string;
+  probationId: string;
+  dayNo: CheckinDay;
+  /** Joining date + dayNo, in CALENDAR days. Stamped in SQL, never recomputed here. */
+  dueOn: string;
+
+  hodStatus: CheckinHodStatus | null;
+  hodRemarks: string | null;
+  hodAt: string | null;
+  hodBy: string | null;
+  filePath: string | null;
+  fileName: string | null;
+
+  joinerStatus: CheckinJoinerStatus | null;
+  joinerRemarks: string | null;
+  joinerAt: string | null;
+  joinerBy: string | null;
+
+  /** Stamped when the SECOND side lands, and never re-dated by a later edit. */
+  completedAt: string | null;
+}
+
+/** ⚠ RETIRED by NR-10 and never written again — see {@link ProbationCheckin}.
+ *  The type and the table survive because the monthly rows would otherwise lose
+ *  their meaning; there have never been any. */
 export interface ProbationReview {
   id: string;
   probationId: string;

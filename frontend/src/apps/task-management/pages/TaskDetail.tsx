@@ -174,7 +174,7 @@ export default function TaskDetail() {
             )}
             {task.isPeerAssignment && (
               <span
-                title="Assigned by another HOD — scored on the Peer Tasks board, not in your own weekly score."
+                title="Assigned by another HOD or Sub-HOD — scored on the Peer Tasks board, not in your own weekly score."
                 className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-[#5b52c9] bg-[#EEECFB] rounded-pill px-2 py-1"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><polyline points="8 7 17 7 17 16" /></svg>

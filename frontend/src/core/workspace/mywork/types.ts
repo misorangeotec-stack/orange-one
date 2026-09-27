@@ -51,6 +51,35 @@ export interface WorkItem {
   assignment: "direct" | "team";
   /** True when the row is waiting on this user's approval decision. */
   isApproval?: boolean;
+  /**
+   * True when the entity is ON HOLD — parked by someone with the right to hold it,
+   * and therefore nobody's work TODAY.
+   *
+   * Held rows are still returned, deliberately. Before this flag existed the two
+   * hold designs in the codebase disagreed on this screen: modules where hold is a
+   * top-level status (`openStep()` returns null for `on_hold`) dropped the row
+   * entirely, so parked work became invisible and untrackable, while Purchase and
+   * Import — where hold sits on the LINE and the request stays at `approval` —
+   * kept reporting it as overdue. Neither is right: the work exists, but it is not
+   * owed today.
+   *
+   * So a held row travels with `isHeld`, keeps its original `dueIso` (what it WAS
+   * due, which is worth seeing), and is bucketed to `hold` instead of a due bucket
+   * by `holdAwareBucketOf`. It is never counted in Overdue / Due today / Next 2
+   * days / No date, and the ranking drops it as `held` so it scores against nobody.
+   */
+  isHeld?: boolean;
+  /**
+   * What to call this row's parked state on the chip. Defaults to "On hold".
+   *
+   * Not every parked row is held. Order to Dispatch also parks an order that is
+   * waiting on the balance of a PARTIAL credit approval — it is not owed as a
+   * normal due item either, but calling it "On hold" would be a different fact
+   * about the order and would send its owner looking for a hold that nobody set.
+   */
+  holdLabel?: string | null;
+  /** Why it is parked, when the module records a reason. Shown beside the chip. */
+  holdReason?: string | null;
 }
 
 export interface MyWorkResult {

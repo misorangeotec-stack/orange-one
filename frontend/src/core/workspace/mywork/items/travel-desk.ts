@@ -26,7 +26,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { TravelData } from "@/apps/travel-desk/data/travelFetch";
-import { buildQueueEntries, type QueueEntry } from "@/apps/travel-desk/lib/queues";
+import { buildHeldEntries, buildQueueEntries, type QueueEntry } from "@/apps/travel-desk/lib/queues";
 import { resolveStepSla } from "@/apps/travel-desk/lib/sla";
 import { stepByKey } from "@/apps/travel-desk/lib/steps";
 import { stepOwnerIdsFor, type StepOwnerRow } from "@/shared/lib/fmsOwners";
@@ -78,9 +78,18 @@ export function travelDeskWorkItems(data: TravelData, uid: string, isAdmin: bool
     return stepOwnerIdsFor(e.stepKey, stepOwners).includes(uid);
   };
 
-  return buildQueueEntries(data.trips, stepSla)
-    .filter((e) => isAdmin || isMine(e))
-    .map((e) => ({
+  const reasonByTrip = new Map(data.trips.map((t) => [t.id, t.holdReason]));
+
+  // Held trips are listed, flagged, at the step they are parked at — see
+  // ./officeSupplies.ts for why they are added back rather than dropped.
+  const entries = [
+    ...buildQueueEntries(data.trips, stepSla).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(data.trips, stepSla).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
+    .filter(({ e }) => isAdmin || isMine(e))
+    .map(({ e, held }) => ({
       id: `travel-desk:${e.entityId}:${e.stepKey}`,
       source: "travel-desk",
       sourceLabel: appName("travel-desk"),
@@ -103,5 +112,6 @@ export function travelDeskWorkItems(data: TravelData, uid: string, isAdmin: bool
           ? ("direct" as const)
           : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
+      ...(held ? { isHeld: true, holdReason: reasonByTrip.get(e.tripId) ?? null } : {}),
     }));
 }

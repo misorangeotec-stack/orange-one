@@ -44,9 +44,10 @@ export default function Dashboard() {
   // (weekStart = this Monday, the same boundary the RYG sections use); "all
   // time" keeps the full backlog. Every card + the donut read the scoped list.
   const scopedList = scopeTasks(list, scope);
-  // ...or to a peer HOD. Four HODs have no downline at all, so without the peer
-  // arm the New Task button stays hidden from exactly the people TM-1 is for.
-  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || (role === "hod" && peerAssignableUsers(user.id).length > 0));
+  // ...or to a peer HOD/Sub-HOD. Four HODs have no downline at all, so without
+  // the peer arm the New Task button stays hidden from exactly the people TM-1
+  // is for.
+  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || ((role === "hod" || role === "sub_hod") && peerAssignableUsers(user.id).length > 0));
   // countsTowardWorkload, not the default: these cards are a WORKLIST, so a peer
   // task the viewer has been handed must still read as due today / overdue. It is
   // scored on the peer board, but it is still work somebody owes today.

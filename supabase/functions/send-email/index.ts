@@ -244,6 +244,8 @@ const PAGE = "#F6F9FD";
 const LINE = "#E9EEF6";
 const GREY = "#64748B";
 const GREY2 = "#8A99B0";
+/** The hold tile's colour, matching the screen's teal (vite.config.ts `teal`). */
+const TEAL = "#2EC4B6";
 const FONT = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /** Initials for the actor avatar (first + last word). */
@@ -1040,9 +1042,11 @@ async function compose(row: Row): Promise<Composed | null> {
     const dueToday = num(tl.dueToday);
     const next2 = num(tl.next2);
     const noDate = num(tl.noDate);
+    const hold = num(tl.hold);
 
+    // Five tiles now, so the fixed width is a fifth rather than a quarter.
     const tile = (label: string, value: string, color: string, sub = "") => `
-      <td width="25%" style="padding:0 3px;">
+      <td width="20%" style="padding:0 3px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAGE};border:1px solid ${LINE};border-radius:11px;">
           <tr><td align="center" style="padding:12px 4px;font-family:${FONT};">
             <div style="font-size:23px;font-weight:800;color:${color};line-height:1.1;">${esc(value)}</div>
@@ -1053,12 +1057,18 @@ async function compose(row: Row): Promise<Composed | null> {
       </td>`;
 
     /**
-     * The four tiles, in the screen's order and with the screen's labels
-     * (MyWorkToday.tsx:90-95). They were suppressed while this mail could only
+     * The tiles, in the screen's order and with the screen's labels
+     * (MyWorkToday.tsx `TILES`). They were suppressed while this mail could only
      * count one module — a tile reading "6 overdue" beside a dashboard reading
      * "11 overdue" is worse than no tile, because the reader trusts whichever
      * they saw last. Now that every wired module is counted by the screen's own
-     * code, the same four numbers are the same four numbers.
+     * code, the same numbers are the same numbers.
+     *
+     * ON HOLD / PARTIAL is the fifth, and it is here for that same reason: the
+     * screen stopped counting parked work as due, so a mail that still did would
+     * be exactly the disagreement this block exists to prevent. It is NOT part of
+     * the total — nothing on it is owed today — which is why it comes last and in
+     * teal rather than red or amber.
      *
      * ⚠ Only restore a tile when the payload genuinely covers every module the
      * reader holds. If `snapshot.uncounted` is ever non-empty these totals are a
@@ -1069,6 +1079,7 @@ async function compose(row: Row): Promise<Composed | null> {
       ${tile("Due today", String(dueToday), dueToday > 0 ? AMBER : GREY, "Needs closing today")}
       ${tile("Next 2 days", String(next2), next2 > 0 ? NAVY : GREY, "Tomorrow + day after")}
       ${tile("No date set", String(noDate), noDate > 0 ? GREY : GREY, "Untimed work")}
+      ${tile("On hold / Partial", String(hold), hold > 0 ? TEAL : GREY, "Parked — not due")}
     </tr></table>`;
 
     const th2 = (label: string, align = "right") =>
@@ -1196,7 +1207,7 @@ async function compose(row: Row): Promise<Composed | null> {
         footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; your personal daily snapshot.<br>You are receiving this because you have a login. Overdue counts tasks past their due date as of today, India time.`,
       }),
       text: `Your Orange One snapshot${dateLabel ? `, ${dateLabel}` : ""}\n\n`
-        + `Overdue ${overdue} | Due today ${dueToday} | Next 2 days ${next2} | No date ${noDate}\n\n`
+        + `Overdue ${overdue} | Due today ${dueToday} | Next 2 days ${next2} | No date ${noDate} | On hold/Partial ${hold}\n\n`
         + (sources.length
             ? sources.map((s) =>
                 `- ${str(s.module)}: ${num(s.items)} items, ${num(s.overdue)} overdue`).join("\n")

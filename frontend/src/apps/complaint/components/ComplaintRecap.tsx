@@ -7,6 +7,7 @@ import {
   invoiceLabelOf,
   lotLabelOf,
   partyLabelOf,
+  rmOriginLabelOf,
 } from "../lib/format";
 import { COMPLAINT_TYPE_LABEL, type ComplaintRequest } from "../types";
 
@@ -118,6 +119,9 @@ export default function ComplaintRecap({ r }: { r: ComplaintRequest }) {
     <div className="space-y-3">
       <Panel title={`${r.complaintNo} · ${COMPLAINT_TYPE_LABEL[t]}`}>
         <Cell label={partyLabelOf(t)} value={r.partyName} />
+        {/* Domestic / Import. Dropped on a finished-good complaint by `Cell`,
+            which renders nothing for "—" — there is no such thing to show. */}
+        <Cell label="Type" value={rmOriginLabelOf(r.rmOrigin)} />
         <Cell label="Company" value={s.companyName(r.companyId)} />
         <Cell label={lotLabelOf(t)} value={r.lotNo} />
         <Cell label="LOT expiry" value={r.lotExpiryDate ? dmy(r.lotExpiryDate) : null} />
@@ -176,8 +180,48 @@ export default function ComplaintRecap({ r }: { r: ComplaintRequest }) {
         </Panel>
       )}
 
+      {r.purAt && (
+        <Panel title="Purchase department">
+          <Cell label="Purchase remarks" value={r.purRemarks} wide />
+          <Cell label="Recorded" value={`${s.personName(r.purBy)} · ${formatDateTime(r.purAt)}`} wide />
+        </Panel>
+      )}
+
+      {r.rmAssignedAt && (
+        <Panel title="Assigned by management" tone="border-violet-200 bg-violet-50">
+          {/* THE FROZEN NAME, not a fresh lookup — see types/index.ts. The live
+              directory is the fallback for a row assigned before the name column
+              was written, which no live row can be, but costs nothing. */}
+          <Cell label="Assigned to" value={r.rmAssigneeName ?? s.personName(r.rmAssigneeId)} />
+          <Cell
+            label="Assigned"
+            value={`${s.personName(r.rmAssignedBy)} · ${formatDateTime(r.rmAssignedAt)}`}
+          />
+          <Cell label="What they were asked" value={r.rmAssignNote} wide />
+        </Panel>
+      )}
+
+      {r.asgAt && (
+        <Panel title={`Response from ${r.rmAssigneeName ?? s.personName(r.asgBy)}`}>
+          <Cell label="Remarks" value={r.asgRemarks} wide />
+          <Cell label="Recorded" value={`${s.personName(r.asgBy)} · ${formatDateTime(r.asgAt)}`} wide />
+        </Panel>
+      )}
+
       {r.mgmtAt && (
-        <Panel title="Management review" tone="border-emerald-200 bg-emerald-50">
+        <Panel
+          title={
+            // ⚠ ONE SET OF COLUMNS, TWO STEPS. `rm_management` closing a
+            //   complaint and `management_review` signing one off both stamp
+            //   mgmt_*, because they are the same act recorded by the same
+            //   fields. An imported complaint that was never assigned and never
+            //   went through purchase was closed by management themselves.
+            r.rmOrigin === "import" && !r.rmAssignedAt && !r.purAt
+              ? "Closed by management"
+              : "Management review"
+          }
+          tone="border-emerald-200 bg-emerald-50"
+        >
           <Cell label="Note" value={r.mgmtNote} wide />
           <Cell label="Reviewed" value={`${s.personName(r.mgmtBy)} · ${formatDateTime(r.mgmtAt)}`} wide />
         </Panel>

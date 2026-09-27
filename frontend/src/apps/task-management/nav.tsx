@@ -67,8 +67,8 @@ export function buildTaskNav(opts: { unreadCount: number }): NavItem[] {
   { label: "Notifications", to: `${B}/notifications`, icon: ic.notifications, badge: opts.unreadCount || undefined },
   { label: "Team Tasks", to: `${B}/team`, icon: ic.team, roles: ["hod", "sub_hod"] },
   { label: "All Tasks", to: `${B}/all`, icon: ic.all, roles: ["admin"] },
-  // TM-1. Sub-HODs are kept here deliberately: the peer PICKER is HODs only, but
-  // a HOD who is also somebody's sub-HOD must still be able to read the board.
+  // TM-1. Admins are kept here to read the board only — they never get the peer
+  // picker, because an admin assigning to a HOD is ordinary downward work.
   { label: "Peer Tasks", to: `${B}/peer`, icon: ic.peer, roles: ["admin", "hod", "sub_hod"] },
   { label: "Recurring", to: `${B}/recurring`, icon: ic.recurring, roles: ["admin", "hod", "sub_hod"], section: "Manage" },
   { label: "Weekly Scorecard", to: `${B}/scorecard`, icon: ic.scorecard },

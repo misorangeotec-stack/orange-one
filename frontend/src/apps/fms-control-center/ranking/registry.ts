@@ -16,6 +16,7 @@ import type { AnyScorer } from "./types";
 import { assetMaintenanceScorer } from "./modules/assetMaintenance";
 import { hrRecruitmentScorer } from "./modules/hrRecruitment";
 import { importScorer } from "./modules/import";
+import { learningDevelopmentScorer } from "./modules/learningDevelopment";
 import { ocpiScorer } from "./modules/ocpi";
 import { officeSuppliesScorer } from "./modules/officeSupplies";
 import { orderToDispatchScorer } from "./modules/orderToDispatch";
@@ -36,6 +37,7 @@ export const RANKED_MODULES: Record<string, AnyScorer> = {
   "order-to-dispatch": orderToDispatchScorer,
   "asset-maintenance": assetMaintenanceScorer,
   ocpi: ocpiScorer,
+  "learning-development": learningDevelopmentScorer,
 };
 
 /**

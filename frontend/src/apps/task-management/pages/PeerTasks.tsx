@@ -18,7 +18,8 @@ import type { Task } from "../types";
 type View = "received" | "given" | "all";
 
 /**
- * Peer Tasks (TM-1) — the one-off work HODs hand SIDEWAYS to each other.
+ * Peer Tasks (TM-1) — the one-off work HODs and Sub-HODs hand SIDEWAYS to each
+ * other.
  *
  * Why this screen exists at all: a peer task is nearly invisible to the person
  * who gave it. Team Tasks filters on assignedTo in [self, ...downline], and a
@@ -107,9 +108,9 @@ export default function PeerTasks() {
 
   const blurb =
     view === "given"
-      ? "One-off tasks you have handed to another HOD."
+      ? "One-off tasks you have handed to another HOD or Sub-HOD."
       : view === "received"
-        ? "One-off tasks another HOD has handed you. Scored here, not in your own weekly score."
+        ? "One-off tasks another HOD or Sub-HOD has handed you. Scored here, not in your own weekly score."
         : "Every HOD-to-HOD task in the company.";
 
   return (
@@ -158,8 +159,8 @@ export default function PeerTasks() {
           }
           message={
             view === "given"
-              ? "Create a task and pick someone from the Other HODs group to assign work sideways."
-              : "When another HOD assigns you a one-off task it appears here, and in My Tasks with a Peer badge."
+              ? "Create a task and pick someone from the HODs & Sub-HODs group to assign work sideways."
+              : "When another HOD or Sub-HOD assigns you a one-off task it appears here, and in My Tasks with a Peer badge."
           }
         />
       ) : (
