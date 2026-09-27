@@ -22,7 +22,7 @@ import { useLocation } from "react-router-dom";
 import { currentAppId } from "@/apps/currentApp";
 
 /** Modules whose tables have the look. The last phase of PF-20 deletes this list. */
-export const TABLE_LOOK_ON: readonly string[] = ["kra-kpi", "order-to-dispatch", "procurement", "import", "production-entry", "sampling"];
+export const TABLE_LOOK_ON: readonly string[] = ["kra-kpi", "order-to-dispatch", "procurement", "import", "production-entry", "sampling", "hr-recruitment"];
 
 /**
  * Modules that get the DRAG ONLY — no one-line rows, no cut text, nothing moved.

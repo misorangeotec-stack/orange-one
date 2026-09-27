@@ -5,6 +5,9 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useHrStore } from "../../store";
 import { STEPS, isHodStep, type StepKey } from "../../lib/steps";
 
@@ -34,6 +37,8 @@ import { STEPS, isHodStep, type StepKey } from "../../lib/steps";
  */
 export default function StepOwnersSection() {
   const s = useHrStore();
+  /** PF-20: one line per row, a long owner list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["step", "owners"]);
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
@@ -118,7 +123,7 @@ export default function StepOwnersSection() {
                 <th className="font-medium px-4 py-3">Owners</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {STEPS.map((st) => {
                 const hod = isHodStep(st.key);
                 const owner = s.stepOwnerFor(st.key);
@@ -143,6 +148,7 @@ export default function StepOwnersSection() {
                     <td className="px-4 py-3 text-grey-2">{st.index}</td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{st.title}</td>
                     <td className="px-4 py-3">
+                      <FitCell fit={fit} col="owners" cap={FIT.CUT}>
                       {/* A HOD step always names the hiring manager first, because that is
                           true whether or not anybody is listed. Anyone named is shown as an
                           addition, never as a replacement. (The old copy here claimed Round 2
@@ -162,6 +168,7 @@ export default function StepOwnersSection() {
                       ) : (
                         <span className="text-grey-2">Unassigned</span>
                       )}
+                      </FitCell>
                     </td>
                   </tr>
                 );
