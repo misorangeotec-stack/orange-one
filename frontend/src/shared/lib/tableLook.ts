@@ -22,7 +22,15 @@ import { useLocation } from "react-router-dom";
 import { currentAppId } from "@/apps/currentApp";
 
 /** Modules whose tables have the look. The last phase of PF-20 deletes this list. */
-export const TABLE_LOOK_ON: readonly string[] = ["kra-kpi", "order-to-dispatch", "procurement", "import", "production-entry", "sampling", "hr-recruitment", "travel-desk"];
+export const TABLE_LOOK_ON: readonly string[] = [
+  "kra-kpi", "order-to-dispatch", "procurement", "import", "production-entry", "sampling",
+  "hr-recruitment", "travel-desk",
+  // The small ones, switched on together (PF-20 item 14): one to four screens each, so a round
+  // apiece would have been eight rounds of the user checking one screen. Daily Report belongs
+  // with these and is held back only because another session is mid-change in it.
+  "fms-control-center", "master-report", "process-coordinator", "leads-dashboard",
+  "customer-orders", "bushra-central-master",
+];
 
 /**
  * Modules that get the DRAG ONLY — no one-line rows, no cut text, nothing moved.
