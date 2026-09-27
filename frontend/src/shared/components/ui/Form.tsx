@@ -20,8 +20,17 @@ export function FieldLabel({ label, required, hint, anchor, strong, children }: 
   return (
     <label id={anchor} className={anchor ? "block scroll-mt-24" : "block"}>
       {/* Baseline-aligned with the label pinned: a hint long enough to wrap used to
-          vertically re-centre the label and collide with it. */}
-      <span className="flex items-baseline justify-between gap-3 mb-1.5">
+          vertically re-centre the label and collide with it.
+
+          ⚠ AND IT WRAPS, because pinning the label alone was not enough. `shrink-0`
+            stops the LABEL being squeezed, which pushed the squeeze onto the hint
+            instead: beside a long label like "Did the customer provide any of this?"
+            the hint was crushed to a two-character column, spilled one word per line
+            down the page and landed on top of the next field. `basis-40` says the hint
+            would like 10rem, and `flex-wrap` drops it onto its own full-width line when
+            it cannot have that. A row that fits today is unchanged — the hint simply
+            grows into the space it already had. */}
+      <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-1.5">
         {/* `strong` is opt-in and defaults OFF, so the ~200 existing call sites
             across every app are untouched. Complaint uses it because its form is
             read as a list of questions rather than a dense entry grid. */}
@@ -29,7 +38,9 @@ export function FieldLabel({ label, required, hint, anchor, strong, children }: 
           {label}
           {required && <span className="text-orange"> *</span>}
         </span>
-        {hint && <span className="text-[11px] text-grey-2 text-right leading-snug min-w-0">{hint}</span>}
+        {hint && (
+          <span className="text-[11px] text-grey-2 text-right leading-snug min-w-0 grow basis-40">{hint}</span>
+        )}
       </span>
       {children}
     </label>

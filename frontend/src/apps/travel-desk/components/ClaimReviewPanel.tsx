@@ -12,11 +12,11 @@ import type { Trip } from "../types";
 /**
  * The reporting manager's decision on a filed claim.
  *
- * ⚠ THE REVIEWER IS NOT ASKED TO CHECK THE ARITHMETIC. Every cap in §7, §9, §10
- *   and §15 has already been applied by the engine, and each line already
+ * ⚠ THE REVIEWER IS NOT ASKED TO CHECK THE ARITHMETIC. Every cap in Section 7, Section 9, Section 10
+ *   and Section 15 has already been applied by the engine, and each line already
  *   carries the sentence saying which rule bit. What a human is here for is the
  *   judgement no rule can make — was the journey necessary, is the business
- *   meal plausible, does the §7.3 exception actually hold. So this screen leads
+ *   meal plausible, does the Section 7.3 exception actually hold. So this screen leads
  *   with what was disallowed and why, rather than with a form to re-add columns.
  *
  * ⚠ A RETURN CLEARS `cl_at` SERVER-SIDE, which is what puts the trip back on the
@@ -188,7 +188,7 @@ export default function ClaimReviewPanel({ trip }: { trip: Trip }) {
           <div className="mt-3">
             <FieldLabel
               label="Note"
-              hint="Required to send it back — a claim returned without a reason leaves nothing to act on"
+              hint="Required to send it back"
             >
               <TextArea
                 rows={3}

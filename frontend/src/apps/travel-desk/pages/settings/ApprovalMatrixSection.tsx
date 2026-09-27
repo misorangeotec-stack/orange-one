@@ -6,9 +6,9 @@ import { useDirectory } from "@/core/platform/store";
 import { useTravelStore } from "../../store";
 
 /**
- * Which bands need which approvals (§3.2).
+ * Which bands need which approvals (Section 3.2).
  *
- * ⚠ THIS SCREEN EXISTS BECAUSE THE POLICY LEFT A QUESTION OPEN. §3.2 sends
+ * ⚠ THIS SCREEN EXISTS BECAUSE THE POLICY LEFT A QUESTION OPEN. Section 3.2 sends
  *   bands 6–9 to a Director and then writes, in the document itself,
  *   "[⚠ CONFIRM if HOD is also needed]" for bands 6–8. That is H1's smaller
  *   sibling, H10: nobody has answered it, and the answer changes who signs off
@@ -17,7 +17,7 @@ import { useTravelStore } from "../../store";
  *   answering it the other way is a setting rather than a deploy.
  *
  * ⚠ IT ROUTES ON THE BAND NUMBER, NOT THE TRAVEL CATEGORY. That is deliberate
- *   and it de-risks the whole approval chain: §3.2 is unambiguous about band
+ *   and it de-risks the whole approval chain: Section 3.2 is unambiguous about band
  *   numbers even though the band → category mapping is still disputed for bands
  *   3 and 8 (H1). Nothing on this screen waits on that answer.
  *
@@ -89,12 +89,12 @@ export default function ApprovalMatrixSection() {
     <Card className="p-4">
       <h2 className="text-[15px] font-bold text-navy">Approval matrix</h2>
       <p className="mt-1 max-w-3xl text-[13px] text-grey-2">
-        Which bands need a Director as well as their reporting manager. Policy §3.2 sets the
+        Which bands need a Director as well as their reporting manager. Policy Section 3.2 sets the
         threshold and then leaves the second question open for bands 6–8.
       </p>
 
       <div className="mt-4 grid max-w-2xl gap-4 sm:grid-cols-2">
-        <FieldLabel label="A Director is needed from band" hint="§3.2 says 6">
+        <FieldLabel label="A Director is needed from band" hint="Policy says 6">
           <TextInput
             type="number"
             min={1}

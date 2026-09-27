@@ -12,7 +12,7 @@ import type { Trip } from "../../types";
 /**
  * Journeys that have happened and not yet been claimed for.
  *
- * ⚠ THE DUE DATE COMES FROM THE RETURN DATE, NOT FROM THE BOOKING. §11.1 gives
+ * ⚠ THE DUE DATE COMES FROM THE RETURN DATE, NOT FROM THE BOOKING. Section 11.1 gives
  *   five working days from return, and the journey ending is not a step anybody
  *   completes — so `ANCHOR_AT` reads `actualReturnDate ?? plannedReturnDate`
  *   directly. A trip whose return is still in the future therefore gets a FUTURE
@@ -21,7 +21,7 @@ import type { Trip } from "../../types";
  *
  * ⚠ A CANCELLED TRIP CAN BE IN HERE, AND IT SHOULD BE. `cancelled_pending_claim`
  *   is a journey that did not happen and money that did — a cancellation charge
- *   §4.1 makes reimbursable, or an advance that has to come back. Routing it
+ *   Section 4.1 makes reimbursable, or an advance that has to come back. Routing it
  *   straight to `cancelled` would take both out of every queue in the module.
  *
  * ⚠ THIS QUEUE IS OWED BY THE TRAVELLER, not by a desk. Everyone can see it —
@@ -152,7 +152,7 @@ export default function ClaimQueue() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Expense claims</h1>
         <p className="text-[13px] text-grey">
-          Journeys waiting to be claimed for. §11.1 allows five working days from the return date,
+          Journeys waiting to be claimed for. Section 11.1 allows five working days from the return date,
           which is what the due column counts from — not from when the trip was booked.
         </p>
       </div>

@@ -8,7 +8,7 @@ import { stepCompletedIso } from "../../lib/queues";
 import type { Trip } from "../../types";
 
 /**
- * How long each step actually takes, against what §12 promised.
+ * How long each step actually takes, against what Section 12 promised.
  *
  * ⚠ MEASURED ON WORK THAT FINISHED, NOT ON WORK OUTSTANDING. A step still open
  *   has no duration yet, and counting it as zero would make a jammed queue look
@@ -27,7 +27,7 @@ import type { Trip } from "../../types";
  *
  * ⚠ IT DOES NOT NAME INDIVIDUALS. The dimension is the STEP, not the person who
  *   actioned it. A per-approver league table is a different thing with different
- *   consequences, and §12.1 puts escalation in HR's hands rather than in a
+ *   consequences, and Section 12.1 puts escalation in HR's hands rather than in a
  *   dashboard.
  */
 
@@ -127,7 +127,7 @@ export default function DeskPerformance() {
       key: "cycle",
       label: "Return to settled",
       value: median(cycles) === null ? "—" : `${median(cycles)} days`,
-      hint: "Median, calendar days. §12 promises 14 WORKING days",
+      hint: "Median, calendar days. Section 12 promises 14 WORKING days",
     },
     {
       key: "cancelled",
@@ -247,7 +247,7 @@ export default function DeskPerformance() {
         <p className="text-[13px] text-grey">
           How long each step took, on work that has finished. Durations are{" "}
           <strong>calendar days</strong> — a claim that sat over a weekend really did take three
-          days — while the targets from §12 are working days, so the last column is a reading rather
+          days — while the targets from Section 12 are working days, so the last column is a reading rather
           than a measurement.
         </p>
       </div>
@@ -270,7 +270,7 @@ export default function DeskPerformance() {
       <Card className="p-4">
         <div className="text-[13px] font-semibold text-navy">Why there is no per-person table</div>
         <p className="mt-1 text-[12.5px] text-grey-2">
-          The dimension here is the step, not whoever actioned it. §12.1 puts a slow approval in
+          The dimension here is the step, not whoever actioned it. Section 12.1 puts a slow approval in
           HR&rsquo;s hands to escalate, which is a conversation; a league table of approvers is a
           different instrument with different consequences, and it is not what the policy asked for.
         </p>

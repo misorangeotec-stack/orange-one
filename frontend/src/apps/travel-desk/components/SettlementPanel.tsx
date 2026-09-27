@@ -18,7 +18,7 @@ import type { Trip } from "../types";
  *   nobody can tie to a bank statement, and because a user asked to type a minus
  *   sign will eventually forget it.
  *
- * ⚠ RECORDING A RECOVERY IS WHAT CLEARS §11.2. The RPC credits
+ * ⚠ RECORDING A RECOVERY IS WHAT CLEARS Section 11.2. The RPC credits
  *   `advance_recovered_amount`, which is the column `outstanding_advance` and
  *   the Employee Exit `travel_advance` clearance row both read. Settling without
  *   it would close the trip while the ledger still said the money was out.
@@ -153,7 +153,7 @@ export default function SettlementPanel({ trip }: { trip: Trip }) {
         {recovering && (
           <p className="mt-2 text-[11.5px] text-grey-2">
             The advance was larger than the claim and the allowance together, so this money comes
-            back. Recording it here is what clears the §11.2 block on the traveller&rsquo;s next
+            back. Recording it here is what clears the Section 11.2 block on the traveller&rsquo;s next
             advance.
           </p>
         )}
@@ -172,7 +172,7 @@ export default function SettlementPanel({ trip }: { trip: Trip }) {
               <FieldLabel
                 label={recovering ? "Amount recovered" : "Amount paid"}
                 required
-                hint="A positive figure — the claim decides which way it went"
+                hint="A positive figure"
               >
                 <TextInput
                   inputMode="decimal"

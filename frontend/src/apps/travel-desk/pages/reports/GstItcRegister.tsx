@@ -12,7 +12,7 @@ import type { ClaimLine, Trip } from "../../types";
  * The GST input credit sitting inside travel claims.
  *
  * ⚠ THIS IS MONEY CURRENTLY LEFT ON THE TABLE, and it is not in the source PRD.
- *   §11.3 wants vendor invoices in the company's name so the input credit can be
+ *   Section 11.3 wants vendor invoices in the company's name so the input credit can be
  *   claimed; nothing in the business has ever been able to list what that credit
  *   came to, so nobody claims it. Every rupee in the "Credit claimable" tile is
  *   real money the company is entitled to and has not been asking for.
@@ -29,7 +29,7 @@ import type { ClaimLine, Trip } from "../../types";
  *   overstating the credit.
  *
  * ⚠ H8 — THE COMPANY GSTIN IS STILL UNKNOWN, and the screen says so rather than
- *   printing a placeholder. §7.1 and §11.3 both carry it as "[⚠ CONFIRM with
+ *   printing a placeholder. Section 7.1 and Section 11.3 both carry it as "[⚠ CONFIRM with
  *   Finance]". Without it, hotels are billing employees personally and the
  *   credit is lost at source, which is a bigger number than anything below.
  */
@@ -226,7 +226,7 @@ export default function GstItcRegister() {
         <h1 className="text-[19px] font-bold text-navy">GST input credit register</h1>
         <p className="text-[13px] text-grey">
           Every travel invoice carrying tax, and what of it the company can actually claim back
-          (§11.3). The tax is apportioned to the share of the line that was settled — claiming the
+          (Section 11.3). The tax is apportioned to the share of the line that was settled — claiming the
           whole of it on a partly disallowed bill would overstate the credit.
         </p>
       </div>
@@ -239,7 +239,7 @@ export default function GstItcRegister() {
             The company GSTIN is not recorded (H8)
           </div>
           <p className="mt-1 text-[12.5px] text-grey-2">
-            §7.1 and §11.3 both carry it as <em>&ldquo;[⚠ CONFIRM with Finance]&rdquo;</em>. Until
+            Section 7.1 and Section 11.3 both carry it as <em>&ldquo;[⚠ CONFIRM with Finance]&rdquo;</em>. Until
             it is set in Settings, the Travel Authorisation cannot tell travellers what number to
             give a hotel — so invoices are being raised in the employee&rsquo;s name and the credit
             is lost before it reaches this register. That is a larger figure than anything in the

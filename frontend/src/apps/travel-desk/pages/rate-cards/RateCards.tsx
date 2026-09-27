@@ -90,7 +90,7 @@ export default function RateCards() {
         await s.setRate(editing.id, { textValue: draftValue.trim() || null });
       } else {
         const t = draftValue.trim();
-        // An EMPTY cell is a real answer for a cap: §10 gives TC-A "no cap,
+        // An EMPTY cell is a real answer for a cap: Section 10 gives TC-A "no cap,
         // actuals with a receipt". So blank means uncapped, not unset.
         const n = t === "" ? null : Number(t);
         if (t !== "" && !Number.isFinite(n)) throw new Error("That is not a number.");

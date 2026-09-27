@@ -155,13 +155,13 @@ export default function TripDetail() {
       </div>
 
       {/*
-        §3.5's consequence, stated on the trip rather than left in an activity
+        Section 3.5's consequence, stated on the trip rather than left in an activity
         row. The downgrade happened at submit; anyone reading the caps later
         would otherwise take TC-D for this person's ordinary entitlement.
       */}
       {trip.tcDowngradedFrom && (
         <div className="rounded-xl bg-[#FFF7E6] px-4 py-3 text-[12.5px] text-navy">
-          <strong>Reimbursed at TC-D under §3.5.</strong> This trip was put on record more than{" "}
+          <strong>Reimbursed at TC-D under Section 3.5.</strong> This trip was put on record more than{" "}
           {s.config.policy.emergencyWindowHours} hours after departure, so it was reduced from{" "}
           {trip.tcDowngradedFrom}. Every figure below is the reduced one.
         </div>
@@ -215,7 +215,7 @@ export default function TripDetail() {
           approve button beside an editable amount.
 
         ⚠ THE CLAIM PANEL ALSO SHOWS FOR A CANCELLED TRIP. `cancelled_pending_claim`
-          is a journey that did not happen and money that did — a §4.1
+          is a journey that did not happen and money that did — a Section 4.1
           cancellation charge, or an advance to hand back.
       */}
       {(trip.status === "booked" || trip.status === "cancelled_pending_claim") && (
@@ -283,7 +283,7 @@ export default function TripDetail() {
               {trip.isEmergency && (
                 <div className="sm:col-span-2">
                   <Field
-                    label="Emergency travel (§3.5)"
+                    label="Emergency travel (Section 3.5)"
                     value={trip.emergencyReason ?? "No reason recorded"}
                     emphasis="quiet"
                   />

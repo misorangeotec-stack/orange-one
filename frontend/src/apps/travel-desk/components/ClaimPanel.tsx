@@ -32,7 +32,7 @@ import type { Trip, ClaimLine, ClaimLineInput, ClaimPreview, ActualTravelInput }
  * ⚠ CAPS APPEAR WHILE TYPING, NOT AFTER SAVING. That is the entire point of the
  *   live preview: somebody who learns at submit time that ₹1,000 of their hotel
  *   bill is disallowed has already had the argument with the hotel. Learning it
- *   as they type lets them attach the §7.3 evidence instead.
+ *   as they type lets them attach the Section 7.3 evidence instead.
  */
 
 const uid = (): string => Math.random().toString(36).slice(2, 10);
@@ -144,7 +144,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
    * How many nights the BOOKINGS say this trip stayed.
    *
    * ⚠ A BLANK `nights` PRICES AS ONE, AND THAT IS A CLAIMANT'S MONEY. The cap is
-   *   per night (§7.2), the box starts empty, and the engine reads empty as a
+   *   per night (Section 7.2), the box starts empty, and the engine reads empty as a
    *   single night — so a two-night stay in Mumbai showed "₹1,750 allowed,
    *   ₹3,250 disallowed" when the right answer was ₹3,500, and the only thing
    *   standing between the traveller and the loss was noticing a small box.
@@ -182,11 +182,11 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
       categories.map((c) => ({
         value: c.id,
         label: c.name,
-        // ⚠ A category that refuses is labelled as refusing, in the picker. §15
+        // ⚠ A category that refuses is labelled as refusing, in the picker. Section 15
         //   refuses alcohol, fines and personal entertainment BY THE CATEGORY,
         //   so somebody picking one should learn that before they type an amount
         //   and attach a photo, not after.
-        sublabel: c.reimbursable ? undefined : "Not reimbursable (§15)",
+        sublabel: c.reimbursable ? undefined : "Not reimbursable (Section 15)",
       })),
     [categories],
   );
@@ -371,8 +371,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
       <Card className="p-4">
         <div className="text-[13px] font-semibold text-navy">What actually happened</div>
         <p className="mt-0.5 text-[11.5px] text-grey-2">
-          The daily allowance is computed from these, not from the planned dates — §8.1 turns on
-          the hour you left and the hour you got back.
+          The allowance is computed from these, not from the planned dates.
         </p>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -384,7 +383,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
               onChange={(e) => setTravel((t) => ({ ...t, actualDepartureDate: e.target.value || null }))}
             />
           </FieldLabel>
-          <FieldLabel label="Departure time" hint="Decides the first day (§8.1)">
+          <FieldLabel label="Departure time">
             <TextInput
               type="time"
               value={travel.actualDepartureTime ?? ""}
@@ -400,7 +399,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
               onChange={(e) => setTravel((t) => ({ ...t, actualReturnDate: e.target.value || null }))}
             />
           </FieldLabel>
-          <FieldLabel label="Return time" hint="Decides the last day (§8.1)">
+          <FieldLabel label="Return time">
             <TextInput
               type="time"
               value={travel.actualReturnTime ?? ""}
@@ -413,7 +412,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <FieldLabel
             label="Did the customer provide any of this?"
-            hint="Meals halve the allowance; meals and a room take it to a quarter (§8.3)"
+            hint="Changes the allowance"
           >
             <Select
               value={travel.customerProvided ?? ""}
@@ -432,7 +431,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
             </Select>
           </FieldLabel>
 
-          <FieldLabel label="Company conference?" hint="§13 pays 50% of the allowance">
+          <FieldLabel label="Company conference?" hint="Pays 50%">
             <Select
               value={travel.isCompanyConference ? "yes" : "no"}
               disabled={!editable}
@@ -445,7 +444,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
             </Select>
           </FieldLabel>
 
-          <FieldLabel label="Family joined from" hint="§14.1 — over 15 days cuts it by 25%">
+          <FieldLabel label="Family joined from" hint="Over 15 days cuts it 25%">
             <TextInput
               type="date"
               value={travel.familyJoinedFrom ?? ""}
@@ -470,8 +469,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
           <div>
             <div className="text-[13px] font-semibold text-navy">Expenses</div>
             <p className="mt-0.5 text-[11.5px] text-grey-2">
-              Caps and disallowances are worked out by the server as you type — the same code that
-              runs when you file.
+              Caps are worked out as you type.
             </p>
           </div>
           {previewing && <span className="text-[11.5px] text-grey-2">Checking…</span>}
@@ -520,7 +518,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                   </FieldLabel>
                   <FieldLabel
                     label="City"
-                    hint="Blank uses wherever you were that day, read off the bookings"
+                    hint="Blank uses the bookings"
                   >
                     <Combobox
                       value={l.cityId ?? ""}
@@ -530,7 +528,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                       onChange={(v) => set(l.key, { cityId: v || null })}
                     />
                   </FieldLabel>
-                  <FieldLabel label="Amount" required hint="The gross, including tax">
+                  <FieldLabel label="Amount" required hint="Gross, including tax">
                     <TextInput
                       inputMode="decimal"
                       value={l.amount ?? ""}
@@ -557,7 +555,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                   </FieldLabel>
                   <FieldLabel
                     label="GST amount"
-                    hint="The tax component, if shown separately — it feeds the ITC register"
+                    hint="If shown separately"
                   >
                     <TextInput
                       inputMode="decimal"
@@ -583,8 +581,8 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                       label="Nights"
                       hint={
                         bookedNights
-                          ? `The cap is per night, per city (§7.2). The booking shows ${bookedNights} night${bookedNights === 1 ? "" : "s"}.`
-                          : "The cap is per night, per city (§7.2). Blank counts as one night."
+                          ? `The booking shows ${bookedNights} night${bookedNights === 1 ? "" : "s"}`
+                          : "Blank counts as one night"
                       }
                     >
                       <TextInput
@@ -596,7 +594,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                     </FieldLabel>
                   )}
                   {isConveyance && (
-                    <FieldLabel label="Days" hint="The conveyance cap is per day (§10)">
+                    <FieldLabel label="Days" hint="The cap is per day">
                       <TextInput
                         inputMode="numeric"
                         value={l.days ?? ""}
@@ -619,7 +617,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                           <option value="late_night">Late night</option>
                         </Select>
                       </FieldLabel>
-                      <FieldLabel label="People" hint="The cap is per person, per meal (§9)">
+                      <FieldLabel label="People" hint="The cap is per person">
                         <TextInput
                           inputMode="numeric"
                           value={l.persons ?? ""}
@@ -629,7 +627,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                       </FieldLabel>
                       <FieldLabel
                         label="Who was there, and why"
-                        hint="§9.1 requires this on a business meal"
+                        hint="Required on a business meal"
                       >
                         <TextInput
                           value={l.guests ?? ""}
@@ -662,7 +660,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                     </>
                   )}
                   {isTransfer && (
-                    <FieldLabel label="Full-day rental?" hint="§10.1 has its own cap">
+                    <FieldLabel label="Full-day rental?" hint="Its own cap applies">
                       <Select
                         value={l.fullDayRental ? "yes" : "no"}
                         disabled={!editable}
@@ -705,7 +703,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                   </div>
                 )}
 
-                {/* §7.3 — the two flags, shown only where they can do anything.
+                {/* Section 7.3 — the two flags, shown only where they can do anything.
                     Offering them on every line would invite them being ticked on
                     lines where they mean nothing. */}
                 {isHotel && overCap && editable && (
@@ -734,7 +732,7 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
                       <span>
                         My HOD approved going above the cap
                         <span className="block text-grey-2">
-                          §7.3 needs both, and never more than 1.5× the cap.
+                          Section 7.3 needs both, and never more than 1.5× the cap.
                         </span>
                       </span>
                     </label>
@@ -811,11 +809,11 @@ export default function ClaimPanel({ trip }: { trip: Trip }) {
       {/* ---- the allowance ---------------------------------------------- */}
       <DaPanel frozen={daDays} preview={preview} overrideTotal={trip.daTotal} />
 
-      {/* ---- §16, when it applies ---------------------------------------- */}
+      {/* ---- Section 16, when it applies ---------------------------------------- */}
       {(preview?.class_excess ?? []).some((x) => x.note) && (
         <Card className="p-4">
           <div className="text-[13px] font-semibold text-navy">
-            Booked above the band entitlement (§16)
+            Booked above the band entitlement (Section 16)
           </div>
           <ul className="mt-2 space-y-1.5">
             {(preview?.class_excess ?? [])

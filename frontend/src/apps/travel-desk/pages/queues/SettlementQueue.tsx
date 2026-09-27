@@ -13,7 +13,7 @@ import type { Trip } from "../../types";
  * Verified claims waiting for the money to move.
  *
  * ⚠ THE DUE DATE IS MEASURED FROM HOD APPROVAL, NOT FROM FINANCE'S OWN
- *   VERIFICATION. §12 promises the credit within seven working days of the HOD
+ *   VERIFICATION. Section 12 promises the credit within seven working days of the HOD
  *   signing off, so Finance taking its full five days does not buy the traveller
  *   another week. Anchoring on the step before would let the 14-day promise
  *   drift quietly.
@@ -113,7 +113,7 @@ export default function SettlementQueue() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Settlement</h1>
         <p className="text-[13px] text-grey">
-          §12 promises the credit within seven working days of HOD approval — which is what the due
+          Section 12 promises the credit within seven working days of HOD approval — which is what the due
           column counts from, not from when Finance got round to verifying it.
         </p>
       </div>

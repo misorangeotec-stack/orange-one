@@ -67,7 +67,7 @@ const ANCHOR_AT: Record<QueueStep, (t: Trip) => string | null> = {
   claim: (t) => t.actualReturnDate ?? t.plannedReturnDate,
   claim_review: (t) => t.clAt,
   finance_review: (t) => t.crAt,
-  // §12 measures the credit from HOD APPROVAL, not from Finance's verification.
+  // Section 12 measures the credit from HOD APPROVAL, not from Finance's verification.
   settlement: (t) => t.crAt,
 };
 

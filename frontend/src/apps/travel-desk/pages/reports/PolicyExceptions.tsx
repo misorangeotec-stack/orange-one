@@ -12,7 +12,7 @@ import type { ClaimLine, Trip } from "../../types";
 /**
  * Every time the policy was applied and every time it was set aside.
  *
- * ⚠ THIS IS §16's QUARTERLY SPOT CHECK, AND IT IS NOT IN THE SOURCE PRD. The
+ * ⚠ THIS IS Section 16's QUARTERLY SPOT CHECK, AND IT IS NOT IN THE SOURCE PRD. The
  *   policy asks for periodic review of violations and exceptions; without a
  *   report the review is somebody reading claims one at a time, which is why it
  *   has never happened.
@@ -25,7 +25,7 @@ import type { ClaimLine, Trip } from "../../types";
  *
  * ⚠ THREE KINDS OF ROW, DELIBERATELY IN ONE LIST:
  *     · CAPPED    — the engine cut the line and nobody argued. Ordinary.
- *     · RELAXED   — Finance settled ABOVE the engine's allowance. §7.3's
+ *     · RELAXED   — Finance settled ABOVE the engine's allowance. Section 7.3's
  *                   exception path, and the row an auditor is looking for.
  *     · TIGHTENED — Finance settled BELOW it. A judgement no rule could make.
  *   Splitting them into three screens would mean the quarterly review is three
@@ -227,7 +227,7 @@ export default function PolicyExceptions() {
       },
       {
         key: "evidence",
-        header: "§7.3 evidence",
+        header: "Section 7.3 evidence",
         cell: (r) =>
           r.line.overCapEvidence && r.line.hodApproved ? (
             "Evidence + HOD"
@@ -270,7 +270,7 @@ export default function PolicyExceptions() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Policy exceptions</h1>
         <p className="text-[13px] text-grey">
-          Every claim line the policy cut, and every one a human then decided differently. §16 asks
+          Every claim line the policy cut, and every one a human then decided differently. Section 16 asks
           for a periodic review of exceptions; this is the list it reviews.
         </p>
       </div>
@@ -284,8 +284,8 @@ export default function PolicyExceptions() {
             policy allows
           </div>
           <p className="mt-1 text-[12.5px] text-grey-2">
-            §7.3 permits this on evidence that nothing within cap was available plus HOD approval,
-            and never above 1.5× the cap. The §7.3 evidence column shows which of the two is on
+            Section 7.3 permits this on evidence that nothing within cap was available plus HOD approval,
+            and never above 1.5× the cap. The Section 7.3 evidence column shows which of the two is on
             file — a row reading &ldquo;HOD only&rdquo; or &ldquo;Evidence only&rdquo; is an
             exception that was granted without the whole of its basis.
           </p>

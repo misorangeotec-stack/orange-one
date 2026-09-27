@@ -60,7 +60,7 @@ export function masterFields(
           required: true,
           options: TIER_OPTIONS,
           hint:
-            "The tier decides the hotel cap, the daily allowance and the local conveyance cap for every trip to this city. Policy §1.3 names the Tier 1 and Tier 2 cities; everything else is Tier 3.",
+            "The tier decides the hotel cap, the daily allowance and the local conveyance cap for every trip to this city. Policy Section 1.3 names the Tier 1 and Tier 2 cities; everything else is Tier 3.",
         },
       ];
 
@@ -94,7 +94,7 @@ export function masterFields(
           type: "select",
           options: YES_NO,
           hint:
-            "Set to No for everything in Policy §15 — alcohol, fines, personal entertainment. The category then refuses itself, so no approver has to be the one to say no.",
+            "Set to No for everything in Policy Section 15 — alcohol, fines, personal entertainment. The category then refuses itself, so no approver has to be the one to say no.",
         },
         {
           key: "receipt_required_above",
@@ -114,7 +114,7 @@ export function masterFields(
           label: "Needs guest names",
           type: "select",
           options: YES_NO,
-          hint: "§9.1 — a business meal must name the guests and their company on the claim.",
+          hint: "Section 9.1 — a business meal must name the guests and their company on the claim.",
         },
         {
           key: "refusal_note",

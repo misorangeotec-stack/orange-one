@@ -48,7 +48,7 @@ export interface TripDraftInput {
  *   `nullif(btrim(coalesce(p->>'x','')), '')::numeric` — a shape that turns "",
  *   "   " and a missing key all into NULL. Sending a real JSON number would work
  *   until somebody clears the field, at which point `0` and "not answered" would
- *   arrive identically. On `estimated_cost`, which §11.1 caps the advance
+ *   arrive identically. On `estimated_cost`, which Section 11.1 caps the advance
  *   against, those two are very different answers.
  */
 const payload = (v: TripDraftInput): Record<string, unknown> => ({

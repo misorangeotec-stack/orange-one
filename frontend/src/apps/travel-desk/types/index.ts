@@ -22,11 +22,11 @@ import type { StepKey } from "../lib/steps";
  *     Booked           + Ticket Shared    → booked   (uploading IS sharing)
  *
  *   SPLIT (the policy needs states the PRD has no name for)
- *     awaiting_director_approval  §3.2 — bands 6-9
- *     awaiting_advance            §11.1 — money before departure
- *     awaiting_claim_review       §11.1 step 7 — the HOD on the claim
- *     awaiting_finance_review     §11.1 step 8 — policy caps applied
- *     awaiting_settlement         §11.1 step 8 — advance netted, then paid
+ *     awaiting_director_approval  Section 3.2 — bands 6-9
+ *     awaiting_advance            Section 11.1 — money before departure
+ *     awaiting_claim_review       Section 11.1 step 7 — the HOD on the claim
+ *     awaiting_finance_review     Section 11.1 step 8 — policy caps applied
+ *     awaiting_settlement         Section 11.1 step 8 — advance netted, then paid
  *
  *   KEPT AS THE PRD HAS IT
  *     returned (its "Return for Clarification"), rejected, cancellation_requested,
@@ -49,7 +49,7 @@ export type TripStatus =
   /**
    * The journey is off but the money is not.
    *
-   * ⚠ IT SITS AT THE **CLAIM** STEP, AND THAT IS THE WHOLE POINT. §4.1 makes a
+   * ⚠ IT SITS AT THE **CLAIM** STEP, AND THAT IS THE WHOLE POINT. Section 4.1 makes a
    *   cancellation charge reimbursable when the reason is business — the
    *   customer moved the meeting, the plant shut — and not when it is personal.
    *   A trip sent straight to `cancelled` would take those charges, and any
@@ -118,16 +118,16 @@ export const STATUS_STEP: Partial<Record<TripStatus, StepKey>> = {
 
 /**
  * The four travel categories the Domestic Travel Policy prices everything
- * against (§2). Every cap, rate and class rule is looked up by one of these
+ * against (Section 2). Every cap, rate and class rule is looked up by one of these
  * plus a city tier.
  *
  * ⚠ THE BAND → CATEGORY MAP IS **DATA**, NOT CODE, AND THAT IS NOT AN
  *   ABSTRACTION FOR ITS OWN SAKE. Section 2 of the policy contains TWO tables,
  *   one immediately after the other, that disagree:
  *
- *     table 1 (and Annexure A, and §14.1):  band 8 → TC-A,  band 3 → TC-D
- *     table 2 (and §4.1, §5.1, §6.2, §6.3,
- *              §7.2, §8.2, §10, §10.1):     band 8 → TC-B,  band 3 → TC-C
+ *     table 1 (and Annexure A, and Section 14.1):  band 8 → TC-A,  band 3 → TC-D
+ *     table 2 (and Section 4.1, Section 5.1, Section 6.2, Section 6.3,
+ *              Section 7.2, Section 8.2, Section 10, Section 10.1):     band 8 → TC-B,  band 3 → TC-C
  *
  *   Live headcount puts 17 people in band 3 and 6 in band 8 — 23 of the 59 real
  *   employees, and band 3 is the field staff who travel most. This cannot be
@@ -144,7 +144,7 @@ export const TRAVEL_CATEGORIES: { value: TravelCategory; label: string }[] = [
   { value: "TC-D", label: "TC-D · Executive Staff" },
 ];
 
-/** City tier (§1.3) — drives the hotel cap, the DA rate and the conveyance cap. */
+/** City tier (Section 1.3) — drives the hotel cap, the DA rate and the conveyance cap. */
 export type CityTier = 1 | 2 | 3;
 
 /** What a leg of the journey is. One trip may hold any number, of any mix. */
@@ -154,7 +154,7 @@ export type LegKind = "flight" | "train" | "bus" | "cab" | "hotel";
 export type JourneyType = "one_way" | "round_trip" | "multi_city";
 
 /**
- * The preferred departure window (PRD §8). Stored as a slot, not a time: the
+ * The preferred departure window (PRD Section 8). Stored as a slot, not a time: the
  * traveller is expressing a preference for the booker, not booking a flight.
  */
 export type TimeSlot = "morning" | "afternoon" | "evening" | "night";
@@ -200,7 +200,7 @@ export interface Trip {
   snapBaseCityId: string | null;
   snapRateCardId: string | null;
   /**
-   * The category this trip was frozen at before §3.5 downgraded it to TC-D for
+   * The category this trip was frozen at before Section 3.5 downgraded it to TC-D for
    * being regularised late. Null on every trip that was not downgraded.
    *
    * ⚠ THE ORIGINAL IS KEPT, NOT OVERWRITTEN. Without it a band-9 Director sits
@@ -224,7 +224,7 @@ export interface Trip {
   actualDepartureDate: string | null;
   actualReturnDate: string | null;
   /**
-   * ⚠ TIMES, NOT TIMESTAMPS, AND ONLY THE ACTUAL ONES. §8.1 turns on the hour
+   * ⚠ TIMES, NOT TIMESTAMPS, AND ONLY THE ACTUAL ONES. Section 8.1 turns on the hour
    *   a traveller left and the hour they got back — the 2 PM cut-off and the
    *   6 PM return — so the daily allowance cannot be computed without them.
    *   They are deliberately absent from the PLANNED pair: nobody knows in
@@ -236,7 +236,7 @@ export interface Trip {
 
   // ---- the four daily-allowance inputs only the traveller knows ----------
   /**
-   * §8.3 — what the customer supplied: nothing, meals, room, or both.
+   * Section 8.3 — what the customer supplied: nothing, meals, room, or both.
    *
    * ⚠ MEALS CUT THE ALLOWANCE; A ROOM ON ITS OWN DOES NOT. The daily
    *   allowance is for food and incidentals, and the hotel is claimed
@@ -245,12 +245,12 @@ export interface Trip {
    */
   customerProvided: "meals" | "room" | "both" | null;
   /**
-   * §13 — a company conference pays 50%, which OVERRIDES §8.1's "no DA when
+   * Section 13 — a company conference pays 50%, which OVERRIDES Section 8.1's "no DA when
    * all meals are arranged". The narrower rule wins.
    */
   isCompanyConference: boolean;
   /**
-   * §14.1 — family present for more than 15 consecutive days cuts the
+   * Section 14.1 — family present for more than 15 consecutive days cuts the
    * allowance by 25%, for bands below the exempt threshold. Keyed on the BAND
    * NUMBER, not the travel category, so it does not wait on H1.
    */
@@ -275,7 +275,7 @@ export interface Trip {
   /**
    * The approval matrix sent this band straight to a Director.
    *
-   * ⚠ OFF ON EVERY TRIP TODAY, and kept anyway. §3.2 sends bands 6-9 to a
+   * ⚠ OFF ON EVERY TRIP TODAY, and kept anyway. Section 3.2 sends bands 6-9 to a
    *   Director and then leaves "[⚠ CONFIRM if HOD is also needed]" hanging for
    *   bands 6-8 (H10). The default answer is that BOTH are needed, so nothing
    *   sets this yet — but answering H10 the other way must be a setting, not a
@@ -284,7 +284,7 @@ export interface Trip {
    */
   managerApprovalSkipped: boolean;
 
-  // ---- the advance (§11.1) ------------------------------------------------
+  // ---- the advance (Section 11.1) ------------------------------------------------
   advanceRequested: boolean;
   advanceRequestedAmount: number | null;
   advanceApprovedAmount: number | null;
@@ -299,7 +299,7 @@ export interface Trip {
    *
    * ⚠ THE CANCELLED-TRIP CASE, AND THE REASON IT EXISTS. The money left, the
    *   trip never happened, and no claim is coming to net it against — so without
-   *   a way to record repayment, §11.2 would bar that person from every future
+   *   a way to record repayment, Section 11.2 would bar that person from every future
    *   advance for ever.
    */
   advanceRecoveredAmount: number | null;
@@ -394,9 +394,9 @@ export interface TravelConfig {
 }
 
 /**
- * Which bands need which approvals (§3.2).
+ * Which bands need which approvals (Section 3.2).
  *
- * ⚠ `managerAlsoForDirectorBands` IS H10. §3.2 sends bands 6-9 to a Director
+ * ⚠ `managerAlsoForDirectorBands` IS H10. Section 3.2 sends bands 6-9 to a Director
  *   and then writes "[⚠ CONFIRM if HOD is also needed]" for bands 6-8. The
  *   default is BOTH — the reading that cannot silently lose an approval nobody
  *   meant to drop — and answering it the other way is a setting rather than a
@@ -649,60 +649,60 @@ export const RATE_TYPE_META: Record<
   hotel_cap: {
     label: "Hotel cap",
     blurb:
-      "Per night including GST (§7.2). An over-cap night needs evidence the cap was unavailable plus HOD approval, and can never exceed 1.5× regardless.",
+      "Per night including GST (Section 7.2). An over-cap night needs evidence the cap was unavailable plus HOD approval, and can never exceed 1.5× regardless.",
     unit: "money", byTier: true, keyed: false,
   },
   da: {
     label: "Daily allowance",
     blurb:
-      "Per calendar day away from the base city (§8). Paid without receipts, and reduced when the customer provides meals or a room.",
+      "Per calendar day away from the base city (Section 8). Paid without receipts, and reduced when the customer provides meals or a room.",
     unit: "money", byTier: false, keyed: false,
   },
   conveyance_cap: {
     label: "Local conveyance cap",
     blurb:
-      "Per day at the destination (§10), separate from the daily allowance. An empty cell means uncapped — actuals with a receipt.",
+      "Per day at the destination (Section 10), separate from the daily allowance. An empty cell means uncapped — actuals with a receipt.",
     unit: "money", byTier: true, keyed: false,
   },
   conveyance_self_dec: {
     label: "Conveyance without a receipt",
     blurb:
-      "Per trip, self-declared (§10). Only TC-C and TC-D have one; the others are actuals with a receipt.",
+      "Per trip, self-declared (Section 10). Only TC-C and TC-D have one; the others are actuals with a receipt.",
     unit: "money", byTier: false, keyed: true,
   },
   mileage: {
     label: "Own vehicle, per km",
     blurb:
-      "Paid against a mileage log with start and end odometer readings (§6.3). HOD approval is required before travel.",
+      "Paid against a mileage log with start and end odometer readings (Section 6.3). HOD approval is required before travel.",
     unit: "money", byTier: false, keyed: true,
   },
   meal_cap: {
     label: "Meal caps",
     blurb:
-      "Business meals with guests, team meals per person, refreshments and the late-night meal (§9). Alcohol is never reimbursable at any band.",
+      "Business meals with guests, team meals per person, refreshments and the late-night meal (Section 9). Alcohol is never reimbursable at any band.",
     unit: "money", byTier: false, keyed: true,
   },
   rental_cap: {
     label: "Full-day vehicle hire",
     blurb:
-      "Including driver (§10.1), for a day spent moving between customers. Pre-approved by the HOD.",
+      "Including driver (Section 10.1), for a day spent moving between customers. Pre-approved by the HOD.",
     unit: "money", byTier: false, keyed: false,
   },
   air_entitlement: {
     label: "Air travel",
     blurb:
-      "Class, fare type and upgrade rule by category (§4.1), plus the distance and duration tests that decide whether flying is permitted at all.",
+      "Class, fare type and upgrade rule by category (Section 4.1), plus the distance and duration tests that decide whether flying is permitted at all.",
     unit: "text", byTier: false, keyed: true,
   },
   train_entitlement: {
     label: "Train travel",
-    blurb: "Class, overnight berth and whether Tatkal is reimbursed (§5.1).",
+    blurb: "Class, overnight berth and whether Tatkal is reimbursed (Section 5.1).",
     unit: "text", byTier: false, keyed: true,
   },
   road_entitlement: {
     label: "Road travel",
     blurb:
-      "The class of cab each category may take (§6.2), and the distance beyond which a personal vehicle needs Director approval.",
+      "The class of cab each category may take (Section 6.2), and the distance beyond which a personal vehicle needs Director approval.",
     unit: "text", byTier: false, keyed: true,
   },
 };
@@ -720,7 +720,7 @@ export const RATE_TYPE_ORDER: RateType[] = [
  *   prices it and whose account is paid — and any number of passengers, who
  *   exist because an airline needs a name, a gender and a date of birth for
  *   everybody on the booking. A second employee who also needs to claim raises
- *   their own trip; §11 of the policy is entirely per-employee, so a shared
+ *   their own trip; Section 11 of the policy is entirely per-employee, so a shared
  *   claim has nobody to pay.
  *
  * `employeeId` is nullable on purpose: a customer or a spouse travelling
@@ -761,7 +761,7 @@ export interface TripLeg {
    */
   netCost: number;
   cancelledAt: string | null;
-  /** §4.1 — business or personal decides whether the charge is reimbursable. */
+  /** Section 4.1 — business or personal decides whether the charge is reimbursable. */
   cancelReasonKind: "business" | "personal" | null;
   cancelReason: string | null;
   docPath: string | null;
@@ -821,7 +821,7 @@ export interface TripPassenger {
  * One line on an expense claim.
  *
  * ⚠ IT CARRIES EVERY INPUT THE ENGINE READ, not just the amount. Nights,
- *   persons, kilometres, whether a receipt exists, whether §7.3 evidence and HOD
+ *   persons, kilometres, whether a receipt exists, whether Section 7.3 evidence and HOD
  *   approval were produced — all of it, so the line can be re-priced later and
  *   the answer explained. A row storing only "4,200" is a row nobody can audit.
  *
@@ -835,7 +835,7 @@ export interface ClaimLine {
   tripId: string;
   categoryId: string | null;
   /**
-   * ⚠ THE HOTEL CAP IS PER NIGHT **PER CITY** (§7.2), so a multi-city trip
+   * ⚠ THE HOTEL CAP IS PER NIGHT **PER CITY** (Section 7.2), so a multi-city trip
    *   prices each night on the tier of the city it was spent in — not on the
    *   trip's headline destination. Null falls back to wherever the traveller was
    *   that day, which the engine reads off the legs.
@@ -861,14 +861,14 @@ export interface ClaimLine {
   vehicleType: string | null;
   fullDayRental: boolean;
   /**
-   * §7.3 — going above the hotel cap needs BOTH: evidence that nothing within
+   * Section 7.3 — going above the hotel cap needs BOTH: evidence that nothing within
    * cap was available, and HOD approval. Two flags, because producing one
    * without the other is the common case and the engine has to say which is
    * missing.
    */
   overCapEvidence: boolean;
   hodApproved: boolean;
-  /** §11.3 — a claim past the hard stop needs written Director approval. */
+  /** Section 11.3 — a claim past the hard stop needs written Director approval. */
   directorApproved: boolean;
 
   docPath: string | null;
@@ -979,7 +979,7 @@ export interface ClaimPreviewLine {
 }
 
 /**
- * §16 — what a leg booked above the band entitlement costs the traveller.
+ * Section 16 — what a leg booked above the band entitlement costs the traveller.
  *
  * ⚠ `entitledFare` IS OFTEN NULL, AND THAT IS NOT A BUG. The rate card holds the
  *   entitled CLASS as words — "Economy — Saver fare" — not as a price, so there
@@ -1027,7 +1027,7 @@ export interface ClaimPreview {
     advance_paid: number;
     /**
      * ⚠ NEGATIVE MEANS THE TRAVELLER OWES MONEY BACK, and it stays negative.
-     *   Flooring it at zero would hide exactly the figure §11.2 and the hr-exit
+     *   Flooring it at zero would hide exactly the figure Section 11.2 and the hr-exit
      *   `travel_advance` clearance row exist to read.
      */
     net_payable: number;
