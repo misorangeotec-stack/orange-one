@@ -78,6 +78,7 @@ export default function FinanceReviewQueue() {
         header: "Claimed",
         cell: (t) => money(t.claimTotal),
         sortValue: (t) => t.claimTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.claimTotal ?? 0 },
         exportValue: (t) => t.claimTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -103,6 +104,7 @@ export default function FinanceReviewQueue() {
         header: "Allowance",
         cell: (t) => money(t.daTotal),
         sortValue: (t) => t.daTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.daTotal ?? 0 },
         exportValue: (t) => t.daTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -114,6 +116,7 @@ export default function FinanceReviewQueue() {
           return a > 0 ? money(a) : <span className="text-grey-2">—</span>;
         },
         sortValue: (t) => Math.max((t.advancePaidAmount ?? 0) - (t.advanceRecoveredAmount ?? 0), 0),
+        filter: { kind: "number", get: (t) => Math.max((t.advancePaidAmount ?? 0) - (t.advanceRecoveredAmount ?? 0), 0) },
         exportValue: (t) =>
           Math.max((t.advancePaidAmount ?? 0) - (t.advanceRecoveredAmount ?? 0), 0),
         tdClassName: "whitespace-nowrap text-right",

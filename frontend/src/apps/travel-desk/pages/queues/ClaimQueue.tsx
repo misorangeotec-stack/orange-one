@@ -115,6 +115,7 @@ export default function ClaimQueue() {
         header: "Booked",
         cell: (t) => money(t.bookingTotal),
         sortValue: (t) => t.bookingTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.bookingTotal ?? 0 },
         exportValue: (t) => t.bookingTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
