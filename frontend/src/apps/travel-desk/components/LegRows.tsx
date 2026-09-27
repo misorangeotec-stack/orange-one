@@ -4,6 +4,9 @@ import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea, Select } from "@/shared/components/ui/Form";
 import { formatDateDMY } from "@/shared/lib/date";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { FIT } from "@/shared/lib/tableLook";
 import { useTravelStore } from "../store";
 import { money, LEG_LABEL } from "../lib/format";
 import TicketCapture from "./TicketCapture";
@@ -93,6 +96,8 @@ export default function LegRows({ trip }: { trip: Trip }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // PF-20: the text columns drag; money, the dates and the row buttons keep their width.
+  const fit = useColumnWidths("tb", ["kind", "carrier", "route", "dates", "ref", "ticket", "other", "refund", "net", "do"]);
   const editable =
     s.canActOn("booking", trip) &&
     !["draft", "closed", "cancelled", "rejected"].includes(trip.status);
@@ -293,10 +298,12 @@ export default function LegRows({ trip }: { trip: Trip }) {
         <h2 className="text-[12px] font-semibold uppercase tracking-wide text-navy">
           What was booked
         </h2>
-        <span className="text-[12.5px] text-grey">
+        <span className="flex items-center gap-2 text-[12.5px] text-grey">
           {legs.length
             ? `${legs.length} ${legs.length === 1 ? "booking" : "bookings"} · ${money(total)}`
             : "nothing yet"}
+          {/* PF-20: appears only once a column here has been dragged. */}
+          <ResetWidths fit={fit} cols={["carrier", "route", "ref"]} label="" />
         </span>
       </div>
 
@@ -305,19 +312,19 @@ export default function LegRows({ trip }: { trip: Trip }) {
           <table className="w-full min-w-[720px] text-[12.5px]">
             <thead>
               <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
-                <th className="py-1.5 pr-3">Kind</th>
-                <th className="py-1.5 pr-3">Carrier / hotel</th>
-                <th className="py-1.5 pr-3">Route</th>
-                <th className="py-1.5 pr-3">Dates</th>
-                <th className="py-1.5 pr-3">Ref</th>
-                <th className="py-1.5 pr-3 text-right">Ticket</th>
-                <th className="py-1.5 pr-3 text-right">Other</th>
-                <th className="py-1.5 pr-3 text-right">Refund</th>
-                <th className="py-1.5 pr-3 text-right">Net</th>
+                <FitTh fit={fit} col="kind" resize={false} className="py-1.5 pr-3">Kind</FitTh>
+                <FitTh fit={fit} col="carrier" className="py-1.5 pr-3">Carrier / hotel</FitTh>
+                <FitTh fit={fit} col="route" className="py-1.5 pr-3">Route</FitTh>
+                <FitTh fit={fit} col="dates" resize={false} className="py-1.5 pr-3">Dates</FitTh>
+                <FitTh fit={fit} col="ref" className="py-1.5 pr-3">Ref</FitTh>
+                <FitTh fit={fit} col="ticket" resize={false} className="py-1.5 pr-3 text-right">Ticket</FitTh>
+                <FitTh fit={fit} col="other" resize={false} className="py-1.5 pr-3 text-right">Other</FitTh>
+                <FitTh fit={fit} col="refund" resize={false} className="py-1.5 pr-3 text-right">Refund</FitTh>
+                <FitTh fit={fit} col="net" resize={false} className="py-1.5 pr-3 text-right">Net</FitTh>
                 <th className="py-1.5" />
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {legs.map((l) => (
                 <tr key={l.id} className="border-b border-line last:border-b-0">
                   <td className="py-1.5 pr-3">
@@ -328,17 +335,23 @@ export default function LegRows({ trip }: { trip: Trip }) {
                       </span>
                     )}
                   </td>
-                  <td className="py-1.5 pr-3">{carrierName(l)}</td>
+                  <td className="py-1.5 pr-3">
+                    <FitCell fit={fit} col="carrier" cap={FIT.CUT}>{carrierName(l)}</FitCell>
+                  </td>
                   <td className="py-1.5 pr-3 text-grey">
-                    {[s.cityById(l.fromCityId)?.name, s.cityById(l.toCityId)?.name]
-                      .filter(Boolean)
-                      .join(" → ") || "—"}
+                    <FitCell fit={fit} col="route" cap={FIT.CUT}>
+                      {[s.cityById(l.fromCityId)?.name, s.cityById(l.toCityId)?.name]
+                        .filter(Boolean)
+                        .join(" → ") || "—"}
+                    </FitCell>
                   </td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-grey">
                     {l.startOn ? formatDateDMY(l.startOn) : "—"}
                     {l.endOn && l.endOn !== l.startOn ? ` – ${formatDateDMY(l.endOn)}` : ""}
                   </td>
-                  <td className="py-1.5 pr-3 text-grey">{l.bookingRef ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-grey">
+                    <FitCell fit={fit} col="ref" cap={FIT.CUT}>{l.bookingRef ?? "—"}</FitCell>
+                  </td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-right">{money(l.ticketCost)}</td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-right">{money(l.otherCharges)}</td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-right">

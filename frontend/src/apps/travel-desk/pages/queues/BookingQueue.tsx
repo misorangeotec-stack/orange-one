@@ -82,6 +82,7 @@ export default function BookingQueue({ mode }: { mode: "book" | "cancel" }) {
         align: "right",
         cell: (t) => money(t.estimatedCost),
         sortValue: (t) => t.estimatedCost ?? 0,
+        filter: { kind: "number", get: (t) => t.estimatedCost ?? 0 },
         exportValue: (t) => t.estimatedCost ?? 0,
         tdClassName: "whitespace-nowrap",
       },

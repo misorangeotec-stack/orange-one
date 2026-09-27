@@ -76,6 +76,7 @@ export default function SettlementQueue() {
         header: "Amount",
         cell: (t) => money(Math.abs(t.netPayable ?? 0)),
         sortValue: (t) => Math.abs(t.netPayable ?? 0),
+        filter: { kind: "number", get: (t) => Math.abs(t.netPayable ?? 0) },
         exportValue: (t) => Math.abs(t.netPayable ?? 0),
         tdClassName: "whitespace-nowrap text-right",
       },

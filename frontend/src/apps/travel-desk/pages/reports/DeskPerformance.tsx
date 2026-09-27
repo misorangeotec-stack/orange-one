@@ -150,20 +150,24 @@ export default function DeskPerformance() {
         key: "step",
         header: "Step",
         alwaysVisible: true,
+        // One line (PF-20): what the step is measured from follows its name, cut
+        // with "…" and shown whole on hover.
         cell: (r) => (
-          <div>
-            <div className="font-semibold text-navy">{r.title}</div>
-            <div className="text-[11px] text-grey-2">from {r.measuredFrom.toLowerCase()}</div>
-          </div>
+          <span className="block truncate">
+            <span className="font-semibold text-navy">{r.title}</span>
+            <span className="ml-1.5 text-[11px] text-grey-2">from {r.measuredFrom.toLowerCase()}</span>
+          </span>
         ),
         sortValue: (r) => stepByKey(r.key)?.index ?? 0,
         filter: { kind: "select", get: (r) => r.title },
         exportValue: (r) => r.title,
+        resize: { width: 300 },
       },
       {
         key: "done",
         header: "Completed",
         cell: (r) => r.done,
+        filter: { kind: "number", get: (r) => r.done },
         sortValue: (r) => r.done,
         exportValue: (r) => r.done,
         tdClassName: "whitespace-nowrap text-right",
@@ -177,6 +181,7 @@ export default function DeskPerformance() {
           ) : (
             <span className="font-semibold text-navy">{r.medianDays}</span>
           ),
+        filter: { kind: "number", get: (r) => r.medianDays ?? -1 },
         sortValue: (r) => r.medianDays ?? -1,
         exportValue: (r) => r.medianDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -185,6 +190,7 @@ export default function DeskPerformance() {
         key: "mean",
         header: "Average days",
         cell: (r) => (r.meanDays === null ? <span className="text-grey-2">—</span> : r.meanDays),
+        filter: { kind: "number", get: (r) => r.meanDays ?? -1 },
         sortValue: (r) => r.meanDays ?? -1,
         exportValue: (r) => r.meanDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -193,6 +199,7 @@ export default function DeskPerformance() {
         key: "worst",
         header: "Slowest",
         cell: (r) => (r.worstDays === null ? <span className="text-grey-2">—</span> : r.worstDays),
+        filter: { kind: "number", get: (r) => r.worstDays ?? -1 },
         sortValue: (r) => r.worstDays ?? -1,
         exportValue: (r) => r.worstDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -206,6 +213,7 @@ export default function DeskPerformance() {
           ) : (
             <span className="text-grey-2">{r.target} working days</span>
           ),
+        filter: { kind: "number", get: (r) => r.target ?? -1 },
         sortValue: (r) => r.target ?? -1,
         exportValue: (r) => r.target ?? "",
         tdClassName: "whitespace-nowrap text-right",

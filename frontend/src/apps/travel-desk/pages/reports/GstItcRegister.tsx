@@ -178,6 +178,7 @@ export default function GstItcRegister() {
         header: "Invoice total",
         cell: (r) => money(r.line.amount),
         sortValue: (r) => r.line.amount,
+        filter: { kind: "number", get: (r) => r.line.amount },
         exportValue: (r) => r.line.amount,
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -186,6 +187,7 @@ export default function GstItcRegister() {
         header: "Tax on invoice",
         cell: (r) => money(r.line.gstAmount),
         sortValue: (r) => r.line.gstAmount,
+        filter: { kind: "number", get: (r) => r.line.gstAmount },
         exportValue: (r) => r.line.gstAmount,
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -213,6 +215,7 @@ export default function GstItcRegister() {
             <span className="text-grey-2">—</span>
           ),
         sortValue: (r) => r.claimable,
+        filter: { kind: "number", get: (r) => r.claimable },
         exportValue: (r) => r.claimable,
         tdClassName: "whitespace-nowrap text-right",
       },

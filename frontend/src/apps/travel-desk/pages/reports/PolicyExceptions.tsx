@@ -186,6 +186,7 @@ export default function PolicyExceptions() {
         header: "Claimed",
         cell: (r) => money(r.line.amount),
         sortValue: (r) => r.line.amount,
+        filter: { kind: "number", get: (r) => r.line.amount },
         exportValue: (r) => r.line.amount,
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -194,6 +195,7 @@ export default function PolicyExceptions() {
         header: "Policy allowed",
         cell: (r) => money(r.line.allowedAmount),
         sortValue: (r) => r.line.allowedAmount ?? 0,
+        filter: { kind: "number", get: (r) => r.line.allowedAmount ?? 0 },
         exportValue: (r) => r.line.allowedAmount ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -209,6 +211,7 @@ export default function PolicyExceptions() {
           );
         },
         sortValue: (r) => r.line.financeAmount ?? r.line.allowedAmount ?? 0,
+        filter: { kind: "number", get: (r) => r.line.financeAmount ?? r.line.allowedAmount ?? 0 },
         exportValue: (r) => r.line.financeAmount ?? r.line.allowedAmount ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -256,6 +259,7 @@ export default function PolicyExceptions() {
         header: "Reason",
         cell: (r) => <span className="text-[12px] text-grey-2">{r.reason || "—"}</span>,
         sortValue: (r) => r.reason,
+        filter: { kind: "select", get: (r) => r.reason },
         // ⚠ NO FILTER, DELIBERATELY. Every reason is a free-text sentence
         //   written once for one line, so a dropdown here would list the rows
         //   back at the reader one at a time — which is the case CLAUDE.md
