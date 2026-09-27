@@ -66,14 +66,15 @@ export default function OnboardingQueue() {
       header: "New hire",
       cell: (o) => {
         const c = candOf(o);
+        // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
         return (
-          <div>
-            <div className="font-medium text-navy">{c?.name ?? "Unknown"}</div>
-            <div className="text-[12px] text-grey-2">
+          <>
+            <span className="font-medium text-navy">{c?.name ?? "Unknown"}</span>
+            <span className="ml-1.5 text-[12px] text-grey-2">
               {c?.phone ?? "—"}
               {s.canViewSalary && c?.offeredCtc !== null && c?.offeredCtc !== undefined && ` · ${inr(c.offeredCtc)}`}
-            </div>
-          </div>
+            </span>
+          </>
         );
       },
       sortValue: (o) => candOf(o)?.name ?? "",
@@ -124,6 +125,7 @@ export default function OnboardingQueue() {
           <span className="text-yellow font-medium">not set</span>
         ),
       sortValue: (o) => o.joiningDate ?? "9999",
+      filter: { kind: "date", get: (o) => o.joiningDate ?? "" },
       exportValue: (o) => (o.joiningDate ? formatDateDMY(o.joiningDate) : "not set"),
       tdClassName: "whitespace-nowrap",
     },
@@ -141,6 +143,7 @@ export default function OnboardingQueue() {
             {OFFER_LABEL[o.offerStatus] ?? o.offerStatus}
           </span>
         ),
+      sortValue: (o) => OFFER_LABEL[o.offerStatus] ?? o.offerStatus,
       filter: { kind: "select", get: (o) => OFFER_LABEL[o.offerStatus] ?? o.offerStatus },
     },
     {
@@ -159,6 +162,7 @@ export default function OnboardingQueue() {
         const p = progress(o);
         return p.total === 0 ? -1 : p.done / p.total;
       },
+      filter: { kind: "number", get: (o) => progress(o).done },
       exportValue: (o) => {
         const p = progress(o);
         return p.total === 0 ? "locked — no joining date" : `${p.done} of ${p.total}`;
@@ -169,6 +173,7 @@ export default function OnboardingQueue() {
       header: "Due",
       cell: (o) => <DueCell dueIso={dueOf(o)} />,
       sortValue: (o) => dueOf(o) ?? "9999",
+      filter: { kind: "date", get: (o) => dueOf(o) ?? "" },
       exportValue: (o) => formatDateDMY(dueOf(o)),
       tdClassName: "whitespace-nowrap",
     },

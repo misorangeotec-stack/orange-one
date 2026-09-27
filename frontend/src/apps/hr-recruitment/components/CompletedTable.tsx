@@ -86,6 +86,7 @@ export default function CompletedTable({
       key: "step",
       header: "Step",
       cell: (e) => <span className="text-grey">{stepByKey(e.stepKey)?.short ?? e.stepKey}</span>,
+      sortValue: (e) => stepByKey(e.stepKey)?.short ?? e.stepKey,
       filter: { kind: "select", get: (e) => stepByKey(e.stepKey)?.short ?? e.stepKey },
     },
     {
@@ -93,6 +94,7 @@ export default function CompletedTable({
       header: "Done on",
       cell: (e) => <span className="text-grey">{formatDate(e.atIso)}</span>,
       sortValue: (e) => e.atIso,
+      filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) },
       exportValue: (e) => formatDate(e.atIso),
       tdClassName: "whitespace-nowrap",
     },
@@ -123,6 +125,7 @@ export default function CompletedTable({
           <span className="text-grey-2">—</span>
         ),
       sortValue: (e) => e.editedAtIso ?? "",
+      filter: { kind: "date", get: (e) => (e.editedAtIso ?? "").slice(0, 10) },
       tdClassName: "whitespace-nowrap",
     },
   ];

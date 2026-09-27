@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import Pagination from "@/shared/components/ui/Pagination";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 
@@ -45,6 +48,11 @@ export default function ReportTable<T>({
   exportNotes?: string[];
 }) {
   const pg = usePagination(rows);
+  /**
+   * PF-20: one line per row, and the columns drag. Four of these sit on the dashboard at once,
+   * so the export name — unique per table — goes into the key to keep their widths apart.
+   */
+  const fit = useColumnWidths("tb", [exportName, ...columns.map((c) => c.key)]);
 
   const exportNow = () =>
     exportRowsToXlsx<T>({
@@ -66,7 +74,9 @@ export default function ReportTable<T>({
 
   return (
     <div>
-      <div className="mb-2 flex justify-end">
+      <div className="mb-2 flex items-center justify-end gap-2">
+        {/* PF-20: appears only once a column here has been dragged. */}
+        <ResetWidths fit={fit} cols={columns.map((c) => c.key)} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
         <button
           onClick={exportNow}
           className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-semibold text-grey-2 rounded-lg border border-line bg-white hover:text-orange hover:border-orange/50"
@@ -80,18 +90,20 @@ export default function ReportTable<T>({
           <thead>
             <tr className="text-left text-grey-2">
               {columns.map((c) => (
-                <th
+                <FitTh
+                  fit={fit}
+                  col={c.key}
                   key={c.key}
                   className={`font-semibold text-[11.5px] uppercase tracking-wide px-3 pt-2 pb-2 border-b border-line ${
                     c.align === "right" ? "text-right" : ""
                   }`}
                 >
                   {c.header}
-                </th>
+                </FitTh>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody {...fit.tbodyProps}>
             {pg.pageItems.map((row) => (
               <tr key={rowKey(row)} className="hover:bg-page/60">
                 {columns.map((c) => (
@@ -99,7 +111,10 @@ export default function ReportTable<T>({
                     key={c.key}
                     className={`px-3 py-2.5 border-b border-line/70 ${c.align === "right" ? "text-right tabular-nums" : ""}`}
                   >
-                    {c.cell(row)}
+                    {/* PF-20: one line; text cut at the column's width, numbers never. */}
+                    <FitCell fit={fit} col={c.key} cap={c.align === "right" ? null : FIT.CUT}>
+                      {c.cell(row)}
+                    </FitCell>
                   </td>
                 ))}
               </tr>
