@@ -177,7 +177,19 @@ export default function Dashboard() {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <WhereStuckCard nodes={nodes} groups={STAGES} actionHref={`${B}/monitoring`} showAction={s.canMonitor} />
-        <NeedsAttentionCard rows={attention} todayIso={today} actionHref={`${B}/calendar`} showAction />
+        {/*
+          Points at the CALENDAR, not the Control Center: these rows are dated
+          tracks — including ones whose job has not opened yet — and the forward
+          view is the only screen that shows them. Hence the explicit label; the
+          card's default names the Control Center, which is not where this goes.
+        */}
+        <NeedsAttentionCard
+          rows={attention}
+          todayIso={today}
+          actionHref={`${B}/calendar`}
+          showAction
+          actionLabel="See what's coming →"
+        />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">

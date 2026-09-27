@@ -376,9 +376,34 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
      *   owner list, yet `canActOn` lets them record the schedule and the service on
      *   their own assets. Ownership alone cannot express that; having work sitting in
      *   the queue can. Now that `myQueue` is scoped, this asks the right question.
+     *
+     * ⚠ THE FOURTH CLAUSE IS WHY A CUSTODIAN KEEPS THE SCREEN AFTER FINISHING.
+     *   With only the first three, completing the work emptied `myQueue` and the
+     *   route gate slammed behind them: press Schedule, and the page you are
+     *   standing on becomes "You do not have access to this screen". That took
+     *   away the ONLY way to correct the entry — the stage's Completed tab, which
+     *   `lockReasonFor` deliberately keeps editable until the next step is
+     *   recorded — because JobDetail's action button is built from `openStep(job)`
+     *   and has already moved on to the next step. Owners never saw it (clause
+     *   three holds their page open); it hit exactly the custodian arm that exists
+     *   so the person who actually takes the asset in can act.
+     *
+     *   It is deliberately narrowed to entries that are STILL EDITABLE
+     *   (`lockReason === null`), not to everything this person ever recorded. The
+     *   page is held open only while it can still do something — which is exactly
+     *   the window that was lost. Once the next step is recorded the entry locks,
+     *   the screen offers nothing, and it closes again, so nobody keeps read
+     *   access to a step's whole Completed list on the strength of one old entry.
+     *   Verification is the exception that proves it right: `lockReasonFor` keeps
+     *   it correctable after the job closes, so its verifier keeps the page — and
+     *   that is a real capability, not a leftover.
      */
     const canSeeQueue = (step: QueueStep): boolean =>
-      isModuleViewer || isProcessCoordinator || isStepOwner(step) || myQueue(step).length > 0;
+      isModuleViewer ||
+      isProcessCoordinator ||
+      isStepOwner(step) ||
+      myQueue(step).length > 0 ||
+      completedForPure(snapshot, step).some((e) => e.actorId === uid && e.lockReason === null);
 
     /* --------------------------- governance --------------------------- */
 
