@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Field, FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { useProcurementStore } from "../store";
-import { PiDocLink, TallyDocLink } from "./DocLinks";
-import type { Grn, Pi, PurchaseOrder, PurchaseRequest } from "../types";
+import { PiDocLink, RequestDocLinks, TallyDocLink } from "./DocLinks";
+import type { Grn, Pi, PurchaseOrder, PurchaseRequest, SourcingDoc } from "../types";
 
 /**
  * The tinted card every stage form opens with — one shell, so Sourcing, Approve,
@@ -17,6 +17,16 @@ export function RefPanel({ children }: { children: ReactNode }) {
     <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{children}</div>
     </div>
+  );
+}
+
+/** The requester's files, as one cell. Nothing at all when none were attached. */
+function RequestAttachmentsField({ docs }: { docs: SourcingDoc[] }) {
+  if (docs.length === 0) return null;
+  return (
+    <Field label="Request attachments">
+      <RequestDocLinks docs={docs} />
+    </Field>
   );
 }
 
@@ -47,6 +57,8 @@ export function RequestRefPanel({
       <Field label="Company" value={s.companyLabel(request.companyId)} />
       <Field label="Requisition No." value={request.requestNo} />
       {vendorId !== undefined && <Field label={vendorFieldLabel} value={s.vendorLabel(vendorId)} />}
+      <Field label="Category" value={s.categoryLabelForRequest(request.id)} />
+      <RequestAttachmentsField docs={s.requestDocsForRequest(request.id)} />
       {children}
     </RefPanel>
   );
@@ -108,6 +120,8 @@ export default function PoRefPanel({
     <RefPanel>
       <Field label="Company" value={s.companyLabel(po.companyId)} />
       <Field label="Vendor" value={s.vendorLabel(po.vendorId)} />
+      <Field label="Category" value={s.categoryLabelForPo(po.id)} />
+      <RequestAttachmentsField docs={s.requestDocsForPo(po.id)} />
 
       {showPoNo && (
         <Field label="PO No.">

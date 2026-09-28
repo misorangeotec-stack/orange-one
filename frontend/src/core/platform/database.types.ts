@@ -4493,6 +4493,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          item_types: string[]
           name: string
           qc_required: boolean
           sort_order: number
@@ -4503,6 +4504,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          item_types?: string[]
           name: string
           qc_required?: boolean
           sort_order?: number
@@ -4513,6 +4515,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          item_types?: string[]
           name?: string
           qc_required?: boolean
           sort_order?: number
@@ -4586,6 +4589,30 @@ export type Database = {
           last_value?: number
           scope?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_purchase_followup_items: {
+        Row: {
+          created_at: string
+          followup_id: string
+          id: string
+          po_item_id: string
+          qty: number
+        }
+        Insert: {
+          created_at?: string
+          followup_id: string
+          id?: string
+          po_item_id: string
+          qty: number
+        }
+        Update: {
+          created_at?: string
+          followup_id?: string
+          id?: string
+          po_item_id?: string
+          qty?: number
         }
         Relationships: []
       }
@@ -5735,6 +5762,50 @@ export type Database = {
           },
         ]
       }
+      fms_purchase_request_docs: {
+        Row: {
+          created_at: string
+          id: string
+          mime_type: string | null
+          name: string
+          path: string
+          request_id: string
+          size_bytes: number | null
+          sort_order: number
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name: string
+          path: string
+          request_id: string
+          size_bytes?: number | null
+          sort_order?: number
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name?: string
+          path?: string
+          request_id?: string
+          size_bytes?: number | null
+          sort_order?: number
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_request_docs_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_purchase_requests: {
         Row: {
           category_id: string
@@ -5742,6 +5813,10 @@ export type Database = {
           created_at: string
           id: string
           note: string | null
+          po_on_hold_at: string | null
+          po_on_hold_by: string | null
+          po_remarks: string | null
+          po_remarks_updated_at: string | null
           request_no: string
           requester_id: string | null
           sourced_at: string | null
@@ -5756,6 +5831,10 @@ export type Database = {
           created_at?: string
           id?: string
           note?: string | null
+          po_on_hold_at?: string | null
+          po_on_hold_by?: string | null
+          po_remarks?: string | null
+          po_remarks_updated_at?: string | null
           request_no: string
           requester_id?: string | null
           sourced_at?: string | null
@@ -5770,6 +5849,10 @@ export type Database = {
           created_at?: string
           id?: string
           note?: string | null
+          po_on_hold_at?: string | null
+          po_on_hold_by?: string | null
+          po_remarks?: string | null
+          po_remarks_updated_at?: string | null
           request_no?: string
           requester_id?: string | null
           sourced_at?: string | null
@@ -8977,6 +9060,17 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_purchase_record_partial_dispatch: {
+        Args: {
+          p_actual_dispatch_date: string
+          p_items: Json
+          p_lr_no: string
+          p_po_id: string
+          p_remarks: string
+          p_transport: string
+        }
+        Returns: undefined
+      }
       fms_purchase_record_followup: {
         Args: {
           p_actual_dispatch_date?: string
@@ -9044,6 +9138,13 @@ export type Database = {
         Returns: undefined
       }
       fms_purchase_save_sourcing_docs: {
+        Args: {
+          p_docs: Json
+          p_request_id: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_save_request_docs: {
         Args: {
           p_docs: Json
           p_request_id: string
@@ -9160,6 +9261,10 @@ export type Database = {
           p_pi_value?: number
           p_vendor_pi_no: string
         }
+        Returns: undefined
+      }
+      fms_purchase_set_po_hold: {
+        Args: { p_on_hold: boolean; p_remarks: string; p_request_id: string }
         Returns: undefined
       }
       fms_purchase_update_po_details: {

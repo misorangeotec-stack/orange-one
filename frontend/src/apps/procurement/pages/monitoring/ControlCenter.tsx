@@ -148,9 +148,9 @@ export default function ControlCenter() {
     {
       key: "company",
       header: "Company",
-      cell: (e) => s.companyById(e.companyId ?? "")?.name ?? "—",
-      sortValue: (e) => s.companyById(e.companyId ?? "")?.name ?? "—",
-      filter: { kind: "select", get: (e) => s.companyById(e.companyId ?? "")?.name ?? "—" },
+      cell: (e) => s.companyLabel(e.companyId ?? null),
+      sortValue: (e) => s.companyLabel(e.companyId ?? null),
+      filter: { kind: "select", get: (e) => s.companyLabel(e.companyId ?? null) },
       tdClassName: "whitespace-nowrap",
     },
     {

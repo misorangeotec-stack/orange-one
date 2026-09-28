@@ -43,6 +43,7 @@ import type {
   Activity,
   ProcNotification,
   ProcEntityType,
+  FollowupItem,
 } from "../types";
 
 /**
@@ -51,16 +52,33 @@ import type {
  * snake_case rows to the camelCase domain types the screens consume. Mirrors
  * the task-management `fetchTaskData` shape (paginate to bypass PostgREST's
  * 1000-row cap, then map in memory).
+ *
+ * CENTRAL MASTERS. Companies, vendors and items are not Purchase's own tables
+ * any more — they are the Tally-fed mst_* rows every module shares (the
+ * cutover is supabase/purchase-central/01_cutover.sql). They load in THREE
+ * places, on purpose:
+ *
+ *   • fetchProcurementData — only the items the requisitions already name, so
+ *     every line renders. A few hundred rows; rides with the working set.
+ *   • fetchProcurementMasters — the 5 company books and every vendor ledger,
+ *     for the pickers. Its own query key, so a workflow save does not re-pull
+ *     3,000 ledgers to learn that a GRN was booked.
+ *   • fetchCompanyItems — ONE company's stock book, fetched when a requisition
+ *     picks that company. O-tec — Surat alone is 8,000+ items; loading every
+ *     book up front would put 14,000 rows behind every visit.
+ *
+ * Categories, rates and everything else stay Purchase's own.
  */
 
 const PAGE = 1000;
 
+// mst_* tables are not in the generated Database types; the standing FMS
+// convention routes them through an untyped alias (see dispatchFetch.ts).
+const db = supabase as any;
+
 type Tbl =
-  | "fms_purchase_companies"
   | "fms_purchase_categories"
   | "fms_purchase_item_groups"
-  | "fms_purchase_items"
-  | "fms_purchase_vendors"
   | "fms_purchase_master_managers"
   | "fms_purchase_master_requests"
   | "fms_purchase_po_cancel_requests"
@@ -72,6 +90,8 @@ type Tbl =
   | "fms_purchase_request_items"
   | "fms_purchase_request_vendors"
   | "fms_purchase_sourcing_docs"
+  | "fms_purchase_request_docs"
+  | "fms_purchase_followup_items"
   | "fms_purchase_vendor_item_prices"
   | "fms_purchase_quotations"
   | "fms_purchase_pos"
@@ -132,6 +152,207 @@ async function fetchAllOptional(table: Tbl, orderBy = "created_at"): Promise<any
   }
 }
 
+/* ------------------------------ central masters --------------------------- */
+
+type MstTbl = "mst_companies" | "mst_parties" | "mst_items" | "mst_units";
+
+/**
+ * The columns each mapper below reads — and nothing else. mst_parties has 26
+ * columns and ~7,800 rows; select("*") would ship the credit limits and group
+ * chains of every ledger in Tally to fill a vendor dropdown.
+ *
+ * ⚠ THE MAPPER IS THE CONTRACT. Rows are `any`, so a column dropped here reads
+ *   as undefined in the UI with no compiler error. Change both together.
+ */
+const MST_COLS = {
+  companies: "id,name,alias,location,active,sort_order,created_at",
+  vendors: "id,name,company_id,gstin,contact_name,phone,email,address,active,created_at",
+  items: "id,name,company_id,unit_id,item_type,active,sort_order,created_at",
+  units: "id,name",
+} as const;
+
+/**
+ * A paged read of a Central Masters table.
+ *
+ * ⚠ ORDERED BY `id`, A UNIQUE KEY. OFFSET paging over a non-unique order skips
+ *   and repeats rows between pages, differently on every run, and nothing
+ *   errors — CENTRAL-MASTERS.md item 24 is the story of the ~1,600 ledgers that
+ *   went missing that way. `created_at` is NOT unique on these tables: the sync
+ *   writes them in batches that share a timestamp.
+ */
+async function fetchMst(table: MstTbl, cols: string, where?: (q: any) => any): Promise<any[]> {
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = db.from(table).select(cols);
+    if (where) q = where(q);
+    const { data, error } = await q.order("id", { ascending: true }).range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Rows by id, in concurrent chunks. `in` builds a query STRING, and a few
+ * hundred uuids already exceed what the gateway accepts as one.
+ */
+async function fetchMstByIds(table: MstTbl, cols: string, ids: string[]): Promise<any[]> {
+  const CHUNK = 200;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+  const results = await Promise.all(chunks.map((c) => db.from(table).select(cols).in("id", c)));
+  const out: any[] = [];
+  for (const { data, error } of results) {
+    if (error) throw new Error(error.message);
+    out.push(...(data ?? []));
+  }
+  return out;
+}
+
+const str = (v: any): string | null => (v === null || v === undefined || v === "" ? null : String(v));
+
+/**
+ * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name. `name` is Tally's
+ *   book name — "ORANGE O TEC PRIVATE LIMITED (01-04-25TO31-03-27)" — which the
+ *   sync rewrites and which is re-minted every April. `alias` is ours and no
+ *   sync touches it. The site rides separately in `location`, and every screen
+ *   already renders a company as "name — location".
+ */
+const mapCompany = (r: any): Company => ({
+  id: r.id,
+  name: str(r.alias) ?? r.name,
+  location: str(r.location),
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at,
+});
+
+const mapVendor = (r: any): Vendor => ({
+  id: r.id,
+  companyId: r.company_id ?? null,
+  name: r.name,
+  gstin: str(r.gstin),
+  contactName: str(r.contact_name),
+  phone: str(r.phone),
+  email: str(r.email),
+  address: str(r.address),
+  active: r.active,
+  createdAt: r.created_at,
+});
+
+const mapItem = (r: any, unitName: Map<string, string>): Item => ({
+  id: r.id,
+  name: r.name,
+  // mst_items points at mst_units; a Purchase line carries the unit's NAME.
+  unit: (r.unit_id && unitName.get(r.unit_id)) || "",
+  companyId: r.company_id ?? null,
+  itemType: str(r.item_type),
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at,
+});
+
+/**
+ * LEGACY FALLBACK — for display only, until the cutover has run.
+ *
+ * Before supabase/purchase-central/01_cutover.sql repoints them, old
+ * requisitions, lines and POs still hold the ids of Purchase's own
+ * fms_purchase_companies / _vendors / _items rows. Looked up in mst_* alone they
+ * render blank. So any id the working set names that is NOT a Central Masters
+ * row is read from the legacy table instead. These rows only feed the
+ * id → name lookups; they never reach a picker. Once the cutover has run every
+ * id resolves in mst_* and these reads come back empty.
+ */
+type LegacyTbl = "fms_purchase_companies" | "fms_purchase_vendors" | "fms_purchase_items";
+
+async function fetchLegacyByIds(table: LegacyTbl, ids: string[]): Promise<any[]> {
+  if (ids.length === 0) return [];
+  const CHUNK = 200;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+  const results = await Promise.all(chunks.map((c) => db.from(table).select("*").in("id", c)));
+  const out: any[] = [];
+  // A database that has dropped the legacy tables simply has nothing to fall back to.
+  for (const { data, error } of results) if (!error) out.push(...(data ?? []));
+  return out;
+}
+
+const mapLegacyItem = (r: any): Item => ({
+  id: r.id,
+  name: r.name,
+  unit: r.unit ?? "",
+  companyId: null,
+  itemType: null,
+  active: false,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at,
+});
+
+async function fetchUnitNames(): Promise<Map<string, string>> {
+  const units = await fetchMst("mst_units", MST_COLS.units);
+  return new Map(units.map((u: any) => [u.id as string, u.name as string]));
+}
+
+/** The pickers' catalogue — see the header. */
+export interface ProcurementMasters {
+  companies: Company[];
+  vendors: Vendor[];
+  /** Unit names (KGS, PCS, …) — global, not per company. The item-request form's list. */
+  units: string[];
+}
+
+/**
+ * The catalogue's own react-query key — NOT scoped to the user: RLS on mst_* is
+ * "any staff member", so everybody gets the same rows and one entry serves all.
+ *
+ * ⚠ ONLY MASTER WRITES MAY INVALIDATE THIS (approving a vendor request creates a
+ *   ledger). A workflow save invalidating it is the bug the split exists to
+ *   prevent.
+ */
+export const PROCUREMENT_MASTERS_QK = ["procurementMasters"] as const;
+
+export async function fetchProcurementMasters(): Promise<ProcurementMasters> {
+  const [companies, vendors, unitName] = await Promise.all([
+    // All five books, deliberately unfiltered: a new company should appear on
+    // its own rather than wait for somebody to tick it.
+    fetchMst("mst_companies", MST_COLS.companies),
+    // Every vendor ledger in every book, plus any ledger ticked for Purchase —
+    // a firm Tally files as a customer but that we also buy from. The company
+    // narrows this on the requisition; there is no list to maintain.
+    fetchMst("mst_parties", MST_COLS.vendors, (q) => q.or("is_vendor.eq.true,modules.cs.{procurement}")),
+    fetchUnitNames(),
+  ]);
+  return {
+    companies: companies.map(mapCompany),
+    vendors: vendors.map(mapVendor),
+    units: [...unitName.values()].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+/** One company's stock book — see fetchCompanyItems. */
+export const PROCUREMENT_ITEM_BOOK_QK = (companyId: string) => ["procurementItemBook", companyId] as const;
+
+/**
+ * EVERY ACTIVE ITEM IN ONE COMPANY'S TALLY BOOK — the requisition line's picker.
+ *
+ * Not filtered on `modules`: almost no stock item carries a module tick, so that
+ * filter would collapse the book to nothing. The company is the filter, and the
+ * line's category narrows it further by item type.
+ *
+ * Sizes, measured: Colorix 254 · Enterprise-Surat 1,495 · Enterprise-Noida 2,096
+ * · O-tec-Noida 2,140 · O-tec-Surat 8,448.
+ */
+export async function fetchCompanyItems(companyId: string): Promise<Item[]> {
+  if (!companyId) return [];
+  const [rows, unitName] = await Promise.all([
+    fetchMst("mst_items", MST_COLS.items, (q) => q.eq("company_id", companyId).eq("active", true)),
+    fetchUnitNames(),
+  ]);
+  return rows.map((r) => mapItem(r, unitName)).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export interface ProcConfig {
   processCoordinatorIds: string[];
   amountBasis: string;
@@ -158,11 +379,20 @@ export const PROCUREMENT_QK = ["procurementData"] as const;
 export const procurementQueryKey = (userId: string | null) => [...PROCUREMENT_QK, userId] as const;
 
 export interface ProcurementData {
-  companies: Company[];
   categories: Category[];
   itemGroups: ItemGroup[];
+  /**
+   * ONLY the items a requisition line or a rate names — what the screens must be
+   * able to render. The pickers read a company's whole book through
+   * fetchCompanyItems instead; companies and vendors are fetchProcurementMasters.
+   */
   items: Item[];
-  vendors: Vendor[];
+  /**
+   * Legacy companies / vendors a pre-cutover record still names — id lookups
+   * only, never a picker. Empty once the cutover has run. See fetchLegacyByIds.
+   */
+  legacyCompanies: Company[];
+  legacyVendors: Vendor[];
   masterManagers: MasterManager[];
   masterRequests: MasterRequest[];
   poCancelRequests: PoCancelRequest[];
@@ -174,6 +404,8 @@ export interface ProcurementData {
   requestItems: RequestItem[];
   requestVendors: RequestVendor[];
   sourcingDocs: SourcingDoc[];
+  /** Files the requester attached when raising the request. Same shape as a sourcing doc. */
+  requestDocs: SourcingDoc[];
   vendorItemPrices: VendorItemPrice[];
   quotations: Quotation[];
   pos: PurchaseOrder[];
@@ -187,18 +419,11 @@ export interface ProcurementData {
   qcItems: QcItem[];
   payments: Payment[];
   followups: Followup[];
+  /** Per-line quantities of each partial-dispatch lot. */
+  followupItems: FollowupItem[];
   activity: Activity[];
   notifications: ProcNotification[];
 }
-
-const mapCompany = (r: any): Company => ({
-  id: r.id,
-  name: r.name,
-  location: r.location ?? null,
-  active: r.active,
-  sortOrder: r.sort_order ?? 0,
-  createdAt: r.created_at,
-});
 
 const mapCategory = (r: any): Category => ({
   id: r.id,
@@ -206,6 +431,8 @@ const mapCategory = (r: any): Category => ({
   active: r.active,
   sortOrder: r.sort_order ?? 0,
   qcRequired: r.qc_required ?? false,
+  // Absent until migration 20261217120000 is applied — [] means "no narrowing".
+  itemTypes: (r.item_types ?? []) as string[],
   createdAt: r.created_at,
 });
 
@@ -215,28 +442,6 @@ const mapItemGroup = (r: any): ItemGroup => ({
   name: r.name,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
-  createdAt: r.created_at,
-});
-
-const mapItem = (r: any): Item => ({
-  id: r.id,
-  categoryId: r.category_id,
-  name: r.name,
-  unit: r.unit ?? "",
-  active: r.active,
-  sortOrder: r.sort_order ?? 0,
-  createdAt: r.created_at,
-});
-
-const mapVendor = (r: any): Vendor => ({
-  id: r.id,
-  name: r.name,
-  gstin: r.gstin ?? null,
-  contactName: r.contact_name ?? null,
-  phone: r.phone ?? null,
-  email: r.email ?? null,
-  address: r.address ?? null,
-  active: r.active,
   createdAt: r.created_at,
 });
 
@@ -323,6 +528,10 @@ const mapRequest = (r: any): PurchaseRequest => ({
   cancelledBy: r.cancelled_by ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
+  poRemarks: r.po_remarks ?? null,
+  poRemarksUpdatedAt: r.po_remarks_updated_at ?? null,
+  poOnHoldAt: r.po_on_hold_at ?? null,
+  poOnHoldBy: r.po_on_hold_by ?? null,
 });
 
 const mapSourcingDoc = (r: any): SourcingDoc => ({
@@ -598,12 +807,12 @@ const mapNotification = (r: any): ProcNotification => ({
 
 
 export async function fetchProcurementData(): Promise<ProcurementData> {
+  // ⚠ DESTRUCTURED BY POSITION — the names and the calls below must stay in
+  //   step. Every row is `any`, so a shifted binding compiles and renders wrong.
   const [
-    companies,
     categories,
     itemGroups,
-    items,
-    vendors,
+    unitName,
     managers,
     masterReqs,
     poCancelReqs,
@@ -630,12 +839,12 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     activity,
     notifications,
     sourcingDocs,
+    requestDocs,
+    followupItems,
   ] = await Promise.all([
-    fetchAll("fms_purchase_companies"),
     fetchAll("fms_purchase_categories"),
     fetchAll("fms_purchase_item_groups"),
-    fetchAll("fms_purchase_items"),
-    fetchAll("fms_purchase_vendors"),
+    fetchUnitNames(),
     fetchAll("fms_purchase_master_managers"),
     fetchAll("fms_purchase_master_requests"),
     fetchAll("fms_purchase_po_cancel_requests"),
@@ -662,6 +871,10 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     fetchAll("fms_purchase_activity"),
     fetchAll("fms_purchase_notifications"),
     fetchAllOptional("fms_purchase_sourcing_docs"),
+    // Optional for the same reason: migration 20261217140000 may not be applied yet.
+    fetchAllOptional("fms_purchase_request_docs"),
+    // Optional: migration 20261217160000 may not be applied yet.
+    fetchAllOptional("fms_purchase_followup_items"),
   ]);
 
   const configByKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -674,12 +887,47 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     reassignPoolUserIds: (configByKey.get("reassign_pool")?.user_ids ?? []) as string[],
   };
 
+  /*
+    THE ITEMS THIS WORKING SET NAMES, and only those.
+
+    A line carries `item_id` and no name, so every item a line or a rate points
+    at must be here or it renders as "Unknown item" — in the queues, on the PO,
+    in the email. That is a few hundred rows; the item BOOKS the pickers need
+    are thousands and load per company (fetchCompanyItems).
+
+    ⚠ A SECOND WAVE, because it needs the lines first. It is chunked and
+      concurrent (fetchMstByIds), so it costs one round trip, not one per chunk.
+  */
+  const itemIds = new Set<string>();
+  for (const r of requestItems) if (r.item_id) itemIds.add(r.item_id);
+  for (const r of vendorItemPrices) if (r.item_id) itemIds.add(r.item_id);
+  const companyIds = new Set<string>();
+  for (const r of [...requests, ...pos]) if (r.company_id) companyIds.add(r.company_id);
+  const vendorIds = new Set<string>();
+  for (const r of [...requestVendors, ...quotations, ...pos, ...vendorItemPrices]) if (r.vendor_id) vendorIds.add(r.vendor_id);
+  for (const r of requestItems) if (r.final_vendor_id) vendorIds.add(r.final_vendor_id);
+
+  const [items, mstCompanies, mstVendors] = await Promise.all([
+    itemIds.size ? fetchMstByIds("mst_items", MST_COLS.items, [...itemIds]) : Promise.resolve([]),
+    companyIds.size ? fetchMstByIds("mst_companies", "id", [...companyIds]) : Promise.resolve([]),
+    vendorIds.size ? fetchMstByIds("mst_parties", "id", [...vendorIds]) : Promise.resolve([]),
+  ]);
+  const missing = (want: Set<string>, found: any[]) => {
+    const have = new Set(found.map((r) => r.id as string));
+    return [...want].filter((id) => !have.has(id));
+  };
+  const [legacyCompanies, legacyVendors, legacyItems] = await Promise.all([
+    fetchLegacyByIds("fms_purchase_companies", missing(companyIds, mstCompanies)),
+    fetchLegacyByIds("fms_purchase_vendors", missing(vendorIds, mstVendors)),
+    fetchLegacyByIds("fms_purchase_items", missing(itemIds, items)),
+  ]);
+
   return {
-    companies: companies.map(mapCompany),
     categories: categories.map(mapCategory),
     itemGroups: itemGroups.map(mapItemGroup),
-    items: items.map(mapItem),
-    vendors: vendors.map(mapVendor),
+    items: [...items.map((r) => mapItem(r, unitName)), ...legacyItems.map(mapLegacyItem)],
+    legacyCompanies: legacyCompanies.map(mapCompany),
+    legacyVendors: legacyVendors.map(mapVendor),
     masterManagers: managers.map(mapManager),
     masterRequests: masterReqs.map(mapMasterRequest),
     poCancelRequests: poCancelReqs.map(mapPoCancelRequest),
@@ -691,6 +939,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     requestItems: requestItems.map(mapRequestItem),
     requestVendors: requestVendors.map(mapRequestVendor),
     sourcingDocs: sourcingDocs.map(mapSourcingDoc),
+    requestDocs: requestDocs.map(mapSourcingDoc),
     vendorItemPrices: vendorItemPrices.map(mapVendorItemPrice),
     quotations: quotations.map(mapQuotation),
     pos: pos.map(mapPo),
@@ -704,6 +953,12 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     qcItems: qcItems.map(mapQcItem),
     payments: payments.map(mapPayment),
     followups: followups.map(mapFollowup),
+    followupItems: followupItems.map((r: any): FollowupItem => ({
+      id: r.id,
+      followupId: r.followup_id,
+      poItemId: r.po_item_id,
+      qty: Number(r.qty),
+    })),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
   };

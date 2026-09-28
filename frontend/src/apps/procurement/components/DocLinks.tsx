@@ -118,6 +118,54 @@ export function PoDocLink({ po }: { po: PurchaseOrder }) {
  * Renders nothing when there is nothing attached, so a caller can pass it
  * unconditionally.
  */
+/**
+ * The requester's attachments, for the reference block on every step.
+ *
+ * ⚠ ANCHORS, NOT BUTTONS — on purpose. This sits INSIDE the reference panel, and
+ *   in a read-only modal that panel is inside a disabled `<fieldset>`, which
+ *   disables buttons but not links. So each file is an `<a>` that mints the
+ *   signed URL on click, and it keeps working for a viewer as well.
+ */
+export function RequestDocLinks({ docs }: { docs: SourcingDoc[] }) {
+  const s = useProcurementStore();
+  const [busy, setBusy] = useState<string | null>(null);
+  if (docs.length === 0) return null;
+  const open = async (path: string) => {
+    if (busy) return;
+    setBusy(path);
+    try {
+      window.open(await s.sourcingDocUrl(path), "_blank", "noopener,noreferrer");
+    } catch {
+      /* surfaced by the store; keep the host quiet */
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <span className="flex flex-col gap-0.5">
+      {docs.map((d) => {
+        const Icon = /\.(png|jpe?g|gif|webp|heic|heif|bmp)$/i.test(d.name) ? Image : FileText;
+        return (
+          <a
+            key={d.path}
+            href="#"
+            role="button"
+            onClick={(e) => {
+              e.preventDefault();
+              void open(d.path);
+            }}
+            title={d.name}
+            className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline"
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{busy === d.path ? "Opening…" : d.name}</span>
+          </a>
+        );
+      })}
+    </span>
+  );
+}
+
 export function SourcingDocsList({ docs }: { docs: SourcingDoc[] }) {
   const s = useProcurementStore();
   if (docs.length === 0) return null;

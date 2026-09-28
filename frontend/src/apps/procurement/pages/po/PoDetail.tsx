@@ -96,7 +96,7 @@ export default function PoDetail() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">{po.poNo}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {formatDate(po.createdAt)}
+            {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {s.categoryLabelForPo(po.id)} · {formatDate(po.createdAt)}
             {po.tallyPoNo ? <> · Tally PO: <span className="font-medium text-navy">{po.tallyPoNo}</span></> : null}
             {po.paymentTerms ? <> · Terms: <span className="font-medium text-navy capitalize">{po.paymentTerms.replace(/_/g, " ")}</span></> : null}
             {po.dispatchDate ? <> · Dispatch: <span className="font-medium text-navy">{formatDate(po.dispatchDate)}</span></> : null}
@@ -162,6 +162,8 @@ export default function PoDetail() {
           {s.canRecordPayment && po.currentStage === "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("advance")}>Record Advance</Button>}
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
           {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
+          {/* Partial dispatch: a lot has left the vendor while the PO stays on Follow-up — its goods can be received now. */}
+          {s.canInward && po.currentStage === "follow_up" && items.some((it) => (s.receiveCapForPoItem(it.id) ?? 0) > it.receivedQty + 0.0005) && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN (dispatched lot)</Button>}
           {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
           {s.canQc && qcPending && <Button size="sm" variant="ghost" onClick={() => setModal("qc")}>Record QC</Button>}
           {s.canPurchaseReturn && pendingReturn && <Button size="sm" variant="ghost" onClick={() => setModal("return")}>Book purchase return</Button>}

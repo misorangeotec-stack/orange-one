@@ -1,36 +1,75 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
-import MasterCrud, { type MasterColumn } from "@/shared/components/ui/MasterCrud";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
+import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
+import { useSession } from "@/core/platform/session";
+import { ITEM_TYPES, itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { emptyValuesFor, masterFields } from "../../lib/masterFields";
 import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
 import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
-import type { Company, Category, Item, Vendor, VendorItemPrice } from "../../types";
+import type { Category, VendorItemPrice } from "../../types";
 
 /**
- * Masters admin — Companies, Categories, Items, Vendors, Vendor-Item Rates. Each
- * tab is a MasterCrud surface driven by the shared `masterFields` descriptor (the
- * same one the request + approve modals use), with the relational tabs (Items →
- * Category, Rates → Vendor + Item) sourcing their options from the store.
+ * Masters admin — the two masters that are Purchase's OWN: Categories and
+ * Vendor-Item Rates. Each tab is a MasterCrud surface driven by the shared
+ * `masterFields` descriptor (the same one the request + approve modals use).
  * Who owns each master is configured in Setup → Master Owners.
  *
- * No Item Groups tab: an item hangs off a category directly (20260808120100).
- * The table and its rows still exist for legacy master requests — see the
- * comment on MASTER_TYPES in ../../types.
+ * ⚠ NO COMPANIES, ITEMS OR VENDORS TABS. Those are Central Masters now —
+ *   Tally's books, stock items and ledgers, shared with every module and edited
+ *   on /admin/masters. Editing them here would fork them again, which is the
+ *   thing the move exists to end. Order to Dispatch dropped its Masters entry
+ *   for the same reason. A missing vendor or item is REQUESTED (Master
+ *   Requests), and approving it creates the central row.
  */
+
+const csvToList = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
+
+const TYPE_OPTIONS = ITEM_TYPES.map((t) => ({ value: t.value, label: t.label }));
+
+/**
+ * Which Tally item types a line in this category may pick.
+ *
+ * Kept OUT of `masterFields("category")` on purpose: that descriptor is also
+ * the request/approve form and the resolve RPC's wire contract, and neither has
+ * a multi-select nor a reason to set this. It is a Masters-screen setting.
+ */
+const itemTypesField: MasterFieldDef = {
+  key: "item_types",
+  label: "Items it offers (Tally item types)",
+  type: "custom",
+  hint: "A requisition line in this category shows only the company's Tally items of these types. Leave empty to show every item. This does not change QC.",
+  render: (value, onChange) => (
+    <MultiSelect
+      values={csvToList(value)}
+      onChange={(ids) => onChange(ids.join(","))}
+      options={TYPE_OPTIONS}
+      placeholder="Every item"
+      searchable
+      chips
+    />
+  ),
+};
+
 export default function Masters() {
   const s = useProcurementStore();
-  const [tab, setTab] = useState("company");
+  const { isAdmin } = useSession();
+  const [tab, setTab] = useState("category");
 
-  const ctx = useMasterFieldCtx();
+  // The rate form's item list is every company's stock book — only load it on
+  // the tab that needs it.
+  const ctx = useMasterFieldCtx({ withItemBooks: tab === "vendor_item_price" });
 
   const tabs = [
-    { key: "company", label: "Companies", count: s.companies.length },
     { key: "category", label: "Categories", count: s.categories.length },
-    { key: "item", label: "Items", count: s.items.length },
-    { key: "vendor", label: "Vendors", count: s.vendors.length },
     { key: "vendor_item_price", label: "Vendor-Item Rates", count: s.vendorItemPrices.length },
   ];
+
+  const typesText = (r: Category) =>
+    r.itemTypes.length ? r.itemTypes.map((t) => itemTypeLabel(t as ItemType) || t).join(", ") : "Every item";
 
   return (
     <div className="space-y-5">
@@ -41,41 +80,45 @@ export default function Masters() {
         </p>
       </div>
 
-      <Tabs tabs={tabs} active={tab} onChange={setTab} />
+      <Card className="p-4">
+        <p className="text-[13px] text-navy">
+          <span className="font-semibold">Companies, vendors and items come from Tally</span>, through Central Masters —
+          the same lists Order to Dispatch uses. They refresh on their own every 15 minutes.
+        </p>
+        <p className="text-[12.5px] text-grey mt-1">
+          Missing a vendor or an item? Type its name where you pick it and choose “Request new…” — once approved it can be
+          picked straight away.
+          {isAdmin && (
+            <>
+              {" "}
+              To edit them, open{" "}
+              <Link to="/admin/masters" className="font-semibold text-orange hover:underline">
+                Central Masters
+              </Link>
+              .
+            </>
+          )}
+        </p>
+      </Card>
 
-      {tab === "company" && (
-        <MasterCrud<Company>
-          singular="Company"
-          rows={s.companies}
-          canManage={s.canManage("company")}
-          searchText={(r) => `${r.name} ${r.location ?? ""}`}
-          columns={[
-            { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Location", render: (r) => r.location || <span className="text-grey-2">—</span> },
-          ] as MasterColumn<Company>[]}
-          fields={masterFields("company", ctx)}
-          emptyValues={emptyValuesFor("company")}
-          toValues={(r) => ({ name: r.name, location: r.location ?? "" })}
-          onSubmit={async (id, v, active) => {
-            const input = { name: v.name.trim(), location: v.location.trim() || null, active, sortOrder: s.companyById(id)?.sortOrder ?? 0 };
-            if (id) await s.editCompany(id, input);
-            else await s.createCompany(input);
-          }}
-          onToggleActive={async (r, active) =>
-            s.editCompany(r.id, { name: r.name, location: r.location, active, sortOrder: r.sortOrder })
-          }
-        />
-      )}
+      <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
       {tab === "category" && (
         <MasterCrud<Category>
           singular="Category"
           rows={s.categories}
           canManage={s.canManage("category")}
-          searchText={(r) => r.name}
+          searchText={(r) => `${r.name} ${typesText(r)}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Items", render: (r) => s.itemsByCategory(r.id).length },
+            {
+              // What the item picker on a requisition line narrows to.
+              header: "Items it offers",
+              render: (r) =>
+                r.itemTypes.length ? typesText(r) : <span className="text-grey-2">Every item</span>,
+              sortValue: typesText,
+              filter: { get: typesText },
+            },
             {
               // Drives the QC Inspection step: a goods receipt carrying any
               // QC-required category must be inspected before the PO can close.
@@ -87,96 +130,26 @@ export default function Masters() {
                 ) : (
                   <span className="text-grey-2">No</span>
                 ),
+              sortValue: (r) => (r.qcRequired ? "Yes" : "No"),
+              filter: { get: (r) => (r.qcRequired ? "Yes" : "No") },
             },
           ] as MasterColumn<Category>[]}
-          fields={masterFields("category", ctx)}
-          emptyValues={emptyValuesFor("category")}
-          toValues={(r) => ({ name: r.name, qc_required: r.qcRequired ? "yes" : "no" })}
+          fields={[...masterFields("category", ctx), itemTypesField]}
+          emptyValues={{ ...emptyValuesFor("category"), item_types: "" }}
+          toValues={(r) => ({ name: r.name, qc_required: r.qcRequired ? "yes" : "no", item_types: r.itemTypes.join(",") })}
           onSubmit={async (id, v, active) => {
             const input = {
               name: v.name.trim(),
               active,
               sortOrder: s.categoryById(id)?.sortOrder ?? 0,
               qcRequired: v.qc_required === "yes",
+              itemTypes: csvToList(v.item_types ?? ""),
             };
             if (id) await s.editCategory(id, input);
             else await s.createCategory(input);
           }}
-          onToggleActive={async (r, active) => s.editCategory(r.id, { name: r.name, active, sortOrder: r.sortOrder, qcRequired: r.qcRequired })}
-        />
-      )}
-
-      {tab === "item" && (
-        <MasterCrud<Item>
-          singular="Item"
-          rows={s.items}
-          canManage={s.canManage("item")}
-          searchText={(r) => `${r.name} ${s.categoryById(r.categoryId)?.name ?? ""}`}
-          columns={[
-            { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Category", render: (r) => s.categoryById(r.categoryId)?.name ?? <span className="text-grey-2">—</span> },
-            { header: "Unit", render: (r) => r.unit || <span className="text-grey-2">—</span> },
-          ] as MasterColumn<Item>[]}
-          fields={masterFields("item", ctx)}
-          emptyValues={emptyValuesFor("item")}
-          toValues={(r) => ({ category_id: r.categoryId, name: r.name, unit: r.unit })}
-          onSubmit={async (id, v, active) => {
-            const input = { categoryId: v.category_id, name: v.name.trim(), unit: v.unit.trim(), active, sortOrder: s.itemById(id)?.sortOrder ?? 0 };
-            if (id) await s.editItem(id, input);
-            else await s.createItem(input);
-          }}
           onToggleActive={async (r, active) =>
-            s.editItem(r.id, { categoryId: r.categoryId, name: r.name, unit: r.unit, active, sortOrder: r.sortOrder })
-          }
-        />
-      )}
-
-      {tab === "vendor" && (
-        <MasterCrud<Vendor>
-          singular="Vendor"
-          rows={s.vendors}
-          canManage={s.canManage("vendor")}
-          searchText={(r) => `${r.name} ${r.gstin ?? ""} ${r.contactName ?? ""} ${r.phone ?? ""} ${r.email ?? ""}`}
-          columns={[
-            { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "GSTIN", render: (r) => r.gstin || <span className="text-grey-2">—</span> },
-            { header: "Contact", render: (r) => r.contactName || <span className="text-grey-2">—</span> },
-            { header: "Phone", render: (r) => r.phone || <span className="text-grey-2">—</span> },
-            { header: "Email", render: (r) => r.email || <span className="text-grey-2">—</span> },
-          ] as MasterColumn<Vendor>[]}
-          fields={masterFields("vendor", ctx)}
-          emptyValues={emptyValuesFor("vendor")}
-          toValues={(r) => ({
-            name: r.name,
-            gstin: r.gstin ?? "",
-            contact_name: r.contactName ?? "",
-            phone: r.phone ?? "",
-            email: r.email ?? "",
-            address: r.address ?? "",
-          })}
-          onSubmit={async (id, v, active) => {
-            const input = {
-              name: v.name.trim(),
-              gstin: v.gstin.trim() || null,
-              contactName: v.contact_name.trim() || null,
-              phone: v.phone.trim() || null,
-              email: v.email.trim() || null,
-              address: v.address.trim() || null,
-              active,
-            };
-            if (id) await s.editVendor(id, input);
-            else await s.createVendor(input);
-          }}
-          onToggleActive={async (r, active) =>
-            s.editVendor(r.id, {
-              name: r.name,
-              gstin: r.gstin,
-              contactName: r.contactName,
-              phone: r.phone,
-              email: r.email,
-              address: r.address,
-              active,
-            })
+            s.editCategory(r.id, { name: r.name, active, sortOrder: r.sortOrder, qcRequired: r.qcRequired, itemTypes: r.itemTypes })
           }
         />
       )}
@@ -194,10 +167,11 @@ export default function Masters() {
           searchText={(r) => `${s.vendorById(r.vendorId)?.name ?? ""} ${s.itemById(r.itemId)?.name ?? ""}`}
           columns={[
             { header: "Vendor", render: (r) => <span className="font-medium text-navy">{s.vendorById(r.vendorId)?.name ?? "—"}</span> },
+            { header: "Company", render: (r) => s.companyLabel(s.vendorById(r.vendorId)?.companyId ?? null) },
             { header: "Item", render: (r) => s.itemById(r.itemId)?.name ?? <span className="text-grey-2">—</span> },
-            { header: "Rate", render: (r) => inr(r.rate) },
-            { header: "GST %", render: (r) => (r.gstPct != null ? `${r.gstPct}%` : <span className="text-grey-2">—</span>) },
-            { header: "Lead days", render: (r) => (r.leadTimeDays != null ? `${r.leadTimeDays}d` : <span className="text-grey-2">—</span>) },
+            { header: "Rate", render: (r) => inr(r.rate), sortValue: (r) => r.rate },
+            { header: "GST %", render: (r) => (r.gstPct != null ? `${r.gstPct}%` : <span className="text-grey-2">—</span>), sortValue: (r) => r.gstPct ?? -1 },
+            { header: "Lead days", render: (r) => (r.leadTimeDays != null ? `${r.leadTimeDays}d` : <span className="text-grey-2">—</span>), sortValue: (r) => r.leadTimeDays ?? -1 },
           ] as MasterColumn<VendorItemPrice>[]}
           fields={masterFields("vendor_item_price", ctx)}
           emptyValues={emptyValuesFor("vendor_item_price")}
@@ -234,7 +208,6 @@ export default function Masters() {
           }
         />
       )}
-
     </div>
   );
 }

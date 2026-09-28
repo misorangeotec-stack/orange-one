@@ -50,7 +50,7 @@ export default function PoWorkbench() {
   };
   const stage = useStageMode(s.completedPoGenEntries, user.id);
 
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyName = (id: string) => s.companyLabel(id);
   /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
   const dueIso = (r: PurchaseRequest) => s.dueIsoForRequest(r, "po");
   /**
@@ -211,9 +211,20 @@ export default function PoWorkbench() {
             emptyMessage="Approved requisitions waiting for a PO will appear here."
             initialSort={{ key: "value", dir: "desc" }}
             actions={(r) => (
-              <button onClick={() => setPoRequest(r)} className="text-[12.5px] font-semibold text-orange hover:underline">
-                {s.canGeneratePo ? "Generate" : "View"}
-              </button>
+              <div className="flex items-center gap-3">
+                {/* Held by the PO Desk at this step. It keeps its place so everyone can see why. */}
+                {r.poOnHoldAt && (
+                  <span
+                    className="inline-flex cursor-help items-center rounded-full bg-[#FFF8E1] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#8A6100]"
+                    title={r.poRemarks ? `On hold: ${r.poRemarks}` : "On hold"}
+                  >
+                    On hold
+                  </span>
+                )}
+                <button onClick={() => setPoRequest(r)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                  {s.canGeneratePo ? (r.poOnHoldAt ? "Open" : "Generate") : "View"}
+                </button>
+              </div>
             )}
           />
         )}

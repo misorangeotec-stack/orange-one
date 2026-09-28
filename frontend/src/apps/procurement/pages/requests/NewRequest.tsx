@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import RequestForm from "../../components/RequestForm";
 import { useProcurementStore } from "../../store";
 import { useRequestForm } from "./useRequestForm";
+import { uploadSourcingFiles } from "../../components/SourcingDocsCapture";
 
 /**
  * Stage 1 — raise a Purchase Request. Pick the buyer Company, then fill the
@@ -16,6 +17,9 @@ export default function NewRequest() {
   const navigate = useNavigate();
   const form = useRequestForm({ mode: "new" });
   const [busy, setBusy] = useState(false);
+  // The request has no id until it is submitted, so its files go up under a
+  // one-off folder key. Kept across retries so a retry re-uses what landed.
+  const folderKey = useRef(crypto.randomUUID());
 
   const submit = async () => {
     form.setErr(null);
@@ -24,7 +28,10 @@ export default function NewRequest() {
 
     setBusy(true);
     try {
+      // Upload FIRST: a failed upload leaves the form on screen, nothing raised.
+      const docs = await uploadSourcingFiles(folderKey.current, form.files, s.uploadRequestDoc, form.setFiles);
       const id = await s.submitRequest({
+        docs,
         companyId: form.companyId,
         // The server takes the first line's category for the NOT NULL header.
         categoryId: null,
