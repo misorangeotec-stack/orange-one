@@ -7736,21 +7736,30 @@ Dharmistha's scores "IT complaint escalation and follow-up" at 5%. Nothing in th
 complaint before this. The **IT Support** category exists for that line and was added to the
 client's 27, with an external-escalation stamp for the Premware hand-off.
 
-#### 🔴 HD-15 · Three Setup lists are EMPTY on live, and one of them costs a stated requirement  `[ ]`
+#### 🟡 HD-15 · Two Setup lists are still empty (the reassign pool is done)  `[~]`
 
-`fms_help_config` on live holds `process_coordinators: []`, `reassign_pool: []`, `master_owners: []`
-and `escalation_fallback_user_id: null`. Nothing is broken by this, and every one of them is a
-question only HR can answer, but the consequences should be said plainly:
+**DONE 28-09-2026, on the client's instruction: the reassign pool is the whole HR team.** Riya
+Kumari, Khushi Soni, Dharmistha Prajapati, Saloni Rathod and Tanisha Tikde. Any of them can now move
+a ticket to the right person, which is what was asked for in the original brief ("anyone from HR can
+reassign a ticket, including when the employee chose the wrong category"). The ZZ TEST account in
+Human Resources was deliberately left out.
 
-- **Only an admin can reassign a ticket.** The client's own words were "anyone from HR can reassign
-  a ticket, including when the employee chose the wrong category". A category's owner can still
-  re-file or hand off their own ticket; what is missing is the general HR pool. **Name people in
-  Settings and it works, with no code change.**
+⚠ **That list widens `fms_help_can_see`,** because the general-HR arm of the read gate names
+`fms_help_is_reassign_target`. So it was checked before it was saved, and BOTH WAYS:
+`supabase/tests/hd15_help_desk_reassign_pool.sql` proves all five now read an ordinary ticket and
+none of them reaches a confidential one they do not own, and `..._negctl.sql` proves that pass is
+the `confidential` flag doing the work rather than some unrelated refusal: take the flag off the
+same category inside the same throwaway transaction and all five can suddenly read it.
+
+**Still empty, and both are questions only HR can answer:**
+
 - **A request for a new category has no approver.** `master_owners` is empty, so the Ticket
   Categories master-change queue reaches nobody but an admin.
-- **A second reopen reaches nobody new.** That is already true for a different reason (see below),
-  and the empty fallback is the second half of it. The reopen is still RECORDED, visibly, and the
-  category's own owner is still told.
+- **`escalation_fallback_user_id` is null.** A second reopen already reaches nobody new for a
+  different reason (see the level-2 labels below), and this is the second half of it. The reopen is
+  still RECORDED, visibly, and the category's own owner is still told.
+- `process_coordinators` is empty too, but that one is additive convenience rather than a gap: it
+  grants act-on-anything without putting every ticket on that person's home screen.
 
 #### Still owed by HR
 
