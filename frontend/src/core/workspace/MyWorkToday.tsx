@@ -46,6 +46,8 @@ import { matchesSearch } from "@/shared/lib/search";
 import { bucketOf, holdAwareBucketOf, todayLocalIso, type Bucket, type WorkBucket } from "@/shared/lib/dueBuckets";
 import { useSession } from "@/core/platform/session";
 import { cn } from "@/shared/lib/cn";
+import { FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import { useMyWork, type AggregateState } from "./mywork/MyWorkAggregator";
 import type { WorkItem } from "./mywork/types";
 
@@ -202,6 +204,9 @@ export function MyWorkView({ state }: { state: AggregateState }) {
     setAdminScope(s);
     if (s === "mine") setAssignment([]); // drop any stale You/Team chip
   };
+  // PF-20: the column widths for this one table, remembered per browser. The cells are untouched
+  // — only the header edges drag.
+  const fit = useColumnWidths("tb", ["source", "ref", "stage", "due", "assigned"], "core.my-work-today");
   const [sort, setSort] = useState<SortKey>("urgency");
   const [dir, setDir] = useState<SortDir>("asc");
 
@@ -468,17 +473,19 @@ export function MyWorkView({ state }: { state: AggregateState }) {
           </div>
 
           <ActiveFilters filters={activeFilters} onClearAll={clearAll} />
+          {/* PF-20: appears only once a column here has been dragged. */}
+          <ResetWidths fit={fit} cols={["source", "ref", "stage", "due", "assigned"]} className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
         </div>
 
         <ScrollableTable>
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-line bg-page/60">
-                <Th sortKey="source" active={sort} dir={dir} onSort={toggleSort}>Source</Th>
-                <Th sortKey="ref" active={sort} dir={dir} onSort={toggleSort}>Reference</Th>
-                <Th sortKey="stage" active={sort} dir={dir} onSort={toggleSort}>Stage</Th>
-                <Th sortKey="due" active={sort} dir={dir} onSort={toggleSort}>Due</Th>
-                <Th>Assigned</Th>
+                <Th fit={fit} col="source" sortKey="source" active={sort} dir={dir} onSort={toggleSort}>Source</Th>
+                <Th fit={fit} col="ref" sortKey="ref" active={sort} dir={dir} onSort={toggleSort}>Reference</Th>
+                <Th fit={fit} col="stage" sortKey="stage" active={sort} dir={dir} onSort={toggleSort}>Stage</Th>
+                <Th fit={fit} col="due" sortKey="due" active={sort} dir={dir} onSort={toggleSort}>Due</Th>
+                <Th fit={fit} col="assigned">Assigned</Th>
               </tr>
               {/* Filter row, one control per column so each sits over the data it
                   narrows. Lives inside <thead> rather than in the toolbar above:
@@ -1110,23 +1117,35 @@ function Th({
   active,
   dir,
   onSort,
+  fit,
+  col,
 }: {
   children: React.ReactNode;
   sortKey?: SortKey;
   active?: SortKey;
   dir?: SortDir;
   onSort?: (k: SortKey) => void;
+  /**
+   * PF-20 — the drag, and ONLY the drag. The cells below are left exactly as they were: this is
+   * the first screen everyone opens, and the rule the user set for the screens people live in
+   * (20-09-2026) is that nothing should look different until somebody drags an edge.
+   */
+  fit?: FitTable;
+  col?: string;
 }) {
   const isActive = !!sortKey && active === sortKey;
+  const drag = fit && col ? <FitResizer fit={fit} col={col} label={col} /> : null;
+  const fitStyle = fit && col ? thFitStyle(fit, col) : undefined;
   if (!sortKey || !onSort) {
     return (
-      <th className="text-left text-[11.5px] font-semibold text-grey-2 uppercase tracking-wide px-4 py-2.5 whitespace-nowrap">
+      <th style={fitStyle} className="relative text-left text-[11.5px] font-semibold text-grey-2 uppercase tracking-wide px-4 py-2.5 whitespace-nowrap">
         {children}
+        {drag}
       </th>
     );
   }
   return (
-    <th className="text-left px-4 py-2.5 whitespace-nowrap">
+    <th style={fitStyle} className="relative text-left px-4 py-2.5 whitespace-nowrap">
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -1150,6 +1169,7 @@ function Th({
           <path d="M12 19V5M5 12l7-7 7 7" />
         </svg>
       </button>
+      {drag}
     </th>
   );
 }
