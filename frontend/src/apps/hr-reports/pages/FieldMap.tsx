@@ -20,8 +20,8 @@ import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { cn } from "@/shared/lib/cn";
-import { weeklyReviewForm } from "../report/weeklyReview";
-import { checkForm, coverageSplit, type FieldCoverage, type FieldDef } from "../report/types";
+import { ALL_FORMS } from "../framework/registry";
+import { checkForm, coverageSplit, isAutoFilled, type FieldCoverage, type FieldDef } from "../report/types";
 import FieldMeter, { BAND_BADGE, bandLabel } from "../components/FieldMeter";
 
 const KIND_WORD: Record<FieldDef["kind"], string> = {
@@ -35,13 +35,45 @@ const KIND_WORD: Record<FieldDef["kind"], string> = {
 };
 
 export default function FieldMap() {
-  const form = weeklyReviewForm;
+  /**
+   * WHICH form's gap list. Reading a form's coverage is safe for any form — the page
+   * touches no database at all — which is why this picker exists here and NOT on the
+   * rendered weekly report next door. That page is hand-written against one form's
+   * field codes; pointing it at another would ask somebody the wrong questions all
+   * week. See the note above FORMS in framework/registry.ts.
+   */
+  const [formId, setFormId] = useState<string>(ALL_FORMS[0].id);
+  const form = ALL_FORMS.find((f) => f.id === formId) ?? ALL_FORMS[0];
   const counts = useMemo(() => coverageSplit(form), [form]);
   // No test runner in this repo: the transcription checks itself on every render and
   // says so loudly rather than quietly dropping a row.
   const problems = useMemo(() => checkForm(form), [form]);
 
+  /**
+   * Where the fillable boxes actually sit on THIS form — named, because "14 of 59 fill
+   * themselves" without a place is a number nobody can act on. Derived from the form's
+   * own sections rather than written per form, so a third transcription needs nothing.
+   */
+  const filledNote = useMemo(() => {
+    const bySection = new Map<string, number>();
+    for (const f of form.fields) {
+      if (!isAutoFilled(f.coverage)) continue;
+      bySection.set(f.section, (bySection.get(f.section) ?? 0) + 1);
+    }
+    const top = [...bySection.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (top.length === 0) return undefined;
+    const name = (code: string) => form.sections.find((s) => s.code === code)?.title ?? code;
+    return `mostly in ${top.map(([c]) => name(c)).join(", ")}`;
+  }, [form]);
+
   const [band, setBand] = useState<FieldCoverage | null>(null);
+  // A band picked on one form must not survive onto another — it would silently show
+  // an empty table for a form that simply has no boxes in that band.
+  const [bandForm, setBandForm] = useState(formId);
+  if (bandForm !== formId) {
+    setBandForm(formId);
+    setBand(null);
+  }
   const visible = useMemo(() => (band ? form.fields.filter((f) => f.coverage === band) : form.fields), [form, band]);
 
   // The form's own order, so "sort by box" means what the reader sees on the paper
@@ -147,6 +179,27 @@ export default function FieldMap() {
 
   return (
     <div className="space-y-4">
+      {ALL_FORMS.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12px] font-medium text-grey">Form</span>
+          {ALL_FORMS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFormId(f.id)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-[12px] font-medium transition",
+                f.id === formId
+                  ? "border-orange bg-orange text-white"
+                  : "border-line bg-white text-navy hover:border-orange/60 hover:text-orange",
+              )}
+            >
+              {f.role}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="rounded-lg border border-orange/35 bg-orange/[0.05] px-4 py-2.5 text-[12px] leading-relaxed text-navy">
         <span className="font-semibold">A reading of the form against the hub, not a record.</span> It writes nothing and holds
         no figures of its own. Form: <span className="font-medium">{form.role}</span> ·{" "}
@@ -160,7 +213,14 @@ export default function FieldMap() {
         </div>
       )}
 
-      <FieldMeter counts={counts} total={form.fields.length} selected={band} onSelect={setBand} typed={0} />
+      <FieldMeter
+        counts={counts}
+        total={form.fields.length}
+        selected={band}
+        onSelect={setBand}
+        typed={0}
+        filledNote={filledNote}
+      />
 
       <Card className="overflow-hidden p-0">
         <div className="px-4 pb-2 pt-3 text-[11.5px] leading-relaxed text-grey">
@@ -197,12 +257,12 @@ export default function FieldMap() {
             initialSort={{ key: "box", dir: "asc" }}
             columnPicker={{ storageKey: "kpi-lab.fieldmap" }}
             resizeKey="kpi-lab.fieldmap"
-            exportName="Weekly_Review_Field_Map"
+            exportName={`Weekly_Review_Field_Map_${form.id}`}
             exportTitle={`${form.role} — Weekly Review Report · what the hub can fill in`}
             exportNotes={[
               `Source: ${form.source}`,
               ...(band ? [`Narrowed to "${bandLabel(band)}" — ${visible.length} of ${form.fields.length} boxes.`] : []),
-              "TEST OUTPUT. Coverage was re-read from the live database on 23-09-2026; it is not from the document. Re-read it before quoting — a third of these bands moved in the two days after the form was first transcribed.",
+              "TEST OUTPUT. Coverage is a reading of the LIVE database on the date each form was transcribed — Saloni's on 23-09-2026, Dharmistha's on 28-09-2026 — not of the document. Re-read it before quoting: a third of Saloni's bands moved in the two days after hers was first written.",
               `Of ${form.fields.length} boxes: ${counts.live} live, ${counts["live-partial"]} live with a caveat, ${counts["empty-table"]} built and not used yet, ${counts.narrative} prose by design, ${counts["no-table"]} with nothing recording them.`,
               '"Built · unused" needs somebody to use a screen that is already live. Only "Nothing records this" is a build.',
             ]}

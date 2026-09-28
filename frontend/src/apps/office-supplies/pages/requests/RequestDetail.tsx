@@ -97,7 +97,15 @@ export default function RequestDetail() {
     );
   }
 
-  const name = (uid: string | null) => (uid ? (s.profileById(uid)?.name ?? "—") : "—");
+  /**
+   * ⚠ `s.personName`, NOT `s.profileById`. The directory is RLS-scoped to self +
+   *   downline + same department, so an approver from another department resolved to
+   *   nothing and the Progress panel printed an em dash where a name belongs.
+   *   SUPPLY-2627-0016 read "Second approval (Management) · DONE · 18-09-2026 · —" on
+   *   the live site for anyone outside Management. `personName` reads the org-wide,
+   *   name-only list that exists for exactly this.
+   */
+  const name = (uid: string | null) => s.personName(uid);
   // A view-only grant removes every action on this page — the two approvals, the
   // handover, hold, edit and cancel — while the request itself stays fully
   // readable. ANDed in per site rather than folded into canActOn or
@@ -155,8 +163,13 @@ export default function RequestDetail() {
           {/* Where the approval actually sits. This is the oversight surface for a
               handover: the first-approval QUEUE deliberately shows only what is on
               your own desk, so without this line an admin browsing requests would
-              have no way to see that one had been passed on. */}
-          {holder && (
+              have no way to see that one had been passed on.
+
+              ⚠ ONLY WHILE IT IS STILL AWAITING THAT APPROVAL. `assignedApproverId` is
+                never cleared — deliberately, so the holder keeps their read — so an
+                unconditional line went on saying "Awaiting approval from X" on a
+                request that had been approved, handed over and DELIVERED. */}
+          {holder && r.status === "pending_first_approval" && (
             <p className="text-[12.5px] text-navy mt-1">
               <span className="text-grey-2">Awaiting approval from</span>{" "}
               <span className="font-semibold">{s.personName(holder)}</span>

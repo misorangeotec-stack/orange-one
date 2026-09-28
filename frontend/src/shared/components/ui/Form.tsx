@@ -47,6 +47,32 @@ export function FieldLabel({ label, required, hint, anchor, strong, children }: 
   );
 }
 
+/**
+ * The same heading as `FieldLabel`, as a plain `div` — for a field whose control is a
+ * GROUP of buttons rather than one input.
+ *
+ * ⚠ THIS EXISTS BECAUSE `FieldLabel` IS A `<label>`. A label forwards any click on its
+ *   text to its first labelable descendant, and `<button>` is labelable — so wrapping
+ *   `ChoiceButtons` in a FieldLabel means clicking the question silently presses the
+ *   FIRST option. On the General Purchase intake form that answered "Location" as
+ *   "Plant" for anyone who clicked the word, with nothing on screen to say so
+ *   (verified on the production build, 28-09-2026). It also gives the button the whole
+ *   label text as its accessible name, which breaks `getByRole('radio', { name })`.
+ *
+ * Use `FieldLabel` around ONE input, textarea or select. Use this above anything else.
+ */
+export function FieldHeading({ label, required, hint }: { label: string; required?: boolean; hint?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-1.5">
+      <span className="text-[13px] font-medium text-navy shrink-0">
+        {label}
+        {required && <span className="text-orange"> *</span>}
+      </span>
+      {hint && <span className="text-[11px] text-grey-2 text-right leading-snug min-w-0 grow basis-40">{hint}</span>}
+    </div>
+  );
+}
+
 /** forwardRef so a parent can drive focus — LineGrid moves the caret cell to cell. */
 export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function TextInput({ className, ...props }, ref) {

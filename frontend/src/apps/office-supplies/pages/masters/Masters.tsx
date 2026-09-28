@@ -285,9 +285,16 @@ export default function Masters() {
             its assigned owner (Setup → Master Owners).
           </p>
         </div>
-        <Button size="sm" onClick={() => setRaising(true)}>
-          Request new entry
-        </Button>
+        {/* Asking for a new master IS a write — it creates a pending row somebody has
+            to review, and it notifies them. A VIEW-ONLY grant means no buttons
+            anywhere, and this one was ungated: a view-only account raised a master
+            request from this screen and the database took it (28-09-2026). The twin
+            button on Master Requests already had this gate. */}
+        {s.canEdit && (
+          <Button size="sm" onClick={() => setRaising(true)}>
+            Request new entry
+          </Button>
+        )}
       </div>
 
       <Tabs tabs={tabs} active={tab} onChange={setTab} />

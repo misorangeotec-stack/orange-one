@@ -57,7 +57,16 @@ export default function StepOwnersSection() {
     setEmpIds((prev) => prev.filter((id) => allowed.has(id)));
   };
 
+  /**
+   * ⚠ REFUSES TO OPEN UNTIL THE STORE HAS LOADED. Seeding on click LOOKS immune
+   *   because it reads the store at click time, and is not: before the fetch lands
+   *   `stepOwnerFor` returns undefined, the `??` swallows it into `[]`, the modal
+   *   shows an empty picker over a saved row, and Save writes `[]` — unassigning the
+   *   step. This is the shape that wiped Riya Kumari off `hr_head_approval` in New
+   *   Recruitment on 09-09-2026. The Edit buttons are disabled to match.
+   */
   const open = (stepKey: StepKey) => {
+    if (s.isLoading) return;
     const cur = s.stepOwnerFor(stepKey);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
@@ -113,11 +122,15 @@ export default function StepOwnersSection() {
             <tbody>
               {assignableSteps.map((st) => {
                 const owner = s.stepOwnerFor(st.key);
-                const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
+                const names = (owner?.employeeIds ?? []).map((id) => s.personName(id));
                 return (
                   <tr key={st.key} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <button onClick={() => open(st.key)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                      <button
+                        onClick={() => open(st.key)}
+                        disabled={s.isLoading}
+                        className="text-[12.5px] font-semibold text-orange hover:underline disabled:text-grey-2 disabled:no-underline disabled:cursor-not-allowed"
+                      >
                         Edit
                       </button>
                     </td>
@@ -145,7 +158,7 @@ export default function StepOwnersSection() {
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
-            <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+            <Button size="sm" onClick={save} disabled={busy || s.isLoading}>{busy ? "Saving…" : "Save"}</Button>
           </>
         }
       >
