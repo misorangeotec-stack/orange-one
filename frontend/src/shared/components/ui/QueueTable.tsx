@@ -114,6 +114,13 @@ interface QueueTableProps<T> {
   /** Leading actions cell (buttons / Open link) — rendered as the first column. */
   actions?: (row: T) => ReactNode;
   rowClassName?: (row: T) => string;
+  /**
+   * Clicking anywhere on the row does this — for a table whose rows open a dialog rather than a
+   * page. Added for the Leads table, which had it as a hand-built table and would otherwise have
+   * lost it on the way onto this one (FIX-4). A button inside the row must stop the event, as the
+   * ones there already do. Omit it and rows are not clickable, exactly as before.
+   */
+  onRowClick?: (row: T) => void;
   rowsLabel?: string;
   emptyTitle?: string;
   emptyMessage?: string;
@@ -386,6 +393,7 @@ export default function QueueTable<T>({
   groupBy,
   actions: actionsProp,
   rowClassName,
+  onRowClick,
   rowsLabel = "rows",
   emptyTitle = "Nothing here",
   emptyMessage = "Items needing action will appear here.",
@@ -970,7 +978,10 @@ export default function QueueTable<T>({
                             </td>
                           </tr>
                         )}
-                        <tr className={`hover:bg-page/60 ${rowClassName?.(row) ?? ""}`}>
+                        <tr
+                          className={`hover:bg-page/60 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""}`}
+                          onClick={onRowClick ? () => onRowClick(row) : undefined}
+                        >
                           {selectable && (
                             <td className="px-4 py-3 border-b border-line/70">
                               <input type="checkbox" className="h-4 w-4 accent-orange align-middle" checked={selectedKeys.has(rowKey(row))} onChange={() => toggleRow(rowKey(row))} aria-label="Select row" />
