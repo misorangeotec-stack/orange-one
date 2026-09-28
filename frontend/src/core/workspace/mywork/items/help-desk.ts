@@ -65,7 +65,12 @@ export function helpDeskWorkItems(data: HelpData, uid: string): WorkItem[] {
     if (!owners.includes(uid)) continue;
 
     out.push({
-      id: `help-desk:${t.id}:${t.currentStep}:${t.roundNo}`,
+      // ⚠ EXACTLY THREE PARTS: `source:entityId:stepKey`. The ranking reads
+      //   these back with `parseItems`, which THROWS on any other shape, and
+      //   the first draft appended the round as a fourth. The round belongs on
+      //   the scorer's `stepId`, not here — a person only ever owes the
+      //   CURRENT round of a ticket, so the home screen needs no round at all.
+      id: `help-desk:${t.id}:${t.currentStep}`,
       source: "help-desk",
       sourceLabel: label,
       ref: t.ticketNo,

@@ -30,6 +30,9 @@
 import type { Framework } from "./types";
 import { saloniFramework } from "./saloni";
 import { tanishaFramework } from "./tanisha";
+import { khushiFramework } from "./khushi";
+import { dharmisthaFramework } from "./dharmistha";
+import { riyaFramework } from "./riya";
 import type { ReportForm } from "../report/types";
 import { weeklyReviewForm } from "../report/weeklyReview";
 
@@ -85,6 +88,34 @@ export const FRAMEWORKS: FrameworkEntry[] = [
     // "FINAL REVISED KRA & KPI FRAMEWORK · Travel Desk Focus" — HR Executive - Travel Desk.
     appliesTo: [],
     people: ["travel@orangeotec.com"],
+  },
+  /*
+   * The three sheets added with the Help Desk (28-09-2026), all pinned by person
+   * for the SAME reason as the two above: Saloni, Tanisha and Khushi are all
+   * "Human Resources · Executive" in the directory and do three different jobs.
+   * Dharmistha shares that designation too. Delete `people` and put the real
+   * designation in `appliesTo` the day HR gives these roles distinct titles.
+   */
+  {
+    framework: khushiFramework,
+    // Her KRA 5 IS the Help Desk, word for word — the line the module was built for.
+    appliesTo: [],
+    people: ["khushi@orangeotec.com"],
+  },
+  {
+    framework: dharmisthaFramework,
+    // The Help Desk sheet's "Receptionist cum HR Executive". Her KRA 4 and KRA 9
+    // are both answered by this module; KRA 9 is why the IT Support category exists.
+    appliesTo: [],
+    people: ["office@orangeotec.com"],
+  },
+  {
+    framework: riyaFramework,
+    // ⚠ The HR HEAD, and the only sheet here NOT keyed to an Executive. She has a
+    //   distinct designation ("HR Head"), so this one could key on the job — but it
+    //   is pinned for consistency with the four above until all five move together.
+    appliesTo: [],
+    people: ["riya@orangeotec.com"],
   },
 ];
 
