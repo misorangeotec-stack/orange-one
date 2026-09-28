@@ -1,26 +1,29 @@
 /**
- * INK IMS — which godowns count.
- *
- * Otec's books are read whole. Enterprises Surat is not: its ink sits in Finished Goods Sachin
- * and Hojiwala, and its other godowns — Production, Lab, Warehouse, job work — hold material the
- * planner cannot sell, so counting them overstates that book on every line.
+ * INK IMS — which stock counts, book by book.
  *
  * Tick nothing for a book and it is read whole, which is what every book did before this screen
  * existed. Tick something and only that part of its stock reaches the sheet.
  *
- * TWO LEVELS. A godown can be taken whole, or opened to take only some of the stock groups
- * inside it — Main Location holds printing ink beside machinery parts and packing material, and
- * only the first is ink the planner plans. An item belongs to exactly one group, so a group tick
- * simply decides which items that godown contributes.
+ * TWO KINDS OF BOOK, because the four books are not the same shape.
+ *
+ *   BY STOCK GROUP — Otec Surat, Otec Noida, Enterprises Noida. Their stock effectively sits in
+ *   one place, so the useful question is which groups count: Printing Ink yes, Machinery Parts
+ *   and Paper Roll no. The figures come straight from Tally's Stock Summary and are EXACT —
+ *   checked against it for Otec Noida, where Printing Ink 75,48,719.39, Paper Roll 49,140.00 and
+ *   Software 30,000.00 all tie to the paisa. Nothing is inferred and no vouchers are read.
+ *
+ *   BY GODOWN — Enterprises Surat alone, because its ink really is spread across Sachin,
+ *   Hojiwala, Production and Lab. That one is walked voucher by voucher, and a godown can be
+ *   opened to tick only certain stock groups inside it. See lib/godowns.ts for what that walk
+ *   can and cannot know.
+ *
+ * Splitting the two also made the screen usable: reading every book's vouchers meant 159,052 rows
+ * over 160 round trips, and the page simply sat there. Only Enterprises Surat pays that cost now,
+ * and only for its own 38,000 lines.
  *
  * NOTHING TAKES EFFECT UNTIL SAVE. Ticking used to write straight through, so a stray click
  * quietly changed every figure on two other screens. The ticks are a draft; Save is what the rest
  * of the app reads, and Discard puts the draft back.
- *
- * HOW THE FIGURE IS WORKED OUT, and why the screen says so: ConnectWave has no godown-wise
- * closing balance. The share each godown holds is taken from the lot balances, and that share is
- * applied to Tally's own item closing, which is authoritative. So the item always ties Tally; the
- * split between godowns is inferred. The reasoning and the measurements are in lib/godowns.ts.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,9 +33,23 @@ import { INK_COMPANIES, fmtQty } from "../lib/inkMis";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import {
   fmtTallyDate, godownChoiceSig, godownGroupKey, loadGodownChoice, loadGodownFreshness,
-  loadGodownSplit, saveGodownChoice,
-  type GodownCell, type GodownChoice, type GodownFreshness, type ItemFacts,
+  loadGodownSplit, loadGroupSummary, saveGodownChoice, wholeGroupKey,
+  type GodownCell, type GodownChoice, type GodownFreshness, type GroupLine, type ItemFacts,
 } from "../lib/godowns";
+
+/** Rupees the way Tally prints them. */
+const fmtValue = (v: number) =>
+  v.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+
+interface BookInfo {
+  fresh: GodownFreshness;
+  /** Group mode. */
+  groupLines?: GroupLine[];
+  /** Godown mode. */
+  godowns?: string[];
+  held?: Record<string, GodownCell>;
+  groups?: Record<string, [string, GodownCell][]>;
+}
 
 export default function InkGodowns() {
   /**
@@ -48,7 +65,7 @@ export default function InkGodowns() {
   const save = () => {
     saveGodownChoice(choice);
     setSavedChoice(choice);
-    // Every loaded position carries the godown filter, so the stock on both other screens is
+    // Every loaded position carries this filter, so the stock on both other screens is
     // recomputed instead of standing at whatever the last choice produced.
     void qc.invalidateQueries({ queryKey: ["inkMis", "positions"] });
   };
@@ -64,26 +81,22 @@ export default function InkGodowns() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  /**
-   * Every book's godowns, read once. The lot table is small — about 4,600 rows for the largest
-   * book — and the planner needs to see all four to decide, not one at a time.
-   */
   const { data, isLoading, error } = useQuery({
-    queryKey: ["inkMis", "godowns"],
+    queryKey: ["inkMis", "godowns", "v2"],
     queryFn: async () => {
       const cw = getConnectwaveSupabase();
-      const out: Record<
-        string,
-        {
-          godowns: string[];
-          held: Record<string, GodownCell>;
-          groups: Record<string, [string, GodownCell][]>;
-          fresh: GodownFreshness;
-        }
-      > = {};
+      const out: Record<string, BookInfo> = {};
+
       for (const c of INK_COMPANIES) {
-        // Each item's group, Tally closing and base unit. The closing is what turns a lot share
-        // into stock, and the unit stops a PCS lot being counted into a KGS item.
+        const fresh = await loadGodownFreshness(c.guid);
+
+        if (c.splitBy === "group") {
+          out[c.key] = { fresh, groupLines: await loadGroupSummary(c.guid) };
+          continue;
+        }
+
+        // Godown mode. Each item's group, Tally opening and closing, and base unit: the closing
+        // turns a walked balance into stock, the unit stops a PCS lot reaching a KGS item.
         const facts = new Map<string, ItemFacts>();
         const PAGE = 1000;
         for (let offset = 0; ; offset += PAGE) {
@@ -112,21 +125,23 @@ export default function InkGodowns() {
           if (page.length < PAGE) break;
         }
 
-        const [split, fresh] = await Promise.all([
-          loadGodownSplit(c.guid, facts),
-          loadGodownFreshness(c.guid),
-        ]);
+        const split = await loadGodownSplit(c.guid, facts);
         const held: Record<string, GodownCell> = {};
         for (const [g, cell] of split.totals) held[g] = cell;
         const groups: Record<string, [string, GodownCell][]> = {};
         for (const [godown, m] of split.groupsByGodown) {
-          // A group whose estimated stock rounds away is stale lot history, not stock on a
-          // shelf — Tally does not list it under the godown and neither should this.
+          // A group whose stock rounds away is stale history, not stock on a shelf — Tally does
+          // not list it under the godown and neither should this.
           groups[godown] = [...m.entries()]
             .filter(([, cell]) => Math.round(cell.qty) !== 0)
             .sort((a, b) => b[1].qty - a[1].qty);
         }
-        out[c.key] = { godowns: split.godowns, held, groups, fresh };
+        out[c.key] = {
+          fresh,
+          godowns: split.godowns.filter((g) => Math.round(held[g]?.qty ?? 0) !== 0),
+          held,
+          groups,
+        };
       }
       return out;
     },
@@ -136,7 +151,7 @@ export default function InkGodowns() {
   const [open, setOpen] = useState<string | null>(null);
 
   /**
-   * Ticking one entry — a whole godown, or one group inside it.
+   * Ticking one entry — a stock group, a whole godown, or one group inside a godown.
    *
    * Taking a godown whole clears any group ticks it already had: "all of it" and "these parts of
    * it" are two answers to one question, and leaving both would leave the sheet reading one while
@@ -163,6 +178,15 @@ export default function InkGodowns() {
     [savedChoice],
   );
 
+  const newest = (pick: (f: GodownFreshness) => string | null) =>
+    data
+      ? Object.values(data)
+          .map((d) => pick(d.fresh))
+          .filter(Boolean)
+          .sort()
+          .pop()
+      : undefined;
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -184,64 +208,41 @@ export default function InkGodowns() {
         </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>
-          Built by walking this year's vouchers godown by godown, the way Tally does. For 103 of
-          Enterprises Surat's 126 finished goods that walk lands on Tally's closing exactly.
-          What it cannot read is where the OPENING stock sat on 1-Apr, because ConnectWave
-          carries the opening per item but not per godown, so that part is reasoned from where
-          stock was issued and where the lots rest. Against Tally's Godown Summary for Finished
-          Goods-Sachin (30,935) this reads about 6% high. Every item's total ties Tally exactly;
-          only the split between godowns carries the estimate. A book with nothing ticked is read
-          whole and is unaffected.
-        </p>
-      </div>
-
       {data && (
         <p className="text-xs text-muted-foreground">
           Read from the ConnectWave copy of Tally, not from Tally itself. Last copied{" "}
           <strong>
             {(() => {
-              const t = Object.values(data)
-                .map((d) => d.fresh.builtAt)
-                .filter(Boolean)
-                .sort()
-                .pop();
+              const t = newest((f) => f.builtAt);
               return t ? new Date(t).toLocaleString() : "unknown";
             })()}
           </strong>
-          ; vouchers up to{" "}
-          <strong>
-            {fmtTallyDate(
-              Object.values(data)
-                .map((d) => d.fresh.lastVoucher)
-                .filter(Boolean)
-                .sort()
-                .pop(),
-            )}
-          </strong>
-          . Reopening this tab re-reads it.
+          ; vouchers up to <strong>{fmtTallyDate(newest((f) => f.lastVoucher))}</strong>. Reopening
+          this tab re-reads it.
         </p>
       )}
 
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
-          Could not read the godowns: {error instanceof Error ? error.message : "unknown error"}
+          Could not read the stock: {error instanceof Error ? error.message : "unknown error"}
         </div>
       )}
 
-      {isLoading && <p className="text-sm text-muted-foreground">Reading godowns…</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Reading stock…</p>}
 
       <div className="grid gap-3 lg:grid-cols-2">
         {INK_COMPANIES.map((c) => {
           const info = data?.[c.key];
           const chosen = choice[c.key] ?? [];
+          const byGroup = c.splitBy === "group";
           return (
             <div key={c.key} className="rounded-lg border bg-card p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Warehouse className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{c.label}</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  {byGroup ? "stock groups" : "godowns"}
+                </span>
                 {info?.fresh && (
                   <span
                     className="text-[11px] text-muted-foreground"
@@ -255,13 +256,7 @@ export default function InkGodowns() {
                   </span>
                 )}
                 <span className="text-xs text-muted-foreground">
-                  {chosen.length
-                    ? `${chosen.filter((x) => !x.includes("||")).length} godown${
-                        chosen.filter((x) => !x.includes("||")).length === 1 ? "" : "s"
-                      }, ${chosen.filter((x) => x.includes("||")).length} group${
-                        chosen.filter((x) => x.includes("||")).length === 1 ? "" : "s"
-                      } counted`
-                    : "whole book"}
+                  {chosen.length ? `${chosen.length} ticked` : "whole book"}
                 </span>
                 {chosen.length > 0 && (
                   <Button
@@ -281,80 +276,121 @@ export default function InkGodowns() {
                 )}
               </div>
 
-              <div className="mt-2 space-y-1">
-                {!info?.godowns.length && !isLoading && (
-                  <p className="text-xs text-muted-foreground">No godowns found for this book.</p>
-                )}
-                {info?.godowns.map((g) => {
-                  const key = `${c.key}|${g}`;
-                  const isOpen = open === key;
-                  const groups = info.groups[g] ?? [];
-                  const picked = chosen.filter((x) => x.startsWith(`${g}||`)).length;
-                  return (
-                    <div key={g}>
-                      <div className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={chosen.includes(g)}
-                          onChange={() => toggle(c.key, g)}
-                        />
-                        <button
-                          type="button"
-                          className="flex-1 truncate text-left hover:underline"
-                          title="Show the stock groups in this godown"
-                          onClick={() => setOpen(isOpen ? null : key)}
-                        >
-                          {isOpen ? "▾" : "▸"} {g}
-                          {picked > 0 && !chosen.includes(g) && (
-                            <span className="ml-1 text-xs text-primary">
-                              {picked} group{picked === 1 ? "" : "s"}
-                            </span>
-                          )}
-                        </button>
-                        <span className="whitespace-nowrap tabular-nums text-xs text-muted-foreground">
-                          {fmtQty(info.held[g]?.qty ?? 0)}
-                          <span className="ml-2 opacity-70">
-                            {info.held[g]?.items ?? 0} items
-                          </span>
-                        </span>
-                      </div>
+              {/* ── by stock group: Tally's Stock Summary, exact ── */}
+              {byGroup && (
+                <div className="mt-2 space-y-1">
+                  {!info?.groupLines?.length && !isLoading && (
+                    <p className="text-xs text-muted-foreground">Nothing in this book.</p>
+                  )}
+                  {info?.groupLines?.map((g) => (
+                    <label key={g.group} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={chosen.includes(wholeGroupKey(g.group))}
+                        onChange={() => toggle(c.key, wholeGroupKey(g.group))}
+                      />
+                      <span className="flex-1 truncate" title={g.group}>
+                        {g.group}
+                      </span>
+                      <span className="whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">
+                        {g.unit ? `${fmtQty(g.qty)} ${g.unit}` : "—"}
+                        <span className="ml-3 font-medium text-foreground">{fmtValue(g.value)}</span>
+                        <span className="ml-3 opacity-70">{g.items} items</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
 
-                      {isOpen && (
-                        <div className="ml-6 mt-1 space-y-1 border-l pl-3">
-                          {!groups.length && (
-                            <p className="text-xs text-muted-foreground">Nothing held here.</p>
-                          )}
-                          {groups.map(([group, cell]) => (
-                            <label key={group} className="flex items-center gap-2 text-xs">
-                              <input
-                                type="checkbox"
-                                checked={chosen.includes(godownGroupKey(g, group))}
-                                disabled={chosen.includes(g)}
-                                onChange={() => toggle(c.key, godownGroupKey(g, group), g)}
-                              />
-                              <span className="flex-1 truncate" title={group}>
-                                {group}
+              {/* ── by godown: the voucher walk ── */}
+              {!byGroup && (
+                <div className="mt-2 space-y-1">
+                  {!info?.godowns?.length && !isLoading && (
+                    <p className="text-xs text-muted-foreground">No godowns found for this book.</p>
+                  )}
+                  {info?.godowns?.map((g) => {
+                    const key = `${c.key}|${g}`;
+                    const isOpen = open === key;
+                    const groups = info.groups?.[g] ?? [];
+                    const picked = chosen.filter((x) => x.startsWith(`${g}||`)).length;
+                    return (
+                      <div key={g}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={chosen.includes(g)}
+                            onChange={() => toggle(c.key, g)}
+                          />
+                          <button
+                            type="button"
+                            className="flex-1 truncate text-left hover:underline"
+                            title="Show the stock groups in this godown"
+                            onClick={() => setOpen(isOpen ? null : key)}
+                          >
+                            {isOpen ? "▾" : "▸"} {g}
+                            {picked > 0 && !chosen.includes(g) && (
+                              <span className="ml-1 text-xs text-primary">
+                                {picked} group{picked === 1 ? "" : "s"}
                               </span>
-                              <span className="whitespace-nowrap tabular-nums text-muted-foreground">
-                                {fmtQty(cell.qty)}
-                                <span className="ml-2 opacity-70">{cell.items} items</span>
-                              </span>
-                            </label>
-                          ))}
-                          {chosen.includes(g) && (
-                            <p className="text-[11px] text-muted-foreground">
-                              The whole godown is counted, so every group in it is included.
-                            </p>
-                          )}
+                            )}
+                          </button>
+                          <span className="whitespace-nowrap tabular-nums text-xs text-muted-foreground">
+                            {fmtQty(info.held?.[g]?.qty ?? 0)}
+                            <span className="ml-2 opacity-70">{info.held?.[g]?.items ?? 0} items</span>
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+
+                        {isOpen && (
+                          <div className="ml-6 mt-1 space-y-1 border-l pl-3">
+                            {!groups.length && (
+                              <p className="text-xs text-muted-foreground">Nothing held here.</p>
+                            )}
+                            {groups.map(([group, cell]) => (
+                              <label key={group} className="flex items-center gap-2 text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={chosen.includes(godownGroupKey(g, group))}
+                                  disabled={chosen.includes(g)}
+                                  onChange={() => toggle(c.key, godownGroupKey(g, group), g)}
+                                />
+                                <span className="flex-1 truncate" title={group}>
+                                  {group}
+                                </span>
+                                <span className="whitespace-nowrap tabular-nums text-muted-foreground">
+                                  {fmtQty(cell.qty)}
+                                  <span className="ml-2 opacity-70">{cell.items} items</span>
+                                </span>
+                              </label>
+                            ))}
+                            {chosen.includes(g) && (
+                              <p className="text-[11px] text-muted-foreground">
+                                The whole godown is counted, so every group in it is included.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
+      </div>
+
+      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          <strong>Enterprises Surat is the only estimated one.</strong> The other three books are
+          read from Tally's Stock Summary, so their group figures are Tally's own. Enterprises
+          Surat is walked voucher by voucher because its ink is spread across real godowns, and
+          that walk lands on Tally's closing exactly for 103 of its 126 finished goods. What it
+          cannot read is where the opening stock sat on 1-Apr, because ConnectWave carries the
+          opening per item but not per godown, so that part is reasoned out. Against Tally's Godown
+          Summary for Finished Goods-Sachin (30,935) it reads about 6% high. Every item's total
+          ties Tally exactly either way.
+        </p>
       </div>
 
       <p className="text-xs text-muted-foreground">

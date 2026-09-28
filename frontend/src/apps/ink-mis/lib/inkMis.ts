@@ -71,6 +71,19 @@ export interface InkCompany {
   label: string;
   /** Top-level stock group that holds printing ink IN THIS BOOK. */
   inkGroups: string[];
+  /**
+   * How this book is narrowed on the Godowns screen.
+   *
+   * "group" reads Tally's Stock Summary and ticks STOCK GROUPS — Printing Ink, Paper Roll,
+   * Machinery. It is exact: the totals ARE Tally's own closing figures, nothing is inferred.
+   * Three of the four books work this way, because their stock effectively sits in one place
+   * and the useful question is which groups count, not which shelf.
+   *
+   * "godown" walks the vouchers godown by godown. Only Enterprises Surat needs it, because its
+   * ink really is spread across Sachin, Hojiwala, Production and Lab. It costs 38,000 voucher
+   * lines to read and the split carries an estimate (see lib/godowns.ts).
+   */
+  splitBy: "group" | "godown";
 }
 
 export const INK_COMPANIES: InkCompany[] = [
@@ -79,24 +92,28 @@ export const INK_COMPANIES: InkCompany[] = [
     guid: "a4e100d1-3b6f-4193-876a-c754f1a74552",
     label: "Otec Surat",
     inkGroups: ["PRINTING INK"],
+    splitBy: "group",
   },
   {
     key: "otec-noida",
     guid: "53d35745-5246-4e1a-a27a-d4769f245b50",
     label: "Otec Noida",
     inkGroups: ["PRINTING INK"],
+    splitBy: "group",
   },
   {
     key: "ent-surat",
     guid: "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e",
     label: "Enterprises Surat",
     inkGroups: ["FINISHED GOODS"],
+    splitBy: "godown",
   },
   {
     key: "ent-noida",
     guid: "779c26f4-3fd8-46bd-9995-4f9916c98856",
     label: "Enterprises Noida",
     inkGroups: ["PRINTING INK"],
+    splitBy: "group",
   },
 ];
 
@@ -317,7 +334,13 @@ export function describeGodownChoice(choice: GodownChoice): string[] {
   for (const c of INK_COMPANIES) {
     const chosen = choice[c.key] ?? [];
     if (!chosen.length) continue;
-    out.push(`${c.label}: ${chosen.map((e) => e.split(GROUP_SEP).join(" \u203a ")).join(", ")}`);
+    out.push(`${c.label}: ${chosen
+      .map((e) =>
+        e.startsWith(GROUP_SEP)
+          ? e.slice(GROUP_SEP.length)
+          : e.split(GROUP_SEP).join(" › "),
+      )
+      .join(", ")}`);
   }
   return out;
 }
@@ -385,7 +408,9 @@ export async function loadInkPositions(
   const splits = new Map<string, GodownSplit>();
   let unsplitItems = 0;
   await Promise.all(
-    INK_COMPANIES.filter((c) => (godownChoice[c.key] ?? []).length).map(async (c) => {
+    INK_COMPANIES.filter(
+      (c) => c.splitBy === "godown" && (godownChoice[c.key] ?? []).length,
+    ).map(async (c) => {
       try {
         const facts = new Map<string, ItemFacts>();
         for (const row of raw) {

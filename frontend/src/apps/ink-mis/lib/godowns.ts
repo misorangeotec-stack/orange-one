@@ -91,6 +91,16 @@ export interface GodownSplit {
 export const GROUP_SEP = "||";
 export const godownGroupKey = (godown: string, group: string) => `${godown}${GROUP_SEP}${group}`;
 
+/**
+ * A stock group taken across the WHOLE book, with no godown in it — "||PRINTING INK".
+ *
+ * This is how three of the four books are narrowed. Their stock effectively sits in one place,
+ * so the useful question is which stock groups count, and the answer comes straight from Tally's
+ * Stock Summary with nothing inferred. A book picked this way never needs a voucher walk.
+ */
+export const wholeGroupKey = (group: string) => `${GROUP_SEP}${group}`;
+export const isWholeGroupKey = (entry: string) => entry.startsWith(GROUP_SEP);
+
 const PAGE = 1000;
 const up = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
 
@@ -327,7 +337,18 @@ export function godownShare(
   /** The item's own stock group, for the group-level ticks. */
   itemGroup = "",
 ): number {
-  if (!split || !chosen.length) return 1;
+  if (!chosen.length) return 1;
+
+  // Group-only picks: the whole book filtered by stock group. Nothing is estimated here — the
+  // item is either in a ticked group or it is not, so the answer is 1 or 0. It must NOT fall
+  // through to the "no evidence, pass the whole figure" rule below, which would quietly let an
+  // unticked group back in.
+  const groupPicks = chosen.filter(isWholeGroupKey);
+  if (groupPicks.length) {
+    return itemGroup && groupPicks.includes(wholeGroupKey(itemGroup)) ? 1 : 0;
+  }
+
+  if (!split) return 1;
   const m = split.byItem.get(item);
   if (!m || !m.size) return 1;
   const groupKey = itemGroup ? godownGroupKey("", itemGroup) : "";
@@ -340,6 +361,71 @@ export function godownShare(
   }
   if (total <= 0) return 1;
   return picked / total;
+}
+
+/** One line of Tally's Stock Summary: a top-level stock group. */
+export interface GroupLine {
+  group: string;
+  /** Closing quantity, only meaningful when every item in the group shares a unit. */
+  qty: number;
+  /** That shared unit, or "" when the group mixes units — as Tally leaves it blank. */
+  unit: string;
+  value: number;
+  items: number;
+}
+
+/**
+ * The book's stock by top-level group, which is what Tally's Stock Summary screen shows.
+ *
+ * Straight out of `rpt_stock_summary_item`, so the values ARE Tally's: checked against the
+ * Stock Summary for Otec Noida, Printing Ink 75,48,719.39, Paper Roll 49,140.00 and Software
+ * 30,000.00 all tie to the paisa.
+ *
+ * `primary_group` is the TOP-level group, which is what that screen means. `stock_group` holds
+ * the leaf and would match almost nothing.
+ */
+export async function loadGroupSummary(companyGuid: string): Promise<GroupLine[]> {
+  const cw = getConnectwaveSupabase();
+  const rows: {
+    primary_group: string | null; base_unit: string | null;
+    closing_qty: number | null; closing_value: number | null;
+  }[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await cw
+      .from("rpt_stock_summary_item")
+      .select("primary_group,base_unit,closing_qty,closing_value")
+      .eq("company_guid", companyGuid)
+      .eq("tenant_id", `acct_orange::${companyGuid}`)
+      .order("item", { ascending: true })
+      .range(offset, offset + PAGE - 1)
+      .returns<typeof rows>();
+    if (error) throw new Error(error.message);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  const acc = new Map<string, { qty: number; value: number; items: number; units: Set<string> }>();
+  for (const r of rows) {
+    const group = up(r.primary_group) || "(UNGROUPED)";
+    const cur = acc.get(group) ?? { qty: 0, value: 0, items: 0, units: new Set<string>() };
+    const qty = Number(r.closing_qty) || 0;
+    cur.qty += qty;
+    cur.value += Number(r.closing_value) || 0;
+    cur.items += 1;
+    if (qty) cur.units.add(up(r.base_unit));
+    acc.set(group, cur);
+  }
+
+  return [...acc.entries()]
+    .map(([group, v]) => ({
+      group,
+      qty: v.qty,
+      unit: v.units.size === 1 ? [...v.units][0] : "",
+      value: v.value,
+      items: v.items,
+    }))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value) || a.group.localeCompare(b.group));
 }
 
 /** True when the walk placed the item, so a filtered figure means something. */
