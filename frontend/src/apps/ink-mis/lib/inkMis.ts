@@ -393,6 +393,7 @@ export async function loadInkPositions(
           facts.set(row.item, {
             group: norm(row.primary_group),
             closing: Number(row.closing_qty) || 0,
+            opening: Number(row.opening_qty) || 0,
             unit: norm(row.base_unit),
           });
         }

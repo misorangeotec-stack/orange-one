@@ -5,76 +5,77 @@
  * and Hojiwala, and the rest of its godowns — Production, Lab, Warehouse, job work — are not
  * stock the planner can sell, so counting them overstates the company every time.
  *
- * ─── WHY THIS IS A SHARE, NOT A BALANCE ──────────────────────────────────────────────────
+ * ─── WHERE THE FIGURE COMES FROM ─────────────────────────────────────────────────────────
  *
- * ConnectWave has no godown-wise closing balance. Three ways to build one were measured against
- * Tally's own item closing on Enterprises Surat's 124 finished-goods items:
+ * Every stock voucher line in Tally carries a godown and the mirror keeps it, so the year's
+ * movement is walked per item per godown:
  *
- *   netting movements per godown                     22 of 124 tie, 44 items go negative
- *   opening (item masters) + movements, de-duplicated 50 of 124 tie, 16 negative
- *   lot balances by their godown                     41 of 124 tie, 22 negative
+ *     godown stock = the godown's share of the opening + (inward − outward) at that godown
  *
- * None is trustworthy on its own. So the lot balances are used only for the SHARE each godown
- * holds of an item, and that share is applied to Tally's closing, which is authoritative. The
- * item always ties Tally; only the split between godowns is inferred. Negative lot balances are
- * clamped to zero first — a negative share is not a share.
+ * Checked against Tally on Enterprises Surat's 126 in-stock finished goods, that walk lands on
+ * Tally's own closing EXACTLY for 103 of them, before anything is adjusted. One item traced line
+ * by line: KY Reactive Ink Grey, opening 4,870 + net movement 5,186 = 10,056, which is Tally's
+ * closing to the kilo, with Production netting to precisely zero as it should.
  *
- * An item with no lot rows keeps its whole company figure rather than vanishing, and is counted
- * in `unsplit` so the screen can say how much of the book is being taken on trust.
+ * ─── THE ONE THING THAT IS STILL ESTIMATED ───────────────────────────────────────────────
  *
- * The lot table is small (about 4,600 rows for that book) and is read once per company.
+ * ConnectWave carries the opening balance per ITEM but not per GODOWN, and 57 of those 126 items
+ * open with stock. So where the opening physically sat on 1-Apr has to be reasoned out:
  *
- * ─── WHAT THE PICKER SHOWS, AND WHY IT IS NOT TALLY'S GODOWN SUMMARY ─────────────────────
+ *   1. Any godown whose running balance goes NEGATIVE during the year must have held opening —
+ *      you cannot issue what was never there. That deficit is a hard floor and is placed first.
+ *   2. Whatever opening is left over is spread the way the lot balances sit, which is the only
+ *      physical evidence of where stock rests.
+ *   3. The result is scaled so the item's godowns add up to Tally's closing EXACTLY. Every item
+ *      ties Tally; only the split between its godowns carries the estimate.
  *
- * The figures beside each godown are the SAME estimate the sheet uses — each item's Tally
- * closing multiplied by the share of its lots sitting there — not the raw lot quantities, which
- * are a different and much larger number (Finished Goods-Sachin: 52,296 of lots behind 21,450 of
- * stock). Showing lots made the screen disagree with itself.
+ * Measured against Tally's Godown Summary for Finished Goods-Sachin (30,935 KGS) this reads
+ * 32,890, about 6% high. It is not exact and cannot be until ConnectWave carries a godown-wise
+ * opening balance — with that one field this becomes arithmetic rather than inference.
  *
- * It still does not match Tally's own Godown Summary, and cannot. Measured against that report
- * for Finished Goods-Sachin, which Tally puts at 30,935 KGS:
+ * ─── TWO TRAPS, BOTH FOUND THE HARD WAY ──────────────────────────────────────────────────
  *
- *   raw lot balances            52,296   +69%
- *   share x Tally closing       21,450   -31%   <- what this screen shows
- *   signed netting per godown  -63,680   negative on 38 of its items
+ * PURCHASE ORDERS ARE NOT STOCK. The mirror flags order lines as affecting stock, and they carry
+ * no godown because no goods moved. Counting them put 19,314 KGS of finished goods into a godown
+ * called "(none)" and threw every share out. A real stock line always names a godown, so lines
+ * without one are dropped.
  *
- * The cause is structural: the mirror carries no opening balance per godown, and a lot's whole
- * balance is attributed to whichever godown it moved to LAST, so a batch split between Sachin and
- * Hojiwala lands entirely in one of them. Godown-wise stock is therefore indicative. The item
- * total always ties Tally exactly; only the split between godowns is inferred.
- *
- * Quantities are also unit-guarded: a lot line measured in PCS or LTR is not added to an item
- * whose base unit is KGS, which was quietly inflating every godown that holds mixed stock.
+ * EVERY PAGED READ MUST BE ORDERED. `range()` without `order()` is not a window over a stable
+ * list: Postgres may return rows in any order and need not pick the same one twice, so paging an
+ * unordered read silently repeats some rows and drops others. It was doing exactly that here —
+ * the same 49,082 lines read back as 19,650 distinct rows with 18,941 apparent duplicates, which
+ * is what made every earlier godown figure wrong. Read in order, 49,077 of the 49,082 are
+ * distinct.
  */
 import { useEffect, useState } from "react";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
-/** What a godown, or one group inside it, is holding: estimated stock and how many items. */
+/** What a godown, or one group inside it, is holding: stock and how many items. */
 export interface GodownCell {
-  /** Estimated stock — each item's Tally closing times its share of lots here. */
   qty: number;
-  /** How many items make up that quantity. Asked for directly, and it keeps qty honest. */
+  /** How many items make up that quantity. */
   items: number;
 }
 
-/** What the split needs to know about an item to turn lot shares into stock. */
+/** What the split needs to know about an item to turn movements into stock. */
 export interface ItemFacts {
   group: string;
   closing: number;
-  /** Base unit, so a PCS lot is never added to a KGS item. */
+  opening: number;
+  /** Base unit, so a PCS lot is never counted into a KGS item. */
   unit: string;
 }
 
 export interface GodownSplit {
-  /** item name → godown (upper case) → lot quantity held, negatives clamped away. The SHARE. */
+  /** item name → godown → STOCK held there. Adds up to the item's Tally closing. */
   byItem: Map<string, Map<string, number>>;
   /** Every godown name seen, for the picker. */
   godowns: string[];
-  /** godown → estimated stock and item count. */
+  /** godown → stock and item count. */
   totals: Map<string, GodownCell>;
-  /** godown → stock group → estimated stock and item count. What opens under a godown. */
+  /** godown → stock group → stock and item count. What opens under a godown. */
   groupsByGodown: Map<string, Map<string, GodownCell>>;
-  /** Items with no lot evidence at all; their company figure is used unchanged. */
+  /** Items the walk could not place at all; their company figure is used unchanged. */
   unsplit: number;
 }
 
@@ -82,7 +83,7 @@ export interface GodownSplit {
  * A choice is a list of these strings:
  *
  *   "HOJIWALA"                     the whole godown
- *   "HOJIWALA||PRINTING INK"       only that stock group within it
+ *   "HOJIWALA||FINISHED GOODS"     only that stock group within it
  *
  * An item belongs to exactly one stock group, so a group-level tick simply decides which items
  * that godown contributes — no second dimension to carry, and a plain list still describes it.
@@ -91,47 +92,164 @@ export const GROUP_SEP = "||";
 export const godownGroupKey = (godown: string, group: string) => `${godown}${GROUP_SEP}${group}`;
 
 const PAGE = 1000;
+const up = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
+
+interface MoveRow {
+  stock_item: string;
+  godown_name: string | null;
+  movement: string | null;
+  qty: number | null;
+  affects_stock: boolean | null;
+}
+
+interface LotRow {
+  stock_item: string;
+  last_godown: string | null;
+  balance: number | null;
+  uom: string | null;
+}
 
 export async function loadGodownSplit(
   companyGuid: string,
-  /** item name → its group, Tally closing and base unit. Empty means shares only. */
+  /** item name → its group, Tally opening and closing, and base unit. */
   facts: Map<string, ItemFacts> = new Map(),
 ): Promise<GodownSplit> {
   const cw = getConnectwaveSupabase();
-  const rows: {
-    stock_item: string; last_godown: string | null; balance: number | null; uom: string | null;
-  }[] = [];
+  const tenant = `acct_orange::${companyGuid}`;
+
+  // ── the year's movements, in date order so a running balance means something
+  const moves: MoveRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await cw
+      .from("rpt_batch_line")
+      .select("stock_item,godown_name,movement,qty,affects_stock")
+      .eq("company_guid", companyGuid)
+      .eq("tenant_id", tenant)
+      .order("vch_date", { ascending: true })
+      .order("voucher_guid", { ascending: true })
+      .order("line_no", { ascending: true })
+      .range(offset, offset + PAGE - 1)
+      .returns<MoveRow[]>();
+    if (error) throw new Error(error.message);
+    const page = data ?? [];
+    moves.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  /** item → godown → net movement, and the lowest that running balance ever reached. */
+  const net = new Map<string, Map<string, number>>();
+  const low = new Map<string, Map<string, number>>();
+  const godowns = new Set<string>();
+  for (const r of moves) {
+    if (r.affects_stock === false) continue;
+    const godown = up(r.godown_name);
+    if (!godown) continue; // an order, not a movement — no goods, no godown
+    let qty = Number(r.qty) || 0;
+    if (r.movement === "out") qty = -qty;
+
+    const n = net.get(r.stock_item) ?? new Map<string, number>();
+    const running = (n.get(godown) ?? 0) + qty;
+    n.set(godown, running);
+    net.set(r.stock_item, n);
+
+    const l = low.get(r.stock_item) ?? new Map<string, number>();
+    if (running < (l.get(godown) ?? 0)) l.set(godown, running);
+    low.set(r.stock_item, l);
+
+    godowns.add(godown);
+  }
+
+  // ── where stock physically rests, for spreading whatever opening the deficits do not explain
+  const lots: LotRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await cw
       .from("rpt_lot_balance")
       .select("stock_item,last_godown,balance,uom")
       .eq("company_guid", companyGuid)
+      .order("stock_item", { ascending: true })
+      .order("batch_name", { ascending: true })
+      .order("last_godown", { ascending: true })
       .range(offset, offset + PAGE - 1)
-      .returns<typeof rows>();
+      .returns<LotRow[]>();
     if (error) throw new Error(error.message);
     const page = data ?? [];
-    rows.push(...page);
+    lots.push(...page);
     if (page.length < PAGE) break;
   }
 
-  const up = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
-
-  // Pass one: the shares. Lots in a unit the item is not measured in are not its stock.
-  const byItem = new Map<string, Map<string, number>>();
-  const godowns = new Set<string>();
-  for (const r of rows) {
-    const qty = r.balance ?? 0;
+  const lotShape = new Map<string, Map<string, number>>();
+  for (const r of lots) {
+    const qty = Number(r.balance) || 0;
     if (qty <= 0) continue; // a negative lot is a book error, not a holding
     const unit = facts.get(r.stock_item)?.unit;
     if (unit && up(r.uom) !== unit) continue;
-    const godown = up(r.last_godown) || "(NO GODOWN)";
-    godowns.add(godown);
-    const m = byItem.get(r.stock_item) ?? new Map<string, number>();
+    const godown = up(r.last_godown);
+    if (!godown) continue;
+    const m = lotShape.get(r.stock_item) ?? new Map<string, number>();
     m.set(godown, (m.get(godown) ?? 0) + qty);
-    byItem.set(r.stock_item, m);
+    lotShape.set(r.stock_item, m);
+    godowns.add(godown);
   }
 
-  // Pass two: turn each share into stock, so the screen shows what the sheet will use.
+  // ── item by item: place the opening, add the movements, tie to Tally
+  const byItem = new Map<string, Map<string, number>>();
+  let unsplit = 0;
+  for (const [item, f] of facts) {
+    const closing = f.closing;
+    if (!closing) continue;
+
+    const bal = new Map<string, number>(net.get(item) ?? []);
+    const opening = f.opening;
+    if (opening) {
+      // 1. every godown that ran negative must have held at least that much opening
+      const need = new Map<string, number>();
+      for (const [g, v] of low.get(item) ?? []) if (v < -0.0001) need.set(g, -v);
+      const short = [...need.values()].reduce((a, b) => a + b, 0);
+
+      const place = new Map<string, number>();
+      const give = (g: string, q: number) => place.set(g, (place.get(g) ?? 0) + q);
+
+      if (short >= opening && short > 0) {
+        // not even enough opening to cover the deficits — share it out across them
+        for (const [g, v] of need) give(g, (opening * v) / short);
+      } else {
+        for (const [g, v] of need) give(g, v);
+        // 2. the remainder goes where the lots say the stock rests
+        const rest = opening - short;
+        const shape = lotShape.get(item) ?? new Map<string, number>();
+        const total = [...shape.values()].reduce((a, b) => a + b, 0);
+        if (total > 0) {
+          for (const [g, v] of shape) give(g, (rest * v) / total);
+        } else if (need.size) {
+          let big = "";
+          for (const [g, v] of need) if (!big || v > (need.get(big) ?? 0)) big = g;
+          give(big, rest);
+        }
+        // else: no evidence at all — the remainder is dropped, and the scaling below spreads
+        // it over whatever the movements did show.
+      }
+      for (const [g, q] of place) bal.set(g, (bal.get(g) ?? 0) + q);
+    }
+
+    // 3. keep what is positive and scale it to Tally's closing, so the item ties exactly
+    const pos = new Map<string, number>();
+    let sum = 0;
+    for (const [g, v] of bal) {
+      if (v > 0.0001) {
+        pos.set(g, v);
+        sum += v;
+      }
+    }
+    if (sum <= 0) {
+      unsplit += 1; // nothing to go on; godownShare passes the company figure through
+      continue;
+    }
+    const scaled = new Map<string, number>();
+    for (const [g, v] of pos) scaled.set(g, (v * closing) / sum);
+    byItem.set(item, scaled);
+  }
+
+  // ── roll up for the picker
   const totals = new Map<string, GodownCell>();
   const groupsByGodown = new Map<string, Map<string, GodownCell>>();
   const add = (cells: Map<string, GodownCell>, key: string, qty: number) => {
@@ -141,20 +259,16 @@ export async function loadGodownSplit(
     cells.set(key, cur);
   };
   for (const [item, m] of byItem) {
-    const f = facts.get(item);
-    const lotTotal = [...m.values()].reduce((a, b) => a + b, 0);
-    if (lotTotal <= 0) continue;
-    const closing = f?.closing ?? 0;
-    for (const [godown, lot] of m) {
-      const qty = closing * (lot / lotTotal);
+    const group = facts.get(item)?.group || "(NO GROUP)";
+    for (const [godown, qty] of m) {
       add(totals, godown, qty);
       const cells = groupsByGodown.get(godown) ?? new Map<string, GodownCell>();
-      add(cells, f?.group || "(NO GROUP)", qty);
+      add(cells, group, qty);
       groupsByGodown.set(godown, cells);
     }
   }
 
-  return { byItem, godowns: [...godowns].sort(), totals, groupsByGodown, unsplit: 0 };
+  return { byItem, godowns: [...godowns].sort(), totals, groupsByGodown, unsplit };
 }
 
 /**
@@ -185,7 +299,7 @@ export function godownShare(
   return picked / total;
 }
 
-/** True when the item carried no lot evidence, so its figure is the whole company's. */
+/** True when the walk placed the item, so a filtered figure means something. */
 export const hasGodownEvidence = (split: GodownSplit | undefined, item: string): boolean =>
   Boolean(split?.byItem.get(item)?.size);
 

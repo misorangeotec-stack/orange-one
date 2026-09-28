@@ -87,13 +87,15 @@ export default function InkGodowns() {
         for (let offset = 0; ; offset += PAGE) {
           const { data: rows, error: e } = await cw
             .from("rpt_stock_summary_item")
-            .select("item,primary_group,closing_qty,base_unit")
+            .select("item,primary_group,closing_qty,opening_qty,base_unit")
             .eq("company_guid", c.guid)
             .eq("tenant_id", `acct_orange::${c.guid}`)
+            // Ordered, or paging repeats and drops rows — see the note in lib/godowns.ts.
+            .order("item", { ascending: true })
             .range(offset, offset + PAGE - 1)
             .returns<{
-              item: string; primary_group: string | null;
-              closing_qty: number | null; base_unit: string | null;
+              item: string; primary_group: string | null; closing_qty: number | null;
+              opening_qty: number | null; base_unit: string | null;
             }[]>();
           if (e) throw new Error(e.message);
           const page = rows ?? [];
@@ -101,6 +103,7 @@ export default function InkGodowns() {
             facts.set(r.item, {
               group: (r.primary_group ?? "").trim().toUpperCase(),
               closing: Number(r.closing_qty) || 0,
+              opening: Number(r.opening_qty) || 0,
               unit: (r.base_unit ?? "").trim().toUpperCase(),
             });
           }
@@ -179,12 +182,13 @@ export default function InkGodowns() {
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          <strong>These figures will not match Tally's Godown Summary.</strong> ConnectWave has no
-          closing balance per godown, so the share each godown holds is taken from the lot
-          balances and applied to Tally's item total. A lot counts wholly against the godown it
-          moved to last, so stock split between two godowns lands in one. Measured against Tally
-          for Finished Goods-Sachin, which Tally puts at 30,935: this reads 21,450, about 31% low.
-          Each item's total still ties Tally exactly, and a book with nothing ticked is read
+          Built by walking this year's vouchers godown by godown, the way Tally does. For 103 of
+          Enterprises Surat's 126 finished goods that walk lands on Tally's closing exactly.
+          What it cannot read is where the OPENING stock sat on 1-Apr, because ConnectWave
+          carries the opening per item but not per godown, so that part is reasoned from where
+          stock was issued and where the lots rest. Against Tally's Godown Summary for Finished
+          Goods-Sachin (30,935) this reads about 6% high. Every item's total ties Tally exactly;
+          only the split between godowns carries the estimate. A book with nothing ticked is read
           whole and is unaffected.
         </p>
       </div>
