@@ -371,7 +371,11 @@ export async function loadInkPositions(
   await Promise.all(
     INK_COMPANIES.filter((c) => (godownChoice[c.key] ?? []).length).map(async (c) => {
       try {
-        splits.set(c.key, await loadGodownSplit(c.guid));
+        const groupOf = new Map<string, string>();
+        for (const row of raw) {
+          if (row.company_guid === c.guid) groupOf.set(row.item, norm(row.primary_group));
+        }
+        splits.set(c.key, await loadGodownSplit(c.guid, groupOf));
       } catch {
         // A godown read that fails must not take the whole sheet down; the book simply shows
         // its company total, which is what it did before any of this existed.
@@ -389,7 +393,10 @@ export async function loadInkPositions(
   const qtyForMaster = (row: StockSummaryRow, companyKey: string) => {
     const chosen = godownChoice[companyKey] ?? [];
     if (!chosen.length) return Number(row.closing_qty) || 0;
-    return (Number(row.closing_qty) || 0) * godownShare(splits.get(companyKey), row.item, chosen);
+    return (
+      (Number(row.closing_qty) || 0) *
+      godownShare(splits.get(companyKey), row.item, chosen, norm(row.primary_group))
+    );
   };
 
   for (const row of inScope) {
@@ -500,7 +507,9 @@ export async function loadInkPositions(
 
     const chosen = godownChoice[company.key] ?? [];
     const split = splits.get(company.key);
-    const qty = chosen.length ? row.closing_qty * godownShare(split, row.item, chosen) : row.closing_qty;
+    const qty = chosen.length
+      ? row.closing_qty * godownShare(split, row.item, chosen, norm(row.primary_group))
+      : row.closing_qty;
     if (chosen.length && split && row.closing_qty !== 0 && !hasGodownEvidence(split, row.item)) {
       unsplitItems++;
     }
