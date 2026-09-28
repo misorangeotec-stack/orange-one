@@ -106,7 +106,7 @@ export default function HelpDeskLayout() {
             </p>
             <p className="mt-0.5 text-[12.5px] text-[#B42318]">{s.error}</p>
             <p className="mt-0.5 text-[12px] text-grey-2">
-              Nothing below is missing — the page could not read it. Tell IT what this says.
+              Nothing below is missing. The page could not read it. Tell IT what this says.
             </p>
           </div>
         ) : undefined

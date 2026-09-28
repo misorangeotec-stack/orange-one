@@ -92,7 +92,7 @@ export default function TicketTable({
       cell: (t) => {
         if (!t.currentStep) return "—";
         const owners = ownersOf(t, s);
-        return owners.length ? owners.join(", ") : "Nobody — needs routing";
+        return owners.length ? owners.join(", ") : "Nobody yet, needs routing";
       },
       sortValue: (t) => ownersOf(t, s).join(", ").toLowerCase(),
       filter: {
@@ -100,7 +100,7 @@ export default function TicketTable({
         get: (t) => {
           if (!t.currentStep) return "—";
           const owners = ownersOf(t, s);
-          return owners.length ? owners.join(", ") : "Nobody — needs routing";
+          return owners.length ? owners.join(", ") : "Nobody yet, needs routing";
         },
       },
     },
@@ -154,7 +154,7 @@ export default function TicketTable({
       initialSort={{ key: "raisedAt", dir: "desc" }}
       onRowClick={(t) => nav(`${B}/tickets/${t.id}`)}
       exportName="help-desk-tickets"
-      exportTitle="Help Desk — tickets"
+      exportTitle="Help Desk tickets"
       resizeKey="helpDeskTickets"
     />
   );

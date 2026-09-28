@@ -113,14 +113,14 @@ export default function NewTicket() {
                setTimeout(focus) here would race it. */
             autoAdvance
             searchable
-            placeholder="Search the list — attendance, payroll, travel, admin…"
+            placeholder="Search the list: attendance, payroll, travel, admin…"
           />
         </FieldLabel>
 
         {cat && <CategoryReadout cat={cat} personName={s.personName} />}
 
         <div className="mt-4">
-          <FieldLabel label="One line — what do you need?" required>
+          <FieldLabel label="One line: what do you need?" required>
             <TextInput
               ref={subjectRef}
               value={subject}
@@ -157,7 +157,7 @@ export default function NewTicket() {
         <div className="mt-4">
           <FieldLabel
             label="Attach something"
-            hint="A screenshot, a bill, a letter. One here — you can add more from the ticket once it is raised."
+            hint="A screenshot, a bill, a letter. One here, and you can add more from the ticket once it is raised."
           >
             <FileCapture value={file} onChange={setFile} />
           </FieldLabel>
@@ -233,7 +233,7 @@ function CategoryReadout({
       <p className="mt-1 text-[12.5px] text-grey-2">
         {cat.tatDays === null ? (
           <>
-            Turnaround: <span className="font-semibold text-navy">{tatLabel(cat)}</span> — this one
+            Turnaround: <span className="font-semibold text-navy">{tatLabel(cat)}</span>. This one
             is governed by policy rather than a fixed number of days, so it will not show a due
             date.
           </>
@@ -255,14 +255,14 @@ function CategoryReadout({
       {cat.handoffAppId && (
         <p className="mt-1 text-[12.5px] text-grey-2">
           This is handled in <span className="font-semibold text-navy">{appName(cat.handoffAppId)}</span>.
-          Raise it here and HR will start it there for you — you will get the reference back on this
+          Raise it here and HR will start it there for you, and you will get the reference back on this
           ticket.
         </p>
       )}
 
       {!owners.length && (
         <p className="mt-1 text-[12.5px] text-[#B54708]">
-          You can still raise it — an admin will route it. Tell HR that this category has no owner.
+          You can still raise it, and an admin will route it. Tell HR that this category has no owner.
         </p>
       )}
     </div>

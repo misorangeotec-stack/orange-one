@@ -71,7 +71,7 @@ export default function Masters() {
       type: "text",
       hint:
         "Working days from when the ticket is raised. 0 means the same working day. " +
-        "LEAVE IT EMPTY for a category governed by policy rather than a number of days — " +
+        "LEAVE IT EMPTY for a category governed by policy rather than a number of days. " +
         "those tickets show no due date and are never counted as late. " +
         "⚠ Changing this moves the due date of every OPEN ticket in the category, immediately.",
     },
@@ -92,7 +92,7 @@ export default function Masters() {
       key: "escalation_l1_label",
       label: "Level 1, in words",
       type: "text",
-      hint: 'What the sheet promises, e.g. "HR Head". Printed even when nobody is named — but then nobody is actually told.',
+      hint: 'What the sheet promises, e.g. "HR Head". Printed even when nobody is named, but then nobody is actually told.',
     },
     {
       key: "escalation_l2_ids",
@@ -105,7 +105,7 @@ export default function Masters() {
       key: "escalation_l2_label",
       label: "Level 2, in words",
       type: "text",
-      hint: 'e.g. "Management". ⚠ Every level 2 is a label with nobody behind it today — until real people are named here, a second reopen tells only the fallback in Settings.',
+      hint: 'e.g. "Management". ⚠ Every level 2 is a label with nobody behind it today. Until real people are named here, a second reopen tells only the fallback in Settings.',
     },
     {
       key: "handoff_app_id",
@@ -132,7 +132,7 @@ export default function Masters() {
       type: "select",
       options: [
         { value: "no", label: "No" },
-        { value: "yes", label: "Yes — the employee must describe it" },
+        { value: "yes", label: "Yes, the employee must describe it" },
       ],
       hint: 'On for "Others", where the category name alone tells the owner nothing.',
     },
@@ -150,7 +150,7 @@ export default function Masters() {
       ),
     },
     { header: "Code", render: (c) => <span className="font-mono text-[12px]">{c.code}</span> },
-    { header: "Who answers it", render: (c) => names(c.ownerIds) || "Nobody — tickets go nowhere" },
+    { header: "Who answers it", render: (c) => names(c.ownerIds) || "Nobody, tickets go nowhere" },
     {
       header: "Turnaround",
       render: (c) =>
@@ -195,7 +195,7 @@ export default function Masters() {
       <h1 className="text-[20px] font-bold text-navy">Ticket categories</h1>
       <p className="mt-1 max-w-3xl text-[13.5px] text-grey-2">
         What an employee picks when they raise a ticket, and what happens next. The category decides
-        who answers it and by when — so a change here changes every ticket raised under it from now
+        who answers it and by when, so a change here changes every ticket raised under it from now
         on, and moves the due date of the ones already open.
       </p>
 
@@ -206,8 +206,8 @@ export default function Masters() {
           No level-2 escalation has a real person behind it
         </p>
         <p className="mt-0.5 text-[12.5px] text-[#B54708]">
-          Every category's level 2 is a label — Management, Finance Head, Admin Vendor, ICC
-          Committee — because none of them is an Orange One account. Until somebody is named, a
+          Every category's level 2 is a label (Management, Finance Head, Admin Vendor, ICC
+          Committee) because none of them is an Orange One account. Until somebody is named, a
           second reopen tells only the fallback set in Settings.
         </p>
       </Card>

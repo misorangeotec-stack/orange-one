@@ -108,7 +108,7 @@ export const TRIGGER_STEPS: Partial<Record<StepKey, { dueAfter: string; rule: st
   awaiting_info: {
     dueAfter: "The moment the question was asked",
     rule:
-      "This many working days after the owner asked for more information — not after the ticket was raised. " +
+      "This many working days after the owner asked for more information, not after the ticket was raised. " +
       "PDF step 6. The clock is on whoever was tagged, which may be the employee or an HOD.",
   },
 };

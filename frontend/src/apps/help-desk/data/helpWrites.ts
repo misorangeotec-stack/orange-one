@@ -471,7 +471,7 @@ export async function saveCategory(
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
-  if (!code) throw new Error("That name has no letters in it — the report key is built from the name");
+  if (!code) throw new Error("That name has no letters in it, and the report key is built from the name");
 
   const { error } = await db.from("fms_help_categories").insert({ ...row, code });
   if (error) throw new Error(error.message);

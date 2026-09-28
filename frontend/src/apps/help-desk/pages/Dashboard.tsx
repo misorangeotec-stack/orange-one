@@ -27,7 +27,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-[20px] font-bold text-navy">Help Desk</h1>
           <p className="mt-1 text-[13.5px] text-grey-2">
-            Ask HR anything — attendance, payroll, leave, travel, admin. What you pick decides who
+            Ask HR anything: attendance, payroll, leave, travel, admin. What you pick decides who
             answers it and by when.
           </p>
         </div>

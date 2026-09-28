@@ -67,7 +67,7 @@ export default function MasterRequests() {
       <h1 className="text-[20px] font-bold text-navy">Ask for a ticket category</h1>
       <p className="mt-1 text-[13.5px] text-grey-2">
         If what you need to ask HR does not fit any of the categories, say so here. Meanwhile, raise
-        it under <b>Others</b> and describe it — that reaches somebody today.
+        it under <b>Others</b> and describe it. That reaches somebody today.
       </p>
 
       <Card className="mt-4 p-5">
@@ -131,7 +131,7 @@ export default function MasterRequests() {
                         A category needs an owner, a turnaround and an escalation
                         ladder, none of which the requester was asked for. */}
                     <span className="text-[12px] text-grey-2">
-                      Approving records the decision —{" "}
+                      Approving records the decision,{" "}
                       <Link to={`${B}/masters`} className="font-semibold text-orange hover:underline">
                         build the category on Masters
                       </Link>{" "}

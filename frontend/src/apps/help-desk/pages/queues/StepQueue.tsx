@@ -135,7 +135,7 @@ export default function StepQueue({ step }: { step: StepKey }) {
           initialSort={{ key: "due", dir: "asc" }}
           onRowClick={(e) => nav(`${B}/tickets/${e.ticketId}`)}
           exportName={`help-desk-${step}`}
-          exportTitle={`Help Desk — ${head.title}`}
+          exportTitle={`Help Desk ${head.title}`}
           resizeKey={`helpDeskQueue-${step}`}
           actions={(e) => {
             const t = s.tickets.find((x) => x.id === e.ticketId);

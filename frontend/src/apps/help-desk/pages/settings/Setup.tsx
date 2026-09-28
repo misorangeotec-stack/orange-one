@@ -89,7 +89,7 @@ export default function Setup() {
       )}
       {ok && (
         <p className="mt-3 rounded-xl border border-[#A6F4C5] bg-[#F6FEF9] px-4 py-3 text-[13px] text-[#027A48]">
-          Saved — {ok}.
+          Saved. {ok}.
         </p>
       )}
 
@@ -98,8 +98,8 @@ export default function Setup() {
         <h2 className="text-[15px] font-bold text-navy">Where an escalation goes when nobody is named</h2>
         <p className="mt-1 text-[13px] text-grey-2">
           A ticket reopened once goes to its category's escalation level 1; reopened again, level 2.
-          Every level 2 on every category is currently a label — Management, Finance Head, ICC
-          Committee — and none of them is an Orange One account, so those escalations land here
+          Every level 2 on every category is currently a label (Management, Finance Head, ICC
+          Committee) and none of them is an Orange One account, so those escalations land here
           instead.
         </p>
         {noFallback && (
@@ -140,7 +140,7 @@ export default function Setup() {
         <div className="mt-3">
           <FieldLabel
             label="Coordinators"
-            hint="Can act on any ticket and read the reports. They do NOT get every ticket on their home screen — that would bury their own work."
+            hint="Can act on any ticket and read the reports. They do NOT get every ticket on their home screen, which would bury their own work."
           >
             <MultiSelect options={peopleOptions} values={coordinators} onChange={setCoordinators} searchable />
           </FieldLabel>
@@ -184,7 +184,7 @@ export default function Setup() {
       <Card className="mt-4 p-5">
         <h2 className="text-[15px] font-bold text-navy">Step owners</h2>
         <p className="mt-1 text-[13px] text-grey-2">
-          These ADD to whoever already owns a ticket — they do not replace them. Use it so HR can
+          These ADD to whoever already owns a ticket. They do not replace them. Use it so HR can
           cover for each other.
         </p>
         {STEPS.map((st) => (
@@ -229,7 +229,7 @@ export default function Setup() {
                   // ⚠ No input at all. The number comes from the category, and a
                   //   box that is silently ignored is worse than no box.
                   <p className="mt-0.5 text-[12.5px] text-grey-2">
-                    Set per category, on the Ticket Categories screen — an attendance correction is
+                    Set per category, on the Ticket Categories screen. An attendance correction is
                     1 working day and a PMS query 3. Five categories are governed by policy and have
                     no due date at all.
                   </p>
@@ -249,7 +249,7 @@ export default function Setup() {
         {/* Honest about what this screen does not yet do. */}
         <p className="mt-3 border-t border-line pt-3 text-[12.5px] text-grey-2">
           These are read-only here. Changing one needs an admin to edit the module's settings
-          directly — the category turnarounds, which are the ones HR actually tune, are fully
+          directly, while the category turnarounds, which are the ones HR actually tune, are fully
           editable on the Ticket Categories screen.
         </p>
       </Card>
@@ -261,7 +261,7 @@ export default function Setup() {
         <div className="mt-3 max-w-xs">
           <FieldLabel
             label="First-reply target (minutes)"
-            hint="Reported on, never enforced — the queue's deadlines are whole days. It is the line the First Reply report measures against."
+            hint="Reported on, never enforced. The queue's deadlines are whole days. It is the line the First Reply report measures against."
           >
             <TextInput value={frt} onChange={(e) => setFrt(e.target.value)} inputMode="numeric" />
           </FieldLabel>

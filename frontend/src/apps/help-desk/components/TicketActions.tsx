@@ -191,7 +191,7 @@ export default function TicketActions({
         )}
         {held && !compact && (
           <span className="text-[12.5px] text-[#B54708]">
-            On hold{ticket.holdReason ? ` — ${ticket.holdReason}` : ""}. Take it off hold to work on
+            On hold{ticket.holdReason ? `: ${ticket.holdReason}` : ""}. Take it off hold to work on
             it.
           </span>
         )}
@@ -204,7 +204,7 @@ export default function TicketActions({
         <Modal open title="Let them know you have it" onClose={close}>
           <p className="text-[13px] text-grey-2">
             {s.personName(ticket.raisedBy)} will be told you have picked this up. The turnaround
-            does not change — it runs from when the ticket was raised.
+            does not change. It runs from when the ticket was raised.
           </p>
           <div className="mt-3">
             <FieldLabel label="Anything to say now?" hint="Optional.">
@@ -248,7 +248,7 @@ export default function TicketActions({
             </FieldLabel>
           </div>
           <div className="mt-3">
-            <FieldLabel label="Attach the proof" hint="Optional — the corrected payslip, the approval, the letter.">
+            <FieldLabel label="Attach the proof" hint="Optional. The corrected payslip, the approval, the letter.">
               <FileCapture value={file} onChange={setFile} />
             </FieldLabel>
           </div>
@@ -342,7 +342,7 @@ export default function TicketActions({
             </FieldLabel>
           </div>
           <div className="mt-3">
-            <FieldLabel label="Attach something" hint="Optional — whatever they asked for.">
+            <FieldLabel label="Attach something" hint="Optional. Whatever they asked for.">
               <FileCapture value={file} onChange={setFile} />
             </FieldLabel>
           </div>
@@ -449,14 +449,14 @@ export default function TicketActions({
       {open === "hand" && (
         <Modal open title="Hand this ticket on" onClose={close}>
           <p className="text-[13px] text-grey-2">
-            The turnaround and the escalation do not change — only who holds it. If the CATEGORY is
+            The turnaround and the escalation do not change. Only who holds it does. If the CATEGORY is
             wrong, use &ldquo;Wrong category&rdquo; instead: that moves the deadline too.
           </p>
           <div className="mt-3">
             <FieldLabel
               label="Who takes it?"
               required
-              hint="Only people set up to receive tickets — the reassign pool, or somebody who owns a category."
+              hint="Only people set up to receive tickets: the reassign pool, or somebody who owns a category."
             >
               <Combobox
                 options={handOptions}
@@ -561,7 +561,7 @@ function ownerWords(s: ReturnType<typeof useHelpStore>, categoryId: string): str
   const names = (s.categoryById(categoryId)?.ownerIds ?? [])
     .map((i) => s.personName(i))
     .filter((n) => n !== "—");
-  return names.length ? names.join(", ") : "nobody — that category has no owner set";
+  return names.length ? names.join(", ") : "nobody, because that category has no owner set";
 }
 
 /** Said in words, not numbers \u2014 "3 out of 5" is a grade, not an opinion. */

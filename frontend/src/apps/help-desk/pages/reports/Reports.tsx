@@ -146,7 +146,7 @@ function MisBody({
       <Card className="mt-4 p-5">
         <h2 className="text-[15px] font-bold text-navy">How old is what is still open</h2>
         <p className="mt-1 text-[12.5px] text-grey-2">
-          Measured today, across everything still open — not only the period above, or the oldest
+          Measured today, across everything still open, not only the period above, or the oldest
           tickets would be the ones it hid.
         </p>
         <ul className="mt-3 divide-y divide-line">
@@ -191,7 +191,7 @@ function MisBody({
           <Tile
             label="Closed with no reply"
             value={mis.closure.autoClosed}
-            sub="The employee never confirmed — not the same as satisfied"
+            sub="The employee never confirmed, which is not the same as satisfied"
           />
           <Tile
             label="Satisfaction"
@@ -262,7 +262,7 @@ function ConfidentialRegister({ from, to }: { from: string; to: string }) {
       <p className="mt-1 max-w-3xl text-[12.5px] text-grey-2">
         {/* The register proves the case was logged and answered in time. It is
             deliberately NOT a second, easier copy of the complaint. */}
-        Grievance, POSH and disciplinary matters. Dates and status only — the complaint itself stays
+        Grievance, POSH and disciplinary matters. Dates and status only. The complaint itself stays
         on its own ticket. Only you and the ICC can read this.
       </p>
       <Grid

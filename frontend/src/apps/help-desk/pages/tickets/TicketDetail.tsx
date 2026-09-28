@@ -79,7 +79,7 @@ export default function TicketDetail() {
             Your ticket was raised, but {attachFailed} did not upload
           </p>
           <p className="mt-0.5 text-[12.5px] text-[#B54708]">
-            Nothing is lost — the question has been sent and somebody owes you an answer. Attach it
+            Nothing is lost. The question has been sent and somebody owes you an answer. Attach it
             again from the box at the foot of this page.
           </p>
         </div>
@@ -89,7 +89,7 @@ export default function TicketDetail() {
       <Card className="mt-4 p-5">
         <div className="grid gap-4 sm:grid-cols-3">
           <Fact label="With">
-            {ticket.currentStep ? whoWith(ticket, s) : "Nobody — it is finished"}
+            {ticket.currentStep ? whoWith(ticket, s) : "Nobody, it is finished"}
           </Fact>
           <Fact label="Step">
             {ticket.currentStep ? (stepByKey(ticket.currentStep)?.title ?? ticket.currentStep) : "—"}
@@ -170,7 +170,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 function whoWith(t: { id: string }, s: ReturnType<typeof useHelpStore>): string {
   const e = s.queueEntries.find((q) => q.ticketId === t.id);
   const names = (e?.ownerIds ?? []).map((id) => s.personName(id)).filter((n) => n !== "—");
-  return names.length ? names.join(", ") : "Nobody — this category has no owner set";
+  return names.length ? names.join(", ") : "Nobody, this category has no owner set";
 }
 
 /** "18 minutes", "3 hours", "2 days" — never "1080 minutes". */

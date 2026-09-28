@@ -45,7 +45,7 @@ export const helpDeskApp: AppManifest = {
   id: "help-desk",
   name: appName("help-desk"),
   description:
-    "One place to ask HR anything — attendance, payroll, leave, travel, admin — and see where your question has got to. The category you pick decides who answers it and by when.",
+    "One place to ask HR anything: attendance, payroll, leave, travel, admin. See where your question has got to. The category you pick decides who answers it and by when.",
   basePath: appBasePath("help-desk"),
   status: "live",
   category: appCategory("help-desk"),

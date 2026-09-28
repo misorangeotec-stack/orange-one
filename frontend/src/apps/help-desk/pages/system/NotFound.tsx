@@ -5,7 +5,7 @@ export default function NotFound() {
     <div className="rounded-xl border border-line bg-white p-6">
       <h1 className="text-[18px] font-bold text-navy">That page does not exist</h1>
       <p className="mt-1 text-[13.5px] text-grey-2">
-        The link may be old — or the ticket may be one you are not able to see.{" "}
+        The link may be old, or the ticket may be one you are not able to see.{" "}
         <Link to="/help-desk" className="font-semibold text-orange hover:underline">
           Back to the dashboard
         </Link>
