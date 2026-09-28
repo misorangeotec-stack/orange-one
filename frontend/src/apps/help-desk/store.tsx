@@ -87,6 +87,16 @@ interface HelpStoreValue {
    */
   canActOn: (step: StepKey, t: Ticket) => boolean;
 
+  /**
+   * May this person be HANDED a ticket? Mirrors `fms_help_can_receive`: the
+   * configured reassign pool, OR anybody who already owns a category.
+   *
+   * ⚠ THE CATEGORY-OWNER ARM IS WHAT KEEPS REASSIGN USABLE. `reassign_pool`
+   *   installs empty, so the pool alone would make the picker offer nobody —
+   *   and the only other safe default would be "every profile", which is why
+   *   the Import module's first Reassign was removed.
+   */
+  canReceive: (userId: string) => boolean;
   markNotificationsRead: (ids: string[]) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -225,6 +235,9 @@ export function HelpStoreProvider({ children }: { children: ReactNode }) {
         isCoordinator || (!!userId && (data?.masterOwnerIds ?? []).includes(userId)),
       canSetup: isAdmin,
       canActOn,
+      canReceive: (id: string) =>
+        (data?.reassignPoolIds ?? []).includes(id) ||
+        categories.some((c) => c.ownerIds.includes(id)),
       markNotificationsRead: async (ids: string[]) => {
         if (!ids.length) return;
         await markRead(ids);

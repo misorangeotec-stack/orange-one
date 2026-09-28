@@ -9,6 +9,8 @@ import {
   acknowledgeTicket,
   answerInfo,
   confirmTicket,
+  recategoriseTicket,
+  reassignTicket,
   reopenTicket,
   requestInfo,
   resolveTicketWithFile,
@@ -37,12 +39,14 @@ import type { Ticket } from "../types";
  */
 export default function TicketActions({ ticket }: { ticket: Ticket }) {
   const s = useHelpStore();
-  const [open, setOpen] = useState<null | "ack" | "resolve" | "ask" | "answer" | "confirm" | "reopen">(null);
+  const [open, setOpen] = useState<null | "ack" | "resolve" | "ask" | "answer" | "confirm" | "reopen" | "hand" | "refile">(null);
   const [note, setNote] = useState("");
   const [resolution, setResolution] = useState("");
   const [askWho, setAskWho] = useState("");
   const [reply, setReply] = useState("");
   const [rating, setRating] = useState<number | null>(null);
+  const [handTo, setHandTo] = useState("");
+  const [newCat, setNewCat] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -59,6 +63,12 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
   // the employee says "satisfied", and one person supplying both is how a CSAT
   // score stops meaning anything.
   const canClose = s.canActOn("confirm", ticket) && ticket.currentStep === "confirm";
+  // Repairing a ticket is the desk's business, and it stays possible for as long
+  // as the ticket is open — including while it sits at `confirm`, because "the
+  // wrong person answered it" is usually only discovered then.
+  const canRepair =
+    s.canActOn("resolve", ticket) ||
+    (s.isDeskStaff && ticket.status !== "closed" && ticket.status !== "cancelled" && s.canActOn("acknowledge", ticket));
 
   const cat = s.categoryById(ticket.categoryId);
   const peopleOptions = useMemo(
@@ -69,7 +79,25 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
     [s.orgPeople, s.userId],
   );
 
-  if (!canAck && !canResolve && !canAnswer && !canClose) return null;
+  const handOptions = useMemo(
+    () =>
+      s.orgPeople
+        .filter((p) => p.id !== ticket.assigneeId && s.canReceive(p.id))
+        .map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined })),
+    [s, ticket.assigneeId],
+  );
+
+  // \u26a0 CONFIDENTIAL CATEGORIES ARE NOT OFFERED. The server refuses a move into
+  //   one, so listing them would be a menu of guaranteed errors.
+  const refileOptions = useMemo(
+    () =>
+      s.raisableCategories
+        .filter((c) => c.id !== ticket.categoryId && !c.confidential)
+        .map((c) => ({ value: c.id, label: c.name, sublabel: tatWords(c) })),
+    [s.raisableCategories, ticket.categoryId],
+  );
+
+  if (!canAck && !canResolve && !canAnswer && !canClose && !canRepair) return null;
 
   const close = () => {
     setOpen(null);
@@ -78,6 +106,8 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
     setAskWho("");
     setReply("");
     setRating(null);
+    setHandTo("");
+    setNewCat("");
     setFile(null);
     setErr(null);
   };
@@ -127,6 +157,21 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
             <Button variant="outline" disabled={held} onClick={() => setOpen("reopen")}>
               It is still not right
             </Button>
+          </>
+        )}
+        {canRepair && (
+          <>
+            <Button variant="outline" disabled={held} onClick={() => setOpen("hand")}>
+              Hand it on
+            </Button>
+            {/* ⚠ Not offered on a confidential ticket: the server refuses the move
+                in both directions, and a button that always errors is worse than
+                no button. */}
+            {!cat?.confidential && (
+              <Button variant="outline" disabled={held} onClick={() => setOpen("refile")}>
+                Wrong category
+              </Button>
+            )}
           </>
         )}
         {held && (
@@ -383,8 +428,122 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
           </div>
         </Modal>
       )}
+      {open === "hand" && (
+        <Modal open title="Hand this ticket on" onClose={close}>
+          <p className="text-[13px] text-grey-2">
+            The turnaround and the escalation do not change — only who holds it. If the CATEGORY is
+            wrong, use &ldquo;Wrong category&rdquo; instead: that moves the deadline too.
+          </p>
+          <div className="mt-3">
+            <FieldLabel
+              label="Who takes it?"
+              required
+              hint="Only people set up to receive tickets — the reassign pool, or somebody who owns a category."
+            >
+              <Combobox
+                options={handOptions}
+                value={handTo}
+                onChange={setHandTo}
+                autoAdvance
+                searchable
+                placeholder="Search the desk"
+              />
+            </FieldLabel>
+          </div>
+
+          {cat?.confidential && handTo && (
+            <p className="mt-3 rounded-lg border border-[#FECDCA] bg-[#FEF3F2] px-3 py-2 text-[13px] text-[#B42318]">
+              This is a confidential ticket. {s.personName(handTo)} will be able to read all of it,
+              and the history will record that you handed it to them.
+            </p>
+          )}
+
+          <div className="mt-3">
+            <FieldLabel label="Why?" hint="Optional, but it saves the next person asking.">
+              <TextArea rows={3} value={reply} onChange={(e) => setReply(e.target.value)} />
+            </FieldLabel>
+          </div>
+          {err && <ErrLine msg={err} />}
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              disabled={busy || !handTo}
+              onClick={() => void run(() => reassignTicket(ticket.id, handTo, reply.trim() || null))}
+            >
+              {busy ? "Handing over…" : "Hand it on"}
+            </Button>
+            <CancelLink onClick={close} />
+          </div>
+        </Modal>
+      )}
+
+      {open === "refile" && (
+        <Modal open title="File it under the right thing" onClose={close}>
+          <p className="text-[13px] text-grey-2">
+            The category decides who answers it and how long they have, so re-filing changes both.
+          </p>
+          <div className="mt-3">
+            <FieldLabel label="What should it be?" required>
+              <Combobox
+                options={refileOptions}
+                value={newCat}
+                onChange={setNewCat}
+                autoAdvance
+                searchable
+                placeholder="Search the categories"
+              />
+            </FieldLabel>
+          </div>
+
+          {/* ⚠ THE DEADLINE MOVES, AND THE READER SEES IT BEFORE THE CLICK. A
+              3-day query re-filed as a 1-day one can be overdue the instant it
+              moves, and discovering that from a red cell afterwards is how the
+              feature gets blamed for the lateness. */}
+          {newCat && (
+            <p className="mt-3 rounded-lg border border-line bg-[#FAFAFB] px-3 py-2 text-[13px] text-grey-2">
+              Turnaround goes from <b className="text-navy">{tatWords(cat)}</b> to{" "}
+              <b className="text-navy">{tatWords(s.categoryById(newCat))}</b>, counted from when the
+              ticket was raised. It becomes <b className="text-navy">{ownerWords(s, newCat)}</b>
+              &rsquo;s.
+            </p>
+          )}
+
+          <div className="mt-3">
+            <FieldLabel label="Why?" hint="Optional.">
+              <TextArea rows={3} value={reply} onChange={(e) => setReply(e.target.value)} />
+            </FieldLabel>
+          </div>
+          {err && <ErrLine msg={err} />}
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              disabled={busy || !newCat}
+              onClick={() =>
+                void run(() => recategoriseTicket(ticket.id, newCat, reply.trim() || null))
+              }
+            >
+              {busy ? "Re-filing…" : "Re-file it"}
+            </Button>
+            <CancelLink onClick={close} />
+          </div>
+        </Modal>
+      )}
     </>
   );
+}
+
+/** A category's turnaround in the reader's words, never an invented number. */
+function tatWords(c: { tatDays: number | null; tatText: string | null } | undefined): string {
+  if (!c) return "—";
+  if (c.tatDays === null) return c.tatText ?? "no fixed turnaround";
+  if (c.tatDays === 0) return c.tatText ?? "the same working day";
+  return `${c.tatDays} working day${c.tatDays === 1 ? "" : "s"}`;
+}
+
+/** Who a re-filed ticket becomes, said plainly when the answer is "nobody". */
+function ownerWords(s: ReturnType<typeof useHelpStore>, categoryId: string): string {
+  const names = (s.categoryById(categoryId)?.ownerIds ?? [])
+    .map((i) => s.personName(i))
+    .filter((n) => n !== "—");
+  return names.length ? names.join(", ") : "nobody — that category has no owner set";
 }
 
 /** Said in words, not numbers \u2014 "3 out of 5" is a grade, not an opinion. */

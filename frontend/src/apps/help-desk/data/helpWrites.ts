@@ -323,3 +323,53 @@ export async function reopenTicket(ticketId: string, reason: string): Promise<vo
   });
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Hand a ticket to a different person. Right category, wrong person.
+ *
+ * ⚠ THE TAT AND THE ESCALATION LADDER DO NOT CHANGE — only who holds it. If
+ *   the CATEGORY is wrong, `recategoriseTicket` is the other button, and it is a
+ *   different repair.
+ *
+ * ⚠ THE TARGET MUST BE SET UP TO RECEIVE ONE: the configured reassign pool, or
+ *   anybody who already owns a ticket category. Never "any profile" — the Import
+ *   module's first Reassign was removed for exactly that.
+ */
+export async function reassignTicket(
+  ticketId: string,
+  toUserId: string,
+  reason?: string | null,
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_reassign", {
+    p_ticket: ticketId,
+    p_to_user: toUserId,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Re-file a ticket under the right category.
+ *
+ * ⚠ THIS MOVES THE DEADLINE. The owner, the TAT and the escalation ladder all
+ *   hang off the category, and nothing is stored — the due date is derived from
+ *   the category's TAT at read time. So an attendance correction re-filed as a
+ *   payroll query gains a day, and the reverse may be overdue the instant it is
+ *   moved. The dialog shows the new date before the click.
+ *
+ * ⚠ REFUSED IN BOTH DIRECTIONS ON A CONFIDENTIAL CATEGORY. Into one, because
+ *   the people who have already read it would stay able to; out of one, because
+ *   it would hand a grievance's whole history to the HR pool in a single click.
+ */
+export async function recategoriseTicket(
+  ticketId: string,
+  categoryId: string,
+  reason?: string | null,
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_recategorise", {
+    p_ticket: ticketId,
+    p_category: categoryId,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
