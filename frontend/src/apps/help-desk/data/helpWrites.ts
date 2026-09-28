@@ -409,3 +409,166 @@ export async function clearHandoff(ticketId: string, reason?: string | null): Pr
   });
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Create or edit a ticket category.
+ *
+ * ⚠ A DIRECT TABLE WRITE, UNDER RLS — `fms_help_categories_write` limits it to
+ *   `fms_help_is_master_manager`. That is the house pattern for a master: the
+ *   workflow RPCs are definers because they enforce a SEQUENCE, and a master row
+ *   has no sequence to enforce.
+ *
+ * ⚠ `code` AND `confidential` ARE NEVER SENT. The code is what every report
+ *   matches on, so changing it would silently re-partition months of history;
+ *   the confidential flag cannot be moved in either direction without either
+ *   un-reading a ticket people have seen or exposing one they have not. Neither
+ *   is offered by the form, and neither is written here even if it appeared in
+ *   the bag.
+ *
+ * ⚠ AN EMPTY TAT IS `null`, NOT 0. Null means "governed by policy, no deadline";
+ *   zero means "the same working day". Coalescing one to the other would give
+ *   five categories a deadline nobody agreed to, POSH among them.
+ */
+export async function saveCategory(
+  id: string | null,
+  v: Record<string, string>,
+  active = true,
+): Promise<void> {
+  const ids = (k: string) => (v[k] ? v[k].split(",").filter(Boolean) : []);
+  const num = (k: string) => {
+    const t = (v[k] ?? "").trim();
+    if (t === "") return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const row = {
+    name: (v.name ?? "").trim(),
+    owner_ids: ids("owner_ids"),
+    tat_days: num("tat_days"),
+    tat_text: (v.tat_text ?? "").trim() || null,
+    escalation_l1_ids: ids("escalation_l1_ids"),
+    escalation_l1_label: (v.escalation_l1_label ?? "").trim() || null,
+    escalation_l2_ids: ids("escalation_l2_ids"),
+    escalation_l2_label: (v.escalation_l2_label ?? "").trim() || null,
+    handoff_app_id: (v.handoff_app_id ?? "").trim() || null,
+    requires_note: v.requires_note === "yes",
+    sort_order: num("sort_order") ?? 999,
+    active,
+  };
+
+  if (id) {
+    const { error } = await db.from("fms_help_categories").update(row).eq("id", id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  // A new category needs a code, and it is derived rather than asked for: the
+  // requester should not be inventing a key that reports match on. Slugged from
+  // the name; the unique index refuses a collision, which is the right failure.
+  const code = row.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  if (!code) throw new Error("That name has no letters in it — the report key is built from the name");
+
+  const { error } = await db.from("fms_help_categories").insert({ ...row, code });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Switch a category off, or back on.
+ *
+ * ⚠ OFF IS NOT DELETE, and it cannot be: `fms_help_tickets.category_id` is
+ *   `on delete restrict`, so a category with tickets against it can never be
+ *   removed — the MIS groups by it. Off means "stop offering it on the raise
+ *   form"; every existing ticket keeps it.
+ */
+export async function setCategoryActive(id: string, active: boolean): Promise<void> {
+  const { error } = await db.from("fms_help_categories").update({ active }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Save one Setup key.
+ *
+ * ⚠ A DIRECT WRITE UNDER RLS — `fms_help_config_write` limits it to admins. The
+ *   whole value is replaced, so the caller must pass the WHOLE object: a partial
+ *   save would drop every key it did not mention, and `policy` holds five.
+ */
+export async function saveConfig(key: string, value: Record<string, unknown>): Promise<void> {
+  const { error } = await db
+    .from("fms_help_config")
+    .upsert({ key, value }, { onConflict: "key" });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Save the additive step owners.
+ *
+ * ⚠ ONE ROW PER STEP, UPSERTED ON `step_key`, INCLUDING THE EMPTY ONES. Skipping
+ *   a step whose list was cleared would leave its old owners in place while the
+ *   screen showed none — and on `raise` that is the difference between "anyone
+ *   may raise a ticket" and "only these three can", which is the module's whole
+ *   premise.
+ */
+export async function saveStepOwners(byStep: Record<string, string[]>): Promise<void> {
+  const rows = Object.entries(byStep).map(([step_key, employee_ids]) => ({
+    step_key,
+    employee_ids,
+  }));
+  const { error } = await db
+    .from("fms_help_step_owners")
+    .upsert(rows, { onConflict: "step_key" });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Ask for a ticket category that does not exist.
+ *
+ * ⚠ THE PAYLOAD IS DELIBERATELY JUST A NAME AND A REASON. Every other module's
+ *   master-request carries the whole row, and each key has to appear in that
+ *   module's resolve RPC or it is SILENTLY DROPPED on approve. That trap is
+ *   avoided here by not building the road: the owner, the turnaround, the
+ *   escalation ladder and the confidentiality are decided by whoever APPROVES it,
+ *   on the Masters screen, where they can see what is already in use.
+ */
+export async function requestCategory(name: string, reason: string | null): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) throw new Error("Not signed in");
+  const { error } = await db.from("fms_help_master_requests").insert({
+    requested_by: uid,
+    proposed_name: name.trim(),
+    reason: reason?.trim() || null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Decide a category request.
+ *
+ * ⚠ APPROVING DOES NOT CREATE THE CATEGORY. It records the decision and points
+ *   the approver at the Masters screen to make it, because a category needs an
+ *   owner, a turnaround and an escalation ladder — none of which the requester
+ *   was asked for, and none of which should be guessed on their behalf. A row
+ *   created blank here would route tickets to nobody.
+ */
+export async function decideCategoryRequest(
+  id: string,
+  status: "approved" | "rejected",
+  note: string | null,
+): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  const { error } = await db
+    .from("fms_help_master_requests")
+    .update({
+      status,
+      decided_by: auth.user?.id ?? null,
+      decided_at: new Date().toISOString(),
+      decision_note: note?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}

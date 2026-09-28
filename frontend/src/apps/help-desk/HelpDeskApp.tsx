@@ -11,8 +11,10 @@ import TicketDetail from "./pages/tickets/TicketDetail";
 import StepQueue from "./pages/queues/StepQueue";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import Reports from "./pages/reports/Reports";
+import Masters from "./pages/masters/Masters";
+import MasterRequests from "./pages/masters/MasterRequests";
+import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
-import ComingSoon from "./pages/system/ComingSoon";
 import NotFound from "./pages/system/NotFound";
 import { QUEUE_PATH } from "./nav";
 import { QUEUE_STEPS } from "./lib/steps";
@@ -73,36 +75,9 @@ export default function HelpDeskApp() {
 
           <Route path="monitoring" element={<RequireDesk><ControlCenter /></RequireDesk>} />
           <Route path="reports" element={<RequireDesk><Reports /></RequireDesk>} />
-          <Route
-            path="masters"
-            element={
-              <ComingSoon
-                title="Ticket Categories — the screen is HD-1's last piece"
-                detail="All 30 categories are live in the database and already routing tickets. The screen that edits them is next; until then a change needs an admin."
-              />
-            }
-          />
-          <Route
-            path="master-requests"
-            element={
-              <ComingSoon
-                title="Category Requests — HD-1's last piece"
-                detail="Asking for a new ticket category, and approving one. The table is live; the screen is next."
-              />
-            }
-          />
-          <Route
-            path="settings"
-            element={
-              <RequireAdmin>
-                <ComingSoon
-                  title="Settings — HD-3 onwards"
-                  detail="Step owners, due dates, the process coordinators, who may be handed a ticket, and the escalation fallback. The escalation fallback matters most: until it is set, a reopen on a category whose escalation is only a label notifies nobody."
-                />
-              </RequireAdmin>
-            }
-          />
-
+          <Route path="masters" element={<Masters />} />
+          <Route path="master-requests" element={<MasterRequests />} />
+          <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
         </Route>
         <Route path="*" element={<Navigate to="/help-desk" replace />} />
