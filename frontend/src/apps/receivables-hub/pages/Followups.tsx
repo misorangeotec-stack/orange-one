@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import * as XLSX from "xlsx-js-style";
 import {
   PhoneCall, AlarmClock, CalendarClock, HandCoins, TriangleAlert, Download, Search, Plus,
-  Pencil, Trash2,
+  Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -22,6 +22,9 @@ import {
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useSession } from "@/core/platform/session";
 import { useFollowups, type DueItem } from "@hub/lib/useFollowups";
+import { useAppData, groupNameOf } from "@hub/lib/useAppData";
+import { useReceivablesSource } from "@hub/lib/sourceContext";
+import { buildLastReceipts, latestReceiptAcross, type LastReceipt } from "@hub/lib/collections";
 import { FollowupModal } from "@hub/components/FollowupModal";
 import { FollowupEntityPicker } from "@hub/components/FollowupEntityPicker";
 import { NextFollowupCell } from "@hub/components/NextFollowupCell";
@@ -155,12 +158,115 @@ function EntityLink({ type, name }: { type: FollowupEntityType; name: string }) 
   );
 }
 
+/** Who a follow-up is about, resolved to ledgers: the companies it spans and its last receipt. */
+interface EntityInfo {
+  companies: string[];
+  lastReceipt: LastReceipt | null;
+}
+
+/** The customer cell: name, then its companies, then the last payment received. */
+function EntityCell({ type, name, info }: { type: FollowupEntityType; name: string; info?: EntityInfo }) {
+  const lr = info?.lastReceipt ?? null;
+  const companies = info?.companies ?? [];
+  const recd = lr
+    ? `Last recd: ${formatDateDMY(lr.date)}${lr.amount !== null ? ` · ${fmtINRMoney(lr.amount)}` : ""}`
+    : "No receipt on record";
+  return (
+    <div className="min-w-0 max-w-[280px]">
+      <EntityLink type={type} name={name} />
+      {companies.length > 0 && (
+        <div className="truncate text-[10px] leading-tight text-muted-foreground" title={companies.join(", ")}>
+          {companies.join(" · ")}
+        </div>
+      )}
+      {info && (
+        <div className={`truncate text-[10px] leading-tight mt-0.5 ${lr ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground opacity-70"}`}>
+          {recd}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type SortDir = "asc" | "desc";
+type Sortable = string | number | null;
+
+/** Compare with blanks always LAST, whichever way the column is sorted. */
+function compareBy(a: Sortable, b: Sortable, dir: SortDir): number {
+  if (a === null || a === "") return b === null || b === "" ? 0 : 1;
+  if (b === null || b === "") return -1;
+  const c = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b));
+  return dir === "asc" ? c : -c;
+}
+
+/** A clickable header: first click sorts the column, the next flips its direction. */
+function SortHead<K extends string>({
+  label, k, sort, onSort, right,
+}: {
+  label: string; k: K; sort: { key: K; dir: SortDir }; onSort: (k: K) => void; right?: boolean;
+}) {
+  const active = sort.key === k;
+  return (
+    <TableHead
+      className={`cursor-pointer select-none text-xs ${right ? "text-right" : ""}`}
+      onClick={() => onSort(k)}
+    >
+      <span className={`inline-flex items-center gap-1 ${right ? "w-full justify-end" : ""}`}>
+        {label}
+        {active
+          ? (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
+          : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+      </span>
+    </TableHead>
+  );
+}
+
+/** First click: text A→Z, figures and dates high-first. Clicking the same column flips it. */
+function nextSort<K extends string>(cur: { key: K; dir: SortDir }, k: K, textKeys: K[]): { key: K; dir: SortDir } {
+  if (cur.key === k) return { key: k, dir: cur.dir === "asc" ? "desc" : "asc" };
+  return { key: k, dir: textKeys.includes(k) ? "asc" : "desc" };
+}
+
+type DueSortKey = "customer" | "outstanding" | "overdue" | "next" | "outcome" | "remark" | "owner";
+type LogSortKey = "logged" | "customer" | "outcome" | "remark" | "next" | "promised" | "by";
+
 export default function FollowupsPage() {
   const { user, isAdmin } = useSession();
   const {
     loading, error, all, due, brokenPromises, promisedTotal, personName, canModify, canEdit, remove,
   } = useFollowups();
   const { toast } = useToast();
+  const { allCustomers, customerDetail, customerGroupMap } = useAppData({});
+  const isLive = useReceivablesSource() === "connectwave";
+
+  // Follow-ups are logged against a customer NAME or a group name, while receipts live on the
+  // individual ledgers (one per company/location) — so resolve each entity to its ledgers first.
+  const lastReceiptByLedger = useMemo(
+    () => buildLastReceipts(allCustomers, customerDetail, isLive ? "live" : "pipeline"),
+    [allCustomers, customerDetail, isLive],
+  );
+  const entityInfo = useMemo(() => {
+    const ledgers = new Map<string, { ids: string[]; companies: Set<string> }>();
+    const add = (key: string, id: string, company: string) => {
+      let e = ledgers.get(key);
+      if (!e) { e = { ids: [], companies: new Set() }; ledgers.set(key, e); }
+      e.ids.push(id);
+      if (company) e.companies.add(company);
+    };
+    for (const c of allCustomers) {
+      add(entityKey("customer", c.name), c.id, c.company);
+      add(entityKey("group", groupNameOf(c, customerGroupMap)), c.id, c.company);
+    }
+    const out = new Map<string, EntityInfo>();
+    for (const [key, e] of ledgers) {
+      out.set(key, {
+        companies: [...e.companies].sort(),
+        lastReceipt: latestReceiptAcross(e.ids, lastReceiptByLedger),
+      });
+    }
+    return out;
+  }, [allCustomers, customerGroupMap, lastReceiptByLedger]);
+  const infoOf = (type: FollowupEntityType, name: string) => entityInfo.get(entityKey(type, name));
 
   const [modal, setModal] = useState<{ type: FollowupEntityType; name: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -192,6 +298,12 @@ export default function FollowupsPage() {
   const [scope, setScope] = useState<"mine" | "all">("all");
   const [bucket, setBucket] = useState<"overdue" | "today" | "upcoming" | "all">("all");
   const [duePage, setDuePage] = useState(1);
+  // Soonest follow-up first — the order this list has always opened in.
+  const [dueSort, setDueSort] = useState<{ key: DueSortKey; dir: SortDir }>({ key: "next", dir: "asc" });
+  const onDueSort = (k: DueSortKey) => {
+    setDueSort((cur) => nextSort(cur, k, ["customer", "next", "outcome", "remark", "owner"]));
+    setDuePage(1);
+  };
 
   // ── "Activity Log" tab state ─────────────────────────────────────────────────
   const today = todayISO();
@@ -201,6 +313,11 @@ export default function FollowupsPage() {
   const [logOutcome, setLogOutcome] = useState("all");
   const [logSearch, setLogSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
+  const [logSort, setLogSort] = useState<{ key: LogSortKey; dir: SortDir }>({ key: "logged", dir: "desc" });
+  const onLogSort = (k: LogSortKey) => {
+    setLogSort((cur) => nextSort(cur, k, ["customer", "next", "outcome", "remark", "by"]));
+    setLogPage(1);
+  };
 
   // ── Due list ─────────────────────────────────────────────────────────────────
   const dueItems = useMemo<DueItem[]>(() => {
@@ -208,8 +325,19 @@ export default function FollowupsPage() {
     // "Mine" = the last person who touched this customer is me. Ownership is implicit —
     // whoever logged the most recent follow-up owns the next one.
     if (scope === "mine") items = items.filter((i) => i.followup.createdBy === user.id);
-    return items;
-  }, [due, bucket, scope, user.id]);
+    const val = (i: DueItem): Sortable => {
+      switch (dueSort.key) {
+        case "customer":    return i.entityName;
+        case "outstanding": return i.outstanding;
+        case "overdue":     return i.overdue;
+        case "next":        return i.nextDate;
+        case "outcome":     return outcomeLabel(i.followup.outcome);
+        case "remark":      return i.followup.remarks;
+        case "owner":       return personName(i.followup.createdBy);
+      }
+    };
+    return [...items].sort((a, b) => compareBy(val(a), val(b), dueSort.dir));
+  }, [due, bucket, scope, user.id, dueSort, personName]);
 
   const duePageItems = useMemo(
     () => dueItems.slice((duePage - 1) * PAGE_SIZE, duePage * PAGE_SIZE),
@@ -219,7 +347,7 @@ export default function FollowupsPage() {
   // ── Activity log ─────────────────────────────────────────────────────────────
   const logRows = useMemo<Followup[]>(() => {
     const q = logSearch.trim().toLowerCase();
-    return all.filter((f) => {
+    const rows = all.filter((f) => {
       const day = f.createdAt.slice(0, 10); // "YYYY-MM-DD" — the log is filtered by the day it was LOGGED
       if (fromDate && day < fromDate) return false;
       if (toDate && day > toDate) return false;
@@ -228,7 +356,19 @@ export default function FollowupsPage() {
       if (q && !f.entityName.toLowerCase().includes(q) && !f.remarks.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [all, fromDate, toDate, logUser, logOutcome, logSearch]);
+    const val = (f: Followup): Sortable => {
+      switch (logSort.key) {
+        case "logged":   return f.createdAt;
+        case "customer": return f.entityName;
+        case "outcome":  return outcomeLabel(f.outcome);
+        case "remark":   return f.remarks;
+        case "next":     return f.nextFollowupDate;
+        case "promised": return f.promisedAmount;
+        case "by":       return personName(f.createdBy);
+      }
+    };
+    return [...rows].sort((a, b) => compareBy(val(a), val(b), logSort.dir));
+  }, [all, fromDate, toDate, logUser, logOutcome, logSearch, logSort, personName]);
 
   const logPageItems = useMemo(
     () => logRows.slice((logPage - 1) * PAGE_SIZE, logPage * PAGE_SIZE),
@@ -372,17 +512,17 @@ export default function FollowupsPage() {
                   )}
                 </div>
               ) : (
-                <ScrollableTable>
+                <ScrollableTable maxHeight="max-h-[calc(100vh_-_190px)]">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-30 bg-muted">
                       <TableRow>
-                        <TableHead className="text-xs">Customer</TableHead>
-                        <TableHead className="text-right text-xs">Outstanding</TableHead>
-                        <TableHead className="text-right text-xs">Overdue</TableHead>
-                        <TableHead className="text-xs">Next Follow-up</TableHead>
-                        <TableHead className="text-xs">Last Outcome</TableHead>
-                        <TableHead className="text-xs">Last Remark</TableHead>
-                        <TableHead className="text-xs">Owner</TableHead>
+                        <SortHead label="Customer" k="customer" sort={dueSort} onSort={onDueSort} />
+                        <SortHead label="Outstanding" k="outstanding" sort={dueSort} onSort={onDueSort} right />
+                        <SortHead label="Overdue" k="overdue" sort={dueSort} onSort={onDueSort} right />
+                        <SortHead label="Next Follow-up" k="next" sort={dueSort} onSort={onDueSort} />
+                        <SortHead label="Last Outcome" k="outcome" sort={dueSort} onSort={onDueSort} />
+                        <SortHead label="Last Remark" k="remark" sort={dueSort} onSort={onDueSort} />
+                        <SortHead label="Owner" k="owner" sort={dueSort} onSort={onDueSort} />
                         <TableHead className="text-right text-xs">Action</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -390,7 +530,7 @@ export default function FollowupsPage() {
                       {duePageItems.map((i) => (
                         <TableRow key={entityKey(i.entityType, i.entityName)}>
                           <TableCell className="text-xs">
-                            <EntityLink type={i.entityType} name={i.entityName} />
+                            <EntityCell type={i.entityType} name={i.entityName} info={infoOf(i.entityType, i.entityName)} />
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">{fmtINRMoney(i.outstanding)}</TableCell>
                           <TableCell className="text-right font-mono text-xs text-red-600">{fmtINRMoney(i.overdue)}</TableCell>
@@ -507,17 +647,17 @@ export default function FollowupsPage() {
                   </p>
                 </div>
               ) : (
-                <ScrollableTable>
+                <ScrollableTable maxHeight="max-h-[calc(100vh_-_190px)]">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-30 bg-muted">
                       <TableRow>
-                        <TableHead className="text-xs">Logged On</TableHead>
-                        <TableHead className="text-xs">Customer</TableHead>
-                        <TableHead className="text-xs">Outcome</TableHead>
-                        <TableHead className="text-xs">Remark</TableHead>
-                        <TableHead className="text-xs">Next Follow-up</TableHead>
-                        <TableHead className="text-right text-xs">Promised</TableHead>
-                        <TableHead className="text-xs">Logged By</TableHead>
+                        <SortHead label="Logged On" k="logged" sort={logSort} onSort={onLogSort} />
+                        <SortHead label="Customer" k="customer" sort={logSort} onSort={onLogSort} />
+                        <SortHead label="Outcome" k="outcome" sort={logSort} onSort={onLogSort} />
+                        <SortHead label="Remark" k="remark" sort={logSort} onSort={onLogSort} />
+                        <SortHead label="Next Follow-up" k="next" sort={logSort} onSort={onLogSort} />
+                        <SortHead label="Promised" k="promised" sort={logSort} onSort={onLogSort} right />
+                        <SortHead label="Logged By" k="by" sort={logSort} onSort={onLogSort} />
                         <TableHead className="text-right text-xs">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -528,7 +668,7 @@ export default function FollowupsPage() {
                             {formatDateTimeDMY(f.createdAt)}
                           </TableCell>
                           <TableCell className="text-xs">
-                            <EntityLink type={f.entityType} name={f.entityName} />
+                            <EntityCell type={f.entityType} name={f.entityName} info={infoOf(f.entityType, f.entityName)} />
                           </TableCell>
                           <TableCell>
                             <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${outcomeBadgeClass(f.outcome)}`}>

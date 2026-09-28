@@ -42,6 +42,7 @@ import { useAppData, groupEntryOf, groupNameOf } from "@hub/lib/useAppData";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { buildLastReceipts, latestReceiptAcross } from "@hub/lib/collections";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { creditsOfLedger } from "@hub/lib/agingReport";
 import { loadOnAccountEntries, displayableEntries, type OnAccountEntry } from "@hub/lib/onAccountEntries";
@@ -132,20 +133,20 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
-// NOTE "gap" is the one key here that is NOT a field on Metrics (it is planned − received), so
-// the sort comparator must branch on it BEFORE its `a.metrics.m[sortKey]` fallback.
-type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "planned" | "gap" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pending" | "collectionPct" | "collectionPctPrev";
+// NOTE "gap" and "pendingOverdue" are the keys here that are NOT fields on Metrics (planned −
+// received, and pending − dueSoon), so the sort comparator must branch on them BEFORE its
+// `a.metrics.m[sortKey]` fallback.
+type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "planned" | "gap" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pendingOverdue" | "dueSoon" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 
 /* ── Columns ──────────────────────────────────────────────────────────────────
    Every column the picker offers. This is DELIBERATELY a superset of SortKey and must stay
    separate from it: the sort comparator ends in `a.metrics.m[sortKey]`, so a key that is not a
-   field on Metrics cannot be a SortKey. Four columns here aren't sortable for exactly that reason
-   (the two follow-up columns are text, and `pendingOverdue` is derived), and they simply omit the
-   `sort` field on their definition. */
+   field on Metrics needs its own branch there before it can be a SortKey. The two follow-up
+   columns are text and aren't sortable; they simply omit the `sort` field on their definition. */
 type ColKey =
   | Exclude<SortKey, "salesperson">
-  | "nextFollowup" | "lastRemark" | "pendingOverdue" | "dueSoon";
+  | "nextFollowup" | "lastRemark";
 
 /** The shape the report has always opened on. A saved layout replaces this; nothing else does. */
 const DEFAULT_COLS: ColKey[] = [
@@ -983,6 +984,14 @@ export default function SalespersonCollectionReport() {
     [activeRows, groupBy, dimValue, customerMetrics, customerMetricsPrev],
   );
 
+  // Last payment received, per ledger — the same figures the Collection Performance report
+  // shows. Built from RAW ledgers (allCustomers), never consolidated ones: consolidateByName
+  // keeps only the first ledger's lastReceiptDate.
+  const lastReceiptByLedger = useMemo(
+    () => buildLastReceipts(allCustomers, customerDetail, isLive ? "live" : "pipeline"),
+    [allCustomers, customerDetail, isLive],
+  );
+
 
   const totals = useMemo<Metrics>(() => {
     const t = emptyMetrics();
@@ -1458,14 +1467,14 @@ export default function SalespersonCollectionReport() {
     },
     {
       key: "pendingOverdue", label: `Due Pending — ${pendingNowLabel}`, short: pendingNowLabel,
-      section: "pending", sub: true,
+      section: "pending", sub: true, sort: "pendingOverdue",
       help: "The overdue slice — bills already past their due date. Matches the dashboard.",
       legal: true, xlsxKind: "money", xlsx: (m) => m.pending - m.dueSoon,
       cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.pending - c.m.dueSoon)}</TableCell>,
     },
     {
       key: "dueSoon", label: `Due Pending — ${pendingTillLabel}`, short: pendingTillLabel,
-      section: "pending", sub: true,
+      section: "pending", sub: true, sort: "dueSoon",
       help: "Bills that are not overdue yet, but fall due before month-end.",
       legal: true, xlsxKind: "money", xlsx: (m) => m.dueSoon,
       cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.dueSoon)}</TableCell>,
@@ -1597,6 +1606,7 @@ export default function SalespersonCollectionReport() {
       if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
       // Derived, not stored — must be handled before the Metrics-key fallback below.
       if (sortKey === "gap")                return dir * (planGap(a.metrics.m) - planGap(b.metrics.m));
+      if (sortKey === "pendingOverdue")     return dir * ((a.metrics.m.pending - a.metrics.m.dueSoon) - (b.metrics.m.pending - b.metrics.m.dueSoon));
       return dir * (a.metrics.m[sortKey] - b.metrics.m[sortKey]);
     };
     return sortTree(tree.roots, cmp);
@@ -2157,6 +2167,20 @@ export default function SalespersonCollectionReport() {
                       {n.sub}
                     </div>
                   )}
+                  {(() => {
+                    const lr = latestReceiptAcross(n.ids, lastReceiptByLedger);
+                    const text = lr
+                      ? `Last recd: ${formatDateLong(lr.date)}${lr.amount !== null ? ` · ${fmt(lr.amount)}` : ""}`
+                      : "No receipt on record";
+                    return (
+                      <div
+                        className={`truncate text-[10px] font-normal leading-tight mt-0.5 ${lr ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground opacity-70"}`}
+                        title={hasChildren ? `${text} — latest payment across all ${n.children.length} rows below` : text}
+                      >
+                        {text}
+                      </div>
+                    );
+                  })()}
                 </div>
               </TableCell>
             ); })()}
@@ -2412,13 +2436,13 @@ export default function SalespersonCollectionReport() {
           </span>
           <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a row to expand; the top level also scopes the Monthly analysis. <Plus className="h-3 w-3 inline" />/<Minus className="h-3 w-3 inline" /> on a group heading folds its breakup; the <Pin className="h-3 w-3 inline" /> on the group column freezes it while scrolling</span>
         </div>
-        <ScrollableTable>
+        <ScrollableTable maxHeight="max-h-[calc(100vh_-_190px)]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-30 bg-muted">
               {/* Received, Outstanding and Due Pending each band their breakup under a banner —
                   but only while TWO or more of that section's columns are on. Leave one and it
                   renders as an ordinary column, which is exactly how the report looks by default. */}
-              <TableRow className="bg-muted/50">
+              <TableRow className="bg-muted">
                 <TableHead
                   ref={chevRef}
                   rowSpan={anyBanner ? 2 : 1}
@@ -2467,7 +2491,7 @@ export default function SalespersonCollectionReport() {
                 )}
               </TableRow>
               {anyBanner && (
-                <TableRow className="bg-muted/50">
+                <TableRow className="bg-muted">
                   {headGroups.map((g) =>
                     g.kind === "banner"
                       ? g.cols.map((col) => <Fragment key={col.key}>{colHead(col, { banded: true })}</Fragment>)
