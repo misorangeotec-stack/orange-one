@@ -1879,7 +1879,7 @@ Excel read back):
   not built.
 - **The email:** DR-3.
 
-### DR-3 · Daily Report — email it every evening  `[~]`
+### DR-3 · Daily Report — email it every evening  `[x]`
 *Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 · **BUILT
 28-09-2026, proved end to end, and DISARMED** · The same entry is DR-3 in master's WORKLIST*
 
@@ -1951,7 +1951,30 @@ before anyone revisits it.
 empty, so only admins can open it). Until somebody is granted the module and types an evening, every
 report goes out with an empty Bank page and no credit facility, saying "0 of 11 accounts entered".
 
-**What is left, in order.**
+**🟢 LIVE 28-09-2026.** Master `ed05eae5`, Vercel deployed, both migrations applied and recorded,
+`send-email` v35, pg_cron armed, and the whole chain proved: a sample was delivered and read, a dry
+run produced identical figures on GitHub's own runner, and `daily_report_email_dispatch` was shown to
+reach GitHub (204) so the 20:30 poke is exercised rather than assumed.
+
+**Schedule as set: Monday to Saturday at 20:30 IST** — `days_of_week = {1,2,3,4,5,6}`. Changed from
+`daily` on 28-09 when Ritesh Bhai pointed out Orange works a six-day week: Sunday is the only closed
+day, so a daily schedule would have mailed an empty report every Sunday evening. Proved on the gate:
+due on Monday, due on Saturday, "not a send day" on Sunday.
+
+**Recipients: `e.techie4@gmail.com` only.** Adding anyone else is a live send and is the owner's call
+— one row in `report_email_recipients`, or the Daily Report → Email screen.
+
+**⚠ THE ONE THING STILL OWED IS NOT CODE.** Nobody has been granted the module and nobody has typed a
+bank balance, so every evening's mail says "0 of 11 accounts were entered" and the bank page and the
+credit facility are empty. Fix in the UI, no deploy: **Admin → Users → the person → Daily Report →
+Full access** (View is not enough — the RLS and `set_daily_report_evening` both require
+`access_level = 'edit'`), then they type the evening at /daily-report/bank-balances.
+
+**Also still owed, and cheap:** the kick borrows the `gh` CLI's token. It has its own config row, so
+`select set_daily_report_email_kick_pat('<a real PAT>', 'e.techie4@gmail.com');` decouples it from the
+Collection report, where a `gh auth logout` would otherwise stop both.
+
+**How it went live, kept because the order matters if it is ever repeated.**
 1. [ ] Merge to `master`. A scheduled workflow only exists on the default branch, and the kick's
    `git_ref` is `master`; the runner bundles whatever `master` holds, so anything not there is not in
    the mail.
