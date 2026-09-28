@@ -1,18 +1,16 @@
-import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import DueCell from "@/shared/components/ui/DueCell";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { appName, appBasePath } from "@/apps/appInfo";
 import { useHelpStore } from "../../store";
-import { helpDocUrl } from "../../data/helpWrites";
 import StatusPill, { ConfidentialPill } from "../../components/StatusPill";
 import TicketActions from "../../components/TicketActions";
+import TicketThread from "../../components/TicketThread";
 import { firstResponseMinutes } from "../../lib/queues";
 import { stepByKey } from "../../lib/steps";
 import { B } from "../../nav";
 import NotFound from "../system/NotFound";
-import type { TicketActivity } from "../../types";
 
 /**
  * One ticket: what was asked, where it is, and the whole story in one list.
@@ -28,9 +26,9 @@ import type { TicketActivity } from "../../types";
  *   different and much more alarming thing than "not your turn". The one
  *   exception is a HELD ticket, which keeps its buttons greyed WITH THE REASON.
  *
- * ⚠ STILL MISSING (HD-4, HD-5): the thread, asking the employee for more, and
- *   the employee confirming or reopening. The page says so at the foot of the
- *   history rather than leaving a reader hunting for a button.
+ * ⚠ STILL MISSING (HD-5): the employee confirming a resolution or reopening it.
+ *   Until then a resolved ticket sits at `confirm` with nobody able to clear it,
+ *   which is why HD-5 is the next phase rather than a later one.
  */
 export default function TicketDetail() {
   const { id } = useParams();
@@ -40,15 +38,6 @@ export default function TicketDetail() {
 
   const ticket = s.tickets.find((t) => t.id === id);
   const cat = s.categoryById(ticket?.categoryId ?? null);
-
-  const timeline = useMemo(
-    () =>
-      (s.data?.activity ?? [])
-        .filter((a) => a.entityType === "ticket" && a.entityId === id)
-        .slice()
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [s.data?.activity, id],
-  );
 
   if (s.loading) {
     return <div className="rounded-xl border border-line bg-white p-6 text-[13.5px] text-grey-2">Loading…</div>;
@@ -89,8 +78,8 @@ export default function TicketDetail() {
             Your ticket was raised, but {attachFailed} did not upload
           </p>
           <p className="mt-0.5 text-[12.5px] text-[#B54708]">
-            Nothing is lost — the question has been sent and somebody owes you an answer. You will
-            be able to attach the file here once the thread is built.
+            Nothing is lost — the question has been sent and somebody owes you an answer. Attach it
+            again from the box at the foot of this page.
           </p>
         </div>
       )}
@@ -180,22 +169,7 @@ export default function TicketDetail() {
         )}
       </Card>
 
-      {/* ── the story ───────────────────────────────────────────────────── */}
-      <Card className="mt-4 p-5">
-        <h2 className="text-[15px] font-bold text-navy">History</h2>
-        {timeline.length === 0 ? (
-          <p className="mt-2 text-[13px] text-grey-2">Nothing has happened yet.</p>
-        ) : (
-          <ol className="mt-3 space-y-4">
-            {timeline.map((a) => (
-              <TimelineRow key={a.id} a={a} personName={s.personName} />
-            ))}
-          </ol>
-        )}
-        <p className="mt-4 border-t border-line pt-3 text-[12.5px] text-grey-2">
-          Replying to a ticket, and saying whether the answer worked, arrive with HD-4 and HD-5.
-        </p>
-      </Card>
+      <TicketThread ticket={ticket} />
     </div>
   );
 }
@@ -206,61 +180,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
       <p className="text-[12px] font-semibold uppercase tracking-wide text-grey-2">{label}</p>
       <p className="mt-0.5 text-[13.5px] font-medium text-navy">{children}</p>
     </div>
-  );
-}
-
-/** How each workflow event reads on the timeline. */
-const EVENT_LABEL: Record<string, string> = {
-  help_ticket_raised: "Raised",
-  help_ticket_attachment: "Attached a file",
-  comment: "Comment",
-};
-
-function TimelineRow({
-  a,
-  personName,
-}: {
-  a: TicketActivity;
-  personName: (id: string | null) => string;
-}) {
-  const [err, setErr] = useState<string | null>(null);
-  const attachments = a.meta.attachments ?? [];
-
-  const open = async (path: string) => {
-    setErr(null);
-    try {
-      window.open(await helpDocUrl(path), "_blank", "noopener");
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  };
-
-  return (
-    <li className="border-l-2 border-line pl-3">
-      <p className="text-[12.5px] text-grey-2">
-        <span className="font-semibold text-navy">
-          {a.actorId ? personName(a.actorId) : "System"}
-        </span>{" "}
-        · {EVENT_LABEL[a.type] ?? a.type} · {formatDateTimeDMY(a.createdAt)}
-      </p>
-      {a.note && <p className="mt-1 whitespace-pre-wrap text-[13.5px] text-navy">{a.note}</p>}
-      {attachments.length > 0 && (
-        <ul className="mt-1 flex flex-wrap gap-2">
-          {attachments.map((f) => (
-            <li key={f.path}>
-              <button
-                type="button"
-                onClick={() => void open(f.path)}
-                className="rounded-md border border-line px-2 py-1 text-[12px] font-semibold text-navy hover:bg-[#F7F8FA]"
-              >
-                {f.name ?? "Attachment"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {err && <p className="mt-1 text-[12px] text-[#B42318]">{err}</p>}
-    </li>
   );
 }
 

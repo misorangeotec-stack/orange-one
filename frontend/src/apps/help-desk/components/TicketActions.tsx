@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
+import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import FileCapture from "@/shared/components/ui/FileCapture";
 import { useHelpStore } from "../store";
-import { acknowledgeTicket, resolveTicketWithFile } from "../data/helpWrites";
+import {
+  acknowledgeTicket,
+  answerInfo,
+  requestInfo,
+  resolveTicketWithFile,
+  uploadThreadFile,
+} from "../data/helpWrites";
 import type { Ticket } from "../types";
 
 /**
@@ -28,25 +35,41 @@ import type { Ticket } from "../types";
  */
 export default function TicketActions({ ticket }: { ticket: Ticket }) {
   const s = useHelpStore();
-  const [open, setOpen] = useState<null | "ack" | "resolve">(null);
+  const [open, setOpen] = useState<null | "ack" | "resolve" | "ask" | "answer">(null);
   const [note, setNote] = useState("");
   const [resolution, setResolution] = useState("");
+  const [askWho, setAskWho] = useState("");
+  const [reply, setReply] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const held = ticket.status === "on_hold";
   const canAck = s.canActOn("acknowledge", ticket) && !ticket.acknowledgedAt;
-  const canResolve =
-    s.canActOn("resolve", ticket) &&
-    (ticket.currentStep === "acknowledge" || ticket.currentStep === "resolve");
+  const onDesk = ticket.currentStep === "acknowledge" || ticket.currentStep === "resolve";
+  const canResolve = s.canActOn("resolve", ticket) && onDesk;
+  // Asking for more is the same right as resolving — it is the desk deciding it
+  // cannot answer yet — so it is offered wherever Resolve is.
+  const canAsk = canResolve;
+  const canAnswer = s.canActOn("awaiting_info", ticket) && ticket.currentStep === "awaiting_info";
 
-  if (!canAck && !canResolve) return null;
+  const cat = s.categoryById(ticket.categoryId);
+  const peopleOptions = useMemo(
+    () =>
+      s.orgPeople
+        .filter((p) => p.id !== s.userId)
+        .map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined })),
+    [s.orgPeople, s.userId],
+  );
+
+  if (!canAck && !canResolve && !canAnswer) return null;
 
   const close = () => {
     setOpen(null);
     setNote("");
     setResolution("");
+    setAskWho("");
+    setReply("");
     setFile(null);
     setErr(null);
   };
@@ -73,9 +96,19 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
             I have this
           </Button>
         )}
+        {canAsk && (
+          <Button variant="outline" disabled={held} onClick={() => setOpen("ask")}>
+            Ask for something
+          </Button>
+        )}
         {canResolve && (
           <Button disabled={held} onClick={() => setOpen("resolve")}>
             Answer it
+          </Button>
+        )}
+        {canAnswer && (
+          <Button disabled={held} onClick={() => setOpen("answer")}>
+            Reply to HR
           </Button>
         )}
         {held && (
@@ -145,6 +178,105 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
               onClick={() => void run(() => resolveTicketWithFile(ticket.id, resolution.trim(), file))}
             >
               {busy ? "Sending…" : "Send the answer"}
+            </Button>
+            <CancelLink onClick={close} />
+          </div>
+        </Modal>
+      )}
+      {open === "ask" && (
+        <Modal open title="Ask for something" onClose={close}>
+          <p className="text-[13px] text-grey-2">
+            {/* ⚠ THE MOVE IS THE POINT. While the ticket waits on them it stops
+                counting against the desk's turnaround — otherwise the SLA report
+                measures how slowly employees answer their own questions. */}
+            The ticket moves to whoever you name. It stops being yours until they reply, and the
+            turnaround stops running against you.
+          </p>
+          <div className="mt-3">
+            <FieldLabel label="Who do you need it from?" required>
+              <Combobox
+                options={peopleOptions}
+                value={askWho}
+                onChange={setAskWho}
+                autoAdvance
+                searchable
+                placeholder="Search everyone"
+              />
+            </FieldLabel>
+          </div>
+
+          {/* ⚠⚠ ON A CONFIDENTIAL TICKET THIS GRANTS ACCESS, and the warning has
+              to appear BEFORE the click, not after. The server allows it —
+              blocking it would stop an HR Head investigating — and records an
+              undeletable line naming who was let in. */}
+          {cat?.confidential && askWho && askWho !== ticket.raisedBy && (
+            <p className="mt-3 rounded-lg border border-[#FECDCA] bg-[#FEF3F2] px-3 py-2 text-[13px] text-[#B42318]">
+              This is a confidential ticket. {s.personName(askWho)} will be able to read all of it,
+              including everything said so far. It will be recorded on the history that you let them
+              in.
+            </p>
+          )}
+
+          <div className="mt-3">
+            <FieldLabel label="What do you need?" required hint={"‘More information’ is not a question anybody can answer."}>
+              <TextArea
+                rows={4}
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder="e.g. Which month is this about, and did you get the earlier payslip?"
+              />
+            </FieldLabel>
+          </div>
+          {err && <ErrLine msg={err} />}
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              disabled={busy || !askWho || reply.trim().length === 0}
+              onClick={() =>
+                void run(async () => {
+                  const files = file ? [await uploadThreadFile(ticket.id, file)] : [];
+                  await requestInfo(ticket.id, askWho, reply.trim(), files);
+                })
+              }
+            >
+              {busy ? "Sending…" : "Send the question"}
+            </Button>
+            <CancelLink onClick={close} />
+          </div>
+        </Modal>
+      )}
+
+      {open === "answer" && (
+        <Modal open title="Reply to HR" onClose={close}>
+          <p className="text-[13px] text-grey-2">
+            This goes back to HR and they pick the ticket up again.
+          </p>
+          <div className="mt-3">
+            <FieldLabel label="Your answer" required>
+              <TextArea
+                rows={4}
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder="Answer what they asked."
+              />
+            </FieldLabel>
+          </div>
+          <div className="mt-3">
+            <FieldLabel label="Attach something" hint="Optional — whatever they asked for.">
+              <FileCapture value={file} onChange={setFile} />
+            </FieldLabel>
+          </div>
+          {err && <ErrLine msg={err} />}
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              disabled={busy || (reply.trim().length === 0 && !file)}
+              onClick={() =>
+                void run(async () => {
+                  const files = file ? [await uploadThreadFile(ticket.id, file)] : [];
+                  await answerInfo(ticket.id, reply.trim(), files);
+                })
+              }
+            >
+              {busy ? "Sending…" : "Send it back"}
             </Button>
             <CancelLink onClick={close} />
           </div>

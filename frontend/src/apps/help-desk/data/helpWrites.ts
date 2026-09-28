@@ -213,3 +213,74 @@ export async function resolveTicketWithFile(
   }
   await resolveTicket(ticketId, resolution, attachments);
 }
+
+/**
+ * One remark on the ticket.
+ *
+ * ⚠ ONLY A MENTION NOTIFIES, and the box must say so. Commenting should not page
+ *   everybody on the ticket; naming somebody is the deliberate act.
+ *
+ * ⚠ GATED ON can_SEE, NOT can_ACT — the employee who raised it can chase it
+ *   while it sits with HR, even though they own no step at that moment.
+ */
+export async function postComment(
+  ticketId: string,
+  text: string,
+  mentions: string[] = [],
+  attachments: { path: string; name?: string }[] = [],
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_post_comment", {
+    p_ticket: ticketId,
+    p_text: text,
+    p_mentions: mentions,
+    p_attachments: attachments,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * The desk asks a named person for something, and THE TICKET MOVES TO THEM.
+ *
+ * ⚠ THE MOVE IS THE POINT, not the message. While a ticket waits on somebody
+ *   outside the desk it must not keep counting against the desk's turnaround —
+ *   otherwise the SLA report measures how slowly employees answer their own
+ *   questions.
+ *
+ * ⚠ ON A CONFIDENTIAL TICKET THIS GRANTS ACCESS. Asking anyone other than the
+ *   raiser lets them read a grievance, POSH or disciplinary record. The server
+ *   allows it — blocking it would stop an HR Head investigating — and writes an
+ *   extra timeline entry naming who was let in. The caller MUST warn first.
+ */
+export async function requestInfo(
+  ticketId: string,
+  fromUserId: string,
+  question: string,
+  attachments: { path: string; name?: string }[] = [],
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_request_info", {
+    p_ticket: ticketId,
+    p_from_user: fromUserId,
+    p_question: question,
+    p_attachments: attachments,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** The person who was asked answers, and the ticket returns to the desk. */
+export async function answerInfo(
+  ticketId: string,
+  answer: string,
+  attachments: { path: string; name?: string }[] = [],
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_answer_info", {
+    p_ticket: ticketId,
+    p_answer: answer,
+    p_attachments: attachments,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Upload into the `comment` slot, for anything posted onto the thread. */
+export async function uploadThreadFile(ticketId: string, file: File) {
+  return { path: await uploadHelpDoc(ticketId, "comment", file), name: file.name };
+}

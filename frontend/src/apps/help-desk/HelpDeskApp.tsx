@@ -59,25 +59,20 @@ export default function HelpDeskApp() {
           <Route path="tickets" element={<RequireDesk><TicketsList /></RequireDesk>} />
           <Route path="tickets/:id" element={<TicketDetail />} />
 
-          {/* The two DESK queues work (HD-3). The two EMPLOYEE queues are listed
-              and readable, but the actions that clear them — answering HR's
-              question, confirming a resolution — land in HD-4 and HD-5, so those
-              two still say so rather than showing a row with no way to act on
-              it. The nav was built once, against the real shape of the module,
-              rather than growing a link per phase. */}
+          {/* Three of the four queues work. Only `confirm` still waits on HD-5 —
+              it would otherwise list resolved tickets with no way to accept or
+              reject them, which is worse than saying it is not built. The nav
+              was built once, against the real shape of the module, rather than
+              growing a link per phase. */}
           {QUEUE_STEPS.map((step) => (
             <Route
               key={step}
               path={`queues/${QUEUE_PATH[step]}`}
               element={
-                step === "awaiting_info" || step === "confirm" ? (
+                step === "confirm" ? (
                   <ComingSoon
-                    title={
-                      step === "confirm"
-                        ? "Confirming a resolution — HD-5"
-                        : "Answering HR's question — HD-4"
-                    }
-                    detail="HR can already answer your ticket and you will be told when they do. Replying to them, and saying whether their answer worked, arrive next."
+                    title="Confirming a resolution — HD-5"
+                    detail="HR can answer your ticket and you will be told when they do. Saying whether the answer worked, or reopening it, arrives next."
                   />
                 ) : (
                   <StepQueue step={step} />
