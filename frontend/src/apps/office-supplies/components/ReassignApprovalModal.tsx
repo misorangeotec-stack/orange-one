@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import ReassignModal from "@/shared/components/approvals/ReassignModal";
+import { B } from "../lib/routes";
 import { useSuppliesStore } from "../store";
 import type { SupplyRequest } from "../types";
 
@@ -37,7 +38,8 @@ export default function ReassignApprovalModal({
       candidates={candidates}
       currentHolderName={holder ? s.personName(holder) : null}
       defaultOwnerLabel="The head of this request's department"
-      setupHref="/general-purchase/settings"
+      // Built from `B`, never retyped — the module has already moved once (see lib/routes.ts).
+      setupHref={`${B}/settings`}
       setupLabel="Setup → Raising & Routing"
       returnLabel="Return to the department head"
       onReassign={(target, note) => s.reassignRequest({ request, approverId: target, note })}

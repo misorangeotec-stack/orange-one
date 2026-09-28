@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { requestTypeLabel } from "../../lib/format";
+import { STATUS_LABEL, requestTypeLabel } from "../../lib/format";
 import { requestHref } from "../../lib/routes";
 import { useSuppliesStore } from "../../store";
 import type { SupplyRequest } from "../../types";
@@ -31,22 +31,22 @@ export default function RequestsList() {
       key: "item",
       header: "Item / Service",
       cell: (r) => <span className="text-navy">{r.itemName ?? "—"}</span>,
-      filter: { kind: "text", get: (r) => r.itemName ?? "" },
       sortValue: (r) => r.itemName ?? "",
+      filter: { kind: "text", get: (r) => r.itemName ?? "" },
     },
     {
       key: "type",
       header: "Type",
       cell: (r) => <span className="text-grey-2">{requestTypeLabel(r.requestType)}</span>,
-      filter: { kind: "select", get: (r) => requestTypeLabel(r.requestType) },
       sortValue: (r) => requestTypeLabel(r.requestType),
+      filter: { kind: "select", get: (r) => requestTypeLabel(r.requestType) },
     },
     {
       key: "for",
       header: "Requested for",
       cell: (r) => <span className="text-grey">{r.requestedForName}</span>,
-      filter: { kind: "text", get: (r) => r.requestedForName },
       sortValue: (r) => r.requestedForName,
+      filter: { kind: "text", get: (r) => r.requestedForName },
     },
     {
       key: "department",
@@ -61,22 +61,27 @@ export default function RequestsList() {
       header: "Qty",
       cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
       sortValue: (r) => r.quantity,
-      filter: { kind: "number", get: (r) => parseFloat(r.quantity) || 0 },
+      // Text, not number - see the same column on My Requests.
+      filter: { kind: "text", get: (r) => r.quantity },
     },
     {
+      // ⚠ The filter reads the LABEL, not `r.status`. It used to offer the raw column
+      //   values — cancelled / on_hold / pending_second_approval — beside a table that
+      //   says "Awaiting second approval", so a reader had to guess the database's
+      //   spelling of the word in front of them.
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
-      filter: { kind: "select", get: (r) => r.status },
-      sortValue: (r) => r.status,
+      sortValue: (r) => STATUS_LABEL[r.status],
+      filter: { kind: "select", get: (r) => STATUS_LABEL[r.status] },
     },
     {
       key: "submitted",
       header: "Submitted",
       cell: (r) => <span className="text-grey-2">{formatDate(r.submittedAt)}</span>,
       sortValue: (r) => r.submittedAt,
-      tdClassName: "whitespace-nowrap",
       filter: { kind: "date", get: (r) => r.submittedAt?.slice(0, 10) ?? "" },
+      tdClassName: "whitespace-nowrap",
     },
   ];
 

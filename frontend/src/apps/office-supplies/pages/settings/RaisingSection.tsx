@@ -15,12 +15,14 @@ import { useSuppliesStore } from "../../store";
  *   fms_supplies_is_hod_designation() are, inside the submit RPC — these
  *   controls only decide what the screens bother to show.
  *
- * ⚠ The HOD test reads profiles.designation_id, NOT the legacy free-text
- *   `designation`. Nothing writes that column yet — the Designation picker on
- *   the user form ships with the Organisation masters — so a ticked designation
- *   currently matches nobody, and the second card says so. Until then the skip
- *   still fires for real department HODs, via the self-approval safeguard in
- *   fms_supplies_submit_request.
+ * ⚠ THE HOD TEST READS `profiles.designation_id`, and it is LIVE. 66 of 70 profiles
+ *   carry a designation (checked 28-09-2026), and it is what routes nearly every
+ *   request in the module today: a requester holding one of the ticked designations
+ *   skips the HOD entirely. The card below used to print an unconditional red line
+ *   saying the list "matches no one for now", which was true when the Designation
+ *   picker had not shipped and has been false ever since — it told an admin that the
+ *   setting doing all the routing was inert. It is now derived, and only appears when
+ *   it is actually true.
  */
 export default function RaisingSection() {
   const s = useSuppliesStore();
@@ -43,17 +45,25 @@ export default function RaisingSection() {
     [s.designations],
   );
 
+  /**
+   * Does ANYBODY carry a designation? Asked of the directory rather than assumed.
+   * Setup is admin-only and an admin's directory is the whole company, so this is
+   * the same question the SQL asks.
+   */
+  const nobodyHasADesignation = !s.isLoading && !s.profiles.some((p) => p.designationId);
+
   return (
     <div className="space-y-4 max-w-xl">
       <Setting
         title="Who can raise a request"
         hint="Only these people see “Raise a Request”. Admins can always raise."
         options={peopleOptions}
-        initial={s.requesterIds}
+        saved={s.requesterIds}
+        loading={s.isLoading}
         placeholder="Select the people who may raise requests"
         save={s.setRequesters}
         warning={
-          s.requesterIds.length === 0
+          !s.isLoading && s.requesterIds.length === 0
             ? "Nobody is selected, so nobody but an admin can raise a request right now."
             : null
         }
@@ -63,21 +73,41 @@ export default function RaisingSection() {
         title="HOD designations"
         hint="A request raised by someone holding one of these designations skips the HOD approval and goes straight to Management. Everyone else goes to their own department’s HOD first."
         options={designationOptions}
-        initial={s.hodDesignationIds}
+        saved={s.hodDesignationIds}
+        loading={s.isLoading}
         placeholder="Select the designations that count as HOD"
         save={s.setHodDesignations}
-        warning="Nobody has a designation assigned yet, so this list matches no one for now — those requests go to the department HOD as before. A request raised by the head of their own department still skips the approval either way."
+        warning={
+          nobodyHasADesignation
+            ? "No profile carries a designation yet, so this list matches nobody — those requests go to the department HOD as before. A request raised by the head of their own department still skips the approval either way."
+            : null
+        }
       />
     </div>
   );
 }
 
-/** One list-of-ids setting: pick, save, confirm. Both cards are the same shape. */
+/**
+ * One list-of-ids setting: pick, save, confirm.
+ *
+ * ⚠ THE PICKER FOLLOWS THE STORE UNTIL THE FIRST EDIT, and Save is dead until it is
+ *   both loaded and changed. `useState(saved)` reads its argument ONCE, and the store
+ *   loads asynchronously — so this tab, which is the DEFAULT tab and therefore mounts
+ *   before any fetch can land, showed two EMPTY pickers over 15 saved requesters and 8
+ *   saved designations, with Save enabled. Pressing it wrote `[]` to both: nobody but
+ *   an admin could raise a request, and every request started routing to a department
+ *   HOD instead of Management. Verified on the production build, 28-09-2026.
+ *
+ *   `edited === null` means "still following the store"; a successful save drops back
+ *   behind it. Same fix as `ReassignPoolSection`, which is the card directly below this
+ *   one on the same tab and already had it.
+ */
 function Setting({
   title,
   hint,
   options,
-  initial,
+  saved,
+  loading,
   placeholder,
   save,
   warning,
@@ -85,23 +115,30 @@ function Setting({
   title: string;
   hint: string;
   options: MultiOption[];
-  initial: string[];
+  saved: string[];
+  loading: boolean;
   placeholder: string;
   save: (ids: string[]) => Promise<void>;
   warning: string | null;
 }) {
-  const [picked, setPicked] = useState<string[]>(initial);
+  const [edited, setEdited] = useState<string[] | null>(null);
+  const picked = edited ?? saved;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
+
+  const key = (a: string[]) => [...a].sort().join(",");
+  const dirty = edited !== null && key(edited) !== key(saved);
 
   const run = async () => {
     setBusy(true);
     setErr(null);
-    setSaved(false);
+    setSavedOk(false);
     try {
       await save(picked);
-      setSaved(true);
+      // Fall back in behind the store, so the next render reads what was written.
+      setEdited(null);
+      setSavedOk(true);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -118,18 +155,19 @@ function Setting({
       <MultiSelect
         values={picked}
         onChange={(v) => {
-          setPicked(v);
-          setSaved(false);
+          setEdited(v);
+          setSavedOk(false);
         }}
         options={options}
-        placeholder={placeholder}
+        placeholder={loading ? "Loading…" : placeholder}
+        disabled={loading}
       />
       {warning && <p className="text-[12.5px] text-ryg-red">{warning}</p>}
       <div className="flex items-center gap-3">
-        <Button size="sm" onClick={run} disabled={busy}>
+        <Button size="sm" onClick={run} disabled={busy || loading || !dirty}>
           {busy ? "Saving…" : "Save"}
         </Button>
-        {saved && <span className="text-[12.5px] text-ryg-green">Saved.</span>}
+        {savedOk && !dirty && <span className="text-[12.5px] text-ryg-green">Saved.</span>}
         {err && <span className="text-[12.5px] text-ryg-red">{err}</span>}
       </div>
     </Card>

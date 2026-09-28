@@ -3,7 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { requestTypeLabel } from "../../lib/format";
+import { STATUS_LABEL, requestTypeLabel } from "../../lib/format";
 import { requestHref, editRequestHref, newRequestHref } from "../../lib/routes";
 import { useSuppliesStore } from "../../store";
 import type { SupplyRequest } from "../../types";
@@ -37,29 +37,35 @@ export default function MyRequests() {
       key: "item",
       header: "Item / Service",
       cell: (r) => <span className="text-navy">{r.itemName ?? "—"}</span>,
-      filter: { kind: "text", get: (r) => r.itemName ?? "" },
       sortValue: (r) => r.itemName ?? "",
+      filter: { kind: "text", get: (r) => r.itemName ?? "" },
     },
     {
       key: "type",
       header: "Type",
       cell: (r) => <span className="text-grey-2">{requestTypeLabel(r.requestType)}</span>,
-      filter: { kind: "select", get: (r) => requestTypeLabel(r.requestType) },
       sortValue: (r) => requestTypeLabel(r.requestType),
+      filter: { kind: "select", get: (r) => requestTypeLabel(r.requestType) },
     },
     {
       key: "qty",
       header: "Qty",
       cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
       sortValue: (r) => r.quantity,
-      filter: { kind: "number", get: (r) => parseFloat(r.quantity) || 0 },
+      // Text, not number. `quantity` is free text by design — the form's own
+      // placeholder is "e.g. 1, 2 boxes, 24 pcs" — and a numeric range filter runs it
+      // through parseFloat, which buckets every non-numeric entry as 0 and silently
+      // hides it from a "min 1" filter. Today's rows happen to be bare numbers; the
+      // column is not.
+      filter: { kind: "text", get: (r) => r.quantity },
     },
     {
+      // The filter reads the LABEL — see the note on the same column in RequestsList.
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
-      filter: { kind: "select", get: (r) => r.status },
-      sortValue: (r) => r.status,
+      sortValue: (r) => STATUS_LABEL[r.status],
+      filter: { kind: "select", get: (r) => STATUS_LABEL[r.status] },
     },
     {
       key: "submitted",
