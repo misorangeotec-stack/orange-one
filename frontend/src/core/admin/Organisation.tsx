@@ -133,7 +133,7 @@ export default function Organisation() {
                   {/* Only where HR calls it something else — repeating an
                       identical name on every row would be noise. */}
                   {r.hrSheetName && r.hrSheetName !== r.name && (
-                    <span className="block text-[11px] text-grey-2">HR sheet: {r.hrSheetName}</span>
+                    <span className="ml-1.5 text-[11px] text-grey-2">HR sheet: {r.hrSheetName}</span>
                   )}
                 </>
               ),

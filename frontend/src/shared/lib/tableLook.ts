@@ -33,6 +33,9 @@ export const TABLE_LOOK_ON: readonly string[] = [
   // Two small modules, one round (28-09).
   "office-supplies", "asset-maintenance",
   "ocpi", "complaint",
+  // "core" is the screens no module owns: the launcher, Admin, My Account, My Work Today and the
+  // announcements history, where `currentAppId` returns null.
+  "core",
 ];
 
 /**
