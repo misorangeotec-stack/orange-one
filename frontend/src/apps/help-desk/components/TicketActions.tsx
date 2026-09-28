@@ -37,7 +37,22 @@ import type { Ticket } from "../types";
  *   because it produces a ticket acknowledged and resolved in the same second
  *   and a First Response Time of zero that means nothing.
  */
-export default function TicketActions({ ticket }: { ticket: Ticket }) {
+export default function TicketActions({
+  ticket,
+  compact = false,
+}: {
+  ticket: Ticket;
+  /**
+   * ⚠ THE QUEUE SHOWS ONLY THE STEP ACTIONS, NOT THE REPAIRS.
+   *
+   *   Found by looking at a screenshot: four buttons in a narrow ACTIONS column
+   *   wrap onto four lines and blow the row height out, so one ticket filled the
+   *   screen. "Hand it on" and "Wrong category" are the rarer of the four and
+   *   they are BOTH still on the ticket page — nothing is lost, which is the
+   *   only condition under which a control may be dropped from a screen.
+   */
+  compact?: boolean;
+}) {
   const s = useHelpStore();
   const [open, setOpen] = useState<null | "ack" | "resolve" | "ask" | "answer" | "confirm" | "reopen" | "hand" | "refile">(null);
   const [note, setNote] = useState("");
@@ -128,38 +143,38 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={compact ? "flex items-center gap-1.5" : "flex flex-wrap items-center gap-2"}>
         {canAck && (
-          <Button variant="outline" disabled={held} onClick={() => setOpen("ack")}>
+          <Button size={compact ? "sm" : "md"} variant="outline" disabled={held} onClick={() => setOpen("ack")}>
             I have this
           </Button>
         )}
         {canAsk && (
-          <Button variant="outline" disabled={held} onClick={() => setOpen("ask")}>
+          <Button size={compact ? "sm" : "md"} variant="outline" disabled={held} onClick={() => setOpen("ask")}>
             Ask for something
           </Button>
         )}
         {canResolve && (
-          <Button disabled={held} onClick={() => setOpen("resolve")}>
+          <Button size={compact ? "sm" : "md"} disabled={held} onClick={() => setOpen("resolve")}>
             Answer it
           </Button>
         )}
         {canAnswer && (
-          <Button disabled={held} onClick={() => setOpen("answer")}>
+          <Button size={compact ? "sm" : "md"} disabled={held} onClick={() => setOpen("answer")}>
             Reply to HR
           </Button>
         )}
         {canClose && (
           <>
-            <Button disabled={held} onClick={() => setOpen("confirm")}>
+            <Button size={compact ? "sm" : "md"} disabled={held} onClick={() => setOpen("confirm")}>
               That sorted it
             </Button>
-            <Button variant="outline" disabled={held} onClick={() => setOpen("reopen")}>
+            <Button size={compact ? "sm" : "md"} variant="outline" disabled={held} onClick={() => setOpen("reopen")}>
               It is still not right
             </Button>
           </>
         )}
-        {canRepair && (
+        {canRepair && !compact && (
           <>
             <Button variant="outline" disabled={held} onClick={() => setOpen("hand")}>
               Hand it on
@@ -174,11 +189,14 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
             )}
           </>
         )}
-        {held && (
+        {held && !compact && (
           <span className="text-[12.5px] text-[#B54708]">
             On hold{ticket.holdReason ? ` — ${ticket.holdReason}` : ""}. Take it off hold to work on
             it.
           </span>
+        )}
+        {held && compact && (
+          <span className="text-[12px] font-semibold text-[#B54708]">On hold</span>
         )}
       </div>
 

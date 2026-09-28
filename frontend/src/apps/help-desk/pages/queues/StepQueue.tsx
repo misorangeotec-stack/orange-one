@@ -148,7 +148,7 @@ export default function StepQueue({ step }: { step: StepKey }) {
             //   can see it. Same guard as receivables' PendingQueue.
             return (
               <span onClick={(ev) => ev.stopPropagation()}>
-                <TicketActions ticket={t} />
+                <TicketActions ticket={t} compact />
               </span>
             );
           }}
