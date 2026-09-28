@@ -7,6 +7,7 @@ import { useHelpStore } from "../../store";
 import StatusPill, { ConfidentialPill } from "../../components/StatusPill";
 import TicketActions from "../../components/TicketActions";
 import TicketThread from "../../components/TicketThread";
+import HandoffPanel from "../../components/HandoffPanel";
 import { firstResponseMinutes } from "../../lib/queues";
 import { stepByKey } from "../../lib/steps";
 import { B } from "../../nav";
@@ -124,25 +125,6 @@ export default function TicketDetail() {
           </div>
         )}
 
-        {/* D1: the ask lives here, the work lives there. */}
-        {cat?.handoffAppId && (
-          <div className="mt-4 border-t border-line pt-4">
-            <p className="text-[12.5px] text-grey-2">
-              This kind of request is handled in{" "}
-              <Link
-                to={appBasePath(cat.handoffAppId)}
-                className="font-semibold text-orange hover:underline"
-              >
-                {appName(cat.handoffAppId)}
-              </Link>
-              .{" "}
-              {ticket.handoffRef
-                ? `HR has started it there as ${ticket.handoffRef}.`
-                : "HR will start it there and the reference will appear here."}
-            </p>
-          </div>
-        )}
-
         {frt !== null && (
           <div className="mt-4 border-t border-line pt-4">
             <p className="text-[12.5px] text-grey-2">
@@ -168,6 +150,8 @@ export default function TicketDetail() {
           </p>
         )}
       </Card>
+
+      <HandoffPanel ticket={ticket} />
 
       <TicketThread ticket={ticket} />
     </div>

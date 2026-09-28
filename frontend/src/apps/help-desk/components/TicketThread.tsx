@@ -143,6 +143,13 @@ const EVENT_LABEL: Record<string, string> = {
   help_ticket_info_answered: "Answered",
   help_ticket_resolved: "Answered by HR",
   help_ticket_access_granted: "Given access to this confidential ticket",
+  help_ticket_reassigned: "Handed on",
+  help_ticket_recategorised: "Re-filed",
+  help_ticket_reopened: "Sent back",
+  help_ticket_confirmed: "Closed by the employee",
+  help_ticket_auto_closed: "Closed automatically",
+  help_ticket_handed_off: "Started in another module",
+  help_ticket_handoff_cleared: "Reference removed",
   comment: "Note",
 };
 

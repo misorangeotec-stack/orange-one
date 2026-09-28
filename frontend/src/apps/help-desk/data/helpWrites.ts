@@ -373,3 +373,39 @@ export async function recategoriseTicket(
   });
   if (error) throw new Error(error.message);
 }
+
+/**
+ * D1: record that this ticket's work was started in the module that owns it.
+ *
+ * ⚠ THE REFERENCE IS VERIFIED BY THE SERVER, NOT TRUSTED. It is looked up in
+ *   that module's own table and refused if it does not exist — a wrong one
+ *   points the employee at something that is not there, and nobody ever checks.
+ *   Case and surrounding spaces are forgiven, because people paste out of mail.
+ */
+export async function recordHandoff(
+  ticketId: string,
+  ref: string,
+  note?: string | null,
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_record_handoff", {
+    p_ticket: ticketId,
+    p_ref: ref,
+    p_note: note ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Remove a reference recorded in error.
+ *
+ * ⚠ THIS EXISTS BECAUSE recordHandoff HAS NO OTHER WAY BACK. A stamp with no
+ *   way to remove it is the FIX-4 trap — a control whose absence is invisible
+ *   until somebody needs it. The timeline entry stays; only the pointer goes.
+ */
+export async function clearHandoff(ticketId: string, reason?: string | null): Promise<void> {
+  const { error } = await db.rpc("fms_help_clear_handoff", {
+    p_ticket: ticketId,
+    p_reason: reason ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
