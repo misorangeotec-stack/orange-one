@@ -32,6 +32,7 @@ import { orderToDispatchProvider } from "./providers/order-to-dispatch";
 import { assetMaintenanceProvider } from "./providers/asset-maintenance";
 import { travelDeskProvider } from "./providers/travel-desk";
 import { learningDevelopmentProvider } from "./providers/learning-development";
+import { helpDeskProvider } from "./providers/help-desk";
 
 export const myWorkProviders: MyWorkProvider[] = [
   tasksProvider,
@@ -55,4 +56,12 @@ export const myWorkProviders: MyWorkProvider[] = [
    *   ./items/learning-development.ts, which is where that line is drawn.
    */
   learningDevelopmentProvider,
+  /*
+   * ⚠ THE SECOND UNIVERSAL PROVIDER. Like L&D above it, this fetches for all 70
+   *   people rather than for a granted few — anyone may have asked HR something.
+   *   Most of what it returns is the READER'S OWN obligation (answer HR's
+   *   question, accept the answer), not HR's pipeline; ./items/help-desk.ts is
+   *   where that line is drawn.
+   */
+  helpDeskProvider,
 ];

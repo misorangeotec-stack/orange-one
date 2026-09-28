@@ -9,6 +9,7 @@ import MyTickets from "./pages/tickets/MyTickets";
 import TicketsList from "./pages/tickets/TicketsList";
 import TicketDetail from "./pages/tickets/TicketDetail";
 import StepQueue from "./pages/queues/StepQueue";
+import ControlCenter from "./pages/monitoring/ControlCenter";
 import AccessDenied from "./pages/system/AccessDenied";
 import ComingSoon from "./pages/system/ComingSoon";
 import NotFound from "./pages/system/NotFound";
@@ -69,17 +70,7 @@ export default function HelpDeskApp() {
             />
           ))}
 
-          <Route
-            path="monitoring"
-            element={
-              <RequireDesk>
-                <ComingSoon
-                  title="Control Center — HD-9"
-                  detail="The pipeline across every open ticket, beside the other fourteen modules. It lands with My Work Today and the daily snapshot mail."
-                />
-              </RequireDesk>
-            }
-          />
+          <Route path="monitoring" element={<RequireDesk><ControlCenter /></RequireDesk>} />
           <Route
             path="reports"
             element={

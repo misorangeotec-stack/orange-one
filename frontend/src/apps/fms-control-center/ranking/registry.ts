@@ -46,6 +46,14 @@ export const RANKED_MODULES: Record<string, AnyScorer> = {
  * never look the same.
  */
 export const NOT_SCORED: Record<string, string> = {
+  "help-desk":
+    "Scorer lands in HD-12, deliberately after a month of real use, because two things have " +
+    "to be settled first. One, KPI-1 weights by volume while the HR appraisal sheets weight " +
+    "by declared importance — 200 tickets a month would be ~90% of Khushi's KPI-1 score " +
+    "while her own sheet puts Help Desk at 5%, so switching it on without saying so makes a " +
+    "fair scorecard look unfair. Two, five categories are deliberately untimed (as per POSH " +
+    "policy, as per exit policy, and three more); those steps must drop as `untimed` and be " +
+    "REPORTED as a drop count, never counted as met. See HELP-DESK.md section 9.",
   "hr-exit":
     "Never used: 0 cases ever (18-09-2026), and the user switched it out of the ranking. " +
     "Its Completed-tab builder still lives inside its React store (store.tsx completedFor) and " +

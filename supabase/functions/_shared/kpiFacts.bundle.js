@@ -172,6 +172,14 @@ var APPS = {
     basePath: "/travel-desk",
     category: "hr"
   },
+  // The HR front door: one place to ask HR anything, routed by the category the
+  // employee picks. Filed under HR rather than Productivity even though everyone
+  // uses it — a reader looking for it is looking for HR.
+  "help-desk": {
+    name: "Help Desk",
+    basePath: "/help-desk",
+    category: "hr"
+  },
   "leads-dashboard": {
     name: "Leads Dashboard",
     basePath: "/leads-dashboard",
@@ -195,6 +203,31 @@ var APPS = {
     name: "Master Report",
     basePath: "/master-report",
     category: "control"
+  },
+  /**
+   * Promoted OUT of the Outstanding Dashboard to the main menu, exactly as
+   * Customer Onboarding was above — the reports had become the larger half of
+   * that app, and burying a finance catalogue two clicks inside a receivables
+   * module is how people stop finding it.
+   *
+   * ⚠ ITS PAGES STILL LIVE UNDER apps/receivables-hub/, for the same reason
+   *   Customer Onboarding's do: every one of them is a hub-native (shadcn)
+   *   component, and `.hub-root` is what makes their colour tokens resolve.
+   *   apps/reports/ is a SHELL — its own basePath, sidebar and chrome — mounting
+   *   the existing subtree.
+   *
+   * ⚠ NOT SEPARATELY GRANTED. The key below is a routing id, not an app_access
+   *   id: the module is still gated by `outstanding-dashboard` plus the `reports`
+   *   menu key and the per-report grants it always had. See apps/reports/meta.tsx.
+   */
+  reports: {
+    name: "Reports",
+    basePath: "/reports",
+    // Its OWN top-level category, not Sales & Receivables. The catalogue reaches
+    // well past receivables — Finance, Inventory, Dashboards, Tally — and parking
+    // it under the department it happened to grow inside is the filing the move
+    // was meant to undo. See the note beside it in apps/categories.ts.
+    category: "reports"
   },
   // The evening snapshot for management and the CFO: what was sold, collected,
   // paid and purchased today, and what is in the bank. Its own module rather
@@ -9592,7 +9625,7 @@ async function fetchTravelData() {
     reassignPoolUserIds: cfg.get("reassign_pool")?.user_ids ?? [],
     companyIdentity: {
       legalName: str3(identity.legal_name),
-      // ⚠ Blank until Finance confirms it. Policy §7.1 and §11.3 both carry the
+      // ⚠ Blank until Finance confirms it. Policy Section 7.1 and Section 11.3 both carry the
       //   GSTIN as "[⚠ CONFIRM with Finance]", and a placeholder number printed
       //   on guidance an employee hands a hotel is worse than a visible gap.
       gstin: str3(identity.gstin),
@@ -9641,10 +9674,10 @@ var OWNER_STEPS3 = STEPS14.map((s) => s.key);
 
 // frontend/src/apps/travel-desk/lib/sla.ts
 var OVERRIDES6 = {
-  // §3.2 / §11.1 step 2 — the HOD has a working day.
+  // Section 3.2 / Section 11.1 step 2 — the HOD has a working day.
   manager_approval: { anchor: "request", days: 1 },
   director_approval: { anchor: "manager_approval", days: 1 },
-  // §11.1 — a trigger step. `days` is the magnitude; the direction (BEFORE the
+  // Section 11.1 — a trigger step. `days` is the magnitude; the direction (BEFORE the
   // planned departure) lives in TRIGGER_STEPS and is applied in queues.ts.
   advance: { anchor: "manager_approval", days: 1 },
   // ⚠ ANCHORED ON manager_approval, NOT on `advance` (the array-order default).
@@ -9653,10 +9686,10 @@ var OVERRIDES6 = {
   //   the moment it was approved. ANCHOR_AT then prefers the DIRECTOR's approval
   //   where there was one, so a band-7 trip is measured from the real decision.
   booking: { anchor: "manager_approval", days: 2 },
-  // §11.1 step 6 — a trigger step, measured from the trip's RETURN DATE rather
+  // Section 11.1 step 6 — a trigger step, measured from the trip's RETURN DATE rather
   // than from any step completion. The journey ending is what starts this clock.
   claim: { anchor: "booking", days: 5 },
-  // §12.
+  // Section 12.
   claim_review: { anchor: "claim", days: 2 },
   finance_review: { anchor: "claim_review", days: 5 },
   settlement: { anchor: "claim_review", days: 7 }
@@ -9665,11 +9698,11 @@ var TRIGGER_STEPS = {
   advance: {
     dueAfter: "Planned departure date",
     before: true,
-    rule: "This many working days BEFORE departure. Policy \xA711.1 requires the advance to be credited before the employee leaves \u2014 money that lands afterwards has missed the point."
+    rule: "This many working days BEFORE departure. Policy Section 11.1 requires the advance to be credited before the employee leaves \u2014 money that lands afterwards has missed the point."
   },
   claim: {
     dueAfter: "Return date",
-    rule: "This many working days AFTER the trip returns (actual date if recorded, else planned). Policy \xA711.1: the claim is due within 5 working days of return."
+    rule: "This many working days AFTER the trip returns (actual date if recorded, else planned). Policy Section 11.1: the claim is due within 5 working days of return."
   }
 };
 var INERT_STEPS = STEPS14.filter((s) => s.noQueue).map((s) => s.key);
@@ -9722,7 +9755,7 @@ var ANCHOR_AT4 = {
   claim: (t) => t.actualReturnDate ?? t.plannedReturnDate,
   claim_review: (t) => t.clAt,
   finance_review: (t) => t.crAt,
-  // §12 measures the credit from HOD APPROVAL, not from Finance's verification.
+  // Section 12 measures the credit from HOD APPROVAL, not from Finance's verification.
   settlement: (t) => t.crAt
 };
 function stepCompletedIso3(t, step) {
@@ -9959,6 +9992,7 @@ var RANKED_MODULES = {
   "learning-development": learningDevelopmentScorer
 };
 var NOT_SCORED = {
+  "help-desk": "Scorer lands in HD-12, deliberately after a month of real use, because two things have to be settled first. One, KPI-1 weights by volume while the HR appraisal sheets weight by declared importance \u2014 200 tickets a month would be ~90% of Khushi's KPI-1 score while her own sheet puts Help Desk at 5%, so switching it on without saying so makes a fair scorecard look unfair. Two, five categories are deliberately untimed (as per POSH policy, as per exit policy, and three more); those steps must drop as `untimed` and be REPORTED as a drop count, never counted as met. See HELP-DESK.md section 9.",
   "hr-exit": "Never used: 0 cases ever (18-09-2026), and the user switched it out of the ranking. Its Completed-tab builder still lives inside its React store (store.tsx completedFor) and must be moved into lib/ \u2014 as HR Recruitment's was \u2014 before it can be scored. Its clearance checks marked N/A also record no actor."
 };
 
