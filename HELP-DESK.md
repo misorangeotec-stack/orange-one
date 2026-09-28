@@ -5,11 +5,34 @@ categories, "Key KPIs (MNC Best Practice)"), plus the client's walkthrough on **
 the five KRA/KPI sheets in `files/HR KPI KRA SOP/`. Every schema fact below was re-read off the live
 database (`icutjkrqkbzwvmnfbzpr`) on 27-09-2026; nothing was written.*
 
-**Status:** **HD-1 is LIVE on the database** (28-09-2026) — foundations, the ticket-category master
-and all 30 seeded categories. The rollback was rehearsed on live inside a discarded transaction
-BEFORE applying, and it caught two wrong counts in this very document (eleven hand-offs, not ten;
-five untimed categories, not six). Nothing is built in the frontend yet. Branch `help-desk`,
-worktree `D:/AI Development/oo-helpdesk`.
+**Status: BUILT.** All thirteen phases, 28-09-2026. Every screen is real — nothing is a stub.
+The database is live on `icutjkrqkbzwvmnfbzpr`; the frontend is on branch `help-desk`
+(worktree `D:/AI Development/oo-helpdesk`) and has NOT been merged or deployed.
+
+**Three things are deliberately not switched on**, each needing somebody's word rather than more code:
+
+| Off | Why | To turn on |
+|---|---|---|
+| **Email** | Ships off in every module here — a desk that starts mailing on day one tells people about a process they have not been trained on | Setup, plus a `send-email` deploy — see below |
+| **Auto-close** | It closes real people's tickets | Apply `20261221130000_hd5_auto_close_nightly.sql` |
+| **Ranking / KPI scoring** | KPI-1 weights by volume, the appraisal sheets by importance — see section 9 | Flip `fms_rank_modules` |
+
+**⚠ THE MAILER IS NOT DEPLOYED, AND MUST NOT BE FROM THIS BRANCH.** `send-email/index.ts`
+is shared by every module and the copies on `master` and `daily-reports` differ by ~115
+lines. The `help-desk_` prefix edit is in this branch; deploying it from here would ship
+another session's unfinished mailer. Checked 28-09: the DEPLOYED copy also lacks
+`travel_` and `learning-development_`, so those two are in the same state. All three have
+email off, so nothing is being lost — reconcile the copies and add all three together.
+
+**⚠ HR STILL OWES TWO THINGS**, and the second one is visible in the product:
+
+1. Who at Premware the IT Support category escalates to.
+2. **Real people for the escalation levels the sheet names only as roles** — Management,
+   Finance Head, Hiring Manager, Admin Vendor, Insurance Provider, Accounts, ICC
+   Committee. Not one is an Orange One account, so **every category's level 2 is a label
+   with nobody behind it**. Until somebody is named, a second reopen is recorded and tells
+   only the fallback in Setup — which is also unset. The Masters screen says so in a
+   banner and the reopen dialog says so before the click.
 
 ---
 
@@ -403,20 +426,20 @@ runner). Migration before frontend, always, where a screen reads a new column.
 
 | # | Phase | What lands |
 |---|---|---|
-| **HD-0** | Decisions | section 3 above, plus the four open questions at section 12 answered. A record, not a task |
-| **HD-1** | Foundations + the category master | ✅ **Database done 28-09-2026.** `fms_help_step_owners` / `_config` / `_counters` / `_activity` / `_notifications` / `_categories` / `_master_requests`, the seq + fy + authz helpers, and the private storage bucket with **no policies yet** (the real rule needs `fms_help_can_see`, HD-2). **30 categories seeded**, owners resolved by email, label-only escalation where the sheet names a role rather than a person. The Masters SCREEN is still to build |
-| **HD-2** | Raise + My Tickets | `fms_help_tickets`, `fms_help_raise()`, the raise form (with the "who gets this, by when" readout), My Tickets, Ticket Detail read-only |
-| **HD-3** | Acknowledge + Resolve | `fms_help_can_act`, `fms_help_can_see`, the two RPCs, the two queues, the action panels, the stepper |
-| **HD-4** | The thread | `fms_help_post_comment` (activity row + mentions + attachments), `awaiting_info` in and out, the timeline |
-| **HD-5** | Confirm / Reopen / Close | the confirm panel, CSAT capture, the reopen path, `round_no` / `reopen_count` |
-| **HD-6** | Reassign + Recategorise | the shared `ReassignModal` + `ReassignPoolSection`, the recategorise RPC (re-derives owner *and* due date, refuses a move into a confidential category) |
-| **HD-7** | Escalation | D3's reopen ladder, the additive co-owner arm in `can_act`, the fallback |
-| **HD-8** | Hand-off | `handoff_*` columns, the deep link out (reuse `shared/lib/returnTo.ts`), the stamp on return |
-| **HD-9** | Home + Control Center | `mywork/items/help-desk.ts` + `providers/help-desk.ts` + `registry.ts`, `worksnapshot/entry.ts` `COVERED_APP_IDS`, the Control Center adapter, the Dashboard |
-| **HD-10** | The seven reports | section 8, including the confidential register behind its own gate |
-| **HD-11** | Email | the `help-desk_` kinds, `email_module_settings` row **installed OFF**, and the `send-email` prefix edit — see section 11 |
-| **HD-12** | Ranking + KPI + the three sheets | the scorer, `fms_rank_modules` row **inactive**, `khushi.ts` / `dharmistha.ts` / `riya.ts`, both bundle rebuilds |
-| **HD-13** | Confidential verification | sign in as a real non-admin HR person and prove a POSH ticket is invisible. Not an admin — admins bypass every gate |
+| ✅ **HD-0** | Decisions | section 3 above, plus the four open questions at section 12 answered. A record, not a task |
+| ✅ **HD-1** | Foundations + the category master | ✅ **Database done 28-09-2026.** `fms_help_step_owners` / `_config` / `_counters` / `_activity` / `_notifications` / `_categories` / `_master_requests`, the seq + fy + authz helpers, and the private storage bucket with **no policies yet** (the real rule needs `fms_help_can_see`, HD-2). **30 categories seeded**, owners resolved by email, label-only escalation where the sheet names a role rather than a person. The Masters SCREEN is still to build |
+| ✅ **HD-2** | Raise + My Tickets | `fms_help_tickets`, `fms_help_raise()`, the raise form (with the "who gets this, by when" readout), My Tickets, Ticket Detail read-only |
+| ✅ **HD-3** | Acknowledge + Resolve | `fms_help_can_act`, `fms_help_can_see`, the two RPCs, the two queues, the action panels, the stepper |
+| ✅ **HD-4** | The thread | `fms_help_post_comment` (activity row + mentions + attachments), `awaiting_info` in and out, the timeline |
+| ✅ **HD-5** | Confirm / Reopen / Close | the confirm panel, CSAT capture, the reopen path, `round_no` / `reopen_count` |
+| ✅ **HD-6** | Reassign + Recategorise | the shared `ReassignModal` + `ReassignPoolSection`, the recategorise RPC (re-derives owner *and* due date, refuses a move into a confidential category) |
+| ✅ **HD-7** | Escalation | D3's reopen ladder, the additive co-owner arm in `can_act`, the fallback |
+| ✅ **HD-8** | Hand-off | `handoff_*` columns, the deep link out (reuse `shared/lib/returnTo.ts`), the stamp on return |
+| ✅ **HD-9** | Home + Control Center | `mywork/items/help-desk.ts` + `providers/help-desk.ts` + `registry.ts`, `worksnapshot/entry.ts` `COVERED_APP_IDS`, the Control Center adapter, the Dashboard |
+| ✅ **HD-10** | The seven reports | section 8, including the confidential register behind its own gate |
+| ✅ **HD-11** | Email | the `help-desk_` kinds, `email_module_settings` row **installed OFF**, and the `send-email` prefix edit — see section 11 |
+| ✅ **HD-12** | Ranking + KPI + the three sheets | the scorer, `fms_rank_modules` row **inactive**, `khushi.ts` / `dharmistha.ts` / `riya.ts`, both bundle rebuilds |
+| ✅ **HD-13** | Confidential verification | sign in as a real non-admin HR person and prove a POSH ticket is invisible. Not an admin — admins bypass every gate |
 
 ---
 
