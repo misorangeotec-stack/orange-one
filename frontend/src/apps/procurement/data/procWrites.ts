@@ -9,37 +9,14 @@ import type { MasterType } from "../types";
  * resolve). Errors throw so the store/UI can surface them.
  */
 
-/* ------------------------------- companies -------------------------------- */
-export interface CompanyInput {
-  name: string;
-  location: string | null;
-  active: boolean;
-  sortOrder: number;
-}
-
-export async function insertCompany(input: CompanyInput & { createdBy: string }): Promise<string> {
-  const { data, error } = await supabase
-    .from("fms_purchase_companies")
-    .insert({
-      name: input.name,
-      location: input.location,
-      active: input.active,
-      sort_order: input.sortOrder,
-      created_by: input.createdBy,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  return data.id as string;
-}
-
-export async function updateCompany(id: string, input: CompanyInput): Promise<void> {
-  const { error } = await supabase
-    .from("fms_purchase_companies")
-    .update({ name: input.name, location: input.location, active: input.active, sort_order: input.sortOrder })
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
+/*
+ * ⚠ NO COMPANY, ITEM OR VENDOR WRITES. Those masters moved to Central Masters
+ *   (mst_*), fed by Tally and edited on /admin/masters. The legacy
+ *   fms_purchase_companies / _items / _vendors tables are the cutover's
+ *   rollback — nothing may write to them. A missing vendor or item is raised as
+ *   a master request; approving it creates the central row
+ *   (fms_purchase_resolve_master_request).
+ */
 
 /* ------------------------------- categories ------------------------------- */
 export interface CategoryInput {
@@ -48,12 +25,17 @@ export interface CategoryInput {
   sortOrder: number;
   /** Goods in this category must clear QC Inspection after their Tally entry. */
   qcRequired: boolean;
+  /** Tally item types a line in this category may pick. [] = the whole book. */
+  itemTypes: string[];
 }
 
 export async function insertCategory(input: CategoryInput & { createdBy: string }): Promise<string> {
   const { data, error } = await supabase
     .from("fms_purchase_categories")
-    .insert({ name: input.name, active: input.active, sort_order: input.sortOrder, qc_required: input.qcRequired, created_by: input.createdBy })
+    .insert({
+      name: input.name, active: input.active, sort_order: input.sortOrder,
+      qc_required: input.qcRequired, item_types: input.itemTypes, created_by: input.createdBy,
+    })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -63,7 +45,10 @@ export async function insertCategory(input: CategoryInput & { createdBy: string 
 export async function updateCategory(id: string, input: CategoryInput): Promise<void> {
   const { error } = await supabase
     .from("fms_purchase_categories")
-    .update({ name: input.name, active: input.active, sort_order: input.sortOrder, qc_required: input.qcRequired })
+    .update({
+      name: input.name, active: input.active, sort_order: input.sortOrder,
+      qc_required: input.qcRequired, item_types: input.itemTypes,
+    })
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -96,92 +81,6 @@ export async function updateItemGroup(id: string, input: ItemGroupInput): Promis
   const { error } = await supabase
     .from("fms_purchase_item_groups")
     .update({ category_id: input.categoryId, name: input.name, active: input.active, sort_order: input.sortOrder })
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-/* --------------------------------- items ---------------------------------- */
-export interface ItemInput {
-  categoryId: string;
-  name: string;
-  unit: string;
-  active: boolean;
-  sortOrder: number;
-}
-
-export async function insertItem(input: ItemInput & { createdBy: string }): Promise<string> {
-  const { data, error } = await supabase
-    .from("fms_purchase_items")
-    .insert({
-      category_id: input.categoryId,
-      name: input.name,
-      unit: input.unit,
-      active: input.active,
-      sort_order: input.sortOrder,
-      created_by: input.createdBy,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  return data.id as string;
-}
-
-export async function updateItem(id: string, input: ItemInput): Promise<void> {
-  const { error } = await supabase
-    .from("fms_purchase_items")
-    .update({
-      category_id: input.categoryId,
-      name: input.name,
-      unit: input.unit,
-      active: input.active,
-      sort_order: input.sortOrder,
-    })
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
-/* -------------------------------- vendors --------------------------------- */
-export interface VendorInput {
-  name: string;
-  gstin: string | null;
-  contactName: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  active: boolean;
-}
-
-export async function insertVendor(input: VendorInput & { createdBy: string }): Promise<string> {
-  const { data, error } = await supabase
-    .from("fms_purchase_vendors")
-    .insert({
-      name: input.name,
-      gstin: input.gstin,
-      contact_name: input.contactName,
-      phone: input.phone,
-      email: input.email,
-      address: input.address,
-      active: input.active,
-      created_by: input.createdBy,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  return data.id as string;
-}
-
-export async function updateVendor(id: string, input: VendorInput): Promise<void> {
-  const { error } = await supabase
-    .from("fms_purchase_vendors")
-    .update({
-      name: input.name,
-      gstin: input.gstin,
-      contact_name: input.contactName,
-      phone: input.phone,
-      email: input.email,
-      address: input.address,
-      active: input.active,
-    })
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -928,6 +827,20 @@ export async function updatePoDetails(input: {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * The PO generator's hold + remarks (migration 20261217130000). Remarks are
+ * always written (blank clears them); putting a PO on hold requires remarks.
+ * The server re-checks that the caller created the PO or is an admin.
+ */
+export async function setPoHold(input: { requestId: string; onHold: boolean; remarks: string | null }): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_set_po_hold", {
+    p_request_id: input.requestId,
+    p_on_hold: input.onHold,
+    p_remarks: input.remarks ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
 export interface PiItemInput {
   poItemId: string;
   qty: number;
@@ -1044,6 +957,26 @@ export async function recordPayment(input: {
   });
   if (error) throw new Error(error.message);
   return data as string;
+}
+
+/** One partial-dispatch lot: the quantity per PO line that left the vendor. */
+export async function recordPartialDispatch(input: {
+  poId: string;
+  actualDispatchDate: string;
+  lrNo: string | null;
+  transportDetails: string | null;
+  remarks: string | null;
+  items: { poItemId: string; qty: number }[];
+}): Promise<void> {
+  const { error } = await (supabase as any).rpc("fms_purchase_record_partial_dispatch", {
+    p_po_id: input.poId,
+    p_actual_dispatch_date: input.actualDispatchDate,
+    p_lr_no: input.lrNo ?? "",
+    p_transport: input.transportDetails ?? "",
+    p_remarks: input.remarks ?? "",
+    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, qty: i.qty })),
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function recordFollowup(input: {
@@ -1375,6 +1308,39 @@ export async function uploadSourcingDoc(requestId: string, file: File): Promise<
     .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(error.message);
   return { path, name: file.name, mimeType: file.type || null, sizeBytes: file.size };
+}
+
+/**
+ * Upload one file the requester attaches to a purchase request.
+ *
+ * ⚠ KEYED BY A FOLDER, NOT A REQUEST ID. On a NEW request the files go up
+ *   before the request exists (a failed upload must never leave a request
+ *   whose attachments silently went missing), so the caller passes a random
+ *   folder key; on an edit it passes the request id. The stored path is opaque
+ *   to everything downstream.
+ */
+export async function uploadRequestDoc(folderKey: string, file: File): Promise<SourcingDocInput> {
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const path = `requests/${folderKey}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(PI_DOCS_BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  return { path, name: file.name, mimeType: file.type || null, sizeBytes: file.size };
+}
+
+/** Replace the whole list of the requester's attachments on a request. */
+export async function saveRequestDocs(requestId: string, docs: SourcingDocInput[]): Promise<void> {
+  const { error } = await (supabase as any).rpc("fms_purchase_save_request_docs", {
+    p_request_id: requestId,
+    p_docs: docs.map((d) => ({
+      path: d.path,
+      name: d.name,
+      mime_type: d.mimeType ?? "",
+      size_bytes: d.sizeBytes ?? "",
+    })),
+  });
+  if (error) throw new Error(error.message);
 }
 
 /** Short-lived signed URL for a stored sourcing attachment. */

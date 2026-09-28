@@ -30,7 +30,7 @@ export default function ApprovalsQueue() {
   const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedApprovalRequestEntries, user.id);
 
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyName = (id: string) => s.companyLabel(id);
   /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
   const dueIso = (r: PurchaseRequest) => s.dueIsoForRequest(r, "approval");
 

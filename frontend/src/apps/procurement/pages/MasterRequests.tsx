@@ -42,7 +42,9 @@ export default function MasterRequests() {
   const [err, setErr] = useState<string | null>(null);
 
   // Shared so vendor_item_price's Vendor/Item dropdowns can never render empty.
-  const ctx = useMasterFieldCtx();
+  // Its item list is every company's stock book, loaded only once a rate
+  // request is actually opened for approval.
+  const ctx = useMasterFieldCtx({ withItemBooks: approving?.masterType === "vendor_item_price" });
 
   const describe = (r: MasterRequest) =>
     describePayload(r.masterType, r.proposedPayload as Record<string, unknown>, {
@@ -50,6 +52,7 @@ export default function MasterRequests() {
       itemGroupName: (id) => s.itemGroupById(id)?.name,
       vendorName: (id) => s.vendorById(id)?.name,
       itemName: (id) => s.itemById(id)?.name,
+      companyLabel: (id) => (s.companyById(id) ? s.companyLabel(id) : undefined),
     });
 
   const rows = useMemo(() => {

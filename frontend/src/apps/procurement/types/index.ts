@@ -8,14 +8,28 @@ export type MasterType = "company" | "category" | "item_group" | "item" | "vendo
 // Owners, the Master Requests banner and the request-new-master type picker are
 // all driven by this array. An item hangs off a CATEGORY now; the group level
 // never appeared anywhere in the request → PO → GRN → Tally flow.
+//
+// `company` is retired the same way. Companies are Tally's books, read from
+// Central Masters (mst_companies); nobody can add one here, and the resolve RPC
+// refuses a company request outright.
+//
+// Items and vendors STAY: they live in Central Masters now, but a requester can
+// still ask for one Tally does not have yet. Approving creates a portal row in
+// mst_items / mst_parties, in the book the request names.
 export const MASTER_TYPES: { value: MasterType; label: string; plural: string }[] = [
-  { value: "company", label: "Company", plural: "Companies" },
   { value: "category", label: "Category", plural: "Categories" },
   { value: "item", label: "Item", plural: "Items" },
   { value: "vendor", label: "Vendor", plural: "Vendors" },
   { value: "vendor_item_price", label: "Vendor-Item Rate", plural: "Vendor-Item Rates" },
 ];
 
+/**
+ * One Tally company BOOK, from Central Masters (mst_companies).
+ *
+ * `name` is the ALIAS ("O-tec", "Enterprise") — never Tally's book name, which
+ * carries the financial year and is re-minted every April. `location` is the
+ * site, so a book renders as "O-tec — Surat".
+ */
 export interface Company {
   id: string;
   name: string;
@@ -36,6 +50,14 @@ export interface Category {
    * other kind of purchase still ends at Tally.
    */
   qcRequired: boolean;
+  /**
+   * The Tally item types (mst_items.item_type) a requisition line in this
+   * category may pick from. Empty = every item in the company's book.
+   *
+   * ⚠ A PICKER FILTER ONLY. QC is decided by `qcRequired` alone, exactly as
+   *   before Central Masters.
+   */
+  itemTypes: string[];
   createdAt: string;
 }
 
@@ -48,18 +70,39 @@ export interface ItemGroup {
   createdAt: string;
 }
 
+/**
+ * A stock item from Central Masters (mst_items) — Tally's, or a portal row not
+ * in Tally yet.
+ *
+ * ⚠ NO categoryId. A Tally item has no purchase category; the requisition LINE
+ *   carries the category (and with it QC), and the category's `itemTypes`
+ *   narrows the picker by `itemType`.
+ */
 export interface Item {
   id: string;
-  categoryId: string;
   name: string;
+  /** The unit's NAME — mst_items points at mst_units. "" when Tally has none. */
   unit: string;
+  /** The Tally company book the item is filed under. */
+  companyId: string | null;
+  /** Ink / Heads / Spare Parts / Raw Material … (mst_items.item_type). */
+  itemType: string | null;
   active: boolean;
   sortOrder: number;
   createdAt: string;
 }
 
+/**
+ * A vendor ledger from Central Masters (mst_parties).
+ *
+ * ⚠ ONE ROW PER COMPANY BOOK. Tally keeps a separate ledger for a firm in every
+ *   book it trades with, so the same firm can appear once under O-tec and once
+ *   under Enterprise. A requisition only ever offers its own company's rows.
+ */
 export interface Vendor {
   id: string;
+  /** The Tally book this ledger lives in; null for a portal vendor with none yet. */
+  companyId: string | null;
   name: string;
   gstin: string | null;
   contactName: string | null;
@@ -150,6 +193,17 @@ export interface PurchaseRequest {
   /** Set when the requester corrected the request after submitting it. */
   editedAt: string | null;
   editedBy: string | null;
+  /**
+   * The PO Desk's remarks and hold, set at the Generate PO step — before any PO
+   * exists. Only a "po" step owner (or an admin) may set them; see
+   * `fms_purchase_set_po_hold`. While `poOnHoldAt` is set the Generate PO dialog
+   * offers no Generate button. All null on a database that has not had
+   * 20261217130000 applied.
+   */
+  poRemarks: string | null;
+  poRemarksUpdatedAt: string | null;
+  poOnHoldAt: string | null;
+  poOnHoldBy: string | null;
 }
 
 /**
@@ -311,7 +365,16 @@ export interface PoItem {
 
 export type PaymentTerms = "full_advance" | "partial_advance" | "credit" | "on_delivery";
 export type PiStatus = "open" | "partially_received" | "received";
-export type DispatchStatus = "pending" | "dispatched" | "delayed";
+/** `partial` = one lot of a bulk order left the vendor; the balance is still owed. */
+export type DispatchStatus = "pending" | "dispatched" | "delayed" | "partial";
+
+/** The quantity of one PO line dispatched in one Follow-up lot (partial dispatch). */
+export interface FollowupItem {
+  id: string;
+  followupId: string;
+  poItemId: string;
+  qty: number;
+}
 
 export interface Pi {
   id: string;
