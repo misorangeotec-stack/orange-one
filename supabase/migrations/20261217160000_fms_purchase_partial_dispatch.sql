@@ -36,7 +36,22 @@
 --   drop trigger if exists fms_purchase_grn_items_dispatch_cap on public.fms_purchase_grn_items;
 --   drop function if exists public.fms_purchase_grn_items_dispatch_cap();
 --   drop function if exists public.fms_purchase_record_partial_dispatch(uuid, date, text, text, text, jsonb);
---   re-run fms_purchase_refresh_po from 20260731120000_fms_purchase_qc_inspection.sql;
+--   for fms_purchase_refresh_po, take THIS file's body and delete the two partial
+--     blocks from it (the v_partial_open declaration, the select that fills it, and
+--     the one `when coalesce(v_partial_open,false) then 'follow_up'` branch).
+--
+--     ⚠ DO NOT re-run the copy in 20260731120000_fms_purchase_qc_inspection.sql.
+--       That body PREDATES the OD-13 P0c staff guard (20261109140000) and does not
+--       carry it, so replacing live with it would silently remove the authorization
+--       check this migration was careful to keep — the exact trap point 5 above
+--       describes, arrived at from the other direction. Verified 28-09-2026: that
+--       file's body contains no is_staff call.
+--
+--     Safer still, read the body off live before changing it, since live is the only
+--     record of what has been injected into it:
+--       select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--        where n.nspname = 'public' and p.proname = 'fms_purchase_refresh_po';
+--
 --   then (only once no row uses it) drop table public.fms_purchase_followup_items
 --   and put the dispatch_status check back to ('pending','dispatched','delayed').
 -- ===========================================================================
