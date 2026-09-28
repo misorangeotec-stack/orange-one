@@ -29,8 +29,9 @@ import { Button } from "@hub/components/ui/button";
 import { INK_COMPANIES, fmtQty } from "../lib/inkMis";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import {
-  godownChoiceSig, godownGroupKey, loadGodownChoice, loadGodownSplit, saveGodownChoice,
-  type GodownCell, type GodownChoice, type ItemFacts,
+  fmtTallyDate, godownChoiceSig, godownGroupKey, loadGodownChoice, loadGodownFreshness,
+  loadGodownSplit, saveGodownChoice,
+  type GodownCell, type GodownChoice, type GodownFreshness, type ItemFacts,
 } from "../lib/godowns";
 
 export default function InkGodowns() {
@@ -77,6 +78,7 @@ export default function InkGodowns() {
           godowns: string[];
           held: Record<string, GodownCell>;
           groups: Record<string, [string, GodownCell][]>;
+          fresh: GodownFreshness;
         }
       > = {};
       for (const c of INK_COMPANIES) {
@@ -110,7 +112,10 @@ export default function InkGodowns() {
           if (page.length < PAGE) break;
         }
 
-        const split = await loadGodownSplit(c.guid, facts);
+        const [split, fresh] = await Promise.all([
+          loadGodownSplit(c.guid, facts),
+          loadGodownFreshness(c.guid),
+        ]);
         const held: Record<string, GodownCell> = {};
         for (const [g, cell] of split.totals) held[g] = cell;
         const groups: Record<string, [string, GodownCell][]> = {};
@@ -121,7 +126,7 @@ export default function InkGodowns() {
             .filter(([, cell]) => Math.round(cell.qty) !== 0)
             .sort((a, b) => b[1].qty - a[1].qty);
         }
-        out[c.key] = { godowns: split.godowns, held, groups };
+        out[c.key] = { godowns: split.godowns, held, groups, fresh };
       }
       return out;
     },
@@ -193,6 +198,33 @@ export default function InkGodowns() {
         </p>
       </div>
 
+      {data && (
+        <p className="text-xs text-muted-foreground">
+          Read from the ConnectWave copy of Tally, not from Tally itself. Last copied{" "}
+          <strong>
+            {(() => {
+              const t = Object.values(data)
+                .map((d) => d.fresh.builtAt)
+                .filter(Boolean)
+                .sort()
+                .pop();
+              return t ? new Date(t).toLocaleString() : "unknown";
+            })()}
+          </strong>
+          ; vouchers up to{" "}
+          <strong>
+            {fmtTallyDate(
+              Object.values(data)
+                .map((d) => d.fresh.lastVoucher)
+                .filter(Boolean)
+                .sort()
+                .pop(),
+            )}
+          </strong>
+          . Reopening this tab re-reads it.
+        </p>
+      )}
+
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           Could not read the godowns: {error instanceof Error ? error.message : "unknown error"}
@@ -210,6 +242,18 @@ export default function InkGodowns() {
               <div className="flex flex-wrap items-center gap-2">
                 <Warehouse className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{c.label}</span>
+                {info?.fresh && (
+                  <span
+                    className="text-[11px] text-muted-foreground"
+                    title={
+                      info.fresh.builtAt
+                        ? `ConnectWave rebuilt this book at ${new Date(info.fresh.builtAt).toLocaleString()}`
+                        : "build time unknown"
+                    }
+                  >
+                    to {fmtTallyDate(info.fresh.lastVoucher)}
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground">
                   {chosen.length
                     ? `${chosen.filter((x) => !x.includes("||")).length} godown${

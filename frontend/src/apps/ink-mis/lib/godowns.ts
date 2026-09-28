@@ -109,6 +109,49 @@ interface LotRow {
   uom: string | null;
 }
 
+/** How current this book's mirror is. */
+export interface GodownFreshness {
+  /** When ConnectWave last rebuilt these movement rows. */
+  builtAt: string | null;
+  /** The newest voucher date it holds, as Tally writes it: yyyymmdd. */
+  lastVoucher: string | null;
+}
+
+/**
+ * The age of the data behind a book.
+ *
+ * Nothing here is read live from Tally — ConnectWave copies Tally on a schedule and this reads
+ * that copy, so the honest question is always "as of when?". Two cheap one-row reads answer it:
+ * the newest build stamp, and the newest voucher date that build contains.
+ */
+export async function loadGodownFreshness(companyGuid: string): Promise<GodownFreshness> {
+  const cw = getConnectwaveSupabase();
+  const tenant = `acct_orange::${companyGuid}`;
+  const one = (column: string) =>
+    cw
+      .from("rpt_batch_line")
+      .select(column)
+      .eq("company_guid", companyGuid)
+      .eq("tenant_id", tenant)
+      .order(column, { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  const [built, vch] = await Promise.all([one("built_at"), one("vch_date")]);
+  return {
+    builtAt: (built.data as { built_at?: string } | null)?.built_at ?? null,
+    lastVoucher: (vch.data as { vch_date?: string } | null)?.vch_date ?? null,
+  };
+}
+
+/** Tally's yyyymmdd as a date a person reads. */
+export const fmtTallyDate = (d: string | null | undefined): string => {
+  if (!d || d.length !== 8) return "—";
+  const dt = new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T00:00:00`);
+  return Number.isNaN(dt.getTime())
+    ? "—"
+    : dt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+};
+
 export async function loadGodownSplit(
   companyGuid: string,
   /** item name → its group, Tally opening and closing, and base unit. */
