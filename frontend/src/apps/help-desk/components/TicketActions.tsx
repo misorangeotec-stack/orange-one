@@ -8,6 +8,8 @@ import { useHelpStore } from "../store";
 import {
   acknowledgeTicket,
   answerInfo,
+  confirmTicket,
+  reopenTicket,
   requestInfo,
   resolveTicketWithFile,
   uploadThreadFile,
@@ -35,11 +37,12 @@ import type { Ticket } from "../types";
  */
 export default function TicketActions({ ticket }: { ticket: Ticket }) {
   const s = useHelpStore();
-  const [open, setOpen] = useState<null | "ack" | "resolve" | "ask" | "answer">(null);
+  const [open, setOpen] = useState<null | "ack" | "resolve" | "ask" | "answer" | "confirm" | "reopen">(null);
   const [note, setNote] = useState("");
   const [resolution, setResolution] = useState("");
   const [askWho, setAskWho] = useState("");
   const [reply, setReply] = useState("");
+  const [rating, setRating] = useState<number | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -52,6 +55,10 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
   // cannot answer yet — so it is offered wherever Resolve is.
   const canAsk = canResolve;
   const canAnswer = s.canActOn("awaiting_info", ticket) && ticket.currentStep === "awaiting_info";
+  // The employee's two. Both are the RAISER's alone — the desk says "resolved",
+  // the employee says "satisfied", and one person supplying both is how a CSAT
+  // score stops meaning anything.
+  const canClose = s.canActOn("confirm", ticket) && ticket.currentStep === "confirm";
 
   const cat = s.categoryById(ticket.categoryId);
   const peopleOptions = useMemo(
@@ -62,7 +69,7 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
     [s.orgPeople, s.userId],
   );
 
-  if (!canAck && !canResolve && !canAnswer) return null;
+  if (!canAck && !canResolve && !canAnswer && !canClose) return null;
 
   const close = () => {
     setOpen(null);
@@ -70,6 +77,7 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
     setResolution("");
     setAskWho("");
     setReply("");
+    setRating(null);
     setFile(null);
     setErr(null);
   };
@@ -110,6 +118,16 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
           <Button disabled={held} onClick={() => setOpen("answer")}>
             Reply to HR
           </Button>
+        )}
+        {canClose && (
+          <>
+            <Button disabled={held} onClick={() => setOpen("confirm")}>
+              That sorted it
+            </Button>
+            <Button variant="outline" disabled={held} onClick={() => setOpen("reopen")}>
+              It is still not right
+            </Button>
+          </>
         )}
         {held && (
           <span className="text-[12.5px] text-[#B54708]">
@@ -282,8 +300,125 @@ export default function TicketActions({ ticket }: { ticket: Ticket }) {
           </div>
         </Modal>
       )}
+      {open === "confirm" && (
+        <Modal open title="Close this ticket" onClose={close}>
+          <p className="text-[13px] text-grey-2">
+            {s.personName(ticket.resolvedBy)} answered this. Closing it tells them it worked.
+          </p>
+
+          <div className="mt-4">
+            <FieldLabel label="How was it handled?" hint="Optional, and only you and HR see it.">
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setRating(rating === n ? null : n)}
+                    className={
+                      "rounded-lg border px-3 py-1.5 text-[13px] font-semibold " +
+                      (rating === n
+                        ? "border-orange bg-[#FFF6ED] text-orange"
+                        : "border-line text-grey-2 hover:border-orange hover:text-orange")
+                    }
+                  >
+                    {RATING_LABEL[n]}
+                  </button>
+                ))}
+              </div>
+            </FieldLabel>
+          </div>
+
+          <div className="mt-3">
+            <FieldLabel label="Anything to add?" hint="Optional.">
+              <TextArea rows={3} value={reply} onChange={(e) => setReply(e.target.value)} />
+            </FieldLabel>
+          </div>
+          {err && <ErrLine msg={err} />}
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              disabled={busy}
+              onClick={() => void run(() => confirmTicket(ticket.id, rating, reply.trim() || null))}
+            >
+              {busy ? "Closing\u2026" : "Close it"}
+            </Button>
+            <CancelLink onClick={close} />
+          </div>
+        </Modal>
+      )}
+
+      {open === "reopen" && (
+        <Modal open title="Send it back" onClose={close}>
+          <p className="text-[13px] text-grey-2">
+            This goes back to {s.personName(ticket.resolvedBy)}.
+          </p>
+
+          {/* \u26a0 THE LADDER IS SAID OUT LOUD BEFORE THE CLICK. Reopening is not a
+              neutral act \u2014 it brings somebody else in, and the employee should
+              know who and why rather than discovering it from a notification. */}
+          <p className="mt-2 rounded-lg border border-[#FEDF89] bg-[#FFFAEB] px-3 py-2 text-[13px] text-[#B54708]">
+            {ticket.reopenCount === 0
+              ? escalationLine(cat?.escalationL1Label, cat?.escalationL1Ids?.length, s, cat?.escalationL1Ids)
+              : escalationLine(cat?.escalationL2Label, cat?.escalationL2Ids?.length, s, cat?.escalationL2Ids)}
+          </p>
+
+          <div className="mt-3">
+            <FieldLabel label="What is still wrong?" required>
+              <TextArea
+                rows={4}
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder="Be specific \u2014 it is going back to the same person."
+              />
+            </FieldLabel>
+          </div>
+          {err && <ErrLine msg={err} />}
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              disabled={busy || reply.trim().length === 0}
+              onClick={() => void run(() => reopenTicket(ticket.id, reply.trim()))}
+            >
+              {busy ? "Sending\u2026" : "Send it back"}
+            </Button>
+            <CancelLink onClick={close} />
+          </div>
+        </Modal>
+      )}
     </>
   );
+}
+
+/** Said in words, not numbers \u2014 "3 out of 5" is a grade, not an opinion. */
+const RATING_LABEL: Record<number, string> = {
+  1: "Badly",
+  2: "Not well",
+  3: "All right",
+  4: "Well",
+  5: "Very well",
+};
+
+/**
+ * Who a reopen will actually reach, said honestly.
+ *
+ * \u26a0 IT MUST NOT PROMISE A PERSON WHO IS NOT THERE. On 28-09-2026 every
+ *   Level 2 on all 30 categories is a LABEL with no portal account behind it \u2014
+ *   "Management", "Finance Head", "ICC Committee" \u2014 because not one of them is
+ *   a user in this hub. Printing "this will be escalated to Management" would be
+ *   a promise the system cannot keep, so when nobody is named the line says the
+ *   HR Head will be told instead.
+ */
+function escalationLine(
+  label: string | null | undefined,
+  count: number | undefined,
+  s: ReturnType<typeof useHelpStore>,
+  ids: string[] | undefined,
+): string {
+  if (count && ids?.length) {
+    return `This will also be raised with ${ids.map((i) => s.personName(i)).join(", ")}.`;
+  }
+  if (label) {
+    return `This is meant to go to ${label}, but nobody has been named for that yet \u2014 so HR will be told instead.`;
+  }
+  return "This will go back to HR.";
 }
 
 function ErrLine({ msg }: { msg: string }) {

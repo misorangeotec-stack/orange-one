@@ -103,14 +103,6 @@ export const QUEUE_STEPS: StepKey[] = STEPS.filter((s) => !s.noQueue).map((s) =>
 export const OWNER_STEPS: StepKey[] = STEPS.map((s) => s.key);
 
 /**
- * Steps whose owner is decided by the TICKET ROW rather than by Setup.
- * Mirrored in SQL by fms_help_can_act()'s row-owned arms.
- */
-export const ROW_OWNED_STEPS: StepKey[] = ["acknowledge", "awaiting_info", "resolve", "confirm"];
-
-export const isRowOwned = (key: StepKey): boolean => ROW_OWNED_STEPS.includes(key);
-
-/**
  * The chain in three labelled runs, for `StepPipeline`'s grouped rail and for
  * the cross-FMS roll-up.
  *

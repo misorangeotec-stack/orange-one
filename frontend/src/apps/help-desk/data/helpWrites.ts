@@ -284,3 +284,42 @@ export async function answerInfo(
 export async function uploadThreadFile(ticketId: string, file: File) {
   return { path: await uploadHelpDoc(ticketId, "comment", file), name: file.name };
 }
+
+/**
+ * The employee accepts the answer, and the ticket closes.
+ *
+ * ⚠ THE RATING IS CAPTURED HERE AND NOWHERE ELSE. The PDF names CSAT as a KPI
+ *   but gives it no step; one field on this action is the whole of it. An
+ *   AUTO-CLOSED ticket therefore carries no rating at all, deliberately —
+ *   inventing one would be inventing an opinion the employee never gave.
+ */
+export async function confirmTicket(
+  ticketId: string,
+  rating: number | null,
+  note?: string | null,
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_confirm", {
+    p_ticket: ticketId,
+    p_rating: rating,
+    p_note: note ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * The employee is not satisfied. The ticket goes back to the same person AND
+ * THE ESCALATION LADDER MOVES (decision D3):
+ *
+ *   reopen #1        → Escalation Level 1 is told, and joins the ticket
+ *   reopen #2 and on → Escalation Level 2 as well
+ *
+ * ⚠ A REASON IS MANDATORY and the server refuses a blank one. A reopen is the
+ *   one event that pulls other people in; it had better say why.
+ */
+export async function reopenTicket(ticketId: string, reason: string): Promise<void> {
+  const { error } = await db.rpc("fms_help_reopen", {
+    p_ticket: ticketId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}

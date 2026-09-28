@@ -59,25 +59,13 @@ export default function HelpDeskApp() {
           <Route path="tickets" element={<RequireDesk><TicketsList /></RequireDesk>} />
           <Route path="tickets/:id" element={<TicketDetail />} />
 
-          {/* Three of the four queues work. Only `confirm` still waits on HD-5 —
-              it would otherwise list resolved tickets with no way to accept or
-              reject them, which is worse than saying it is not built. The nav
-              was built once, against the real shape of the module, rather than
-              growing a link per phase. */}
+          {/* All four queues are real (HD-5). The nav was built once, against
+              the shape of the module, rather than growing a link per phase. */}
           {QUEUE_STEPS.map((step) => (
             <Route
               key={step}
               path={`queues/${QUEUE_PATH[step]}`}
-              element={
-                step === "confirm" ? (
-                  <ComingSoon
-                    title="Confirming a resolution — HD-5"
-                    detail="HR can answer your ticket and you will be told when they do. Saying whether the answer worked, or reopening it, arrives next."
-                  />
-                ) : (
-                  <StepQueue step={step} />
-                )
-              }
+              element={<StepQueue step={step} />}
             />
           ))}
 
