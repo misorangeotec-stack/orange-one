@@ -345,3 +345,8 @@ The menu is much longer now: All Tickets, the queues, Control Center, Reports, T
 2. **Who at Premware** the IT Support category escalates to.
 3. **A decision to confirm:** the Help Desk sheet gives "Employee Engagement Activities" to Saloni,
    but Khushi's own appraisal claims that whole area at 25%. It is currently set to **Khushi**.
+4. **Three lists on the Settings screen, all empty today.** Nothing is broken by this and no code
+   has to change, but until somebody is named: **only an admin can reassign a ticket** (a
+   category's own owner can still re-file or hand off their own), a request for a new category has
+   no approver, and the fallback for an escalation that names nobody reaches nobody. Naming people
+   in *Settings* is the whole fix.

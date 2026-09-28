@@ -7689,7 +7689,7 @@ because a module can be "done" and still be reaching nobody, and those are diffe
 | 2 | **Learning & Development** | 🟢 Done, shared for final feedback. Was a wholly new module | Universal, no grant needed | ⚠ **0 sessions, 0 nominations** |
 | 3 | **Stationery** (= General Purchase) | 🟢 Done, shared for final feedback. Access, manual and walkthrough all shared | 32 edit, 1 view | 19 requests |
 | 4 | **Asset Requisition** (= Asset Maintenance) | 🟢 Done, shared for final feedback. Access and manual shared | ⚠ **2 edit, 1 view** | 40 assets, 1 job |
-| 5 | **Help Desk** | 🟡 **In progress**, going out for feedback 28-09-2026 — see HD-1 | Not live | — |
+| 5 | **Help Desk** | 🟢 **LIVE on master 28-09-2026.** Built, walked end to end as three real users, manual published. See HD-1 | Universal, no grant needed | 30 categories, **0 tickets** |
 | 6 | **Knowledge Base** | 🟡 **Due by 04-10-2026** (end of this week) — see KB-1 | Not live | — |
 | 7 | **Exit** | ⏸ **Deferred behind Attendance & Payroll** — see EX-1 | 4 edit, 1 view | **0 cases** |
 
@@ -7716,18 +7716,83 @@ because a module can be "done" and still be reaching nobody, and those are diffe
   "ZERO `travel-desk` grants". There are now **7 grants and 25 trips**, and the client counts it as
   shared for feedback. Corrected in place below.
 
-### HD-1 · Help Desk — the ticketing module  `[~]`
-*Raised 2026-09-28 · **IN PROGRESS**, going out to HR for feedback on 28-09-2026 (client's word).*
+### HD-1 · Help Desk, the ticketing module  `[x]`
+*Raised 2026-09-28 · 🟢 **LIVE**. Merged to `master` and deployed 28-09-2026 (`8216fa59`);
+every migration is applied to `icutjkrqkbzwvmnfbzpr`.*
 
-Week 1, item 5. Being built now on branch `help-desk`: the foundations and the ticket-category master
-that routes every ticket are committed there, and **nothing is on `master` and no `fms_hd_*` table
-exists on the live database**.
+Week 1, item 5, and the fifteenth FMS. One front door for every employee to ask HR anything, where
+**the category is the router**: all thirty carry an owner, a turnaround, a two-level escalation
+ladder, a confidentiality flag and, for eleven of them, the module that actually does the work.
 
-⚠ **It is also the answer to one KRA that is currently unanswerable.** Dharmistha's sheet scores
-"IT complaint escalation and follow-up" at 5%, and nothing in the hub records an IT complaint today
-(see GP-1's KRA mapping, where that line is banded *built, not live*). A ticket, an owner, an
-escalation and a closure are exactly what this module records, so it closes that gap the day it
-ships.
+**On the live database today:** 30 categories, 3 confidential, 5 governed by policy rather than a
+number of days, every one with a named owner, **0 tickets**. The test data was deleted and the
+financial-year counter reset, so HR's first real ticket is `HD-2627-0001`.
+
+**Manual:** https://claude.ai/artifact/RcFsvWHz3A423e2azAVryZ (the flow, a feature list per screen,
+and a step-by-step checklist with the real screenshots).
+
+**It answers a KRA that was unanswerable.** Khushi's sheet scores the Help Desk itself, and
+Dharmistha's scores "IT complaint escalation and follow-up" at 5%. Nothing in the hub recorded an IT
+complaint before this. The **IT Support** category exists for that line and was added to the
+client's 27, with an external-escalation stamp for the Premware hand-off.
+
+#### 🔴 HD-15 · Three Setup lists are EMPTY on live, and one of them costs a stated requirement  `[ ]`
+
+`fms_help_config` on live holds `process_coordinators: []`, `reassign_pool: []`, `master_owners: []`
+and `escalation_fallback_user_id: null`. Nothing is broken by this, and every one of them is a
+question only HR can answer, but the consequences should be said plainly:
+
+- **Only an admin can reassign a ticket.** The client's own words were "anyone from HR can reassign
+  a ticket, including when the employee chose the wrong category". A category's owner can still
+  re-file or hand off their own ticket; what is missing is the general HR pool. **Name people in
+  Settings and it works, with no code change.**
+- **A request for a new category has no approver.** `master_owners` is empty, so the Ticket
+  Categories master-change queue reaches nobody but an admin.
+- **A second reopen reaches nobody new.** That is already true for a different reason (see below),
+  and the empty fallback is the second half of it. The reopen is still RECORDED, visibly, and the
+  category's own owner is still told.
+
+#### Still owed by HR
+
+1. **Real people for every level-2 escalation.** All thirty are a label today: Management, Finance
+   Head, Hiring Manager, Admin Vendor, Insurance Provider, Accounts, ICC Committee. None is an
+   Orange One account, so a second reopen notifies nobody new. A yellow banner on the Ticket
+   Categories screen says so, and the reopen records `notified_anyone: false` rather than pretending.
+2. **Who at Premware the IT Support category escalates to.**
+3. **One decision to confirm.** The Help Desk sheet gives "Employee Engagement Activities" to
+   Saloni; Khushi's own appraisal claims that whole area at 25%. It is currently set to Khushi.
+
+#### Deliberately switched off
+
+| Off | What that means today | To turn on |
+|---|---|---|
+| **Email** | People are told in the hub (the bell), not by email | The Settings switch, **plus** deploying `send-email` (the `help-desk_` prefix is committed but not deployed, and the mailer drops unknown prefixes) |
+| **Auto-close** | A ticket the employee never confirms stays open for ever | `20261221130000_hd5_auto_close_nightly.sql` is written and rehearsed but **not applied** |
+| **KPI scoring** | Help Desk does not count towards anyone's FMS score | One flag in `fms_rank_modules`. ⚠ Read first: the scorer counts by VOLUME while Khushi's sheet puts the Help Desk at 5% of her job, so two hundred tickets a month would swamp her score. Her sheet is weighted correctly in the KRA/KPI lab instead |
+
+#### What was proved, and how
+
+Walked end to end in a real browser as **three real people**, not as an admin: an ordinary employee,
+an HR executive who owns some categories (Khushi), and the HR Head (Riya). That walk found three
+faults that no amount of SQL testing would have: every queue action button was dead (the row's
+`onClick` swallowed the click), the sidebar and the page disagreed on a queue's name, and four
+stacked buttons made a queue row 200px tall. All three were fixed before the manual was written.
+
+The confidential gate is the one worth restating: a POSH complaint is invisible to the HR team
+**including the people who can reassign and answer every other ticket**, because the complaint may be
+about one of them. Proved in the UI by pasting the ticket's address as Khushi and getting "That page
+does not exist", and separately in SQL by `hd13_help_desk_rls_as_real_users.sql`, which is the only
+test in the set that runs as `authenticated` with real JWT claims rather than as the migration role.
+
+#### HD-14 · No em dash in anything a reader sees  `[x]`
+
+*28-09-2026.* The user's standing rule, restated after reading the published manual. Swept in three
+places: 46 strings in the frontend, 34 passages in the manual, and 20 in the DATABASE (nine
+notification titles, ten error toasts and one auto-close activity line), which are the easy ones to
+forget because they are written in SQL. The migration carries an assertion that no `fms_help_*`
+function can write one again. **The house-wide dash that marks an empty table cell is deliberately
+left alone**: it is used in all fifteen modules (travel-desk alone has 160 of them) and changing it
+here only would make one module's grids read unlike every other.
 
 ### AP-1 · Attendance & Payroll  `[!]`
 *Raised 2026-09-28 · 🔴 **BLOCKED — waiting on the client for the feature list AND for HROne
