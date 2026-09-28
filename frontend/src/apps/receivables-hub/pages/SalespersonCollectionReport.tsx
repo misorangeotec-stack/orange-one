@@ -2413,7 +2413,7 @@ export default function SalespersonCollectionReport() {
           <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a row to expand; the top level also scopes the Monthly analysis. <Plus className="h-3 w-3 inline" />/<Minus className="h-3 w-3 inline" /> on a group heading folds its breakup; the <Pin className="h-3 w-3 inline" /> on the group column freezes it while scrolling</span>
         </div>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="collection.people">
             <TableHeader>
               {/* Received, Outstanding and Due Pending each band their breakup under a banner —
                   but only while TWO or more of that section's columns are on. Leave one and it
@@ -2584,7 +2584,7 @@ export default function SalespersonCollectionReport() {
 
             {/* Month table */}
             <ScrollableTable>
-              <Table>
+              <Table resizeKey="collection.customers">
                 <TableHeader>
                   {/* This panel follows the main table's Received / Due Pending breakups — turn
                       them on with Columns above and they band here too. */}
@@ -2775,7 +2775,7 @@ export default function SalespersonCollectionReport() {
               `flex-1 min-h-0` passed through className lands on the inner div and never resolves
               to a height — which leaves the list unconstrained and unscrollable. */}
           <ScrollableTable maxHeight="max-h-[60vh]" className="rounded-card border border-border">
-            <Table>
+            <Table resizeKey="collection.invoices">
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
                   <TableHead className="text-xs">Ledger</TableHead>

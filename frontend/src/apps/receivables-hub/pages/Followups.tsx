@@ -373,7 +373,7 @@ export default function FollowupsPage() {
                 </div>
               ) : (
                 <ScrollableTable>
-                  <Table>
+                  <Table resizeKey="followups.open">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="text-xs">Customer</TableHead>
@@ -508,7 +508,7 @@ export default function FollowupsPage() {
                 </div>
               ) : (
                 <ScrollableTable>
-                  <Table>
+                  <Table resizeKey="followups.done">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="text-xs">Logged On</TableHead>

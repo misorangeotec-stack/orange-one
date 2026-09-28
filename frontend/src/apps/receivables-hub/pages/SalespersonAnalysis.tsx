@@ -697,7 +697,7 @@ export default function SalespersonAnalysis() {
           <span className="text-[11px] text-muted-foreground">Click a name or cell to filter the list below</span>
         </div>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="salesperson-analysis.people">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {(() => { const f = pivotStick({ header: true }); return (
@@ -884,7 +884,7 @@ export default function SalespersonAnalysis() {
           </span>
         </div>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="salesperson-analysis.customers">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {bottomColumns.map((col) => {

@@ -2193,7 +2193,7 @@ export default function CustomerRiskRegister() {
       </p>
       <Card className="rounded-card border-border bg-surface overflow-hidden">
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="risk-register">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {visibleColumnList.map((col) => {
