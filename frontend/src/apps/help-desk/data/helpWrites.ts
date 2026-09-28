@@ -154,3 +154,62 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
     .is("read_at", null);
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Step 5 — the process owner confirms they have the ticket.
+ *
+ * ⚠ NOT REQUIRED BEFORE RESOLVING. Half the tickets on this desk are answered in
+ *   one go, and `resolveTicket` accepts a ticket that was never acknowledged,
+ *   back-filling the stamp so the First Response Time report still counts it.
+ *   This exists for the other half — the ones that will take a day, where
+ *   "someone has picked this up" is the whole of what the employee needs to know
+ *   right now.
+ */
+export async function acknowledgeTicket(ticketId: string, note?: string | null): Promise<void> {
+  const { error } = await db.rpc("fms_help_acknowledge", {
+    p_ticket: ticketId,
+    p_note: note ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Step 7 — answer the ticket and hand it to the employee to confirm.
+ *
+ * ⚠ THE RESOLUTION TEXT IS MANDATORY, and the server refuses a blank one. It is
+ *   the only record the employee gets of what was actually done, it is what they
+ *   are being asked to accept, and it is the evidence the HR appraisal sheets
+ *   call for. The form must not offer a way to skip it.
+ */
+export async function resolveTicket(
+  ticketId: string,
+  resolution: string,
+  attachments: { path: string; name?: string }[] = [],
+): Promise<void> {
+  const { error } = await db.rpc("fms_help_resolve", {
+    p_ticket: ticketId,
+    p_resolution: resolution,
+    p_attachments: attachments,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Resolve, with an attachment, in the order that survives a failure.
+ *
+ * ⚠ THE FILE GOES UP FIRST HERE — the opposite of raising a ticket. The ticket
+ *   already exists, so the storage policy can resolve its path; and unlike a
+ *   raise, a resolution whose evidence failed to attach is worth stopping for,
+ *   because the owner can simply try again without anything having moved.
+ */
+export async function resolveTicketWithFile(
+  ticketId: string,
+  resolution: string,
+  file: File | null,
+): Promise<void> {
+  const attachments: { path: string; name: string }[] = [];
+  if (file) {
+    attachments.push({ path: await uploadHelpDoc(ticketId, "resolution", file), name: file.name });
+  }
+  await resolveTicket(ticketId, resolution, attachments);
+}

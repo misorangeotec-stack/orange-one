@@ -8,6 +8,7 @@ import NewTicket from "./pages/tickets/NewTicket";
 import MyTickets from "./pages/tickets/MyTickets";
 import TicketsList from "./pages/tickets/TicketsList";
 import TicketDetail from "./pages/tickets/TicketDetail";
+import StepQueue from "./pages/queues/StepQueue";
 import AccessDenied from "./pages/system/AccessDenied";
 import ComingSoon from "./pages/system/ComingSoon";
 import NotFound from "./pages/system/NotFound";
@@ -58,19 +59,29 @@ export default function HelpDeskApp() {
           <Route path="tickets" element={<RequireDesk><TicketsList /></RequireDesk>} />
           <Route path="tickets/:id" element={<TicketDetail />} />
 
-          {/* HD-3 to HD-5 fill these. The nav offers them already, against the
-              real shape of the module, so the sidebar is built once rather than
-              growing a link per phase — and each stub names the phase that
-              fills it, so nobody reports it as broken. */}
+          {/* The two DESK queues work (HD-3). The two EMPLOYEE queues are listed
+              and readable, but the actions that clear them — answering HR's
+              question, confirming a resolution — land in HD-4 and HD-5, so those
+              two still say so rather than showing a row with no way to act on
+              it. The nav was built once, against the real shape of the module,
+              rather than growing a link per phase. */}
           {QUEUE_STEPS.map((step) => (
             <Route
               key={step}
               path={`queues/${QUEUE_PATH[step]}`}
               element={
-                <ComingSoon
-                  title="This queue is being built"
-                  detail="HD-3 adds acknowledging and resolving, HD-4 the question-and-answer thread, HD-5 confirmation and reopening. Until then, open a ticket from My Tickets to read it."
-                />
+                step === "awaiting_info" || step === "confirm" ? (
+                  <ComingSoon
+                    title={
+                      step === "confirm"
+                        ? "Confirming a resolution — HD-5"
+                        : "Answering HR's question — HD-4"
+                    }
+                    detail="HR can already answer your ticket and you will be told when they do. Replying to them, and saying whether their answer worked, arrive next."
+                  />
+                ) : (
+                  <StepQueue step={step} />
+                )
               }
             />
           ))}

@@ -7,6 +7,7 @@ import { appName, appBasePath } from "@/apps/appInfo";
 import { useHelpStore } from "../../store";
 import { helpDocUrl } from "../../data/helpWrites";
 import StatusPill, { ConfidentialPill } from "../../components/StatusPill";
+import TicketActions from "../../components/TicketActions";
 import { firstResponseMinutes } from "../../lib/queues";
 import { stepByKey } from "../../lib/steps";
 import { B } from "../../nav";
@@ -21,11 +22,15 @@ import type { TicketActivity } from "../../types";
  *   are the same story, and splitting them makes the reader merge two lists by
  *   hand to follow it. Modelled on TripThread and CandidateTimeline.
  *
- * ⚠ READ-ONLY FOR NOW (HD-2). Acknowledging, resolving, asking a question,
- *   confirming and reopening land in HD-3 to HD-5. The page deliberately shows
- *   NO disabled buttons in the meantime: a greyed-out "Resolve" reads as a
- *   permission problem, which is a different and much more alarming thing than
- *   "not built yet".
+ * ⚠ THE ACTIONS ARE ONLY THE ONES THE SERVER WOULD ACCEPT. TicketActions
+ *   renders nothing at all when the reader owes nothing on this ticket — no
+ *   greyed-out "Resolve", because that reads as a permission problem, which is a
+ *   different and much more alarming thing than "not your turn". The one
+ *   exception is a HELD ticket, which keeps its buttons greyed WITH THE REASON.
+ *
+ * ⚠ STILL MISSING (HD-4, HD-5): the thread, asking the employee for more, and
+ *   the employee confirming or reopening. The page says so at the foot of the
+ *   history rather than leaving a reader hunting for a button.
  */
 export default function TicketDetail() {
   const { id } = useParams();
@@ -75,6 +80,7 @@ export default function TicketDetail() {
             {s.personName(ticket.raisedBy)} on {formatDateDMY(ticket.raisedAt)}
           </p>
         </div>
+        <TicketActions ticket={ticket} />
       </div>
 
       {attachFailed && (
@@ -187,7 +193,7 @@ export default function TicketDetail() {
           </ol>
         )}
         <p className="mt-4 border-t border-line pt-3 text-[12.5px] text-grey-2">
-          Replying, attaching and resolving arrive with the next phase (HD-3 and HD-4).
+          Replying to a ticket, and saying whether the answer worked, arrive with HD-4 and HD-5.
         </p>
       </Card>
     </div>
