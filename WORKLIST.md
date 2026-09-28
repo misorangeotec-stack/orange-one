@@ -1880,62 +1880,123 @@ Excel read back):
   not built.
 - **The email:** DR-3.
 
-### DR-3 · Daily Report — email it every evening  `[ ]`
-*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 so closing DR-2
-did not close this · **The client wants this next***
+### DR-3 · Daily Report — email it every evening  `[x]`
+*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 · **BUILT
+28-09-2026, proved end to end, and DISARMED** · The same entry is DR-3 in master's WORKLIST*
 
-**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection report
-already goes out.
+**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection
+report already goes out.
 
-**🟢 The document is ready.** `lib/exportDailyPdf.ts` exposes `dailyReportPdfBlob`, and DR-2 settled
-its shape. What is missing is everything around it: the runner, the schedule, the recipients and the
-send.
+**🟢 The four shape decisions, taken 28-09-2026.** Every evening at **20:30 IST** · **PDF only** ·
+**one report covering all locations** · it sends **at the fixed time whether or not the bank balances
+have been typed**, and says on the mail how many were.
 
-**🟢 Copy the Collection report's delivery — the CURRENT pattern, not the first one.**
-- **Waking.** The waking moved to **pg_cron on 29-08-2026**. The first design ticked GitHub's `schedule`
-  every 30 minutes, and on this repo that decayed from ~40 ticks a day to one, then **missed a Saturday
-  slot outright**. Now a pg_cron job asks the gate RPC and, only when a send is due, fires GitHub's
-  `workflow_dispatch` via `net.http_post`. GitHub's own cron stays only as a backstop, which cannot
-  double-send because the runner re-asks the gate and the send log claims the slot.
-- **Runner.** `.github/workflows/collections-report.yml` checks out, runs `npm ci`, **bundles the app's
-  own TypeScript** (`supabase/collectionsreport/build.mjs`), builds and sends. Needs **Node 22+**.
-- **Modes.** `dry-run` (the default: build, send nothing), `sample`, `scheduled`.
-- **The decision lives in the database** (`collections_report_due()`), so the settings screen and the
-  rule the sender obeys are one object.
+**🟢 What is built.**
+- **One input, two callers** — `lib/reportInput.ts`. `DailyXlsxInput` used to be assembled inside
+  `pages/DailyReport.tsx` from about a dozen React memos, so a server job would have had to
+  re-derive it: a second definition of "what the report is for this day and this location", free to
+  drift. The page now renders from the same object it exports, and the runner calls the same
+  function. `exportInput` is gone; both export buttons take `input` directly.
+- **The gate** — `20261212120000_daily_report_email.sql`. `daily_report_email_due()` is the single
+  answer to "should it go out now, and to whom": the arming lever, the report's own switch, the
+  schedule, the send day, the slot, the grace window (60 min) and the send log. Reuses the shared
+  `report_email_*` tables under the key `daily-report`, so no schema was added for configuration and
+  per-location copies would cost a *key*, not a migration.
+- **The waking** — `20261212120100_daily_report_email_kick.sql`. pg_cron `daily-report-email-kick`
+  (`7-59/15`) asks the gate and only fires `workflow_dispatch` when due; `daily-report-email-watchdog`
+  (`11-59/30`) mails when a slot passes unserved. **Both minutes were chosen by arithmetic** against
+  all 17 live jobs — `*/15` collides with the collections kick, the watchdog and the outbox sweep.
+- **The runner** — `supabase/dailyreport/` + `.github/workflows/daily-report.yml`. Bundles the app's
+  own TypeScript (three guards kept: legacy-receivables refusal, browser-globals scan,
+  `tsc --noEmit`). Three modes; `dry-run` is the default. Needed a fifth substitution the Collection
+  report does not: `@hub/lib/scope`, because one unused React hook in `scopeParties.ts` drags the
+  whole portal session into a Node job.
+- **The mail** — `daily_report_evening` and `daily_report_missed` branches in `send-email/index.ts`.
+- **The screen** — Daily Report → **Email**. Switch, frequency/time/days, and the address list. The
+  status banner is read from the gate, never asserted in the component.
 
-**🔴 It does not run in an Edge Function, and that is measured.** Edge Functions allow **~2 seconds of CPU
-per request, cumulative — yielding does not reset it**. Drawing the Collection report is ~40 seconds of
-CPU; this report is smaller, but it is the same shape of work under the same ceiling.
+**🟢 Proved, not assumed.**
+- Both migrations and every branch of the gate rehearsed against **live data inside a transaction
+  that was then rolled back**: disarmed, not-yet, due, missed, already-sent, nobody-to-send-to,
+  dedup on a second `mark_sent`, zero-queued refusal, and the watchdog alerting exactly once over
+  three runs. The rehearsal **found two real bugs** (below).
+- The runner ran for real in `dry-run` on three dates. 6-page PDF, verified with pdf.js: rupee signs
+  intact, no blank boxes, headline figures present, and "0 of 11" stated on the Bank page. The
+  figures are identical before and after the refactor.
+- `npm run build` green; the bundle reports no browser code and typechecks.
 
-**The traps (each cost real time on the Collection report):**
-- **Dispatch silently does nothing:**
-  - if the body omits `inputs.mode='scheduled'` (the input defaults to `dry-run` and reports success);
-  - if `ref` is not `master`;
-  - if the request has no `User-Agent` (pg_net adds none);
-  - if the token is not `misorangeotec-stack`'s.
-- **The token is borrowed.** `private.collections_report_kick_config.github_pat` holds the `gh` CLI's
-  OAuth token, not a dedicated PAT. Decide whether this report shares it or gets its own.
-- **Secrets go in a `private.*_config` table, not Vault** (Vault holds nothing and is used nowhere).
-- **Every run exits "success".** "Not due" is a successful run, and a dropped tick makes no run at all,
-  so a **watchdog** must alert when a slot passes unserved. A new outbox `kind` also needs its renderer
-  in `send-email`, or it is `markSkipped` silently.
-- **Scheduled workflows run only from the default branch.** GitHub also disables a scheduled workflow
-  after 60 days without a commit.
-- **Do not put cron jobs on `*/5` or `*/15` boundaries.** Those already carry other jobs; the house slots
-  are minutes 3, 8, 13 … 58.
-- **Arming it is a live send.** Build behind the same two-switch gate, prove it with `dry-run`, then
-  `sample`, before a recipient is added.
-- **Every figure must keep coming from `lib/aggregate.ts`**, so the mailed PDF cannot disagree with the
-  screen.
-- **The bank balances and the credit facility are typed by hand each evening** (discussion items 3 and
-  5). An email sent before they are typed will say "0 of 11 entered". Decide whether the send waits
-  for them, or goes regardless and says so.
+**🔴 Two bugs the rehearsal caught, both of which would have shipped silently.**
+1. The watchdog's empty-list suppression tested the gate's `reason` for `'nobody to send to'` — which
+   the gate can never return once the window has closed, because it checks the grace window first
+   and says `'missed …'`. The suppression was dead code, so a database with no distribution list
+   would have mailed the alert **every night**. It now checks the recipient table directly.
+2. `strays` (salesperson rows filed under this key, which reach nobody) was built beside the
+   recipients, so it appeared only on the `due` and `nobody to send to` answers. On 364 evenings out
+   of 365 the gate says `not yet` or `already sent today`, so the warning was invisible. It is now
+   resolved first and travels on every answer.
 
-**To discuss with Ritesh Bhai:**
-- [ ] **When does it send, and to whom?** Management and the CFO — which addresses?
-- [ ] **Does it attach the Excel workbook as well as the PDF?**
-- [ ] **Does it wait for the bank balances to be typed**, or send at a fixed time regardless?
-- [ ] **Which location?** One all-locations report, or separate Surat and Noida copies as the old sheets were?
+Also worth keeping: `daily_report_email_watchdog` takes a `p_now` clock, unlike the Collection
+report's, which reads `now()` internally and therefore shipped unproven. The clock is why the two
+bugs above were found rather than waited for.
+
+**🔴 And one claim that had to be corrected.** The drawing was *estimated* at ~2.5s to argue it could
+not be an Edge Function. **Measured: 1.6s on a quiet day, 1.8-2.0s on a busy one** (259 sale lines).
+That is *on* the 2s ceiling, not over it — which is a worse place to be, since it fails intermittently
+on the busiest days at 20:30 while every run reports success. The runner is still right; the migration
+and `entry.ts` now state the measurement instead of the estimate, and say to measure a December day
+before anyone revisits it.
+
+**⚠ THE REAL BLOCKER IS NOT CODE: NOBODY HAS EVER TYPED AN EVENING.** Measured on live 28-09-2026:
+11 active bank accounts, **0 rows** in `daily_report_bank_balances`, **0** in
+`daily_report_cc_limits`, and **0** `app_access` grants for `daily-report` (`UNIVERSAL_APP_IDS` is
+empty, so only admins can open it). Until somebody is granted the module and types an evening, every
+report goes out with an empty Bank page and no credit facility, saying "0 of 11 accounts entered".
+
+**🟢 LIVE 28-09-2026.** Master `ed05eae5`, Vercel deployed, both migrations applied and recorded,
+`send-email` v35, pg_cron armed, and the whole chain proved: a sample was delivered and read, a dry
+run produced identical figures on GitHub's own runner, and `daily_report_email_dispatch` was shown to
+reach GitHub (204) so the 20:30 poke is exercised rather than assumed.
+
+**Schedule as set: Monday to Saturday at 20:30 IST** — `days_of_week = {1,2,3,4,5,6}`. Changed from
+`daily` on 28-09 when Ritesh Bhai pointed out Orange works a six-day week: Sunday is the only closed
+day, so a daily schedule would have mailed an empty report every Sunday evening. Proved on the gate:
+due on Monday, due on Saturday, "not a send day" on Sunday.
+
+**Recipients: `e.techie4@gmail.com` only.** Adding anyone else is a live send and is the owner's call
+— one row in `report_email_recipients`, or the Daily Report → Email screen.
+
+**⚠ THE ONE THING STILL OWED IS NOT CODE.** Nobody has been granted the module and nobody has typed a
+bank balance, so every evening's mail says "0 of 11 accounts were entered" and the bank page and the
+credit facility are empty. Fix in the UI, no deploy: **Admin → Users → the person → Daily Report →
+Full access** (View is not enough — the RLS and `set_daily_report_evening` both require
+`access_level = 'edit'`), then they type the evening at /daily-report/bank-balances.
+
+**Also still owed, and cheap:** the kick borrows the `gh` CLI's token. It has its own config row, so
+`select set_daily_report_email_kick_pat('<a real PAT>', 'e.techie4@gmail.com');` decouples it from the
+Collection report, where a `gh auth logout` would otherwise stop both.
+
+**How it went live, kept because the order matters if it is ever repeated.**
+1. [ ] Merge to `master`. A scheduled workflow only exists on the default branch, and the kick's
+   `git_ref` is `master`; the runner bundles whatever `master` holds, so anything not there is not in
+   the mail.
+2. [ ] Apply both migrations (they ship disarmed, switched off, unscheduled and unlisted; the asserts
+   fail if any of that is untrue).
+3. [ ] Deploy `send-email`. ⚠ The repo copy was **stale against the deployed function** (v34, 24-Sep,
+   carrying the `complaint_` prefix and the PF-18 bullet/cta overrides). It has been caught up from
+   the live source first; deploy from that, not from an older branch.
+4. [ ] Grant the module to whoever types the balances, and get one evening typed.
+5. [ ] `select set_daily_report_email_kick_pat('<token>', '<alert email>');` — its **own** token, not
+   the collections kick's borrowed `gh` CLI credential, so one revocation cannot stop both reports.
+6. [ ] Run the workflow by hand with `mode: dry-run` and read the artifact.
+7. [ ] Set the switch, the schedule (daily 20:30) and **one** recipient, then `mode: sample` to that
+   address alone. Read the real mail.
+8. [ ] Only on the owner's word: add the real recipients, then
+   `select set_daily_report_email_armed(true);` — **last, and theirs.** Nothing sends before it.
+
+To stop it at any time without losing the schedule or the list:
+`update private.daily_report_email_config set armed = false;`
+
+---
 
 ## OCPI  *(new module)*
 

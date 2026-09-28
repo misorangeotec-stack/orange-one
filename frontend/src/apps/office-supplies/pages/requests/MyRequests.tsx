@@ -52,6 +52,11 @@ export default function MyRequests() {
       header: "Qty",
       cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
       sortValue: (r) => r.quantity,
+      // Text, not number. `quantity` is free text by design — the form's own
+      // placeholder is "e.g. 1, 2 boxes, 24 pcs" — and a numeric range filter runs it
+      // through parseFloat, which buckets every non-numeric entry as 0 and silently
+      // hides it from a "min 1" filter. Today's rows happen to be bare numbers; the
+      // column is not.
       filter: { kind: "text", get: (r) => r.quantity },
     },
     {

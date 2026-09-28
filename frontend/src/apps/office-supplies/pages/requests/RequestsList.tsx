@@ -61,6 +61,7 @@ export default function RequestsList() {
       header: "Qty",
       cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
       sortValue: (r) => r.quantity,
+      // Text, not number - see the same column on My Requests.
       filter: { kind: "text", get: (r) => r.quantity },
     },
     {
@@ -79,7 +80,7 @@ export default function RequestsList() {
       header: "Submitted",
       cell: (r) => <span className="text-grey-2">{formatDate(r.submittedAt)}</span>,
       sortValue: (r) => r.submittedAt,
-      filter: { kind: "date", get: (r) => r.submittedAt },
+      filter: { kind: "date", get: (r) => r.submittedAt?.slice(0, 10) ?? "" },
       tdClassName: "whitespace-nowrap",
     },
   ];

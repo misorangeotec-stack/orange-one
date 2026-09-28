@@ -30,6 +30,9 @@ export const TABLE_LOOK_ON: readonly string[] = [
   // with these and is held back only because another session is mid-change in it.
   "fms-control-center", "master-report", "process-coordinator", "leads-dashboard",
   "customer-orders", "bushra-central-master",
+  // Two small modules, one round (28-09).
+  "office-supplies", "asset-maintenance",
+  "ocpi", "complaint",
 ];
 
 /**

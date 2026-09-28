@@ -13,19 +13,20 @@ import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
 import { useCcLimits } from "../data/ccLimits";
 import {
-  addDays, daysBetween, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
+  addDays, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
   shortDay, timeOfDay, todayIso,
 } from "../lib/format";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank, listNoun, SHOWN_ONLY_WHEN_ACTIVE } from "../lib/labels";
 import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType";
 import {
-  allBandsTotal, bandMoney, bankColumns, cellFor, companyColumnLabel, entityTotal,
-  FACILITY_BALANCE_NOTE, facilityRows, groupSales, inLocation,
+  allBandsTotal, bandMoney, cellFor, companyColumnLabel, entityTotal,
+  FACILITY_BALANCE_NOTE, facilityRows, groupSales,
   isBankOnlyLocation, pivotCompanies, pivotMoney, pivotSales, purchaseTotal, salesTotals, saleKind,
   tradeTotal, TRADE_BANDS,
   type LocationFilter, type MoneyBand,
 } from "../lib/aggregate";
-import { exportDailyReportXlsx } from "../lib/exportDailyXlsx";
+import { buildDailyReportInput, HISTORY_DAYS, historyFrom } from "../lib/reportInput";
+import { exportDailyReportXlsx, type DailyXlsxInput } from "../lib/exportDailyXlsx";
 import { downloadDailyReportPdf } from "../lib/exportDailyPdf";
 import FactCard, { KpiSkeleton, LoadingNote, type Fact } from "../components/Snapshot";
 import PivotGrid from "../components/PivotGrid";
@@ -54,8 +55,15 @@ const LOCATION_OPTIONS: { value: LocationFilter; label: string }[] = [
   ...REPORT_LOCATIONS.map((l) => ({ value: l as LocationFilter, label: l })),
 ];
 
-/** How many days of balance history the bank grid shows. */
-const HISTORY_DAYS = 7;
+/**
+ * Stable empties, so a render before the data lands does not hand every memo below a brand-new
+ * array and invalidate all of them for nothing.
+ */
+const EMPTY_SALES: DailyXlsxInput["sales"] = [];
+const EMPTY_MONEY: DailyXlsxInput["money"] = [];
+const EMPTY_PURCHASES: DailyXlsxInput["purchases"] = [];
+const EMPTY_ACCOUNTS: BankAccount[] = [];
+const EMPTY_DATES: string[] = [];
 
 /* ------------------------------------------------------------ money lists */
 
@@ -210,31 +218,35 @@ export default function DailyReport() {
   const report = useDailyReport(date);
   const accounts = useBankAccounts();
 
-  const historyFrom = addDays(date, -(HISTORY_DAYS - 1));
-  const balances = useBankBalances(historyFrom, date);
+  const balances = useBankBalances(historyFrom(date), date);
   const ccLimits = useCcLimits(date, date);
 
   const bankOnly = isBankOnlyLocation(loc);
 
   /* ---- scoped rows -------------------------------------------------- */
-  const sales = useMemo(
-    () => (report.data?.sales ?? []).filter((l) => inLocation(loc, l.location)),
-    [report.data, loc],
+  /**
+   * ⚠ THE PAGE RENDERS FROM THE SAME OBJECT IT EXPORTS, AND THAT IS THE POINT.
+   *   The scoping used to be half a dozen memos here, which the evening send (DR-3) would have had
+   *   to re-derive on a server with no component — a second definition of the same rule, free to
+   *   drift from this one. It now lives in `lib/reportInput.ts`, which both callers use. Everything
+   *   below is a read off `input`, never a filter of its own.
+   */
+  const input = useMemo(
+    () =>
+      report.data
+        ? buildDailyReportInput({
+            date, loc, data: report.data,
+            accounts: accounts.data ?? [],
+            balances: balances.data ?? new Map(),
+            ccLimits: ccLimits.data ?? new Map(),
+          })
+        : null,
+    [report.data, date, loc, accounts.data, balances.data, ccLimits.data],
   );
-  const purchases = useMemo(
-    () => (report.data?.purchases ?? []).filter((p) => inLocation(loc, p.location)),
-    [report.data, loc],
-  );
-  // ⚠ MONEY FOLLOWS THE LOCATION FILTER TOO, since 17-09-2026. It used not to:
-  //   a voucher carried only its book's label, and narrowing on that would have
-  //   meant parsing "O-tec — Surat". Each row now carries the location of its
-  //   book from ext_company_map (toMoneyRows), so a Surat filter shows Surat's
-  //   receipts rather than all five books' under a Surat heading. Delhi has no
-  //   book, so it empties by construction, exactly like sales.
-  const money = useMemo(
-    () => (report.data?.money ?? []).filter((m) => inLocation(loc, m.location)),
-    [report.data, loc],
-  );
+
+  const sales = input?.sales ?? EMPTY_SALES;
+  const purchases = input?.purchases ?? EMPTY_PURCHASES;
+  const money = input?.money ?? EMPTY_MONEY;
 
   const totals = useMemo(() => salesTotals(sales), [sales]);
   const groups = useMemo(() => groupSales(sales), [sales]);
@@ -275,11 +287,10 @@ export default function DailyReport() {
   const paidAllLacs = allBandsTotal(paid);
 
   /* ---- bank --------------------------------------------------------- */
-  const dates = useMemo(() => daysBetween(historyFrom, date), [historyFrom, date]);
-  const bankCols = useMemo(
-    () => bankColumns(accounts.data ?? [], balances.data ?? new Map(), dates, loc),
-    [accounts.data, balances.data, dates, loc],
-  );
+  // `input.dates`, not a second `daysBetween` call: the window the bank grid shows and the window
+  // the export carries are one decision, and computing it twice is how they drift.
+  const dates = input?.dates ?? EMPTY_DATES;
+  const bankCols = input?.accounts ?? EMPTY_ACCOUNTS;
   const bankByEntity = useMemo(() => {
     const m = new Map<string, BankAccount[]>();
     for (const a of bankCols) {
@@ -301,14 +312,9 @@ export default function DailyReport() {
     return { sum, anyMissing };
   }, [bankByEntity, balances.data, date]);
 
-  // ⚠ EVERY LOCATION, NOT bankCols. A credit facility is sanctioned to a
-  //   company, so its available balance is the whole company's cash; under a
-  //   Surat filter, bankCols would make it Orange O Tec's Surat cash under the
-  //   company's name. The same list goes to both exports.
-  const facilityAccounts = useMemo(
-    () => bankColumns(accounts.data ?? [], balances.data ?? new Map(), [date], "all"),
-    [accounts.data, balances.data, date],
-  );
+  // ⚠ EVERY LOCATION, NOT bankCols — see `buildDailyReportInput`, which is where that reasoning now
+  //   lives and where both exports read it from.
+  const facilityAccounts = input?.facilityAccounts ?? EMPTY_ACCOUNTS;
   const facility = useMemo(
     () => facilityRows(facilityAccounts, balances.data ?? new Map(), ccLimits.data ?? new Map(), date),
     [facilityAccounts, balances.data, ccLimits.data, date],
@@ -371,16 +377,9 @@ export default function DailyReport() {
   // ONE input for both exports, built from the same scoped rows the page is
   // rendering. The workbook and the document must never be able to disagree
   // with each other, or with what the reader is looking at.
-  const exportInput = (rulesLoaded: boolean) => ({
-    date, loc, sales, money, purchases,
-    accounts: bankCols,
-    balances: balances.data ?? new Map(),
-    facilityAccounts,
-    ccLimits: ccLimits.data ?? new Map(),
-    dates,
-    mtdSalesLacs: mtdSales,
-    rulesLoaded,
-  });
+  // There is no `exportInput` any more: the export IS `input`, the same object the page is
+  // rendering from. Both buttons guard on it, so the workbook and the document cannot be built from
+  // anything the reader is not looking at.
 
   // Sorted oldest-rebuilt first, so the book that is furthest behind is the one
   // a reader's eye lands on rather than one they have to hunt for. A company that
@@ -560,12 +559,12 @@ export default function DailyReport() {
           <Button
             variant="ghost"
             size="sm"
-            disabled={!report.data || exporting !== null}
+            disabled={!input || exporting !== null}
             onClick={async () => {
-              if (!report.data) return;
+              if (!input) return;
               setExporting("xlsx");
               try {
-                await exportDailyReportXlsx(exportInput(report.data.rulesLoaded));
+                await exportDailyReportXlsx(input);
               } finally {
                 setExporting(null);
               }
@@ -575,12 +574,12 @@ export default function DailyReport() {
           </Button>
           <Button
             size="sm"
-            disabled={!report.data || exporting !== null}
+            disabled={!input || exporting !== null}
             onClick={async () => {
-              if (!report.data) return;
+              if (!input) return;
               setExporting("pdf");
               try {
-                await downloadDailyReportPdf(exportInput(report.data.rulesLoaded));
+                await downloadDailyReportPdf(input);
               } finally {
                 setExporting(null);
               }

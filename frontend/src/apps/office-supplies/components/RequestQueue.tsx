@@ -108,7 +108,9 @@ export default function RequestQueue({
       header: "Requested for",
       cell: ({ request: r }) => <span className="text-grey">{r.requestedForName}</span>,
       sortValue: ({ request }) => request.requestedForName,
-      filter: { kind: "text", get: ({ request }) => request.requestedForName },
+      // A searchable multi-select, not a text box: this repo's default for a name
+      // column, and MultiSelect forces its search box on however many names there are.
+      filter: { kind: "select", get: ({ request }) => request.requestedForName },
     },
     {
       key: "department",
@@ -171,7 +173,7 @@ export default function RequestQueue({
       header: "Requested for",
       cell: (e) => <span className="text-grey">{e.row.requestedForName}</span>,
       sortValue: (e) => e.row.requestedForName,
-      filter: { kind: "text", get: (e) => e.row.requestedForName },
+      filter: { kind: "select", get: (e) => e.row.requestedForName },
     },
     // Reads the entry's OWN `departmentId`, stamped at build time in lib/queues.ts
     // — not a lookup off `e.row`. The filter runs per row per sort comparison, so
