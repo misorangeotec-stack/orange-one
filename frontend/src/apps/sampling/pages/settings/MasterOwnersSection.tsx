@@ -3,6 +3,10 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useSamplingStore } from "../../store";
 import { SAMPLING_MASTER_TYPES, type SamplingMasterType } from "../../types";
 
@@ -14,6 +18,8 @@ import { SAMPLING_MASTER_TYPES, type SamplingMasterType } from "../../types";
  */
 export default function MasterOwnersSection() {
   const s = useSamplingStore();
+  /** PF-20: one line per row, a long owner list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["master", "owners"]);
   const [editing, setEditing] = useState<SamplingMasterType | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -55,6 +61,8 @@ export default function MasterOwnersSection() {
           can edit it.
         </p>
       </div>
+      {/* PF-20: inside ScrollableTable like every other table, so a phone scrolls it rather than clipping it. */}
+      <ScrollableTable>
       <table className="w-full text-[13.5px]">
         <thead>
           <tr className="text-left text-grey-2 border-b border-line">
@@ -63,7 +71,7 @@ export default function MasterOwnersSection() {
             <th className="font-medium px-4 py-3">Owners</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody {...fit.tbodyProps}>
           {SAMPLING_MASTER_TYPES.map((mt) => {
             const ids = s.managerIdsFor(mt.value);
             const names = ids.map((id) => s.profileById(id)?.name ?? "Unknown");
@@ -74,15 +82,18 @@ export default function MasterOwnersSection() {
                     Edit
                   </button>
                 </td>
-                <td className="px-4 py-3 font-medium text-navy">{mt.plural}</td>
+                <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{mt.plural}</td>
                 <td className="px-4 py-3">
-                  {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned — falls back to admins</span>}
+                  <FitCell fit={fit} col="owners" cap={FIT.CUT}>
+                    {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned — falls back to admins</span>}
+                  </FitCell>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      </ScrollableTable>
 
       <Modal
         open={editing !== null}

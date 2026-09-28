@@ -50,6 +50,30 @@ const INWARD_LAB_FLOW: FlowNode[] = [
   { key: "result_received", label: "Result Received" },
   { key: "closed", label: "Closed" },
 ];
+/**
+ * MACHINE TESTING joins in one of two ways.
+ *
+ * On a LAB request it is a tail: the two nodes are spliced in ahead of Closed,
+ * after the lab result. On a NO-LAB request it REPLACES the receipt step — the
+ * sample goes from collection straight to the machine — which is why that case
+ * gets a flow of its own rather than a splice.
+ */
+const MACHINE_NODES: FlowNode[] = [
+  { key: "machine_process", label: "Machine Testing" },
+  { key: "machine_result", label: "Machine Result" },
+];
+/** Inward, NO lab testing, machine testing: collect → machine → result. */
+const INWARD_MACHINE_FLOW: FlowNode[] = [
+  { key: "request", label: "Request" },
+  { key: "sample_collect", label: "Collect & Handover" },
+  ...MACHINE_NODES,
+  { key: "closed", label: "Closed" },
+];
+const withMachine = (flow: FlowNode[], request: SamplingRequest): FlowNode[] =>
+  request.machineTestingRequired === true
+    ? [...flow.slice(0, -1), ...MACHINE_NODES, flow[flow.length - 1]]
+    : flow;
+
 const OUTWARD_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
   { key: "send_sample", label: "Sample Sent" },
@@ -79,8 +103,10 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
       : isLegacyInward
         ? INWARD_LEGACY_FLOW
         : request.labTestingRequired === false
-          ? INWARD_NO_LAB_FLOW
-          : INWARD_LAB_FLOW;
+          ? request.machineTestingRequired === true
+            ? INWARD_MACHINE_FLOW
+            : INWARD_NO_LAB_FLOW
+          : withMachine(INWARD_LAB_FLOW, request);
 
   const nodes: PoStageRailNode[] = useMemo(
     () =>
@@ -116,6 +142,10 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
                 ? request.labResultToId
                   ? s.personName(request.labResultToId)
                   : request.labResultToName
+              : n.key === "machine_result"
+                ? request.machineResultToId
+                  ? s.personName(request.machineResultToId)
+                  : request.machineResultToName
                 : n.key === "result_handover"
                   ? request.resultHandoverToId
                     ? s.personName(request.resultHandoverToId)
@@ -140,6 +170,7 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
     [flow, s, request, request.receiveVia, request.collectorId, request.collectSkipped,
      request.handoverRecipientId,
      request.handoverRecipientName, request.labResultToId, request.labResultToName,
+     request.machineResultToId, request.machineResultToName,
      request.resultHandoverToId, request.resultHandoverToName],
   );
 

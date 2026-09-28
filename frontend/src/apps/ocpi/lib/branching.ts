@@ -1,4 +1,5 @@
 import {
+  isSchemeDeal,
   isUsdDeal,
   NO_DEAL_FACTS,
   type DealFacts,
@@ -436,8 +437,20 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
       `clearHidden` blank it when the deal type moves, matching the server. Do
       not delete it as dead just because nothing renders it.
   */
-  highSeasVia: (d) => d.transportTerms === "high_seas",
-  highSeasCostBy: (d) => d.transportTerms === "high_seas",
+  /*
+    ⚠ R5 · EVERY NAMED SCHEME, NOT JUST HIGH SEAS. `epcg`, `moowr` and
+      `hss_epcg` are import deals with the same shipping question, and the
+      server clears BOTH bearer columns for anything that is neither
+      `high_seas` nor `local`. Left as they were, the three new deal types would
+      have recorded no cost bearer at all — with neither control on screen to
+      notice it.
+
+    ⚠ The caption on `highSeasCostBy` reads "Shipping cost borne by" now; the
+      COLUMN keeps its name. Renaming a column to fix a caption is how the SQL
+      and the form drift apart.
+  */
+  highSeasVia: (d) => isSchemeDeal(d.transportTerms),
+  highSeasCostBy: (d) => isSchemeDeal(d.transportTerms),
   localCostBy: (d) => d.transportTerms === "local",
 
   /*
@@ -453,10 +466,26 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
   */
   deliveryPort: (d) => d.deliveryVia === "CIF",
   deliveryFactoryCity: (d) => d.deliveryVia === "EX Factory",
-  // 🔴 TWO CONDITIONS, NOT ONE. Both answers end "to customer premises", so the
-  //    question is meaningless once the COMPANY bears the cost -- settled with
-  //    Ritesh Bhai: "when we select a company, we don't have to ask this thing."
-  deliveryLeg: (d) => d.transportTerms === "high_seas" && d.highSeasCostBy === "customer",
+  // R5 · a LOCAL delivery names where it goes, exactly as EX Factory names where
+  // it leaves from. Without a place the printed term says less than the
+  // "Ex-Work Surat" it replaces — see `composeTradeTerm`.
+  deliveryDestination: (d) => d.deliveryVia === "Local",
+  /*
+    🔴 R5 · KEYED ON THE DELIVERY TERM NOW, NOT ON THE DEAL TYPE. The client
+       asked for it on every CIF deal. It used to be two conditions — high seas
+       AND customer-borne — because both answers end "to customer premises" and
+       the question was meaningless once the company paid.
+
+    🔴 ITS SQL TWIN MOVED IN THE SAME BREATH, AND HAD TO. `fms_ocpi_write_quotation`
+       NULLS this column unless its own rule matches; leave the server on the old
+       rule and the form asks a required question whose answer is erased on save,
+       so the deal can never be sent for approval. One rule, three copies, one
+       edit — the file says so a few lines up and it was nearly true anyway.
+
+    ⚠ The answer is RECORDED BUT NOT PRINTED (client, 10-Sep-2026) — see the
+      removed branch in `composeTradeTerm`.
+  */
+  deliveryLeg: (d) => d.deliveryVia === "CIF",
 
   // RULE 4 — a dollar term, asked only of dollar deals.
   dollarClauseAgreed: isUsdDeal,
@@ -488,7 +517,10 @@ export const PART_A_VISIBILITY: Partial<Record<keyof QuotationDraft, Visibility>
       the RPC state, and deleting it would leave High Seas depending on a
       currency that the writer, not the form, sets.
   */
-  gstRate: (d) => d.transportTerms !== "high_seas" && !isUsdDeal(d),
+  // R5 · no scheme is taxed, not just High Seas. `isUsdDeal` already reads
+  // `isSchemeDeal`, so the first test is belt-and-braces for the render between
+  // picking a scheme and the save coming back — kept for exactly that reason.
+  gstRate: (d) => !isSchemeDeal(d.transportTerms) && !isUsdDeal(d),
 
   // RULE 6 — the FX position only exists for a dollar deal. See `isUsdDeal`:
   // High Seas qualifies from the moment the deal type is picked, not from the

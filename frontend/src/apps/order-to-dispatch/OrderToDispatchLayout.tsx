@@ -56,7 +56,10 @@ export default function OrderToDispatchLayout() {
   const canSeeSalesReturn = s.canSeeQueue("sales_return");
   const salesReturnPending = canSeeSalesReturn ? s.salesReturnPending.length : 0;
 
-  const anyQueue = queueSteps.some((step) => queues[step]) || canSeeSalesReturn;
+  const canSeeCustomerOrders = s.canSeeCustomerOrders;
+  const customerOrdersPending = canSeeCustomerOrders ? s.customerOrdersPending.length : 0;
+
+  const anyQueue = queueSteps.some((step) => queues[step]) || canSeeSalesReturn || canSeeCustomerOrders;
   /*
     A view-only reader gets All Orders and the Order Register outright. Stated
     here rather than left to ride on `anyQueue` — which is now true for them via
@@ -95,9 +98,11 @@ export default function OrderToDispatchLayout() {
         heldByStep,
         queues,
         canSeeSalesReturn,
+        canSeeCustomerOrders,
+        customerOrdersPending,
         salesReturnPending,
       }),
-    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending],
+    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending, canSeeCustomerOrders, customerOrdersPending],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

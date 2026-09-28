@@ -94,7 +94,7 @@ export default function Masters() {
             <>
               <p className="mb-3 text-[13px] text-grey-2">
                 The <strong>tier</strong> is what prices a trip: it decides the hotel cap, the daily
-                allowance and the local conveyance cap. Policy §1.3 names the Tier 1 and Tier 2
+                allowance and the local conveyance cap. Policy Section 1.3 names the Tier 1 and Tier 2
                 cities; everything else is Tier 3 by that section&rsquo;s own definition. Note{" "}
                 <strong>Surat is Tier 2</strong> — the head office is not a metro under this policy.
               </p>
@@ -150,7 +150,7 @@ export default function Masters() {
           {tab === "expense_category" && (
             <>
               <p className="mb-3 text-[13px] text-grey-2">
-                Everything Policy §15 refuses is a row here with <strong>Company pays = No</strong>,
+                Everything Policy Section 15 refuses is a row here with <strong>Company pays = No</strong>,
                 so the category itself declines and no approver has to be the one to say no. The
                 reason is shown to whoever tries to claim it.
               </p>

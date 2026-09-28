@@ -15,7 +15,17 @@ import type { DispatchMasterType, DispatchOrder, DispatchType } from "../../type
  * round let a single order bill two different entities.
  */
 export interface SalesOrderFormState {
-  dispatchType: DispatchType;
+  /**
+   * `""` means NOTHING CHOSEN YET — reachable only by opening a CUSTOMER-raised
+   * order, where the field is legitimately empty until credit check fills it in
+   * (OD-13 Q2). A new staff order still starts at "local" exactly as before, so
+   * nothing about the ordinary intake changes.
+   *
+   * ⚠ Defaulting it to "local" here instead would have been silent and wrong: the
+   *   form would show a confident answer nobody gave, on the one order type where
+   *   the whole point is that WE decide it and the customer never sees it.
+   */
+  dispatchType: DispatchType | "";
   companyId: string;
   /** OUR site the goods leave from. Not `customerLocation` — see the types file. */
   locationId: string;
@@ -83,7 +93,7 @@ const seededState = (s: DispatchStoreValue): SalesOrderFormState => {
 };
 
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
-  dispatchType: o.dispatchType,
+  dispatchType: o.dispatchType ?? "",
   companyId: o.companyId ?? "",
   locationId: o.locationId ?? "",
   customerId: o.customerId,
@@ -101,7 +111,32 @@ const linesFromOrder = (o: DispatchOrder): OrderLineRow[] =>
     lineRemark: l.lineRemark ?? "",
   }));
 
-export function useSalesOrderForm(existing?: DispatchOrder) {
+/**
+ * How this form is being used. `existing` alone used to say it: absent meant new,
+ * present meant edit. OD-14 adds a third that `existing` cannot express — writing
+ * up a CUSTOMER order, which has an existing row but obeys different rules about
+ * where its options come from and who is allowed to save it.
+ */
+export type SalesOrderMode = "new" | "edit" | "complete";
+
+export interface SalesOrderFormOptions {
+  mode?: SalesOrderMode;
+  /**
+   * Complete mode only: the companies this customer may be billed from, straight
+   * from `fms_dispatch_customer_intake_options`.
+   *
+   * ⚠ NOT `s.assignedCompanies`, and the difference is not cosmetic. The server
+   *   accepts only the companies of this customer's ticked ledgers and refuses
+   *   anything else with "That company does not bill this customer". Offering the
+   *   wider list would put thirty companies in front of the clerk of which five
+   *   are allowed.
+   */
+  companyChoices?: { id: string; name: string }[];
+}
+
+export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderFormOptions = {}) {
+  const mode: SalesOrderMode = opts.mode ?? (existing ? "edit" : "new");
+  const completing = mode === "complete";
   const s = useDispatchStore();
   const [form, setForm] = useState<SalesOrderFormState>(() =>
     existing ? stateFromOrder(existing) : seededState(s),
@@ -133,6 +168,21 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     and only the typed term can tell the reader which one they are looking at.
   */
   const [mapping, setMapping] = useState<{ search: string } | null>(null);
+
+  /*
+    AND NEITHER DOES THE CUSTOMER PICKER, AS OF OD-5. Same shape as `mapping`
+    above and for the same reason: the firm somebody cannot find is almost never
+    missing from Tally, it is merely filed in another company's book — 412 of our
+    1,354 distinct customer names exist in more than one — so this opens a
+    mapping rather than asking anybody for a new ledger.
+
+    ⚠ SEPARATE STATE FROM `mapping`, NOT A SHARED ONE WITH A KIND FLAG. The two
+      modals chain: mapping a company opens the ITEM modal straight afterwards on
+      the customer just mapped, because a freshly mapped customer has no items
+      and stopping there would leave the user exactly as stuck. One piece of
+      state cannot be open twice.
+  */
+  const [companyMapping, setCompanyMapping] = useState<{ search: string } | null>(null);
 
   /**
    * THE ITEM TYPE THE LINES ARE BEING PICKED FROM (OD-10).
@@ -209,10 +259,28 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
    */
   const setCompany = (id: string) => {
     if (id === form.companyId) return;
-    // The person's OWN sites under that company — the auto-pick has to agree with
-    // the list they are about to be shown, or it fills in a site they cannot see.
-    const sites = s.assignedLocationsForCompany(id, existing?.locationId ?? null);
+    /*
+      The person's OWN sites under that company — the auto-pick has to agree with
+      the list they are about to be shown, or it fills in a site they cannot see.
+
+      ⚠ EXCEPT WHEN COMPLETING A CUSTOMER ORDER, where the site list is the
+        company's own rather than the person's. The order has no location yet, so
+        there is nothing to be "assigned to"; the same widening `CustomerIntakePanel`
+        has always used, and the server checks only that the site belongs to the
+        company.
+    */
+    const sites = completing
+      ? s.locationsForCompany(id)
+      : s.assignedLocationsForCompany(id, existing?.locationId ?? null);
+    /*
+      ⚠ ON A CUSTOMER ORDER THE CUSTOMER NEVER MOVES. It is the same firm whichever
+        of our books bills them — the ledger merely follows the company, and the
+        SERVER resolves that from the ticked list, which never reaches the browser
+        (Q11). So the field is display-only here and the lines must survive a change
+        of company, or writing one up would silently empty the order.
+    */
     const keepsCustomer =
+      completing ||
       !form.customerId ||
       s.customersForCompany(id, existing?.customerId ?? null).some((c) => c.id === form.customerId);
     patch({
@@ -227,12 +295,16 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   const filledLines = useMemo(() => lines.filter((l) => !isLineBlank(l)), [lines]);
 
   const validate = (): string | null => {
+    if (!form.dispatchType) return "Choose how this order travels — Local or Transport.";
     if (!form.companyId) return "Choose the company that bills this order.";
     // Compulsory only where the company HAS sites — mirrors fms_dispatch_submit_order.
     // A company nobody has added locations to must not block order entry.
     if (
       !form.locationId &&
-      s.assignedLocationsForCompany(form.companyId, existing?.locationId ?? null).length > 0
+      (completing
+        ? s.locationsForCompany(form.companyId)
+        : s.assignedLocationsForCompany(form.companyId, existing?.locationId ?? null)
+      ).length > 0
     ) {
       return "Choose the location this order dispatches from.";
     }
@@ -247,7 +319,13 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     return null;
   };
 
-  const toInput = (requesterName: string): OrderInput => ({
+  const toInput = (requesterName: string): OrderInput => {
+    // `validate()` already guarantees this, and both callers (NewOrder, EditOrder)
+    // run it and bail first. THROWING rather than casting is the point: a future
+    // caller that skips validate() fails loudly here instead of posting an order
+    // with no dispatch type, which the RPC would then refuse with its own wording.
+    if (!form.dispatchType) throw new Error("Choose how this order travels — Local or Transport.");
+    return {
     dispatchType: form.dispatchType,
     companyId: form.companyId,
     locationId: form.locationId || null,
@@ -265,17 +343,22 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
       quantity: l.quantity,
       lineRemark: l.lineRemark.trim() || null,
     })),
-  });
+    };
+  };
 
   return {
     // The order being edited, if any. `SalesOrderFields` needs it to keep a
     // company / site the editor is not assigned to in its own dropdowns.
     existing: existing ?? null,
+    mode,
+    completing,
+    companyChoices: opts.companyChoices ?? null,
     form, patch, setForm,
     lines, setLines, filledLines,
     setCustomer, setCompany,
     raise, setRaise, requested, setRequested,
     mapping, setMapping,
+    companyMapping, setCompanyMapping,
     /*
       ⚠ Starts BLANK when editing an existing order, and that is deliberate. A
         saved order's lines are whatever they are — quite possibly two types —

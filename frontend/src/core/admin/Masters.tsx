@@ -13,10 +13,10 @@ import { APPS } from "@/apps/appInfo";
 import {
   companyDisplayName, itemTypeLabel, ITEM_TYPES,
   fetchMasterCompanies, fetchMasterItems, fetchMasterLocations, fetchMasterLookup,
-  fetchMasterParties, fetchMasterPartyItems, fetchMasterSyncRuns,
+  fetchMasterParties, fetchMasterPartyCompanies, fetchMasterPartyItems, fetchMasterSyncRuns,
   type ItemType,
   type MasterCompany, type MasterItem, type MasterLocation,
-  type MasterLookup, type MasterParty, type MasterPartyItem,
+  type MasterLookup, type MasterParty, type MasterPartyItem, type MasterSyncRun,
 } from "@/core/platform/liveMasters";
 import {
   deleteCompanyLink, fetchMyMasterManagerTypes, insertMaster, insertMasters, runMastersSync,
@@ -120,6 +120,34 @@ const companiesField = (options: ComboOption[]): MasterFieldDef => ({
       onChange={(ids) => onChange(ids.join(","))}
       options={options}
       placeholder="No company"
+      searchable
+      chips
+    />
+  ),
+});
+
+/**
+ * WHICH OF OUR BOOKS MAY BILL THIS CUSTOMER, beyond the one Tally files them in.
+ *
+ * ⚠ IT GOVERNS THE HAND-ADDED ROWS ONLY, and the diff on save enforces that.
+ *   mst_refresh_party_companies() runs four times an hour and re-inserts every
+ *   pair Tally can justify, so unticking a derived book would come back within
+ *   fifteen minutes — a control that appears to work and quietly undoes itself
+ *   is worse than no control. Derived books are listed here so the picture is
+ *   complete (and because hiding a ticked value is its own trap), but only the
+ *   ones marked "added here" in the column can actually be removed.
+ */
+const billableCompaniesField = (options: ComboOption[]): MasterFieldDef => ({
+  key: "billableCompanyIds",
+  label: "Also billable from",
+  type: "custom",
+  hint: "Books that may bill this customer besides their own. Untick to withdraw one that was added by hand; the ones Tally derives cannot be removed here.",
+  render: (value, onChange) => (
+    <MultiSelect
+      values={csvToList(value)}
+      onChange={(ids) => onChange(ids.join(","))}
+      options={options}
+      placeholder="Their own book only"
       searchable
       chips
     />
@@ -292,6 +320,10 @@ export default function Masters() {
     enabled: enabled("location") });
   const partyItems = useQuery({ queryKey: ["masters", "party_items"], queryFn: fetchMasterPartyItems, ...opts,
     enabled: enabled("party_item") });
+  /* Which of OUR books may bill each customer, beyond the one Tally files their
+     ledger in (OD-5). Customers only — a vendor is not billed by us. */
+  const partyCompanies = useQuery({ queryKey: ["masters", "party_companies"], queryFn: fetchMasterPartyCompanies, ...opts,
+    enabled: enabled("customer") });
   const runs = useQuery({ queryKey: ["masters", "sync-runs"], queryFn: () => fetchMasterSyncRuns(1), staleTime: 60_000 });
 
   /**
@@ -352,6 +384,42 @@ export default function Masters() {
   );
   const companyNames = (ids: string[]) =>
     ids.map((id) => companyLabel.get(id) ?? "—").sort().join(", ");
+
+  /**
+   * WHICH BOOKS MAY BILL EACH CUSTOMER — party id -> its link rows (OD-5).
+   *
+   * ⚠ THIS IS NOT `mst_parties.company_id`, AND THE TWO COLUMNS MUST NOT BE
+   *   READ AS ONE. company_id is Tally's filing: the single book the ledger
+   *   physically sits in. These rows are ours, and since OD-5 the save guard
+   *   honours them, so this is the column that answers "who may bill them".
+   *
+   * ⚠ ACTIVE ROWS ONLY, matching fms_dispatch_assert_customer_of_company. A
+   *   switched-off pair is not permission and must not read as one.
+   *
+   * ⚠ AN EMPTY CELL MEANS "NOTHING DERIVED YET", NOT "NO SIBLING LEDGERS".
+   *   mst_refresh_party_companies() only walks parties ticked into
+   *   order-to-dispatch, so a customer outside that module has no rows here
+   *   however many books carry a ledger of the same name.
+   */
+  const booksByParty = useMemo(() => {
+    const m = new Map<string, { companyId: string; source: string }[]>();
+    for (const l of partyCompanies.data ?? []) {
+      if (!l.active) continue;
+      const list = m.get(l.targetId);
+      if (list) list.push({ companyId: l.companyId, source: l.source });
+      else m.set(l.targetId, [{ companyId: l.companyId, source: l.source }]);
+    }
+    return m;
+  }, [partyCompanies.data]);
+
+  /** The books a person added by hand — the only ones an untick may remove. */
+  const handAddedBooks = (partyId: string) =>
+    (booksByParty.get(partyId) ?? []).filter((b) => b.source === "portal").map((b) => b.companyId);
+
+  const billableLabels = (partyId: string) =>
+    (booksByParty.get(partyId) ?? [])
+      .map((b) => (companyLabel.get(b.companyId) ?? "—") + (b.source === "portal" ? " (added here)" : ""))
+      .sort();
 
   /**
    * Group labels carry their company, because 103 group NAMES are shared across
@@ -496,21 +564,117 @@ export default function Masters() {
     ];
   }, [parties.data, items.data, partyItems.data, companyOptions, companyLabel]);
 
-  const doSync = async (force: boolean) => {
+  /**
+   * Press, and get the screen back.
+   *
+   * ⚠ THE INVOKE IS DELIBERATELY NOT AWAITED. A pull takes ~26s, and awaiting it
+   *   held this button on "Syncing…" for the whole of it — which is what an admin
+   *   actually complained about. The admin runs the ConnectWave connector first
+   *   and presses this straight afterwards, so they were watching a spinner at the
+   *   one moment the sync is slowest.
+   *
+   * ⚠ BUT THE OUTCOME STILL HAS TO REACH THEM, AND THIS IS THE TRAP. A FAILED sync
+   *   writes no master rows, so PF-17's realtime signal never fires and the screen
+   *   would sit there looking fine having silently failed. So we watch the run log
+   *   instead: it carries status AND the error text, which is everything the old
+   *   blocking version could show and more.
+   *
+   *   `.catch` on the un-awaited promise is not optional — a rejected floating
+   *   promise is an unhandled rejection now that nobody is awaiting it. It is also
+   *   NOT the main error path: an Edge Function that dies mid-run records the
+   *   failure in mst_sync_runs whether or not the HTTP response ever reaches us.
+   */
+  const doSync = (force: boolean) => {
     setSyncing(true);
-    setSyncNote(null);
-    try {
-      const res = await runMastersSync(force);
-      setSyncNote(
-        res.skipped
-          ? "Tally has not synced since the last pull — nothing to bring in."
-          : `Pulled ${res.counts?.parties ?? 0} parties and ${res.counts?.items ?? 0} items.`,
-      );
-      await invalidate();
-    } catch (e) {
-      setSyncNote(`Sync failed: ${(e as Error).message}`);
-    } finally {
+    setSyncNote("Sync started. This page will fill in on its own — you can carry on.");
+
+    /**
+     * ⚠ WHICHEVER ANSWER ARRIVES FIRST WINS, AND EXACTLY ONCE. Three things can
+     *   end this and they race:
+     *     · the function returns `skipped` — Tally has not moved, and NO run row
+     *       is ever created, so the watcher alone would wait three minutes and
+     *       then wrongly report "still running";
+     *     · the call itself fails (403, network) — again no run row, and the
+     *       watcher alone would find the PREVIOUS run sitting at `success` and
+     *       cheerfully report someone else's numbers as ours;
+     *     · a real run finishes, which only the watcher can see.
+     *   Both of the first two were live bugs in the first draft of this, caught in
+     *   a browser. `settled` is what keeps the loser silent.
+     */
+    let settled = false;
+    const finish = (note: string) => {
+      if (settled) return;
+      settled = true;
+      setSyncNote(note);
       setSyncing(false);
+      void invalidate();
+    };
+
+    runMastersSync(force)
+      .then((res) => {
+        // A pull that actually ran is reported by the watcher, which has the
+        // counts and the status; this branch only covers "there was nothing to do".
+        if (res.skipped) finish("Tally has not synced since the last pull — nothing to bring in.");
+      })
+      .catch((e) => finish(`Sync failed: ${(e as Error).message}`));
+
+    void watchSyncRun(finish);
+  };
+
+  /**
+   * Follow the run log until the newest run stops saying "running".
+   *
+   * Polling is right here and a subscription would not be: this is ONE admin on
+   * ONE screen for under a minute, and a sync that dies without writing anything
+   * produces no database change to subscribe to.
+   */
+  const watchSyncRun = async (finish: (note: string) => void) => {
+    const startedAt = Date.now();
+    // Long enough for the worst run ever recorded (90s) plus the retry budget.
+    const GIVE_UP_MS = 180_000;
+
+    /**
+     * ⚠ REMEMBER WHICH RUN WAS NEWEST *BEFORE* OURS. Without this the very first
+     *   poll finds the PREVIOUS run — already `success` — and reports its counts
+     *   as though they were this press's. Ours is the first row whose id differs.
+     */
+    let priorId: string | null = null;
+    try {
+      priorId = (await fetchMasterSyncRuns(1))[0]?.id ?? null;
+    } catch {
+      // Could not read the log; treat every row as possibly ours rather than
+      // silently attributing an old run to this press.
+      priorId = null;
+    }
+
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      let run: MasterSyncRun | undefined;
+      try {
+        run = (await fetchMasterSyncRuns(1))[0];
+      } catch {
+        // A blip reading the log is not a failed sync. Keep watching.
+        run = undefined;
+      }
+
+      const isOurs = !!run && run.id !== priorId;
+      if (isOurs && run!.status !== "running") {
+        const c = run!.counts ?? {};
+        finish(
+          run!.status === "success"
+            ? `Brought in ${c.parties ?? 0} customers and suppliers and ${c.items ?? 0} items`
+              + `${c.read_retries ? `, after ${c.read_retries} retry(s)` : ""}.`
+            : `Sync failed: ${run!.error ?? "no reason recorded"}`,
+        );
+        return;
+      }
+
+      if (Date.now() - startedAt > GIVE_UP_MS) {
+        // Not "it failed" — we stopped looking. The run may still land, and the
+        // masters refresh themselves when it does.
+        finish("Still running after three minutes. Reload later to see how it finished.");
+        return;
+      }
     }
   };
 
@@ -702,6 +866,34 @@ export default function Masters() {
             { header: "In Tally's books", render: (r) => (
               <span className="text-[12px] text-grey">{r.companyId ? companyLabel.get(r.companyId) ?? "—" : "—"}</span>
             ) },
+            /* WHO MAY BILL THEM — ours, and since OD-5 the database agrees.
+               Sits beside Tally's filing because the two are constantly
+               mistaken for each other and the only cure is reading them
+               together. Customers only: we do not bill a vendor. */
+            ...(tab === "customer"
+              ? [{
+                  header: "Also billable from",
+                  render: (r: MasterParty) => {
+                    const labels = billableLabels(r.id);
+                    return labels.length === 0
+                      /* Spelt out, not a dash: a filterable value is how you
+                         find the ones with nothing mapped. And it means "nothing
+                         derived yet" — see booksByParty. */
+                      ? <span className="text-grey-2/70">Not mapped</span>
+                      : <span className="text-[12px] text-grey">{labels.join(", ")}</span>;
+                  },
+                  /* The cell renders a component when the list is empty and
+                     nodeText cannot walk that, so both are declared rather than
+                     derived — the rule at the top of this file. */
+                  sortValue: (r: MasterParty) => billableLabels(r.id).join(", "),
+                  filter: {
+                    get: (r: MasterParty) => {
+                      const labels = billableLabels(r.id);
+                      return labels.length ? labels : ["Not mapped"];
+                    },
+                  },
+                }]
+              : []),
             /* Where the CUSTOMER takes delivery — 33 places, seeded from what the
                Dispatch team typed. Vendors have none, so the column is not shown
                on that tab rather than standing there as a row of dashes. */
@@ -733,6 +925,9 @@ export default function Masters() {
                of which is sitting on null. */
             { key: "companyId", label: "Company", type: "select", options: companyOptions,
               hint: "Which of our books this ledger lives in. Locked on a row that came from Tally." },
+            ...(tab === "customer"
+              ? [billableCompaniesField(companyOptions)]
+              : []),
             { key: "code", label: "Code", type: "text", placeholder: "your own reference" },
             { key: "location", label: "Delivery location", type: "text",
               hint: "Where the CUSTOMER takes delivery — not one of our sites." },
@@ -795,16 +990,41 @@ export default function Masters() {
             sortField,
           ]}
           emptyValues={{
-            name: "", companyId: "", gstin: "", creditPeriod: "", code: "", location: "",
+            name: "", companyId: "", billableCompanyIds: "", gstin: "", creditPeriod: "", code: "", location: "",
             contactName: "", phone: "", email: "", modules: "", sortOrder: "0",
           }}
           toValues={(r) => ({
-            name: r.name, companyId: r.companyId ?? "", gstin: r.gstin ?? "",
+            name: r.name, companyId: r.companyId ?? "",
+            billableCompanyIds: (booksByParty.get(r.id) ?? []).map((b) => b.companyId).join(","),
+            gstin: r.gstin ?? "",
             creditPeriod: r.creditPeriod ?? "", code: r.code ?? "",
             location: r.location ?? "", contactName: r.contactName ?? "", phone: r.phone ?? "",
             email: r.email ?? "", modules: r.modules.join(","), sortOrder: String(r.sortOrder),
           })}
-          onSubmit={submitFor("party", (v) => ({
+          /**
+           * TWO TABLES, ONE FORM — the same shape the Dispatch Locations tab
+           * uses below for mst_company_locations. The party is a row in
+           * mst_parties; which books may bill it is rows in
+           * mst_party_companies, reconciled as a diff so an untouched pair keeps
+           * its id and its created_by.
+           *
+           * ⚠ ON EDIT ONLY. A row being created has no id yet to hang links off,
+           *   and `createFields` deliberately omits the picker: a new customer's
+           *   own book is already required there, and extra books are an edit.
+           *
+           * ⚠ AN UNTICK DELETES RATHER THAN DEACTIVATES, following
+           *   deleteCompanyLink's own reasoning: nothing points AT a link row,
+           *   it IS the pointer, and an inactive row left behind would make
+           *   re-ticking fail on the UNIQUE constraint. The mapping RPC on the
+           *   sales order can still reactivate one that something else switched
+           *   off — that path is unaffected.
+           *
+           * ⚠ ONLY HAND-ADDED ROWS ARE REMOVABLE. See billableCompaniesField:
+           *   unticking a Tally-derived book would be undone by the next refresh
+           *   within fifteen minutes.
+           */
+          onSubmit={async (id, v, active) => {
+            await submitFor("party", (vv) => ({
             name: v.name.trim(), code: v.code.trim() || null,
             /* Sent on every save, kept only where it is ours: updateMaster drops
                Tally-owned columns when the row's source is 'tally', so this
@@ -820,7 +1040,20 @@ export default function Masters() {
             contact_name: v.contactName.trim() || null, phone: v.phone.trim() || null,
             email: v.email.trim() || null, modules: csvToList(v.modules),
             is_customer: tab === "customer", is_vendor: tab === "vendor",
-          }))}
+            }))(id, v, active);
+
+            if (!id || tab !== "customer") return;
+            const want = csvToList(v.billableCompanyIds);
+            const had = (booksByParty.get(id) ?? []).map((b) => b.companyId);
+            const removable = new Set(handAddedBooks(id));
+            await Promise.all([
+              ...want.filter((c) => !had.includes(c)).map((c) =>
+                insertMaster("party_company", { party_id: id, company_id: c })),
+              ...had.filter((c) => !want.includes(c) && removable.has(c)).map((c) =>
+                deleteCompanyLink("mst_party_companies", { party_id: id, company_id: c })),
+            ]);
+            await invalidate();
+          }}
           onToggleActive={toggle("party")}
         />
       )}

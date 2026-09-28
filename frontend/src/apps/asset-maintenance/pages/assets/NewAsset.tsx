@@ -25,9 +25,15 @@ export default function NewAsset() {
     return (
       <div className="rounded-xl border border-line bg-white p-6">
         <h1 className="text-[18px] font-bold text-navy">Adding assets is restricted</h1>
+        {/*
+          `canRaise` is false for TWO different reasons, and naming only one of
+          them sent people hunting for a Service Due owner that had never been
+          set. A view-only grant is by far the commoner cause.
+        */}
         <p className="mt-1 text-[13.5px] text-grey-2">
-          An owner has been set for the Service Due step, so only they, a coordinator or an admin can
-          add to the register.
+          {!s.canEdit
+            ? "Your access to Asset Maintenance is view only, so you can read every screen here but not change anything. An admin can widen it under Admin → Users → Module access."
+            : "An owner has been set for the Service Due step, so only they, a coordinator or an admin can add to the register."}
         </p>
       </div>
     );
@@ -41,6 +47,16 @@ export default function NewAsset() {
     for (const typeId of trackTypeIds) {
       const t = s.scheduleTypes.find((x) => x.id === typeId);
       if (!t) continue;
+      /*
+        ⚠ THE WARRANTY TRACK IS THE RPC'S, NOT OURS. `fms_asset_submit_asset`
+          already creates a one-time "Warranty Expiry" track whenever
+          warranty_months is set (it matches the type BY NAME, so this does too).
+          Letting the loop try again meant the duplicate insert threw, the catch
+          below counted it as `needsDate`, and the setup banner then told the user
+          a track "was not created" and to go and add it — while it sat on the
+          screen right above the message.
+      */
+      if (t.name === "Warranty Expiry" && v.warranty_months.trim()) continue;
       const unit: FrequencyUnit = t.defaultFrequencyUnit ?? "months";
       const due = estimateNextDue(v.purchase_date || null, s.todayIso, t.defaultFrequencyValue, unit);
       if (!due) { needsDate += 1; continue; }

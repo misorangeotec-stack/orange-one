@@ -78,3 +78,17 @@ export function monthLabelToOrdinal(label: string): number {
   if (m === undefined || Number.isNaN(y)) return Number.MAX_SAFE_INTEGER;
   return (2000 + y) * 12 + m;
 }
+
+/**
+ * Shift a month label by whole months: shiftMonthLabel("Jan-26", -2) === "Nov-25".
+ *
+ * The rolling "last three months" columns are built with this (RC-12), so nobody hand-adds a month
+ * the way the finance sheet did with its JUN / JULY / Aug columns. Returns "" for an unparseable
+ * label rather than inventing a month — a bad label must show as a gap, not as a plausible date.
+ */
+export function shiftMonthLabel(label: string, months: number): string {
+  const ord = monthLabelToOrdinal(label);
+  if (ord === Number.MAX_SAFE_INTEGER) return "";
+  const next = ord + months;
+  return `${MONTH_ABBR[((next % 12) + 12) % 12]}-${String(Math.floor(next / 12) % 100).padStart(2, "0")}`;
+}

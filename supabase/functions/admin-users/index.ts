@@ -56,19 +56,53 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authErr } = await caller.auth.getUser();
   if (authErr || !user) return json(401, { error: "not authenticated" });
 
-  // 2) Authorize: the caller must be an admin (checked with the service role).
+  // 2) Authorize. An admin may do everything here. There is exactly ONE other door
+  //    (NR-13): whoever is already running a particular onboarding may create the
+  //    ONE staff login that onboarding needs, because the new joiner cannot answer
+  //    their own probation check-ins without it and nobody in HR is an admin.
+  //
+  //    ⚠ The gate is NOT `module_can_edit('hr-recruitment')`. That is true for 22
+  //    people today — plant heads and DGMs among them, because a head who raises an
+  //    MRF holds the module at Edit. It is `fms_hr_can_act('onboarding', …)` on the
+  //    SPECIFIC onboarding named in the body: the same predicate that decides
+  //    whether the panel the button sits on is read-only. The power cannot exist
+  //    away from a real onboarding that the caller is already working.
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const { data: roleRows, error: roleErr } = await admin.from("user_roles").select("role").eq("user_id", user.id);
   if (roleErr) return json(500, { error: roleErr.message });
-  if (!(roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin")) {
-    return json(403, { error: "admin only" });
-  }
+  const isAdmin = (roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin");
 
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
     return json(400, { error: "invalid JSON body" });
+  }
+
+  // The non-admin door. `hrOnboarding` being set is what every clamp below keys
+  // off, so it is computed once, here, and can only become truthy after the
+  // server has checked the caller against that onboarding itself.
+  let hrOnboarding: string | null = null;
+  if (!isAdmin) {
+    if (body.action !== "create") {
+      return json(403, { error: "Only an admin can do that. You can create a new joiner's login, nothing else." });
+    }
+    const onb = String(body.onboardingId ?? "").trim();
+    if (!onb) return json(403, { error: "admin only" });
+
+    const { data: onbRow, error: onbErr } = await admin
+      .from("fms_hr_onboardings").select("requisition_id").eq("id", onb).maybeSingle();
+    if (onbErr) return json(500, { error: onbErr.message });
+    if (!onbRow) return json(403, { error: "admin only" });
+
+    const { data: mayAct, error: actErr } = await admin.rpc("fms_hr_can_act", {
+      p_step_key: "onboarding", p_req: onbRow.requisition_id, p_uid: user.id,
+    });
+    if (actErr) return json(500, { error: actErr.message });
+    if (mayAct !== true) {
+      return json(403, { error: "You are not running this onboarding, so you cannot create its login." });
+    }
+    hrOnboarding = onb;
   }
 
   // ---- delete ----
@@ -128,11 +162,31 @@ Deno.serve(async (req) => {
     const name = String(body.name ?? "").trim();
     const email = String(body.email ?? "").trim();
     const phone = String(body.phone ?? "").trim();
+    // ---- EXTERNAL (customer) ACCOUNTS — OD-13 -------------------------------
+    // A customer login is not one of our people. Two rules differ, and both matter:
+    //
+    //   * IT GETS A REAL PASSWORD, typed by the admin, never derived from a mobile
+    //     number. "Your password is your phone number" is a reasonable convention
+    //     inside the company and an indefensible one for an outside firm — and it
+    //     would be re-pinned to the phone on every later admin save (store.tsx:343,
+    //     exempted in the same change).
+    //   * THE MOBILE NUMBER IS OPTIONAL, because it is no longer load-bearing.
+    //
+    // Everything below this block is byte-identical for staff. `isExternal` absent
+    // or false takes exactly the path it always took.
+    const isExternal = body.isExternal === true;
+    const password = String(body.password ?? "").trim();
     if (!name) return json(400, { error: "name required" });
     if (!email) return json(400, { error: "email required" });
-    // The mobile number is the user's initial password, so it must satisfy the
-    // auth minimum length.
-    if (phone.length < 6) return json(400, { error: "phone (mobile) required, min 6 characters — it is the initial password" });
+    if (isExternal) {
+      if (password.length < 6) {
+        return json(400, { error: "an external (customer) login needs a password of at least 6 characters" });
+      }
+    } else {
+      // The mobile number is the user's initial password, so it must satisfy the
+      // auth minimum length.
+      if (phone.length < 6) return json(400, { error: "phone (mobile) required, min 6 characters — it is the initial password" });
+    }
     const role = (body.role as AppRole) ?? "employee";
     const departmentId = (body.departmentId as string | null) ?? null;
     // The four organisation fields. `designation` (text) is the legacy mirror
@@ -174,14 +228,44 @@ Deno.serve(async (req) => {
     // which is exactly what a brand-new user should start with.
     const receivablesAllowedReports = Array.isArray(body.receivablesAllowedReports) ? (body.receivablesAllowedReports as string[]) : [];
 
+    // NR-13 — everything the HR door may NOT do. Refused loudly rather than quietly
+    // reduced: a client sending any of this is wrong or hostile, and silently
+    // creating a weaker account than it asked for would hide both.
+    //
+    // The role list is the client's decision (employee, sub-HOD or HOD — never an
+    // admin). Module access and every receivables scope are refused outright: those
+    // are what actually reach money and other people's data, and the person who
+    // creates the login also knows its password, so granting them here would be a
+    // way to mint an account and then sign in as it.
+    if (hrOnboarding) {
+      if (isExternal) {
+        return json(403, { error: "Only an admin can create an external (customer) login." });
+      }
+      if (!["employee", "sub_hod", "hod"].includes(role)) {
+        return json(403, { error: "A new joiner's login can be an Employee, Sub-HOD or HOD. Only an admin can create an Admin." });
+      }
+      if (Object.keys(moduleLevels).length > 0) {
+        return json(403, { error: "Only an admin can grant access to modules. Create the login first; an admin grants what they need." });
+      }
+      if (
+        receivablesSalespersons.length || receivablesCollectionTeams.length ||
+        receivablesHiddenMenus.length || receivablesAdminMenus.length || receivablesAllowedReports.length
+      ) {
+        return json(403, { error: "Only an admin can set Outstanding Dashboard access." });
+      }
+    }
+
     // Create the auth user with the mobile number as the initial password (email
     // pre-confirmed). The on_auth_user_created trigger inserts the profile + an
     // 'employee' role row. The user can change their password after first login.
+    // ⚠ `user_metadata.phone` is only written for staff. On an external account the
+    //   password is NOT the phone, so copying it there would be meaningless; on the
+    //   staff path it is the existing behaviour and is left exactly as it was.
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email,
-      password: phone,
+      password: isExternal ? password : phone,
       email_confirm: true,
-      user_metadata: { name, phone },
+      user_metadata: isExternal ? { name } : { name, phone },
     });
     if (createErr || !created.user) return json(400, { error: createErr?.message ?? "could not create user" });
     const id = created.user.id;
@@ -197,7 +281,12 @@ Deno.serve(async (req) => {
         sub_department_id: subDepartmentId,
         band_id: bandId,
         employee_code: employeeCode,
-        phone,
+        phone: isExternal ? (phone || null) : phone,
+        // The flag every RLS policy in the database now reads (OD-13 P0). It is set
+        // HERE, in the same write that creates the profile, rather than by a second
+        // call afterwards: a profile that exists for even a moment without it is a
+        // profile that is_staff() answers `true` for.
+        is_external: isExternal,
         receivables_salespersons: receivablesSalespersons,
         receivables_collection_teams: receivablesCollectionTeams,
         receivables_hidden_menus: receivablesHiddenMenus,

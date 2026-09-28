@@ -55,6 +55,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/task-management",
     category: "productivity",
   },
+  // Every employee's own KRA / KPI report — work done, and work done on time, per
+  // module and step, for any week or range (KPI-1). Filed beside Task Management
+  // because half of it IS Task Management, and because it is a personal screen
+  // everyone opens, not a control-room board.
+  "kra-kpi": {
+    name: "KRA / KPI Scorecard",
+    basePath: "/kra-kpi",
+    category: "productivity",
+  },
   "outstanding-dashboard": {
     name: "Outstanding Dashboard",
     basePath: "/outstanding-dashboard",
@@ -89,6 +98,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/sampling",
     category: "sampling",
   },
+  /**
+   * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
+   * in the browser (like Ink IMS); Central Masters itself is never written.
+   */
+  "bushra-central-master": {
+    name: "Bushra Central Master",
+    basePath: "/bushra-central-master",
+    category: "control",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
@@ -118,6 +136,28 @@ export const APPS: Record<string, AppInfo> = {
     category: "sales",
   },
   /**
+   * The customer's own ordering screen (OD-13).
+   *
+   * ⚠ THE ONLY NAME IN THIS FILE THAT A CUSTOMER READS. Every other entry names
+   *   an internal module to internal readers, and can be renamed when the business
+   *   changes its mind. This one is on the browser tab and at the head of every
+   *   screen of an app used by another company, so it was agreed with the client
+   *   rather than chosen: "Orange Order Desk".
+   *
+   * ⚠ AND THE BASE PATH IS DELIBERATELY NOT `/customer-orders`. It is a URL the
+   *   customer sees, types and bookmarks; "customer-orders" is how WE describe
+   *   them, from our side of the transaction. The id stays `customer-orders`
+   *   because ids are frozen — renaming one revokes everybody's access.
+   *
+   * Categorised under Sales so the admin permission screens file it beside Order
+   * to Dispatch, which is the module its orders land in.
+   */
+  "customer-orders": {
+    name: "Orange Order Desk",
+    basePath: "/order-desk",
+    category: "sales",
+  },
+  /**
    * Promoted OUT of the Outstanding Dashboard to the main menu (29-07-2026).
    *
    * ⚠ ITS CODE STILL LIVES UNDER apps/receivables-hub/, and deliberately so. The
@@ -143,9 +183,27 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/asset-maintenance",
     category: "asset",
   },
+  /**
+   * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
+   * same department's work and the same people configure it.
+   */
+  "learning-development": {
+    name: "Learning & Development",
+    basePath: "/learning-development",
+    category: "hr",
+  },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",
+    category: "hr",
+  },
+  // The HR instruments the client writes by hand — a weighted PMS sheet per job and
+  // the weekly review form — filled in from live data. Its own app rather than a
+  // corner of New Recruitment: every employee has a KPI sheet, and most of them have
+  // no business in the recruitment pipeline.
+  "hr-reports": {
+    name: "HR Reports",
+    basePath: "/hr-reports",
     category: "hr",
   },
   "hr-exit": {
@@ -185,6 +243,41 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/master-report",
     category: "control",
   },
+  /**
+   * Promoted OUT of the Outstanding Dashboard to the main menu, exactly as
+   * Customer Onboarding was above — the reports had become the larger half of
+   * that app, and burying a finance catalogue two clicks inside a receivables
+   * module is how people stop finding it.
+   *
+   * ⚠ ITS PAGES STILL LIVE UNDER apps/receivables-hub/, for the same reason
+   *   Customer Onboarding's do: every one of them is a hub-native (shadcn)
+   *   component, and `.hub-root` is what makes their colour tokens resolve.
+   *   apps/reports/ is a SHELL — its own basePath, sidebar and chrome — mounting
+   *   the existing subtree.
+   *
+   * ⚠ NOT SEPARATELY GRANTED. The key below is a routing id, not an app_access
+   *   id: the module is still gated by `outstanding-dashboard` plus the `reports`
+   *   menu key and the per-report grants it always had. See apps/reports/meta.tsx.
+   */
+  reports: {
+    name: "Reports",
+    basePath: "/reports",
+    // Its OWN top-level category, not Sales & Receivables. The catalogue reaches
+    // well past receivables — Finance, Inventory, Dashboards, Tally — and parking
+    // it under the department it happened to grow inside is the filing the move
+    // was meant to undo. See the note beside it in apps/categories.ts.
+    category: "reports",
+  },
+  // The evening snapshot for management and the CFO: what was sold, collected,
+  // paid and purchased today, and what is in the bank. Its own module rather
+  // than a page inside the Master Report — a CFO should not have to hold the
+  // module-adoption report, nor the user-access matrix beside it, to read the
+  // day's cash position.
+  "daily-report": {
+    name: "Daily Report",
+    basePath: "/daily-report",
+    category: "control",
+  },
   // The coordinator's own desk: every module's master approvals in one queue,
   // and every process at a glance with the person to ring about a stuck step.
   // Sits in Control between the two screens it is deliberately not — the
@@ -193,6 +286,15 @@ export const APPS: Record<string, AppInfo> = {
   "process-coordinator": {
     name: "Process Coordinator",
     basePath: "/process-coordinator",
+    category: "control",
+  },
+  // PF-18 · Where announcements are WRITTEN. Holding this module (at Full access) is
+  // what lets a non-admin post. Reading them needs no grant at all: that is the
+  // /announcements page, which is why this base is NOT /announcements (the
+  // breadcrumb matches that path by prefix and would swallow this module).
+  announcements: {
+    name: "Announcements",
+    basePath: "/post-announcements",
     category: "control",
   },
   // Virtual module: no web app and no route, so no basePath that resolves to a

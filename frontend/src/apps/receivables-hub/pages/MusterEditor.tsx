@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ClipboardCheck, Save, RefreshCw, Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronDown,
-  Plus, Trash2, Check,
+  ClipboardCheck, Save, RefreshCw, Search, ChevronDown,
+  Plus, Trash2, Check, CheckCircle2, RotateCcw,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@hub/components/ui/card";
@@ -10,9 +11,6 @@ import { Checkbox } from "@hub/components/ui/checkbox";
 import { Badge } from "@hub/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@hub/components/ui/tabs";
 import { Popover, PopoverTrigger, PopoverContent } from "@hub/components/ui/popover";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@hub/components/ui/table";
 import {
   Pagination, PaginationContent, PaginationItem,
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
@@ -26,16 +24,16 @@ import {
 } from "@hub/components/ui/alert-dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@hub/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@hub/components/ui/select";
-import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useToast } from "@hub/hooks/use-toast";
 import { useHubMenuAccess } from "@hub/lib/menus";
 import {
   fetchTagRows, fetchGroupRows, fetchSnapshot, fetchOtherPaymentRows, fetchRedMarkRows,
   saveTag, saveGroup, saveCompanyMap,
   insertOtherPayment, saveOtherPayment, deleteOtherPayment,
-  insertRedMark, saveRedMark, deleteRedMark,
+  insertRedMark, saveRedMark, deleteRedMark, clearRedMark, reopenRedMark,
+  fetchDisputeRows, fetchOpenBills, saveDispute, deleteDispute, clearDispute, reopenDispute, disputeKey,
   type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type OtherPaymentInput,
-  type RedMarkRow,
+  type RedMarkRow, type DisputeRow, type OpenBillRow,
 } from "@hub/lib/musterApi";
 import { fetchCompanyMap, makeCompanyResolver, companyGuidOf, type CompanyMapRow } from "@hub/lib/companyMap";
 import {
@@ -46,11 +44,19 @@ import MasterValueCell from "@hub/components/MasterValueCell";
 import NameMasterTab, { type NameMasterUsage } from "./NameMasterTab";
 import { formatDateDMY } from "@hub/lib/utils";
 import { MasterIoBar } from "@hub/pages/MusterIoBar";
-import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo } from "@hub/lib/musterIo";
+import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo, disputeIo } from "@hub/lib/musterIo";
+import { ClearStatusToggle } from "@hub/components/ClearStatusToggle";
+import { ClearStatusBadge } from "@hub/components/ClearStatusBadge";
+import { ClearNoteDialog } from "@hub/components/ClearNoteDialog";
+import { AddDisputeDialog, type DisputeBill, type DisputeCustomer } from "@hub/components/AddDisputeDialog";
+import {
+  CLEAR_VIEW_DEFAULT, DISPUTE_COPY, countByClearView, describeClear, matchesClearView, useCanClear,
+  type ClearView,
+} from "@hub/lib/clearStatus";
+import { useColumnGrid } from "@hub/lib/useColumnGrid";
+import { GridTable, describeColumnFilters, type TableColumn } from "@hub/components/GridTable";
 
 const PAGE_SIZE = 25;
-type FilterMode = "all" | "unchecked" | "new";
-type SortDir = "desc" | "asc" | null;
 
 /** ₹ with Indian grouping; blank when zero. */
 function fmtINR(n: number): string {
@@ -75,55 +81,6 @@ function StatusBadge({ checked, source }: { checked: boolean; source: string | n
   if (checked) return <Badge className="bg-success/15 text-success-foreground border-success/30">Verified</Badge>;
   if (source === "sync_stub") return <Badge className="bg-warning/15 text-warning-foreground border-warning/40">New</Badge>;
   return <Badge variant="outline" className="text-muted-foreground">Unchecked</Badge>;
-}
-
-/** Sortable "Outstanding" header cell. */
-function OutstandingHead({ dir, onToggle }: { dir: SortDir; onToggle: () => void }) {
-  const Icon = dir === "desc" ? ArrowDown : dir === "asc" ? ArrowUp : ArrowUpDown;
-  return (
-    <TableHead className="w-36 text-right">
-      <button onClick={onToggle} className="inline-flex items-center gap-1 ml-auto hover:text-foreground">
-        Outstanding <Icon className="h-3.5 w-3.5" />
-      </button>
-    </TableHead>
-  );
-}
-
-/**
- * Checkbox multi-select in a popover. Empty selection = no filter (show all), per the
- * platform multi-select rule (visible checkboxes + Select all + Clear).
- */
-function MultiSelect({ label, options, selected, onChange }: {
-  label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void;
-}) {
-  const toggle = (o: string) =>
-    onChange(selected.includes(o) ? selected.filter((x) => x !== o) : [...selected, o]);
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button size="sm" variant={selected.length ? "default" : "outline"} className="gap-1.5">
-          {label}
-          {selected.length > 0 && <span className="tabular-nums opacity-80">{selected.length}</span>}
-          <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-2" align="start">
-        <div className="flex items-center justify-between px-1 pb-2 text-xs">
-          <button className="underline text-muted-foreground hover:text-foreground" onClick={() => onChange([...options])}>Select all</button>
-          <button className="underline text-muted-foreground hover:text-foreground" onClick={() => onChange([])}>Clear</button>
-        </div>
-        <div className="max-h-64 overflow-auto space-y-0.5">
-          {options.length === 0 && <p className="text-xs text-muted-foreground px-1 py-2">No options.</p>}
-          {options.map((o) => (
-            <label key={o} className="flex items-center gap-2 px-1 py-1 text-sm cursor-pointer rounded hover:bg-muted">
-              <Checkbox checked={selected.includes(o)} onCheckedChange={() => toggle(o)} />
-              <span className="truncate" title={o}>{o}</span>
-            </label>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 function PagerBar({
@@ -172,104 +129,45 @@ function PagerBar({
   );
 }
 
-function Toolbar({
-  search, onSearch, filter, onFilter, counts, balanceOnly, onToggleBalance,
-  companyOptions, selectedCompanies, onCompanies,
-  locationOptions, selectedLocations, onLocations,
-  orphanCount, orphanOnly, onToggleOrphan,
-}: {
-  search: string; onSearch: (v: string) => void;
-  filter: FilterMode; onFilter: (f: FilterMode) => void;
-  counts: { all: number; unchecked: number; new: number };
-  balanceOnly: boolean; onToggleBalance: () => void;
-  companyOptions: string[]; selectedCompanies: string[]; onCompanies: (v: string[]) => void;
-  locationOptions: string[]; selectedLocations: string[]; onLocations: (v: string[]) => void;
-  orphanCount?: number; orphanOnly?: boolean; onToggleOrphan?: () => void;
-}) {
-  const btn = (mode: FilterMode, label: string, n: number) => (
-    <Button size="sm" variant={filter === mode ? "default" : "outline"} onClick={() => onFilter(mode)} className="gap-1.5">
-      {label}<span className="tabular-nums opacity-70">{n}</span>
-    </Button>
-  );
-  return (
-    <div className="flex flex-col gap-3 pb-3">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Search customer / company…" className="pl-8" />
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {btn("all", "All", counts.all)}
-          {btn("unchecked", "Unchecked", counts.unchecked)}
-          {btn("new", "New", counts.new)}
-          <Button size="sm" variant={balanceOnly ? "default" : "outline"} onClick={onToggleBalance}>Has balance</Button>
-          {onToggleOrphan && (orphanCount ?? 0) > 0 && (
-            <Button size="sm" variant={orphanOnly ? "default" : "outline"}
-              className={orphanOnly ? "" : "border-destructive/40 text-destructive hover:text-destructive"}
-              onClick={onToggleOrphan}>
-              Orphan <span className="tabular-nums opacity-70">{orphanCount}</span>
-            </Button>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <MultiSelect label="Location" options={locationOptions} selected={selectedLocations} onChange={onLocations} />
-        <MultiSelect label="Company" options={companyOptions} selected={selectedCompanies} onChange={onCompanies} />
-        {(selectedCompanies.length > 0 || selectedLocations.length > 0) && (
-          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => { onCompanies([]); onLocations([]); }}>
-            Reset company/location
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /** Plain-English list of the active filters, recorded on the export's "About" sheet. */
 function describeFilters(o: {
-  search?: string; mode?: FilterMode; balanceOnly?: boolean;
-  allocs?: string[]; companies?: string[]; locations?: string[]; unassignedTeam?: boolean;
+  search?: string; balanceOnly?: boolean;
+  unassignedTeam?: boolean;
+  noSalesperson?: boolean; noCategory?: boolean;
+  clearView?: ClearView;
+  /** Per-column selections, from `describeColumnFilters(COLUMNS, grid)`. */
+  columns?: { label: string; values: string[] }[];
 }): string[] {
   const out: string[] = [];
   if (o.search?.trim()) out.push(`Search: "${o.search.trim()}"`);
-  if (o.mode === "unchecked") out.push("Only unchecked");
-  if (o.mode === "new") out.push("Only new");
+  // Named on the export even though it is the DEFAULT view: a sheet of 27 rows from a 54-row master
+  // has to say why, or it reads as the whole master.
+  if (o.clearView === "uncleared") out.push("Uncleared cases only");
+  if (o.clearView === "cleared") out.push("Cleared cases only");
   if (o.balanceOnly) out.push("Only rows with a balance");
+  // The three "who is unmapped" chips (RC-17). Each counts EVERY unmapped customer, not only those
+  // who owe — so the sheet has to say which, or 1,088 rows read as a broken export.
   if (o.unassignedTeam) out.push("Only customers with no collection team");
-  if (o.allocs?.length) out.push(`Allocation: ${o.allocs.join(", ")}`);
-  if (o.companies?.length) out.push(`Companies: ${o.companies.join(", ")}`);
-  if (o.locations?.length) out.push(`Locations: ${o.locations.join(", ")}`);
+  if (o.noSalesperson) out.push("Only customers with no salesperson");
+  if (o.noCategory) out.push("Only customers with no category");
+  // Every per-column filter, by the column's own header. Without this a grid narrowed from 1,882
+  // rows to 12 exports a sheet whose "Filters applied" band says only what was typed in the search.
+  for (const c of o.columns ?? []) out.push(`${c.label}: ${c.values.join(", ")}`);
   return out;
-}
-
-function useMusterFilters() {
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterMode>("all");
-  const [balanceOnly, setBalanceOnly] = useState(false);
-  const [orphanOnly, setOrphanOnly] = useState(false);
-  const [companies, setCompanies] = useState<string[]>([]);
-  const [locations, setLocations] = useState<string[]>([]);
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [search, filter, balanceOnly, orphanOnly, companies, locations, sortDir]);
-  const cycleSort = () => setSortDir((d) => (d === "desc" ? "asc" : d === "asc" ? null : "desc"));
-  return {
-    search, setSearch, filter, setFilter, balanceOnly, setBalanceOnly, orphanOnly, setOrphanOnly,
-    companies, setCompanies, locations, setLocations, sortDir, cycleSort, page, setPage,
-  };
 }
 
 // ── Salesperson & Category muster ───────────────────────────────────────────────
 interface TagDraft { salesperson: string; category: string; checked: boolean }
 
-function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
+function TagMuster({ rows, snapByGuid, master, knownNames, onReload }: {
   rows: TagRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[];
   /** The salesperson master. The cell picks from it; the Excel import is validated against it. */
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
-  const f = useMusterFilters();
+  const [search, setSearch] = useState("");
+  const [balanceOnly, setBalanceOnly] = useState(false);
+  const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, TagDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const categories = useMemo(
@@ -279,36 +177,38 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, master, 
   const snap = (r: TagRow) => snapByGuid.get(r.ledger_id);
   const out = (r: TagRow) => Number(snap(r)?.outstanding ?? 0);
 
-  const counts = useMemo(() => ({
-    all: rows.length,
-    unchecked: rows.filter((r) => !r.checked).length,
-    new: rows.filter((r) => r.source === "sync_stub").length,
+  /**
+   * "Who is unmapped?" in one click — no salesperson, no category (RC-17).
+   *
+   * ⚠ EVERY UNMAPPED CUSTOMER, not only those who owe. The neighbouring collection-team chip counted
+   *   owing-only for years and that was right for ITS job — finding customers nobody is chasing, where
+   *   a credit balance means there is nothing to collect. This chip does a different job. An untagged
+   *   customer is invisible to every scoped salesperson and to the Advances report (RC-18) whether or
+   *   not they owe today, and they will bill tomorrow: owing-only would report 3 where 27 are actually
+   *   unmapped, and the 24 it hid are precisely the ones worth fixing BEFORE they bill. The
+   *   "Has balance" toggle beside it narrows to those carrying a balance — `Math.abs(out) >= 1`, so
+   *   credit balances are kept too; it is not an "owes money" filter.
+   *
+   * ⚠ `isUnset`, never `=== null`. '' and NULL both mean unset — the muster seed left empty strings
+   *   on 1,631 rows, and 14 of the unset categories are '' rather than NULL.
+   *
+   * 🔴 "OTHERS" IS A REAL SALESPERSON, not an unset one — 678 ledgers carry it deliberately. Folding
+   *   it in here would overstate the gap and send somebody to re-tag rows that are already tagged.
+   *
+   * ⚠ Counted over ALL rows, so the number on the chip does not move as somebody filters the table.
+   *
+   * ⚠ DECLARED AFTER `out` — these two do not use it, but an amount-based variant added here later
+   *   would. useMemo runs its callback DURING render at the line it sits on, so referencing a const
+   *   declared further down throws "Cannot access 'out' before initialization" and takes the whole tab
+   *   out. TypeScript cannot catch it: the reference is inside a closure, which for all the compiler
+   *   knows runs later.
+   */
+  const [noSalespersonOnly, setNoSalespersonOnly] = useState(false);
+  const [noCategoryOnly, setNoCategoryOnly] = useState(false);
+  const unmapped = useMemo(() => ({
+    salesperson: rows.filter((r) => isUnset(r.salesperson)).length,
+    category: rows.filter((r) => isUnset(r.category)).length,
   }), [rows]);
-
-  const view = useMemo(() => {
-    const q = f.search.trim().toLowerCase();
-    const list = rows.filter((r) => {
-      if (f.filter === "unchecked" && r.checked) return false;
-      if (f.filter === "new" && r.source !== "sync_stub") return false;
-      if (f.balanceOnly && Math.abs(out(r)) < 1) return false;
-      const s = snap(r);
-      if (f.companies.length && !f.companies.includes(s?.company ?? "")) return false;
-      if (f.locations.length && !f.locations.includes(s?.location ?? "")) return false;
-      if (q) {
-        const hay = `${s?.name ?? r.tally_name ?? ""} ${r.salesperson ?? ""} ${s?.company ?? ""} ${s?.location ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-    if (f.sortDir) list.sort((a, b) => f.sortDir === "desc" ? out(b) - out(a) : out(a) - out(b));
-    return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, f.search, f.filter, f.balanceOnly, f.companies, f.locations, f.sortDir, snapByGuid]);
-
-  const totalPages = Math.max(1, Math.ceil(view.length / PAGE_SIZE));
-  const pageRows = view.slice((f.page - 1) * PAGE_SIZE, f.page * PAGE_SIZE);
-  const rangeStart = view.length === 0 ? 0 : (f.page - 1) * PAGE_SIZE + 1;
-  const rangeEnd = Math.min(f.page * PAGE_SIZE, view.length);
 
   const cur = (r: TagRow): TagDraft =>
     draft[r.ledger_id] ?? { salesperson: r.salesperson ?? "", category: r.category ?? "", checked: r.checked };
@@ -341,6 +241,119 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, master, 
     }
   };
 
+  /**
+   * ⚠ SORT AND FILTER READ THE SAVED ROW, NEVER THE DRAFT. A half-typed category must not make its
+   *   row jump out of the list the person is typing into. The `cell` renderers below are the only
+   *   place the draft appears.
+   *
+   * ⚠ Each `value` folds through `isUnset`, not just `?? ""`. `filterValueOf` maps '' and null to
+   *   the blank sentinel but does NOT trim, so a whitespace-only tag would become its own filter
+   *   option while the chip above counted it as unset. There are none today; this keeps it that way.
+   */
+  const columns = useMemo<TableColumn<TagRow>[]>(() => [
+    {
+      key: "customer", label: "Customer", head: "min-w-[220px]",
+      value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "",
+      cell: (r) => (
+        <span className="font-medium">{snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—"}</span>
+      ),
+    },
+    {
+      key: "company", label: "Company", head: "min-w-[150px]", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim() || "—",
+    },
+    {
+      key: "location", label: "Location", head: "w-28", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim() || "—",
+    },
+    {
+      key: "salesperson", label: "Salesperson", head: "min-w-[180px]",
+      value: (r) => (isUnset(r.salesperson) ? "" : (r.salesperson as string)),
+      cell: (r) => (
+        <MasterValueCell
+          value={cur(r).salesperson} master={master}
+          onChange={(v) => patch(r, { salesperson: v ?? "" })}
+        />
+      ),
+    },
+    {
+      key: "category", label: "Category", head: "w-28",
+      value: (r) => (isUnset(r.category) ? "" : (r.category as string)),
+      cell: (r) => (
+        <Input list="muster-categories" value={cur(r).category}
+          onChange={(e) => patch(r, { category: e.target.value })} className="h-8" />
+      ),
+    },
+    {
+      // Money: ordered by the amount, never by "₹1,23,456" as a string. No filter — every value is
+      // its own, so the dropdown would merely restate the column.
+      key: "outstanding", label: "Outstanding", head: "w-32", right: true, filter: false,
+      value: (r) => fmtINR(out(r)), sortValue: (r) => out(r),
+      cell: (r) => fmtINR(out(r)),
+    },
+    {
+      key: "status", label: "Status", head: "w-28",
+      value: (r) => (r.checked ? "Verified" : r.source === "sync_stub" ? "New" : "Unchecked"),
+      cell: (r) => <StatusBadge checked={r.checked} source={r.source} />,
+    },
+    {
+      key: "checked", label: "Checked", head: "w-20 text-center", cellClass: "text-center",
+      value: (r) => (r.checked ? "Yes" : "No"),
+      cell: (r) => (
+        <Checkbox checked={cur(r).checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
+      ),
+    },
+    {
+      key: "save", label: "Save", head: "w-24 text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (r) => (
+        <Button size="sm" variant={isDirty(r) ? "default" : "outline"} disabled={!isDirty(r) || savingId === r.ledger_id}
+          onClick={() => save(r)} className="gap-1.5">
+          <Save className="h-3.5 w-3.5" />{savingId === r.ledger_id ? "…" : "Save"}
+        </Button>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [snapByGuid, master, draft, savingId]);
+
+  /** ⚠ useCallback: useColumnGrid's `base` depends on this identity, and would recompute every render. */
+  const prefilter = useCallback((r: TagRow) => {
+    const s = snapByGuid.get(r.ledger_id);
+    if (balanceOnly && Math.abs(Number(s?.outstanding ?? 0)) < 1) return false;
+    if (noSalespersonOnly && !isUnset(r.salesperson)) return false;
+    if (noCategoryOnly && !isUnset(r.category)) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return `${s?.name ?? r.tally_name ?? ""} ${r.salesperson ?? ""} ${s?.company ?? ""} ${s?.location ?? ""}`
+      .toLowerCase().includes(q);
+  }, [search, balanceOnly, noSalespersonOnly, noCategoryOnly, snapByGuid]);
+
+  // Opens on the biggest debtors, as it always has. Without this the grid would open in fetch order.
+  const grid = useColumnGrid(rows, columns, prefilter, { key: "outstanding", dir: "desc" });
+  const view = grid.rows;
+
+  // ⚠ Reset the page on every narrowing control. A chip that cuts 1,887 rows to 27 while the reader
+  //   sits on page 40 lands them on a blank page with no hint why.
+  useEffect(() => { setPage(1); }, [search, balanceOnly, noSalespersonOnly, noCategoryOnly, grid.anyFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(view.length / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const rangeStart = view.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, view.length);
+
+  const clearAll = () => {
+    grid.clearFilters();
+    setSearch(""); setBalanceOnly(false); setNoSalespersonOnly(false); setNoCategoryOnly(false);
+  };
+
+  const chip = (on: boolean, toggle: () => void, label: string, n: number) => (
+    <Button size="sm" variant={on ? "default" : "outline"} onClick={toggle} className="gap-1.5">
+      {label}<span className="tabular-nums opacity-80">{n}</span>
+    </Button>
+  );
+
   return (
     <>
       {/* Salesperson has no datalist any more — it is a picker fed by the master (RC-15).
@@ -348,73 +361,42 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, master, 
       <datalist id="muster-categories">
         {["A", "B", "C", "D", "E", "AA", ...categories].filter((v, i, a) => a.indexOf(v) === i).map((c) => <option key={c} value={c} />)}
       </datalist>
-      <div className="flex justify-end pb-2">
-        <MasterIoBar io={tagIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
-          activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations })}
-          onReload={onReload} />
+      <div className="flex flex-col gap-3 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customer / salesperson / company…" className="pl-8" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant={balanceOnly ? "default" : "outline"} onClick={() => setBalanceOnly((v) => !v)}>
+              Has balance
+            </Button>
+            {chip(noSalespersonOnly, () => setNoSalespersonOnly((v) => !v), "No salesperson", unmapped.salesperson)}
+            {chip(noCategoryOnly, () => setNoCategoryOnly((v) => !v), "No category", unmapped.category)}
+            <MasterIoBar io={tagIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
+              activeFilters={describeFilters({
+                search, balanceOnly, noSalesperson: noSalespersonOnly, noCategory: noCategoryOnly,
+                columns: describeColumnFilters(columns, grid),
+              })}
+              onReload={onReload} />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Customers with nothing tagged. An untagged customer is invisible to every scoped salesperson
+          and to the Advances report whether or not they owe today — <span className="font-medium">Has
+          balance</span> narrows to the ones carrying a balance, in either direction.
+          {" "}<span className="font-medium">OTHERS</span> is a real salesperson, so it is not counted here.
+        </p>
       </div>
-      <Toolbar
-        search={f.search} onSearch={f.setSearch} filter={f.filter} onFilter={f.setFilter}
-        counts={counts} balanceOnly={f.balanceOnly} onToggleBalance={() => f.setBalanceOnly((v) => !v)}
-        companyOptions={companyOptions} selectedCompanies={f.companies} onCompanies={f.setCompanies}
-        locationOptions={locationOptions} selectedLocations={f.locations} onLocations={f.setLocations}
+      <GridTable
+        columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => r.ledger_id}
+        sourceCount={rows.length}
+        emptyMessage="No customers in the muster yet."
+        emptyFilteredMessage="No customers match the current filters."
+        onClearFilters={clearAll}
       />
-      <div className="overflow-x-auto rounded-md border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-52">Customer</TableHead>
-              <TableHead className="min-w-40">Company</TableHead>
-              <TableHead className="min-w-28">Location</TableHead>
-              <TableHead className="min-w-44">Salesperson</TableHead>
-              <TableHead className="w-24">Category</TableHead>
-              <OutstandingHead dir={f.sortDir} onToggle={f.cycleSort} />
-              <TableHead className="w-28 text-center">Status</TableHead>
-              <TableHead className="w-20 text-center">Checked</TableHead>
-              <TableHead className="w-24 text-right">Save</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageRows.map((r) => {
-              const d = cur(r);
-              const dirty = isDirty(r);
-              const s = snap(r);
-              return (
-                <TableRow key={r.ledger_id}>
-                  <TableCell className="font-medium">{s?.name ?? r.tally_name ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">{s?.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">{s?.location || "—"}</TableCell>
-                  <TableCell>
-                    <MasterValueCell
-                      value={d.salesperson} master={master}
-                      onChange={(v) => patch(r, { salesperson: v ?? "" })}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input list="muster-categories" value={d.category}
-                      onChange={(e) => patch(r, { category: e.target.value })} className="h-8" />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtINR(out(r))}</TableCell>
-                  <TableCell className="text-center"><StatusBadge checked={r.checked} source={r.source} /></TableCell>
-                  <TableCell className="text-center">
-                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant={dirty ? "default" : "outline"} disabled={!dirty || savingId === r.ledger_id}
-                      onClick={() => save(r)} className="gap-1.5">
-                      <Save className="h-3.5 w-3.5" />{savingId === r.ledger_id ? "…" : "Save"}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {pageRows.length === 0 && (
-              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No matching customers.</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <PagerBar page={f.page} totalPages={totalPages} rangeStart={rangeStart} rangeEnd={rangeEnd} total={view.length} noun="customers" onPage={f.setPage} />
+      <PagerBar page={page} totalPages={totalPages} rangeStart={rangeStart} rangeEnd={rangeEnd} total={view.length} noun="customers" onPage={setPage} />
       <p className="text-xs text-muted-foreground pt-1">
         The same name in two <span className="font-medium">companies</span> shows as two rows (each its own ledger + balance).
         Leave salesperson blank to fall back to <span className="font-medium">OTHERS</span>; tick <span className="font-medium">Checked</span> once verified.
@@ -427,14 +409,15 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, master, 
 // ── Customer group muster (keyed by ledger GUID, one row per ledger/company) ─────
 interface GroupDraft { group_name: string; collection_team: string; checked: boolean }
 
-function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
+function GroupMuster({ rows, snapByGuid, master, knownNames, onReload }: {
   rows: GroupRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[];
   /** The collection team master. Group name stays free text — it is a label, not a vocabulary. */
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
-  const f = useMusterFilters();
+  const [search, setSearch] = useState("");
+  const [balanceOnly, setBalanceOnly] = useState(false);
+  const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, GroupDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -444,63 +427,46 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
   const out = (r: GroupRow) => Number(snap(r)?.outstanding ?? 0);
 
   /**
-   * "Unassigned" — a customer that owes money and has no collection team (RC-11).
+   * "Unassigned" — a customer with no collection team (RC-11, widened by RC-17).
    *
    * ⚠ THIS IS NOT A TIDINESS REPORT. Once a user is scoped by collection team, a customer with no
    *   team is invisible to every one of them. And the gap re-opens on its own: collection_refresh()
    *   enrols each new customer with no team at all, so the list grows quietly unless somebody looks.
    *   This is where they look.
    *
-   * ⚠ OWING, not merely carrying a balance. `out(r) >= 1`, deliberately not the `Math.abs()` the
-   *   "Only rows with a balance" toggle beside it uses: a CREDIT balance is money we owe the
-   *   customer, so there is nothing to collect and nobody to assign. Counting those made this read
-   *   64 against the 54 on the list handed to the collection team — one question, two answers.
+   * 🔴 EVERY UNMAPPED CUSTOMER — changed deliberately on 18-09-2026, and the reasoning it replaced is
+   *   worth stating so it is not "restored" as a bug. This chip used to count `out(r) >= 1`, owing
+   *   only, deliberately not the `Math.abs()` the "Has balance" toggle uses: a CREDIT balance is money
+   *   we owe the customer, so there is nothing to collect and nobody to assign. That is sound for
+   *   COLLECTIONS — the question "who is nobody chasing?" — and it is why the chip read 6 against 54.
    *
-   * ⚠ DECLARED AFTER `out`, and it has to be. useMemo runs its callback DURING render, at the line
-   *   it sits on — so referencing a const declared further down throws "Cannot access 'out' before
-   *   initialization" and takes the whole tab out. TypeScript cannot catch it: the reference is
-   *   inside a closure, which for all the compiler knows runs later.
+   *   But the chip's job changed. The question now asked of this screen is "who needs TAGGING?", and
+   *   for that owing-today is the wrong denominator: the Advances report (RC-18) shows money against
+   *   the collection team, so an untagged customer holding unapplied credit is invisible to everyone
+   *   scoped to a team — and a customer who owes nothing today will bill tomorrow. Owing-only reported
+   *   7 where 1,088 are actually unmapped, and hid the ones holding most of the advance money.
+   *
+   * ⚠ "HAS BALANCE" DOES NOT REPRODUCE THE OLD NUMBER, and it would be wrong to say it does. It tests
+   *   `Math.abs(out) >= 1`, so it keeps CREDIT balances too: chip + Has balance reads 25, where the
+   *   old owing-only chip read 7 (measured 18-09-2026). The 18 between them are customers carrying a
+   *   credit — money we owe them. Nothing on this screen reproduces the old 7 exactly; if that reading
+   *   is ever wanted back it needs its own predicate, not this toggle.
+   *
+   * ⚠ `isUnset`, never `=== null`. The seed left an empty string on 960 of these rows and NULL on 128
+   *   — `=== null` would report 128 of 1,088.
+   *
+   * ⚠ Counted over ALL rows, so the number does not move as somebody filters the table.
+   *
+   * ⚠ DECLARED AFTER `out`, and anything amount-based added here must stay below it. useMemo runs its
+   *   callback DURING render, at the line it sits on, so referencing a const declared further down
+   *   throws "Cannot access 'out' before initialization" and takes the whole tab out. TypeScript
+   *   cannot catch it: the reference is inside a closure, which for all the compiler knows runs later.
    */
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const unassignedCount = useMemo(
-    () => rows.filter((r) => isUnset(r.collection_team) && out(r) >= 1).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, snapByGuid],
+    () => rows.filter((r) => isUnset(r.collection_team)).length,
+    [rows],
   );
-
-  const counts = useMemo(() => ({
-    all: rows.length,
-    unchecked: rows.filter((r) => !r.checked).length,
-    new: rows.filter((r) => r.source === "sync_stub").length,
-  }), [rows]);
-
-  const view = useMemo(() => {
-    const q = f.search.trim().toLowerCase();
-    const list = rows.filter((r) => {
-      if (f.filter === "unchecked" && r.checked) return false;
-      if (f.filter === "new" && r.source !== "sync_stub") return false;
-      if (f.balanceOnly && Math.abs(out(r)) < 1) return false;
-      // Owing money AND unassigned. A customer with nothing outstanding needs no collector, so
-      // including those would bury the ~50 rows that actually matter under a thousand that do not.
-      if (unassignedOnly && !(isUnset(r.collection_team) && out(r) >= 1)) return false;
-      const s = snap(r);
-      if (f.companies.length && !f.companies.includes(s?.company ?? "")) return false;
-      if (f.locations.length && !f.locations.includes(s?.location ?? "")) return false;
-      if (q) {
-        const hay = `${s?.name ?? r.tally_name ?? ""} ${r.group_name ?? ""} ${r.collection_team ?? ""} ${s?.company ?? ""} ${s?.location ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-    if (f.sortDir) list.sort((a, b) => f.sortDir === "desc" ? out(b) - out(a) : out(a) - out(b));
-    return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, f.search, f.filter, f.balanceOnly, unassignedOnly, f.companies, f.locations, f.sortDir, snapByGuid]);
-
-  const totalPages = Math.max(1, Math.ceil(view.length / PAGE_SIZE));
-  const pageRows = view.slice((f.page - 1) * PAGE_SIZE, f.page * PAGE_SIZE);
-  const rangeStart = view.length === 0 ? 0 : (f.page - 1) * PAGE_SIZE + 1;
-  const rangeEnd = Math.min(f.page * PAGE_SIZE, view.length);
 
   const cur = (r: GroupRow): GroupDraft =>
     draft[r.ledger_id] ?? { group_name: r.group_name ?? "", collection_team: r.collection_team ?? "", checked: r.checked };
@@ -534,90 +500,151 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
     }
   };
 
+  /**
+   * ⚠ SORT AND FILTER READ THE SAVED ROW, NEVER THE DRAFT — a half-typed group must not make its row
+   *   jump out of the list the person is typing into. `cell` is the only place the draft appears.
+   *
+   * ⚠ Collection Team folds through `isUnset` rather than `?? ""`: `filterValueOf` maps '' and null to
+   *   the blank sentinel but does not trim, so without this a whitespace-only team would be its own
+   *   filter option while the chip above counted it unset — the dropdown and the chip would disagree.
+   */
+  const columns = useMemo<TableColumn<GroupRow>[]>(() => [
+    {
+      key: "customer", label: "Customer", head: "min-w-[220px]",
+      value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "",
+      cell: (r) => <span className="font-medium">{snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—"}</span>,
+    },
+    {
+      key: "company", label: "Company", head: "min-w-[150px]", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim() || "—",
+    },
+    {
+      key: "location", label: "Location", head: "w-28", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim() || "—",
+    },
+    {
+      key: "group", label: "Group", head: "min-w-[180px]",
+      value: (r) => (isUnset(r.group_name) ? "" : r.group_name),
+      cell: (r) => (
+        <Input list="muster-groups" value={cur(r).group_name}
+          onChange={(e) => patch(r, { group_name: e.target.value })} placeholder={name(r)} className="h-8" />
+      ),
+    },
+    {
+      key: "team", label: "Collection Team", head: "min-w-[170px]",
+      value: (r) => (isUnset(r.collection_team) ? "" : (r.collection_team as string)),
+      cell: (r) => (
+        <MasterValueCell
+          value={cur(r).collection_team} master={master}
+          onChange={(v) => patch(r, { collection_team: v ?? "" })}
+        />
+      ),
+    },
+    {
+      // Money: ordered by the amount, never by "₹1,23,456" as a string; no filter, every value is its own.
+      key: "outstanding", label: "Outstanding", head: "w-32", right: true, filter: false,
+      value: (r) => fmtINR(out(r)), sortValue: (r) => out(r),
+      cell: (r) => fmtINR(out(r)),
+    },
+    {
+      key: "status", label: "Status", head: "w-28",
+      value: (r) => (r.checked ? "Verified" : r.source === "sync_stub" ? "New" : "Unchecked"),
+      cell: (r) => <StatusBadge checked={r.checked} source={r.source} />,
+    },
+    {
+      key: "checked", label: "Checked", head: "w-20 text-center", cellClass: "text-center",
+      value: (r) => (r.checked ? "Yes" : "No"),
+      cell: (r) => (
+        <Checkbox checked={cur(r).checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
+      ),
+    },
+    {
+      key: "save", label: "Save", head: "w-24 text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (r) => (
+        <Button size="sm" variant={isDirty(r) ? "default" : "outline"} disabled={!isDirty(r) || savingId === r.ledger_id}
+          onClick={() => save(r)} className="gap-1.5">
+          <Save className="h-3.5 w-3.5" />{savingId === r.ledger_id ? "…" : "Save"}
+        </Button>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [snapByGuid, master, draft, savingId]);
+
+  /** ⚠ useCallback: useColumnGrid's `base` depends on this identity, and would recompute every render. */
+  const prefilter = useCallback((r: GroupRow) => {
+    const s = snapByGuid.get(r.ledger_id);
+    if (balanceOnly && Math.abs(Number(s?.outstanding ?? 0)) < 1) return false;
+    if (unassignedOnly && !isUnset(r.collection_team)) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return `${s?.name ?? r.tally_name ?? ""} ${r.group_name ?? ""} ${r.collection_team ?? ""} ${s?.company ?? ""} ${s?.location ?? ""}`
+      .toLowerCase().includes(q);
+  }, [search, balanceOnly, unassignedOnly, snapByGuid]);
+
+  // Opens on the biggest debtors, as it always has. Without this the grid would open in fetch order.
+  const grid = useColumnGrid(rows, columns, prefilter, { key: "outstanding", dir: "desc" });
+  const view = grid.rows;
+
+  // ⚠ Reset the page on every narrowing control. The chip cuts 1,887 rows to a handful, and a reader
+  //   sitting on page 40 would otherwise land on a blank page with no hint why.
+  useEffect(() => { setPage(1); }, [search, balanceOnly, unassignedOnly, grid.anyFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(view.length / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const rangeStart = view.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, view.length);
+
+  const clearAll = () => {
+    grid.clearFilters();
+    setSearch(""); setBalanceOnly(false); setUnassignedOnly(false);
+  };
+
   return (
     <>
       <datalist id="muster-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
       {/* Collection team has no datalist any more — it is a picker fed by the master (RC-15). */}
-      <div className="flex justify-end pb-2">
-        <MasterIoBar io={groupIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
-          activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations, unassignedTeam: unassignedOnly })}
-          onReload={onReload} />
+      <div className="flex flex-col gap-3 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customer / group / team…" className="pl-8" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant={balanceOnly ? "default" : "outline"} onClick={() => setBalanceOnly((v) => !v)}>
+              Has balance
+            </Button>
+            <Button size="sm" variant={unassignedOnly ? "default" : "outline"}
+              onClick={() => setUnassignedOnly((v) => !v)} className="gap-1.5">
+              No collection team
+              <span className="tabular-nums opacity-80">{unassignedCount}</span>
+            </Button>
+            <MasterIoBar io={groupIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
+              activeFilters={describeFilters({
+                search, balanceOnly, unassignedTeam: unassignedOnly,
+                columns: describeColumnFilters(columns, grid),
+              })}
+              onReload={onReload} />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Customers with nobody assigned to collect from them. Anyone scoped to a collection team cannot
+          see these at all — on any report, including the money they are holding on account — and every
+          new customer starts here. <span className="font-medium">Has balance</span> narrows to the ones
+          carrying a balance, in either direction.
+        </p>
       </div>
-      <Toolbar
-        search={f.search} onSearch={f.setSearch} filter={f.filter} onFilter={f.setFilter}
-        counts={counts} balanceOnly={f.balanceOnly} onToggleBalance={() => f.setBalanceOnly((v) => !v)}
-        companyOptions={companyOptions} selectedCompanies={f.companies} onCompanies={f.setCompanies}
-        locationOptions={locationOptions} selectedLocations={f.locations} onLocations={f.setLocations}
+      <GridTable
+        columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => r.ledger_id}
+        sourceCount={rows.length}
+        emptyMessage="No customers in the muster yet."
+        emptyFilteredMessage="No customers match the current filters."
+        onClearFilters={clearAll}
       />
-      <div className="flex items-center gap-2 pb-2">
-        <Button
-          size="sm" variant={unassignedOnly ? "default" : "outline"}
-          onClick={() => setUnassignedOnly((v) => !v)} className="gap-1.5"
-        >
-          No collection team
-          <span className="tabular-nums opacity-80">{unassignedCount}</span>
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          Customers who owe money and have nobody chasing them. Anyone scoped to a collection team
-          cannot see these at all, and every new customer starts here.
-        </span>
-      </div>
-      <div className="overflow-x-auto rounded-md border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-52">Customer</TableHead>
-              <TableHead className="min-w-40">Company</TableHead>
-              <TableHead className="min-w-28">Location</TableHead>
-              <TableHead className="min-w-44">Group</TableHead>
-              <TableHead className="min-w-40">Collection Team</TableHead>
-              <OutstandingHead dir={f.sortDir} onToggle={f.cycleSort} />
-              <TableHead className="w-28 text-center">Status</TableHead>
-              <TableHead className="w-20 text-center">Checked</TableHead>
-              <TableHead className="w-24 text-right">Save</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageRows.map((r) => {
-              const d = cur(r);
-              const dirty = isDirty(r);
-              const s = snap(r);
-              return (
-                <TableRow key={r.ledger_id}>
-                  <TableCell className="font-medium">{name(r)}</TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">{s?.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">{s?.location || "—"}</TableCell>
-                  <TableCell>
-                    <Input list="muster-groups" value={d.group_name}
-                      onChange={(e) => patch(r, { group_name: e.target.value })} placeholder={name(r)} className="h-8" />
-                  </TableCell>
-                  <TableCell>
-                    <MasterValueCell
-                      value={d.collection_team} master={master}
-                      onChange={(v) => patch(r, { collection_team: v ?? "" })}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums whitespace-nowrap">{fmtINR(out(r))}</TableCell>
-                  <TableCell className="text-center"><StatusBadge checked={r.checked} source={r.source} /></TableCell>
-                  <TableCell className="text-center">
-                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant={dirty ? "default" : "outline"} disabled={!dirty || savingId === r.ledger_id}
-                      onClick={() => save(r)} className="gap-1.5">
-                      <Save className="h-3.5 w-3.5" />{savingId === r.ledger_id ? "…" : "Save"}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {pageRows.length === 0 && (
-              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No matching customers.</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <PagerBar page={f.page} totalPages={totalPages} rangeStart={rangeStart} rangeEnd={rangeEnd} total={view.length} noun="customers" onPage={f.setPage} />
+      <PagerBar page={page} totalPages={totalPages} rangeStart={rangeStart} rangeEnd={rangeEnd} total={view.length} noun="customers" onPage={setPage} />
       <p className="text-xs text-muted-foreground pt-1">
         One row per ledger (per company), keyed by the Tally GUID — a rename never orphans a mapping.
         Blank group falls back to the customer's own name; tick <span className="font-medium">Checked</span> once verified.
@@ -629,7 +656,7 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, master
 
 /**
  * Company master — maps each Tally BOOK to the finance-facing (Company, Location) pair every
- * report renders. One row per Tally company (a handful), so no search/pagination here.
+ * report renders. One row per Tally company (a handful), so no pagination here.
  *
  * Keyed by the company GUID, never the name: the raw book name embeds the financial year
  * ("…-FY 26-27", "…(from 1-Apr-25)") and Tally re-mints it every April, so a name-keyed mapping
@@ -642,6 +669,7 @@ function CompanyMuster({ rows, custCounts, onReload }: {
   onReload: () => void;
 }) {
   const { toast } = useToast();
+  const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Record<string, { company: string; location: string; checked: boolean }>>({});
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -678,59 +706,99 @@ function CompanyMuster({ rows, custCounts, onReload }: {
     }
   };
 
+  /** ⚠ Sort and filter read the SAVED row, never the draft — see the note on the musters above. */
+  const columns = useMemo<TableColumn<CompanyMapRow>[]>(() => [
+    {
+      key: "tally", label: "Tally company (as named in Tally)", head: "min-w-[280px]",
+      cellClass: "text-muted-foreground",
+      value: (r) => r.tally_company ?? "",
+      cell: (r) => (
+        <div className="max-w-[420px] truncate" title={r.tally_company ?? ""}>{r.tally_company ?? "—"}</div>
+      ),
+    },
+    {
+      key: "company", label: "Company", head: "w-[170px]",
+      value: (r) => (isUnset(r.company) ? "" : (r.company as string)),
+      cell: (r) => (
+        <Input value={cur(r).company} onChange={(e) => patch(r.company_guid, r, { company: e.target.value })}
+          placeholder="O-tec" className="h-8" />
+      ),
+    },
+    {
+      key: "location", label: "Location", head: "w-[150px]",
+      value: (r) => (isUnset(r.location) ? "" : (r.location as string)),
+      cell: (r) => (
+        <Input value={cur(r).location} onChange={(e) => patch(r.company_guid, r, { location: e.target.value })}
+          placeholder="Surat" className="h-8" />
+      ),
+    },
+    {
+      // A count: ordered as a number, and no filter — the values are near-unique per book.
+      key: "customers", label: "Customers", head: "w-[110px]", right: true, filter: false,
+      value: (r) => String(custCounts.get(r.company_guid) ?? 0),
+      sortValue: (r) => custCounts.get(r.company_guid) ?? 0,
+      cell: (r) => (custCounts.get(r.company_guid) ?? 0).toLocaleString("en-IN"),
+    },
+    {
+      key: "status", label: "Status", head: "w-[110px]",
+      value: (r) => (r.checked ? "Verified" : r.source === "sync_stub" ? "New" : "Unchecked"),
+      cell: (r) => <StatusBadge checked={r.checked} source={r.source} />,
+    },
+    {
+      key: "checked", label: "Checked", head: "w-[90px] text-center", cellClass: "text-center",
+      value: (r) => (r.checked ? "Yes" : "No"),
+      cell: (r) => (
+        <Checkbox checked={cur(r).checked} onCheckedChange={(v) => patch(r.company_guid, r, { checked: v === true })} aria-label="Checked" />
+      ),
+    },
+    {
+      key: "save", label: "Save", head: "w-[90px] text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (r) => (
+        <Button size="sm" variant={isDirty(r) ? "default" : "outline"} disabled={!isDirty(r) || saving === r.company_guid}
+          onClick={() => save(r)} className="gap-1.5">
+          <Save className="h-3.5 w-3.5" />Save
+        </Button>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [custCounts, draft, saving]);
+
+  /** ⚠ useCallback: useColumnGrid's `base` depends on this identity, and would recompute every render. */
+  const prefilter = useCallback((r: CompanyMapRow) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return `${r.tally_company ?? ""} ${r.company ?? ""} ${r.location ?? ""}`.toLowerCase().includes(q);
+  }, [search]);
+
+  // Alphabetical by book, which is the order it has always arrived in.
+  const grid = useColumnGrid(rows, columns, prefilter, { key: "tally", dir: "asc" });
+
+  // A handful of books, so no pagination — every row that survives the filters is on screen.
+  const clearAll = () => { grid.clearFilters(); setSearch(""); };
+
   return (
     <>
-      <div className="flex justify-end pb-3">
-        <MasterIoBar io={companyIo(custCounts)} exportRows={rows} existingRows={rows} activeFilters={[]} onReload={onReload} />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search Tally book / company / location…" className="pl-8" />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+          <MasterIoBar io={companyIo(custCounts)} exportRows={grid.rows} existingRows={rows}
+            activeFilters={describeFilters({ search, columns: describeColumnFilters(columns, grid) })}
+            onReload={onReload} />
+        </div>
       </div>
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tally company (as named in Tally)</TableHead>
-              <TableHead className="w-[160px]">Company</TableHead>
-              <TableHead className="w-[140px]">Location</TableHead>
-              <TableHead className="w-[110px] text-right">Customers</TableHead>
-              <TableHead className="w-[110px]">Status</TableHead>
-              <TableHead className="w-[90px]">Checked</TableHead>
-              <TableHead className="w-[90px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => {
-              const d = cur(r);
-              return (
-                <TableRow key={r.company_guid}>
-                  <TableCell className="text-muted-foreground">{r.tally_company ?? "—"}</TableCell>
-                  <TableCell>
-                    <Input value={d.company} onChange={(e) => patch(r.company_guid, r, { company: e.target.value })} placeholder="O-tec" />
-                  </TableCell>
-                  <TableCell>
-                    <Input value={d.location} onChange={(e) => patch(r.company_guid, r, { location: e.target.value })} placeholder="Surat" />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {custCounts.get(r.company_guid) ?? 0}
-                  </TableCell>
-                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
-                  <TableCell>
-                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r.company_guid, r, { checked: v === true })} />
-                  </TableCell>
-                  <TableCell>
-                    <Button size="sm" variant={isDirty(r) ? "default" : "outline"} disabled={!isDirty(r) || saving === r.company_guid}
-                      onClick={() => save(r)} className="gap-1.5">
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {rows.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No Tally companies found.</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <GridTable
+        columns={columns} grid={grid} pageRows={grid.rows} rowKey={(r) => r.company_guid}
+        sourceCount={rows.length}
+        emptyMessage="No Tally companies found."
+        emptyFilteredMessage="No Tally companies match the current filters."
+        onClearFilters={clearAll}
+        maxHeight="max-h-[60vh]"
+      />
       <p className="text-xs text-muted-foreground pt-2">
         One row per Tally company, keyed by its permanent Tally ID — so next year's renamed book keeps
         its mapping. These two values drive the Company and Location filters on every Live report.
@@ -931,9 +999,9 @@ function AddOtherPaymentDialog({ open, onOpenChange, snap, onAdded }: {
   );
 }
 
-function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, onReload }: {
+function OtherPaymentMuster({ rows, snap, snapByGuid, onReload }: {
   rows: OtherPaymentRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[]; onReload: () => void;
+  onReload: () => void;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState<Record<string, OpDraft>>({});
@@ -942,11 +1010,7 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOp
   const [confirmDelete, setConfirmDelete] = useState<OtherPaymentRow | null>(null);
 
   const [search, setSearch] = useState("");
-  const [allocs, setAllocs] = useState<string[]>([]);
-  const [companies, setCompanies] = useState<string[]>([]);
-  const [locations, setLocations] = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [search, allocs, companies, locations]);
 
   const cur = (r: OtherPaymentRow): OpDraft => draft[String(r.id)] ?? draftOf(r);
   const isDirty = (r: OtherPaymentRow) => {
@@ -960,27 +1024,6 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOp
 
   const nameOf = (r: OtherPaymentRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
   const isOrphan = (r: OtherPaymentRow) => !snapByGuid.has(r.ledger_id);
-
-  const view = useMemo(() => {
-    const q = search.trim().toUpperCase();
-    return rows
-      .filter((r) => {
-        const s = snapByGuid.get(r.ledger_id);
-        if (q && !`${nameOf(r)} ${r.ref_invoice ?? ""} ${r.payment_ref ?? ""}`.toUpperCase().includes(q)) return false;
-        if (allocs.length && !allocs.includes(allocLabel(r.allocation_type))) return false;
-        if (companies.length && !companies.includes((s?.company ?? "").trim())) return false;
-        if (locations.length && !locations.includes((s?.location ?? "").trim())) return false;
-        return true;
-      })
-      // Newest payment first; id breaks ties so the order is stable across renders.
-      .sort((a, b) => (b.payment_date ?? "").localeCompare(a.payment_date ?? "") || b.id - a.id);
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [rows, search, allocs, companies, locations, snapByGuid]);
-
-  const total = view.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const sumShown = view.reduce((s, r) => s + Number(r.amount || 0), 0);
 
   const save = async (r: OtherPaymentRow) => {
     const d = cur(r);
@@ -1029,6 +1072,158 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOp
     }
   };
 
+  /**
+   * ⚠ Sort and filter read the SAVED row, never the draft — a half-typed amount must not reorder the
+   *   list under the cursor. `cell` is the only place the draft appears.
+   *
+   * ⚠ The Orphan badge is rendered INSIDE the Customer cell but must stay OUT of its `value`, or
+   *   "ACME" and "ACME Orphan" become two separate filter options for one customer.
+   */
+  const columns = useMemo<TableColumn<OtherPaymentRow>[]>(() => [
+    {
+      key: "customer", label: "Customer", head: "min-w-[220px]",
+      value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "",
+      cell: (r) => (
+        <div className="flex items-center gap-2 font-medium">
+          <span className="truncate" title={nameOf(r)}>{nameOf(r)}</span>
+          {isOrphan(r) && (
+            <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "company", label: "Company", head: "w-32", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim() || "—",
+    },
+    {
+      key: "location", label: "Location", head: "w-28", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim() || "—",
+    },
+    {
+      // Filters on the date as READ, sorts on the ISO value — "01-Sep-26" sorts alphabetically, which
+      // would put September before March. The `#id` tail reproduces the old tie-break exactly: newest
+      // payment first, and the higher id first within a day.
+      key: "date", label: "Date", head: "w-36",
+      value: (r) => (r.payment_date ? formatDateDMY(r.payment_date) : ""),
+      sortValue: (r) => `${r.payment_date ?? ""}#${String(r.id).padStart(12, "0")}`,
+      cell: (r) => (
+        <Input type="date" value={cur(r).payment_date} className="h-8 min-w-[140px]"
+          onChange={(e) => patch(r, { payment_date: e.target.value })} />
+      ),
+    },
+    {
+      // Sorted on the number: the cell is an <input type="number">, whose rendered text is empty, so
+      // without sortValue this column could not be ordered at all. No filter — every amount is its own.
+      key: "amount", label: "Amount", head: "w-32 text-right", filter: false,
+      value: (r) => fmtINR(Number(r.amount) || 0), sortValue: (r) => Number(r.amount) || 0,
+      cell: (r) => (
+        <>
+          {/* min-w, not just the column's w-32: 12 columns squeeze the flex layout hard enough that
+              the field collapsed to ~57px and rendered "2000000" as "20" — an unreadable amount is
+              worse than a scrollbar, and the grid's scroll container is already here to carry it. */}
+          <Input type="number" inputMode="decimal" min="0" step="0.01" value={cur(r).amount}
+            className="h-8 text-right tabular-nums min-w-[120px]"
+            onChange={(e) => patch(r, { amount: e.target.value })} />
+          <span className="block text-[10px] text-muted-foreground text-right tabular-nums pt-0.5">
+            {fmtINR(Number(cur(r).amount) || 0)}
+          </span>
+        </>
+      ),
+    },
+    {
+      // A two-value vocabulary, so it filters on the LABEL — what the cell shows — not on the stored code.
+      key: "allocation", label: "Allocation", head: "w-40",
+      value: (r) => allocLabel(r.allocation_type),
+      cell: (r) => (
+        <Select value={cur(r).allocation_type} onValueChange={(v) => patch(r, { allocation_type: v })}>
+          <SelectTrigger className="h-8 min-w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {ALLOC_TYPES.map((t) => <SelectItem key={t} value={t}>{allocLabel(t)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      ),
+    },
+    {
+      // References and free text: every value is its own, so they sort but carry no filter.
+      key: "refInvoice", label: "Ref Invoice", head: "w-44", filter: false,
+      value: (r) => r.ref_invoice ?? "",
+      cell: (r) => (
+        <Input value={cur(r).ref_invoice} className="h-8 min-w-[150px]"
+          onChange={(e) => patch(r, { ref_invoice: e.target.value })} />
+      ),
+    },
+    {
+      key: "paymentRef", label: "Payment Ref", head: "w-36", filter: false,
+      value: (r) => r.payment_ref ?? "",
+      cell: (r) => (
+        <Input value={cur(r).payment_ref} className="h-8 min-w-[120px]"
+          onChange={(e) => patch(r, { payment_ref: e.target.value })} />
+      ),
+    },
+    {
+      key: "remarks", label: "Remarks", head: "min-w-[200px]", filter: false,
+      value: (r) => r.remarks ?? "",
+      cell: (r) => (
+        <Input value={cur(r).remarks} className="h-8 min-w-[200px]"
+          onChange={(e) => patch(r, { remarks: e.target.value })} />
+      ),
+    },
+    {
+      key: "status", label: "Status", head: "w-24",
+      value: (r) => (r.checked ? "Verified" : r.source === "sync_stub" ? "New" : "Unchecked"),
+      cell: (r) => <StatusBadge checked={r.checked} source={r.source} />,
+    },
+    {
+      key: "checked", label: "Checked", head: "w-20 text-center", cellClass: "text-center",
+      value: (r) => (r.checked ? "Yes" : "No"),
+      cell: (r) => (
+        <Checkbox checked={cur(r).checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
+      ),
+    },
+    {
+      key: "actions", label: "Actions", head: "w-28 text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button size="sm" variant={isDirty(r) ? "default" : "ghost"} disabled={!isDirty(r) || savingId === r.id}
+            onClick={() => save(r)} className="gap-1" aria-label="Save">
+            <Save className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
+            className="text-destructive hover:text-destructive" aria-label="Delete">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [snapByGuid, draft, savingId]);
+
+  /** ⚠ useCallback: useColumnGrid's `base` depends on this identity, and would recompute every render. */
+  const prefilter = useCallback((r: OtherPaymentRow) => {
+    const q = search.trim().toUpperCase();
+    if (!q) return true;
+    const name = snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+    return `${name} ${r.ref_invoice ?? ""} ${r.payment_ref ?? ""} ${r.remarks ?? ""}`.toUpperCase().includes(q);
+  }, [search, snapByGuid]);
+
+  // Newest payment first — the order this tab has always opened in, previously hard-coded into the
+  // view and unreachable from the UI. Now it is the default AND every column sorts.
+  const grid = useColumnGrid(rows, columns, prefilter, { key: "date", dir: "desc" });
+  const view = grid.rows;
+
+  useEffect(() => { setPage(1); }, [search, grid.anyFilter]);
+
+  const total = view.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sumShown = view.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  const clearAll = () => { grid.clearFilters(); setSearch(""); };
+
   return (
     <div>
       <div className="flex flex-col gap-3 pb-3">
@@ -1036,14 +1231,12 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOp
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customer / invoice / ref…" className="pl-8" />
+              placeholder="Search customer / invoice / ref / remark…" className="pl-8" />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <MultiSelect label="Allocation" options={["Against Invoice", "On Account"]} selected={allocs} onChange={setAllocs} />
-            <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
-            <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
             <MasterIoBar io={otherPaymentIo(snapByGuid)} exportRows={view} existingRows={rows}
-              activeFilters={describeFilters({ search, allocs, companies, locations })} onReload={onReload} />
+              activeFilters={describeFilters({ search, columns: describeColumnFilters(columns, grid) })}
+              onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />Add payment
             </Button>
@@ -1055,110 +1248,17 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOp
         </p>
       </div>
 
-      <ScrollableTable className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[220px]">Customer</TableHead>
-              <TableHead className="w-28">Company</TableHead>
-              <TableHead className="w-24">Location</TableHead>
-              <TableHead className="w-36">Date</TableHead>
-              <TableHead className="w-32 text-right">Amount</TableHead>
-              <TableHead className="w-40">Allocation</TableHead>
-              <TableHead className="w-44">Ref Invoice</TableHead>
-              <TableHead className="w-36">Payment Ref</TableHead>
-              <TableHead className="min-w-[180px]">Remarks</TableHead>
-              <TableHead className="w-24">Status</TableHead>
-              <TableHead className="w-20 text-center">Checked</TableHead>
-              <TableHead className="w-28 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageRows.map((r) => {
-              const d = cur(r);
-              const s = snapByGuid.get(r.ledger_id);
-              const dirty = isDirty(r);
-              return (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate">{nameOf(r)}</span>
-                      {isOrphan(r) && (
-                        <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{s?.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{s?.location ?? "—"}</TableCell>
-                  <TableCell>
-                    <Input type="date" value={d.payment_date} className="h-8 min-w-[140px]"
-                      onChange={(e) => patch(r, { payment_date: e.target.value })} />
-                  </TableCell>
-                  <TableCell>
-                    {/* min-w, not just the column's w-32: 12 columns squeeze the flex layout hard
-                        enough that the field collapsed to ~57px and rendered "2000000" as "20" —
-                        an unreadable amount is worse than a scrollbar, and ScrollableTable is
-                        already here to carry the extra width. */}
-                    <Input type="number" inputMode="decimal" min="0" step="0.01" value={d.amount}
-                      className="h-8 text-right tabular-nums min-w-[120px]"
-                      onChange={(e) => patch(r, { amount: e.target.value })} />
-                    <span className="block text-[10px] text-muted-foreground text-right tabular-nums pt-0.5">
-                      {fmtINR(Number(d.amount) || 0)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Select value={d.allocation_type} onValueChange={(v) => patch(r, { allocation_type: v })}>
-                      <SelectTrigger className="h-8 min-w-[140px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {ALLOC_TYPES.map((t) => <SelectItem key={t} value={t}>{allocLabel(t)}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Input value={d.ref_invoice} className="h-8 min-w-[150px]"
-                      onChange={(e) => patch(r, { ref_invoice: e.target.value })} />
-                  </TableCell>
-                  <TableCell>
-                    <Input value={d.payment_ref} className="h-8 min-w-[120px]"
-                      onChange={(e) => patch(r, { payment_ref: e.target.value })} />
-                  </TableCell>
-                  <TableCell>
-                    <Input value={d.remarks} className="h-8 min-w-[200px]"
-                      onChange={(e) => patch(r, { remarks: e.target.value })} />
-                  </TableCell>
-                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
-                  <TableCell className="text-center">
-                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button size="sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || savingId === r.id}
-                        onClick={() => save(r)} className="gap-1">
-                        <Save className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
-                        className="text-destructive hover:text-destructive">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {pageRows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
-                  No payments {rows.length ? "match the filters" : "recorded yet"}.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </ScrollableTable>
+      <GridTable
+        columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => String(r.id)}
+        sourceCount={rows.length}
+        emptyMessage="No payments recorded yet."
+        emptyFilteredMessage="No payments match the current filters."
+        onClearFilters={clearAll}
+      />
 
       <PagerBar
         page={page} totalPages={totalPages}
-        rangeStart={(page - 1) * PAGE_SIZE + 1} rangeEnd={Math.min(page * PAGE_SIZE, total)}
+        rangeStart={total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} rangeEnd={Math.min(page * PAGE_SIZE, total)}
         total={total} noun="payments" onPage={setPage}
       />
 
@@ -1213,8 +1313,10 @@ const rmDraftOf = (r: RedMarkRow): RmDraft => ({
 });
 
 /** Add-red-mark dialog: pick a customer + optional reason, then flag them. */
-function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
-  open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[]; onAdded: () => void;
+function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
+  open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[];
+  /** The master as it stands, so the dialog can say when this add REOPENS a cleared case. */
+  rows: RedMarkRow[]; onAdded: () => void;
 }) {
   const { toast } = useToast();
   const [ledger, setLedger] = useState<SnapRow | null>(null);
@@ -1223,10 +1325,16 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
 
   useEffect(() => { if (open) { setLedger(null); setReason(""); } }, [open]);
 
+  // Adding a customer whose case was CLEARED is a re-flag, and the server reopens it (the upsert
+  // sends cleared:false). Saying so beats a silent "added" on a row that was already there.
+  const existing = ledger ? rows.find((r) => r.ledger_id === ledger.ledger_id) ?? null : null;
+
   const submit = async () => {
     if (!ledger) return;
     setSaving(true);
     try {
+      // The server also sets cleared:false — re-flagging a settled customer starts a new case
+      // rather than leaving a row every screen ignores.
       await insertRedMark({
         ledger_id: ledger.ledger_id,
         tally_name: ledger.name,
@@ -1238,7 +1346,10 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
       });
       onAdded();
       onOpenChange(false);
-      toast({ title: "Red Mark added", description: `${ledger.name}` });
+      toast({
+        title: existing?.cleared ? "Red Mark reopened" : "Red Mark added",
+        description: `${ledger.name}`,
+      });
     } catch (e) {
       toast({ variant: "destructive", title: "Could not add", description: (e as Error).message });
     } finally {
@@ -1265,6 +1376,13 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
             <span className="text-xs font-medium text-muted-foreground">Reason (optional)</span>
             <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. long overdue, disputed…" />
           </div>
+          {existing && (
+            <p className="text-[11px] text-muted-foreground">
+              {existing.cleared
+                ? "This customer is already on the master with a CLEARED case — adding them reopens it."
+                : "This customer is already flagged; this will update their details."}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -1277,9 +1395,10 @@ function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
   );
 }
 
-function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, master, knownNames, onReload }: {
+function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames, onReload }: {
   rows: RedMarkRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
-  companyOptions: string[]; locationOptions: string[];
+  /** ledger_id → collection team, from the group muster: the who-may-clear test reads it (RC-12). */
+  teamByGuid: Map<string, string>;
   /** The salesperson master. This tab kept its OWN copy of the salesperson as bare free text with
    *  no suggestions at all, and 6 of its 54 rows had already drifted off the muster vocabulary. */
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
@@ -1289,12 +1408,15 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
   const [savingId, setSavingId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<RedMarkRow | null>(null);
+  // RC-12: closing a settled case. `clearing` carries the row AND which way it is going, because
+  // the dialog asks for a note one way and only confirms the other.
+  const [clearing, setClearing] = useState<{ row: RedMarkRow; mode: "clear" | "reopen" } | null>(null);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
+  const canClear = useCanClear();
 
   const [search, setSearch] = useState("");
-  const [companies, setCompanies] = useState<string[]>([]);
-  const [locations, setLocations] = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  useEffect(() => { setPage(1); }, [search, companies, locations]);
 
   const cur = (r: RedMarkRow): RmDraft => draft[r.ledger_id] ?? rmDraftOf(r);
   const isDirty = (r: RedMarkRow) => {
@@ -1308,24 +1430,18 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
 
   const nameOf = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
   const isOrphan = (r: RedMarkRow) => !snapByGuid.has(r.ledger_id);
+  const companyOf = (r: RedMarkRow) => (snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "").trim();
+  const locationOf = (r: RedMarkRow) => (snapByGuid.get(r.ledger_id)?.location ?? r.location ?? "").trim();
 
-  const view = useMemo(() => {
+  const prefilter = useCallback((r: RedMarkRow) => {
+    if (!matchesClearView(r, clearView)) return false;
     const q = search.trim().toUpperCase();
-    return rows
-      .filter((r) => {
-        const s = snapByGuid.get(r.ledger_id);
-        if (q && !`${nameOf(r)} ${r.salesperson ?? ""} ${r.reason ?? ""}`.toUpperCase().includes(q)) return false;
-        if (companies.length && !companies.includes((s?.company ?? r.company ?? "").trim())) return false;
-        if (locations.length && !locations.includes((s?.location ?? r.location ?? "").trim())) return false;
-        return true;
-      })
-      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [rows, search, companies, locations, snapByGuid]);
+    if (!q) return true;
+    const name = snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+    return `${name} ${r.salesperson ?? ""} ${r.reason ?? ""} ${r.clear_note ?? ""}`.toUpperCase().includes(q);
+  }, [search, clearView, snapByGuid]);
 
-  const total = view.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const counts = useMemo(() => countByClearView(rows), [rows]);
 
   const save = async (r: RedMarkRow) => {
     const d = cur(r);
@@ -1360,6 +1476,154 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
     }
   };
 
+  /**
+   * Clear or reopen. The server's answer IS the new row, so it is written back rather than guessed
+   * at — and `onReload` follows so the rest of the screen catches up.
+   */
+  const doClear = async (note: string) => {
+    if (!clearing) return;
+    const { row, mode } = clearing;
+    setClearBusy(true);
+    try {
+      const { row: saved } = mode === "clear"
+        ? await clearRedMark(row.ledger_id, note)
+        : await reopenRedMark(row.ledger_id);
+      Object.assign(row, saved);
+      setClearing(null);
+      toast({ title: mode === "clear" ? "Cleared" : "Reopened", description: nameOf(row) });
+      onReload();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: mode === "clear" ? "Couldn't clear" : "Couldn't reopen",
+        description: (e as Error).message,
+      });
+    } finally {
+      setClearBusy(false);
+    }
+  };
+
+  /**
+   * Sort and filter read the SAVED row, never the draft: a half-typed reason must not make its row
+   * jump out of the list the person is typing into. `cell` is the only place the draft appears.
+   *
+   * ⚠ The Orphan badge renders inside the Customer cell but stays OUT of its `value`, or "ACME" and
+   *   "ACME Orphan" would be two filter options for one customer.
+   */
+  const columns = useMemo<TableColumn<RedMarkRow>[]>(() => [
+    {
+      key: "customer", label: "Customer", head: "min-w-[220px]",
+      value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "",
+      cell: (r) => (
+        <div className="flex items-center gap-2 font-medium">
+          <span className="truncate" title={nameOf(r)}>{nameOf(r)}</span>
+          {isOrphan(r) && (
+            <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "company", label: "Company", head: "w-28", cellClass: "text-muted-foreground",
+      value: (r) => companyOf(r), cell: (r) => companyOf(r) || "—",
+    },
+    {
+      key: "location", label: "Location", head: "w-24", cellClass: "text-muted-foreground",
+      value: (r) => locationOf(r), cell: (r) => locationOf(r) || "—",
+    },
+    {
+      key: "salesperson", label: "Salesperson", head: "w-40",
+      value: (r) => (isUnset(r.salesperson) ? "" : (r.salesperson as string)),
+      cell: (r) => (
+        <MasterValueCell
+          value={cur(r).salesperson} master={master} className="min-w-[140px]"
+          onChange={(v) => patch(r, { salesperson: v ?? "" })}
+        />
+      ),
+    },
+    {
+      // Free text — every reason is its own, so it sorts but carries no filter.
+      key: "reason", label: "Reason", head: "min-w-[200px]", filter: false,
+      value: (r) => r.reason ?? "",
+      cell: (r) => (
+        <Input value={cur(r).reason} className="h-8 min-w-[200px]"
+          onChange={(e) => patch(r, { reason: e.target.value })} />
+      ),
+    },
+    {
+      key: "status", label: "Status", head: "w-24",
+      value: (r) => (r.source === "sync_stub" && !r.checked ? "New" : r.checked ? "Verified" : "Unchecked"),
+      cell: (r) => <StatusBadge checked={r.checked} source={r.source} />,
+    },
+    {
+      // "Clear status", never just "Status": the column beside it answers a different question —
+      // has a steward verified this row?
+      key: "clear", label: "Clear status", head: "w-32",
+      value: (r) => (r.cleared ? "Cleared" : "Red Mark"),
+      cell: (r) => <ClearStatusBadge row={r} />,
+    },
+    {
+      key: "clearedBy", label: "Cleared by", head: "w-36",
+      cellClass: "text-[11px] text-muted-foreground truncate",
+      value: (r) => (r.cleared ? r.cleared_by ?? "" : ""),
+      cell: (r) => <span title={describeClear(r)}>{r.cleared ? (r.cleared_by ?? "—") : "—"}</span>,
+    },
+    {
+      key: "checked", label: "Checked", head: "w-20 text-center", cellClass: "text-center",
+      value: (r) => (r.checked ? "Yes" : "No"),
+      cell: (r) => (
+        <Checkbox checked={cur(r).checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
+      ),
+    },
+    {
+      key: "actions", label: "Actions", head: "w-44 text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (r) => {
+        const mayClear = canClear(teamByGuid.get(r.ledger_id));
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button size="sm" variant={isDirty(r) ? "default" : "ghost"} disabled={!isDirty(r) || savingId === r.ledger_id}
+              onClick={() => save(r)} className="gap-1" title="Save this row">
+              <Save className="h-3.5 w-3.5" />
+            </Button>
+            {/* Clear is the ROUTINE action and reads as one — a labelled button, in the settled-case
+                colour. Delete is a correction and stays an icon. */}
+            <Button
+              size="sm" variant="outline"
+              className="h-8 gap-1 px-2 text-[11px] border-emerald-600/40 text-emerald-700 hover:text-emerald-700 dark:text-emerald-400"
+              disabled={!mayClear}
+              title={mayClear
+                ? (r.cleared ? "Reopen this case" : "Clear — the case is settled; the record stays")
+                : "Only this customer's collection team, or an administrator, can clear it"}
+              onClick={() => setClearing({ row: r, mode: r.cleared ? "reopen" : "clear" })}
+            >
+              {r.cleared
+                ? <><RotateCcw className="h-3.5 w-3.5" />Reopen</>
+                : <><CheckCircle2 className="h-3.5 w-3.5" />Clear</>}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
+              className="text-destructive hover:text-destructive"
+              title="Delete — only if this customer was marked by mistake">
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [snapByGuid, master, teamByGuid, draft, savingId, canClear]);
+
+  const grid = useColumnGrid(rows, columns, prefilter);
+  const view = grid.rows;
+
+  useEffect(() => { setPage(1); }, [search, clearView, grid.anyFilter]);
+
+  const total = view.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const clearAll = () => { grid.clearFilters(); setSearch(""); setClearView("all"); };
+
   return (
     <div>
       <div className="flex flex-col gap-3 pb-3">
@@ -1367,13 +1631,16 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customer / salesperson / reason…" className="pl-8" />
+              placeholder="Search customer / salesperson / reason / clear note…" className="pl-8" />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
-            <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
+            {/* Company and Location moved into the column filters below, where every other column now
+                has one too — two controls over the same thing would disagree the moment one of them
+                cascades. */}
+            <ClearStatusToggle value={clearView} onChange={setClearView} counts={counts} />
             <MasterIoBar io={redMarkIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
-              activeFilters={describeFilters({ search, companies, locations })} onReload={onReload} />
+              activeFilters={describeFilters({ search, clearView, columns: describeColumnFilters(columns, grid) })}
+              onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />Add Red Mark
             </Button>
@@ -1384,76 +1651,14 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
         </p>
       </div>
 
-      <ScrollableTable className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[220px]">Customer</TableHead>
-              <TableHead className="w-28">Company</TableHead>
-              <TableHead className="w-24">Location</TableHead>
-              <TableHead className="w-40">Salesperson</TableHead>
-              <TableHead className="min-w-[200px]">Reason</TableHead>
-              <TableHead className="w-24">Status</TableHead>
-              <TableHead className="w-20 text-center">Checked</TableHead>
-              <TableHead className="w-28 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageRows.map((r) => {
-              const d = cur(r);
-              const s = snapByGuid.get(r.ledger_id);
-              const dirty = isDirty(r);
-              return (
-                <TableRow key={r.ledger_id}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate">{nameOf(r)}</span>
-                      {isOrphan(r) && (
-                        <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{s?.company ?? r.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{s?.location ?? r.location ?? "—"}</TableCell>
-                  <TableCell>
-                    <MasterValueCell
-                      value={d.salesperson} master={master} className="min-w-[140px]"
-                      onChange={(v) => patch(r, { salesperson: v ?? "" })}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input value={d.reason} className="h-8 min-w-[200px]"
-                      onChange={(e) => patch(r, { reason: e.target.value })} />
-                  </TableCell>
-                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
-                  <TableCell className="text-center">
-                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button size="sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || savingId === r.ledger_id}
-                        onClick={() => save(r)} className="gap-1">
-                        <Save className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
-                        className="text-destructive hover:text-destructive">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {pageRows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  No Red Mark customers {rows.length ? "match the filters" : "yet"}.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </ScrollableTable>
+      <GridTable
+        columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => r.ledger_id}
+        rowClass={(r) => (r.cleared ? "opacity-70" : undefined)}
+        sourceCount={rows.length}
+        emptyMessage="No Red Mark customers yet."
+        emptyFilteredMessage={`No Red Mark customers match the current filters${clearView !== "all" ? ` in the ${clearView} view` : ""}.`}
+        onClearFilters={clearAll}
+      />
 
       <PagerBar
         page={page} totalPages={totalPages}
@@ -1464,20 +1669,35 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
       <p className="text-xs text-muted-foreground pt-2">
         Hand-picked customers flagged <span className="font-medium">Red Mark</span>. The flag shows as a
         red badge, a Dashboard KPI, a filter, and the Red Mark report on the Live (Tally) screens.
-        Keyed by the Tally GUID, so a rename never loses the flag. Delete a row to un-flag the customer.
+        Keyed by the Tally GUID, so a rename never loses the flag.{" "}
+        <span className="font-medium">Clear</span> closes a settled case and keeps the record;{" "}
+        <span className="font-medium">Delete</span> is only for a customer marked by mistake.
       </p>
 
-      <AddRedMarkDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} onAdded={onReload} />
+      <AddRedMarkDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} rows={rows} onAdded={onReload} />
+
+      <ClearNoteDialog
+        mode={clearing?.mode ?? null}
+        subject={clearing ? `${nameOf(clearing.row)}${companyOf(clearing.row) ? ` · ${companyOf(clearing.row)}` : ""}` : ""}
+        row={clearing?.row ?? null}
+        busy={clearBusy}
+        onCancel={() => setClearing(null)}
+        onConfirm={(note) => void doClear(note)}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this Red Mark?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this Red Mark?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmDelete && (
                 <>
-                  {nameOf(confirmDelete)} will no longer be flagged as Red Mark on the Live (Tally) screens.
-                  This cannot be undone (you can re-add them).
+                  {nameOf(confirmDelete)} will no longer be flagged as Red Mark on the Live (Tally) screens,
+                  and the record is thrown away.
+                  <br /><br />
+                  <span className="font-medium">If the case was settled, use Clear instead</span> — that
+                  removes the flag everywhere but keeps who was marked, why, and how it ended. Delete is
+                  for a customer who should never have been marked.
                 </>
               )}
             </AlertDialogDescription>
@@ -1488,7 +1708,416 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => confirmDelete && doDelete(confirmDelete)}
             >
-              Remove
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ── Disputed bills master (RC-13) ─────────────────────────────────────────────────────────────
+// One row per disputed BILL, addressed by its id and keyed (ledger_id, bill_ref). Stores what a
+// human typed; the money lives on the Disputed Bills report, where it matches every other screen.
+// Loads its own data (the disputes and the open bills) so the rest of the panel does not pay for a
+// 6,000-row read nobody on the other tabs needs.
+
+type DsDraft = { remarks: string; item: string; checked: boolean };
+const dsDraftOf = (r: DisputeRow): DsDraft => ({
+  remarks: r.remarks ?? "", item: r.item_description ?? "", checked: r.checked,
+});
+
+/** yyyymmdd (the snapshot's storage form) → yyyy-mm-dd; "" when it is not one. */
+const ymdIso = (s: string | null) => (s && /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : "");
+
+function DisputeMuster({ snap, snapByGuid, teamByGuid }: {
+  snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
+  /** ledger_id → collection team: the who-may-clear test, exactly as on the Red Mark tab. */
+  teamByGuid: Map<string, string>;
+}) {
+  const { toast } = useToast();
+  const canClear = useCanClear();
+  // Same keys as the report, so a write here is seen there without a second fetch.
+  const disputes = useQuery({ queryKey: ["disputeRows"], queryFn: fetchDisputeRows, staleTime: 60 * 1000 });
+  const openBills = useQuery({ queryKey: ["openBills"], queryFn: fetchOpenBills, staleTime: 5 * 60 * 1000 });
+  const rows = useMemo(() => disputes.data ?? [], [disputes.data]);
+
+  const [draft, setDraft] = useState<Record<number, DsDraft>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<DisputeRow | null>(null);
+  const [clearing, setClearing] = useState<{ row: DisputeRow; mode: "clear" | "reopen" } | null>(null);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+
+  /** Every open (ledger, bill) — "is this dispute's bill still open?" — and the bills per customer. */
+  const { openKeys, billsByLedger } = useMemo(() => {
+    const keys = new Set<string>();
+    const by = new Map<string, OpenBillRow[]>();
+    for (const b of openBills.data ?? []) {
+      keys.add(disputeKey(b.ledger_id, b.bill_ref));
+      const list = by.get(b.ledger_id);
+      if (list) list.push(b); else by.set(b.ledger_id, [b]);
+    }
+    return { openKeys: keys, billsByLedger: by };
+  }, [openBills.data]);
+
+  const reload = () => { void disputes.refetch(); void openBills.refetch(); };
+
+  const cur = (r: DisputeRow): DsDraft => draft[r.id] ?? dsDraftOf(r);
+  const isDirty = (r: DisputeRow) => {
+    const d = draft[r.id];
+    if (!d) return false;
+    const o = dsDraftOf(r);
+    return (Object.keys(o) as (keyof DsDraft)[]).some((k) => d[k] !== o[k]);
+  };
+  const patch = (r: DisputeRow, p: Partial<DsDraft>) =>
+    setDraft((prev) => ({ ...prev, [r.id]: { ...cur(r), ...p } }));
+
+  const nameOf = (r: DisputeRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
+  /** The customer's ledger has left the snapshot altogether — rarer than a settled bill. */
+  const isOrphan = (r: DisputeRow) => !snapByGuid.has(r.ledger_id);
+  /** Still open in Tally? Unknown (true) until the bills have loaded, so nothing flashes "gone". */
+  const billOpen = (r: DisputeRow) => !openBills.data || openKeys.has(disputeKey(r.ledger_id, r.bill_ref));
+
+  const prefilter = useCallback((r: DisputeRow) => {
+    if (!matchesClearView(r, clearView)) return false;
+    const q = search.trim().toUpperCase();
+    if (!q) return true;
+    const name = snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+    return `${name} ${r.bill_ref} ${r.remarks ?? ""} ${r.item_description ?? ""} ${r.clear_note ?? ""}`
+      .toUpperCase().includes(q);
+  }, [search, clearView, snapByGuid]);
+
+  const counts = useMemo(() => countByClearView(rows), [rows]);
+  const goneCount = openBills.data ? rows.filter((r) => !r.cleared && !billOpen(r)).length : 0;
+
+  /** Only the fields that changed are sent, so this never overwrites a colleague's other edit. */
+  const save = async (r: DisputeRow) => {
+    const d = cur(r);
+    const o = dsDraftOf(r);
+    setSavingId(r.id);
+    try {
+      const { row } = await saveDispute({
+        id: r.id,
+        ...(d.remarks !== o.remarks ? { remarks: d.remarks.trim() || null } : {}),
+        ...(d.item !== o.item ? { item_description: d.item.trim() || null } : {}),
+        ...(d.checked !== o.checked ? { checked: d.checked } : {}),
+      });
+      Object.assign(r, row);
+      setDraft((prev) => { const { [r.id]: _omit, ...rest } = prev; return rest; });
+      toast({ title: "Saved", description: `${nameOf(r)} · ${r.bill_ref}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Save failed", description: (e as Error).message });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const doDelete = async (r: DisputeRow) => {
+    try {
+      await deleteDispute(r.id);
+      setConfirmDelete(null);
+      toast({ title: "Removed", description: `${nameOf(r)} · ${r.bill_ref}` });
+      reload();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Remove failed", description: (e as Error).message });
+    }
+  };
+
+  const doClear = async (note: string) => {
+    if (!clearing) return;
+    const { row, mode } = clearing;
+    setClearBusy(true);
+    try {
+      const { row: saved } = mode === "clear" ? await clearDispute(row.id, note) : await reopenDispute(row.id);
+      Object.assign(row, saved);
+      setClearing(null);
+      toast({ title: mode === "clear" ? "Dispute cleared" : "Dispute reopened", description: `${nameOf(row)} · ${row.bill_ref}` });
+      reload();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: mode === "clear" ? "Couldn't clear" : "Couldn't reopen",
+        description: (e as Error).message,
+      });
+    } finally {
+      setClearBusy(false);
+    }
+  };
+
+  /**
+   * Sort and filter read the SAVED row, never the draft — a half-typed remark must not make its row
+   * jump out of the list the person is typing into.
+   *
+   * ⚠ The Orphan badge renders inside the Customer cell but stays OUT of its `value`, and the "No
+   *   longer open" badge is its own `open` column rather than part of the Bill ref text.
+   */
+  const columns = useMemo<TableColumn<DisputeRow>[]>(() => [
+    {
+      key: "customer", label: "Customer", head: "min-w-[220px]",
+      value: (r) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "",
+      cell: (r) => (
+        <div className="flex items-center gap-2 font-medium">
+          <span className="truncate" title={nameOf(r)}>{nameOf(r)}</span>
+          {isOrphan(r) && (
+            <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "company", label: "Company", head: "w-28", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.company ?? "").trim() || "—",
+    },
+    {
+      key: "location", label: "Location", head: "w-24", cellClass: "text-muted-foreground",
+      value: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim(),
+      cell: (r) => (snapByGuid.get(r.ledger_id)?.location ?? "").trim() || "—",
+    },
+    {
+      // Every bill reference is its own, so it sorts but carries no filter.
+      key: "bill", label: "Bill ref", head: "w-36", cellClass: "font-mono text-xs whitespace-nowrap",
+      filter: false,
+      value: (r) => r.bill_ref, cell: (r) => r.bill_ref,
+    },
+    {
+      key: "open", label: "Bill", head: "w-32",
+      value: (r) => (billOpen(r) ? "Open" : "No longer open"),
+      cell: (r) => billOpen(r) ? (
+        <span className="text-xs text-muted-foreground">Open</span>
+      ) : (
+        <Badge
+          variant="outline"
+          className={`whitespace-nowrap ${r.cleared ? "text-muted-foreground" : "border-warning/50 bg-warning/10 text-warning-foreground"}`}
+          title={r.cleared
+            ? "Tally no longer lists this bill as open."
+            : "Tally no longer lists this bill as open — most likely settled. Check, then clear the dispute."}
+        >
+          No longer open
+        </Badge>
+      ),
+    },
+    {
+      key: "remarks", label: "Remark", head: "min-w-[240px]", filter: false,
+      value: (r) => r.remarks ?? "",
+      cell: (r) => (
+        <Input value={cur(r).remarks} className="h-8 min-w-[240px]"
+          onChange={(e) => patch(r, { remarks: e.target.value })} />
+      ),
+    },
+    {
+      key: "item", label: "Item", head: "min-w-[160px]", filter: false,
+      value: (r) => r.item_description ?? "",
+      cell: (r) => (
+        <Input value={cur(r).item} className="h-8 min-w-[160px]"
+          onChange={(e) => patch(r, { item: e.target.value })} />
+      ),
+    },
+    {
+      key: "status", label: "Status", head: "w-24",
+      value: (r) => (r.checked ? "Verified" : "Unchecked"),
+      cell: (r) => <StatusBadge checked={r.checked} source={r.source} />,
+    },
+    {
+      key: "clear", label: "Clear status", head: "w-32",
+      value: (r) => (r.cleared ? "Cleared" : DISPUTE_COPY.openLabel),
+      cell: (r) => <ClearStatusBadge row={r} copy={DISPUTE_COPY} />,
+    },
+    {
+      key: "clearedBy", label: "Cleared by", head: "w-36",
+      cellClass: "text-[11px] text-muted-foreground truncate",
+      value: (r) => (r.cleared ? r.cleared_by ?? "" : ""),
+      cell: (r) => <span title={describeClear(r)}>{r.cleared ? (r.cleared_by ?? "—") : "—"}</span>,
+    },
+    {
+      key: "checked", label: "Checked", head: "w-20 text-center", cellClass: "text-center",
+      value: (r) => (r.checked ? "Yes" : "No"),
+      cell: (r) => (
+        <Checkbox checked={cur(r).checked} onCheckedChange={(v) => patch(r, { checked: v === true })} aria-label="Checked" />
+      ),
+    },
+    {
+      key: "actions", label: "Actions", head: "w-44 text-right", cellClass: "text-right", sortable: false,
+      value: () => "",
+      cell: (r) => {
+        const mayClear = canClear(teamByGuid.get(r.ledger_id));
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button size="sm" variant={isDirty(r) ? "default" : "ghost"} disabled={!isDirty(r) || savingId === r.id}
+              onClick={() => save(r)} className="gap-1" title="Save this row">
+              <Save className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              className={`h-8 gap-1 px-2 text-[11px] border-emerald-600/40 text-emerald-700 hover:text-emerald-700 dark:text-emerald-400 ${
+                !r.cleared && !billOpen(r) ? "ring-1 ring-warning" : ""
+              }`}
+              disabled={!mayClear}
+              title={mayClear
+                ? (r.cleared ? "Reopen this dispute" : "Clear — the dispute is settled; the record stays")
+                : "Only this customer's collection team, or an administrator, can clear it"}
+              onClick={() => setClearing({ row: r, mode: r.cleared ? "reopen" : "clear" })}
+            >
+              {r.cleared
+                ? <><RotateCcw className="h-3.5 w-3.5" />Reopen</>
+                : <><CheckCircle2 className="h-3.5 w-3.5" />Clear</>}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
+              className="text-destructive hover:text-destructive"
+              title="Delete — only if this bill was listed by mistake">
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [snapByGuid, openKeys, openBills.data, teamByGuid, draft, savingId, canClear]);
+
+  const grid = useColumnGrid(rows, columns, prefilter);
+  const view = grid.rows;
+
+  useEffect(() => { setPage(1); }, [search, clearView, grid.anyFilter]);
+
+  const total = view.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const clearAll = () => { grid.clearFilters(); setSearch(""); setClearView("all"); };
+
+  // The add dialog reads the raw snapshot here, like every other muster tab (see OpenBillRow).
+  const dialogCustomers = useMemo<DisputeCustomer[]>(
+    () => snap.map((s) => ({
+      ledgerId: s.ledger_id, name: s.name ?? "", company: (s.company ?? "").trim(), location: (s.location ?? "").trim(),
+    })),
+    [snap],
+  );
+  const billsOf = useCallback((ledgerId: string): DisputeBill[] =>
+    (billsByLedger.get(ledgerId) ?? []).map((b) => ({
+      billRef: b.bill_ref,
+      date: ymdIso(b.bill_date),
+      dueDate: ymdIso(b.due_date),
+      amount: Number(b.amount) || 0,
+      pending: Number(b.pending) || 0,
+      overdueDays: Number(b.overdue_days) || 0,
+      saleType: b.sale_type ?? "other",
+    })), [billsByLedger]);
+
+  if (disputes.error || openBills.error) {
+    return (
+      <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-md p-3">
+        Could not load the disputed bills: {((disputes.error ?? openBills.error) as Error).message}
+      </div>
+    );
+  }
+  if (disputes.isLoading) return <p className="text-sm text-muted-foreground py-8 text-center">Loading disputed bills…</p>;
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customer / bill / remark / item…" className="pl-8" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ClearStatusToggle value={clearView} onChange={setClearView} counts={counts} />
+            <MasterIoBar io={disputeIo(snapByGuid, openKeys)} exportRows={view} existingRows={rows}
+              activeFilters={describeFilters({ search, clearView, columns: describeColumnFilters(columns, grid) })}
+              onReload={reload} />
+            <Button size="sm" onClick={() => setAddOpen(true)} disabled={!openBills.data} className="gap-1.5">
+              <Plus className="h-4 w-4" />Add disputed bills
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{total}</span> disputed bill{total === 1 ? "" : "s"} shown
+          {goneCount > 0 && (
+            <>
+              {" · "}
+              <button
+                className="underline text-warning-foreground"
+                onClick={() => { grid.setSelected("open", ["No longer open"]); setClearView("uncleared"); }}
+              >
+                {goneCount} open dispute{goneCount === 1 ? "" : "s"} on a bill no longer open in Tally
+              </button>
+            </>
+          )}
+        </p>
+      </div>
+
+      <GridTable
+        columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => String(r.id)}
+        rowClass={(r) => (r.cleared ? "opacity-70" : undefined)}
+        sourceCount={rows.length}
+        emptyMessage="No disputed bills yet."
+        emptyFilteredMessage={`No disputed bills match the current filters${clearView !== "all" ? ` in the ${clearView} view` : ""}.`}
+        onClearFilters={clearAll}
+      />
+
+      <PagerBar
+        page={page} totalPages={totalPages}
+        rangeStart={(page - 1) * PAGE_SIZE + 1} rangeEnd={Math.min(page * PAGE_SIZE, total)}
+        total={total} noun="disputed bills" onPage={setPage}
+      />
+
+      <p className="text-xs text-muted-foreground pt-2">
+        Customer bills under dispute, one row per bill. Amounts are not kept here — the{" "}
+        <span className="font-medium">Disputed Bills report</span> shows each bill's live figures.{" "}
+        <span className="font-medium">No longer open</span> means Tally has knocked the bill off, usually
+        because it was settled: check it, then clear the dispute.{" "}
+        <span className="font-medium">Clear</span> closes a settled dispute and keeps the record;{" "}
+        <span className="font-medium">Delete</span> is only for a bill added by mistake.
+      </p>
+
+      <AddDisputeDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        customers={dialogCustomers}
+        billsOf={billsOf}
+        existing={rows}
+        onAdded={() => reload()}
+      />
+
+      <ClearNoteDialog
+        mode={clearing?.mode ?? null}
+        subject={clearing ? `${clearing.row.bill_ref} · ${nameOf(clearing.row)}` : ""}
+        row={clearing?.row ?? null}
+        busy={clearBusy}
+        onCancel={() => setClearing(null)}
+        onConfirm={(note) => void doClear(note)}
+        copy={DISPUTE_COPY}
+      />
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this disputed bill?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete && (
+                <>
+                  {confirmDelete.bill_ref} on {nameOf(confirmDelete)} comes off the list, and its remark and
+                  history are thrown away.
+                  <br /><br />
+                  <span className="font-medium">If the dispute was settled, use Clear instead</span> — that
+                  keeps the remark, who cleared it and how. Delete is for a bill added by mistake.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => confirmDelete && doDelete(confirmDelete)}
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1525,10 +2154,14 @@ export function MusterPanel() {
   const [teamMaster, setTeamMaster] = useState<NameMasterRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
 
   const load = () => {
     setLoading(true);
     setError(null);
+    // The Disputed Bills tab loads its own data through react-query; Reload has to mean that too.
+    void queryClient.invalidateQueries({ queryKey: ["disputeRows"] });
+    void queryClient.invalidateQueries({ queryKey: ["openBills"] });
     Promise.all([
       fetchTagRows(), fetchGroupRows(), fetchSnapshot(), fetchCompanyMap(),
       fetchOtherPaymentRows(), fetchRedMarkRows(),
@@ -1559,14 +2192,9 @@ export function MusterPanel() {
     (snap ?? []).forEach((s) => m.set(s.ledger_id, s));
     return m;
   }, [snap]);
-  const companyOptions = useMemo(
-    () => [...new Set((snap ?? []).map((s) => (s.company ?? "").trim()).filter(Boolean))].sort(),
-    [snap],
-  );
-  const locationOptions = useMemo(
-    () => [...new Set((snap ?? []).map((s) => (s.location ?? "").trim()).filter(Boolean))].sort(),
-    [snap],
-  );
+  // The Company and Location option lists that used to live here are gone: every tab now derives
+  // them per column, from the rows the OTHER filters still allow, so they cascade. A list computed
+  // once over the whole snapshot could offer a combination that returns an empty table.
 
   // Customers per Tally book — shown in the company master so a mapping's blast radius is visible.
   const custCountByGuid = useMemo(() => {
@@ -1599,6 +2227,21 @@ export function MusterPanel() {
     (redMarks ?? []).forEach((r) => { if (!isUnset(r.salesperson)) anywhere.add(r.salesperson as string); });
     return { counts, inUseAnywhere: anywhere };
   }, [tags, redMarks]);
+
+  /**
+   * ledger_id → collection team, for the Red Mark tab's who-may-clear test (RC-12).
+   *
+   * From the group muster, which this panel already loads — the Red Mark master does not carry the
+   * team, and the server derives it from exactly the same column, so the button and the write agree.
+   * '' and NULL both mean unset, and unset is NOBODY's rather than everybody's: a collector may not
+   * clear a customer with no team, and neither will the server.
+   */
+  const teamByGuid = useMemo(
+    () => new Map(
+      (groups ?? []).map((g) => [g.ledger_id, isUnset(g.collection_team) ? "" : (g.collection_team as string)]),
+    ),
+    [groups],
+  );
 
   const teamUsage = useMemo<NameMasterUsage>(() => {
     const counts = new Map<string, number>();
@@ -1652,20 +2295,19 @@ export function MusterPanel() {
               <TabsTrigger value="companies">Companies &amp; Locations</TabsTrigger>
               <TabsTrigger value="other-payments">Other Payments</TabsTrigger>
               <TabsTrigger value="redmark">Red Mark</TabsTrigger>
+              <TabsTrigger value="disputes">Disputed Bills</TabsTrigger>
               <TabsTrigger value="salesperson-list">Salespersons</TabsTrigger>
               <TabsTrigger value="team-list">Collection Teams</TabsTrigger>
             </TabsList>
             <TabsContent value="tags" className="mt-4">
               <TagMuster
-                rows={tags} snapByGuid={snapByGuid} companyOptions={companyOptions}
-                locationOptions={locationOptions} master={salespersonMaster ?? []}
+                rows={tags} snapByGuid={snapByGuid} master={salespersonMaster ?? []}
                 knownNames={knownSalespersons} onReload={load}
               />
             </TabsContent>
             <TabsContent value="groups" className="mt-4">
               <GroupMuster
-                rows={groups} snapByGuid={snapByGuid} companyOptions={companyOptions}
-                locationOptions={locationOptions} master={teamMaster ?? []}
+                rows={groups} snapByGuid={snapByGuid} master={teamMaster ?? []}
                 knownNames={knownTeams} onReload={load}
               />
             </TabsContent>
@@ -1674,16 +2316,18 @@ export function MusterPanel() {
             </TabsContent>
             <TabsContent value="other-payments" className="mt-4">
               <OtherPaymentMuster
-                rows={otherPayments ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
-                companyOptions={companyOptions} locationOptions={locationOptions} onReload={load}
+                rows={otherPayments ?? []} snap={snap ?? []} snapByGuid={snapByGuid} onReload={load}
               />
             </TabsContent>
             <TabsContent value="redmark" className="mt-4">
               <RedMarkMuster
                 rows={redMarks ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
-                companyOptions={companyOptions} locationOptions={locationOptions}
+                teamByGuid={teamByGuid}
                 master={salespersonMaster ?? []} knownNames={knownSalespersons} onReload={load}
               />
+            </TabsContent>
+            <TabsContent value="disputes" className="mt-4">
+              <DisputeMuster snap={snap ?? []} snapByGuid={snapByGuid} teamByGuid={teamByGuid} />
             </TabsContent>
             <TabsContent value="salesperson-list" className="mt-4">
               <NameMasterTab

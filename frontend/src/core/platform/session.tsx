@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { AppRole, ModuleLevel, Profile } from "./types";
 import { useAuth } from "./auth";
 import { useDirectory } from "./store";
+import { useCatalogueVersion } from "./useCatalogueVersion";
 import { isUniversalApp } from "@/apps/universal";
 
 /**
@@ -16,6 +17,8 @@ interface SessionValue {
   user: Profile;
   role: AppRole;
   isAdmin: boolean;
+  /** True when this login is a customer, not staff. See Profile.isExternal. */
+  isExternal: boolean;
   isHod: boolean; // hod or sub_hod (team-level access)
   isEmployee: boolean;
   moduleAccess: string[];
@@ -64,16 +67,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { profiles } = useDirectory();
   const authId = session?.user.id ?? null;
 
+  /**
+   * PF-17 — the central masters push, mounted here and NOWHERE ELSE.
+   *
+   * ⚠ THIS PROVIDER, NOT HomeLayout. HomeLayout is the element of the `/home`
+   *   route only; every module mounts at its own basePath as a SIBLING, so a
+   *   hook mounted there is unmounted the moment somebody opens Order to
+   *   Dispatch — which is exactly where the stale catalogue hurts. SessionProvider
+   *   is the innermost provider, inside QueryClientProvider and AuthProvider, so
+   *   one subscription covers the launcher, every module and the admin screens,
+   *   and it unmounts on sign-out.
+   */
+  useCatalogueVersion(authId);
+
   const value = useMemo<SessionValue>(() => {
     const user = profiles.find((p) => p.id === authId) ?? null;
     const role: AppRole = user?.role ?? "employee";
     const isAdmin = role === "admin";
+    // Fails closed: no resolved profile yet means we do not YET know this is staff.
+    const isExternal = user?.isExternal ?? false;
     return {
       // Non-null wherever it's read: every consumer is behind RequireAuth and the
       // directory has finished loading, so a matching profile exists.
       user: user as Profile,
       role,
       isAdmin,
+      isExternal,
       isHod: role === "hod" || role === "sub_hod",
       isEmployee: role === "employee",
       moduleAccess: user?.moduleAccess ?? [],

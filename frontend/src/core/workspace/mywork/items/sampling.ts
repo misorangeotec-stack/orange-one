@@ -18,7 +18,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { SamplingData } from "@/apps/sampling/data/samplingFetch";
-import { buildQueueEntries, samplingSnapshotFrom } from "@/apps/sampling/lib/queues";
+import { buildHeldEntries, buildQueueEntries, samplingSnapshotFrom } from "@/apps/sampling/lib/queues";
 import { isSourceScoped, stepByKey } from "@/apps/sampling/lib/steps";
 import { confirmerSourceOf, outwardSourceOf } from "@/apps/sampling/lib/format";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
@@ -89,15 +89,22 @@ export function samplingWorkItems(data: SamplingData, uid: string, isAdmin: bool
   const sourceOwners = data.stepSourceOwners;
   const confirmers = data.confirmers;
   const byId = new Map(data.requests.map((r) => [r.id, r]));
-  return buildQueueEntries(
-    samplingSnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla }),
-  )
+  const snap = samplingSnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla });
+
+  // Held requests are listed, flagged, at the step they are parked at — see
+  // ./officeSupplies.ts for why they are added back rather than dropped.
+  const entries = [
+    ...buildQueueEntries(snap).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(snap).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
     .filter(
-      (e) =>
+      ({ e }) =>
         isAdmin ||
         isMineBySampling(e.stepKey, uid, byId.get(e.requestId), owners, sourceOwners, confirmers),
     )
-    .map((e) => ({
+    .map(({ e, held }) => ({
       id: `sampling:${e.requestId}:${e.stepKey}`,
       source: "sampling",
       sourceLabel: appName("sampling"),
@@ -118,5 +125,6 @@ export function samplingWorkItems(data: SamplingData, uid: string, isAdmin: bool
         ? ("direct" as const)
         : ("team" as const),
       isApproval: false,
+      ...(held ? { isHeld: true, holdReason: byId.get(e.requestId)?.holdReason ?? null } : {}),
     }));
 }

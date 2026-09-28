@@ -169,6 +169,10 @@ function liveItems(order: DispatchOrder): RoundItem[] {
       shipQty: l.shipQty ?? 0,
       billQty: l.billQty,
       lotNo: l.lotNo,
+      // OD-15 · the split travels with the summary, or the LIVE round would show
+      // a breakdown the archived one does not -- and four of the six readers
+      // reach the lot through this projection without knowing which they hold.
+      lots: l.lots,
     }));
 }
 

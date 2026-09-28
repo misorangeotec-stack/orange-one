@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
+import { CUSTOMER_ACTORS_QK, fetchCustomerOrderActors } from "./data/customerOrgs";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import {
   DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
@@ -19,6 +20,7 @@ import {
   insertMaster as insertMasterWrite,
   insertMasters as insertMastersWrite,
   mapCustomerItems as mapCustomerItemsWrite,
+  mapPartyCompanies as mapPartyCompaniesWrite,
   markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
@@ -34,12 +36,14 @@ import {
   submitOrder as submitOrderWrite,
   updateMaster as updateMasterWrite,
   updateOrder as updateOrderWrite,
+  completeCustomerOrder as completeCustomerOrderWrite,
   updateSalesReturn as updateSalesReturnWrite,
   updateStep as updateStepWrite,
   uploadStepDocument as uploadStepDocumentWrite,
   withdrawCancelRequest as withdrawCancelRequestWrite,
   type AmendRoundLine,
   type MapCustomerItemResult,
+  type MapPartyCompanyResult,
   type MasterInput,
   type OrderInput,
   type SalesReturnPayload,
@@ -63,7 +67,7 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
+  CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
 
@@ -135,6 +139,26 @@ export interface DispatchStoreValue {
   reassignPoolUserIds: string[];
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (step: OwnerStepKey) => boolean;
+  /**
+   * The New Customer Orders queue (OD-14).
+   *
+   * ⚠ NOT `canSeeQueue("sales_order")`, and the difference is the whole point.
+   *   That would resolve to the four people who own the origin step, and they
+   *   would open an EMPTY queue: a customer order has `location_id` null until it
+   *   is written up, and `fms_dispatch_can_see_order`'s owner arm matches only
+   *   `location_id is null or location_id = <the order's>` — which on a null
+   *   location leaves just the fallback owner-set, and that set holds zero people
+   *   (checked live for `sales_order` and `credit_check` alike). RLS would hand
+   *   them no rows. `canSeeQueue`'s own note calls that failure out by name.
+   *
+   *   (`fms_dispatch_can_act` is more generous — passing a null location asks
+   *   "owns this step anywhere", so an owner passes it. It makes no difference:
+   *   they cannot read the order to act on it. The two are worth not confusing.)
+   *
+   *   The audience is the people Setup named per customer under "who we tell when
+   *   they order" (Q8), plus admins, coordinators and viewers.
+   */
+  canSeeCustomerOrders: boolean;
   canEditOrder: (order: DispatchOrder) => boolean;
   /** Omit the location to ask "owns this step anywhere". */
   isStepOwner: (stepKey: OwnerStepKey, locationId?: string | null) => boolean;
@@ -146,6 +170,11 @@ export interface DispatchStoreValue {
    */
   stepOwnerCovering: (stepKey: OwnerStepKey, locationId: string | null) => StepOwner | undefined;
   ownerNamesFor: (stepKey: OwnerStepKey, locationId?: string | null) => string[];
+  /**
+   * The staff we named against the CUSTOMER who raised this order, or [] for a
+   * staff-raised one. Mirrors `fms_dispatch_is_customer_recipient`'s notify list.
+   */
+  customerRecipientIdsOf: (raisedBy: string | null) => string[];
   personName: (id: string | null) => string;
   /**
    * May this person cancel the order? The RAISER may, at any open stage — that is
@@ -172,6 +201,14 @@ export interface DispatchStoreValue {
   customers: Customer[];
   items: Item[];
   customerItems: CustomerItem[];
+  /**
+   * WHICH BOOKS MAY BILL A CUSTOMER beyond their own ledger's (OD-5).
+   *
+   * Raw rows, active and inactive both, because the only screen that reads
+   * them directly — MapCustomerCompanyModal — needs to know a pair EXISTS in
+   * order not to offer it twice. `customersForCompany` does the filtering.
+   */
+  customerCompanies: CustomerCompany[];
   /**
    * The sites a given company dispatches from — ACTIVE only, sorted.
    *
@@ -322,6 +359,28 @@ export interface DispatchStoreValue {
   salesReturnPending: DispatchOrder[];
   salesReturnCompleted: DispatchOrder[];
 
+  /**
+   * NEW CUSTOMER ORDERS — placed by a customer, not yet written up (OD-14).
+   *
+   * ⚠ OFF THE CHAIN, for the same reasons as Sales Return above. These are not
+   *   `QueueEntry`s and never pass through `buildQueueEntries`, because the write-up
+   *   is not a `StepModal` step: it has its own page, its own RPC, no `RECORD_RPC`,
+   *   no `LOCK` arm and no `STEP_CONFIG`.
+   *
+   * ⚠ SCOPED BY `canActOn("sales_order", …)`, WHICH IS NOT THE STEP-OWNER RULE HERE.
+   *   A customer order has `location_id` null until it is completed, and the
+   *   null-location fallback owner-set holds zero people — so a step-owner test
+   *   alone would show this queue to nobody. What actually matches is the
+   *   customer-recipient arm: the people Setup named under "who we tell when they
+   *   order" (decision Q8), plus admins and coordinators. That is the same rule the
+   *   server's `fms_dispatch_complete_customer_order` enforces.
+   */
+  customerOrdersPending: DispatchOrder[];
+  /** Written up, and not yet past credit check — still reopenable. */
+  customerOrdersCompleted: DispatchOrder[];
+  /** May this person write up (or reopen) this customer order? */
+  canCompleteCustomerOrder: (o: DispatchOrder) => boolean;
+
   // master governance
   masterManagers: MasterManager[];
   masterRequests: DispatchMasterRequest[];
@@ -342,6 +401,8 @@ export interface DispatchStoreValue {
   // actions
   submitOrder: (input: OrderInput) => Promise<string>;
   updateOrder: (orderId: string, input: OrderInput) => Promise<void>;
+  /** Write up a customer order and send it on to credit check (OD-14). */
+  completeCustomerOrder: (orderId: string, input: OrderInput) => Promise<void>;
   recordStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   updateStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   holdOrder: (orderId: string, hold: boolean, reason: string) => Promise<void>;
@@ -390,6 +451,22 @@ export interface DispatchStoreValue {
   mapCustomerItems: (
     customerId: string, companyId: string, itemIds: string[],
   ) => Promise<MapCustomerItemResult>;
+  /**
+   * Record which of our companies may bill a customer (OD-5), with no approval
+   * step — the twin of `mapCustomerItems`, and the same shape for the same
+   * reason: RLS on mst_party_companies admits only an admin or a
+   * 'party_company' master manager, which is nobody who raises an order.
+   *
+   * ⚠ THIS GRANTS PERMISSION TO BILL, not a note for somebody to action later.
+   *   The save guard accepts an active row, so the pair is invoiceable the
+   *   moment this returns. Decided 07-09-2026; the Tally ledger is opened by
+   *   people at billing time and the order is not held for it.
+   *
+   * Several companies at once on purpose — see the write wrapper.
+   */
+  mapPartyCompanies: (
+    customerId: string, companyIds: string[],
+  ) => Promise<MapPartyCompanyResult>;
   resolveMasterRequest: (
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
@@ -443,6 +520,23 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   // directory itself is RLS-scoped, which is why this is a separate read).
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
+  /**
+   * Which logins belong to a CUSTOMER, and who we named to act on their orders.
+   *
+   * ⚠ ITS OWN QUERY, not a member of fetchDispatchData's Promise.all — that call
+   *   destructures BY POSITION and says so in capitals; adding a line there shifts
+   *   every binding after it, silently, because every row is `any`.
+   *
+   * Two rows today, and none until Setup → Customer Logins is used, so `staleTime`
+   * is long: this is configuration, not traffic.
+   */
+  const { data: customerActors } = useQuery({
+    queryKey: CUSTOMER_ACTORS_QK,
+    queryFn: fetchCustomerOrderActors,
+    enabled: !!session.user,
+    staleTime: 5 * 60_000,
+  });
+
   const stepOwners = data?.stepOwners ?? [];
   const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
@@ -452,6 +546,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const customers = masters?.customers ?? [];
   const items = masters?.items ?? [];
   const customerItems = masters?.customerItems ?? [];
+  const customerCompanies = masters?.customerCompanies ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
@@ -657,8 +752,48 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const assigneeOfStep = (orderId: string | null, stepKey: string): string | null =>
       orderId ? assigneeByKey.get(orderId + '|' + stepKey) ?? null : null;
 
+    /**
+     * Was this order raised by a CUSTOMER whose named recipients include me?
+     *
+     * Mirrors `public.fms_dispatch_is_customer_recipient`. Returns false for every
+     * staff-raised order — the map is empty until a customer login exists — so this
+     * is a pure widening and changes nothing about how the module behaves today.
+     */
+    const customerRecipientsByRaiser = new Map<string, string[]>();
+    for (const a of customerActors ?? []) customerRecipientsByRaiser.set(a.profileId, a.notifyUserIds);
+    const isCustomerRecipientOf = (raisedBy: string | null): boolean =>
+      !!raisedBy && (customerRecipientsByRaiser.get(raisedBy)?.includes(uid) ?? false);
+    /** Named against ANY customer — what decides whether the New Customer Orders nav shows. */
+    const isCustomerRecipientOfAny = [...customerRecipientsByRaiser.values()].some((ids) =>
+      ids.includes(uid),
+    );
+    /** Empty for every staff-raised order. Used to name who really owns a customer order. */
+    const customerRecipientIdsOf = (raisedBy: string | null): string[] =>
+      (raisedBy ? customerRecipientsByRaiser.get(raisedBy) : undefined) ?? [];
+
     const canActOn = (stepKey: OwnerStepKey, o: DispatchOrder): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
+      /**
+       * NAMED AGAINST THIS CUSTOMER — the client half of OD-13's recipient rule.
+       *
+       * ⚠ THE PLACEMENT IS THE POINT, and it mirrors the server line for line.
+       *   Before the assignee check, because `fms_dispatch_step_assignees` is
+       *   `unique (order_id, step_key)`: once one person is assigned, the branch
+       *   below returns early and every OTHER named recipient is refused — which
+       *   quietly re-creates the single-point-of-failure that a LIST of recipients
+       *   (decision Q8) exists to avoid.
+       *
+       * ⚠ AND IT IS HERE RATHER THAN IN `isStepOwner`, deliberately. `isStepOwner`
+       *   also answers "do I own this step ANYWHERE" for the nav and the My Work
+       *   feed; widening it would give a recipient a nav entry for every step of a
+       *   module they own no step in. The authority is over THIS ORDER, so it
+       *   belongs on the function that takes one.
+       *
+       *   Without this, the RLS lets the clerk read the order and the client still
+       *   drops it out of their queue — the same symptom from two different bugs,
+       *   and this one throws no error to find it by.
+       */
+      if (isCustomerRecipientOf(o.raisedBy)) return true;
       // A REASSIGNMENT MOVES THE WORK. While an assignee is set they are the only
       // non-admin who may act - deliberately NOT an OR with the location's owners,
       // or the step would stay in their queue too. Mirrors fms_dispatch_can_act.
@@ -762,6 +897,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       o.status === "awaiting_credit_check" &&
       o.ccAt == null &&
       o.rounds.length === 0;
+
+    /**
+     * Mirrors `fms_dispatch_complete_customer_order`'s authz and its refusals.
+     *
+     * ⚠ IT IS NOT `canEditOrder`, AND THAT IS THE WHOLE POINT. `canEditOrder`
+     *   requires raiser / admin / coordinator, and on a customer order THE RAISER
+     *   IS THE CUSTOMER — so the named recipient this work belongs to fails it and
+     *   never sees the button. `canActOn("sales_order", …)` is what carries the
+     *   customer-recipient arm.
+     *
+     * ⚠ THE SECOND ARM IS "REOPEN DETAILS", not a second way to complete. Once
+     *   written up the order sits at credit check, and the clerk there may still
+     *   need to move it to another billing book for a credit reason — the choice
+     *   they lost when the customer started making it. It closes the moment the
+     *   verdict is recorded or anything dispatches, which is what `ccDecidedAt`
+     *   and `rounds.length` test.
+     */
+    const canCompleteCustomerOrder = (o: DispatchOrder): boolean =>
+      canEdit &&
+      o.intakeSource === "customer" &&
+      o.rounds.length === 0 &&
+      (o.status === "awaiting_order_completion" ||
+        (o.status === "awaiting_credit_check" && o.ccDecidedAt == null)) &&
+      canActOn("sales_order", o);
 
     /**
      * Mirrors fms_dispatch_cancel_order's authz and its refusals.
@@ -927,6 +1086,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       }
       return seen;
     })();
+    /**
+     * WHICH CUSTOMERS EACH BOOK MAY BILL BY MAPPING — company id -> party ids.
+     *
+     * Keyed by COMPANY rather than by customer because that is the question the
+     * picker asks: `customersForCompany` runs once per render over ~1,900 rows,
+     * and a per-customer map would turn it into 1,900 lookups of a one-element
+     * array. 779 rows in, five keys out.
+     *
+     * ⚠ ACTIVE ROWS ONLY, and it must match the database exactly. The guard
+     *   `fms_dispatch_assert_customer_of_company` tests `pc.active`, so an
+     *   inactive pair offered here would be a name the picker shows and the save
+     *   refuses.
+     */
+    const mappedBookSets = (() => {
+      const seen = new Map<string, Set<string>>();
+      for (const m of customerCompanies) {
+        if (!m.active) continue;
+        const set = seen.get(m.companyId);
+        if (set) set.add(m.customerId);
+        else seen.set(m.companyId, new Set([m.customerId]));
+      }
+      return seen;
+    })();
+
     const EMPTY_NAMES: ReadonlySet<string> = new Set<string>();
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
@@ -1069,6 +1252,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       isModuleViewer,
       canActOn,
       canSeeQueue,
+      canSeeCustomerOrders: isModuleViewer || isProcessCoordinator || isCustomerRecipientOfAny,
       canEditOrder,
       canCancelOrder,
       canWithdrawCancel,
@@ -1076,6 +1260,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       stepOwnerFor,
       stepOwnerCovering,
       ownerNamesFor,
+      customerRecipientIdsOf,
       personName,
 
       profiles: dir.profiles,
@@ -1083,7 +1268,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       designations,
       dispatchUsers: dir.profiles,
 
-      companies, companyLocations, customers, items, customerItems,
+      companies, companyLocations, customers, items, customerItems, customerCompanies,
       activeOf,
       masterList: (mt) => MASTER_LIST[mt],
 
@@ -1091,6 +1276,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       itemName: (id) => nameFrom(items, id),
       customersForCompany: (companyId, includeId) => {
         if (!companyId) return includeId ? customers.filter((c) => c.id === includeId) : [];
+        const mapped = mappedBookSets.get(companyId);
         return activeOf(customers).filter((c) =>
           c.companyId === companyId
           // ⚠ NO COMPANY MEANS EVERY COMPANY, not none. A customer nobody has
@@ -1100,6 +1286,18 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           //   Hiding them would make a newly approved customer unorderable,
           //   which is the exact moment somebody needs to order from them.
           || c.companyId === null
+          // ⚠ AND ANY BOOK MAPPED TO THEM BY HAND (OD-5). A UNION, NEVER A
+          //   REPLACEMENT — this is the one change that must not be made the
+          //   other way round. Most ledgers have no mapping row at all, so
+          //   reading `mappedBookSets` INSTEAD of company_id would cut O-tec
+          //   from 1,232 names to 304. As a union it adds 401 across the five
+          //   books and removes none (measured 11-09-2026).
+          //
+          //   The database agrees with this line, and it has to:
+          //   fms_dispatch_assert_customer_of_company accepts an active
+          //   mst_party_companies row too. Widening one without the other is
+          //   how a user fills a whole order and is thrown out at save.
+          || mapped?.has(c.id)
           || c.id === includeId);
       },
       mappedItemCount: (customerId) => (customerId ? mappedItemNameSets.get(customerId)?.size ?? 0 : 0),
@@ -1161,6 +1359,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       salesReturnPending: orders.filter((o) => isSalesReturnPending(o) && canActOn("sales_return", o)),
       salesReturnCompleted: orders.filter((o) => isSalesReturnDone(o) && canActOn("sales_return", o)),
 
+      // New Customer Orders. Same shape and the same reasoning as Sales Return
+      // just above: plain filters over `orders`, never `buildQueueEntries`.
+      customerOrdersPending: orders.filter(
+        (o) => o.status === "awaiting_order_completion" && canActOn("sales_order", o),
+      ),
+      customerOrdersCompleted: orders.filter(
+        (o) =>
+          o.intakeSource === "customer" &&
+          !!o.intakeCompletedAt &&
+          o.status === "awaiting_credit_check" &&
+          canActOn("sales_order", o),
+      ),
+      canCompleteCustomerOrder,
+
       masterManagers,
       masterRequests,
       myMasterRequests,
@@ -1181,6 +1393,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       updateOrder: async (orderId, input) => {
         await updateOrderWrite(orderId, input);
+        invalidate();
+      },
+      completeCustomerOrder: async (orderId, input) => {
+        await completeCustomerOrderWrite(orderId, input);
         invalidate();
       },
       recordStep: async (step, orderId, payload) => {
@@ -1330,6 +1546,37 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         invalidateAll();
         return result;
       },
+      mapPartyCompanies: async (customerId, companyIds) => {
+        const result = await mapPartyCompaniesWrite(customerId, companyIds);
+        // Told, not asked — same as the item mapping. There is nothing to
+        // approve, so this never reaches `resolvableRequests` and never bumps
+        // the "To review" badge.
+        //
+        // ⚠ ANNOUNCED TO THE *CUSTOMER* MASTER'S REVIEWERS, not a
+        //   'party_company' one. DispatchMasterType has five members and that is
+        //   not among them; asking for it does not fail at runtime, it fails to
+        //   compile. The customer master is the right audience anyway — this
+        //   widens who may bill one of their rows.
+        if (result.created + result.reactivated > 0) {
+          const n = result.created + result.reactivated;
+          await safeAnnounce({
+            entityType: "master_request",
+            entityId: customerId,
+            type: "master_mapped",
+            text: `${personName(uid)} mapped ${nameFrom(customers, customerId)} to ${n} billing compan${
+              n === 1 ? "y" : "ies"
+            }.`,
+            recipients: masterReviewersFor("customer").filter((id) => id !== uid),
+            meta: { master_type: "customer" },
+          });
+        }
+        // MINTS THE MAPPING THE CUSTOMER PICKER READS. `customersForCompany`
+        // unions mst_party_companies, so without this the user maps the firm and
+        // watches the picker still not offer it for up to thirty minutes — the
+        // exact failure the feature exists to end.
+        invalidateAll();
+        return result;
+      },
       resolveMasterRequest: async (id, approve, payload, note) => {
         await resolveMasterRequestWrite(id, approve, payload, note);
         const req = masterRequests.find((r) => r.id === id);
@@ -1356,6 +1603,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   }, [
     userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
+    customerCompanies,
     masterManagers, masterRequests, orders, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,
     // Load-bearing and invisible to tsc: without these the memo keeps the

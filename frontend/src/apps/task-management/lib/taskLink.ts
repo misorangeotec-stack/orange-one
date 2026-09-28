@@ -12,8 +12,12 @@ import type { AppRole, StatusFilter, TaskStatus } from "../types";
 
 export type RygColour = "green" | "yellow" | "red";
 
-/** Whether a task list link is restricted to recurring-generated or one-off tasks. */
-export type TaskKind = "recurring" | "oneoff";
+/**
+ * Which slice of the week a task-list link is restricted to. The three are a
+ * PARTITION - every task is exactly one of them, with peer winning - so the
+ * cards they drill from add up to the total above them.
+ */
+export type TaskKind = "recurring" | "oneoff" | "peer";
 
 /**
  * Colour → underlying task statuses, matching `rygCounts` (RygCells.tsx) and
@@ -38,8 +42,28 @@ export function taskListRouteForRole(role: AppRole): string {
   return "/task-management/tasks";
 }
 
+/**
+ * Where a task-list link should actually land, given what it is filtered to.
+ *
+ * 🔴 PEER LINKS MUST NOT GO TO TEAM TASKS. Team Tasks scopes to
+ *   `assignedTo in [self, ...downline]` and, when the viewer has no reports, it
+ *   replaces the whole table with a "No team members mapped" empty state. A peer
+ *   counterparty is BY DEFINITION not in your team, so every number on the peer
+ *   card drilled into a page telling the viewer they had no team - while that
+ *   same page's header read "1 task across your team". Found by browser-testing
+ *   as a real HOD; an admin lands on All Tasks and would never have seen it.
+ *
+ *   The peer board is the screen built for exactly these rows and reads the same
+ *   deep-link params, so peer links go there for every role.
+ */
+function routeFor(role: AppRole, kind?: TaskKind): string {
+  if (kind === "peer") return "/task-management/peer";
+  return taskListRouteForRole(role);
+}
+
 /** Display name of that route, so a link to it can say where it goes. Matches the nav labels. */
-export function taskListLabelForRole(role: AppRole): string {
+export function taskListLabelForRole(role: AppRole, kind?: TaskKind): string {
+  if (kind === "peer") return "Peer Tasks";
   if (role === "admin") return "All Tasks";
   if (role === "hod" || role === "sub_hod") return "Team Tasks";
   return "My Tasks";
@@ -57,7 +81,7 @@ export interface TaskLinkParams {
   statuses?: StatusFilter[];
   /** RYG colour, expanded to its statuses; takes precedence over `statuses`. */
   colour?: RygColour;
-  /** Restrict to recurring-generated tasks ("recurring") or one-off tasks ("oneoff"). */
+  /** Restrict to recurring, one-off, or peer (HOD-to-HOD) tasks. */
   kind?: TaskKind;
   /**
    * Restrict to "Other" (self-tracking, is_personal) tasks. Mutually exclusive
@@ -75,7 +99,7 @@ export interface TaskLinkParams {
 
 /** Build a deep-link to the role-appropriate task list, pre-filtered. */
 export function taskListLink({ role, assignee, dept, weekStart, statuses, colour, kind, personal, metricOnly }: TaskLinkParams): string {
-  const base = taskListRouteForRole(role);
+  const base = routeFor(role, kind);
   const sp = new URLSearchParams();
   // Employees only ever see their own tasks and My Tasks has no assignee filter,
   // so the assignee param is redundant (and would be a no-op) there.
@@ -119,11 +143,16 @@ export interface ParsedTaskFilters {
   dept?: string;
   week?: string;
   statuses: StatusFilter[];
-  /** Restrict to recurring-generated or one-off tasks (undefined = both). */
+  /** Restrict to recurring, one-off or peer tasks (undefined = all three). */
   kind?: TaskKind;
   /** Restrict to "Other" (self-tracking, is_personal) tasks only. */
   personal: boolean;
-  /** Exclude personal + Not-Applicable tasks, matching the score behind the link. */
+  /**
+   * Exclude whatever the score behind the link excludes, so the list matches the
+   * number that was clicked. 🔴 That depends on `kind`: for peer links it means
+   * countsTowardPeerMetrics, everywhere else countsTowardMetrics - which excludes
+   * peer tasks. Reading it as a fixed predicate makes every peer drill-down empty.
+   */
   metricOnly: boolean;
 }
 
@@ -146,7 +175,8 @@ export function parseTaskFilters(params: URLSearchParams): ParsedTaskFilters {
     .map((s) => s.trim())
     .filter((s): s is StatusFilter => VALID_STATUS.has(s as StatusFilter));
   const rawKind = params.get("kind");
-  const kind: TaskKind | undefined = rawKind === "recurring" || rawKind === "oneoff" ? rawKind : undefined;
+  const kind: TaskKind | undefined =
+    rawKind === "recurring" || rawKind === "oneoff" || rawKind === "peer" ? rawKind : undefined;
   return {
     assignee,
     dept,

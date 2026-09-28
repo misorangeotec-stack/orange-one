@@ -55,6 +55,8 @@ export const STATUS_LABEL: Record<RequestStatus, string> = {
   awaiting_sample_to_lab: "Awaiting receipt & send to lab",
   awaiting_lab_process: "With the lab",
   awaiting_result_received: "Awaiting result receipt",
+  awaiting_machine_process: "With machine testing",
+  awaiting_machine_result: "Awaiting machine result receipt",
   closed: "Closed",
   on_hold: "On hold",
   cancelled: "Cancelled",
@@ -74,6 +76,10 @@ export const STATUS_TONE: Record<RequestStatus, string> = {
   // Navy, like `awaiting_testing`: work is under way elsewhere, not waiting on a hand-off.
   awaiting_lab_process: "text-navy bg-navy/[0.06]",
   awaiting_result_received: "text-orange bg-orange-soft",
+  // Navy for the process (work under way elsewhere), orange for the hand-off —
+  // the same pairing the lab branch uses.
+  awaiting_machine_process: "text-navy bg-navy/[0.06]",
+  awaiting_machine_result: "text-orange bg-orange-soft",
   closed: "text-ryg-green bg-[#E9F8EF]",
   on_hold: "text-grey bg-page",
   cancelled: "text-grey-2 bg-page",
@@ -82,6 +88,14 @@ export const STATUS_TONE: Record<RequestStatus, string> = {
 /** Human label for the lab-testing decision (inward only). */
 export const labTestingLabel = (v: boolean | null): string =>
   v === true ? "Required" : v === false ? "Not required" : "—";
+
+/**
+ * The machine-testing decision. NULL reads as "Not required" here, unlike the lab
+ * gate's em-dash: every row raised before the gate existed genuinely ran no
+ * machine testing, and the server treats NULL the same way.
+ */
+export const machineTestingLabel = (v: boolean | null): string =>
+  v === true ? "Required" : "Not required";
 
 /* ------------------------------- step dates -------------------------------- */
 

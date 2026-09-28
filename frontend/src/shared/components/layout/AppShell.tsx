@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
 import { pageLabelFor } from "@/apps/currentApp";
+import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { HOME_LABEL, HOME_PATH, type NavItem, type NotificationItem, type ShellUser } from "./types";
@@ -98,6 +99,10 @@ export default function AppShell({
           roleSwitcher={roleSwitcher}
           onMenu={() => setDrawer(true)}
         />
+        {/* PF-18 · Hub-wide announcements. Its own element, NOT the `banner` below:
+            four layouts fill `banner` with the Demo Sandbox notice, and both must
+            show. Here, every app on this shell carries it at once. */}
+        <AnnouncementStrip />
         <main className="flex-1 overflow-y-auto">
           {/*
             1440, not 1180: the wide tables (All Tasks now runs to 1210px with its

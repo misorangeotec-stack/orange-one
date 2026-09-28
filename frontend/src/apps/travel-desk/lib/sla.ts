@@ -10,7 +10,7 @@
  *
  * ── WHERE THESE NUMBERS COME FROM ───────────────────────────────────────────
  * Every default below is a figure from the Domestic Travel Policy, not a guess.
- * §12's timeline table is the whole back half of the chain:
+ * Section 12's timeline table is the whole back half of the chain:
  *
  *     Employee submits expense claim …… within 5 working days of return
  *     HOD approves or rejects ………………… within 2 working days
@@ -19,14 +19,14 @@
  *     Total cycle …………………………………………… maximum 14 working days
  *
  * ⚠ NOTE `settlement` ANCHORS ON `claim_review`, NOT ON `finance_review`.
- *   That is not a slip. §12 measures the credit from HOD APPROVAL, so Finance
+ *   That is not a slip. Section 12 measures the credit from HOD APPROVAL, so Finance
  *   taking its full five days does not buy the traveller's money another week.
  *   Anchoring it on the step before would let the 14-day promise drift.
  *
  * ── THE NEGATIVE-OFFSET TRAP — READ BEFORE TOUCHING `advance` ────────────────
  *
  * The advance deadline runs BACKWARDS: money that lands after departure has
- * missed the point entirely (§11.1 — "credited to employee bank account BEFORE
+ * missed the point entirely (Section 11.1 — "credited to employee bank account BEFORE
  * departure date"). The shared engine cannot express that:
  *
  *   • `resolveStepSla` does NOT clamp a negative `days` to zero — it SILENTLY
@@ -71,11 +71,11 @@ export type StepSla = StepSlaBase<StepKey>;
 export type StepSlaMap = StepSlaMapBase<StepKey>;
 
 const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
-  // §3.2 / §11.1 step 2 — the HOD has a working day.
+  // Section 3.2 / Section 11.1 step 2 — the HOD has a working day.
   manager_approval: { anchor: "request", days: 1 },
   director_approval: { anchor: "manager_approval", days: 1 },
 
-  // §11.1 — a trigger step. `days` is the magnitude; the direction (BEFORE the
+  // Section 11.1 — a trigger step. `days` is the magnitude; the direction (BEFORE the
   // planned departure) lives in TRIGGER_STEPS and is applied in queues.ts.
   advance: { anchor: "manager_approval", days: 1 },
 
@@ -86,11 +86,11 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   //   where there was one, so a band-7 trip is measured from the real decision.
   booking: { anchor: "manager_approval", days: 2 },
 
-  // §11.1 step 6 — a trigger step, measured from the trip's RETURN DATE rather
+  // Section 11.1 step 6 — a trigger step, measured from the trip's RETURN DATE rather
   // than from any step completion. The journey ending is what starts this clock.
   claim: { anchor: "booking", days: 5 },
 
-  // §12.
+  // Section 12.
   claim_review: { anchor: "claim", days: 2 },
   finance_review: { anchor: "claim_review", days: 5 },
   settlement: { anchor: "claim_review", days: 7 },
@@ -109,12 +109,12 @@ export const TRIGGER_STEPS: Partial<
     dueAfter: "Planned departure date",
     before: true,
     rule:
-      "This many working days BEFORE departure. Policy §11.1 requires the advance to be credited before the employee leaves — money that lands afterwards has missed the point.",
+      "This many working days BEFORE departure. Policy Section 11.1 requires the advance to be credited before the employee leaves — money that lands afterwards has missed the point.",
   },
   claim: {
     dueAfter: "Return date",
     rule:
-      "This many working days AFTER the trip returns (actual date if recorded, else planned). Policy §11.1: the claim is due within 5 working days of return.",
+      "This many working days AFTER the trip returns (actual date if recorded, else planned). Policy Section 11.1: the claim is due within 5 working days of return.",
   },
 };
 

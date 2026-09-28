@@ -7,8 +7,8 @@ const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company, CompanyItem, CompanyLocation, Customer, Designation, DispatchActivity,
-  DispatchMasterRequest, CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder,
-  DispatchRound, Item, MasterManager, NamedMaster, OrderLine, RoundItem, StepAssignee, StepDoc, StepOwner,
+  DispatchMasterRequest, CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder,
+  DispatchRound, Item, LotAllocation, MasterManager, NamedMaster, OrderLine, RoundItem, StepAssignee, StepDoc, StepOwner,
 } from "../types";
 
 /**
@@ -40,6 +40,7 @@ type Tbl =
   | "mst_items"
   | "mst_units"
   | "mst_party_items"
+  | "mst_party_companies"
   | "fms_dispatch_master_managers"
   | "fms_dispatch_master_requests"
   | "fms_dispatch_orders"
@@ -158,6 +159,14 @@ const COLS = {
   locations: "id,name,active,sort_order,created_at",
   companySites: "id,active,sort_order,created_at,location_id,company_id",
   partyItems: "id,active,sort_order,created_at,party_id,item_id",
+  /**
+   * ⚠ NO `name` COLUMN — asking for one is a 400, not an empty field. Same
+   *   trap as partyItems and companySites above: this is a link table and
+   *   PostgREST rejects the whole request rather than returning null.
+   *   `source` earns its place: the Masters column marks the hand-added ones,
+   *   and it is the only way to tell a person's decision from a derived row.
+   */
+  partyCompanies: "id,active,sort_order,created_at,party_id,company_id,source",
   parties: "id,name,active,sort_order,created_at,company_id,code,location,gstin,contact_name,phone,email",
   items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id,item_type",
   units: "id,name,created_at",
@@ -321,9 +330,14 @@ export const DISPATCH_MASTERS_QK = ["dispatchMasters"] as const;
  *
  * ⚠ ITS OWN KEY, and NOT a child of DISPATCH_MASTERS_QK. Nesting it there would
  *   put every book behind `invalidateAll()`, so mapping one item would re-fetch
- *   8,340 rows to learn about the one that changed. Nothing invalidates this:
- *   a company's Tally book changes on the sync's schedule, not on ours, and the
- *   30-minute staleTime is the right granularity for that.
+ *   8,340 rows to learn about the one that changed. That still holds: no WRITE
+ *   path may invalidate this.
+ *
+ * A company's Tally book changes on the SYNC's schedule, not on ours — and since
+ * PF-17 the browser is told when that schedule fires. `useCatalogueVersion`
+ * invalidates the `["dispatchCompanyItems"]` prefix once or twice per pull, which
+ * re-fetches only the book actually on screen. The 30-minute staleTime stays as
+ * the floor for a browser that was closed or asleep.
  */
 export const COMPANY_ITEMS_QK = (companyId: string) =>
   ["dispatchCompanyItems", companyId] as const;
@@ -399,6 +413,30 @@ const mapMasterRequest = (r: any): DispatchMasterRequest => ({
   createdAt: r.created_at,
 });
 
+/**
+ * OD-15 · the lot split, embedded rather than fetched separately.
+ *
+ * PostgREST resolves these from the foreign key, so the children ride along with
+ * the parent page and there is no second round trip, no extra query key, and no
+ * second grouping pass to keep in step with the two that already exist.
+ *
+ * ⚠ THE PARENT SELECT MUST KEEP ITS "*". These tables have no narrow column
+ *   list anywhere -- see COLS, which covers the catalogue only.
+ *
+ * ⚠ THE MIGRATION MUST BE LIVE BEFORE THIS SHIPS. An embed naming a table the
+ *   database does not have is a 400 on the WHOLE request, so the dispatch fetch
+ *   fails outright rather than degrading to no lots.
+ */
+const LINE_COLS  = "*, fms_dispatch_order_item_lots(lot_no, qty, seq)";
+const RITEM_COLS = "*, fms_dispatch_round_item_lots(lot_no, qty, seq)";
+
+/** Child rows -> the ordered allocation. Absent, null or [] all mean "no split". */
+const mapLots = (rows: any): LotAllocation[] =>
+  (Array.isArray(rows) ? rows : [])
+    .map((r: any) => ({ lotNo: String(r.lot_no ?? ""), qty: num(r.qty), seq: Number(r.seq ?? 0) }))
+    .filter((l: LotAllocation) => l.lotNo !== "")
+    .sort((a: LotAllocation, b: LotAllocation) => a.seq - b.seq);
+
 const mapLine = (r: any): OrderLine => ({
   id: r.id,
   orderId: r.order_id,
@@ -411,6 +449,7 @@ const mapLine = (r: any): OrderLine => ({
   shipQty: num(r.ship_qty),
   billQty: num(r.bill_qty),
   lotNo: str(r.lot_no),
+  lots: mapLots(r.fms_dispatch_order_item_lots),
 });
 
 const mapRoundItem = (r: any): RoundItem => ({
@@ -425,6 +464,7 @@ const mapRoundItem = (r: any): RoundItem => ({
   shipQty: Number(r.ship_qty ?? 0),
   billQty: num(r.bill_qty),
   lotNo: str(r.lot_no),
+  lots: mapLots(r.fms_dispatch_round_item_lots),
 });
 
 const mapRound = (r: any): DispatchRound => ({
@@ -492,9 +532,11 @@ const mapOrder = (r: any): DispatchOrder => ({
   id: r.id,
   orderNo: r.order_no,
 
-  dispatchType: r.dispatch_type,
+  dispatchType: r.dispatch_type ?? null,
   companyId: r.company_id ?? null,
   locationId: r.location_id ?? null,
+  intakeSource: r.intake_source ?? null,
+  intakeCompletedAt: r.intake_completed_at ?? null,
   customerId: r.customer_id,
   customerLocation: str(r.customer_location),
   customerPoNo: str(r.customer_po_no),
@@ -653,6 +695,7 @@ export interface DispatchMasters {
   customers: Customer[];
   items: Item[];
   customerItems: CustomerItem[];
+  customerCompanies: CustomerCompany[];
 }
 
 /**
@@ -675,7 +718,8 @@ export interface DispatchMasters {
  *   — it is what the split exists to prevent.
  */
 export async function fetchDispatchMasters(): Promise<DispatchMasters> {
-  const [companies, locations, companySites, customerItems, customers, units, orderLineItemIds] =
+  const [companies, locations, companySites, customerItems, customers, units, orderLineItemIds,
+         partyCompanies] =
     await Promise.all([
       // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
       // items, where Tally holds thousands and the tick is the only thing making
@@ -693,6 +737,11 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       fetchWhere("mst_parties", (q) => q.eq("is_customer", true), COLS.parties),
       fetchAll("mst_units", "created_at", COLS.units),
       fetchOrderLineItemIds(),
+      // WHICH BOOKS MAY BILL A CUSTOMER BEYOND THEIR OWN (OD-5). 779 rows of
+      // two uuids — one page. Appended at the END of this list on purpose: the
+      // destructure above is positional and every row is `any`, so inserting
+      // in the middle silently rebinds every name after it.
+      fetchAll("mst_party_companies", "created_at", COLS.partyCompanies),
     ]);
 
   const unitNameById = new Map<string, string>(units.map((u: any) => [u.id, u.name]));
@@ -806,6 +855,26 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
         ...mapMaster(r), name: "", customerId: r.party_id, itemId: r.item_id,
       })),
 
+    /**
+     * WHICH BOOKS MAY BILL A CUSTOMER, beyond the one their ledger is filed in.
+     *
+     * ⚠ THIS IS ADDITIVE TO `customer.companyId`, NEVER A REPLACEMENT FOR IT.
+     *   `customersForCompany` unions the two. Swapping one for the other would
+     *   SHRINK every picker — O-tec 1,232 offered today would fall to 304 —
+     *   because most ledgers have no row here at all. As a union it adds 401
+     *   across the five books and removes none (measured 11-09-2026).
+     *
+     * ⚠ Filtered to this module's customers for the same reason as the pairs
+     *   above: the table covers every party in the business, and a row whose
+     *   party is not loaded here can only ever be dead weight in the cache.
+     */
+    customerCompanies: partyCompanies
+      .filter((r: any) => customerIds.has(r.party_id))
+      .map((r: any): CustomerCompany => ({
+        ...mapMaster(r), name: "",
+        customerId: r.party_id, companyId: r.company_id, source: r.source ?? "portal",
+      })),
+
   };
 }
 
@@ -874,9 +943,9 @@ export async function fetchDispatchData(
     fetchAll("fms_dispatch_master_managers"),
     fetchAll("fms_dispatch_master_requests"),
     fetchAll("fms_dispatch_orders", "submitted_at"),
-    fetchAll("fms_dispatch_order_items"),
+    fetchAll("fms_dispatch_order_items", "created_at", LINE_COLS),
     fetchAll("fms_dispatch_rounds", "archived_at"),
-    fetchAll("fms_dispatch_round_items"),
+    fetchAll("fms_dispatch_round_items", "created_at", RITEM_COLS),
     // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
     //   user_id is not the signed-in user (`mineNotifications`), so fetching the
     //   whole table only ever cost bandwidth — and it cost the most for an admin,
@@ -983,7 +1052,7 @@ async function fetchOrderChildren(orderIds: string[]) {
   const inList = (col: string) => (q: any) => q.in(col, orderIds);
 
   const [orderItems, rounds] = await Promise.all([
-    fetchWhere("fms_dispatch_order_items", inList("order_id")),
+    fetchWhere("fms_dispatch_order_items", inList("order_id"), LINE_COLS),
     pagedWalk((withCount) =>
       db.from("fms_dispatch_rounds")
         .select("*", withCount ? { count: "exact" } : undefined)
@@ -994,7 +1063,7 @@ async function fetchOrderChildren(orderIds: string[]) {
   const roundItems = roundIds.length
     ? await pagedWalk((withCount) =>
         db.from("fms_dispatch_round_items")
-          .select("*", withCount ? { count: "exact" } : undefined)
+          .select(RITEM_COLS, withCount ? { count: "exact" } : undefined)
           .in("round_id", roundIds)
           .order("id", { ascending: true }))
     : [];

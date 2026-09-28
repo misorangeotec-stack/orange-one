@@ -11,6 +11,7 @@ import CreateTask from "./pages/CreateTask";
 import TaskDetail from "./pages/TaskDetail";
 import TeamTasks from "./pages/TeamTasks";
 import AllTasks from "./pages/AllTasks";
+import PeerTasks from "./pages/PeerTasks";
 import RecurringList from "./pages/RecurringList";
 import RecurringForm from "./pages/RecurringForm";
 import Reports from "./pages/Reports";
@@ -59,6 +60,9 @@ export default function TaskManagementApp() {
 
             <Route path="team" element={<RequireRole roles={[...MANAGER]}><TeamTasks /></RequireRole>} />
             <Route path="all" element={<RequireRole roles={["admin"]}><AllTasks /></RequireRole>} />
+            {/* MANAGER, not hod-only: a HOD who is ALSO somebody's sub-HOD must not
+                lose the screen, and an admin gets the org-wide view of it. */}
+            <Route path="peer" element={<RequireRole roles={[...MANAGER]}><PeerTasks /></RequireRole>} />
 
             <Route path="recurring" element={<RequireRole roles={[...MANAGER]}><RecurringList /></RequireRole>} />
             <Route path="recurring/new" element={<RequireRole roles={[...MANAGER]}><RequireEdit><RecurringForm /></RequireEdit></RequireRole>} />

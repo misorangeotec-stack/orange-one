@@ -16,7 +16,7 @@ export interface TaskExportRow {
   department: string;
   createdBy: string;
   assignedTo: string;
-  type: string; // Recurring / One-off / Other
+  type: string; // Recurring / One-off / Peer / Other
   recurrence: string;
   status: string;
   assignedOn: string; // dd-mm-yyyy

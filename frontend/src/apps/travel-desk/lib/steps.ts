@@ -20,15 +20,15 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  *
  * THREE STEPS THE PRD DOES NOT HAVE, and why each is a step rather than a field:
  *
- *   director_approval — Policy §3.2 sends bands 6-9 to a Director, not to their
+ *   director_approval — Policy Section 3.2 sends bands 6-9 to a Director, not to their
  *                       HOD. Folding that into one approval step would either
  *                       spam the Directors with every field engineer's day trip
  *                       or quietly let a GM self-approve a Mumbai week.
- *   advance           — §11.1 gives it its own approver (Finance), its own
+ *   advance           — Section 11.1 gives it its own approver (Finance), its own
  *                       deadline (2 working days) and its own failure mode (the
  *                       money not arriving before departure). A field on the
  *                       trip owes nobody; a step owes Finance.
- *   finance_review    — §11.1 step 8 is a different person doing a different job
+ *   finance_review    — Section 11.1 step 8 is a different person doing a different job
  *                       from the HOD in step 7: the HOD says "yes they went and
  *                       yes that is roughly right", Finance says "and here is
  *                       what policy actually allows". Merging them is how a cap

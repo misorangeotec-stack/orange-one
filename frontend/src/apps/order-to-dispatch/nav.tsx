@@ -39,6 +39,13 @@ export const QUEUE_PATH: Record<QueueStep, string> = {
 export const SALES_RETURN_PATH = "sales-return";
 
 /**
+ * New Customer Orders' path, kept out of `QUEUE_PATH` for the same reason Sales
+ * Return's is: that record is indexed by the loop over `STEPS`, and this queue is
+ * deliberately not a step in the chain (see lib/steps.ts).
+ */
+export const NEW_CUSTOMER_ORDERS_PATH = "new-customer-orders";
+
+/**
  * ⚠ MASTER REQUESTS IS TWO DIFFERENT THINGS, and where it sits says which.
  *
  * For a master's OWNER (and every admin) it is an approval queue — so it belongs
@@ -74,6 +81,10 @@ export function buildDispatchNav(opts: {
   canSeeSalesReturn: boolean;
   /** Cancelled orders whose sales bill still needs unwinding. 0 shows no badge. */
   salesReturnPending: number;
+  /** May this person see New Customer Orders — named against a customer, or a coordinator. */
+  canSeeCustomerOrders: boolean;
+  /** Customer orders nobody has written up yet. 0 shows no badge. */
+  customerOrdersPending: number;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -93,6 +104,26 @@ export function buildDispatchNav(opts: {
   ];
 
   let queueUsed = false;
+
+  /*
+    FIRST IN THE QUEUES GROUP, ahead of the chain, because it is where the work
+    starts — a customer order arrives before anybody has looked at it, and the
+    chain's own first queue (credit) cannot see it until this one is done.
+
+    BADGED WITH THE WHOLE BACKLOG rather than a held subset: an order nobody has
+    written up is not a slow order, it is an order our team has not read yet.
+  */
+  if (opts.canSeeCustomerOrders) {
+    nav.push({
+      label: "New Customer Orders",
+      to: `${B}/queues/${NEW_CUSTOMER_ORDERS_PATH}`,
+      icon: ic.step,
+      badge: opts.customerOrdersPending || undefined,
+      section: "Queues",
+    });
+    queueUsed = true;
+  }
+
   const queueSteps = STEPS.filter((st) => !st.noQueue);
   for (const st of queueSteps) {
     const step = st.key as QueueStep;

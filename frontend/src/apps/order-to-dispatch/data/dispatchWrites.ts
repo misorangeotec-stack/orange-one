@@ -86,6 +86,46 @@ export async function updateOrder(orderId: string, input: OrderInput): Promise<v
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Write up a customer order on the ordinary sales-order form, and send it on to
+ * credit check (OD-14).
+ *
+ * ⚠ A SEPARATE RPC FROM `updateOrder`, AND IT HAS TO BE. Two things stop the
+ *   staff path working here, and both are fatal rather than awkward:
+ *
+ *   1. `fms_dispatch_update_order` gates on raiser-or-coordinator, and on a
+ *      customer order THE RAISER IS THE CUSTOMER. The named recipient whose job
+ *      this is fails that check.
+ *   2. It writes lines through `fms_dispatch_replace_lines`, which validates the
+ *      exact `mst_party_items(customer_id, item_id)` pair — 36 of 62 possible
+ *      lines on Bishen's primary book and 0 on two others. It would refuse lines
+ *      nobody had touched. The customer sibling validates against the union of
+ *      ticked ledgers, by name.
+ *
+ * `requesterName` is not sent: on a customer order it is the customer's own name
+ * and is not ours to overwrite.
+ */
+export async function completeCustomerOrder(orderId: string, input: OrderInput): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_complete_customer_order", {
+    p_order: orderId,
+    p: {
+      company_id: input.companyId,
+      location_id: input.locationId ?? "",
+      dispatch_type: input.dispatchType,
+      order_date: input.orderDate ?? "",
+      customer_po_no: input.customerPoNo ?? "",
+      order_remarks: input.orderRemarks ?? "",
+      customer_location: input.customerLocation ?? "",
+      lines: input.lines.map((l) => ({
+        item_id: l.itemId ?? "",
+        quantity: l.quantity ?? "",
+        line_remark: l.lineRemark ?? "",
+      })),
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
 /* ----------------------------- workflow steps ----------------------------- */
 
 /**
@@ -167,6 +207,17 @@ export interface AmendRoundLine {
    */
   billQty: string;
   lotNo?: string | null;
+  /**
+   * OD-15 · the corrected lot split.
+   *
+   * ⚠ OMITTED MEANS KEEP, exactly as `receiver` does below, and this is the
+   *   whole safety of the correction path. The RPC presence-tests the key:
+   *   absent, it leaves the stored split and its summary alone; present, it
+   *   replaces both. Sending it unconditionally would flatten a split that was
+   *   recorded correctly on the first quantity-only correction, and nobody
+   *   would see it happen.
+   */
+  lots?: { lot_no: string; qty: string; seq: number }[];
 }
 
 /**
@@ -201,7 +252,13 @@ export async function amendRound(
   if (input.dcStatus) payload.dc_status = input.dcStatus;
   if (input.lines?.length) {
     payload.lines = input.lines.map((l) => ({
-      id: l.id, bill_qty: l.billQty, lot_no: l.lotNo ?? "",
+      id: l.id,
+      bill_qty: l.billQty,
+      lot_no: l.lotNo ?? "",
+      // Spread, so a line with no `lots` sends no key at all — see the note on
+      // the field. `{}` would still add nothing; `lots: undefined` would too,
+      // but this says out loud that absence is the signal.
+      ...(l.lots ? { lots: l.lots } : {}),
     }));
   }
   // All three keys travel together or none of them do — a new primary sent
@@ -579,6 +636,43 @@ export async function mapCustomerItems(
   });
   if (error) throw new Error(error.message);
   const r = (data ?? {}) as Partial<MapCustomerItemResult>;
+  return { created: r.created ?? 0, reactivated: r.reactivated ?? 0, skipped: r.skipped ?? 0 };
+}
+
+/**
+ * Map a customer to the companies that may bill them, with NO approval step
+ * (OD-5, decided 07-09-2026).
+ *
+ * ⚠ AN RPC RATHER THAN AN INSERT, for the same reason as the item twin above.
+ *   RLS on mst_party_companies is `is_admin(uid) OR
+ *   mst_is_master_manager('party_company', uid)`: a salesperson can READ the
+ *   table and cannot write it, which is exactly backwards for the one person
+ *   who has just discovered the mapping is missing.
+ *
+ * ⚠ SEVERAL COMPANIES AT ONCE, and the plural is the point rather than a
+ *   convenience. A firm that should be billable from Enterprise is usually
+ *   billable from Noida too, and making that two trips through the modal is how
+ *   the second one never gets done. The sales order's own company arrives
+ *   pre-ticked; the rest are the user's to add.
+ *
+ * ⚠ WHAT THIS WRITES IS PERMISSION TO BILL, not a note. The save guard
+ *   `fms_dispatch_assert_customer_of_company` accepts an active row here, so a
+ *   pair written by this call can be invoiced immediately — that is the whole
+ *   decision, and the Tally ledger is opened by people at billing time. See
+ *   supabase/migrations/20261119120000_od5_map_party_company.sql.
+ */
+export type MapPartyCompanyResult = MapCustomerItemResult;
+
+export async function mapPartyCompanies(
+  customerId: string,
+  companyIds: string[],
+): Promise<MapPartyCompanyResult> {
+  const { data, error } = await db.rpc("fms_dispatch_map_party_company", {
+    p_party: customerId,
+    p_companies: companyIds,
+  });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as Partial<MapPartyCompanyResult>;
   return { created: r.created ?? 0, reactivated: r.reactivated ?? 0, skipped: r.skipped ?? 0 };
 }
 

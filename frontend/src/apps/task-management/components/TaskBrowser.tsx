@@ -14,8 +14,8 @@ import { matchesSearch } from "@/shared/lib/search";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
 import { useTaskStore } from "../mock/store";
-import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
-import type { Department, Profile, Task, TaskStatus } from "../types";
+import { countsTowardMetrics, countsTowardPeerMetrics, isRecurringTask, isPeerTask } from "../mock/selectors";
+import type { Department, Task, TaskStatus } from "../types";
 import { STATUS_FILTER_OPTIONS, RECURRENCE_LABEL, matchesStatusFilter, isOverdueTask, type StatusFilter } from "../types";
 import { exportTasksToXlsx, type TaskExportRow } from "../lib/exportTasks";
 
@@ -26,7 +26,28 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   revised: "Revised",
   shifted: "Shifted",
 };
-import type { ParsedTaskFilters } from "../lib/taskLink";
+import type { ParsedTaskFilters, TaskKind } from "../lib/taskLink";
+
+/**
+ * The only fields this browser reads off a person. Both `Profile` (RLS-scoped
+ * directory) and `OrgPerson` (list_org_people(), org-wide and name-only)
+ * structurally satisfy it, so the peer board can pass HODs the viewer's own
+ * directory cannot see without either widening RLS or faking a Profile row.
+ */
+export interface BrowserPerson {
+  id: string;
+  name: string;
+  designation: string | null;
+  departmentId: string | null;
+  avatarColor: string;
+}
+
+/** Chip wording per kind. A map, not a ternary — a ternary silently mislabels a third value. */
+const KIND_LABEL: Record<TaskKind, string> = {
+  recurring: "Recurring tasks",
+  oneoff: "One-off tasks",
+  peer: "Peer tasks",
+};
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "./TaskTable";
 
 const nextWeekStart = () => {
@@ -49,7 +70,13 @@ export default function TaskBrowser({
   stickyScope,
 }: {
   tasks: Task[];
-  people: Profile[];
+  /**
+   * Who may appear in the assignee filter. Structurally the fields this table
+   * actually reads, so BOTH a `Profile` (the RLS-scoped directory, used by All
+   * Tasks and Team Tasks) and an `OrgPerson` (from list_org_people(), used by
+   * the peer board for HODs outside the viewer's directory) satisfy it.
+   */
+  people: BrowserPerson[];
   departments?: Department[];
   emptyMessage?: string;
   /** Hide the internal "Any/This/Next week" dropdown when the parent owns the time scope (e.g. Team Tasks' This-week/All-time toggle). */
@@ -84,7 +111,7 @@ export default function TaskBrowser({
   const [dept, setDept] = useStickyState(scope, "dept", initialFilters?.dept ?? "all");
   const [statuses, setStatuses] = useStickyState<StatusFilter[]>(scope, "statuses", initialFilters?.statuses ?? []);
   // Recurring-vs-one-off scope, seeded from a deep-link (Weekly Scorecard split blocks).
-  const [kind, setKind] = useStickyState<"all" | "recurring" | "oneoff">(scope, "kind", initialFilters?.kind ?? "all");
+  const [kind, setKind] = useStickyState<"all" | TaskKind>(scope, "kind", initialFilters?.kind ?? "all");
   const [week, setWeek] = useStickyState<"all" | "this" | "next">(scope, "week", "all");
   // An exact ISO-Monday week from a deep-link — independent of the all/this/next
   // dropdown, so it can target a historical week even when that dropdown is hidden.
@@ -165,7 +192,12 @@ export default function TaskBrowser({
   const filtered = useMemo(() => {
     const nw = nextWeekStart();
     return tasks.filter((t) => {
-      if (metricOnly && !countsTowardMetrics(t)) return false;
+      // ⚠ The metric predicate DEPENDS ON THE KIND, and it is applied before the
+      //   kind filter below. countsTowardMetrics excludes peer tasks (they are
+      //   scored on the peer board, not in anyone's own RYG), so reading it as a
+      //   constant would make every ?kind=peer&metric=1 drill-down return zero
+      //   rows — i.e. every number on the peer card would link to an empty list.
+      if (metricOnly && !(kind === "peer" ? countsTowardPeerMetrics(t) : countsTowardMetrics(t))) return false;
       if (category === "regular" && t.isPersonal) return false;
       if (category === "other" && !t.isPersonal) return false;
       if (person !== "all" && t.assignedTo !== person) return false;
@@ -173,8 +205,11 @@ export default function TaskBrowser({
       if (dept !== "all" && t.departmentId !== dept) return false;
       if (statuses.length && !matchesStatusFilter(t, statuses)) return false;
       if (overdueOnly && !isOverdueTask(t)) return false;
-      if (kind === "recurring" && !isRecurringTask(t)) return false;
-      if (kind === "oneoff" && (isRecurringTask(t) || t.isPersonal)) return false;
+      // Peer wins, so the three kinds partition the list and the cards that drill
+      // in here still add up to the total above them.
+      if (kind === "peer" && !isPeerTask(t)) return false;
+      if (kind === "recurring" && (!isRecurringTask(t) || isPeerTask(t))) return false;
+      if (kind === "oneoff" && (isRecurringTask(t) || t.isPersonal || isPeerTask(t))) return false;
       if (exactWeek && t.weekStart !== exactWeek) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
       if (week === "next" && t.weekStart !== nw) return false;
@@ -263,7 +298,7 @@ export default function TaskBrowser({
   if (kind !== "all")
     activeFilters.push({
       key: "kind",
-      label: kind === "recurring" ? "Recurring tasks" : "One-off tasks",
+      label: KIND_LABEL[kind],
       onClear: () => setKind("all"),
     });
   if (week !== "all")
@@ -302,7 +337,7 @@ export default function TaskBrowser({
         department: departmentById(t.departmentId)?.name ?? "",
         createdBy: actorById(t.createdBy)?.name ?? "",
         assignedTo: actorById(t.assignedTo)?.name ?? "",
-        type: t.isPersonal ? "Other" : isRecurringTask(t) ? "Recurring" : "One-off",
+        type: t.isPersonal ? "Other" : isPeerTask(t) ? "Peer" : isRecurringTask(t) ? "Recurring" : "One-off",
         recurrence: rec ? RECURRENCE_LABEL[rec] : "",
         status: t.notApplicable ? "Not Applicable" : STATUS_LABEL[t.status],
         assignedOn: formatDate(t.createdAt),
@@ -335,13 +370,14 @@ export default function TaskBrowser({
           column now lives in the table's own filter row instead.
         */}
         <div className="p-3 flex flex-wrap items-center gap-2.5 border-b border-line">
-          <PillToggle<"all" | "recurring" | "oneoff">
+          <PillToggle<"all" | TaskKind>
             value={kind}
             onChange={setKind}
             options={[
               { value: "all", label: "All types" },
               { value: "recurring", label: "Recurring" },
               { value: "oneoff", label: "One-off" },
+              { value: "peer", label: "Peer" },
             ]}
           />
           <PillToggle<"all" | "regular" | "other">

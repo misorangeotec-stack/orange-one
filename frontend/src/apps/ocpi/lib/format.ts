@@ -149,17 +149,36 @@ export function paperDate(iso: string | null): string {
 }
 
 /**
- * A quotation number from its sequence value: 24 → `QT-M0024`.
+ * The next quotation number, for the screen only: 1 → `OTPL/QT/2627/SEP/0001`.
  *
- * ⚠ THE FORMAT LIVES IN TWO PLACES AND THAT IS A KNOWN DUPLICATE. The number a
- *   deal actually carries is minted in SQL — `'QT-M' || lpad(next_seq, 4, '0')`
- *   in fms_ocpi_generate_quotation — because minting must be atomic with the
- *   counter. This copy exists ONLY to show a person what the next one will look
- *   like before it is minted (Settings → Quotation numbering). Nothing stores
- *   what this returns; change the SQL and change this to match.
+ * ⚠ A KNOWN DUPLICATE OF SQL, AND IT MUST STAY IDENTICAL. The number a deal
+ *   actually carries is minted by `fms_ocpi_qt_no` in the database, because
+ *   minting must be atomic with the counter. This copy exists ONLY to show a
+ *   person what the next one will look like before it is minted (Settings →
+ *   Quotation numbering). Nothing stores what this returns.
+ *
+ * ⚠ THE PERIOD IS THE COUNTER SCOPE (R6). `2627/SEP` names the `qt:2627/SEP`
+ *   counter row, and a new scope starts at 1 — which is what makes the series
+ *   restart every month, with no reset job.
  */
-export function quotationNoFor(seq: number): string {
-  return `QT-M${String(Math.max(0, Math.trunc(seq))).padStart(4, "0")}`;
+export function quotationNoFor(seq: number, period: string = periodCode()): string {
+  return `OTPL/QT/${period}/${String(Math.max(0, Math.trunc(seq))).padStart(4, "0")}`;
+}
+
+/**
+ * The financial year and month a number belongs to: Sep-2026 → `2627/SEP`.
+ *
+ * ⚠ A SECOND COPY OF `fms_ocpi_period_code`. The database mints the real number
+ *   and derives its own period IN IST; this exists so Settings can name the
+ *   period it is about to move before anything is minted.
+ *
+ * ⚠ THE BROWSER IS ALREADY IN THE USER'S OWN CLOCK, so a local `Date` is the
+ *   right thing here — unlike SQL, where `current_date` is UTC and would stamp a
+ *   1-October paper SEP. That trap lives in the database, not here.
+ */
+export function periodCode(d: Date = new Date()): string {
+  const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  return `${fyCode(d)}/${MON[d.getMonth()]}`;
 }
 
 /**
@@ -176,47 +195,40 @@ export function fyCode(d: Date = new Date()): string {
 }
 
 /**
- * An order-confirmation number from its sequence value: 9 → `OTPL/OC/9/26-27`.
+ * An order-confirmation number from its sequence value:
+ * 1 → `OTPL/OC/2627/SEP/0001`.
  *
- * ⚠ THE SAME KNOWN DUPLICATE AS `quotationNoFor`, and the more expensive one to
- *   get wrong. The authority is `fms_ocpi_oc_no` in the database, called by both
- *   `fms_ocpi_generate_quotation` (which mints) and `fms_ocpi_decide_quotation`
- *   (which still mints for any deal generated before OCPI-36). Change that and
- *   change this to match.
+ * ⚠ A KNOWN DUPLICATE OF `fms_ocpi_oc_no`, and the more expensive one to get
+ *   wrong. The database is the authority — it is called by
+ *   `fms_ocpi_generate_quotation` (which mints), `fms_ocpi_decide_quotation`
+ *   (the fallback for pre-OCPI-36 deals) and `fms_ocpi_submit_oc`. Change that
+ *   and change this to match.
  *
- * ⚠ THE SERIAL IS FIRST AND UNPADDED, THE YEAR IS LAST AND HYPHENATED (OCPI-36).
- *   It used to read `OTPL/OC/2627/0009` — year first, serial padded to four —
- *   and every one of the 27 folders in Bushra's `2026.27 OC&PI` is headed
- *   `OTPL/OC/<n>/26-27`. So every order confirmation the module had issued
- *   carried a number her register does not recognise.
+ * ⚠ THE COUNTER RESTARTS EVERY MONTH (R6), not every April, because the period
+ *   is part of the counter scope and a new scope starts at 1.
  *
- * ⚠ `fy` IS STILL THE FOUR-DIGIT COUNTER SCOPE — `2627`, not `26-27`. It names
- *   the `oc:2627` counter row and `fms_ocpi_set_oc_series` validates it as four
- *   digits. The hyphen belongs to the printed number and is added here.
- *
- * ⚠ THE OC SERIES RESTARTS EACH APRIL and the quotation series does not, which
- *   is why this takes a year and `quotationNoFor` does not.
- *
- * ⚠ DEALS ISSUED BEFORE OCPI-36 KEEP THE NUMBER THEY PRINTED. Nothing rewrites
- *   `oc_no`, so `OTPL/OC/2627/0001…0008` still exist on record and this function
- *   will never reproduce them. That is correct: a frozen paper keeps its number.
+ * ⚠ TWO EARLIER SHAPES STILL EXIST ON RECORD AND THIS WILL NEVER REPRODUCE
+ *   EITHER. `OTPL/OC/2627/0001…0008` (pre-OCPI-36) and `OTPL/OC/9…22/26-27`
+ *   (OCPI-36) are both frozen where they were printed. That is correct: a paper
+ *   keeps the number it was issued under. Expect three shapes in the register
+ *   for the rest of this financial year.
  */
-export function ocNoFor(seq: number, fy: string = fyCode()): string {
-  return `OTPL/OC/${Math.max(0, Math.trunc(seq))}/${fy.slice(0, 2)}-${fy.slice(2)}`;
+export function ocNoFor(seq: number, period: string = periodCode()): string {
+  return `OTPL/OC/${period}/${String(Math.max(0, Math.trunc(seq))).padStart(4, "0")}`;
 }
 
 /**
- * The same number with the serial left as a placeholder — `OTPL/OC/nnn/26-27`.
+ * The same number with the serial left as a placeholder — `OTPL/OC/2627/SEP/nnnn`.
  *
  * ⚠ THIS EXISTS BECAUSE THE CALLER USED TO BUILD IT WITH A REGEX, AND OCPI-36
  *   BROKE THAT REGEX SILENTLY. `SetupWarnings` rendered
  *   `ocNoFor(1, fy).replace(/\d+$/, "nnnn")`, which worked only while the number
- *   ENDED in the serial. Against `OTPL/OC/1/26-27` the trailing digits are the
- *   YEAR, so it produced `OTPL/OC/1/26-nnnn` — a made-up number, in a warning
- *   whose entire job is to show the reader what is about to be minted.
+ *   ENDED in the serial. R6 has made it end in the serial again — which is
+ *   exactly why this stays a function rather than being folded back into a
+ *   regex that happens to work today.
  */
-export function ocNoPreview(fy: string = fyCode()): string {
-  return `OTPL/OC/nnn/${fy.slice(0, 2)}-${fy.slice(2)}`;
+export function ocNoPreview(period: string = periodCode()): string {
+  return `OTPL/OC/${period}/nnnn`;
 }
 
 /**

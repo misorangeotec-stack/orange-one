@@ -78,6 +78,8 @@ export function buildRequestColumns(s: Store, opts: { showRequester: boolean }):
       sortValue: (r) => statusLabel(r),
       filter: { kind: "select", get: (r) => statusLabel(r), options: STATUS_PRIORITY.map((st) => LINE_STATUS_LABEL[st]) },
       tdClassName: "whitespace-nowrap",
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
   ];
 }

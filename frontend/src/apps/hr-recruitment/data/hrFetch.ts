@@ -9,6 +9,9 @@ import {
   mapOnboardingCheck,
   mapProbation,
   mapProbationReview,
+  mapProbationCheckin,
+  mapBuddy,
+  mapBuddyInteraction,
 } from "./hrMap";
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
@@ -44,6 +47,9 @@ import type {
   ProbationFinalStatus,
   ProbationOutcome,
   ProbationReview,
+  ProbationCheckin,
+  Buddy,
+  BuddyInteraction,
   ProbationReviewStatus,
   Requisition,
   RequisitionPlatform,
@@ -122,6 +128,9 @@ type Tbl =
   | "fms_hr_onboarding_checks"
   | "fms_hr_probations"
   | "fms_hr_probation_reviews"
+  | "fms_hr_probation_checkins"
+  | "fms_hr_buddies"
+  | "fms_hr_buddy_interactions"
   | "fms_hr_activity"
   | "fms_hr_candidate_scores"
   | "fms_hr_notifications"
@@ -235,6 +244,11 @@ export interface HrData {
   onboardingChecks: OnboardingCheck[];
   probations: Probation[];
   probationReviews: ProbationReview[];
+  /** NR-10 — the Day 7/15/30/60/90 check-ins that replaced them. */
+  probationCheckins: ProbationCheckin[];
+  /** NR-9 — the buddy programmes and their logged interactions. */
+  buddies: Buddy[];
+  buddyInteractions: BuddyInteraction[];
   activity: HrActivity[];
   candidateScores: CandidateFit[];
   notifications: HrNotification[];
@@ -419,6 +433,9 @@ export async function fetchHrData(): Promise<HrData> {
     onboardingChecks,
     probations,
     probationReviews,
+    probationCheckins,
+    buddies,
+    buddyInteractions,
     activity,
     candidateScores,
     notifications,
@@ -449,6 +466,9 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_onboarding_checks"),
     fetchAll("fms_hr_probations"),
     fetchAll("fms_hr_probation_reviews"),
+    fetchAll("fms_hr_probation_checkins", "created_at"),
+    fetchAll("fms_hr_buddies", "created_at"),
+    fetchAll("fms_hr_buddy_interactions", "created_at"),
     // The trail used to come back whole, which was fine while it was pure audit —
     // a few dozen rows. Team comments live in this table too now, so it grows with
     // the conversation rather than with the process, and it is read on EVERY app load.
@@ -509,6 +529,9 @@ export async function fetchHrData(): Promise<HrData> {
     onboardingChecks: onboardingChecks.map(mapOnboardingCheck),
     probations: probations.map(mapProbation),
     probationReviews: probationReviews.map(mapProbationReview),
+    probationCheckins: probationCheckins.map(mapProbationCheckin),
+    buddies: buddies.map(mapBuddy),
+    buddyInteractions: buddyInteractions.map(mapBuddyInteraction),
     activity: activity.map(mapActivity),
     candidateScores: candidateScores.map(mapCandidateScore),
     notifications: notifications.map(mapNotification),

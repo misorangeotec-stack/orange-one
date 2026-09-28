@@ -51,17 +51,19 @@ export default function SalesReturnQueue() {
   const stage = useStageMode<DoneRow>(completed, s.userId);
   const acting = useEntryModal<{ order: DispatchOrder }>();
 
+  // Plain inline, not inline-flex (PF-20): a column dragged narrow cuts the round chip first.
+  // An inline-flex box that overflows is swallowed whole by the "…".
   const orderCell = (o: DispatchOrder) => (
-    <span className="inline-flex items-center gap-2">
+    <>
       <Link to={`${B}/orders/${o.id}`} className="font-semibold text-navy hover:text-orange">
         {o.orderNo}
       </Link>
       {(o.srRoundNo ?? 0) > 1 && (
-        <span className="rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
+        <span className="ml-2 inline-block rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
           R{o.srRoundNo}
         </span>
       )}
-    </span>
+    </>
   );
 
   const pendingColumns: QueueColumn<DispatchOrder>[] = [

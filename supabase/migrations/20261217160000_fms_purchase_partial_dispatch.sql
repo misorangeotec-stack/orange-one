@@ -27,6 +27,8 @@
 --      edit twin) stay byte-identical.
 --   5. fms_purchase_refresh_po - carried forward VERBATIM from 20260731120000
 --      with one rule added: balance still to dispatch -> stage 'follow_up'.
+--      The OD-13 P0c staff guard (20261109140000) that live carries is kept,
+--      and its grants are restated.
 --
 -- A PO with no partial lots behaves exactly as before.
 --
@@ -194,6 +196,8 @@ begin
   return new;
 end $$;
 
+revoke all on function public.fms_purchase_grn_items_dispatch_cap() from public, anon;
+
 drop trigger if exists fms_purchase_grn_items_dispatch_cap on public.fms_purchase_grn_items;
 create trigger fms_purchase_grn_items_dispatch_cap
   before insert or update of received_qty, po_item_id on public.fms_purchase_grn_items
@@ -222,6 +226,11 @@ declare
   v_gate_pending  boolean;
   v_partial_open  boolean;
 begin
+  -- OD-13 P0c guard (20261109140000), kept: that sweep injected it into the live
+  -- body, and a CREATE OR REPLACE from an older copy would silently drop it.
+  if auth.uid() is not null and not public.is_staff(auth.uid()) then
+    raise exception 'Not authorized';
+  end if;
   -- Cancellation is absorbing. `closed` is derived and stays re-derivable.
   if (select current_stage from public.fms_purchase_pos where id = p_po_id) = 'cancelled' then
     return;
@@ -328,3 +337,7 @@ begin
    where id = p_po_id;
 end $$;
 
+-- OD-13 P0c grants, restated: signed-in staff and the service role only.
+revoke execute on function public.fms_purchase_refresh_po(uuid) from public;
+revoke execute on function public.fms_purchase_refresh_po(uuid) from anon;
+grant  execute on function public.fms_purchase_refresh_po(uuid) to authenticated, service_role;

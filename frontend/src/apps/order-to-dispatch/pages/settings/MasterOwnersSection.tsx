@@ -4,6 +4,9 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useDispatchStore } from "../../store";
 import {
   DISPATCH_MASTER_TYPES, isDirectMaster, REQUESTABLE_DISPATCH_MASTER_TYPES,
@@ -78,6 +81,12 @@ export default function MasterOwnersSection() {
 
   const editingLabel = DISPATCH_MASTER_TYPES.find((m) => m.value === editing)?.plural ?? "";
 
+  /**
+   * PF-20: one line per row, a long owner list cut at the table's cut width and whole on hover.
+   * A settings matrix, so no drag handles (the user, 19-09-2026).
+   */
+  const fit = useColumnWidths("tb", ["master", "owners", "raised"]);
+
   return (
     <div className="space-y-3">
       <p className="text-[12.5px] text-grey max-w-2xl">
@@ -94,9 +103,14 @@ export default function MasterOwnersSection() {
                 <th className="font-medium px-4 py-3 w-px whitespace-nowrap">How it&rsquo;s raised</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {DISPATCH_MASTER_TYPES.map((m) => {
                 const names = s.managerIdsFor(m.value).map((id) => s.personName(id));
+                const owners = names.length ? (
+                  <span className="text-navy">{names.join(", ")}</span>
+                ) : (
+                  <span className="text-grey-2">Admins only</span>
+                );
                 return (
                   <tr key={m.value} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -109,10 +123,12 @@ export default function MasterOwnersSection() {
                     </td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{m.plural}</td>
                     <td className="px-4 py-3">
-                      {names.length ? (
-                        <span className="text-navy">{names.join(", ")}</span>
+                      {fit.on ? (
+                        <FitCell fit={fit} col="owners" cap={FIT.CUT}>
+                          {owners}
+                        </FitCell>
                       ) : (
-                        <span className="text-grey-2">Admins only</span>
+                        owners
                       )}
                     </td>
                     <td className="px-4 py-3 text-grey-2 whitespace-nowrap">

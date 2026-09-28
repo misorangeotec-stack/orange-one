@@ -13,17 +13,24 @@ import type { AttentionRow } from "@/shared/lib/fmsDashboard";
  * link (the monitoring route is gated, so a plain link would drop a regular user
  * on Access Denied). The value column auto-hides when no row carries a value
  * (no-money FMS).
+ *
+ * `actionLabel` overrides that text. Asset Maintenance points this card at its
+ * CALENDAR rather than the Control Center — its rows are dated tracks, not queue
+ * entries, and the forward view is where you act on them — so the default label
+ * named a destination the link does not go to.
  */
 export default function NeedsAttentionCard({
   rows,
   todayIso,
   actionHref,
   showAction,
+  actionLabel = "Open Control Center →",
 }: {
   rows: AttentionRow[];
   todayIso: string;
   actionHref?: string;
   showAction?: boolean;
+  actionLabel?: string;
 }) {
   const hasValue = rows.some((r) => r.value !== null);
   return (
@@ -32,7 +39,7 @@ export default function NeedsAttentionCard({
         <h3 className={SECTION_HEADING_CLASS}>Needs attention</h3>
         {showAction && actionHref && (
           <Link to={actionHref} className="text-[12px] font-semibold text-orange hover:underline">
-            Open Control Center →
+            {actionLabel}
           </Link>
         )}
       </div>

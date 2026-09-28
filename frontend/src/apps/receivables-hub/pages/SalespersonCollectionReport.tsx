@@ -57,25 +57,52 @@ import { formatDateDMY } from "@hub/lib/utils";
 import type { Customer, SaleType } from "@hub/lib/types";
 
 /* ── Group-by dimensions (the Aging-style roll-up builder) ───────────────────── */
-type CDim = "salesperson" | "customer" | "group" | "category" | "company" | "location";
+type CDim = "salesperson" | "collectionTeam" | "customer" | "group" | "category" | "company" | "location";
 const C_DIMENSIONS: { key: CDim; label: string }[] = [
-  { key: "salesperson", label: "Salesperson" },
-  { key: "customer",    label: "Customer" },
-  { key: "group",       label: "Customer Group" },
-  { key: "category",    label: "Customer Category" },
-  { key: "company",     label: "Company" },
-  { key: "location",    label: "Location" },
+  { key: "salesperson",    label: "Salesperson" },
+  { key: "collectionTeam", label: "Collection Team" },
+  { key: "customer",       label: "Customer" },
+  { key: "group",          label: "Customer Group" },
+  { key: "category",       label: "Customer Category" },
+  { key: "company",        label: "Company" },
+  { key: "location",       label: "Location" },
 ];
 const C_PRESETS: GroupByPreset<CDim>[] = [
-  { label: "Salesperson → Customer", dims: ["salesperson", "customer"] },
-  { label: "Salesperson → Group",    dims: ["salesperson", "group"] },
-  { label: "Salesperson",            dims: ["salesperson"] },
-  { label: "Customer",               dims: ["customer"] },
-  { label: "Customer Group",         dims: ["group"] },
-  { label: "Customer Category",      dims: ["category"] },
-  { label: "Company",                dims: ["company"] },
-  { label: "Location",               dims: ["location"] },
+  { label: "Salesperson → Customer",     dims: ["salesperson", "customer"] },
+  { label: "Salesperson → Group",        dims: ["salesperson", "group"] },
+  { label: "Salesperson",                dims: ["salesperson"] },
+  { label: "Collection Team → Customer", dims: ["collectionTeam", "customer"] },
+  { label: "Collection Team",            dims: ["collectionTeam"] },
+  { label: "Customer",                   dims: ["customer"] },
+  { label: "Customer Group",             dims: ["group"] },
+  { label: "Customer Category",          dims: ["category"] },
+  { label: "Company",                    dims: ["company"] },
+  { label: "Location",                   dims: ["location"] },
 ];
+/**
+ * The bucket a ledger with NO collection team lands in, when grouping by Collection Team.
+ *
+ * ⚠ A SENTINEL, never the display text — the same reason `shared/lib/blankFilter.ts` spells a
+ *   blank "\u0000blank". "OTHERS" IS A REAL COLLECTION TEAM (one ledger carries it, measured on
+ *   the live mirror 18-09-2026), so a bucket keyed on any plausible word could merge the untagged
+ *   ledgers into a team the client actually uses, indistinguishably. Note this is the OPPOSITE of
+ *   the salesperson dimension on this same screen, where `spName()` folds the untagged into
+ *   "Others" on purpose, because there it IS a real muster value. NUL cannot occur in a
+ *   Tally-sourced muster value, which makes the collision impossible rather than merely unlikely.
+ *
+ * ⚠ THE FILTER DELIBERATELY CANNOT SELECT THIS BUCKET. `CollectionTeamMultiSelect` offers only
+ *   teams that exist, because inventing a catch-all there "would hide the coverage gap the Masters
+ *   screen exists to report". A group-by has no such choice — every row must land somewhere — so
+ *   every untagged ledger that reaches this report lands in a bucket the control above cannot
+ *   select. That is correct, and it is why the label reads as an ABSENCE: the report must not be
+ *   taken to have invented a team.
+ *
+ *   How big it is depends entirely on which figure you mean, so neither is a safe assumption:
+ *   1,088 of 1,887 muster rows carry no team, but most of those ledgers are dormant and never
+ *   reach this table — measured 18-09-2026 the bucket held 30 of the 755 ledgers actually listed.
+ */
+const NO_TEAM = "\u0000no-team";
+const NO_TEAM_LABEL = "No collection team";
 /** Composite node metrics — current + previous month, so Collection % (prev) rolls up too. */
 interface CM { m: Metrics; mPrev: Metrics; }
 const KEY_SEP = "|||";
@@ -900,6 +927,15 @@ export default function SalespersonCollectionReport() {
     const ledgerSub = [c.company, c.location].filter(Boolean).join(" · ") || undefined;
     switch (dim) {
       case "salesperson": { const v = spName(c.salesPerson); return { value: v, label: v }; }
+      // Buckets on the RAW, UNTRIMMED value — deliberately unlike the `category` case below. The
+      // filter is `set.has(c.collectionTeam)` and `collectionTeamOptions` is built the same way,
+      // so a team stored with a stray space has to bucket under exactly the string the filter can
+      // select, or group and filter quietly disagree about the same customer. Unset is always ""
+      // here and never null (the fetcher normalises it), and folds to the sentinel — see NO_TEAM.
+      case "collectionTeam": {
+        const v = c.collectionTeam;
+        return v ? { value: v, label: v } : { value: NO_TEAM, label: NO_TEAM_LABEL };
+      }
       case "customer":    return { value: perLedger, label: c.name || "—", sub: ledgerSub };
       case "group": {
         const g = groupEntryOf(c, customerGroupMap);
@@ -1214,6 +1250,14 @@ export default function SalespersonCollectionReport() {
     salesPersons.length > 0 && {
       label: salesPersons.length <= 2 ? `Person: ${salesPersons.join(", ")}` : `${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
+    },
+    // Worded exactly as the Dashboard and the Risk Register word it. This report was the one
+    // screen carrying the team filter with no chip, so the only thing that said a team was
+    // selected was the control itself — and grouping by team makes a forgotten one far easier
+    // to misread (one bucket, and nothing on the page explaining why).
+    collectionTeams.length > 0 && {
+      label: collectionTeams.length <= 2 ? `Team: ${collectionTeams.join(", ")}` : `${collectionTeams.length} teams`,
+      onRemove: () => setCollectionTeams([]),
     },
     categories.length > 0 && {
       label: categories.length <= 2 ? `Category: ${categories.join(", ")}` : `${categories.length} categories`,
@@ -1531,7 +1575,20 @@ export default function SalespersonCollectionReport() {
     : "salesperson";
   const sortedRoots = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
+    /** The "No collection team" bucket, wherever it sits in the tree. `sortTree` compares siblings
+     *  only, so testing the node's OWN dimension (the last hop of its path) is enough. */
+    const unassignedTeam = (n: GroupNode<CM>): boolean => {
+      const own = n.path[n.path.length - 1];
+      return own?.dim === "collectionTeam" && own.value === NO_TEAM;
+    };
     const cmp = (a: GroupNode<CM>, b: GroupNode<CM>): number => {
+      // It is an ABSENCE, not a team, so it is pinned below its siblings whatever the column and
+      // whatever the direction — the sort then always orders the TEAMS, and the reader never has
+      // to work out whether the top row is a collector or a gap. Its size is no guide either way
+      // and must not become one: it is 30 of 755 listed ledgers today, against 1,088 of 1,887 on
+      // the muster, and it grows the moment an untagged customer starts billing.
+      const ua = unassignedTeam(a), ub = unassignedTeam(b);
+      if (ua !== ub) return ua ? 1 : -1;
       if (sortKey === "salesperson")       return dir * a.label.localeCompare(b.label);
       if (sortKey === "sales")              return dir * (a.metrics.m.sales - b.metrics.m.sales);
       if (sortKey === "salesPrev")          return dir * (a.metrics.mPrev.sales - b.metrics.mPrev.sales);
@@ -1641,9 +1698,14 @@ export default function SalespersonCollectionReport() {
     aoa.push([`Financial Year: ${fyLabel}`]);
     aoa.push([`Month: ${selectedMonth}`]);
     aoa.push([`As on: ${formatDateLong(asOfDate)}`]);
+    // Salesperson and Collection Team are named here too. The file used to print Company,
+    // Location, Sale Type, Segment and Search and neither of these — so an export grouped by team
+    // and filtered to one team could not say which team it was.
     aoa.push([
       `Company: ${companies.length ? companies.join(", ") : "All"}`,
       `Location: ${locations.length ? locations.join(", ") : "All"}`,
+      `Salesperson: ${salesPersons.length ? salesPersons.join(", ") : "All"}`,
+      `Collection Team: ${collectionTeams.length ? collectionTeams.join(", ") : "All"}`,
     ]);
     aoa.push([
       `Sale Type: ${saleTypes.length ? saleTypes.map((t) => SALE_TYPE_LABELS[t] ?? t).join(", ") : "All"}`,

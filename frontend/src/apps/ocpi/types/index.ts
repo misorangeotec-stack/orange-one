@@ -75,7 +75,9 @@ export interface OcpiDoc {
 /** What the deal is quoted in. The source form records dollar deals as free text. */
 export type DealCurrency = "INR" | "USD";
 
-export type TransportTerms = "high_seas" | "local";
+// R5 · five deal types. ⚠ `high_seas` is CAPTIONED "HSS" and `local` is
+// captioned "Others" — the label is not the value; see TRANSPORT_TERMS.
+export type TransportTerms = "high_seas" | "hss_epcg" | "epcg" | "moowr" | "local";
 /**
  * ⚠ RETAINED, DERIVED, AND NO LONGER ASKED (OCPI-35). The form merged this
  *   question into the one delivery question -- `deliveryVia`, asked on BOTH
@@ -83,7 +85,9 @@ export type TransportTerms = "high_seas" | "local";
  *   three live constraints and one RPC demand it on a High Seas deal. See the
  *   note on `deliveryVia` below.
  */
-export type HighSeasVia = "CIF" | "EX Factory" | "FOB";
+// R5 · `FOB` is retired from the buttons but MUST stay here — the column can
+// still hold it, and `Local` joined it. Equal to the column CHECK by design.
+export type HighSeasVia = "CIF" | "EX Factory" | "FOB" | "Local";
 export type CostBearer = "customer" | "company";
 /**
  * Where the customer's own delivery leg starts, on a High Seas deal whose cost
@@ -233,6 +237,8 @@ export interface OcpiDeal {
   deliveryVia: string | null;
   deliveryPort: string | null;
   deliveryFactoryCity: string | null;
+  /** R5 · where a LOCAL delivery goes. Free text, like `deliveryPort`. */
+  deliveryDestination: string | null;
   deliveryLeg: DeliveryLeg | null;
   remarks: string | null;
   dollarClauseAgreed: boolean | null;
@@ -367,6 +373,24 @@ export interface OcpiDeal {
   postWarrantyHeadPrice: number | null;
   consumablesSupplier: string | null;
   machineModelNo: string | null;
+  /**
+   * R8 · the customs heading chosen FOR THIS DEAL, overriding the machine's.
+   *
+   * ⚠ THE TWIN OF `machineModelNo`, AND THEY SHARE A PRINTED LINE —
+   *   `(HM1800B-TK64-A1)  HSN CODE: 84433910`. Both resolve the same way,
+   *   `deal.x || machine.x`, because a pair that prints together must be
+   *   overridable together or a paper goes out half-overridden.
+   *
+   * ⚠ NULL IS THE NORMAL STATE and means "use the machine master's". Nothing
+   *   pre-fills it, deliberately: copying the master's value onto the deal
+   *   freezes it into the revision, so a later correction to the master would
+   *   never reach deals already raised.
+   *
+   * 🔴 BOTH `84433250` AND `84433910` ARE IN LIVE USE and neither is the
+   *    machine's permanent answer — which applies depends on the consignment.
+   *    The form says so, and says to confirm with the export team.
+   */
+  hsnCode: string | null;
   preparedBy: string | null;
   approvedBy: string | null;
 
@@ -527,6 +551,28 @@ export interface OcpiMachine {
   name: string;
   /** The full product name as it reads on an invoice. NOT unique. */
   billingName: string | null;
+  /**
+   * B1 · The short name the CUSTOMER knows the machine by — `HOMER K64`,
+   * `Sub Pro II+`, `ROCKET MACHINE` — and the ONLY thing it feeds is the
+   * Performa Invoice's Subject line.
+   *
+   * 🔴 THREE NAMES, THREE JOBS, AND THEY ARE NOT INTERCHANGEABLE.
+   *      `name`         the salesperson's picker, and what a deal points at
+   *      `billingName`  the long item-cell description and the OC's `Product:`
+   *      `salesName`    the Subject line, and nothing else
+   *    Printing `billingName` here was tried and withdrawn: it already prints in
+   *    the item cell four lines below, the Subject line does not wrap, and the
+   *    longest live billing name is 107 characters.
+   *
+   * ⚠ NULL IS A REAL STATE, not an unfilled field to warn about. 18 of the 29
+   *   machines were named off a real invoice's Subject line; the other 11 have
+   *   no invoice in either year's folder, so they fall back to
+   *   `machineModelNo` — exactly what they printed before B1.
+   *
+   * ⚠ NO HEAD COUNT LIVES HERE. The real papers append one (`HOMER
+   *   K64(With 64 Heads)`) but that varies per DEAL — see R4.
+   */
+  salesName: string | null;
   /** Direct / Sublimation / Other. Chosen first on the quotation; narrows the list. */
   categoryId: string | null;
   /**

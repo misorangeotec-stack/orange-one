@@ -356,7 +356,7 @@ export default function TopExposureReport() {
   if (source === "default") {
     return (
       <div className="p-6 max-w-[900px] mx-auto space-y-4">
-        <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Reports
         </Link>
         <Card className="rounded-card border-border bg-surface">
@@ -465,7 +465,7 @@ export default function TopExposureReport() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

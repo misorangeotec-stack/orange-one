@@ -10,6 +10,7 @@ import {
   setOcSeries as setOcSeriesWrite,
 } from "./data/ocpiWrites";
 import { buildQueueEntries, type QueueEntry, type QueueStep } from "./lib/queues";
+import { RAISER_STEPS } from "./lib/owners";
 import { resolveStepSla, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
@@ -236,7 +237,6 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
      *   they can SEE: the deals policy still hands a non-owner only their own
      *   deals, so the list they open is their own.
      */
-    const RAISER_STEPS: QueueStep[] = ["customer_signoff", "finance_handover"];
     const canSeeQueue = (step: QueueStep): boolean =>
       isProcessCoordinator ||
       isViewer ||

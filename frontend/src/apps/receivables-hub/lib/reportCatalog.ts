@@ -5,8 +5,10 @@ import {
   Boxes,
   Calculator,
   CalendarClock,
+  ClipboardList,
   CreditCard,
   Crown,
+  Factory,
   FolderTree,
   Gauge,
   HandCoins,
@@ -14,6 +16,7 @@ import {
   Layers,
   LayoutDashboard,
   NotebookText,
+  PackageCheck,
   PackageX,
   Percent as PercentIcon,
   ReceiptText,
@@ -30,22 +33,86 @@ import {
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
+// The Bushra-Dashboard screens' icons, kept on their own line: master's list above keeps gaining
+// icons, and an addition beside another branch's addition is a merge conflict for no reason.
+import { Package, Receipt } from "lucide-react";
+// RC-18's icon, on its own line for the same reason as RC-13's below.
+import { BadgeIndianRupee } from "lucide-react";
+// RC-13's icon, on its own line so it never collides with edits to the list above.
+import { FileWarning } from "lucide-react";
+// The Purchase dashboards' icon, on its own line for the same reason.
+import { Truck } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
+import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
 import type { Crumb } from "@/apps/currentApp";
 
 /**
- * The report catalogue — ONE source of truth for every report in this app.
+ * The report catalogue — ONE source of truth for every report in the portal.
  *
- * The landing page (pages/Reports.tsx), the sidebar's Reports sub-nav (lib/menus.tsx)
- * and the breadcrumb trail (layouts/UserLayout.tsx) all read this list. Adding a report
- * here makes it appear in all three; there is no second place to register it.
+ * The landing page (pages/Reports.tsx), the Reports app's sidebar and home-menu rows
+ * (apps/reports/) and the breadcrumb trail all read this list. Adding a report here makes it
+ * appear in all of them; there is no second place to register it.
  *
- * Reads `appBasePath` directly rather than lib/menus' BASE re-export: menus.tsx imports
- * REPORT_CATEGORIES from here to build its sub-nav, so importing BASE back from menus
- * would be a cycle. `appInfo` is an import-free leaf, which is what makes this safe.
+ * ⚠ IT STILL LIVES UNDER receivables-hub/ although most of what it describes does not. The
+ *   file did not move with the screens for the same reason they did not move out of this
+ *   folder: a hundred hub modules import it by its @hub path, and relocating it would be a
+ *   rename with no reader-visible gain. What DID have to change is the routing table below —
+ *   see it for which app now serves what.
+ *
+ * Reads `appBasePath` directly rather than lib/menus' BASE re-export: appInfo is an
+ * import-free leaf, which is what makes it safe to read from a module this widely imported.
  */
 
-const BASE = appBasePath("outstanding-dashboard");
+/**
+ * WHICH APP SERVES WHICH CATALOGUE PATH.
+ *
+ * Every `path` below stays written the way it always was — relative to the PORTAL ROOT of
+ * whichever app owned the screen when it was catalogued — and this table maps the prefix to
+ * the URL it is served at today. Resolving per entry rather than flipping one constant is
+ * what lets ONE catalogue keep describing screens that now live in two apps.
+ */
+const HUB_BASE = appBasePath("outstanding-dashboard");
+const REPORTS_BASE = appBasePath("reports");
+
+const ROUTING: { path: string; url: string }[] = [
+  // The Reports app's own pages. Its basePath IS "/reports", so the segment is not repeated:
+  // "reports/aging" is served at "/reports/aging", not "/reports/reports/aging".
+  { path: "reports/", url: `${REPORTS_BASE}/` },
+  // Bushra-Dashboard moved into the Reports app too, but KEPT its own segment: its screens are
+  // a section of the app, not reports in the flat /reports/<slug> shape, and their catalogue
+  // paths are shared verbatim with lib/bushraDashboards.ts.
+  { path: "bushra-dashboard/", url: `${REPORTS_BASE}/bushra-dashboard/` },
+  // Whatever is left is still a Receivables hub page — today just the two Sales & Team
+  // reports, which have their own top-level menu over there and never moved.
+  { path: "", url: `${HUB_BASE}/` },
+];
+
+/** Catalogue path → absolute URL. First match wins, so the table is ordered most specific first. */
+function absoluteHref(path: string): string {
+  const r = ROUTING.find((x) => path.startsWith(x.path))!;
+  return r.url + path.slice(r.path.length);
+}
+
+/**
+ * The inverse. Matched LONGEST URL FIRST, not in table order — "/reports/bushra-dashboard/x"
+ * starts with "/reports/" too, and reading it as the report "reports/bushra-dashboard/x"
+ * would find nothing in the catalogue and fail the route guard closed.
+ */
+const BY_URL_LENGTH = [...ROUTING].sort((a, b) => b.url.length - a.url.length);
+
+/**
+ * Absolute URL → the catalogue path it would be written as, or null when the URL belongs to
+ * neither app. "/reports" itself maps to the landing page's own path, "reports".
+ */
+function cataloguePath(pathname: string): string | null {
+  if (pathname === REPORTS_BASE) return "reports";
+  const r = BY_URL_LENGTH.find((x) => pathname.startsWith(x.url));
+  return r ? r.path + pathname.slice(r.url.length) : null;
+}
+
+/** Absolute URL of the Reports landing page. Exported so the guards and the shell agree. */
+export const reportsHome = (): string => REPORTS_BASE;
 
 /**
  * Which pipeline a report's numbers come from.
@@ -91,7 +158,8 @@ export type ReportCategoryId =
   | "collections"
   | "customers"
   | "sales-team"
-  | "tally";
+  | "tally"
+  | "bushra-report";
 
 export interface ReportCategory {
   id: ReportCategoryId;
@@ -115,7 +183,11 @@ export interface ReportEntry {
   category: ReportCategoryId;
   /** Only meaningful inside the "tally" category today. */
   subcategory?: string;
-  /** Path RELATIVE to BASE, query string included. Absent when status is "soon". */
+  /**
+ * Path relative to the PORTAL ROOT, query string included — "reports/aging",
+ * "bushra-dashboard/packing-material". `absoluteHref` turns it into a URL on
+ * whichever app owns it. Absent when status is "soon".
+ */
   path?: string;
   icon: LucideIcon;
   source: ReportSource;
@@ -231,6 +303,13 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Tally Reports",
     blurb: "Statements laid out the way Tally prints them, for line-by-line cross-verification.",
     icon: BookOpen,
+  },
+  // Bushra's own reports, kept together in one group rather than scattered across the others.
+  {
+    id: "bushra-report",
+    title: "Bushra-Report",
+    blurb: "Bushra's reports — production, batch costing and sales, read straight from the Tally books.",
+    icon: ClipboardList,
   },
 ];
 
@@ -524,7 +603,7 @@ export const REPORTS: ReportEntry[] = [
     scoping: "party-client",
     title: "Credit Terms Not Set",
     purpose:
-      "Customers with no credit limit or credit days in Tally, company by company, with what they owe.",
+      "One row per customer with a block per company book — credit days, limit, customer since and what they owe — and the gaps marked red.",
     category: "receivables",
     path: "reports/credit-terms",
     icon: CreditCard,
@@ -574,6 +653,20 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["on account", "manual"],
   },
+  {
+    // RC-18. The customer rows are scoped in the browser through allCustomers, like Disputed Bills.
+    // The Suspense block at its foot is NOT scoped: those receipts name no customer to scope by.
+    id: "advances",
+    scoping: "party-client",
+    title: "Advances Not Applied",
+    purpose: "Money received that no open invoice has absorbed, per salesperson, with its receipts and open bills.",
+    category: "collections",
+    path: "reports/advances",
+    icon: BadgeIndianRupee,
+    source: "tally",
+    status: "live",
+    keywords: ["advance", "on account", "unapplied", "unallocated", "suspense", "receipt", "settle"],
+  },
 
   // ── Customers ──────────────────────────────────────────────────────────────
   {
@@ -614,6 +707,20 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["red mark", "blocked", "flag", "watchlist"],
+  },
+  {
+    // RC-13. Scoped in the browser through allCustomers, like Red Mark: a dispute on a customer the
+    // viewer cannot see is never drawn.
+    id: "disputed-bills",
+    scoping: "party-client",
+    title: "Disputed Bills",
+    purpose: "Bills under dispute (managed in Masters), with live amount, pending and settled; clear once settled.",
+    category: "customers",
+    path: "reports/disputed-bills",
+    icon: FileWarning,
+    source: "tally",
+    status: "live",
+    keywords: ["dispute", "disputed", "remark", "rate difference", "credit note", "clear"],
   },
 
   // ── Sales & Team ───────────────────────────────────────────────────────────
@@ -735,6 +842,21 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["register", "sales register", "voucher", "gstin", "particulars", "quantity", "rate", "revenue", "foc", "challan", "credit note", "debit note"],
   },
   {
+    id: "soa-sales-register",
+    // Same read path and scoping as the Sales Register — straight off rpt_soa_register through
+    // PostgREST, so the scope goes on the query as .in("party", …).
+    scoping: "party-server",
+    title: "SOA Sales Register",
+    purpose: "Stock sent on approval — billed, returned, or still with the customer. Pending matches Tally's Sales Bills Pending.",
+    category: "tally",
+    subcategory: "books-registers",
+    path: "reports/soa-sales-register",
+    icon: PackageCheck,
+    source: "tally",
+    status: "live",
+    keywords: ["soa", "sales on approval", "approval", "delivery challan", "tracking number", "sales bills pending", "goods delivered bills not made", "pending", "rejected", "converted"],
+  },
+  {
     id: "group-summary",
     scoping: "none",
     title: "Group Summary",
@@ -776,16 +898,143 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["bills", "receivables", "due date", "overdue", "pending", "bill-wise"],
   },
+
+  // ── Bushra-Report ──────────────────────────────────────────────────────────
+  {
+    id: "batch-costing",
+    // Production batches — item grain, no customer on a stock journal.
+    scoping: "none",
+    title: "Batch Costing",
+    purpose: "Every production batch — finished good, scrap and RM consumed, by colour, group and category.",
+    category: "bushra-report",
+    path: "reports/batch-costing",
+    icon: Factory,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "batch costing", "production", "stock journal", "stock journal-production", "consumption",
+      "rm consumption", "finished good", "scrap", "output", "colour", "color", "sublimation",
+      "reactive", "item category", "lot", "batch", "bushra",
+    ],
+  },
+  {
+    id: "bushra-sales-register",
+    // Same read as the Tally Sales Register — rpt_sales_register with .in("party", …).
+    scoping: "party-server",
+    title: "Sales Register",
+    purpose: "Every sales voucher line, with sales-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-sales-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
+  },
+  {
+    id: "bushra-purchase-register",
+    // Vendors, not customers — the salesperson scope does not apply.
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
+    title: "Purchase Register",
+    purpose: "Every purchase, purchase return and purchase debit note line, with purchase-type, ink type, group and category from Central Masters, and colour.",
+    category: "bushra-report",
+    path: "reports/bushra-purchase-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "purchase register", "purchase", "purchase return", "debit note", "inward service", "vendor",
+      "colour", "color", "item group", "item category", "bushra",
+    ],
+  },
+
+  // ── Bushra-Dashboard screens ───────────────────────────────────────────────
+  // The three screens under the Bushra-Dashboard MENU are catalogued here so they are granted
+  // per screen, like any report: nobody but an admin opens one until it is ticked for them
+  // (profiles.receivables_allowed_reports). A menu alone is a deny-list and would have shown
+  // production cost per KG to every hub user the day it shipped.
+  // ⚠ Each id and path must equal its page in lib/bushraDashboards.ts. The id is what the route
+  //   guard, the sidebar and the landing page check, so a mismatch silently hides the screen.
+  {
+    id: "production-batch-costing",
+    scoping: "none",
+    title: "Production Dashboard",
+    purpose: "Output, batches, scrap and cost per KG — by year, month, colour, category and batch.",
+    category: "bushra-report",
+    path: "bushra-dashboard/production-batch-costing",
+    icon: LayoutDashboard,
+    source: "tally",
+    status: "live",
+    keywords: ["production", "dashboard", "batch costing", "cost per kg", "output", "scrap", "colour", "bushra"],
+  },
+  {
+    id: "production-expenses",
+    scoping: "none",
+    title: "Expenses",
+    purpose: "Direct & Indirect Expenses as Tally's P&L groups them, and the full cost of a kilogram.",
+    category: "bushra-report",
+    path: "bushra-dashboard/production-expenses",
+    icon: Receipt,
+    source: "tally",
+    status: "live",
+    keywords: ["expenses", "direct expenses", "indirect expenses", "overheads", "cost per kg", "production", "bushra"],
+  },
+  {
+    id: "packing-material",
+    scoping: "none",
+    title: "Packing Material",
+    purpose: "Every outward entry of caps, cans and stickers — production, repacking, warehouse — and what it adds per KG.",
+    category: "bushra-report",
+    path: "bushra-dashboard/packing-material",
+    icon: Package,
+    source: "tally",
+    status: "live",
+    keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
+  },
+  // Bushra-Dashboard → Sales: one entry per dashboard, generated from lib/bushraSalesDashboards.ts so
+  // each id and path matches its screen. All built on the Bushra Sales Register (party-server scope).
+  ...SALES_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "party-server",
+    // NOT emailable yet: the figures (lib/bushraSalesSummary.ts), the PDF (lib/bushraSalesPdf.ts)
+    // and the mail setup (components/BushraSalesMailOptions.tsx) are built, but no sender reads
+    // them — the Collections runner mails zero-collections alone. Tick `emailable: true` in the
+    // commit that adds the sender, as the rule on the field says; that also brings back the
+    // dashboard's Auto email button and its switch in Settings → Permissions.
+    title: p.id === "bushra-sales-dashboard" ? p.title : `Sales — ${p.title} Dashboard`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: ShoppingCart,
+    source: "tally",
+    status: "live",
+    keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
+  })),
+  // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
+  // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
+  ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({
+    id: p.id,
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
+    title: p.id === "bushra-purchase-dashboard" ? p.title : `Purchase — ${purchaseDashboardTitle(p)}`,
+    purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+    category: "bushra-report",
+    path: p.path,
+    icon: Truck,
+    source: "tally",
+    status: "live",
+    keywords: ["purchase dashboard", p.title.toLowerCase(), "purchase type", "category", "vendor", "bushra"],
+  })),
 ];
 
 /** Absolute URL for a report. Empty for a "soon" entry, which is never a link. */
 export function reportHref(r: ReportEntry): string {
-  return r.path ? `${BASE}/${r.path}` : "";
+  return r.path ? absoluteHref(r.path) : "";
 }
 
 /** Absolute URL for a category — a filter on the landing page, not a route of its own. */
 export function categoryHref(id: ReportCategoryId): string {
-  return `${BASE}/reports?cat=${id}`;
+  return `${REPORTS_BASE}?cat=${id}`;
 }
 
 export function categoryById(id: string): ReportCategory | undefined {
@@ -847,7 +1096,7 @@ export function reportCategoriesFor(allowed: ReadonlySet<string>): ReportCategor
  * uses this to ask "does the viewer hold ANY report at this path?" instead.
  */
 export function reportsAtPath(pathname: string): ReportEntry[] {
-  const rel = pathname.startsWith(`${BASE}/`) ? pathname.slice(BASE.length + 1) : null;
+  const rel = cataloguePath(pathname);
   if (!rel) return [];
   return REPORTS.filter((r) => r.path && r.path.split("?")[0] === rel);
 }
@@ -865,7 +1114,7 @@ export function reportsAtPath(pathname: string): ReportEntry[] {
  * Hence: exact `path + query` first, then fall back to the first entry with a matching path.
  */
 export function findReport(pathname: string, search: string): ReportEntry | null {
-  const rel = pathname.startsWith(`${BASE}/`) ? pathname.slice(BASE.length + 1) : null;
+  const rel = cataloguePath(pathname);
   if (!rel) return null;
 
   const query = new URLSearchParams(search);
@@ -890,9 +1139,9 @@ export function findReport(pathname: string, search: string): ReportEntry | null
  * so keying only on the path would silently drop the category step.
  */
 export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
-  const root: Crumb = { label: "Reports", to: `${BASE}/reports` };
+  const root: Crumb = { label: "Reports", to: REPORTS_BASE };
 
-  if (pathname === `${BASE}/reports`) {
+  if (pathname === REPORTS_BASE) {
     const cat = categoryById(new URLSearchParams(search).get("cat") ?? "");
     return cat ? [root, { label: cat.title }] : null;
   }
@@ -905,7 +1154,7 @@ export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
     { id: "ledger-outstanding", fallback: "Ledger Outstandings" },
     { id: "ledger-voucher", fallback: "Ledger Vouchers" },
   ]) {
-    const listPath = `${BASE}/reports/${detail.id}`;
+    const listPath = `${REPORTS_BASE}/${detail.id}`;
     if (pathname.startsWith(`${listPath}/`)) {
       const entry = REPORTS.find((r) => r.id === detail.id);
       const cat = entry ? categoryById(entry.category) : undefined;

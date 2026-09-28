@@ -174,6 +174,35 @@ export interface CustomerItem extends NamedMaster {
   itemId: string;
 }
 
+/**
+ * WHICH OF OUR COMPANIES MAY BILL A CUSTOMER — the second answer to that
+ * question, and the reason there are two.
+ *
+ * `mst_parties.company_id` is Tally's filing: the ONE book a ledger sits in. A
+ * firm we trade with from two books is two party rows. This table is ours, and
+ * it says a book may bill a customer whose ledger is filed elsewhere.
+ *
+ * ⚠ IT USED TO BE A FINDER AND IS NOW A PERMISSION, deliberately (OD-5, decided
+ *   07-09-2026). `fms_dispatch_assert_customer_of_company` accepts an active row
+ *   here, so what the picker offers and what the database will save are the same
+ *   set. Read supabase/migrations/20261119120000_od5_map_party_company.sql
+ *   before narrowing either one — this gate has been widened, narrowed and
+ *   widened again, and every argument is on disk.
+ *
+ * ⚠ `source` has THREE values, not two: 'tally' derived from a same-named ledger
+ *   in that book, 'order_history' seeded from an order the company actually
+ *   raised, and 'portal' typed by a person. It gates nothing — it only says
+ *   where the row came from — and there is no CHECK constraint, so do not treat
+ *   it as a boolean.
+ *
+ * It carries no name of its own; it is described by the pair it names.
+ */
+export interface CustomerCompany extends NamedMaster {
+  customerId: string;
+  companyId: string;
+  source: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Master governance                                                          */
 /* -------------------------------------------------------------------------- */
@@ -351,8 +380,16 @@ export interface DispatchNotification {
  *
  * Since the reshape this is a LABEL: the delivery-confirmation step no longer
  * branches on it (it collects one outcome and a receiver copy either way). It is
- * kept because it is how the sales team describes the order, and it is still
- * NOT NULL on the table.
+ * kept because it is how the sales team describes the order.
+ *
+ * ⚠ NO LONGER NOT NULL ON THE TABLE — OD-13. A customer never sees this field
+ *   (decision Q2) and never picks it, so an order they punch arrives with it
+ *   empty and credit check fills it in. `DispatchOrder.dispatchType` is therefore
+ *   `DispatchType | null`, and every `DISPATCH_TYPE_LABEL[…]` lookup has to cope.
+ *
+ *   The existing CHECK is `dispatch_type = ANY (ARRAY['local','transport'])`,
+ *   which already PASSES on NULL under SQL three-valued logic — so dropping the
+ *   NOT NULL needed no change to the constraint and rewrote no data.
  */
 export type DispatchType = "local" | "transport";
 
@@ -367,6 +404,18 @@ export type DispatchType = "local" | "transport";
  * and no earlier step can be edited underneath it.
  */
 export type DispatchStatus =
+  /**
+   * A CUSTOMER ORDER NOBODY HAS WRITTEN UP YET (OD-14).
+   *
+   * ⚠ OD-13 P3 deliberately did NOT make this a status, and was right to: it used
+   *   `intake_source` + `intake_completed_at` because the order was meant to sit IN
+   *   the credit-check queue carrying three extra fields. OD-14 wants it OUT of
+   *   that queue and in one of its own, and a queue is chosen by status.
+   *
+   * Only a customer order ever carries it. A staff order is complete the moment it
+   * is raised, so it starts at `awaiting_credit_check` exactly as before.
+   */
+  | "awaiting_order_completion"
   | "awaiting_credit_check"
   | "awaiting_material_status"
   | "awaiting_sales_bill"
@@ -401,6 +450,32 @@ export type CreditStatus = "approved" | "partial" | "credit_hold";
 
 export type DeliveryStatus = "delivered" | "returned";
 
+/**
+ * One lot a consignment line draws on, and how much came from it (OD-15).
+ *
+ * A shipment of 100 KGS that went out as 60 from one lot and 40 from another is
+ * TWO of these, not one string. The store keeper was already writing exactly
+ * that by hand -- 92 dispatch lines on file do -- because the single lot box
+ * would not hold it.
+ *
+ * ⚠ `lots` IS NOT THE ONLY RECORD, AND `lotNo` IS NOT STALE. `lotNo` stays as
+ *   the rendered summary of these rows, written server-side by
+ *   `fms_dispatch_lot_text` on every save. Six readers still take it, and 4,454
+ *   historic lines have no `lots` at all -- they predate OD-15 and their text is
+ *   never parsed. Read `lots` only where the breakdown is what you want; read
+ *   `lotNo` to DISPLAY the lot, and it will be right either way.
+ *
+ * One lot covering the whole line summarises as the bare lot number, so an
+ * ordinary dispatch reads exactly as it always has.
+ */
+export interface LotAllocation {
+  lotNo: string;
+  /** How much of the line came from this lot. Null when nobody said. */
+  qty: number | null;
+  /** 1-based, the order they were picked in. */
+  seq: number;
+}
+
 export interface OrderLine {
   id: string;
   orderId: string;
@@ -431,8 +506,11 @@ export interface OrderLine {
    *   nothing on rows that predate the column.
    */
   billQty: number | null;
-  /** Typed by the store keeper. Free text — there is no LOT master. */
+  /** Typed by the store keeper. Free text — there is no LOT master.
+   *  Since OD-15 this is the RENDERED SUMMARY of `lots` — see LotAllocation. */
   lotNo: string | null;
+  /** The split behind `lotNo`. Empty on every line dispatched before OD-15. */
+  lots: LotAllocation[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -458,7 +536,10 @@ export interface RoundItem {
    * Null only on rounds archived before the column existed; use `billedQtyOf`.
    */
   billQty: number | null;
+  /** The rendered summary of `lots` — see LotAllocation. */
   lotNo: string | null;
+  /** The split behind `lotNo`, frozen with the round. Empty before OD-15. */
+  lots: LotAllocation[];
 }
 
 /**
@@ -552,14 +633,20 @@ export interface DispatchOrder {
   orderNo: string;
 
   // ---- intake ----
-  dispatchType: DispatchType;
+  /**
+   * Null on a CUSTOMER-raised order until credit check completes the intake —
+   * the customer is never shown this field (OD-13, decision Q2). Also null on a
+   * handful of orders that predate the column.
+   */
+  dispatchType: DispatchType | null;
   /**
    * WHICH OF OUR ENTITIES BILLS THIS ORDER. Asked once, on the intake form, by
    * the person who actually knows the answer.
    *
    * ⚠ It is ORDER-scoped, not round-scoped, so `fms_dispatch_archive_round` must
    *   NOT wipe it — every round of an order bills the same entity. Null only on
-   *   orders raised before 20260817120000 moved the question here.
+   *   orders raised before 20260817120000 moved the question here, and on a
+   *   customer-raised order before credit check completes the intake (OD-13 Q1).
    */
   companyId: string | null;
   /**
@@ -573,6 +660,19 @@ export interface DispatchOrder {
    * locations configured — the form asks for one only where one exists.
    */
   locationId: string | null;
+  /**
+   * `"customer"` when the CUSTOMER punched this order themselves through the
+   * Orange Order Desk; null for every staff-raised order, past and future.
+   *
+   * ⚠ Paired with `intakeCompletedAt`, this is what "incomplete" means — the
+   *   order exists but the three fields the customer never sees are still empty.
+   *   Deliberately NOT a new `status` value: `status` drives every queue, filter,
+   *   export and report in the staff app, and widening it would move the staff
+   *   flow this feature must leave alone.
+   */
+  intakeSource: "customer" | null;
+  /** When credit check filled in the company, site and dispatch type. */
+  intakeCompletedAt: string | null;
   customerId: string;
   /** Where this consignment goes. Seeded from the customer master, overridable. */
   customerLocation: string | null;

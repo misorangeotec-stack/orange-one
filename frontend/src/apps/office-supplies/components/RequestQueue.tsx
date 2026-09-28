@@ -87,23 +87,28 @@ export default function RequestQueue({
       ),
       sortValue: ({ request }) => request.reqNo,
       tdClassName: "whitespace-nowrap",
+      filter: { kind: "text", get: ({ request }) => request.reqNo },
     },
     {
       key: "item",
       header: "Item / Service",
       cell: ({ request: r }) => <span className="text-navy">{r.itemName ?? "—"}</span>,
       filter: { kind: "text", get: ({ request }) => request.itemName ?? "" },
+      sortValue: ({ request }) => request.itemName ?? "",
     },
     {
       key: "type",
       header: "Type",
       cell: ({ request: r }) => <span className="text-grey-2">{requestTypeLabel(r.requestType)}</span>,
       filter: { kind: "select", get: ({ request }) => requestTypeLabel(request.requestType) },
+      sortValue: ({ request }) => requestTypeLabel(request.requestType),
     },
     {
       key: "for",
       header: "Requested for",
       cell: ({ request: r }) => <span className="text-grey">{r.requestedForName}</span>,
+      sortValue: ({ request }) => request.requestedForName,
+      filter: { kind: "select", get: ({ request }) => request.requestedForName },
     },
     {
       key: "department",
@@ -123,6 +128,7 @@ export default function RequestQueue({
         return <span className={overdue ? "text-ryg-red font-semibold" : "text-navy"}>{dmy(dueIso)}</span>;
       },
       sortValue: ({ dueIso }) => dueIso ?? "9999-99-99",
+      filter: { kind: "date", get: ({ dueIso }) => dueIso ?? "" },
     },
   ];
 
@@ -151,12 +157,14 @@ export default function RequestQueue({
       header: "Item / Service",
       cell: (e) => <span className="text-navy">{e.row.itemName ?? "—"}</span>,
       filter: { kind: "text", get: (e) => e.row.itemName ?? "" },
+      sortValue: (e) => e.row.itemName ?? "",
     },
     {
       key: "for",
       header: "Requested for",
       cell: (e) => <span className="text-grey">{e.row.requestedForName}</span>,
       sortValue: (e) => e.row.requestedForName,
+      filter: { kind: "select", get: (e) => e.row.requestedForName },
     },
     // Reads the entry's OWN `departmentId`, stamped at build time in lib/queues.ts
     // — not a lookup off `e.row`. The filter runs per row per sort comparison, so
@@ -234,6 +242,7 @@ export default function RequestQueue({
         ),
       sortValue: (e) => e.editedAtIso ?? "",
       tdClassName: "whitespace-nowrap",
+      filter: { kind: "date", get: (e) => e.editedAtIso?.slice(0, 10) ?? "" },
     },
   ];
 

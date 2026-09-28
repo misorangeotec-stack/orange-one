@@ -4,6 +4,9 @@ import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useProcurementStore } from "../../store";
 import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import { anchorOptions, TRIGGER_STEPS, type StepSlaMap } from "../../lib/sla";
@@ -38,6 +41,12 @@ const stepTitle = (k: StepKey) => stepByKey(k)?.title ?? k;
 
 export default function StepDueDatesSection() {
   const s = useProcurementStore();
+  /**
+   * PF-20: one line per row; the Rule sentence is cut and shown whole on hover. A settings
+   * matrix, so no drag. The dropdown and the days box are never wrapped — a control must not
+   * sit inside a box that clips.
+   */
+  const fit = useColumnWidths("tb", ["step", "dueAfter", "days", "rule"]);
   const [draft, setDraft] = useState<StepSlaMap>(s.stepSla);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -94,7 +103,7 @@ export default function StepDueDatesSection() {
                 <th className="font-medium px-4 py-3">Rule</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {STEPS.map((st) => {
                 const rule = draft[st.key];
                 // Steps that never sit in a queue, so no SLA of their own applies.
@@ -137,6 +146,7 @@ export default function StepDueDatesSection() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-grey-2">
+                      <FitCell fit={fit} col="rule" cap={FIT.CUT}>
                       {inert ? (
                         inert.rule
                       ) : trigger ? (
@@ -150,6 +160,7 @@ export default function StepDueDatesSection() {
                           </span>
                         </>
                       )}
+                      </FitCell>
                     </td>
                   </tr>
                 );

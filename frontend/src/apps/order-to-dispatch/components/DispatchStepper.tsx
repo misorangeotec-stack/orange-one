@@ -100,9 +100,25 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
         owned by whoever owns the step, so name them rather than printing
         "Unassigned" on a rail that is in fact staffed. Names only: there is no
         single department to attribute it to.
+
+        ⚠ EXCEPT ON A CUSTOMER-RAISED ORDER, WHERE THAT FALLBACK NAMES THE WRONG
+          PEOPLE. Such an order has no site until credit check fills one in, so it
+          takes the orphan branch — and `ownerNamesFor` then lists every owner of
+          the step at every location, none of whom can act on it:
+          `fms_dispatch_can_see_order` refuses a location-free order to anyone but
+          the customer's NAMED recipients. The rail would caption the order as
+          staffed by people the Act button then refuses, which reads as a bug in
+          the button rather than in the caption. The recipients are the true
+          answer, and the same list the server authorises against.
       */
       const orphan = !owner && !order.locationId;
-      const people = orphan
+      // ⚠ ONLY WHILE THE ORDER IS ORPHANED. Once credit check fills in the site the
+      //   ordinary per-site owners are the right answer again for every step after
+      //   it — the recipients own the ARRIVAL of the order, not the whole flow.
+      const recipientIds = orphan ? s.customerRecipientIdsOf(order.raisedBy) : [];
+      const people = recipientIds.length
+        ? recipientIds.map((id) => s.personName(id)).filter((n) => n !== "—" && n !== "Unknown user")
+        : orphan
         ? s.ownerNamesFor(st.step)
         : (owner?.employeeIds ?? [])
             // personName, not a directory lookup: the directory is RLS-scoped, so a
@@ -113,7 +129,7 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
       return {
         key: st.key,
         label: st.label,
-        departments: orphan
+        departments: orphan || recipientIds.length
           ? []
           : (owner?.departmentIds ?? []).map(deptName).filter((n): n is string => !!n),
         people,

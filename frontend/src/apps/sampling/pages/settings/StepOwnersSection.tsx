@@ -5,6 +5,9 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useSamplingStore } from "../../store";
 import { STEPS, branchLabelsOf, isSourceScoped, type StepDef, type StepKey } from "../../lib/steps";
 import { SAMPLING_SOURCES, SAMPLING_SOURCE_LABEL, type SamplingSource } from "../../types";
@@ -27,6 +30,8 @@ type OwnerRow = { st: StepDef; source: SamplingSource | null };
 
 export default function StepOwnersSection() {
   const s = useSamplingStore();
+  /** PF-20: one line per row, a long owner list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["step", "owners"]);
   const [editing, setEditing] = useState<{ stepKey: StepKey; source: SamplingSource | null } | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
@@ -109,7 +114,7 @@ export default function StepOwnersSection() {
                 <th className="font-medium px-4 py-3">Owners</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {ownerRows.map(({ st, source }) => {
                 const owner = ownerOf(st.key, source);
                 const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
@@ -136,7 +141,9 @@ export default function StepOwnersSection() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned</span>}
+                      <FitCell fit={fit} col="owners" cap={FIT.CUT}>
+                        {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned</span>}
+                      </FitCell>
                     </td>
                   </tr>
                 );

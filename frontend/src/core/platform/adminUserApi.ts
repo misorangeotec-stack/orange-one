@@ -9,10 +9,42 @@ import type { AppRole } from "./types";
  */
 
 export interface CreateUserInput {
+  /**
+   * NR-13 — the onboarding this login is being created FOR.
+   *
+   * An admin never sends it. A non-admin must: it is the whole of their
+   * authorization, checked server-side with `fms_hr_can_act('onboarding', …)` —
+   * the same predicate that decides whether the panel the button sits on is
+   * read-only. Sending it changes nothing for an admin.
+   */
+  onboardingId?: string;
   name: string;
   email: string;
-  /** Mobile number — becomes the user's initial login password. */
+  /**
+   * Mobile number — becomes the user's initial login password.
+   *
+   * ⚠ EXCEPT on an external account, where it is optional and NOT the password.
+   *   See `isExternal` / `password` below.
+   */
   phone: string;
+  /**
+   * A login that does NOT belong to staff — today, a customer placing their own
+   * orders through the Orange Order Desk (OD-13).
+   *
+   * Sets `profiles.is_external`, which is the predicate behind every RLS policy in
+   * the database (`public.is_staff`). It is written in the same statement that
+   * creates the profile, not by a follow-up call: a profile that exists for even a
+   * moment without it is one `is_staff()` answers `true` for.
+   */
+  isExternal?: boolean;
+  /**
+   * The real password for an external account. **Required when `isExternal`**, and
+   * ignored otherwise — a staff password is still the mobile number.
+   *
+   * "Your password is your phone number" is a reasonable convention inside the
+   * company and an indefensible one to hand an outside firm.
+   */
+  password?: string;
   /** Designation NAME — the legacy mirror list_org_people() returns. Sent with designationId. */
   designation?: string | null;
   designationId?: string | null;

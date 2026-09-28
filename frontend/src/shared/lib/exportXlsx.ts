@@ -108,6 +108,17 @@ export interface ExportSheet<T> {
    *   preamble is byte-for-byte what it was before this existed.
    */
   preamble?: (string | number)[][];
+  /**
+   * Style for one PREAMBLE cell — a band that names the column groups beneath it, a title.
+   * `row` counts from the top of the preamble; `col` is the column index, across `columns.length`.
+   * Undefined leaves the cell plain. A sheet that does not pass it is unchanged.
+   */
+  preambleStyle?: (row: number, col: number) => object | undefined;
+  /**
+   * Merged ranges, in SHEET coordinates (preamble rows count). Written as `!merges`, which the
+   * writer does honour (unlike `!freeze`). Typically a group band spanning its columns.
+   */
+  merges?: XLSX.Range[];
   /** Row height in points, per data row. Undefined leaves Excel's default. */
   rowHeights?: (row: T) => number | undefined;
   /**
@@ -175,6 +186,17 @@ function buildDataSheet<T>(sheet: ExportSheet<T>): XLSX.WorkSheet {
     })}`,
   };
   styleRow(ws, headerRow, columns.length, { ...HEADER_STYLE, ...(headerStyle ?? {}) });
+
+  // Both opt-in: a sheet that passes neither takes exactly the path it always did.
+  if (sheet.preambleStyle) {
+    for (let r = 0; r < preamble.length; r++) {
+      for (let c = 0; c < columns.length; c++) {
+        const st = sheet.preambleStyle(r, c);
+        if (st) styleCell(ws, r, c, st);
+      }
+    }
+  }
+  if (sheet.merges?.length) ws["!merges"] = sheet.merges;
 
   if (rowStyle || cellStyle) {
     rows.forEach((r, i) => {

@@ -342,7 +342,7 @@ export function CollectPiQueue() {
   const piColumns: QueueColumn<StageEntry<Pi>>[] = [
     ...poRefColumns<Pi>(s, vendorOf),
     { key: "piNo", header: "Vendor PI No.", cell: (e) => <span className="font-semibold text-navy">{e.row.vendorPiNo}</span>, sortValue: (e) => e.row.vendorPiNo, filter: { kind: "text", get: (e) => e.row.vendorPiNo }, tdClassName: "whitespace-nowrap" },
-    { key: "doc", header: "PI Document", cell: (e) => <PiDocLink pi={e.row} />, tdClassName: "whitespace-nowrap" },
+    { key: "doc", header: "PI Document", cell: (e) => <PiDocLink pi={e.row} />, tdClassName: "whitespace-nowrap", resize: false /* a document button: never cut (PF-20) */ },
     { key: "remarks", header: "Remarks", cell: (e) => e.row.remarks ?? "—", sortValue: (e) => e.row.remarks ?? "", filter: { kind: "text", get: (e) => e.row.remarks ?? "" } },
     ...entryMetaColumns<Pi>(s, "Collected On"),
   ];
@@ -423,7 +423,7 @@ export function FollowUpQueue() {
   const vendorOf = (e: StageEntry<Followup>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
   const fupColumns: QueueColumn<StageEntry<Followup>>[] = [
     ...poRefColumns<Followup>(s, vendorOf),
-    { key: "status", header: "Dispatch", cell: (e) => <span className={`${PILL} ${e.row.dispatchStatus === "dispatched" ? "text-ryg-green bg-[#EAF7EE]" : e.row.dispatchStatus === "delayed" ? "text-ryg-red bg-[#FDECEC]" : "text-grey-2 bg-page"}`}>{e.row.dispatchStatus}</span>, sortValue: (e) => e.row.dispatchStatus, filter: { kind: "select", get: (e) => e.row.dispatchStatus }, tdClassName: "whitespace-nowrap" },
+    { key: "status", header: "Dispatch", cell: (e) => <span className={`${PILL} ${e.row.dispatchStatus === "dispatched" ? "text-ryg-green bg-[#EAF7EE]" : e.row.dispatchStatus === "delayed" ? "text-ryg-red bg-[#FDECEC]" : "text-grey-2 bg-page"}`}>{e.row.dispatchStatus}</span>, sortValue: (e) => e.row.dispatchStatus, filter: { kind: "select", get: (e) => e.row.dispatchStatus }, tdClassName: "whitespace-nowrap", resize: false /* a pill: never cut (PF-20) */ },
     { key: "actual", header: "Actual Dispatch", cell: (e) => formatDate(e.row.actualDispatchDate), sortValue: (e) => e.row.actualDispatchDate ?? "", filter: { kind: "date", get: (e) => e.row.actualDispatchDate ?? "" }, tdClassName: "whitespace-nowrap" },
     { key: "revised", header: "Revised Dispatch", cell: (e) => formatDate(e.row.revisedDispatchDate), sortValue: (e) => e.row.revisedDispatchDate ?? "", filter: { kind: "date", get: (e) => e.row.revisedDispatchDate ?? "" }, tdClassName: "whitespace-nowrap" },
     { key: "lr", header: "LR No.", cell: (e) => e.row.lrNo ?? "—", sortValue: (e) => e.row.lrNo ?? "", filter: { kind: "text", get: (e) => e.row.lrNo ?? "" }, tdClassName: "whitespace-nowrap" },
@@ -476,11 +476,15 @@ export function FollowUpQueue() {
             sortValue: (p) => dispatchLatest(p),
             filter: { kind: "select", get: (p) => dispatchLatest(p), options: ["pending", "delayed", "dispatched"] },
             tdClassName: "whitespace-nowrap",
+            // A pill: never cut, no handle (PF-20).
+            resize: false,
           },
           {
             key: "followups",
             header: "Follow-ups",
             tdClassName: "whitespace-nowrap",
+            // A count pill: never cut, no handle (PF-20).
+            resize: false,
             cell: (p) => {
               const count = s.followupsForPo(p.id).length;
               return count === 0 ? (
@@ -544,7 +548,7 @@ export function InwardQueue() {
     { key: "poRef", header: "PO Ref", cell: (e) => e.row.poRef ?? "—", sortValue: (e) => e.row.poRef ?? "", filter: { kind: "text", get: (e) => e.row.poRef ?? "" }, tdClassName: "whitespace-nowrap" },
     { key: "gate", header: "Gate Reg No.", cell: (e) => e.row.gateRegisterNo ?? "—", sortValue: (e) => e.row.gateRegisterNo ?? "", filter: { kind: "text", get: (e) => e.row.gateRegisterNo ?? "" }, tdClassName: "whitespace-nowrap" },
     { key: "qty", header: "Qty Received", cell: (e) => <span className="font-semibold text-navy">{numFmt(grnQtyOf(e))}</span>, sortValue: (e) => grnQtyOf(e), filter: { kind: "number", get: (e) => grnQtyOf(e) }, tdClassName: "whitespace-nowrap" },
-    { key: "condition", header: "Condition", cell: (e) => <span className={`${PILL} ${e.row.condition === "good" ? "text-ryg-green bg-[#EAF7EE]" : "text-ryg-red bg-[#FDECEC]"}`}>{e.row.condition.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.condition, filter: { kind: "select", get: (e) => e.row.condition.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap" },
+    { key: "condition", header: "Condition", cell: (e) => <span className={`${PILL} ${e.row.condition === "good" ? "text-ryg-green bg-[#EAF7EE]" : "text-ryg-red bg-[#FDECEC]"}`}>{e.row.condition.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.condition, filter: { kind: "select", get: (e) => e.row.condition.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap", resize: false /* a pill: never cut (PF-20) */ },
     ...entryMetaColumns<Grn>(s, "Received On"),
   ];
   // Inward has no SLA due of its own (poDueIso returns null for `inward`), so the
@@ -656,12 +660,14 @@ export function TallyQueue() {
             key: "unbooked",
             header: "To Book",
             after: "qtyToBook",
+            // A count and a pill: never cut, no handle (PF-20).
+            resize: false,
             tdClassName: "whitespace-nowrap",
             cell: (p) => {
               const n = s.unbookedGrnsForPo(p.id).length;
               const partial = !allReceived(s.importIndex, p);
               return (
-                <span className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-2">
                   <span className="font-semibold text-navy">{n} GRN{n === 1 ? "" : "s"}</span>
                   {partial && <span className={`${PILL} bg-orange/10 text-orange`}>Partial</span>}
                 </span>
@@ -723,6 +729,8 @@ export function QcQueue() {
       sortValue: (e) => e.row.result,
       filter: { kind: "text", get: (e) => e.row.result },
       tdClassName: "whitespace-nowrap",
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
     { key: "rejected", header: "Rejected", cell: (e) => rejectedSummary(s, e.row.id), sortValue: (e) => s.rejectedItemsFor(e.row.id).length, tdClassName: "whitespace-nowrap" },
     { key: "remarks", header: "Remarks", cell: (e) => e.row.remarks ?? "—", sortValue: (e) => e.row.remarks ?? "", filter: { kind: "text", get: (e) => e.row.remarks ?? "" } },

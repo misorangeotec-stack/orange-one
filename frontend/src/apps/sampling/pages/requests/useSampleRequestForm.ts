@@ -5,7 +5,7 @@ import { useSession } from "@/core/platform/session";
 import { useSamplingStore } from "../../store";
 import { outwardSourceOf } from "../../lib/format";
 import type { RequestInput } from "../../data/samplingWrites";
-import type { Direction, ReceiveVia, RequirementType, TransportBorne } from "../../types";
+import type { Direction, ReceiveVia, RequirementType, SamplingRequest, TransportBorne } from "../../types";
 
 /** One editable colour/quantity row. */
 export interface SampleRow extends LineGridRow {
@@ -47,31 +47,47 @@ export type LabChoice = "" | "true" | "false";
  * starts empty and says nothing about it — the list once carried a synthetic "No
  * collection needed" first row, which only existed because Combobox had no way
  * back to blank; the field now renders `clearable` instead.
+ *
+ * EDITING: pass the request as `initial` and every field starts from it. Used by
+ * EditRequest until the request's first step is recorded — the save goes through
+ * fms_sampling_update_request, which applies the same rules and routing.
  */
-export function useSampleRequestForm() {
+export function useSampleRequestForm(initial?: SamplingRequest) {
   const s = useSamplingStore();
   const session = useSession();
   const selfId = session.user?.id ?? "";
 
-  const [companyId, setCompanyId] = useState("");
-  const [receiveVia, setReceiveVia] = useState<ReceiveVia | "">("");
-  const [direction, setDirection] = useState<Direction | "">("");
-  const [requirementType, setRequirementType] = useState<RequirementType | "">("");
-  const [requesterName, setRequesterName] = useState(session.user?.name ?? "");
-  const [partyName, setPartyName] = useState("");
+  const [companyId, setCompanyId] = useState(initial?.companyId ?? "");
+  const [receiveVia, setReceiveVia] = useState<ReceiveVia | "">(initial?.receiveVia ?? "");
+  const [direction, setDirection] = useState<Direction | "">(initial?.direction ?? "");
+  const [requirementType, setRequirementType] = useState<RequirementType | "">(initial?.requirementType ?? "");
+  const [requesterName, setRequesterName] = useState(initial ? initial.requesterName : session.user?.name ?? "");
+  const [partyName, setPartyName] = useState(initial?.partyName ?? "");
   // Outward-only party block.
-  const [partyAddress, setPartyAddress] = useState("");
-  const [partyContactName, setPartyContactName] = useState("");
-  const [partyContactMobile, setPartyContactMobile] = useState("");
-  const [senderId, setSenderId] = useState("");
-  const [productDesc, setProductDesc] = useState("");
-  const [sampleItems, setSampleItems] = useState<SampleRow[]>([makeEmptySample()]);
-  const [labTestingRequired, setLabTestingRequired] = useState<LabChoice>("");
-  const [collectorId, setCollectorId] = useState("");
-  const [handoverRecipientId, setHandoverRecipientId] = useState(selfId);
-  const [transportBorne, setTransportBorne] = useState<TransportBorne | "">("");
-  const [desiredResult, setDesiredResult] = useState("");
-  const [additionalInfo, setAdditionalInfo] = useState("");
+  const [partyAddress, setPartyAddress] = useState(initial?.partyAddress ?? "");
+  const [partyContactName, setPartyContactName] = useState(initial?.partyContactName ?? "");
+  const [partyContactMobile, setPartyContactMobile] = useState(initial?.partyContactMobile ?? "");
+  const [senderId, setSenderId] = useState(initial?.senderId ?? "");
+  const [productDesc, setProductDesc] = useState(initial?.productDesc ?? "");
+  const [sampleItems, setSampleItems] = useState<SampleRow[]>(() =>
+    initial?.sampleItems.length
+      ? initial.sampleItems.map((it) => ({ uid: newUid(), colour: it.colour ?? "", quantity: it.quantity ?? "" }))
+      : [makeEmptySample()],
+  );
+  const [labTestingRequired, setLabTestingRequired] = useState<LabChoice>(
+    initial?.labTestingRequired == null ? "" : initial.labTestingRequired ? "true" : "false",
+  );
+  // NULL starts blank rather than as "No": on an edit the two gates should read
+  // the same way, and a row raised before the machine gate existed genuinely has
+  // no answer on file. The server reads a missing answer as "not required".
+  const [machineTestingRequired, setMachineTestingRequired] = useState<LabChoice>(
+    initial?.machineTestingRequired == null ? "" : initial.machineTestingRequired ? "true" : "false",
+  );
+  const [collectorId, setCollectorId] = useState(initial?.collectorId ?? "");
+  const [handoverRecipientId, setHandoverRecipientId] = useState(initial?.handoverRecipientId || selfId);
+  const [transportBorne, setTransportBorne] = useState<TransportBorne | "">(initial?.transportBorne ?? "");
+  const [desiredResult, setDesiredResult] = useState(initial?.desiredResult ?? "");
+  const [additionalInfo, setAdditionalInfo] = useState(initial?.additionalInfo ?? "");
   const [err, setErr] = useState<string | null>(null);
 
   const companyOptions: ComboOption[] = s.activeCompanies.map((c) => ({ value: c.id, label: c.name }));
@@ -84,6 +100,18 @@ export function useSampleRequestForm() {
     ...(selfId ? [{ value: selfId, label: "Self (me)" }] : []),
     ...s.activeRecipients.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
   ];
+  // An edit keeps the people the request already names, even when they are not on
+  // today's lists — the requester's own "Self" seen by a coordinator, or a
+  // collector since deactivated. Without this the field would render blank.
+  if (initial?.collectorId && !collectorOptions.some((o) => o.value === initial.collectorId)) {
+    collectorOptions.push({ value: initial.collectorId, label: s.personName(initial.collectorId) });
+  }
+  if (initial?.handoverRecipientId && !recipientOptions.some((o) => o.value === initial.handoverRecipientId)) {
+    recipientOptions.push({
+      value: initial.handoverRecipientId,
+      label: initial.handoverRecipientName ?? s.personName(initial.handoverRecipientId),
+    });
+  }
 
   const isInward = direction === "inward";
   const isOutward = direction === "outward";
@@ -133,7 +161,10 @@ export function useSampleRequestForm() {
   const recipientName = (id: string): string | null => {
     if (!id) return null;
     if (id === selfId) return session.user?.name ?? "Self";
-    return s.activeRecipients.find((r) => r.userId === id)?.name ?? null;
+    const listed = s.activeRecipients.find((r) => r.userId === id)?.name;
+    if (listed) return listed;
+    // A recipient kept from the request being edited (see recipientOptions).
+    return id === initial?.handoverRecipientId ? initial.handoverRecipientName : null;
   };
 
   /**
@@ -167,6 +198,7 @@ export function useSampleRequestForm() {
     }
     if (!productDesc.trim()) return { error: "Product / description is required." };
     if (isInward && labTestingRequired === "") return { error: "Please choose whether lab testing is required." };
+    if (isInward && machineTestingRequired === "") return { error: "Please choose whether machine testing is required." };
     // No collector check: it is OPTIONAL, and an empty one means "skip the
     // collect step" rather than "the user forgot". The server agrees — the inward
     // arm of fms_sampling_submit_request routes past collect instead of raising.
@@ -198,6 +230,7 @@ export function useSampleRequestForm() {
         collectorId: isInward ? collectorId || null : null,
         handoverName: null,
         labTestingRequired: isInward ? labTestingRequired === "true" : null,
+        machineTestingRequired: isInward ? machineTestingRequired === "true" : null,
         handoverRecipientId: recipientId || null,
         handoverRecipientName: recipientId ? recipientName(recipientId) : null,
         transportBorne: isCompetitor || isOutward ? (transportBorne || null) : null,
@@ -222,6 +255,7 @@ export function useSampleRequestForm() {
     productDesc, setProductDesc,
     sampleItems, setSampleItems,
     labTestingRequired, setLabTestingRequired,
+    machineTestingRequired, setMachineTestingRequired,
     collectorId, setCollectorId,
     handoverRecipientId, setHandoverRecipientId,
     transportBorne, setTransportBorne,

@@ -1,5 +1,5 @@
 import type { OcpiDeal } from "../types";
-import { isUsdDealRow, type DealFacts } from "./fieldSpec";
+import { deliveryPeriodTakesSuffix, isUsdDealRow, type DealFacts } from "./fieldSpec";
 import { resolve } from "./tokens";
 
 /**
@@ -62,6 +62,31 @@ export const CONDITION_HELP: { name: string; means: string }[] = [
   },
   { name: "centering", means: "the deal includes a centering device" },
   { name: "usd", means: "the deal is quoted in dollars" },
+  /*
+    R4 · TWO POSITIVE NAMES FOR ONE QUESTION, AND THE PAIR IS DELIBERATE.
+
+    🔴 DO NOT REPLACE THESE WITH `[[if !heads]]`. `incl_head` has three states and
+       the third is real: `!false` is `true`, so a negated marker would print
+       "(WITHOUT PRINTHEADS)" FROM SILENCE on a deal nobody has answered —
+       inventing a promise on a document a customer signs. Two positive names
+       mean an unanswered deal prints NEITHER claim, which is the only safe
+       reading of "we don't know yet".
+
+    ⚠ THEY ARE NOT REDUNDANT WITH EACH OTHER. `heads` is not the negation of
+      `noHeads`; both are false together on an unanswered deal, and that middle
+      state is the whole reason there are two.
+  */
+  { name: "heads", means: "this deal includes print heads in the machine price" },
+  {
+    name: "noHeads",
+    means:
+      "the deal EXPLICITLY excludes print heads — false while the question is unanswered, so it can never assert 'without heads' from silence",
+  },
+  {
+    name: "periodInDays",
+    means:
+      "the delivery period is a number of days, or not answered yet — false only on a worded answer such as \"Immediately\", which must print without the Days suffix",
+  },
 ];
 
 /*
@@ -160,6 +185,30 @@ export function applyConditions(text: string, conditions: Conditions): Condition
   const unknown = new Set<string>();
   let unbalanced = false;
 
+  /*
+    🔴 THE SUPPLIED MAP IS LOWERCASED, AND WITHOUT THIS A CAMELCASE NAME CANNOT
+       EVER MATCH. The matcher below reads the name out of the template and
+       lowercases it (`name.toLowerCase()`, and the regex is `gi`), so a key
+       spelled `noHeads` in `conditionsFor` is looked up as `noheads`, is not
+       found, and is reported UNKNOWN — which FAILS OPEN and prints the body on
+       every deal.
+
+    🔴 THAT SHIPPED, BRIEFLY, AND RENDERED PROOF CAUGHT IT. R4's `noHeads` was
+       the first name in this vocabulary that was not already all-lowercase;
+       `dryer`, `centering` and `usd` had hidden the asymmetry for months. A
+       heads-included contract printed BOTH branches —
+       "LARGE FORMAT INKJET PRINTER WITH 32 HEADS (WITHOUT PRINTHEADS)" — and an
+       unanswered deal asserted "(WITHOUT PRINTHEADS)" from silence, which is the
+       exact failure the two-positive-names rule exists to prevent.
+
+    ⚠ FIXED HERE RATHER THAN BY RENAMING THE KEY, deliberately. Renaming would
+      fix today's pair and leave the trap set for the next author, who has every
+      reason to think a name is case-insensitive — the regex is `gi` and the
+      doc comments say so. This makes that true on BOTH sides.
+  */
+  const byLowerKey: Conditions = {};
+  for (const k of Object.keys(conditions)) byLowerKey[k.toLowerCase()] = conditions[k];
+
   const keepWords = (line: string): string | null => {
     unbalanced = true;
     marker.lastIndex = 0;
@@ -178,11 +227,11 @@ export function applyConditions(text: string, conditions: Conditions): Condition
     cond.lastIndex = 0;
     const next = line.replace(cond, (_m, neg: string, name: string, body: string) => {
       const key = name.toLowerCase();
-      if (!Object.prototype.hasOwnProperty.call(conditions, key)) {
+      if (!Object.prototype.hasOwnProperty.call(byLowerKey, key)) {
         unknown.add(key);
         return body;
       }
-      return (neg === "!" ? !conditions[key] : conditions[key]) ? body : "";
+      return (neg === "!" ? !byLowerKey[key] : byLowerKey[key]) ? body : "";
     });
 
     // A backstop for the structurally valid but unreadable — `[[if 2-fast]]`
@@ -256,6 +305,32 @@ export function render(
   };
 }
 
+/**
+ * A template read as the machine is NORMALLY SOLD — for screens with no deal.
+ *
+ * 🔴 THE OBVIOUS SHORTCUT IS WRONG AND PRODUCES A CONTRADICTION. `applyConditions
+ *    (text, {})` looks like a marker-stripper — every name is unknown, unknown
+ *    fails open, the words survive — and it is exactly right for a vocabulary of
+ *    mutually independent names. It stopped being right when R4 added a PAIR:
+ *    `heads` and `noHeads` both fail open, so both bodies print and an admin list
+ *    reads "LARGE FORMAT INKJET PRINTER WITH 24 HEADS (WITHOUT PRINTHEADS) WITH
+ *    STD. ACCESSORIES". A visible marker would have been better than that.
+ *
+ * ⚠ SO THE HEAD PAIR IS PINNED AND NOTHING ELSE IS. `dryer`, `centering` and
+ *   `usd` stay unknown and keep failing open, which is what a preview wants —
+ *   they are independent, and showing their words describes the fullest machine.
+ *   Only a pair needs an opinion, and "as sold with heads" is the common case.
+ *
+ * ⚠ THIS IS A DISPLAY AID, NEVER A DOCUMENT PATH. Anything a customer receives
+ *   has a deal behind it and must go through `conditionsFor`. Use this only
+ *   where there is genuinely no deal: the Machines master's list column and its
+ *   filter text, and the quotation form's machine picker, which shows every
+ *   machine before one is chosen.
+ */
+export function asNormallySold(text: string): string {
+  return applyConditions(text, { heads: true, noHeads: false }).text;
+}
+
 /** Every condition a template uses — for the editor's "is this recognised?" card. */
 export function conditionsUsedIn(text: string): string[] {
   if (!text || !text.includes("[[")) return [];
@@ -317,5 +392,40 @@ export function conditionsFor({ deal, facts }: { deal: OcpiDeal; facts: DealFact
     dryer: facts.showsDryer && !facts.noDryerCategory,
     centering: deal.inclCentering === true,
     usd: isUsdDealRow(deal),
+    /*
+      R4 · `incl_head` READ STRICTLY, BOTH WAYS. Neither is `!` of the other, and
+      an unanswered deal is false on both — see the note in CONDITION_HELP.
+
+      ⚠ `incl_head = false` MEANS "NOT IN THE MACHINE PRICE", NOT "NO HEADS".
+        branching.ts:207-235 is explicit about it, and a deal may go on to buy
+        heads separately (`head_offer_agreed`). That does not change what belongs
+        on the PRICED SUPPLY LINE: it describes what the machine price covers, so
+        "(WITHOUT PRINTHEADS)" is right in both readings — and R3 already rules
+        that separately-invoiced items keep their money out of that total.
+
+      ⚠ THE SPEC ROW IS WHERE THE TWO READINGS WOULD DIVERGE. "Number of
+        installed printing heads" describes the physical machine, so a deal that
+        buys heads separately AND fits them would lose a row it should keep. No
+        live deal does — of ten `incl_head = false` deals, five answered
+        `head_offer_agreed = false` and five never answered, none true. If that
+        ever changes, key the spec row on `head_offer_qty`, not on this.
+    */
+    heads: deal.inclHead === true,
+    noHeads: deal.inclHead === false,
+    /*
+      The deck line is `Shipment Terms: {{delivery_days}}[[if periodInDays]] Days
+      from the date of confirmation[[/if]]`. A worded answer ("Immediately")
+      prints alone, the way both PDFs already print it.
+
+      ⚠ AN UNANSWERED PERIOD KEEPS THE SUFFIX, DELIBERATELY. The token then
+        prints a ruled blank, and "________ Days from the date of confirmation"
+        tells the reader what the gap is asking. `deliveryPeriodTakesSuffix` alone
+        is false on an empty value, so it is not used bare here.
+
+      🟢 FAILS SAFE ON A STALE TAB. An old bundle does not know this name, and an
+         unknown name fails open — which prints the suffix, exactly as before.
+    */
+    periodInDays:
+      (deal.deliveryDays ?? "").trim() === "" || deliveryPeriodTakesSuffix(deal.deliveryDays),
   };
 }

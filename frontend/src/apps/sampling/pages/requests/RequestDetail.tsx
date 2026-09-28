@@ -11,6 +11,8 @@ import CollectModal from "../../components/CollectModal";
 import SampleReceivedModal from "../../components/SampleReceivedModal";
 import SampleToLabModal from "../../components/SampleToLabModal";
 import LabProcessModal from "../../components/LabProcessModal";
+import MachineProcessModal from "../../components/MachineProcessModal";
+import MachineResultModal from "../../components/MachineResultModal";
 import ResultReceivedModal from "../../components/ResultReceivedModal";
 import SendModal from "../../components/SendModal";
 import ConfirmModal from "../../components/ConfirmModal";
@@ -20,7 +22,7 @@ import HandoverModal from "../../components/HandoverModal";
 import SamplingStepper from "../../components/SamplingStepper";
 import DocLink from "../../components/DocLink";
 import StatusPill from "../../components/StatusPill";
-import { directionLabel, dmy, labTestingLabel, receiveViaLabel, requestSubject, requirementTypeLabel, totalSampleQty } from "../../lib/format";
+import { directionLabel, dmy, labTestingLabel, machineTestingLabel, receiveViaLabel, requestSubject, requirementTypeLabel, totalSampleQty } from "../../lib/format";
 import { openStep } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import { useSamplingStore } from "../../store";
@@ -28,6 +30,7 @@ import type { SamplingRequest } from "../../types";
 
 type OpenModal =
   | "collect" | "sampleReceived" | "sampleToLab" | "labProcess" | "resultReceived"
+  | "machineProcess" | "machineResult"
   | "send" | "confirm" | "testing" | "result" | "handover" | null;
 
 export default function RequestDetail() {
@@ -93,6 +96,10 @@ export default function RequestDetail() {
     : r.status === "awaiting_lab_process"
       ? { label: r.labStartedAt ? "Record result" : "Record tentative date", modal: "labProcess" }
     : r.status === "awaiting_result_received" ? { label: "Confirm result received", modal: "resultReceived" }
+    // Machine testing is the same two-pass shape as the lab process.
+    : r.status === "awaiting_machine_process"
+      ? { label: r.machineStartedAt ? "Record machine result" : "Record tentative date", modal: "machineProcess" }
+    : r.status === "awaiting_machine_result" ? { label: "Confirm machine result received", modal: "machineResult" }
     : r.status === "awaiting_send" ? { label: "Record dispatch", modal: "send" }
     : r.status === "awaiting_confirm" ? { label: "Confirm receipt", modal: "confirm" }
     : r.status === "awaiting_testing" ? { label: "Record testing", modal: "testing" }
@@ -134,6 +141,12 @@ export default function RequestDetail() {
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           {action && <Button size="sm" onClick={() => setModal(action.modal)}>{action.label}</Button>}
+          {/* Open only until the next bucket records its step. */}
+          {s.canEditRequest(r) && (
+            <Link to={`/sampling/requests/${r.id}/edit`}>
+              <Button size="sm" variant="ghost">Edit request</Button>
+            </Link>
+          )}
           {canHold && (
             <Button
               size="sm"
@@ -214,6 +227,7 @@ export default function RequestDetail() {
           {r.direction === "inward" && (
             <>
               <Field label="Lab testing" value={labTestingLabel(r.labTestingRequired)} />
+              <Field label="Machine testing" value={machineTestingLabel(r.machineTestingRequired)} />
               {/* "Not required" is a DIFFERENT fact from the em-dash: the collect
                   step was deliberately skipped at raise, not merely unfilled. */}
               <Field
@@ -245,6 +259,56 @@ export default function RequestDetail() {
         )}
       </Card>
 
+      {/* MACHINE TESTING — its own card, because it is a tail that either inward
+          branch can carry: folding it into the branch blocks below would have meant
+          writing it twice. Shown only once the request actually asks for it. */}
+      {r.machineTestingRequired === true && (
+        <Card className="p-5">
+          <SectionHeading>Machine testing</SectionHeading>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+            <Field
+              label="In testing"
+              value={
+                r.machineStartedAt
+                  ? `Result expected ${dmy(r.machineTentativeDate)} · ${name(r.machineStartedBy)}`
+                  : "—"
+              }
+            />
+            <Field
+              label="Machine testing completed"
+              value={
+                r.machineCompletedAt
+                  ? `${r.machineCompletedDate ? dmy(r.machineCompletedDate) : formatDate(r.machineCompletedAt)} · ${name(r.machineCompletedBy)}`
+                  : "—"
+              }
+            />
+            {/* The step's own remark — deliberately separate from the verdict below. */}
+            {r.machineNote && <Field label="Machine remarks" value={r.machineNote} className="col-span-1 sm:col-span-2" />}
+            <Field label="Machine result" value={r.machineComment} className="col-span-1 sm:col-span-2" />
+            {r.machineDocPath && (
+              <div className="col-span-1 sm:col-span-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Machine report</div>
+                <div className="mt-1">
+                  <DocLink path={r.machineDocPath} name={r.machineDocName} fallback="View machine report" />
+                </div>
+              </div>
+            )}
+            <Field
+              label="Result handed over to"
+              value={r.machineResultToId ? name(r.machineResultToId) : r.machineResultToName}
+            />
+            <Field
+              label="Machine result received"
+              value={
+                r.machineResultReceivedAt
+                  ? `${r.machineResultReceivedDate ? dmy(r.machineResultReceivedDate) : formatDate(r.machineResultReceivedAt)}${r.machineResultReceivedNote ? ` · ${r.machineResultReceivedNote}` : ""} · ${name(r.machineResultReceivedBy)}`
+                  : "—"
+              }
+            />
+          </div>
+        </Card>
+      )}
+
       <Card className="p-5">
         <SectionHeading>Step details</SectionHeading>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
@@ -255,15 +319,20 @@ export default function RequestDetail() {
                 value={collectHandoverValue}
                 className="col-span-1 sm:col-span-2"
               />
-              <Field
-                label="Sample received"
-                value={
-                  r.sampleReceivedAt
-                    ? `${r.sampleReceivedDate ? dmy(r.sampleReceivedDate) : formatDate(r.sampleReceivedAt)}${r.sampleReceivedNote ? ` · ${r.sampleReceivedNote}` : ""} · ${name(r.sampleReceivedBy)}`
-                    : "—"
-                }
-                className="col-span-1 sm:col-span-2"
-              />
+              {/* A no-lab request that needs MACHINE testing never runs this
+                  step — collection hands it straight to the machine — so the row
+                  would sit there as a permanent em-dash. */}
+              {r.machineTestingRequired !== true && (
+                <Field
+                  label="Sample received"
+                  value={
+                    r.sampleReceivedAt
+                      ? `${r.sampleReceivedDate ? dmy(r.sampleReceivedDate) : formatDate(r.sampleReceivedAt)}${r.sampleReceivedNote ? ` · ${r.sampleReceivedNote}` : ""} · ${name(r.sampleReceivedBy)}`
+                      : "—"
+                  }
+                  className="col-span-1 sm:col-span-2"
+                />
+              )}
             </>
           ) : r.direction === "inward" && !isLegacyInward ? (
             <>
@@ -434,6 +503,8 @@ export default function RequestDetail() {
       <SampleToLabModal open={modal === "sampleToLab"} onClose={() => setModal(null)} request={r} />
       <LabProcessModal open={modal === "labProcess"} onClose={() => setModal(null)} request={r} />
       <ResultReceivedModal open={modal === "resultReceived"} onClose={() => setModal(null)} request={r} />
+      <MachineProcessModal open={modal === "machineProcess"} onClose={() => setModal(null)} request={r} />
+      <MachineResultModal open={modal === "machineResult"} onClose={() => setModal(null)} request={r} />
       <SendModal open={modal === "send"} onClose={() => setModal(null)} request={r} />
       <ConfirmModal open={modal === "confirm"} onClose={() => setModal(null)} request={r} />
       <TestingModal open={modal === "testing"} onClose={() => setModal(null)} request={r} />

@@ -724,7 +724,7 @@ function CustomerCategoryInner() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -1201,7 +1201,7 @@ function CustomerCategoryInner() {
               </li>
               <li>
                 <strong className="text-foreground">Category × Aging already exists.</strong>{" "}
-                Use the <Link to="/outstanding-dashboard/reports/aging" className="text-primary hover:underline">Aging
+                Use the <Link to="/reports/aging" className="text-primary hover:underline">Aging
                 Report</Link> grouped by Customer Category — it is bill-wise on the same bills, so it agrees with this
                 report to the rupee.
               </li>

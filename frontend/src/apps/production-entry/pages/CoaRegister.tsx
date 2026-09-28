@@ -134,14 +134,12 @@ export default function CoaRegister() {
       header: "Remarks",
       // Free text, so a text filter rather than a dropdown of near-unique values.
       // ⚠ This is the CERTIFICATE's remark (internal copy only), not the test's.
-      cell: (r) => (
-        <span className="text-grey" title={r.coa.remarks ?? ""}>
-          {r.coa.remarks || "—"}
-        </span>
-      ),
+      // PF-20: cut at 260 px by the table itself (dragging wider shows more), and whole on
+      // hover only when it IS cut — the hand-set max-w + truncate + always-on title are gone.
+      cell: (r) => <span className="text-grey">{r.coa.remarks || "—"}</span>,
       sortValue: (r) => r.coa.remarks ?? "",
       filter: { kind: "text", get: (r) => r.coa.remarks ?? "" },
-      tdClassName: "max-w-[260px] truncate",
+      resize: { width: 260 },
     },
     {
       key: "filled",

@@ -34,6 +34,8 @@ export default function MyRequests() {
       key: "cardType",
       header: "Type",
       cell: (r) => <CardTypePill cardType={r.cardType} />,
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       sortValue: (r) => CARD_TYPE_LABEL[r.cardType],
       filter: { kind: "select", get: (r) => CARD_TYPE_LABEL[r.cardType] },
       tdClassName: "whitespace-nowrap",
@@ -64,6 +66,8 @@ export default function MyRequests() {
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       filter: { kind: "select", get: (r) => r.status },
     },
     // The date the job belongs to (back-datable), beside the date it was keyed in.

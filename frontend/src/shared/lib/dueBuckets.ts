@@ -51,3 +51,34 @@ export function bucketOf(dueIso: string | null, todayIso: string): Bucket | null
   if (dueIso === addDaysIso(todayIso, 2)) return "dayAfter";
   return null;
 }
+
+/**
+ * A bucket, plus the one state that is not a due date at all.
+ *
+ * `hold` is deliberately NOT a member of `Bucket` and not returned by
+ * `bucketOf`: the FMS Control Center's rails bucket raw due dates and know
+ * nothing about hold, and widening `Bucket` would force a `hold` arm into every
+ * exhaustive switch over there for a case those call sites can never see.
+ */
+export type WorkBucket = Bucket | "hold";
+
+/**
+ * Where a My Work row belongs, hold included.
+ *
+ * HOLD BEATS THE DUE DATE, and that is the whole point: a held row keeps the
+ * `dueIso` it had — being able to see what it WAS due is useful — but it is not
+ * owed today, so it must not land in Overdue or Due today. Bucketing on the date
+ * alone is what made a request someone had deliberately parked keep showing up
+ * red. Any row without `isHeld` buckets exactly as before.
+ *
+ * Lives here, next to `bucketOf`, because My Work Today and the 9am snapshot mail
+ * both bucket the same items for the same person. The two have drifted before
+ * (see `core/workspace/mywork/items/README.md`); one function is what stops it.
+ */
+export function holdAwareBucketOf(
+  item: { dueIso: string | null; isHeld?: boolean },
+  todayIso: string,
+): WorkBucket | null {
+  if (item.isHeld) return "hold";
+  return bucketOf(item.dueIso, todayIso);
+}

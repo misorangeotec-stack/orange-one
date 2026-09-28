@@ -19,7 +19,7 @@ import type { TravelRate, TravelCategory, CityTier, RateType } from "../types";
  * ⚠ MIRRORS fms_travel_resolve_rate's WALK, and must keep mirroring it. The
  *   lookup is most-specific-first: a row naming a travel category beats one that
  *   does not, then a row naming a tier, then a row naming a key. That is what
- *   lets §10 say "TC-B is 1,500 in Tier 1 and 1,000 everywhere else" as three
+ *   lets Section 10 say "TC-B is 1,500 in Tier 1 and 1,000 everywhere else" as three
  *   rows instead of twelve, and what lets "no cap for TC-A" be a row with a NULL
  *   amount rather than a missing row.
  */
@@ -83,7 +83,7 @@ export function makeRateResolver(rates: TravelRate[], cardId: string | null): Ra
 /**
  * Which travel category a band falls into ON THIS CARD.
  *
- * ⚠ BANDS 3 AND 8 ARE DISPUTED IN THE SOURCE POLICY — §2's two tables disagree
+ * ⚠ BANDS 3 AND 8 ARE DISPUTED IN THE SOURCE POLICY — Section 2's two tables disagree
  *   one row apart, and 23 of 59 live employees sit in those two bands. The
  *   answer therefore comes from the card, never from a constant here, and the
  *   `disputed` flag rides along so the form can say so out loud rather than
@@ -104,9 +104,9 @@ export function categoryForBand(
 }
 
 /**
- * §3.2 — bands 1 to 5 need their reporting manager; 6 to 9 also need a Director.
+ * Section 3.2 — bands 1 to 5 need their reporting manager; 6 to 9 also need a Director.
  *
- * ⚠ ROUTED ON THE BAND NUMBER, NOT ON THE TRAVEL CATEGORY. §3.2 is unambiguous
+ * ⚠ ROUTED ON THE BAND NUMBER, NOT ON THE TRAVEL CATEGORY. Section 3.2 is unambiguous
  *   about this even though the band-to-category mapping is still disputed, so
  *   the approval chain does not depend on that answer being settled. Mirrored in
  *   SQL by fms_travel_submit_trip's `v_skip_dir := v_band_no <= 5`.
@@ -119,22 +119,22 @@ export interface Entitlement {
   categoryDisputed: boolean;
   categoryNote: string | null;
 
-  /** Per night including GST, for the destination's tier (§7.2). */
+  /** Per night including GST, for the destination's tier (Section 7.2). */
   hotelCap: ResolvedRate | null;
-  /** Per calendar day away from the base city (§8). */
+  /** Per calendar day away from the base city (Section 8). */
   da: ResolvedRate | null;
-  /** Per day at the destination (§10). A null amount means uncapped. */
+  /** Per day at the destination (Section 10). A null amount means uncapped. */
   conveyanceCap: ResolvedRate | null;
-  /** Per trip, without a receipt (§10). Only TC-C and TC-D have one. */
+  /** Per trip, without a receipt (Section 10). Only TC-C and TC-D have one. */
   conveyanceSelfDec: ResolvedRate | null;
-  /** Full-day vehicle hire including driver (§10.1). */
+  /** Full-day vehicle hire including driver (Section 10.1). */
   rentalCap: ResolvedRate | null;
 
   air: {
     travelClass: ResolvedRate | null;
     bookingType: ResolvedRate | null;
     upgrade: ResolvedRate | null;
-    /** §4.1 — flying is permitted beyond this distance… */
+    /** Section 4.1 — flying is permitted beyond this distance… */
     minDistanceKm: ResolvedRate | null;
     /** …or when the train would take longer than this. */
     minTrainHours: ResolvedRate | null;
@@ -162,7 +162,7 @@ export interface Entitlement {
     lateNight: ResolvedRate | null;
   };
 
-  /** True when ANY figure shown carries the §2 contradiction. */
+  /** True when ANY figure shown carries the Section 2 contradiction. */
   anyDisputed: boolean;
 }
 
@@ -254,7 +254,7 @@ export function resolveEntitlement(
 }
 
 /**
- * §4.1's own test, stated rather than applied.
+ * Section 4.1's own test, stated rather than applied.
  *
  * The form shows this so a traveller asking for a flight to a city 180 km away
  * learns why it will be questioned — at request time, not at claim time. It

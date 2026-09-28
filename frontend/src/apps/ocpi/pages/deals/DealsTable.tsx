@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import { useOcpiStore } from "../../store";
 import { deleteDraft as deleteDraftWrite } from "../../data/ocpiWrites";
-import { dealRef } from "../../lib/queues";
+import { dealRef, dealRefSort } from "../../lib/queues";
 import { STATUS_LABEL } from "../../lib/format";
 import type { OcpiDeal } from "../../types";
 
@@ -63,25 +63,28 @@ export default function DealsTable({
             {dealRef(d)}
           </Link>
         ),
-        sortValue: (d) => dealRef(d),
+        sortValue: (d) => dealRefSort(d),
         filter: { kind: "text", get: (d) => dealRef(d) },
       },
       {
         key: "customer",
         header: "Customer",
         cell: (d) => d.customerName ?? "",
+        sortValue: (d) => d.customerName ?? "",
         filter: { kind: "select", get: (d) => d.customerName ?? "" },
       },
       {
         key: "machine",
         header: "Machine",
         cell: (d) => machineName(d.machineId),
+        sortValue: (d) => machineName(d.machineId),
         filter: { kind: "select", get: (d) => machineName(d.machineId) },
       },
       {
         key: "salesperson",
         header: "Salesperson",
         cell: (d) => d.salespersonName ?? "",
+        sortValue: (d) => d.salespersonName ?? "",
         filter: { kind: "select", get: (d) => d.salespersonName ?? "" },
       },
       {
@@ -99,6 +102,7 @@ export default function DealsTable({
         key: "currency",
         header: "Ccy",
         cell: (d) => d.dealValueCurrency ?? "",
+        sortValue: (d) => d.dealValueCurrency ?? "",
         filter: { kind: "select", get: (d) => d.dealValueCurrency ?? "" },
         defaultHidden: true,
       },

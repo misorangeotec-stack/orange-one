@@ -6,6 +6,9 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import ReassignmentSection from "./ReassignmentSection";
 import { useProcurementStore } from "../../store";
 import type { ApprovalBand } from "../../types";
@@ -28,6 +31,8 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 export default function ApprovalMatrixSection() {
   const s = useProcurementStore();
   const [editing, setEditing] = useState<ApprovalBand | null>(null);
+  /** PF-20: one line per row, a long approver list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["tier", "min", "max", "approvers", "status"]);
   const [creating, setCreating] = useState(false);
   const [tierLabel, setTierLabel] = useState("");
   const [minAmount, setMinAmount] = useState("0");
@@ -146,7 +151,7 @@ export default function ApprovalMatrixSection() {
                   <th className="font-medium px-4 py-3">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...fit.tbodyProps}>
                 {bands.map((b) => (
                   <tr key={b.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -161,16 +166,20 @@ export default function ApprovalMatrixSection() {
                     <td className="px-4 py-3 whitespace-nowrap">{inr(b.minAmount)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{b.maxAmount === null ? "No limit" : inr(b.maxAmount)}</td>
                     <td className="px-4 py-3">
-                      {b.approverUserIds.length === 0 ? (
-                        <span className="text-ryg-red">None — nobody can approve this band</span>
-                      ) : (
-                        <span title={b.approverUserIds.length > 1 ? "Any one of them can approve" : undefined}>
-                          {b.approverUserIds.map((id) => s.profileById(id)?.name ?? "Unknown").join(", ")}
-                          {b.approverUserIds.length > 1 && (
-                            <span className="ml-1.5 text-[11.5px] text-grey-2">· any one</span>
-                          )}
-                        </span>
-                      )}
+                      <FitCell fit={fit} col="approvers" cap={FIT.CUT}>
+                        {b.approverUserIds.length === 0 ? (
+                          <span className="text-ryg-red">None — nobody can approve this band</span>
+                        ) : (
+                          // No title here since PF-20: "· any one" already says it, and a title would
+                          // stop the cut list showing whole on hover.
+                          <span>
+                            {b.approverUserIds.map((id) => s.profileById(id)?.name ?? "Unknown").join(", ")}
+                            {b.approverUserIds.length > 1 && (
+                              <span className="ml-1.5 text-[11.5px] text-grey-2">· any one</span>
+                            )}
+                          </span>
+                        )}
+                      </FitCell>
                     </td>
                     <td className="px-4 py-3">
                       <span

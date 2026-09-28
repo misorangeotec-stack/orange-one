@@ -94,6 +94,30 @@ export function factsFromPaper(p, base, ctx) {
     /dryer\s*[：:]/i.test(electrical) ||
     /\bdryer\b/i.test(supplyText);
 
+  /*
+    🔴 THE HEADS ARE DECIDED BY THE PAPER TOO, AND THIS USED TO BE HARDCODED
+       `false`. Every real contract was synthesised as "heads excluded", which
+       cost nothing while no template branched on it. R4 made `[[if heads]]` and
+       `[[if noHeads]]` real, so a hardcoded false would render "(WITHOUT
+       PRINTHEADS)" against all ~21 templated machines and report a GAP on every
+       one — quietly turning the module's only automated guard into noise.
+
+    ⚠ AN EXPLICIT DENIAL WINS OVER A COUNT, and it has to: folder 108 (M K
+      Fashion) prints "ALPHA II (WITHOUT PRINTHEADS)" while its spec table still
+      carries an installable-head figure. Read the count first and let the words
+      overrule it, never the other way round.
+
+    ⚠ ZERO IS A DENIAL, NOT A MISSING ANSWER. `headCount` is parsed above and a
+      real paper stating 0 heads is stating that it sold none.
+
+    ⚠ NULL, NOT FALSE, WHEN THE PAPER IS SILENT — matching how `incl_head` works
+      on a live deal, where the third state is real. Both conditions are then
+      false and the audit compares whatever the template prints without a head
+      claim, which is exactly the right question to ask of a silent paper.
+  */
+  const saysWithout = /\bwithout\s+(print\s*heads?|printheads?|heads?)\b/i.test(supplyText);
+  const inclHead = saysWithout ? false : headCount === null ? null : headCount > 0;
+
   const category = ctx.categories.find((c) => c.id === ctx.machine.categoryId);
   const noDryerName = ctx.dryerTypes.find((t) => t.meansNoDryer)?.name ?? "Not Applicable";
   const aDryerName = ctx.dryerTypes.find((t) => !t.meansNoDryer)?.name ?? "Chinese";
@@ -199,7 +223,8 @@ export function factsFromPaper(p, base, ctx) {
     inclInk: inkNote !== null,
     inkQtyIncluded: inkNote,
 
-    inclHead: false, headsIncluded: null, inclSpares: false,
+    // Derived from the paper — see the note beside `saysWithout` above.
+    inclHead, headsIncluded: null, inclSpares: false,
     inclCentering: false, centeringDetails: null, airBlade: false,
     inkDustExhauster: false, chillingSystem: false, otherInclusions: null,
     headShipMode: null, headShipVia: null, headSeparateInvoice: null,

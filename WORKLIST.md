@@ -23,7 +23,7 @@ there is no open entry to move.
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-09-21
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -72,6 +72,170 @@ comes back. Two kinds of item live here and they are marked differently:
 - **`[decided]`** — already agreed and already applied. Listed so it can be confirmed, and so the
   exact wording is on record if it is ever queried.
 - **`[open]`** — nothing built either way; the answer changes what gets built.
+
+### Daily Report
+
+The report is **live for Ritesh Bhai to audit** against his own evening sheet — orangeonehub.com →
+Control → Daily Report. Use **8 September 2026**: it is the day both reference sheets cover, so every
+figure can be checked line by line. Build details are under **DR-1** in the Daily Report section.
+
+**For the credit-limit block (built and live 17-09-2026), four questions — items 3, 5, 12 and 13:**
+lakhs or crores · who types the figures each evening · which accounts make up "available balance" ·
+do Enterprises and Colorix have a facility. **Ask item 3 before any real figure is typed.**
+
+**1. `[decided]` Which collection and payment figures are right — the sheet's or Tally's?** *(14-09-2026 · answered 17-09-2026 by the fold rule, see DR-2)*
+
+For Orange O Tec, Surat, on 8 September:
+
+| | Old sheet | Tally, same company and day |
+|---|---|---|
+| Collections | 2 receipts, ₹5.36 L | 6 customer receipts, ₹25.18 L |
+| Payments | 1 payment, ₹34.10 L | 9 supplier payments, ₹35.51 L |
+
+The report shows the Tally figures. The sheet's two receipts and its one payment are among them at
+the same amounts, so this is not a disagreement about numbers — the sheet was listing some rows and
+leaving others out.
+
+⚠ **Tally has changed since this was first checked.** On 11-09-2026 the payments read 7 for ₹35.33 L;
+on 14-09-2026 they read 9 for ₹35.51 L. Two payments of ₹0.14 L and ₹0.04 L that were against the
+*suspense* account on 11 September now name Colorix — the day book was rebuilt from Tally on 13
+September — and Colorix is filed as a supplier, so they moved into the headline (see item 7). The
+other two suspense payments, ₹4.18 L and ₹1.50 L, are unchanged. Audit against what the screen shows
+on the day, not against these notes.
+
+> **The question:** was the sheet deliberately showing only the large items, or were rows being
+> missed? If it was deliberate, what is the cut-off?
+
+🟢 **Answered 17-09-2026: the fold rule is the cut-off** (built as **DR-2**, live on master `d4c0e5c`). The
+report keeps Tally's figures and every row behind them, and shows the list the way the sheet was
+reaching for:
+
+- A list of **10 or fewer** shows every party.
+- Above 10, it names parties biggest first until they cover **80% of the list's total**, and folds the
+  rest into one **"Remaining N"** line with a **TOTAL** under it, so the list still adds up to the
+  headline.
+- It applies to What sold, Money in and Money out alike, **band by band** on the money pages, so a
+  bank transfer never shares a Remaining line with a customer receipt.
+- **Free-of-charge customers are never folded.**
+- The Excel lists every party, unfolded.
+
+On 8 September no money list is longer than 10, so every receipt and payment shows by name. Folds
+first appear on 14-09 (receipts, 32 customers → 14 named) and 02-09 (payments, 27 suppliers → 4 named).
+
+⚠ **One refinement to confirm with Ritesh Bhai:** when the fold would leave exactly ONE party behind,
+that party is named instead of printing "Remaining 1 customer". That line takes the same space as the
+name, and hides it. It can only happen when a customer with a free-of-charge line sits below the cut.
+Decided by the user 17-09-2026, not by the client.
+
+**2. `[decided]` The headline counts customers and suppliers only.** *(11-09-2026)*
+
+Transfers between our own bank accounts, inter-company movement, petty cash and suspense are listed
+separately underneath, under *"not counted in the figure above"*. On 8 September that is ₹96 L of the
+₹1.32 Cr Tally recorded as received. Listed to confirm.
+
+**3. `[open]` 🔴 What are the bank limits — and are they in lakhs or crores?**
+
+*Updated 17-09-2026 — the block is now built (see DR-1 → Credit-limit block).* It is typed **per
+company, on Bank balances, under each company's total** — no longer once per account on Bank
+accounts. CC limit and LC/BC limit carry forward from the last recorded day; utilised and held by
+bank are typed each evening. None of it is in Tally; it lives in the sanction letters.
+
+🔴 **Units are the open risk.** Every box is labelled **₹ L** and the whole report is in lakhs. The
+sheet prints `(IN CR.)` under its available-balance column, yet that column's 2.45 is exactly its
+own lakh bank total — while this note found on 14-09 that the **CC limit 44.50 cannot be lakhs**, the
+Axis cash credit account already standing at ₹7.47 Cr drawn. So the sheet most likely mixes units:
+limits in crores, available balance in lakhs. The report still works if the limits are typed **in
+lakhs** (44.50 Cr = 4,450.00) — the danger is only someone typing crore figures into lakh boxes.
+
+> **Needed:** for each company with a facility, the sanctioned CC limit, the LC/BC limit and the
+> amount held by the bank, **stated in rupees**, and confirmation of which columns on the old sheet
+> were in crores. Do not type the first real evening until this is answered.
+
+**4. `[open]` Does anyone track LC/BC utilised each day?**
+
+The one facility figure with no source anywhere. If someone does, it goes in the **Utilised** box of
+the company's credit facility on Bank balances (the old per-account optional box is gone) and the
+free limit works itself out. If nobody does, the LC/BC columns show a dash rather than a made-up zero.
+
+**5. `[open]` 🔴 Who types the bank balances each evening?**
+
+**None have been entered yet** — the report shows 0 of 11. The same person types each company's
+**credit facility** on that screen. That person needs **Daily Report at
+`edit`** in Admin → Module Access. A Sunday or a day off stays blank on purpose; only a working day
+nobody typed is flagged.
+
+**6. `[open]` Who reads the report?**
+
+Only admins can see it today. The CFO and management need **Daily Report at `view`** in Admin →
+Module Access. `view` shows everything and lets them export; it does not let them type balances.
+
+**7. `[open]` 🔴 Money between our own companies is being counted as trade, in two places.**
+
+**In "What sold".** A sale from one of our books to another counts as a sale today. On 8 September
+Orange O Tec Surat sold ₹0.23 L of spares to Orange O Tec Noida, and it sits in the spare-parts total.
+There are 1,055 such branch-sale lines this financial year.
+
+**In "Money out".** The report decides what a counterparty is from how Tally files it. Orange O Tec
+Noida is filed under *Branch / Divisions*, so it is correctly kept out of the headline — but **Colorix
+is filed as a supplier** in the Orange O Tec Surat book. On 8 September that puts two payments to
+Colorix, ₹0.18 L, inside "paid to suppliers".
+
+> **The question:** should anything moving between Orange O Tec, Orange O Tec Enterprises and Colorix
+> be kept out of the sales and payment headlines? If yes, the clean fix is to name the three entities
+> once and exclude them by name, rather than rely on how each Tally book happens to file them — the
+> filing is inconsistent between books, which is how Colorix slipped through.
+
+**8. `[open]` The suspense account is filed two ways in Tally.**
+
+`SUSPENSE A/C` sits under *Suspense* in three company books and under *Sundry Debtors* in the Orange O
+Tec Surat book. The report treats it as suspense everywhere, so it never counts as a customer
+collection. Either confirm that, or have the Surat book's filing corrected in Tally.
+
+**9. `[open]` Three kinds of sale have no product line.**
+
+They appear under **"Not yet classified"** rather than being dropped:
+
+| Voucher type | This year |
+|---|---|
+| TRANSFER OF OWNER SHIP | ₹215.00 L |
+| DELIVERY CHALLAN SALES ON APPROVAL BASIS | ₹66.06 L |
+| GST SALES - AMC | ₹21.20 L |
+
+> **The question:** should each be ink, heads, machine, spares — or left out of sales altogether?
+
+**10. `[open]` Three bank accounts could not be matched to Tally with certainty.**
+
+Only affects a future "typed balance against Tally's book balance" check; the report itself is
+unaffected.
+
+- **ICICI 0014** (Orange O Tec, Surat) — matched only because it is the only ICICI ledger in that book.
+- **AXIS 3080** (Enterprise, Noida) — the same account also appears in the Enterprise Surat book.
+- **AXIS 9516** (Colorix) — Colorix's Tally book has no Axis ledger at all.
+
+**11. `[decided]` Colorix is included; sales are net of GST; one report with a location filter.** *(11-09-2026)*
+
+Listed to confirm. Colorix appeared on neither reference sheet.
+
+**12. `[open]` 🔴 Which accounts make up the credit facility's "available balance"?** *(17-09-2026)*
+
+Built as the **whole company's bank total** — all five Orange O Tec accounts — because that is what
+was asked, and on 8 September the sheet's 2.45 equals its own Orange O Tec bank total. But the
+sheet's bank table sums only **two** columns, AXIS-ST and NOIDA. The report's Orange O Tec also holds
+the **ICICI 0014 cash credit** account and the **Delhi** account, and a cash-credit balance is money
+owed, so adding it in may be wrong in sign as well as in scope. It could not be checked against real
+figures: no balance had ever been saved.
+
+> **The question:** which accounts should "available balance / lien amt" add up? Changing it is one
+> function (`facilityBalanceAccounts` in `apps/daily-report/lib/aggregate.ts`); every screen and
+> export follows.
+
+**13. `[open]` Do Orange O Tec Enterprises and Colorix have a credit facility?** *(17-09-2026)*
+
+The old sheet shows a CC row for Orange O Tec only. Both other companies get the same inputs on Bank
+balances; neither shows a row on the report until something is typed, so nothing needs changing if
+the answer is no.
+
+> **The question:** does either hold a CC or LC/BC limit, and at which bank?
 
 ### OCPI
 
@@ -1431,6 +1595,405 @@ collapse has to reconcile ten field schemas. And `fms_dispatch_resolve_master_re
 body is **not** the one in its migration; the Phase 1 cutover replaced it with a version that
 writes into `mst_*`. Read every definition from `pg_get_functiondef()`, never from a
 migration file.
+
+---
+
+## Daily Report  *(new module)*
+
+### DR-1 · Daily Report — the evening snapshot for management and the CFO  `[~]`
+*Raised 2026-09-10 · Built 2026-09-11 · **Live 14-09-2026**, master `30fad0e` · **Awaiting Ritesh Bhai's
+audit** — the open questions are under [To discuss with Ritesh Bhai → Daily Report](#daily-report).
+Reference sheets: `Misc/Ritesh Bhai/DAILY REPORT-08.09.26.pdf` (Surat) and `Misc/Ritesh Bhai/08.09.2026.pdf` (Noida).*
+
+**What it replaces.** An Excel sheet two people rebuilt by hand every evening, one for Surat and one
+for Noida, circulated as a PDF to management and the CFO. Reconciled against both sheets for
+08-09-2026 before shipping: ink quantities matched to the kilogram and the print-head despatch list
+matched line for line. The sheets were also found to be **incomplete** — one ink customer worth 150 kg
+was missing, and the collection and payment lines listed a fraction of what Tally recorded that day.
+
+**Where it is.** orangeonehub.com → **Control → Daily Report**, base path `/daily-report`. Three screens:
+
+1. **Daily Report** — five KPI tiles and four summary cards: *What sold*, *Bank*, *Money in*, *Money
+   out*. Nothing below the cards is shown until asked for: every summary line opens **only the one
+   table behind it**, and clicking it again closes it. Everything is in **₹ lakhs with the unit
+   printed** — there are no crores anywhere on the report. Location filter (All / Surat / Noida /
+   Delhi). Excel workbook and branded PDF.
+2. **Bank balances** — one form, eleven accounts, typed each evening; each company's card ends with
+   its total and its **credit facility** (added 17-09-2026, see below).
+3. **Bank accounts** — the master of those eleven accounts. *(Limits are no longer here.)*
+
+**Where the numbers come from.**
+
+| Section | Source | Typed by hand? |
+|---|---|---|
+| Sales, heads and machines outward | `rpt_sales_register` on ConnectWave | No |
+| Collections, payments | `rpt_day_book` on ConnectWave | No |
+| Purchases | `rpt_purchase_item` on ConnectWave | No |
+| Counterparty type (customer, supplier, bank…) | `v_ledger_detail.group_chain` | No |
+| Closing bank balances | `daily_report_bank_balances` | **Yes, daily** |
+| Credit facility (CC limit, LC/BC limit, utilised, held) | `daily_report_cc_limits` | **Yes — limits carry forward, utilised and held daily** |
+
+**Decisions already built in** — confirmed with the user 11-09-2026:
+
+- **Sales and purchases net of GST.** The old sheet was GST-inclusive; that is the whole of the
+  ×1.18 difference between the two.
+- **Headline collections and payments count customers and suppliers only**, as the old sheet did.
+  Our own bank transfers, inter-company movement, cash and suspense are listed underneath under
+  *"not counted in the figure above"*.
+- **Goods out on approval are shown but not counted as sales** — the reference sheet excludes them too.
+- **A bank balance nobody typed stays blank, never zero.** A Sunday, a working day nobody entered and
+  an account that genuinely stood at zero render three different ways, and an entity total prints a
+  dash rather than a partial sum.
+- **Colorix is included**, though neither reference sheet showed it.
+
+**Built, applied and verified.**
+
+- Migrations `20261118120000_dr1_daily_report_banks` and `20261118120100_dr1_seed_bank_accounts`,
+  both applied, **both rollbacks rehearsed against live data** in a rolled-back transaction. Balances
+  are readable only with the module; writes go through `set_bank_daily_balance()` only, which refuses
+  a future date and treats an empty value as *clear*, not zero. Access tested as a real non-admin at
+  no grant, `view` and `edit`.
+- `supabase/connectwave/sale_type_rules_delivery_challans.sql` — **applied on ConnectWave** 11-09-2026.
+  Delivery challans had no product line, so a print head that left on a challan was not counted as a
+  print head. Eighteen rules; the file records which were load-bearing and which are backstops.
+
+**Before anyone but an admin can use it** — see the discussion items for the detail:
+- Grant **Daily Report at `edit`** to whoever types the bank balances. **None have been typed yet.**
+- Grant **Daily Report at `view`** to the CFO and management.
+- Type the **credit facility** under each company on Bank balances once finance confirms the limits
+  **and the units** (discussion items 3 and 12). The facility block says "not recorded" until then.
+
+**✅ Credit-limit block — COMPLETE for now. Built 17-09-2026, live on master `c8498f3`.** Nothing left
+to build; waiting only on Ritesh Bhai's answers (discussion items 3, 5, 12, 13).
+
+The client's top-right CC block had never shown anything: it was modelled per *account*, on static
+master columns, and all were blank. It is per *company* and two of its figures change daily.
+
+- **Migration `20261125120000_dr1_cc_limits`** (applied live before the frontend; rollback rehearsed
+  on live — apply, roll back, compare, re-apply). New table `daily_report_cc_limits`, keyed **company
+  alias + bank + day**, bank a real column defaulting to AXIS. Written only through
+  `set_cc_daily_limit()` — same rules as the balances: edit access, IST today, no future dates, and
+  **all four boxes blank deletes the day** rather than storing zeros. `set_daily_report_evening()`
+  saves balances and facilities in one transaction.
+- **Bank balances:** a **company total** row per card (blank until every account is typed, and says
+  which are missing), then **Credit facility · AXIS** in the sheet's column order — CC limit, LC/BC
+  limit, utilised, held typed; available balance, free limit, available CC limit worked out.
+- **One calculation for all three outputs** — the report page, the PDF and the Excel read the same
+  function, per company, whatever the location filter.
+- **Removed from the screens** (database columns kept): the per-account "LC / BC utilised (optional)"
+  box, and the limit fields on Bank accounts — nothing can be typed in two places now.
+- Also fixed: **"Saved at" never appeared** after saving balances.
+- **Verified on orangeonehub.com, 17-09-2026:** the 08-09 sheet reproduces (free limit **0.22**,
+  available CC **40.00**, available balance **2.45**); the next evening opens with the limits carried
+  and saves no copy; the page, PDF and Excel agree under the Surat filter; future dates and direct
+  table writes are refused; clearing deletes. All test figures were removed afterwards — both tables
+  0 rows. Permission gate tested as a non-admin in a rolled-back transaction (**nobody but admins has
+  Daily Report access yet**).
+
+**Found while building, deliberately NOT fixed here:**
+
+- **The Outstanding Dashboard types some sales wrongly on screen.** Its browser-side sale-type resolver
+  in `apps/receivables-hub/lib/connectwaveFetcher.ts` picks the first matching rule by priority and
+  ignores the longest-match tie-break the database uses — the mechanism by which `HEAD/M/` (a machine)
+  beats `HEAD/` (a head). So a machine deal can read as a head on that screen and as a machine in SQL.
+  The Daily Report has its own correct copy in `apps/daily-report/lib/saleType.ts`. Not changed in the
+  receivables code because it would move live figures on a screen this work did not test.
+- **Inter-company money leaks into the trade headlines** where a Tally book files a sister company as a
+  customer or supplier rather than under Branch / Divisions. Colorix is filed as a supplier in the
+  Orange O Tec Surat book. Raised as a question rather than patched — see discussion item 7.
+
+**Phase 2 — emailing the report every evening — is its own entry now: see DR-3.** The PDF already
+exposes a Blob entry point (`dailyReportPdfBlob`), so that becomes a backend job rather than a rewrite.
+
+### DR-2 · The Daily Report as a document: a summary page, a page per block, and customer lists that fold  `[x]`
+*Raised 2026-09-16 by Ritesh Bhai · Decided with him 17-09-2026 · **Built, verified and live
+17-09-2026**, master `d4c0e5c` (branch commit `1a6288c`) · The email is NOT part of this — see DR-3*
+
+**The ask.** Make the report read like the zero-collections report:
+- **Page one is only a summary** (including the credit facility), and every figure on it is a link.
+- **One page per block:** What sold · Money in · Money out · Bank.
+- **What sold pivots to one row per customer with the companies as columns.**
+- **Long lists fold** to the customers making up 80%, with the rest in one line.
+
+**Decided with the client, 17-09-2026 — built exactly so:**
+1. **The fold rule.**
+   - A list of **10 or fewer** shows every customer.
+   - Above 10, customers are named biggest first until they cover **80% of that list's total**.
+   - The rest fold into **"Remaining N customers"**, followed by a **TOTAL** that adds up to the figure
+     on page one.
+   - The same rule applies on What sold, Money in and Money out.
+2. **Free of charge is never folded.**
+   - A customer who is only free of charge is named at the foot of its block, below Remaining and
+     above TOTAL.
+   - A customer with a paid AND a free sale keeps its place among the named rows, with FOC marked in
+     that company's cell only.
+3. **One column per company, no location split.** Surat and Noida add together; the location filter
+   still narrows.
+4. **Company columns use the short names:** O-tec · Enterprise · Colorix, in `entityRank` order.
+
+**Decided by default — listed for the user 17-09-2026:**
+5. Section headings, bank cards and the PDF/Excel headings **keep the full legal names**
+   (`entityLabel`); only the new company columns are short.
+6. **Nothing is removed, everything has a page:**
+   - heads and machines outward, goods on approval and *Not yet classified* go on **What sold**;
+   - **Purchases** go on **Money out** under their own heading, never added into payments;
+   - the facility and the balance grid go on **Bank**.
+7. **The Excel carries every customer, unfolded**, in the same company-column shape.
+8. **On screen the lists open folded**, with a *Show all N customers* control.
+
+**Decided by the user while building, 17-09-2026:**
+- **Money now follows the location filter.**
+  - It never did: a voucher carried only its book's label.
+  - Each money row now carries its book's company and location from `ext_company_map`
+    (`toMoneyRows`), so a Surat filter shows Surat's receipts, and Delhi empties by construction like
+    sales.
+- **A remainder of exactly one customer is named, not folded.** This is a refinement of the client's
+  rule, raised in *To discuss* item 1 to confirm. It can only happen when a customer with a
+  free-of-charge line sits below the cut: with more than 10 paid customers, the two smallest can never
+  make up more than 20%.
+- **No one was granted Daily Report access for a view-only test** (see *Still open*).
+
+**Built.**
+- **`lib/aggregate.ts`:**
+  - `pivotSales` / `pivotMoney` (one row per customer, cells per company alias).
+  - `pivotCompanies` (page-wide columns; a book missing from the company map is flagged *Unmapped*,
+    never a silent "—" column).
+  - `foldList` (the rule above, ranked once on the row total across all companies).
+  - `byParty` and `topShare` are gone. The comment on `pivotSales` records that one row per customer
+    reverses the earlier "two lines per entity" decision deliberately.
+- **`shared/components/ui/QueueTable.tsx`:** a new optional `footerRows` prop, rendered in a `<tfoot>`
+  outside sorting, filtering and pagination, so a sort never lifts "Remaining 15 customers" to the top
+  and a filter never hides TOTAL. No existing caller changed.
+- **Screen:**
+  - The four cards and one-block-at-a-time stay.
+  - Each product line and each money band is now a folded pivot, with *Show all*.
+  - Money is folded **band by band**, trade bands first, then *"Not counted in the figure above"*.
+  - A sale block's figure is labelled **"sold, before returns"**, with the net stated beside it.
+- **PDF (`exportDailyPdf.ts`, rewritten on `exportCollectionsPdf.ts`):**
+  - **Page one:** the five cards, the four block summaries two by two, the credit facility and the
+    notes. Every figure is a deferred link (`applyDeferredLinks`).
+  - **What sold · Money in · Money out · Bank** each start a page with *Back to Home*. Bank is last,
+    in landscape. Bookmarks for all five.
+  - Customer-name and line-table columns are measured and **wrap rather than ellipsize** (the longest
+    real name in FY 26-27 is 52 characters).
+- **Excel:**
+  - One sheet per product line and a Receipts / Payments sheet, all in company-column shape with every
+    party, TOTALs in the preamble so the autofilter cannot hide them.
+  - Voucher-level detail kept on *Receipt vouchers* / *Payment vouchers*, now with Company and
+    Location.
+- **What left the screen (views only, no actions):** the money tables' Book, Voucher type and Voucher
+  no. columns, and the sales tables' Location column. The voucher detail is in the Excel, and the
+  voucher numbers are a tooltip on each party.
+
+**🔴 Found while building, and fixed:**
+- **Free-of-charge lines carry value in Tally.**
+  - 1,912 of 1,913 FOC lines in FY 26-27 have a non-zero `revenue`: ink at a nominal ₹1/kg, and a
+    **machine sent free at full value** (GARTEX TEXPROCESS, 30-07-2026, ₹1.28 Cr).
+  - `salesTotals` always left it out of the day's figure. `groupSales` and the party list added it back.
+  - So on 30-07 the Machines row on the card read ₹128.59 L more than the Total counted, and a free
+    machine would have ranked first in any fold.
+  - Now free of charge is **quantity only, everywhere** (`moneyOf`).
+- **Money was not narrowed by location** (above).
+
+**Found, NOT fixed here:**
+- **Month-to-date sales ignore the location filter.** `loadDailyReport` sums every book, so under Surat
+  the "Month to date" hint is still all locations. This was already the case, and it now sits beside
+  day figures that do narrow. A small change to `mtd`, not attempted.
+- **The single-book day-book path cannot be reached from the screen.** `loadDailyReport` always reads
+  every mapped book. `toMoneyRows` handles it anyway, and was tested with a real single-book payload.
+
+**Verified 17-09-2026 against the live mirror** (admin account, dev server, PDF read with pdf.js,
+Excel read back):
+- **08-09, Ink:**
+  - 31 customers fold to **14 named** (13 to 81.2%, plus Shree Nandeshwar), then **Remaining 15**
+    (₹7.22 L), then Grando and Artisan (FOC only), then **TOTAL 6,540 kg (130 FOC), ₹41.11 L** — the
+    card's Ink figure.
+  - Shree Nandeshwar is one row: O-tec 60 kg ₹0.51 L, Enterprise 60 kg **FOC**.
+  - K3 Fabric Hub has values under both companies. Heads (5) and spares (10) show everyone; Peacock's
+    heads read `7 (1 FOC)`.
+- **08-09, money:** every list is 10 parties or fewer (customer receipts 9, supplier payments 7), so
+  nothing folds, and every band adds up to its card row.
+- **Long money lists:**
+  - 14-09 receipts: 32 customers → 14 named + Remaining 18.
+  - 02-09 payments: 27 suppliers → 4 named + Remaining 23.
+  - Both add up in every column.
+- **30-07:** both free machines show as FOC-only, and the Machines row now matches what the Total counts.
+- **Location:**
+  - **Surat 14-09:** money narrows to Surat books only.
+  - **Noida 02-09:** money narrows to Noida books only.
+  - **Delhi:** the business pages print why they are empty.
+- **PDF:**
+  - Page-one links land on What sold / Money in / Money out / Bank, including when a block spills to a
+    second page; every other page links home.
+  - **No ellipsized text on any page** of five documents.
+  - A sort on the screen keeps Remaining and TOTAL at the foot.
+- **The five built-in decisions still hold:** net of GST, trade-only headline, approval not counted, a
+  blank balance never zero, Colorix included.
+
+**🔴 Follow-up the same day, after the user tested it live — master `d08354e` (branch `1b13c0a`):**
+- **"Unmapped: ORANGE ENT BRANCH" / "Unmapped: ORANGE O TEC BRANCH" columns on 16-09-2026.**
+  - The cause is master's `receivables-hub/lib/salesRegister.ts`, which is AHEAD of `daily-reports`:
+    since 10-09 it fills `company` with the counterparty class on every Branch / Related line.
+  - DR-2 was proved "master not ahead" on its OWN files only, and was tested against the branch's older
+    loader, so the pivot looked clean locally and broke live.
+  - **Fixed:** `data/dailyReport.ts` now takes each sales line's company and location from the book's
+    GUID through `ext_company_map`, whatever the loader displays.
+  - Re-verified on a dev server run from the `oo-master` worktree: its loader does return
+    "ORANGE ENT BRANCH", and the report still shows only O-tec and Enterprise — screen, PDF and Excel.
+- **The lists were hard to read** (roomy rows, names on three lines, headers breaking). They are now
+  drawn as the **Disputed Bills / Red Mark** grid (`components/PivotGrid.tsx`), from the same hub parts:
+  - one 29px line per row, a sticky customer column that truncates with the full name on hover;
+  - each company named once over its `kg | ₹ L` pair;
+  - sort on every column (`useColumnGrid`) and a searchable Customer filter; the figure columns carry no
+    filter (unique values, as on Disputed Bills);
+  - Remaining and TOTAL drawn after the rows, so no sort or filter moves them.
+  - The `QueueTable.footerRows` prop added for the first cut is removed again; nothing else used it.
+  - The per-list Excel buttons went with QueueTable; the page's Excel lists every customer of every list.
+- 08-09 figures unchanged after both fixes (14 named, Remaining 15, TOTAL ₹41.11 L).
+
+**Second follow-up, 17-09-2026 — master `efe1dfa` (branch `49066fd`):**
+- **Colorix only where it has customer data** (the user: Colorix hardly trades — 7 sales lines on 3 days
+  from 01-08 to 17-09, no receipts or payments in September).
+  - Company columns are now chosen **per list** on screen, in the PDF and in each Excel sheet, so a
+    company gets a column only where it has a customer.
+  - The "Tally mirror rebuilt" line leaves Colorix off on a quiet day (`SHOWN_ONLY_WHEN_ACTIVE` in
+    `labels.ts`).
+  - **The bank section is deliberately unchanged** — the user meant customer data. The bank account is
+    typed by hand and its gap is flagged.
+  - Verified on master's code: on 15-09 only "Not yet classified" has a Colorix column; on 16-09 none
+    does, and the freshness line omits Colorix.
+- **The PDF, redrawn after the user called it cluttered and misaligned.**
+  - **Page one:** a title and one line of terms, five plain cards (no SEE LIST markers), and four
+    equal-height cards on one column grid, so counts and figures line up. Lines outside the headline are
+    grey type, not filled bands. A free-of-charge-only product line says "free". The credit facility
+    shows only when recorded. The notes moved to the end.
+  - **List pages:** a title with its figure on the right, each company named once over its kg | ₹ L pair,
+    lists kept whole on a fresh page when they fit, and a closing line instead of the navy bar.
+  - Checked by rendering pages for 14-09, 08-09, 02-09, 15-09 and Delhi: no ellipsized text, all links
+    resolve.
+
+**Still open:**
+- **View-only check not run.** Nobody holds Daily Report access yet, and the user chose not to grant
+  anyone for the test. Run it as the first real `view` user once one is granted.
+- **Does page one need the previous day's comparison?** Asked on 16-09 and not decided on 17-09;
+  not built.
+- **The email:** DR-3.
+
+### DR-3 · Daily Report — email it every evening  `[x]`
+*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 · **BUILT
+28-09-2026, proved end to end, and DISARMED** · The same entry is DR-3 in master's WORKLIST*
+
+**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection
+report already goes out.
+
+**🟢 The four shape decisions, taken 28-09-2026.** Every evening at **20:30 IST** · **PDF only** ·
+**one report covering all locations** · it sends **at the fixed time whether or not the bank balances
+have been typed**, and says on the mail how many were.
+
+**🟢 What is built.**
+- **One input, two callers** — `lib/reportInput.ts`. `DailyXlsxInput` used to be assembled inside
+  `pages/DailyReport.tsx` from about a dozen React memos, so a server job would have had to
+  re-derive it: a second definition of "what the report is for this day and this location", free to
+  drift. The page now renders from the same object it exports, and the runner calls the same
+  function. `exportInput` is gone; both export buttons take `input` directly.
+- **The gate** — `20261212120000_daily_report_email.sql`. `daily_report_email_due()` is the single
+  answer to "should it go out now, and to whom": the arming lever, the report's own switch, the
+  schedule, the send day, the slot, the grace window (60 min) and the send log. Reuses the shared
+  `report_email_*` tables under the key `daily-report`, so no schema was added for configuration and
+  per-location copies would cost a *key*, not a migration.
+- **The waking** — `20261212120100_daily_report_email_kick.sql`. pg_cron `daily-report-email-kick`
+  (`7-59/15`) asks the gate and only fires `workflow_dispatch` when due; `daily-report-email-watchdog`
+  (`11-59/30`) mails when a slot passes unserved. **Both minutes were chosen by arithmetic** against
+  all 17 live jobs — `*/15` collides with the collections kick, the watchdog and the outbox sweep.
+- **The runner** — `supabase/dailyreport/` + `.github/workflows/daily-report.yml`. Bundles the app's
+  own TypeScript (three guards kept: legacy-receivables refusal, browser-globals scan,
+  `tsc --noEmit`). Three modes; `dry-run` is the default. Needed a fifth substitution the Collection
+  report does not: `@hub/lib/scope`, because one unused React hook in `scopeParties.ts` drags the
+  whole portal session into a Node job.
+- **The mail** — `daily_report_evening` and `daily_report_missed` branches in `send-email/index.ts`.
+- **The screen** — Daily Report → **Email**. Switch, frequency/time/days, and the address list. The
+  status banner is read from the gate, never asserted in the component.
+
+**🟢 Proved, not assumed.**
+- Both migrations and every branch of the gate rehearsed against **live data inside a transaction
+  that was then rolled back**: disarmed, not-yet, due, missed, already-sent, nobody-to-send-to,
+  dedup on a second `mark_sent`, zero-queued refusal, and the watchdog alerting exactly once over
+  three runs. The rehearsal **found two real bugs** (below).
+- The runner ran for real in `dry-run` on three dates. 6-page PDF, verified with pdf.js: rupee signs
+  intact, no blank boxes, headline figures present, and "0 of 11" stated on the Bank page. The
+  figures are identical before and after the refactor.
+- `npm run build` green; the bundle reports no browser code and typechecks.
+
+**🔴 Two bugs the rehearsal caught, both of which would have shipped silently.**
+1. The watchdog's empty-list suppression tested the gate's `reason` for `'nobody to send to'` — which
+   the gate can never return once the window has closed, because it checks the grace window first
+   and says `'missed …'`. The suppression was dead code, so a database with no distribution list
+   would have mailed the alert **every night**. It now checks the recipient table directly.
+2. `strays` (salesperson rows filed under this key, which reach nobody) was built beside the
+   recipients, so it appeared only on the `due` and `nobody to send to` answers. On 364 evenings out
+   of 365 the gate says `not yet` or `already sent today`, so the warning was invisible. It is now
+   resolved first and travels on every answer.
+
+Also worth keeping: `daily_report_email_watchdog` takes a `p_now` clock, unlike the Collection
+report's, which reads `now()` internally and therefore shipped unproven. The clock is why the two
+bugs above were found rather than waited for.
+
+**🔴 And one claim that had to be corrected.** The drawing was *estimated* at ~2.5s to argue it could
+not be an Edge Function. **Measured: 1.6s on a quiet day, 1.8-2.0s on a busy one** (259 sale lines).
+That is *on* the 2s ceiling, not over it — which is a worse place to be, since it fails intermittently
+on the busiest days at 20:30 while every run reports success. The runner is still right; the migration
+and `entry.ts` now state the measurement instead of the estimate, and say to measure a December day
+before anyone revisits it.
+
+**⚠ THE REAL BLOCKER IS NOT CODE: NOBODY HAS EVER TYPED AN EVENING.** Measured on live 28-09-2026:
+11 active bank accounts, **0 rows** in `daily_report_bank_balances`, **0** in
+`daily_report_cc_limits`, and **0** `app_access` grants for `daily-report` (`UNIVERSAL_APP_IDS` is
+empty, so only admins can open it). Until somebody is granted the module and types an evening, every
+report goes out with an empty Bank page and no credit facility, saying "0 of 11 accounts entered".
+
+**🟢 LIVE 28-09-2026.** Master `ed05eae5`, Vercel deployed, both migrations applied and recorded,
+`send-email` v35, pg_cron armed, and the whole chain proved: a sample was delivered and read, a dry
+run produced identical figures on GitHub's own runner, and `daily_report_email_dispatch` was shown to
+reach GitHub (204) so the 20:30 poke is exercised rather than assumed.
+
+**Schedule as set: Monday to Saturday at 20:30 IST** — `days_of_week = {1,2,3,4,5,6}`. Changed from
+`daily` on 28-09 when Ritesh Bhai pointed out Orange works a six-day week: Sunday is the only closed
+day, so a daily schedule would have mailed an empty report every Sunday evening. Proved on the gate:
+due on Monday, due on Saturday, "not a send day" on Sunday.
+
+**Recipients: `e.techie4@gmail.com` only.** Adding anyone else is a live send and is the owner's call
+— one row in `report_email_recipients`, or the Daily Report → Email screen.
+
+**⚠ THE ONE THING STILL OWED IS NOT CODE.** Nobody has been granted the module and nobody has typed a
+bank balance, so every evening's mail says "0 of 11 accounts were entered" and the bank page and the
+credit facility are empty. Fix in the UI, no deploy: **Admin → Users → the person → Daily Report →
+Full access** (View is not enough — the RLS and `set_daily_report_evening` both require
+`access_level = 'edit'`), then they type the evening at /daily-report/bank-balances.
+
+**Also still owed, and cheap:** the kick borrows the `gh` CLI's token. It has its own config row, so
+`select set_daily_report_email_kick_pat('<a real PAT>', 'e.techie4@gmail.com');` decouples it from the
+Collection report, where a `gh auth logout` would otherwise stop both.
+
+**How it went live, kept because the order matters if it is ever repeated.**
+1. [ ] Merge to `master`. A scheduled workflow only exists on the default branch, and the kick's
+   `git_ref` is `master`; the runner bundles whatever `master` holds, so anything not there is not in
+   the mail.
+2. [ ] Apply both migrations (they ship disarmed, switched off, unscheduled and unlisted; the asserts
+   fail if any of that is untrue).
+3. [ ] Deploy `send-email`. ⚠ The repo copy was **stale against the deployed function** (v34, 24-Sep,
+   carrying the `complaint_` prefix and the PF-18 bullet/cta overrides). It has been caught up from
+   the live source first; deploy from that, not from an older branch.
+4. [ ] Grant the module to whoever types the balances, and get one evening typed.
+5. [ ] `select set_daily_report_email_kick_pat('<token>', '<alert email>');` — its **own** token, not
+   the collections kick's borrowed `gh` CLI credential, so one revocation cannot stop both reports.
+6. [ ] Run the workflow by hand with `mode: dry-run` and read the artifact.
+7. [ ] Set the switch, the schedule (daily 20:30) and **one** recipient, then `mode: sample` to that
+   address alone. Read the real mail.
+8. [ ] Only on the owner's word: add the real recipients, then
+   `select set_daily_report_email_armed(true);` — **last, and theirs.** Nothing sends before it.
+
+To stop it at any time without losing the schedule or the list:
+`update private.daily_report_email_config set armed = false;`
 
 ---
 
@@ -7136,6 +7699,23 @@ people and simply never picked up. **The question is whether it is wanted at all
 nobody has left the company — those exits were handled outside the portal, so there is no history in
 here to migrate or report on.
 
+### EX-2 · Make Employee Exit scorable before it joins the ranking  🟢  `[ ]`
+*Raised 18-09-2026 from CC-1 · ⏸ **Parked by the user, 18-09-2026** — only matters once Exit is in use (EX-1).*
+
+The monthly ranking (CC-1) scores every FMS by running its own code on the server, and Exit cannot run there yet:
+its Completed-tab builder (`completedFor`) lives inside the React store (`hr-exit/store.tsx`). Before Exit counts:
+move it into `hr-exit/lib/queues.ts` as a pure function the store then calls (as HR Recruitment's
+`hrCompletedEntries` was), write `fms-control-center/ranking/modules/hrExit.ts`, move `hr-exit` from
+`NOT_SCORED` to `RANKED_MODULES` in `ranking/registry.ts`, rebuild the bundle from master, redeploy
+`fms-ranking`, and switch the module on in the ranking's admin section.
+
+**Gaps to decide then:** a clearance check marked N/A records no actor; `lwdConfirmedAt` is re-stamped on every
+re-confirm; `fnfApprovedById` is overwritten by a re-decision; My Work's Exit rule has no reporting-manager arm
+although the store's queue has one.
+
+**Why it can wait:** Exit has 0 cases and is switched off in the ranking, and the ranking's build cannot forget it
+— Exit is listed as excused, with this reason.
+
 ### KB-1 · 🟢 HR knowledge base — a second brain over the HR documents  `[~]`
 *Raised 2026-08-20 · **🟢 Low priority, IN PROGRESS (03-09-2026).** A demo has already been built and
 shown; what remains is turning it into something live. ⚠ The permissions question below must be
@@ -7256,6 +7836,10 @@ own **NR-n** entry below; this table is the index, so the list can be read witho
 | 5 | 2026-09-03 | The EA board shows *4 · 2 in play* for 2 people — the same candidates were entered twice, and the duplicate check cannot catch a CV with no email or phone. Filed as a **fault**, not a task, so it sits in [Fixes](#fixes) | **FIX-5** | `[x]` |
 | 6 | 2026-09-03 | A cancelled position shows no reason, no date and no person — though all three are stored. Show them, on the page and on hover, for every stopped state. **Plus:** the Completed tabs of all five HR queues named a department and never the position | **NR-6** | `[x]` |
 | 7 | 2026-09-03 | The Positions grid's **Close** button actually **cancels** — five real vacancies were cancelled through it. Filed as a **fault**, so it sits in [Fixes](#fixes) | **FIX-6** | `[x]` |
+| 8 | 2026-09-21 | At the **HR approval** gate the HR head sets three numbers and the module tracks each: the period the position must be **closed** in, the number of **new CVs** required, and how many CVs must reach the **director** round (**default 3**) — today 12 of 18 live positions have sent nobody to a director, and one sent 1 of 20 | **NR-7** | `[x]` |
+| 9 | 2026-09-21 | **Talent Equation — KRA 1 of Saloni's KPI sheet, mapped into this module.** Its six **Talent Acquisition** lines (30%): an acknowledgement stamp, the CV and shortlist targets, the 48-hour interview feedback, the role-specific TAT and the BGV checklist items | **NR-8** | `[x]` |
+| 10 | 2026-09-21 | **The Buddy Program** (5%) — a cross-departmental buddy allocated within 24h of offer acceptance, a Buddy Passport handed over on Day 1, **8 interactions in 90 days** marked by HR, closure with probation (and extension alongside it), and the joiner's own rating. **Nothing exists today** | **NR-9** | `[ ]` |
+| 11 | 2026-09-21 | **Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90** (10%) — two-sided reviews (HR **and** the new joiner), a reminder a day before each, a concerns / grievances register on a format the client will send, and confirm-or-extend at 90 days. Built monthly today, and **never once used** | **NR-10** | `[~]` |
 
 *More points are expected on this list, and **nothing is being built until they are all in** — the
 client wants them gathered first so they can be sequenced together. Add each here as it comes in,
@@ -8599,6 +9183,1581 @@ switch.
 
 ---
 
+### NR-7 · HR sets the clock and the CV numbers when it approves  `[x]` — 🟢 **LIVE 21-09-2026**
+
+*Raised 2026-09-21 by Ritesh Bhai, in two messages the same day. **Not started** — logged here on the
+instruction "just add this to the worklist, don't execute". The figures below were read off
+`icutjkrqkbzwvmnfbzpr` on 21-09-2026 (30 requisitions, 179 CVs, read-only); nothing was written and no
+code was touched.*
+
+🟢 **BUILT 21-09-2026 — database LIVE, frontend on localhost only (not pushed).**
+
+*Migration `20261130120000_nr7_requisition_targets.sql` applied to `icutjkrqkbzwvmnfbzpr`, with its
+rollback written **first** and kept beside it. `npm run build` green. Walked in a real browser as a
+signed-in user (Playwright, localhost:5193) — every screen below was driven, not reasoned about.*
+
+**The module is live, so the whole change is additive and backward compatible.** Proof rather than
+intention: the row counts and two fingerprints were taken before the migration and again after the
+browser pass, and they are identical — 30 requisitions, 179 candidates, 153 interviews, 676 activity
+rows, `req_fingerprint 7fa12ef7…`, `cand_fingerprint 45e4be06…`. No requisition changed status, and
+the three sitting at `hr_review` are all still there.
+
+| What | Where |
+|---|---|
+| 4 numbers on the requisition | `target_close_days`, `cv_target`, `shortlist_target` (3), `director_cv_target` (3), `targets_set_at/by` — all nullable or defaulted, with the decisions written into the **column comments** |
+| New vs repeat CV | `fms_hr_candidates.is_repeat` + `repeat_of_candidate_id` + `repeat_signal`, decided at INSERT by the new `fms_hr_candidate_seen_before()` and stored. `duplicate_ack` is now kept on the row too — it never was |
+| Asked for at approval | `MrfDecisionModal`, HR stage only, **Confirm disabled until all four are filled**; the fields vanish on Reject / Send back |
+| Set later | `fms_hr_set_requisition_targets` + the Targets card's **Edit** — the way in for the 24 positions that were already open |
+| Tracked, one position | `TargetsCard` on the requisition page: the clock, new CVs, shortlist, directors |
+| Tracked, all positions | Two new columns on **Positions** — *Closure* and *Targets met* — both sorting, both filtering, per this file's standing rule |
+
+**What the browser pass actually proved** (as opposed to what the code says):
+
+- The **old four-argument call still resolves** to the new function — the deployed site keeps working
+  while the database is ahead of it. Probed both forms; both reached the authorisation gate, neither
+  wrote anything.
+- Saving from the UI wrote `30 days / 10 CVs`, stamped `targets_set_at` and the person, and the card
+  redrew as *25 of 30 days used · 5 left · due 26-09-2026*. **That row was then restored to null** —
+  HR should type their own numbers, not mine.
+- An approval was driven end to end on a real pending MRF with `fetch` intercepted, so the requisition
+  was **not** approved: the payload it sent was exactly
+  `{target_close_days: 21, cv_target: 8, shortlist_target: 3, director_cv_target: 4}`.
+- The gate is **not admin-only**: `fms_hr_can_act('hr_head_approval', …)` returns true for **Riya
+  Kumari (HR Head, role `hod`, not an admin)** and for Saloni Rathod. Checked in SQL rather than by
+  borrowing their login.
+
+**Two defects found by looking at the screen, which the code read as correct:**
+
+1. 🔴 **"offer accepted —" on a vacancy with no offer.** The clock note was keyed on the STATE, and a
+   position whose period runs out while it is still hunting is `missed` with no stop date — so it
+   printed an acceptance that never happened. Now keyed on whether the clock actually stopped. It
+   reads *"12 over · was due 09-09-2026"*.
+2. The approval dialog's four hints wrapped to four lines each, pushed the two inputs out of line with
+   each other and **overflowed the dialog sideways**. `FieldLabel`'s `hint` shares the label's own
+   line; the explanations now sit under each input instead.
+
+**One trap worth keeping.** `STAGE_RANK.disqualified` is **10** — above R3's 8 — so "reached the
+directors" counted by rank alone would score every dropped candidate as having met a director. The
+count reads three signals (held date, current stage excluding disqualified, and a booked round-3
+row), which is why MRF-2627-0015 reads **9**: one round held, nine booked. `interview3_at` alone
+would have said **1**.
+
+**Not built, deliberately:** the *"type why"* box when fewer than 3 reach the directors — that was the
+🟡 assumption above, and it belongs with the final-decision step rather than here.
+
+🟢 **SHIPPED 21-09-2026** — `master` at **ffea893e**, pushed as `misorangeotec-stack`, Vercel deployed
+from it. Ported onto master rather than copied: all seven touched app files were byte-identical there,
+but **`database.types.ts` was 64 lines AHEAD on master**, so its three additions were re-applied to
+master's own copy rather than overwriting it. Built and walked in the browser **again on master's
+code** in a throwaway worktree (`D:\AI Development\oo-nr7`) before the commit — the branch this was
+developed on carries three other sessions' work, so passing there proves nothing about what deploys.
+
+**The ask.** When a new requisition reaches the **HR approval** gate, the HR head sets three numbers
+alongside the approval, and the module then tracks each one against what actually happened:
+
+| # | What HR sets at approval | What gets tracked |
+|---|---|---|
+| 1 | The **period this position should be closed in** | Was the position closed inside that window? |
+| 2 | The **number of new CVs** required for this position | Did the CVs gathered match the finalised number? |
+| 3 | The **approximate number of CVs that should reach the director round** — **default 3** when HR types nothing | Did at least that many candidates get in front of a director? |
+
+Number 3 arrived with its own reason: *"even if there are many CVs uploaded at stage 1, when the stage
+progresses and reaches the final director stage, many times only 1 CV is left. This is also an
+important part of quality assurance of the CVs — we at least need 3 CVs to reach the directors."* It
+is a CV **quality** check, not a volume one, and it is the only one of the three with a default.
+
+#### What the live data says
+
+**The director-stage complaint is real, and it is worse than "often only 1".** Of the 18 live
+positions holding CVs, **12 have never put anybody in front of a director at all** — including the two
+biggest pipelines in the system. The six that did:
+
+| MRF | Position | CVs | Reached the director column | Would pass "3 must reach" |
+|---|---|---|---|---|
+| MRF-2627-0015 | Finance manager | 17 | 6 | ✅ |
+| MRF-2627-0021 | Service Coordinator | 4 | 3 | ✅ |
+| MRF-2627-0023 | Business Development Executive | 2 | 2 | ✗ — only 2 CVs ever existed |
+| MRF-2627-0017 | Electrical & Panel Technician | **20** | **1** | ✗ |
+| MRF-2627-0004 | MIS Executive / MIS Analyst | 2 | 1 | ✗ |
+| MRF-2627-0019 | *ZZ TEST — HR Executive* | 3 | 1 | ✗ (test row) |
+| — | **Never reached a director** | — | 0 | Design Engineer (**37 CVs**), Area Sales Manager (23), Marketing Executive (14), Spare Parts Executive (12), Service Engineer ×2 (10 + 6), Executive Assistant (8), Marketing Manager (8), Service Engineer (6), Ink Lab Chemist (3), Ink Production Executive (3), Credit Control Executive (2), Technical Sales Engineer (1) |
+
+Two of thirty positions would clear the rule today. MRF-2627-0017 is the client's sentence in one row:
+**20 CVs in, one candidate out the far end.**
+
+**The closure clock has no precedent to calibrate against.** In six weeks of live use **not one
+requisition has ever reached `closed`** — 0 of 30. All five ended vacancies were **cancelled**. Nobody
+has joined: `joined_at` is null on all 179 candidate rows, 3 offers are out (`finalized`), 0 `hired`.
+Meanwhile nine positions approved on **10-Aug-2026** are still `sourcing` **42 days later**, and
+MRF-2627-0002 (Sales Executive, approved 10-Aug, posted 20-Aug) still has **zero CVs** against it.
+Whatever period HR sets, most of today's live board is already outside it — so the first report this
+builds will be a wall of red unless the rollout says what it does with the 24 positions already open.
+
+**CV volume today** — 179 CVs across the board, 0 to 37 per position: 37, 23, 20, 17, 14, 12, 10, 8,
+8, 6, 4, 3, 3, 3, 2, 2, 2, 1, and **six approved positions sitting at zero**. 39 of the 179 are
+disqualified.
+
+#### Where it lands
+
+- **Capture:** [MrfModals.tsx](frontend/src/apps/hr-recruitment/components/MrfModals.tsx) —
+  `MrfDecisionModal`, and **only on `stage === "hr"`**; the same modal serves the Management gate and
+  must not grow the fields there. It is also the **edit** path (`editing`), so the three numbers have
+  to survive a corrected approval, not just the first one.
+- **Write:** `decideMrf` / `updateDecideMrf` in
+  [hrWrites.ts:342-375](frontend/src/apps/hr-recruitment/data/hrWrites.ts#L342-L375) →
+  `fms_hr_decide_mrf` / `fms_hr_update_decide_mrf`, both `(p_req, p_stage, p_decision, p_remarks)`
+  today. Three more parameters, or one payload — and the default of 3 belongs **in the RPC**, not only
+  in the form, or a row written by any other path arrives with no target at all.
+- **Store:** three new **nullable** columns on `fms_hr_requisitions` (additive only — the table has
+  none of them today: no target date, no CV target, no director target), plus the `Requisition` mirror
+  in [types/index.ts:274-383](frontend/src/apps/hr-recruitment/types/index.ts#L274-L383) and the row
+  mapper.
+- **Show and track:** Positions list, Position pipeline, MRF detail, the management pipeline dashboard
+  (NR-2) and [lib/analytics.ts](frontend/src/apps/hr-recruitment/lib/analytics.ts). If a missed target
+  should *chase* somebody it also has to reach [lib/queues.ts](frontend/src/apps/hr-recruitment/lib/queues.ts)
+  and My Work, which is a bigger change than displaying it.
+- ⚠ **This is not the step-SLA model.** [lib/sla.ts](frontend/src/apps/hr-recruitment/lib/sla.ts) +
+  Setup → Due Dates already give every *step* a due date (HR approval 2 days, posting 1, resume upload
+  7…), configurable org-wide. What is being asked for here is a **whole-vacancy** target, set per
+  requisition by a person. Two different clocks — do not collapse them, and do not let the new one
+  read `stepSla`.
+
+#### Decisions needed before this can be built
+
+🟢 **Questions 1 and 2 have a recommended answer — put to the client 21-09-2026, taken from HR's own
+two documents rather than from preference. Ritesh Bhai's instinct was "closed when the person joins";
+this keeps that and splits the scoring.**
+
+**Two bars. The position still CLOSES when the person joins — but the period HR types at approval is
+measured to OFFER ACCEPTED.** The gap between the two prints beside it as Offer-to-Join days:
+reported, not scored against HR.
+
+Why, from the instruments themselves:
+
+- **Her weekly form already separates them.** `A1.4` *Positions Closed* and `A1.5` *Offer-to-Join %*
+  are two different boxes, with `Z.2` offer drop / no-show as a third. If joining were simply part of
+  one closure number, those boxes would not exist — HR already reports the waiting time as its own
+  fact ([WEEKLY-REVIEW-REPORT.md](WEEKLY-REVIEW-REPORT.md)).
+- **The KPI sheet separates them too.** 1A.5 scores "requisition open and closure dates"; 1A.6 is a
+  *separate* line with its own 7-working-day SLA covering offer release, BGV, references and joining
+  documentation. The sheet never asks one line to carry both.
+- **1A.5 is the largest single line in the document — 10%.** A 30–90 day notice period is not HR's to
+  influence, and hanging the biggest number in someone's appraisal on it makes it a lottery.
+
+⚠ **Whatever counts a closure must exclude cancellations.** Every `closed_at` on the board today
+belongs to a **cancelled** requisition, not a filled one — so a naive count off that column reports
+five cancellations as five wins. The same trap already affects the framework lab's `closure_within_tat`
+metric, which reads `closed_at` raw.
+
+*Still open in these two questions: the exact number of days per role (Q2's other half), and whether
+the clock starts at HR approval or at job posting.*
+
+1. **What stops the closure clock? — 🟢 ANSWERED 21-09-2026, see the green block above.** The position
+   closes when the person **joins** (today's rule, `fms_hr_sync_requisition_fill`, reached zero times
+   so far); the period HR types is judged to **offer accepted**; the gap prints beside it as
+   Offer-to-Join days. Both must be named on the screen, or the report will disagree with HR's own
+   understanding of the word *closed*.
+2. **And what starts it? — 🟢 DECIDED 21-09-2026: the day the job is POSTED.** Not the approval: 0002
+   was approved 10-Aug and posted **20-Aug**, 0013 approved 21-Aug and posted **02-Sep**, and those
+   waiting days are not the hunt's.
+   - ⚠ **Which posting date.** The module keeps two and they are not the same fact: `posted_on` is the
+     business date HR typed (the sheet's *"Date of Job Posted"*) and `posted_at` is when the step was
+     completed in the hub. Use **`posted_on`**, falling back to `posted_at` — and say which on screen.
+   - ⚠ **A position that is never posted never starts its clock.** Three are sitting there now
+     (0026, 0028, 0029 — approved 18-Sep, `posted_on` still null). They are not untracked: the
+     `job_posting` step already carries its own 1-day SLA, so the chasing happens there. But the
+     closure report must show them as *not started*, never as *on time*.
+3. **A date, or N days? — 🟢 DECIDED 21-09-2026: a number of days, typed per position by the HR Head
+   at MRF approval.** *"A different number HR Head will set for each position at the time of new MRF
+   approval."* So there is **no per-role default and no master table of TATs** — the box is filled on
+   every approval, and it should be **required**, not optional, or a skipped box quietly means a
+   position nobody is tracking. ⚠ `expected_start_date` already exists on the MRF — it is the HOD's
+   wanted **joining** date, a different fact, and must not be reused for this.
+4. **Per seat or per position? — 🟢 DECIDED 21-09-2026: per position, in total.** Every number the HR
+   head types is the total for the whole requisition, however many seats it carries. MRF-2627-0007
+   wants **5** Service Engineers on one MRF and still gets one CV target, one shortlist bar and one
+   director bar — the HR head raises them by hand if the hunt needs it. **The hub must never multiply
+   a typed number by `positions_required`**, anywhere, or a 5-seat position shows a target nobody set.
+5. **What counts as a "new" CV — 🟢 DECIDED 21-09-2026: only a person the hub has never seen.** A
+   candidate already on any earlier requisition does **not** count toward the number; HR must source
+   somebody new. 🔴 **This one answer is the most expensive of the seven**, because the hub cannot
+   tell new from repeat today:
+   - `fms_hr_candidate_duplicate` looks **within one requisition only** — the server has never
+     compared a CV against the rest of the board.
+   - The *"add anyway"* reason is a gate the RPC checks and **never stores** — there is no
+     `duplicate_ack` column on `fms_hr_candidates`; only the client sends one.
+   - The cross-vacancy check in [lib/duplicates.ts](frontend/src/apps/hr-recruitment/lib/duplicates.ts)
+     is advisory, in the browser, and nothing it decides survives the save.
+   **So the verdict has to be computed at ADD time and stored on the row** — `is_repeat`,
+   `matched_candidate_id`, and which signal matched — never recomputed later from email/phone/hash. A
+   quarter of CV rows carry no email and no phone (FIX-5), so a recomputation on a later day will
+   quietly give a different answer than the one HR was shown.
+   - Right now **0 of 179** CVs appear on two vacancies, so the rule changes no number on today's
+     board. It starts to bite the first time HR re-uses a good CV.
+   - ⚠ Only the **CV number** is affected. A repeat candidate still counts for the shortlist bar and
+     the director bar — those measure how far a person **got**, not where the CV came from.
+   - ⚠ Worth telling HR plainly: re-using a strong CV from an earlier hunt is good recruiting, and
+     under this rule it earns nothing toward the number.
+6. **Do disqualified CVs count? — 🟢 DECIDED 21-09-2026: yes.** A CV counts the moment HR sourced and
+   uploaded it, whatever happens to that person afterwards — so the CV number measures **sourcing
+   effort**, which is the part HR controls, and the target never moves under them. 39 of the 179 CVs
+   on the board today are disqualified, and all 39 count. ⚠ The other two bars are unaffected and
+   stay as they are: the shortlist bar (3 to the HOD) and the director bar (3 to the directors) are
+   about how far people **got**, not how many were sent.
+7. **Is the director number a target or a gate? — 🟡 ASSUMED 21-09-2026, not confirmed.** The client's
+   words were *"3 CVs are the minimum benchmark for any position; more than 3 is always welcome"* — a
+   benchmark, so the number is a floor and never a ceiling. **The exception case was not answered, so
+   the plan assumes: nothing is blocked.** If fewer than 3 reached a director, the position shows red
+   and HR is asked to type why, and that reason is kept — the same shape as the existing duplicate-CV
+   *"add anyway, with a reason"* gate, which HR already knows. **Revisit if the client wants a hard
+   stop.** Note that two of the three live offers carry no director round result at all.
+8. 🔴 **What counts as "reached the director" — this is a measurement trap.** Three signals in the
+   same database give three different answers for the same fact:
+
+   | Signal | Says |
+   |---|---|
+   | `candidates.interview3_at` (the round **held**) | **1** candidate, ever |
+   | `fms_hr_interviews` round 3 rows | **17** booked — **16 still `scheduled` with no result recorded** |
+   | `candidates.stage` (the column the card sits in) | **14** at or past the director column (11 + 3 finalized) |
+
+   It is not confined to round 3: **43** telephonic, **40** round-1 and **29** round-2 bookings also
+   sit `scheduled` for ever with no result. Build the counter on `interview3_at` and the report says
+   *1* where HR sees *14*. Choose the signal deliberately, in writing, on the screen.
+9. **Do the already-open positions get the rules too? — 🟢 DECIDED 21-09-2026: yes, all of them.**
+   The HR Head goes back over the **24 open positions** and sets the closure period and the CV number
+   on each; the 3-to-the-HOD and 3-to-the-directors bars apply to everything from the day it ships.
+   - **So the build needs a way to set the numbers on a position that is ALREADY approved** — not
+     only inside the approval dialog. A small edit control on the position itself, admin/HR-Head only,
+     with who set it and when, or 24 positions have nowhere to receive their numbers.
+   - ⚠ **Expect red on day one, and it will be honest.** Nine of the 24 have been open since 10-Aug
+     (42 days). Whatever period is typed on them now is already spent, so the first report shows most
+     of the board overdue. Tell HR that before they open it, not after.
+   - ⚠ The CV number is the harder one to backfill: these positions already hold CVs (one holds 37),
+     so a number typed today is being set against a hunt that is half over. Setting it to what they
+     **should** have had is the honest reading; setting it to what they already have makes every old
+     position pass, which is worth nothing.
+
+---
+
+### The Talent Equation block — Saloni's KPI sheet, mapped into this module  *(raised 2026-09-21)*
+
+*Source: `files/KRA-KPI-Analysis.png` — the **KPI-3 lab's** Framework scorecard for Saloni Rathod
+(HR Executive), which is **localhost-only on branch `kpi-3-lab`** and writes nothing — read together
+with [KRA-KPI-FRAMEWORK.md](KRA-KPI-FRAMEWORK.md) at the repo root, which transcribes the source
+`.docx` line by line. Everything below was re-checked against the live database on 21-09-2026;
+read-only, nothing written.*
+
+**What the picture is.** A weighted appraisal sheet for one role — 5 KRAs, 44 KPI lines, fixed at
+100%. **KRA 1 — "Talent Acquisition, Buddy Program & Probation", 45% of the whole sheet, 18 lines —
+is this module's half of it.** The other 55% (Learning & Development 40%, attendance, task
+management) belongs elsewhere and is **not** planned here. The client calls the programme **Talent
+Equation**.
+
+🔴 **The headline from the lab: of KRA 1's 45 points, the hub can see 7. The other 38 have no data
+behind them.** Not "a report nobody wrote" — no table, no column, no screen. The Buddy Program (5%)
+has *nothing at all*, and Probation (10%) has tables that have never held a single row.
+
+| Group | Wt | Lines | Where it stands today | Entry |
+|---|---:|---|---|---|
+| **1A · Talent Acquisition** | 30% | 6 | 1 line measurable, 2 waiting on NR-7's numbers, 3 need a column or a master row | **NR-8** |
+| **1B · Buddy Program** | 5% | 5 | ❌ **no tables, no screens, nothing** | **NR-9** |
+| **1C · Probation Management** | 10% | 7 | ⚠ built, **never used** (0 probations, 0 reviews) and on the **wrong cadence** — monthly, not Day 7/15/30/60/90 | **NR-10** |
+
+#### P0 · Three things every entry below depends on
+
+1. 🔴 **A requisition has no owner.** The lab says it in its own footnote: *"the recruitment tables
+   record the requisition, not who chased it."* Every recruitment line is scored **per HR executive**,
+   and today the only reason Saloni's figures are hers is that she is the only recruiter. One column
+   (`recruiter_id` on `fms_hr_requisitions`, defaulted at HR approval, reassignable) turns the whole
+   of 1A from "the department's number" into "this person's number". **Until it exists, a second
+   recruiter makes every 1A line wrong.** It is one column and one picker, and it must come first.
+2. **Reminders have no home in this module.** The bell exists (`fms_hr_notifications` +
+   `fms_hr_announce`), but **`hr-recruitment` email has been OFF since 04-08-2026**
+   (`email_module_settings`), and NR-1 already parks the `send-email` redeploy that must happen before
+   it is ever switched on. Anything "notified a day before" needs a scheduled wake: the project
+   already runs **15 pg_cron jobs**, with `fms-asset-send-reminders` (03:30) as the working precedent —
+   copy it, and pick a minute that collides with none of them.
+3. **The new joiner is not a user — 🟢 DECIDED 21-09-2026: give them one.** Both the buddy feedback
+   (1B.5) and the joiner's half of every probation review need the *joiner* to log in and type. There
+   is **no link at all** today from a hire to a portal account — `fms_hr_onboardings` /
+   `fms_hr_probations` carry a free-text `employee_code`, and `profiles.employee_code` is filled on 44
+   of 68 people.
+
+   **The client's answer:** *"As soon as that person is onboarded we will create a login for that
+   person. That is also part of the onboarding process."* So:
+
+   - **"Create Orange One login" becomes an onboarding checklist item** — a master row in
+     `fms_hr_onboarding_items`, alongside the other nine. No migration for the item itself.
+   - **Store the link, never retype it.** The onboarding (and the probation, and the buddy row) carries
+     the new `profiles.id`. Matching a hire back to a person by employee code or by name is the trap
+     this file has already been bitten by.
+   - 🔴 **HR cannot create a login today — 🟢 DECIDED 21-09-2026: let them, but only the lowest type.**
+     The `admin-users` Edge Function refuses anyone who is not `admin` (*"admin only", 403*), and
+     **Saloni Rathod is `employee`, Riya Kumari (HR Head) is `hod`** — neither can press the button.
+     The client's answer: **HR may create `employee` logins, and nothing more.** So the function grows
+     a second, narrower gate — recruitment staff (`fms_hr_is_recruitment_staff` is the predicate that
+     already exists) may CREATE a user whose role is `employee`; they may not create an admin, a hod or
+     a sub_hod, may not change an existing person's role, may not grant module access beyond the
+     default, and may not delete anybody. ⚠ **That function serves live user management for the whole
+     portal** — the new branch must be additive and the old admin path must come out byte-identical.
+   - Note the portal's own convention: a new user's **mobile number is their initial password**
+     (CLAUDE.md), so onboarding must have collected a phone before this item can be ticked.
+
+---
+
+### NR-8 · The six Talent Acquisition lines (30% of the sheet)  `[x]` — 🟢 **LIVE 21-09-2026**
+
+🟢 **BUILT AND SHIPPED 21-09-2026** — `master` at **30769cbd**. Migration
+`20261201120000_nr8_ack_bgv_induction.sql` applied to `icutjkrqkbzwvmnfbzpr` with its rollback written
+first; built and walked in a browser on **master's own code** before the commit.
+
+**Three of the six lines needed a column; the other three were NR-7's and are already live.**
+
+| Line | What shipped |
+|---|---|
+| 1A.1 Requisition acknowledgement | `acknowledged_at` / `_by`, an **Acknowledge** button on the requisition header, and `fms_hr_acknowledge_requisition` — which refuses a second acknowledgement, an unapproved requisition, and anybody who is not the recruiter on it |
+| 1A.6 **BGV** | A three-state **result** on the onboarding — *In progress · Clear · Discrepancy* — with a note the RPC **demands** for a discrepancy. `police_verification` is untouched and stays an ordinary checklist item |
+| 1A.6 **references** | One master row (`reference_check`, 7 days). No code, and no migration the next time HR wants an item |
+| gap 2 **induction** | `induction_on` — a DATE, so the weekly report's *"not done by Day 15"* flag can actually fire. Refused in the future, and refused before the joining date |
+
+**1A.2, 1A.3 and 1A.5 were delivered by NR-7.** 1A.4 needs no build at all — it is the interview
+results nobody records (128 of 153 bookings), and no column fixes that.
+
+#### What the browser caught, which the code read as correct
+
+🔴 **An action taken from the requisition header failed in complete silence.** `err` was rendered
+**only inside the edit-and-resubmit branch**, so `setErr` on any other action wrote to a state nothing
+displayed: the button un-greyed and nothing else happened. Every reason the server can give — *already
+acknowledged*, *not approved yet*, *only the recruiter can acknowledge it* — went nowhere. The header
+now reads them out, and the fix guards whatever gets added to that row next.
+
+Also worth keeping: the onboarding dialog has **two** date inputs, and a test that grabs
+`querySelector('input[type="date"]')` types into the **joining date**, not the induction. Nothing was
+saved, but the field sat there dirty, one click from changing a real hire's joining date. Select the
+induction input by its `min`/`max`, or by its own block.
+
+#### Proof it did not disturb the live module
+
+Counts and fingerprints identical before and after, across requisitions, candidates, interviews and
+onboardings. The BGV and induction round trip was exercised **for real** on the `ZZ TEST` onboarding
+(refused a discrepancy with no note, then recorded one, then set an induction date) and **cleared back
+to null** afterwards. The acknowledgement was driven with `fetch` intercepted, so no live requisition
+was acknowledged — all 30 still read `acknowledged_at = null`, waiting for HR.
+
+⚠ **The three onboardings already open do NOT carry the reference-check item**, by design: checks are
+seeded when an onboarding opens, and back-filling would invent work nobody was asked for. Every
+onboarding opened from now on has it.
+
+⚠ **One thing was decided rather than asked**, and is cheap to change: the acknowledgement clock is
+anchored on **`hr_approved_at`** — the HR Head's approval, the earliest moment the vacancy is genuinely
+the recruiter's to run — rather than on Management's. If HR means "approved" to be the Management gate,
+it is one line.
+
+Line by line, with what exists and what each one needs. **Three of the six are already NR-7's work** —
+build NR-7 first and *extend* its form; do not put a second "targets" screen anywhere.
+
+| Line | Wt | Target on the sheet | What exists | The change |
+|---|---:|---|---|---|
+| 1A.1 Requisition acknowledgement | 3% | Within **1 working day** of an approved requisition | ❌ `hr_approved_at` is the *approval*, by the HR **Head**. The recruiter does nothing recordable between approval and posting | Two nullable columns (`acknowledged_at`, `acknowledged_by`) + an **Acknowledge** control on an approved requisition |
+| 1A.2 CV pipeline creation | 5% | CV target per requisition, **set by the HR Head while approving** | ⚠ counts exist; the target does not | **= NR-7 number 2.** Nothing further |
+| 1A.3 Quality shortlist submission | 5% | Minimum **2–3** shortlisted profiles per requisition | ⚠ `hr_shortlisted_at` exists — but **160 of 179 CVs are HR-shortlisted**, so the line as written passes on almost everything | 🟢 **DECIDED 21-09-2026: 3.** The same benchmark as the director round, so the whole pipeline reads one number. Seeded as the default on **NR-7's approval form**, overridable per position |
+| 1A.4 Interview coordination + feedback | 3% | Scheduled, and feedback closed, **within 48 hours** | ✅ the data shape is there (`scheduled_on`, `held_at`, result) — but 🔴 **128 of the 153 interviews ever booked sit `scheduled` with no result recorded** (R0 43, R1 40, R2 29, R3 16) | Not a column. The fix is making result-recording unavoidable — same defect as NR-7's measurement trap |
+| 1A.5 Position closure within approved TAT | 10% | Closed within the **role-specific** TAT | ❌ the biggest line on the sheet, and no TAT is stored anywhere | **= NR-7 number 1.** 🟢 **DECIDED 21-09-2026:** no job-title default and no `default_tat_days` — the HR Head types the days **per position, at approval**, and the box is required |
+| 1A.6 Offer, **BGV**, references, joining docs | 4% | Within **7 working days** of approval | ⚠ the onboarding checklist already does per-item due days — 9 active items — but **none is a BGV or a reference check** (`police_verification`, 7d, is the nearest) | **Master rows, no code, no migration.** Add the missing items in Setup → Masters. The cheapest 4% in the document |
+
+⚠ **Decide whether acknowledgement becomes a STEP.** A step key inherits the SLA map, My Work, the
+queues, step owners, reassignment **and the live CC-1 ranking**. A column with a due chip does not.
+Recommendation: a column first; promote it to a step only if it must actively chase somebody.
+
+---
+
+### NR-9 · The Buddy Program — a new sub-module  `[ ]` — planned 2026-09-21, nothing built
+
+*5% of the sheet, and **nothing exists**: no table, no column, no screen, no step.*
+
+**The programme, as the client described it (21-09-2026):**
+
+1. **Offer accepted → a buddy is allocated within 24 hours** (1B.1). The buddy is a **cross-departmental**
+   employee — deliberately not from the joiner's own department — who is there for the new joiner's
+   questions and general support.
+2. **Day 1 → the Buddy Passport is handed over** (1B.2). The passport carries tasks, so it is a
+   checklist, not a document.
+3. **Over 90 days → at least 8 interactions** between the buddy and the joiner (1B.3), each one
+   recorded. **HR tracks and marks them** — that is explicitly HR's job, not the buddy's.
+4. **At 90 days** the programme ends **with probation**: if the employee is confirmed, the passport
+   closes on 100% of its tasks plus a final sign-off (1B.4). **If the employee is not confirmed, the
+   buddy programme is extended by exactly the period probation is extended by** — the two clocks move
+   together, always.
+5. **The joiner then rates the experience** (1B.5). The line scores at **4 of 5 or better**.
+
+**What has to be built**
+
+- **The passport holds no task list — 🟢 DECIDED 21-09-2026: the 8 interactions ARE the passport.**
+  The client's answer to *"where does the task list come from?"* was **no task list**. So 1B.4
+  *"100% tasks and final sign-off"* means: **all 8 interactions confirmed, plus HR's sign-off.**
+  That **removes two tables** from this build (`fms_hr_buddy_passport_items` / `_checks`) and the
+  whole Setup screen behind them. The passport stays a real event — it is handed over on Day 1 and
+  that handover is stamped and scored (1B.2) — it simply carries nothing the hub has to track inside
+  it. ⚠ If the printed passport does list tasks, the hub will not know about them: HR's sign-off is
+  the only statement that they were done.
+- **Tables** (all new, additive, now three not five): `fms_hr_buddies` (one per hire — onboarding_id,
+  buddy_user_id, allocated_at/by, passport_handed_at/by, interaction target **defaulted to 8**,
+  status, closed_at/by, extension fields); `fms_hr_buddy_interactions` (buddy_id, sequence,
+  happened_on, mode, notes, logged_at/by, confirmed_at/by, optional file); `fms_hr_buddy_feedback`
+  (rating 1–5 + free text, by the joiner).
+- **HR picks the buddy — 🟢 DECIDED 21-09-2026**, within 24 hours of the offer being accepted, and it
+  is final: no HOD approval step, so the 24-hour clock HR is scored on stays in HR's own hands.
+- **The cross-department rule belongs in the RPC, not the picker.** Allocation must refuse a buddy
+  whose `profiles.department_id` equals the position's department. A picker that merely hides them is
+  not a rule — and the picker and the validator must agree.
+  - ⚠ **The picker is the work, not the rule.** It has to offer ~68 colleagues minus one department,
+    searchable, and it should show what each person already carries: somebody already buddying two
+    new joiners is the wrong third choice, and HR cannot see that from a name alone.
+- **Screens:** a **Buddy** panel on the hire's page (allocate → hand over → log interactions → close),
+  a **Buddy queue** beside the existing five, and an interactions grid — sorting and filtering on
+  every column, per this file's standing rule.
+- **Steps:** `buddy_allocation` (24h from offer acceptance) and `buddy_passport` (Day 1) are exactly
+  what the step model already does. Putting them in gets the queue, My Work and the chasing for free —
+  and **changes what the live CC-1 ranking scores**. Say that out loud before it ships.
+- **Who logs an interaction — 🟢 DECIDED 21-09-2026: the buddy logs it, HR confirms it.** The buddy
+  records the meeting they were actually in (date, how they met, a short note, optional file); HR marks
+  it **confirmed**. Two timestamps on the row — `logged_at/by` and `confirmed_at/by` — and the count
+  toward 8 is the **confirmed** ones, since HR carries the score. An unconfirmed log is a real state,
+  not a draft: it shows on HR's queue as work owed.
+  - 🔴 **This puts an ordinary employee inside the HR module.** A buddy is any cross-department
+    colleague; almost none of them hold an `hr-recruitment` grant, and the module's read gate has three
+    tiers before you reach candidate data. The buddy must reach **one screen showing only their own
+    buddy record** — most likely a My Work item plus a narrow route, **not** a module grant, or every
+    buddy silently gains sight of the whole recruitment pipeline.
+- **If the joiner leaves mid-probation — 🟢 DECIDED 21-09-2026: close the programme, reason "person
+  left", with the date.** It is a **third ending** beside *closed on confirmation* and *extended with
+  probation*, and it must exist in the status list from the start: it **stops the reminders to the
+  buddy that same day**, and it is **excluded from the KPI** rather than scored as a miss — the
+  interactions that never happened were not HR's doing. ⚠ Nothing in the hub announces a resignation
+  today, so this ending is reached by hand (or by the Employee Exit module later, if the two are ever
+  joined up).
+- ⚠ **1B.5 needs the joiner to have a login** (P0 number 3). Without one, "new joiner feedback" is HR
+  quoting the new joiner.
+
+---
+
+### NR-10 · Probation re-cadenced to Day 7 / 15 / 30 / 60 / 90  `[~]` — 🟢 **LIVE 21-09-2026** except the reminders
+
+🟢 **LIVE 21-09-2026 — three of the four parts.** `master` at **b2690d30** (the cadence), **7fb6b495**
+(the joiner's own screen) and **e56cf80a** (concerns). Four migrations applied to
+`icutjkrqkbzwvmnfbzpr`, each with its rollback written first; every part built and walked in a
+browser on **master's own code** before it shipped.
+
+| Part | State |
+|---|---|
+| Day 7 / 15 / 30 / 60 / 90, two-sided | 🟢 live |
+| The new joiner's own screen (`/my-probation`) | 🟢 live |
+| Concerns & grievances, 24-hour clock | 🟢 live |
+| **Reminders a day before** | ⛔ **NOT built — needs the email switch, which is the client's call** |
+
+**Safe to re-cadence only because probation had never run:** 0 probations, 0 reviews, and **0 rows for
+this module in `fms_rank_steps` and `kpi_facts`** — so the CC-1 worry recorded earlier was empty, and
+nothing stored was computed on the old keys. The monthly model was **not altered**: its table, its
+RPC and its three step keys are untouched and retired in place. That window shuts the day somebody
+joins.
+
+**The shape, as the client decided it.** The HOD writes one side, the new joiner writes the other, and
+a check-in is not done until both are in — `completed_at` is stamped when the *second* side lands and
+never re-dated by a later edit. HR writes **neither** side: they chase both and are scored on whether
+both arrived by `due_on`. Only the linked account can write the joiner's half — an admin cannot, and
+neither can HR, because an answer typed by somebody else is what would make it worthless.
+
+**`due_on` is stamped in SQL, in CALENDAR days.** It is read, never recomputed: a day-unit SLA in this
+codebase counts **working days (Mon–Sat)**, so `days: 7` would land Day 7 on the 8th calendar day. The
+entries in `lib/sla.ts` are display only and say so.
+
+#### Five defects, none of which the build could see
+
+1. 🔴 **The new joiner could not read their own check-ins.** The policy's joiner arm queried
+   `fms_hr_probations` and `fms_hr_onboardings` inline, and **a policy is evaluated as the caller**, so
+   those reads met their own RLS — which the joiner fails. The EXISTS returned false, their page was
+   empty, and nothing errored. Moved behind a SECURITY DEFINER predicate; proven with `set local role
+   authenticated` at **0 rows before, 5 after**.
+2. 🔴 **The probation queue showed NOBODY.** `ProbationQueue.tsx` filters on its own hard-coded array
+   of step keys; until it learned the new ones every probation sat at a step it did not name and was
+   filtered out silently. Now recorded as its own memory — it applies to every FMS here.
+3. 🔴 **A grievance would have leaked to the manager it was about.** The first version announced it
+   through `fms_hr_announce`, which writes `fms_hr_activity` — readable by anyone who can read the
+   requisition, the hiring manager included. One line of notification code undid the entire point of
+   the table's narrow gate. It now writes **no activity row at all**, and the notice to HR does not say
+   what was raised, because a bell is read over shoulders. The same call also **crashed** for anybody
+   without a probation, who is expressly allowed to raise a concern.
+4. A row read **"Not due yet" beside a red "3d overdue" badge**: the wording keyed off which check-in
+   the queue was chasing rather than off the date.
+5. The page offering the concern form returned an **EmptyState** for anyone with no check-ins, turning
+   the server's *"anybody signed in may raise one"* into the UI's *"only new joiners may"*.
+
+#### What is left, and why it is not mine to do
+
+**The reminder a day before each of the five dates.** The client chose **bell AND email**. The bell
+half is ready to build; the email half means **turning on `email_module_enabled('hr-recruitment')`**,
+which has been **off since 04-08-2026** and which also releases the interview-panel notices and the
+master-request mail that have been sitting built and disarmed behind the same switch — and
+`send-email` must be redeployed in the same change (NR-1). That is a live-send decision, so it waits
+for the client's word rather than being done quietly.
+
+#### Still open on this entry
+
+- [ ] **The grievance FORM.** The register is live and its questions land in `answers` (jsonb) with no
+      migration. The client owes the format.
+- [ ] **Extending probation must extend the buddy programme by the same period** — the hook belongs in
+      the same RPC, and NR-9 does not exist yet.
+- [ ] **The confirmation letter** (1C.7) — decided as generate-on-confirm, not yet built.
+- [ ] Whether the joiner should see the HOD's actual verdict. Today they see **that** it was answered,
+      never **what** was said; that conversation belongs between the two of them. One line to change.
+
+*10% of the sheet. The module **already has** probation — `fms_hr_probations`,
+`fms_hr_probation_reviews`, five steps, `ProbationPanel`, `ProbationQueue` — and it has **never been
+used**: **0 probations, 0 reviews**, because nobody has joined yet. **Re-cadencing it costs no data.**
+That will not be true once the first hire joins, so this is the moment.*
+
+**What changes**
+
+- **The cadence.** Today: Month 1, 2, 3, final, extension (`month` CHECK 1–4; steps
+  `probation_m1…m3`, `probation_final`, `probation_extension`). The sheet wants **Day 7 (1%), Day 15
+  (1.5%), Day 30 (1.5%), Day 60 (1.5%) and the Day-90 Confirmation Review (2%)**. Add a `day_no`
+  column (7/15/30/60/90) beside `month`, leave `month` nullable, and write a new CHECK rather than
+  dropping the old one.
+- 🔴 **"Day 7" is not 7 days in this codebase.** A day-unit SLA here counts **working days, Mon–Sat**
+  (`lib/sla.ts`), and the probation steps dodge it only by being `unit: "months"` with
+  `addMonths(joiningDate, n)` in `probationDueIso`. Set Day 7 as a plain `days: 7` and it lands on the
+  **8th calendar day**. The cadence needs a calendar-day unit, written deliberately.
+- **A review becomes two-sided — 🟢 DECIDED 21-09-2026: the HOD and the new joiner write it; HR does
+  not.** *"The joiner and both can write the probation review, not the HR. HR can just see those."* So
+  a review row grows **two sides** — the HOD's and the joiner's — each with its own `submitted_at`, and
+  the review counts as done only when **both** are in by the due date. HR reads them, chases them, and
+  is **scored on whether they arrived on time** — which is exactly what the sheet asks of HR (*"7-Day
+  Review — completed on due date"* scores completion, never content). The HOD keeps the confirm-or-
+  extend decision at Day 90, as today.
+  - ⚠ Consequence for the step model: the step stays **HOD-owned** (it is titled "(HOD)" already), so
+    the chasing in My Work and the CC-1 ranking still points at the head — but the *joiner's* half has
+    no step of its own and no owner the step model can express. Either the joiner's side hangs off the
+    same step, or it needs its own notion of "work owed by someone who is not staff".
+- **A reminder one day before** every one of the five dates, to the **HOD and the joiner**, with **HR
+  copied** since HR carries the score for it (P0 number 2). 🟢 **DECIDED 21-09-2026: bell AND email.**
+  - 🔴 **That means switching `hr-recruitment` email ON, and it does not only send reminders.** The
+    switch has been **off since 04-08-2026**, and behind it sit mails that are already built and have
+    never gone out: the **interview panel notices** and the **master-request** mail (NR-1). Flipping
+    it releases those too. Read them before, not after.
+  - 🔴 **`send-email` must be redeployed FIRST.** Its renderer already knows that an
+    `hr-recruitment_interview_*` kind is a panel notice rather than master-data governance, and that
+    change is **committed but not deployed** — the running copy serves five modules that do have email
+    on. Deploy it in the same change that flips the switch:
+    `supabase functions deploy send-email --project-ref icutjkrqkbzwvmnfbzpr` (NR-1 parks this too).
+  - ⚠ **The mailer has no Cc.** Three recipients means **three outbox rows**, one each — so every
+    reminder is HOD + joiner + HR = 3 rows, ×5 reviews, per hire. Size the sweep accordingly.
+  - ⚠ **Once it is on, testing a probation flow in the browser sends real mail** to real people.
+    Check the switch before any walkthrough.
+- **Concerns / grievances** (1C.6 — *closed within 24 hours of reporting*). **The client has a fixed
+  format and will send it.** Leave the space and build the shell now: one `fms_hr_grievances` table
+  (raised_by, about, raised_at, category, status, closed_at/by, resolution) with the format's own
+  fields in a **`jsonb` payload**, a queue, and a 24-hour clock — so the format drops in later
+  **without a migration**.
+- **Probation closure** (1C.7 — confirm or extend before the due date) exists as `probation_final` +
+  `extension_months`. Keep it, and make **extending probation extend the buddy programme by the same
+  period in the same RPC** (NR-9 point 4), or the two records will tell different stories about the
+  same person.
+- ⚠ **The knock-on is real.** `probation_m*` is referenced in **10 frontend files**, **3 SQL
+  functions**, and the **live, nightly CC-1 ranking**
+  ([hrRecruitment.ts](frontend/src/apps/fms-control-center/ranking/modules/hrRecruitment.ts)). This is
+  not a find-and-replace, and CC-1's stored history was computed on the old keys.
+
+---
+
+#### Does this block actually FILL the KRA and the weekly report?  *(cross-check, 21-09-2026)*
+
+**This is the stated goal of the whole block** — *"after this is done, all the Report and the KRA for
+this should be mapped and filled up."* So the plan was validated line by line against the two
+instruments themselves: the KPI line definitions and the weekly-review field definitions built in the
+KPI-3 lab (`framework/saloni.ts`, `report/weeklyReview.ts` on `kpi-3-lab`). The result: **it very
+nearly does — and four things are missing that nobody had listed.**
+
+**KRA 1 — 18 lines, 45 points, 7 measurable today**
+
+| Line | Wt | Lands where | After the block |
+|---|---:|---|---|
+| 1A.1 Requisition acknowledgement | 3 | NR-8 (new column) | ✅ |
+| 1A.2 CV pipeline creation | 5 | NR-7 (the CV target) | ✅ |
+| 1A.3 Quality shortlist submission | 5 | NR-7 (fixed at 3) | ✅ |
+| 1A.4 Interview coordination + 48h | 3 | already live | ⚠ **people, not code** — 128 of the 153 interviews ever booked carry no result |
+| 1A.5 Position closure within TAT | 10 | NR-7 (days + posted-date start) | ✅ |
+| 1A.6 Offer, **BGV**, references, docs | 4 | NR-8 + a **BGV result field** (gap 3) | ✅ |
+| 1B.1 Buddy allocation | 1 | NR-9 | ✅ |
+| 1B.2 Passport handover | 1 | NR-9 | ✅ |
+| 1B.3 Department interactions | 1 | NR-9 | 🔴 **stays empty** — the client's programme is 8 buddy meetings; this line asks for department sign-offs (gap 1). Only a re-wording by HR closes it |
+| 1B.4 Passport closure | 1 | NR-9 | ✅ (once 1B.3 is settled) |
+| 1B.5 New joiner feedback | 1 | NR-9 + the joiner's login | ✅ |
+| 1C.1–1C.5 the five reviews | 7.5 | NR-10 | ✅ |
+| 1C.6 Concerns / grievances | 1 | NR-10 (format awaited) | ✅ |
+| 1C.7 Probation closure | 1.5 | NR-10 + a **generated confirmation letter** (gap 4) | ✅ |
+
+**→ after the four gaps were answered on 21-09-2026: 44 of the 45 points land.** The **1 point that does not is 1B.3**, and no amount of building fixes it — the sheet asks for something the programme does not do. 1A.4 (3 points) lands only if interview results start being recorded. For the whole
+sheet that is **KRA 1 (45%) + KRA 3 (5%, already live via `kpi_report`) = half the appraisal filling
+itself.** The other half is Learning & Development (40%) and attendance (10%), which are different
+modules and are **not** in this block.
+
+**The weekly review report — 81 boxes, 28 fill themselves today**
+
+| Section | Boxes | Today | After the block |
+|---|---:|---|---|
+| A · Talent Acquisition | 24 | 14 live + 5 caveat + 5 empty | **24** — the five "empty" ones (`A1.4` Positions Closed, `A1.5` Offer-to-Join %, `A4.3` Offer Date, `A4.7` Joined, `A4.5` BGV) need **use**, not building — except `A4.5`, which needs gap 3 |
+| B · Passport To Orange | 12 | 3 live, **7 with no table at all** | **10 of 12** — NR-9 fills the buddy, the feedback and the closure, and gap 2 adds the induction date; the **two department-connect boxes stay empty** for the same reason as 1B.3 |
+| C · Learning & Development | 24 | 0 | **0** — out of scope, needs its own module |
+| Special KPI tracker | 4 | 0 | 2 (`SK-1` closures, `SK-4` probation) |
+| Flags / actions / sign-off | 9 | 1 | 3 — incl. *"Buddy not assigned before Day 1"*, which works only because NR-9 stores the allocation **date**, not just the name |
+
+**→ roughly 28 boxes today → about 57 after the block, and the 24 that stay empty are all Learning &
+Development.**
+
+#### 🔴 The four gaps this cross-check found
+
+1. **"8 interactions" — 🟡 PUT TO THE CLIENT 21-09-2026, who confirmed: EIGHT MEETINGS WITH THE
+   BUDDY.** The question was asked because both instruments say something else, independently: the
+   KPI line's evidence column reads **"Department-wise sign-offs"**, and the weekly form's own rule is
+   *"each department connect counts only when signed off in the passport **by the person met**"* — one
+   row per joiner **per department**, carrying who signed. The client's answer is the **process**, and
+   the process wins; the build follows it (8 meetings, buddy logs, HR confirms).
+   - 🟢 **RESOLVED 21-09-2026: the documents get re-worded, not the programme.** 1B.3 and the weekly
+     form's connect boxes ask for **department-wise sign-offs**, which the 8 buddy meetings cannot
+     fill. The client's answer: **Saloni and Riya Kumari re-word the line** — *"Department
+     interactions / department-wise sign-offs"* becomes **"Buddy interactions"** — and the hub then
+     fills it from what NR-9 builds. **No extra build; one edit to the KPI document and to the weekly
+     form.**
+     - ⚠ **This is a dependency on somebody outside the build, and it is invisible until the end.**
+       Until those two documents are edited, 1B.3 (1%) and `B1.4` / `B2.6` will read as failures on a
+       report that is otherwise full. **Get the re-wording confirmed in writing before NR-9 ships**,
+       and note it wherever the lab's line definitions live (`framework/saloni.ts`,
+       `report/weeklyReview.ts` on `kpi-3-lab`) — those carry the old wording today.
+2. **An INDUCTION record was missing from the plan entirely — 🟢 DECIDED 21-09-2026: add one date.**
+   The weekly form tests it at **Day 15** (`B1.3`, `B2.5`) and flags it, and nothing in the hub
+   records an induction. The answer is the smallest possible one: **`induction_on`, a single date on
+   the onboarding**, set by HR — plus `induction_by` so it is attributable, at no extra cost. It fills
+   two boxes and raises the form's own *"induction not done by Day 15"* flag without anything else
+   being built. ⚠ Put it on **`fms_hr_onboardings`**, not in the checklist: a checklist item can only
+   say done / not done, and the flag needs the **date**.
+3. **BGV has to be a RESULT, not a tick — 🟢 DECIDED 21-09-2026: clear / discrepancy / pending.**
+   NR-8's answer to 1A.6 was "add the missing checklist items", and a checklist item can only be done
+   or not done. The weekly form wants a **status** (`A4.5`), and its own analysis is blunt: *"there is
+   nowhere to record that a verification came back **with a discrepancy**, which is the only state
+   worth flagging."* So BGV gets a **three-state result** on the onboarding, with the date and who
+   recorded it.
+   - ⚠ **This is the one place the checklist pattern does not stretch**, and it is worth noticing why:
+     `fms_hr_onboarding_checks` is a fixed done/not-done shape with a file and a pending reason. A
+     result is a fourth thing. Either BGV leaves the checklist and becomes its own field on
+     `fms_hr_onboardings`, or the checklist grows a result column that only one item uses. **The
+     field is cleaner** — the reference check can stay an ordinary checklist item beside it.
+4. **Probation closure needs a LETTER — 🟢 DECIDED 21-09-2026: the hub generates it.** 1C.7's evidence
+   is *"Decision and letter issuance record"*. Confirming a person now **produces the confirmation
+   letter from a template**, stores it against them, and stamps who issued it and when.
+   - ⚠ **This module has never generated a document** — it only stores uploads (`fms-hr-docs`, and the
+     offer letter is a checklist *tick*, not a file). The generation pattern exists in the codebase,
+     in **OCPI** (jsPDF → storage → an activity row), so it is a copy rather than an invention.
+   - ⚠ Three traps this repo has already paid for, and a letter meets all three: **`drawTable`
+     ellipsizes and never wraps** (fine in a report, wrong in a letter — a long name or address is
+     silently cut); **a generated PDF must be checked with pdf.js**, because string-searching jsPDF
+     output finds nothing even for text that is there; and **deleting a draft orphans its storage**.
+   - ⚠ **The letter needs a template and an approver.** Who signs a confirmation letter, and on whose
+     letterhead, is HR's answer, not ours. Until it arrives, generate to a plain template and keep the
+     wording in one place — the same `[[if …]]` marker trap from OCPI applies if it ever becomes
+     conditional.
+   - 🟢 **Extension and non-confirmation get NO letter — decided 21-09-2026.** Only a confirmed
+     employee gets a generated letter, which is exactly what 1C.7 asks for. ⚠ Both other endings are
+     then communicated outside the hub: the **decision, the date and the reason are still recorded**
+     (they already are), but what was actually said to the person is not. That is the client's call
+     and it is the cheaper build — worth one line in the handover so nobody later reads the missing
+     letter as an oversight.
+⚠ **And one that is not a gap but will look like one:** 1A.4 (3%) is already measurable and will still
+score badly, because **results are not being recorded on interviews** — 128 of 153 bookings sit with no
+result. No amount of building fixes that line; using the screen does.
+
+#### Build order for the block  — 🟢 CONFIRMED BY THE CLIENT 21-09-2026
+
+**NR-7 → NR-8 → NR-10 → NR-9**, as set out below, and **execution is authorised to start** — every
+question in this block has an answer (see the 🟢 marks throughout; 30 decisions taken 21-09-2026).
+Two things are owed from outside the build and neither blocks a start:
+
+- **The grievance format** — the register is built now and the format drops into its `jsonb` payload
+  later, with no migration.
+- **The 1B.3 re-wording** — HR edits *"Department interactions"* to *"Buddy interactions"* on the KPI
+  sheet and the weekly form. Needed **before NR-9 ships**, not before it starts.
+
+1. **NR-7** — it is the input to 1A.2, 1A.3 and 1A.5. Everything else duplicates it if it goes second.
+2. **P0** — the requisition's owner, the reminder plumbing, and the new-joiner identity decision.
+3. **NR-8's cheap half** — 1A.6 (master rows only) and 1A.1 (two columns and a button).
+4. **NR-10** — 10% of the sheet, zero rows of data to migrate, and that window closes at the first hire.
+5. **NR-9** — the largest new build for the smallest weight (5%), so last of the four.
+
+⚠ **None of this makes the sheet score by itself.** The instrument that reads these numbers is the
+**KPI-3 lab**, which is DEV-only on `kpi-3-lab` and writes nothing; whether it graduates is a separate
+decision with its own open questions (KRA-KPI-FRAMEWORK.md §4–5). These entries make the **data**
+exist. Building them is worth doing on its own merits — a buddy programme and a probation cadence are
+real HR process, not reporting — but nobody should expect a score to move because one of them shipped.
+
+#### Open questions for the client
+
+- [x] ~~**The grievance format**~~ — **decided 21-09-2026: build it now without the format.** The register goes in with the basics (who raised it, when, about what, the 24-hour clock, who closed it and how) and the client's own questions land later in the `jsonb` payload, **with no rebuilding and no migration**. The format is still owed, but nothing waits on it.
+- [x] ~~**2 or 3** shortlisted profiles per requisition~~ — **3**, decided 21-09-2026.
+- [x] ~~**Role-specific TAT** (1A.5) — the number of days per job title~~ — **decided 21-09-2026: no per-role number. The HR Head sets the days on each MRF at approval.**
+- [x] ~~**Does the new joiner get a portal login?**~~ — **decided 21-09-2026: yes, created as part of onboarding, by HR, `employee` role only.** See P0 number 3.
+- [x] ~~**Who marks a buddy interaction**~~ — **decided 21-09-2026: the buddy logs it, HR confirms it. Only confirmed ones count toward the 8.**
+- [x] ~~**Who owns a probation review**~~ — **decided 21-09-2026: the HOD and the new joiner write it; HR reads it and is scored on whether both arrive on time.**
+- [x] ~~**What happens to the buddy programme if the hire leaves during probation**~~ — **decided 21-09-2026: closed, marked "person left", with the date. It stops counting against HR (the missing interactions were not theirs) and the buddy's reminders stop the same day.**
+- [x] ~~**Is the buddy scored too?**~~ — **decided 21-09-2026: no. Only HR carries the 5%.** Being a
+      buddy stays goodwill work with no KPI line of its own, so nothing has to be added to anybody
+      else's scorecard. ⚠ Worth saying once to HR: a buddy who never turns up costs **HR** marks and
+      costs the buddy nothing, so the only lever HR has is choosing the buddy well — which is why
+      the picker should show what each colleague is already carrying.
+
+---
+
+## Learning & Development  *(new module)*
+
+> 🟢 **LIVE ON `orangeonehub.com` SINCE 23-09-2026** (`54d24a5e`). Verified from the deployed
+> bundle, not the build log. The module is **universal** — all 68 people can open it and there
+> are no `app_access` rows to grant, so Admin → Module Access will show it as admins-only and
+> be wrong. Ranking and KPI scoring stay **OFF** until `fms_rank_modules` is switched, and
+> **email is off**. Two blockers are live with it: **LD-14** (hours always zero) and **LD-15**
+> (Send back strands the request) — HR has been told in writing not to use Send back.
+
+*Source: `files/Orange_Hub_Learning_Development_FMS_Flow.docx` — **ORANGE HUB · LEARNING & DEVELOPMENT ·
+FMS WORKFLOW & SYSTEM MAPPING**, v1.0, "prepared for Orange O Tec Pvt. Ltd. | HR and IT Team". Fourteen
+sections; **§11 "Final Arrow-wise End-to-End Flow" — page 8 — is the spine** and is what the client walked
+through on 21-09-2026. Read with [KRA-KPI-FRAMEWORK.md](KRA-KPI-FRAMEWORK.md) (**KRA 2 of Saloni's
+appraisal sheet IS this module — 40% of it, plus KRA 5's 5%**) and
+[WEEKLY-REVIEW-REPORT.md](WEEKLY-REVIEW-REPORT.md) (**Section C is this module — 24 boxes, none of them
+fillable today**). Every figure below was re-checked against the live database on 21-09-2026; read-only,
+nothing written.*
+
+*(cross-ref: the **Talent Equation block** is KRA 1 of the same sheet — **NR-7 and NR-8 are LIVE**
+(21-09-2026), **NR-9 / NR-10** planned. This section is KRA 2 + KRA 5. Between them the two blocks
+close the appraisal. · **PF-13 / PF-14** — approvals that
+rest on one person, and modules shipped with no step owners configured at all. Do not repeat that here.)*
+
+**Nothing exists.** Not "a screen nobody built" — the live database was swept on 21-09-2026 for any table
+matching `train`, `learn`, `ld_`, `session`, `nomin`, `attend`, `feedback`, `certif` or `posh`: **zero
+rows returned**. No code on any branch, no migration, no manifest. This is a module from a blank page.
+
+🟢 **ALL TWELVE OPEN DECISIONS WERE ANSWERED BY THE CLIENT ON 21-09-2026** — see **LD-0**, which is now a
+record rather than a question list. The plan below is written to those answers. **Two things still owed by
+HR, both outside the build**, are carried at the foot of LD-0.
+
+---
+
+### The flow, as the client stated it and as the document draws it
+
+The client's walkthrough and §11 agree on the sequence. They differ in the places below, and the client's
+reading wins in every one:
+
+| | Document §11 | The client, 21-09-2026 | Taken as |
+|---|---|---|---|
+| Approval | **one** stage — "HR Head / Approver" | **two** — HR Head, then Management… | **…but configurable.** HR Head always; Management **never / always / above ₹X**, set in Setup |
+| Nomination | HOD nominates, "HR checks target group and capacity" | HOD nominates **and HR/L&D is the final authority to approve them** | **A step of its own** — `nomination_approval` |
+| Post-assessment | pre-score, post-score, pass mark, result, attempt | 🔴 **"We don't have to do the proper assessment, like a test or marks. We just need to track whether all the employees have submitted their assignment."** | **Scoring dropped entirely.** The assignment — issued, submitted, reviewed — is the whole of it |
+
+**The 22 steps.** §11's 17 arrows, plus the nomination-approval split, plus a sent-back step (every other
+FMS here has one), plus the assignment broken into issue → submit → review because **each of those three
+has its own deadline** on Saloni's sheet and one field cannot carry three.
+
+| # | Step key | Title | Scope | Owner |
+|---:|---|---|---|---|
+| 1 | `need_raised` | Training Need Raised | request | anyone (`noQueue` — raising *is* the event) |
+| 2 | `need_resubmit` | Sent Back — Revise & Resubmit | request | the raiser |
+| 3 | `need_validation` | HR Validation | request | HR/L&D Executive |
+| 4 | `proposal` | Proposal, Priority & Budget | request | HR/L&D Executive |
+| 5 | `hr_head_approval` | HR Head Approval | request | HR Head |
+| 6 | `mgmt_approval` | Management Approval | request | Management — **conditional, see Setup** |
+| 7 | `trainer_finalization` | Trainer Finalisation | request | HR/L&D Executive |
+| 8 | `session_scheduling` | Calendar & Session Creation | request → session | HR/L&D Executive |
+| 9 | `nomination` | Employee Nomination | session | **HOD (row-owned)** / HR |
+| 10 | `nomination_approval` | Nomination Approval | session | HR/L&D Executive |
+| 11 | `invitation` | Invitation & RSVP | participant | **the nominee (row-owned)** |
+| 12 | `pre_material` | Pre-Training Material | session | Trainer (internal) / HR |
+| 13 | `conducted` | Training Conducted | session | Trainer (internal) / HR |
+| 14 | `attendance` | Attendance Closure | session | HR / Trainer |
+| 15 | `assignment_issue` | Assignment Issued | session | Trainer / HR |
+| 16 | `assignment_submit` | Assignment Submission | participant | **the nominee (row-owned)** |
+| 17 | `assignment_review` | Assignment Reviewed | participant | HR/L&D Executive |
+| 18 | `feedback` | Employee Feedback | participant | **the nominee (row-owned)** |
+| 19 | `session_review` | HR Session Review | session | HR/L&D Executive |
+| 20 | `effectiveness` | 30-Day Effectiveness | session × HOD | **the attendee's HOD (row-owned)** |
+| 21 | `followup_decision` | Follow-up Decision | request | HR/L&D Executive |
+| 22 | `closure` | Closure & KPI | request | HR/L&D Executive / HR Head |
+
+⚠ **Five of these are ROW-OWNED, not owned by the step-owner table** — the same structural thing New
+Recruitment's `HOD_STEPS` does. A nominee's RSVP, assignment and feedback are owed by *that person*; the
+effectiveness review is owed by *that attendee's* HOD. `fms_ld_can_act()` on the server and the
+`ROW_OWNED_STEPS` list in the client **must be the same list**. Change one, change the other — recruitment
+has already shipped that disagreement twice (`fms_hr_can_act`, 20260712170000).
+
+---
+
+### 🔴 The gap the document does not have: there are TWO doors, not one
+
+The SOP is **bottom-up** — somebody spots a need, raises a request, it is approved, it becomes a session.
+Saloni's KPI sheet is **top-down** and scores something the SOP never mentions:
+
+> *"Annual training calendar publication — **2%** — Uploaded by January with session dates and participant
+> plan."*  ·  *"Training calendar adherence — **5%** — Planned sessions completed as scheduled."*
+> *"Minimum 15 internal trainings annually"* · *"Minimum 48 external trainings annually."*
+
+**Adherence has no meaning without a plan to adhere to.** 🟢 **Client, 21-09-2026: BOTH doors** — HR
+publishes the year's plan up front, *and* anyone can still raise a fresh need mid-year. So an
+**Annual Training Plan** is a first-class object (**LD-2**), and a session is born from *either* an
+approved request *or* a plan line — the plan line it fulfils being what makes adherence measurable.
+
+### 🔴 The second thing the document gets wrong for us: training type is a SET, not one value
+
+The weekly form states its own rule in a footnote, and it decides the schema:
+
+> *"External consultant / agency training and technical training are counted separately — **a technical
+> session run by an external agency is reported under both lines and once in the Total**."*
+
+A single `type` column cannot do that. It is `session_types text[]` over a master — *External Agency ·
+Technical · Internal · Functional · Behavioural · Leadership · POSH · Safety · Compliance · Induction ·
+Mandatory/Statutory* — with `delivery_mode` (classroom / online / hybrid / on-the-job) and `trainer_type`
+(internal / external) as **separate** columns. Get this wrong at table-creation time and C2 is
+unbuildable without a migration on live data.
+
+---
+
+### What this module has to feed, and what it closes
+
+**Saloni's appraisal sheet** — KRA 2 is 16 lines / 40%, KRA 5 is 3 lines / 5%:
+
+| Line | Wt | Computed from |
+|---|---:|---|
+| 2A Annual calendar publication | 2% | `fms_ld_plans.published_at` ≤ 31-Jan, with session dates and a participant plan |
+| 2A Calendar adherence | 5% | plan lines fulfilled by a conducted session ÷ plan lines due in period |
+| 2B Internal target · adherence | 9% | sessions tagged Internal, conducted ÷ target; plan-linked ÷ planned |
+| 2C External target · adherence | 11% | sessions tagged External Agency, same two arithmetics |
+| 2D Attendance capture (100% of sessions) | 1% | sessions with every nominee carrying an attendance status |
+| 2D Feedback capture (100%) · quality (≥4/5) | 2% | feedback rows ÷ attendees; mean `overall_rating` |
+| 2D Assignment circulation ≤24h | 1% | `issued_at` − session end |
+| 2D Submission rate ≥80% · evaluation ≤7 days | 2% | `submitted_at` ≤ `due_at`; `reviewed_at` − `submitted_at` |
+| 2D **"Assessment completion ≥90% of nominated"** | 2% | ⚠ **no assessment exists any more** — needs HR's re-wording, see LD-0 |
+| 2E POSH 100% · Safety 100% · record update | 5% | everyone, once a year (client's rule) — completed ÷ active employees |
+| 5 Assigned training attendance 100% | 2% | per employee: attended ÷ nominated |
+| 5 Assignment completion within due date | 2% | per employee: on-time submissions ÷ assignments |
+| 5 **"Assessment and learning closure within SLA"** | 1% | ⚠ same — needs re-wording to the assignment |
+
+**The weekly review report** — Section C's 24 boxes, plus `SK-3` and two of the form's flags. 🟢 **23 of
+the 24 now fill.** The one that does not is C5's *"Certifications due for renewal — zero overdue"*, because
+the client parked the certificate register (**LD-0 · 9**).
+
+**The arithmetic, stated once so it can be checked later.** [WORKLIST's own Talent Equation
+cross-check](#new-recruitment) puts **44 of KRA 1's 45 points** landing after NR-8/9/10, and KRA 3's 5% is
+already live through `kpi_report`. Add this module and the sheet reads:
+
+| | Points |
+|---|---:|
+| System-measured after the NR block + this module | **91** |
+| Lands **only if HR re-words two lines** from "assessment" to "assignment" | **3** |
+| Typed by design (KRA 4's HOD feedback, collaboration, discipline) | 3 |
+| **Cannot be measured at all** — 1B.3 (needs HR's re-wording) 1% + attendance/punctuality 2% (no biometric feed) | 3 |
+
+---
+
+### The change list
+
+| # | What | Entry | Status |
+|---|---|---|---|
+| 0 | The twelve decisions — **all answered 21-09-2026**, plus the two things HR still owes | **LD-0** | `[x]` |
+| 1 | The spine: schema, app shell, steps 1–8, request list + detail, **Setup**, queues, RLS | **LD-1** | `[ ]` |
+| 2 | Annual Training Plan + the **calendar everyone sees** | **LD-2** | `[x]` |
+| 3 | Nomination, nomination approval, invitation and RSVP | **LD-3** | `[x]` |
+| 4 | Pre-training material and **My Learning** — the participant's door | **LD-4** | `[x]` |
+| 5 | Conduct, attendance, attendance sheet, absentee follow-up | **LD-5** | `[x]` |
+| 6 | **The assignment** — issued, submitted, reviewed (no marks, no test) | **LD-6** | `[x]` |
+| 7 | Feedback and the HR session review | **LD-7** | `[x]` |
+| 8 | 30-day effectiveness, follow-up decision and closure | **LD-8** | `[x]` |
+| 9 | POSH / Safety yearly compliance — everyone, once a year | **LD-9** | `[x]` |
+| 10 | Reports, exports and the **Weekly Review Section C** feed | **LD-10** | `[x]` |
+| 11 | KPI + FMS-ranking wiring (KRA 2 and KRA 5) — **ships OFF**, two deploy-day steps | **LD-11** | `[x]` |
+| 12 | Email, reminders and escalation — ships **OFF** | **LD-12** | `[ ]` |
+| 13 | **Masters + Master Requests** — trainers, venues, competencies, POSH & Safety | **LD-13** | `[x]` |
+| 14 | 🔴 **Learning hours are never captured** — every hours figure reads zero | **LD-14** | `[ ]` |
+| 15 | 🔴 **A sent-back request is stranded** — nobody can revise or resubmit it | **LD-15** | `[ ]` |
+| 16 | Three smaller things the end-to-end walk turned up | **LD-16** | `[ ]` |
+| 17 | Four questions for HR, collected with the trial feedback | **LD-17** | `[ ]` |
+
+**Build order is the list order**, with two exceptions worth stating: **LD-2 must land with or before
+LD-1's session step** (a session needs somewhere to say which plan line it fulfils, and adding that column
+later means a migration against live sessions), and **LD-12 is last on purpose** — see its ⚠.
+
+---
+
+### LD-0 · ✅ The twelve decisions — answered by the client, 21-09-2026  `[x]`
+*Raised and closed 2026-09-21. Kept as the record of WHY the module is shaped this way; each line changes
+a table or a gate, so anything re-opened here re-opens a build entry.*
+
+| # | Decision | Answer | Lands in |
+|---:|---|---|---|
+| 1 | Post-assessment — marks, or an online test? | 🔴 **Neither. No test and no marks.** Track only whether each employee submitted the assignment | **LD-6** |
+| 2 | Who can open the module? | **Everyone in the company**, with the nav scoping what each person gets | **LD-1** |
+| 3 | Must every training clear both approvals? | **Configurable in Setup** — HR Head always; Management **never / always / above ₹X** | **LD-1** |
+| 4 | What does the HOD fill at 30 days? | **One form per HOD, one overall rating** for their department, plus a comment — not a rating per attendee | **LD-8** |
+| 5 | External trainers — logins? | **No.** No outsider gets an Orange Hub account; HR uploads material and marks the session on their behalf | **LD-4, LD-5** |
+| 6 | Annual plan, or only ad-hoc requests? | **Both** — a published yearly plan *and* mid-year requests | **LD-2** |
+| 7 | Who must do POSH / Safety? | **Everyone, once a year** | **LD-9** |
+| 8 | Budget — annual pot or per training? | **Per training.** Proposed → approved → actual → cost per participant. No yearly pot to maintain | **LD-1** |
+| 9 | Certificates with expiry and renewal chasing? | 🟡 **Skipped for now.** C5's renewal box stays empty and no certificate register is built | *(dropped)* |
+| 10 | Which training targets govern? | **Build them as settings**, monthly and yearly, and ask HR to reconcile their two documents | **LD-1, LD-11** |
+| 11 | Can the trainer see who gave which feedback? | **An internal trainer can** (they have a login). **An external trainer sees nothing** — decision 5 means they have no account at all. HR/L&D and HR Head always see names | **LD-7** |
+| 12 | Who are the HR Head, the Management approver and the L&D Executive? | **Confirmed at test time**, set in Setup, changeable without code | **LD-1** |
+
+#### 🟡 Two things HR still owes, and neither one blocks the build
+
+Both are **document edits, not development** — the same shape as the 1B.3 re-wording already carried in
+the Talent Equation block. Both stay invisible until the very end, which is exactly why they are written
+down now.
+
+- [ ] **1 · Re-word two KPI lines from "assessment" to "assignment".** Decision 1 removed scoring, but
+      Saloni's sheet still carries *"Assessment completion — at least 90% of nominated participants"* (2%)
+      and KRA 5's *"Assessment and learning closure within SLA"* (1%). **3 points** that will read as
+      permanent failures on an otherwise full scorecard until the two lines are re-worded to the
+      assignment. Get it confirmed in writing **before LD-11 ships**.
+- [ ] **2 · Reconcile the training targets across the two documents.** The KPI sheet says **15 internal +
+      48 external per year**; the weekly report says **minimum 3 external + 2 technical + 5 total per
+      month** — which is 36 external a year, not 48. Three sets of numbers, no two of which agree. The
+      module takes whatever is typed into Setup, so nothing waits on this; but until HR picks, the
+      adherence lines are scoring against a number nobody has agreed.
+
+---
+
+### LD-1 · 🟢 The spine — schema, shell, steps 1–8, Setup, queues, RLS  `[x]`
+*Raised 2026-09-21 · Everything else hangs off this*
+
+> 🟢 **THE DATABASE HALF IS LIVE (21-09-2026)** — `20261215120000` (foundations) and `20261215120100`
+> (workflow), both applied to `icutjkrqkbzwvmnfbzpr` after their rollbacks were **rehearsed and run**.
+> 19 `fms_ld_*` tables · 20 functions · 39 RLS policies · the `fms-ld-docs` bucket · seeded masters.
+> The request → session flow (steps 1–8) is proved end to end by
+> `20261215120100_ld1_learning_development_workflow_verify.sql` — 20 checks driven as four real
+> **non-admin** employees, all passing, run inside a transaction that rolls back.
+> **Nothing is user-visible:** no manifest, no registry entry, no route. That is the deploy ordering
+> CLAUDE.md asks for — the migration goes ahead of the code that reads it.
+>
+> 🟢 **AND THE SCREENS ARE BUILT (21-09-2026).** 28 files under
+> `frontend/src/apps/learning-development/`, registered in `registry.tsx` / `appInfo.ts` /
+> `universal.ts`. `npm run build` passes, and the module was driven on localhost **as a real
+> non-admin employee and as an admin** — no console errors in either pass. Dashboard · training
+> calendar · request list + detail with a per-request rail · Raise-a-need form · one queue component
+> serving all seven request-scoped steps · Setup (Step Owners, Approval Rules, Due Dates,
+> Coordinators, Master Owners).
+>
+> ⚠ **UNIVERSAL, and the only module here that is** — every employee is a potential participant.
+> Say this to admins once: a universal app has **no `app_access` rows**, so Module Access shows it as
+> admins-only and there is nothing to tick. That is not a bug.
+>
+> 🔴 **NOT DEPLOYED.** Nothing is pushed and `master` does not have it. The branch is
+> `learning-development` in the worktree `D:\AI Development\oo-ld`.
+>
+> **Before it can be used by anyone:** Setup → Step Owners must be seeded (nothing moves past a step
+> with no owner), and the HR Head / Management / L&D Executive names have to be confirmed — **LD-0 · 12**.
+
+**Module identity.** `frontend/src/apps/learning-development/`, id `learning-development`, base path
+`/learning-development`, `category: "hr"`, tables `fms_ld_*`, storage bucket `fms-ld-docs`. Registered in
+`apps/registry.tsx`; name/path/category in `apps/appInfo.ts` — **never typed in a component**.
+
+**Built to the same engine as Order to Dispatch and New Recruitment**, because that is what the client
+asked for and because the parts already exist: `@/shared/lib/fmsQueue`, `@/shared/lib/stepSla`,
+`@/shared/lib/fmsOwners`, `QueueTable`, `MasterCrud`, `StepPipeline`, `AppShell`.
+
+**Tables (phase 1).**
+
+| Table | Holds |
+|---|---|
+| `fms_ld_requests` | the Training Request ID, need source, department, requester, title, skill gap, objective, target group, required-by date, priority, competency, category, mandatory/optional, justification, expected outcome, **proposed / approved / actual cost**, decision stamps, status |
+| `fms_ld_sessions` | session ID, `request_id` **and** `plan_line_id` (either may be null), `session_types text[]`, delivery mode, trainer, date, start/end, duration, hours, venue/link, capacity, registration cut-off, outcome, actual start/end, cancellation-or-reschedule reason, `rescheduled_from` |
+| `fms_ld_trainers` | internal person **or** external agency, contact, speciality, rate, active. ⚠ An external trainer is a **master row, never a login** (LD-0 · 5) |
+| `fms_ld_activity` | user, timestamp, old value, new value, reason — §13's audit-trail acceptance item |
+| `fms_ld_step_owners` · `fms_ld_step_assignees` | who owns each step; the reassignment pool |
+| `fms_ld_config` | key/value; holds `step_sla`, the **approval rule**, the nomination rules, the windows and the targets |
+| `fms_ld_notifications` | in-app bell rows, same shape as `fms_hr_notifications` |
+| `fms_ld_master_managers` · `fms_ld_master_requests` | master governance, same as every other FMS |
+
+Masters (all `MasterCrud`, all owner-governed): training categories · competencies · trainers/agencies ·
+venues · **delay reasons** · session outcomes · attendance statuses · effectiveness outcomes · follow-up
+actions — §7 of the document lists the exact values to seed for the last five. *(Assessment results was
+the sixth and is dropped with LD-0 · 1.)*
+
+**Setup (admin only), following Order to Dispatch's and New Recruitment's tab layout:**
+
+`Step Owners` · `Reassignment` · `Due Dates` · `Coordinators` · `Master Owners` · `Notifications` ·
+**`Approval Rules`** (Management approval: *never / always / above ₹X* — **LD-0 · 3**) ·
+**`Nomination Rules`** (who may nominate, default capacity, cut-off days) ·
+**`Feedback & Assignments`** (feedback window, assignment due days, review SLA, trainer visibility) ·
+**`Effectiveness`** (30 days, reminder lead) ·
+**`Targets`** (internal / external, **monthly and yearly** — LD-0 · 10 — plus 85% attendance, 80%
+assignments, 10 hours per head).
+
+⚠ **`mgmt_approval` is a CONDITIONAL step, and that is not the same as an optional one.** When the rule
+says it is not required, the request must move from HR Head approval straight to trainer finalisation with
+the skip **recorded on the row** — not left sitting in a queue nobody owns, and not silently absent from
+the audit trail. The SLA engine must also not count a skipped step as overdue.
+
+**Due dates.** §3's recommended TATs seeded as the defaults in `fms_ld_config.step_sla`, every one of them
+admin-editable on the Due Dates tab — the document itself says they *"are recommended configuration values
+and may be changed by HR before development sign-off"*, so none of them is hard-coded. Working days
+Mon–Sat as elsewhere; `effectiveness` is **calendar days from the session**, not working days — the same
+`unit: "months"` escape hatch recruitment's probation steps use.
+
+🟢 **Module access: UNIVERSAL** (`apps/universal.ts`), per LD-0 · 2 — the nav does the scoping. Everyone
+gets *Training Calendar* and *My Learning*; queues, reports and Setup appear only for the people who own
+them. ⚠ **Say this out loud to admins once:** a universal app has **no `app_access` rows**, so the Module
+Access matrix will show it as admins-only and there is nothing to tick. That has surprised people before.
+
+⚠ **RLS is the boundary, the nav is only politeness.** A participant reads the sessions they are nominated
+to plus the public calendar; a HOD reads their own people; L&D, HR Head, coordinators and admins read all.
+Writes go through `fms_ld_*` RPCs with `fms_ld_can_act()` in front. Note that **a policy is evaluated as
+the caller** — inner reads inside a policy meet their own RLS, and the same SQL inside a `SECURITY
+DEFINER` function will hide that from you.
+
+---
+
+### LD-2 · 🟢 The Annual Training Plan, and the calendar everyone sees  `[x]`
+*Raised 2026-09-21 · **Land this with LD-1's session step**, not after it · client confirmed both doors*
+
+**The plan.** `fms_ld_plans` (financial year, status draft/published, `published_at`, who) +
+`fms_ld_plan_lines` (month, title, types, target audience — department / designation / band / named list,
+planned participants, estimated cost, estimated hours). Published once; edits after publication are
+versioned rather than silent, because 2A is scored on *"uploaded by January"* and an un-versioned plan can
+be back-fitted to whatever happened.
+
+**Adherence** = plan lines whose fulfilling session was conducted ÷ plan lines due in the period. A session
+carries `plan_line_id`; a session with none is ad-hoc and counts toward the volume targets but not toward
+adherence.
+
+**The calendar.** A month grid — `apps/asset-maintenance/pages/Calendar.tsx` is the working shape to copy
+(Monday-first, lead-padding, per-day cells) — plus a flat list view that obeys the house rules (**every
+column sorts, every column filters, cascading, 25 a page, no `groupBy`**). What each reader sees:
+
+- **Everyone:** every scheduled session, with the ones they are nominated to marked, and their own RSVP
+  state on the cell.
+- **HODs:** additionally, which of their people are nominated to each — that is the screen they nominate
+  from (**LD-3**).
+- **HR/L&D:** additionally, planned-but-not-yet-scheduled plan lines shown as ghosts on their target month,
+  so the gap between the plan and the calendar is visible on the calendar rather than in a report.
+
+Filters: type, department, trainer, mode, status, month. Statuses rendered distinctly — **planned ·
+scheduled · conducted · rescheduled · cancelled** — because C2 and the KPI adherence lines all turn on
+telling those apart, and a rescheduled session keeps its original in the audit trail (§6).
+
+---
+
+### LD-3 · 🟢 Nomination, approval, invitation and RSVP  `[x]`
+
+> 🟢 **LD-3 … LD-8 ARE BUILT (22-09-2026).** Migration `20261215120200` (7 tables, 22 functions)
+> applied after its rollback was rehearsed, proved by `…_verify.sql` — **26 checks driven as real
+> non-admin people**, all passing. Screens: a **Session Detail** page carrying eight panels, a
+> **My Learning** page for everybody, an **All Sessions** register, and the calendar wired to open a
+> session. `npm run build` passes; driven on localhost as the L&D executive and as a real attendee
+> with no console errors.
+>
+> 🔴 **STILL NOT DEPLOYED** — branch `learning-development`, worktree `D:\AI Development\oo-ld`.
+>
+> **What is left on the module:** LD-2's annual-plan screens, LD-9 (POSH/Safety), LD-10 (reports and
+> the weekly Section C feed), LD-11 (KPI wiring) and LD-12 (email, which ships OFF).
+*Raised 2026-09-21*
+
+`fms_ld_nominations`, one row per (session, employee): `nominated_by`, `nominated_at`, `source`
+(hod | hr | self), `status` (proposed | approved | rejected | withdrawn), `approved_by/at`, `reject_reason`,
+`invited_at`, `rsvp` (pending | accepted | declined), `rsvp_at`, `decline_reason`, `reminder_1_at`,
+`reminder_2_at`. Unique on (session, employee) — §4's *"unique employee per session"*.
+
+- **Who nominates:** the HOD from the calendar or the session, or HR directly. **HR/L&D approves either
+  way** — the client's explicit instruction, and `nomination_approval` exists for it. HR's own nominations
+  are auto-approved by the same hand that made them, and the row still records it.
+- **🔴 Only people who exist in the system can be nominated** — the client's own rule. The picker reads
+  `profiles` where `is_external = false`. Somebody who is not there **cannot be typed in as free text**;
+  the picker offers a *"this person is not in Orange Hub yet"* line that takes an admin straight to
+  `/admin/users` and tells everybody else who to ask. A free-text nominee would break attendance, the
+  assignment, the per-employee learning hours and KRA 5 all at once.
+- **Capacity and cut-off:** nominations beyond `capacity` are refused with the number, not silently
+  dropped; nominations after the registration cut-off need HR.
+- **Invitation & RSVP:** on nomination approval the invitation goes out (in-app always, email when
+  **LD-12** is armed). RSVP is accept/decline with a **mandatory reason on decline** (§4). Reminders at
+  48 and 24 hours (§3 step 8).
+- ⚠ **The nominee's RSVP is a row-owned step.** It cannot be owned by a step-owner row; see LD-1's
+  `ROW_OWNED_STEPS` note.
+
+---
+
+### LD-4 · 🟢 Pre-training material, and My Learning  `[x]`
+*Raised 2026-09-21*
+
+**Material.** `fms_ld_materials` (session, title, kind — agenda / pre-read / slide deck / other, file path
+in `fms-ld-docs`, version, uploaded_by/at, `visible_from`). Uploaded by the trainer **if internal**; for an
+external trainer HR uploads it on their behalf (**LD-0 · 5**), and the row records whose material it is so
+the credit is not lost. §3 step 9 wants a readiness checklist and blocks the session moving to *Ready*
+until it is complete — that is a `readiness_confirmed_at` plus the checklist rows, and the block is
+enforced in the RPC, not only in the UI.
+
+⚠ **Write-once attachments are a known fault in this codebase** — NR-5 exists because every HR attachment
+was write-once and the RPCs structurally could not clear a value. Build edit, replace and delete into
+`fms_ld_materials` from the first migration.
+
+**My Learning** — the screen every employee opens, and for most people the *only* one:
+
+*My invitations (RSVP here)* · *My sessions — upcoming and past* · *My material* · *My assignments, with
+due dates and the upload* · *My feedback forms* · *My learning hours this year (against 10)* ·
+*My POSH / Safety status for the year*.
+
+🟢 Reachable by everybody because the module is universal (LD-0 · 2) — no grant, no tick-box, and no
+nominee who receives an invitation to a page they cannot open.
+
+---
+
+### LD-5 · 🟢 Conduct, attendance and the absentee follow-up  `[x]`
+*Raised 2026-09-21*
+
+- **Conduct:** actual start/end, session outcome (conducted / rescheduled / cancelled / partially
+  conducted), trainer attendance, evidence upload (photos, screenshots, trainer log). A cancellation or
+  reschedule needs a **reason and a revised date**, and the original stays in the audit trail (§6).
+  Marked by the internal trainer, or by HR for an external one.
+- **Attendance:** `fms_ld_attendance`, one row per (session, employee) — `status` (present / absent /
+  partial / approved exception / not applicable), `minutes`, `reason`, `marked_by`, `marked_at`,
+  `followed_up_at`. **Closure is blocked until every nominee carries a status** (§3 step 11, §13).
+- **The attendance sheet** the client asked for: a scan uploaded against the session
+  (`attendance_sheet_path`) — evidence *beside* the marked rows, never instead of them. The KPI line
+  *"attendance capture — 100% of sessions"* counts marked rows; a PDF cannot be counted.
+- **Absentee follow-up within 24 hours** — weekly form C4 asks for it and nothing else in the hub records
+  it. `followed_up_at` on the attendance row is the whole feature.
+- **Learning hours** fall out here: present → the session's hours; partial → `minutes ÷ 60`. That single
+  rule feeds C5, `SK-3` and KRA 5.
+
+---
+
+### LD-6 · 🟢 The assignment — issued, submitted, reviewed  `[x]`
+*Raised 2026-09-21 · 🔴 **No test, no marks, no pass mark.** Client, 21-09-2026: "We just need to track
+whether all the employees have submitted their assignment that has been provided during the training."*
+
+The whole of the post-training evaluation is three timestamps and a file:
+
+**Per session** — `fms_ld_assignments`: title, brief, attachment, `issued_at`, `due_at` (default: session
+end + the days set in Setup). Issued by the trainer if internal, by HR otherwise.
+
+**Per participant** — `fms_ld_assignment_submissions`: file, `submitted_at`, `reviewed_at`, `outcome`
+(accepted / needs rework / not submitted), `reviewer_remarks`, `escalated_at`.
+
+Every KPI line this module owes on the subject is then a subtraction of two of those timestamps, which is
+the point of building it this way:
+
+| Line | Arithmetic |
+|---|---|
+| Assignment circulated within 24h of the session | `issued_at` − session end |
+| Submission rate ≥ 80%, and on time | `submitted_at` ≤ `due_at` |
+| Review closed within 7 days of submission | `reviewed_at` − `submitted_at` |
+| Pending submissions escalated to HOD | `escalated_at` — weekly form C4 |
+| KRA 5 · per-employee assignment completion | that employee's on-time submissions ÷ their assignments |
+
+⚠ **Two KPI lines on Saloni's sheet still say "assessment"** and will read as permanent failures until HR
+re-words them — **3 points**, tracked in LD-0's owed list. Nothing to build; somebody has to edit a
+document.
+
+⚠ Employees upload to `fms-ld-docs` here, which is the **first place a non-admin writes a file** in this
+module. The bucket policy has to allow it for their own submission only, and nothing else.
+
+🟡 **Parked, not refused:** an online test taken inside the portal (question bank, timing, re-attempts) was
+considered and dropped on 21-09-2026. If HR ever wants it, it is a build of its own and the assignment
+above is unaffected by it.
+
+---
+
+### LD-7 · 🟢 Feedback and the HR session review  `[x]`
+*Raised 2026-09-21*
+
+`fms_ld_feedback`, one row per (session, employee), unique: `content_rating`, `trainer_rating`,
+`relevance_rating`, `overall_rating` (1–5), `comment`, `submitted_at`. Window 48 hours (§3 step 13),
+configurable. A reminder fires inside the window; a non-response is **marked**, not assumed.
+
+🟢 **Who sees the names** (LD-0 · 11): **HR/L&D and the HR Head always.** An **internal trainer sees the
+names** on their own sessions. An **external trainer sees nothing at all** — by decision 5 they have no
+account, so this needs no code, only a note in the design so nobody later "fixes" it by inviting them.
+
+**HR session review** (`session_review`): attendance, assignment submission rate, feedback, cost against
+approved budget, cost per participant, exceptions — with a review note and action points. §6 escalates a
+low score or serious feedback; the weekly form's *"Low-score session under review"* flag reads exactly this.
+
+---
+
+### LD-8 · 🟢 30-day effectiveness, follow-up and closure  `[x]`
+*Raised 2026-09-21*
+
+**The client's wording:** *"The HOD of the department, for whatsoever employees were there in this
+training, after the session is conducted, should be notified. After 30 days, the HOD should add the
+effectiveness of that training for their department."*
+
+- **On attendance closure**, resolve every attendee's HOD — `user_hods` first, `fms_hr_department_hods` as
+  the fallback — and **notify each one immediately** that their people attended. That is the client's ask
+  and it is also the only warning a HOD gets before a task lands on them 30 days later.
+- **At session date + 30 calendar days**, one effectiveness task per **(session, HOD)**. 🟢 **One overall
+  rating for the department, plus a comment** (LD-0 · 4) — *not* a rating per attendee. The task still
+  **lists** that HOD's attendees by name, so the HOD knows who they are rating about, and it captures
+  application observed, evidence, improvement area and follow-up required. Reminder and escalation if
+  overdue (§3 step 15: *within 7 days of task creation*).
+- 🔴 **19 of 67 internal profiles resolve to NO HOD AT ALL** — measured 21-09-2026 by running the
+  shipped resolver (`fms_ld_hods_of`) over every internal profile, not by counting the raw table: **48
+  resolve, 19 do not.** The raw `user_hods` count is 20; the department fallback rescues exactly one
+  person, which is also the proof that the fallback arm fires at all. `fms_hr_department_hods` holds
+  **1 row for 23 departments**, so it rescues almost nobody.
+  🟢 **Client's answer, 21-09-2026: show HR an explicit "no reviewer" list on the session review**
+  rather than quietly counting the review complete — reporting a control that does not exist is worse
+  than reporting a gap — **and get the map filled** in parallel.
+  - [ ] **Who fills the missing 19?** Likely Bushra or HR, the same way the org masters were filled. Not
+        a blocker for the build; it is a blocker for the first real effectiveness review.
+- **Follow-up decision** (§3 step 16): close, coach, reassess or refresher. An unsuccessful outcome
+  **creates the linked follow-up** with an owner and a due date — a link, not a note.
+- **Closure** (§3 step 17): blocked while any mandatory evidence or open task remains; on closure the
+  record locks, TAT/SLA compute, and **only the HR Head may reopen it, with a reason**, audit trail kept.
+
+---
+
+### LD-9 · 🟢 POSH and Safety — everyone, once a year  `[x]`
+*Raised 2026-09-21 · scope cut by LD-0 · 7 and · 9*
+
+`fms_ld_mandatory_programs` — POSH, Safety and whatever else HR names later. 🟢 **Applicability is
+"every active internal employee, once per year"** (LD-0 · 7), which makes the arithmetic honest and needs
+no per-person applicability list to maintain: *completed this year ÷ active internal employees*. A session
+tagged POSH or Safety and marked conducted credits every attendee for that cycle.
+
+Feeds KRA 2E (5%), C5's *"Mandatory & statutory training completion — 100%"*, and the weekly form's
+*"Mandatory training overdue"* flag.
+
+🟡 **The certificate register is NOT built** (LD-0 · 9 — client parked it). Consequences, so nobody hunts
+for the feature later: C5's *"Certifications due for renewal — zero overdue"* box stays empty, and there is
+no expiry chasing of any kind. If it is ever wanted, **copy the Asset module's insurance tracks** — that is
+the working shape for "a thing with an expiry that has to be chased".
+
+---
+
+### LD-10 · 🟢 Reports, exports, and the Weekly Review Section C feed  `[x]`
+*Raised 2026-09-21*
+
+§10 of the document names nine dashboard views; they collapse into these screens, all flat, all sorting
+and filtering on every column, all exporting to Excel:
+
+**Training Register** (the whole request → closure record, one row per request) · **Session Register**
+(C3's exact columns: topic, type, trainer/agency, date, participants, hours, feedback /5) ·
+**Attendance Register** · **Assignments** (issued, submitted, on time, reviewed) · **Feedback** (rate and
+averages) · **Effectiveness** (pending / overdue / done) · **Budget vs Actual** (proposed, approved,
+actual, cost per participant) · **Learning Hours per Employee** (against 10/yr) · **POSH / Safety
+Compliance** · **Owner-wise SLA** (given, done, on time, overdue — per step, per owner).
+
+**And the Section C feed.** The weekly report view already exists in the KPI-3 lab
+(`kra-kpi-lab/report/`, DEV-only on `kpi-3-lab`) and prints all 24 C boxes as unfillable. This entry is
+what makes **23 of them** fill: C1's five figures, C2's four-row mix with its monthly targets, C3's session
+list, C4's seven items, and three of C5's four. ⚠ **Row counts must not be written into the field
+literal** — the lab already learned that once; a box states the shape of its gap and reads its figure live.
+
+---
+
+### LD-11 · 🟡 KPI and FMS-ranking wiring  `[x]` *(built; two deploy-day steps left)*
+
+> 🟡 **BUILT AND VERIFIED 23-09-2026, STILL SWITCHED OFF.** `fms_rank_modules` carries the row set
+> `active = false` — the same state `asset-maintenance`, `hr-exit` and `travel-desk` are in — and its
+> note now says why. An admin switches it on from the Control Center the day it is in use.
+*Raised 2026-09-21*
+
+The two things this entry said the module did not have, it now has. **A third is somebody else's file.**
+
+| # | What | State |
+|---|---|---|
+| 1 | `kpi_put_module` / `kpi_put_rows` — the module writes its own facts | ✅ **automatic** — see below |
+| 2 | CC-1 ranking: scorer, adapter, My Work items, `fms_rank_modules` row | ✅ built |
+| 3 | KRA 2 / KRA 5 line definitions | 🟡 **still only in the DEV-only KPI-3 lab** (branch `kpi-3-lab`) |
+
+**1 needed no code at all, and that is worth knowing.** `kpi-facts` enumerates its modules from
+`RANKED_MODULES` and `apps/kra-kpi/facts/fmsFacts.ts` is entirely generic — no module is named anywhere
+in it. So the moment the scorer exists and the switch is on, the nightly 01:07 IST run writes L&D facts
+for every person alongside every other module. There was nothing to write; there was a scorer to write.
+
+#### What was built
+
+- 🔴 **`apps/learning-development/lib/work.ts` — the piece that did not exist.** `lib/queues.ts`
+  answers "where is this REQUEST", and steps 1–8 are all it *can* answer for, because a request sits at
+  exactly one step. **The other fourteen hang off a session or off one person's obligation, and a
+  session holds several at once** — nominations still open while the material is already up. One
+  "current step" cannot describe that. So this returns a LIST of open and closed steps across all three
+  scopes, and the three consumers below all read it rather than re-deriving anything.
+- `core/workspace/mywork/items/learning-development.ts` + its provider — **the only universal provider
+  in the hub.** Every other one is narrowed by `hasModule`; this one fetches for all 67 people, because
+  everybody is a potential participant. What it hands most of them back is their OWN obligation — an
+  invitation to answer, an assignment to hand in — never HR's pipeline.
+- `apps/fms-control-center/adapters/learning-development.ts` — the twelfth row on the scoreboard, and
+  the only one that counts steps its own module's sidebar does not show.
+- `apps/fms-control-center/ranking/modules/learningDevelopment.ts` + `RANKED_MODULES`.
+
+⚠ **PARTICIPANT STEPS ARE KEYED BY THE PARTICIPANT'S OWN ROW, NOT BY THE SESSION.** Twelve people
+owing a feedback form is twelve pieces of work, and KRA 5 scores each against its own name. Keying by
+the session would collide, and My Work's item id — `source:row:step`, split on the colon by
+`ranking/workItems.ts` — would hand the ranking one row where there are twelve. Same reason hr-exit
+keys by `checkId ?? entityId`.
+
+⚠ **TWO STEPS HAVE NO ACTOR COLUMN.** Training Conducted and Attendance Closure stamp a time on the
+session and nobody's name, so those two read `fms_ld_activity`, which records the actor and the moment
+for every move. Deliberate exception, not a pattern: a column is the truth wherever one exists, and the
+other twenty steps have one.
+
+#### 🔴 The bug live data found, and string-matching would not have
+
+Test rows are recognised by a `ZZ TEST` title — every request and session carries a real sequential
+code, because the seed data was made through the module's own RPCs, so there is no separate numbering.
+The scorer first matched that against **the step's displayed title**, and **a participant step does not
+show the session's title**: an assignment step is titled after the assignment. Two steps of a test
+session therefore came through as real and would have been scored. Found by compiling the scorer with
+the edge function's own shims and **running it against live data** — it does not show up in a build, a
+typecheck or a screen. `lib/work.ts` now decides once, on the owning request or session, and every step
+of that entity inherits the flag.
+
+#### Verified, 23-09-2026
+
+Compiled through `supabase/ranking/build.mjs`'s own shims and run against the live database: **20 closed
+steps across all three scopes, every one with both an actor and a time** (including the two that come
+from the activity log), **no duplicate step ids**, 4 open steps all timed, and all 20 correctly dropped
+— 19 `test_record`, 1 `excluded_step` — leaving nothing scoreable, which is right, because every row in
+the module today is seed data. Per person: 3 of 68 carry open L&D work, and they are the right three —
+a HOD's 30-day note, the L&D executive's follow-up decision, and one nominee's own feedback and
+assignment. In the browser: the **twelfth row on the FMS Control Center** reads 2 due tomorrow and
+expands to all five stages (21 steps; `need_raised` is `noQueue`), and **My Work Today as Saloni** —
+signed in as her, not as an admin — shows `TRN-2627-0017 · Follow-up · 24-09-2026 · TEAM`.
+
+#### ⚠ Two deploy-day steps, neither of them code
+
+- [x] ✅ **Both bundles rebuilt and shipped, 23-09-2026** (`54d24a5e`). Done the safe way round:
+      `origin/master` was merged INTO the branch first, so the rebuild ran on a tree that already held
+      master's code — checked afterwards that the bundle carries New Recruitment's Day 7/15/30/60/90
+      probation cadence as well as the new L&D scorer. Both guards passed (12 Control Center modules,
+      11 scored, 1 excused; no browser code in either graph). The deployed edge functions were already
+      current on master's rules, so no function redeploy was needed; one IS needed before the switch
+      below is flipped.
+- [ ] **Switch `fms_rank_modules.learning-development` on** the day the module is in use, from the
+      Control Center. Nothing else waits on it: with it off, `kpi-facts` lists L&D under `skipped` and
+      the report's footer says so.
+
+⚠ **Do not arm the scoring before LD-0's two owed document edits are confirmed.** Three of the points
+scored here are against KPI lines that still say "assessment", and the adherence lines score against
+targets no two documents agree on. Shipping first means the first scorecard anybody sees is wrong in a
+way that looks like our bug.
+
+---
+
+### LD-13 · ✅ Masters and Master Requests — the screens HR needs to start  `[x]`
+*Raised 2026-09-22 · **BUILT AND VERIFIED 22-09-2026.** The trial is no longer blocked on us. Not
+deployed — the module is still absent from `master` entirely.*
+
+HR reached **step 6, Trainer Finalisation, and stopped.** The trainer is mandatory, the master held
+the one agency LD-1 seeded, and there was no screen to add another.
+
+**What was built.**
+- **`pages/masters/Masters.tsx`** — eight tabs, each a `MasterCrud`, so sorting on every column,
+  a cascading searchable filter under every column, the Active/Inactive segment, 25 a page and the
+  Excel round trip all arrive with no per-tab wiring. The seven governed lists (session types,
+  competencies, need sources, venues, trainers, delay reasons, follow-up actions) **plus an eighth,
+  POSH & Safety** — see the ⚠ below.
+- **`pages/MasterRequests.tsx`** + **`components/RequestMasterModal.tsx`** — ask for a value that is
+  not on a list, and see what happened to the one you asked for. The reviewer can CORRECT the
+  proposal before approving, and the correction is what the list gets.
+- **`lib/masterFields.ts`** — the wire contract the approve RPC had been expecting since LD-1.
+- Store: `canManageMaster(type)` **per list**, `canManageMandatory`, `masterRequests`,
+  `pendingMasterRequests`, `canUseMasterRequests`. Writes: `saveMaster`, `setMasterActive`,
+  `requestMaster`, `resolveMasterRequest`, `saveMandatoryProgram`, `setMandatoryProgramActive`.
+- `MasterOwnersSection` now renders from the same `LD_MASTER_TYPES` constant the Masters tabs and the
+  request picker read, so the list that three CHECK constraints police exists once.
+
+⚠ **THE EIGHTH TAB HAS A DIFFERENT OWNER, AND THAT IS NOT A SLIP.**
+`fms_ld_mandatory_programs` (LD-9) was being **fetched and never rendered** — a master nobody could
+edit, holding the two rows that decide the whole POSH / Safety denominator. It is now a tab, but its
+RLS policy reads `is_admin OR fms_ld_is_coordinator`, **not** `fms_ld_is_master_manager`, so it is
+gated on `canManageMandatory` and it has no Master Owners row and no request path. Proved in a
+rolled-back transaction as the L&D executive: trainer insert ALLOWED, venue insert ALLOWED,
+mandatory-programme insert **REFUSED**, granting herself an owner row **REFUSED**.
+
+🔴 **A SECOND ORPHAN, FOUND ON THE WAY, NOW FIXED — the Venues master had no reader at all.**
+`venue_id` and `meeting_link` have existed on `fms_ld_sessions` since LD-1, are accepted by
+`fms_ld_create_session`, are mapped in `ldFetch` and are *read* by Session Detail's "Where" — and
+**nothing ever set them.** Every session in the module said `Where: —`, and a Venues master would have
+been decorative on arrival. This is **FIX-4 in reverse**: the whole pipe was laid and only the tap was
+missing, so nothing failed, nothing warned, and it compiled. The scheduling panel
+(`StepActionPanel`, `session_scheduling`) now carries **Where** and, when the chosen venue is an
+online one, a **required Joining link** — plus a warning when the capacity typed exceeds the room's
+seats. Session Detail renders the link as a link rather than the word "Online": a nominee who arrives
+at the hour and cannot get in is the failure that was waiting to happen.
+
+**Go-live step, done 22-09-2026:** `fms_ld_master_managers` was **empty**, which under the RLS policy
+means *admins only* — so the screen alone would not have unblocked HR. Saloni Rathod (the L&D
+executive, a plain `employee` who already owns 15 of the 17 step-owner rows) is now the owner of all
+seven lists. Changeable in Setup → Master Owners without code.
+- [ ] **Open, deferred to go-live:** should **session types** be admin-only? It carries the report
+      codes the KPI arithmetic matches on — editing `posh` there would silently break the compliance
+      count — and she is on it today because she is the one who would add a new type mid-year. One row
+      in Setup either way.
+
+**Verified in the browser on localhost, as admin** — every tab renders; an external trainer saves; a
+duplicate name is refused with a sentence rather than an index name; an internal trainer with nobody
+picked is refused before the request is even sent; picking the employee saves; asking for a venue,
+correcting its name at review and approving lands the **corrected** row in the master; Reject stays
+disabled until a reason is typed; scheduling records the venue; an online venue blocks Create until
+the link is typed; Session Detail renders it.
+
+**And verified as the real user** — signed in as **Saloni Rathod, role `employee`, not an admin**
+(session minted from a magic link, no password touched, revoked `scope=local` afterwards). Her sidebar
+carries Masters and Master Requests and **no Setup**, and only the four queues she owns. **She added a
+trainer** — the thing that blocked the trial — through the screen, as a plain employee. The per-tab
+gate renders exactly as RLS decides it: **POSH & Safety came up read-only for her** (no Add, no
+Import, no row actions, no Actions column, and the card underneath says whose list it is), and with
+her `venue` owner row temporarily removed the **Venues tab went read-only too** while the other six
+stayed editable. The row was put straight back.
+
+**Test rows left in place, to remove before go-live** (they join LD-1's own `ZZ TEST Numbers
+Academy`): trainers `ZZ TEST Bright Minds` and `ZZ TEST Internal Person`, venues `ZZ TEST Seminar
+Hall (2nd floor)` and `ZZ TEST Google Meet`, and one approved venue master-request. The two training
+requests walked to reach the scheduling step were deleted again.
+
+⚠ **`MasterCrud` has the `FieldLabel` bug, and this module dodged it rather than fixing it.**
+`MasterCrud` wraps every field in `FieldLabel`, which is a `<label>`, so clicking the question text
+above a `ChoiceButtons` strip silently presses the FIRST option. Over a `Combobox` the same click only
+opens the picker, which is harmless — so every fixed pair here (trainer type, venue online) is
+declared `select`, not `choice`. **The bug itself is untouched and is shared by every FMS in the hub**
+— it affects `MasterCrud`'s `choice` fields everywhere, on top of the 15 cases already logged in 5
+files. Fixing it is one branch in `MasterCrud.tsx` and belongs in its own change, not in LD-13.
+
+---
+
+### LD-12 · 🟡 Email, reminders and escalation — ships OFF  `[ ]`
+*Raised 2026-09-21 · **Last on purpose.** Read all three ⚠ before writing a line of it*
+
+§6 of the document is the whole specification: a task on every status movement, a reminder at **50% of
+SLA**, another **24 hours** before the due date, **Overdue** at breach notifying the owner and L&D, and
+escalation to HR Head / HOD after one working day. Plus the invitation, the 48/24-hour RSVP reminders, the
+material-ready notice, the absentee follow-up, the assignment reminder, the feedback reminder and the
+30-day effectiveness task.
+
+⚠ **`send-email` will silently drop every one of these until it is changed and redeployed.**
+`supabase/functions/send-email/index.ts:1187` carries a **hard-coded list of module prefixes**
+(`import_`, `procurement_`, `sampling_`, `office-supplies_`, `production-entry_`, `order-to-dispatch_`,
+`asset-maintenance_`, `hr-recruitment_`, `hr-exit_`, `ocpi_`, `travel_`). A kind that matches none of them
+falls through to `markSkipped(row, "unknown kind")` at line 1281 — it does not error, it does not retry,
+and the outbox row looks handled. `learning-development_` has to be added **and the function deployed**.
+
+⚠ **The mailer has no Cc.** Several recipients means one outbox row each. A session with 30 nominees is 30
+rows per notice, and the reminder rules above fire several times per session — size this before arming it.
+⚠ Everybody in the company can now be a recipient (the module is universal), which is a wider blast radius
+than any other FMS here has.
+
+⚠ **Ship with `email_module_settings('learning-development') = false`**, like `hr-recruitment`,
+`order-to-dispatch`, `hr-exit`, `ocpi` and `travel-desk` are today. Browser-testing a flow on a module
+whose switch is on **sends real mail to real employees**. Arm it only when HR says so, and say out loud
+which notice goes to whom on the day it is armed.
+
+---
+
+### LD-14 · 🔴 Learning hours are never captured, so every hours figure is zero  `[ ]`
+*Raised 2026-09-23 by the end-to-end walk. **Blocks the trial's figures, not the flow.***
+
+`fms_ld_sessions.hours` is **always null**. The scheduling form asks for a start and an end time and
+records both — and nothing ever turns them into a number. `ConductPanel` does not ask either: it sends
+`actualStart: new Date()` and never an `actualEnd`. The only writer is `createSession({hours})`, and no
+screen passes it.
+
+**What it breaks, all of it visible to HR on day one:**
+- **My Learning** — *Hours this year* reads `0.0` against a target of 10, for everybody, forever. The
+  tile beside it (*Sessions attended*) is right, which makes the zero look like a bug in the arithmetic
+  rather than a missing input.
+- **Reports → Learning hours** — all 68 employees read `0.0 · 10.0 short`.
+- **SK-3 of the weekly review report** (10 hours per employee per year) cannot be filled at all.
+
+⚠ **The number is already on the screen.** `10:00–17:00` is stored on the session. Deriving it is a few
+lines; the question is only which number HR wants — the scheduled span, or the actual one. **Ask before
+building**: a training that overran is a different figure from the one that was booked, and `partial`
+attendance already records its own minutes, so the two have to agree.
+
+---
+
+### LD-15 · 🔴 A sent-back request is stranded — nobody can revise or resubmit it  `[ ]`
+*Raised 2026-09-23 by the end-to-end walk. **Tell HR not to use Send back until this lands.***
+
+HR sends a request back at validation with a reason. The raiser **can see it and can do nothing about
+it**:
+- their only button on the request is **Back**;
+- `/queues/sent-back` answers **"No access"** for them — `canSeeQueue` returns false for a step in
+  `ROW_OWNED_STEPS`… except `need_resubmit` is *not* in that list, so the queue gate and the panel gate
+  disagree;
+- the panel does render for them and says *"This step is yours"* — above a card with no control.
+
+The request sits at `returned` indefinitely. **There is no route out for anybody**: `reopenRequest` is
+wired only into `ClosurePanel`, i.e. it reopens a **closed** request, not a returned one.
+
+The panel's own text admits it: *"Editing a returned request lands with LD-2; for now, raise it again
+with the correction, or ask HR to reopen it."* LD-2 became the annual plan, so it never landed, and
+"ask HR to reopen it" describes a control that does not exist.
+
+**What it needs:** the raiser can edit the fields and press Submit again (status → `submitted`,
+`returned_at` cleared, the SLA re-anchored on the new submission — `need_resubmit` already anchors on
+`returnedAt`, so that part is right). Plus `canSeeQueue("need_resubmit")` fixed so the queue opens for
+the person who owes it.
+
+---
+
+### LD-16 · 🟡 Three smaller things the walk turned up  `[ ]`
+*Raised 2026-09-23. None of them blocks anything; all three are visible to HR.*
+
+- **The raiser's own ticket number leaks into the UI.** The sent-back panel prints "LD-2" to whoever
+  raised the request. Remove it with LD-15's fix.
+- **"Recorded" is the moment Save was pressed**, not when the training ran. `ConductPanel` sends
+  `actualStart: new Date()` and no `actualEnd`, so a session marked conducted a week late dates every
+  downstream deadline — the assignment, the feedback — from the day of the click. The 30-day
+  effectiveness task is **not** affected: it is computed server-side from `session_date`.
+- **Department is never defaulted.** The raise form offers a department picker and leaves it blank, so
+  most requests will carry none and the reports cannot break down by department. Either default it to
+  the raiser's own department or make it required — HR's call.
+
+---
+
+### LD-17 · Questions the walk raised for HR, not defects  `[ ]`
+*Raised 2026-09-23. All four are in the trial script; collect the answers with the trial feedback.*
+
+- **Is feedback anonymous to anybody?** Today an attendee sees their own name on their own feedback, and
+  HR sees every name. LD-0 · 11 settled the *trainer's* view (internal sees names, external sees nothing)
+  but never the attendee's. Cheaper to change before people start using it.
+- **Should the HOD's 30-day note appear on their My Learning screen?** It is on the home screen (My Work
+  Today) and on the session, but *My Learning* counts only assignments and feedback, so a HOD's "things
+  you owe" reads 0 while they owe a review.
+- **Is the assignment, with no marks and no test, enough?** It is exactly what the client asked for on
+  21-09; worth confirming once they have seen it.
+- **Does the wording of the five shipped vocabularies fit Orange O Tec?** Session types, need sources,
+  delay reasons, follow-up actions, POSH & Safety all arrived seeded from the source document.
+
+---
+
+### How this gets built — the rules that apply to all of it
+
+- **Additive-only on Supabase.** New tables and nullable columns; nothing existing is mutated or dropped.
+  Every migration in `supabase/migrations/` gets a **rollback file, and the rollback is rehearsed on live
+  data before the cutover** — a rollback that has only been read is not a rollback.
+- **Never `supabase db push`** from here; it would replay every local migration onto live data. Apply
+  through the SQL editor or the management API.
+- **Deploy ordering:** the migration goes live **before** the frontend that reads it. New Vite env vars
+  (none expected) would go into Vercel before the merge.
+- **The build is the gate.** `npm run build` runs strict `tsc` over all of `src`; there is no test runner
+  and no lint script.
+- **House rules on every grid**, not on request: sort on every column, a cascading searchable filter under
+  every column, 25 a page, flat (no `groupBy`), a *Clear filters* row rather than an `EmptyState` when a
+  filter matches nothing, and focus advancing to the next field after every selection.
+- **Test as the real user, not as an admin.** Admins bypass every gate. The three audiences that must each
+  be driven end to end on localhost are the **HR/L&D Executive**, a **HOD**, and a plain **employee
+  nominee** — the last one is the whole of LD-4 and half of LD-6, and an admin-only pass has already
+  hidden a control from the person it was built for once.
+- **Removing anything? Account for every control inside it.** `noUnusedLocals` is false and there is no
+  test runner, so an orphaned handler still compiles, still looks present, and is invisible until somebody
+  needs it. See **FIX-4**.
+
+---
+
 ## Asset Maintenance  *(service & maintenance)*
 
 ### AM-1 · Walk the module with Bushra and list the changes  `[x]`
@@ -8800,37 +10959,71 @@ day of closure. **Test on `abs(credit_limit)`, always.**
 
 *(cross-ref: **PC-1** above — decide whether this stays alongside the new dashboard)*
 
-### CC-1 · Ranking on the master control center  🟢  `[ ]`
-*Raised 2026-08-20 · **Low priority, confirmed 04-09-2026.** Nothing depends on it and it is a real
-build — a person dimension threaded through all nine adapters, not a widget. Park it.*
+### CC-1 · Ranking on the master control center  🟢  `[x]`
+*Raised 2026-08-20 · planned and **LIVE 18-09-2026** (master `37fe245`). **Nightly run ARMED 18-09-2026**
+(cron job `fms-ranking-nightly`, 00:52 IST) on the user's yes; its first scheduled run is tonight.*
 
-Add a gamification layer to the master control center: **a user sees their ranking** and
-understands where they stand against everyone else using the Orange One hub.
+**What it is.** A monthly ranking of how well each person keeps their FMS steps on time. Every step a
+person is given scores **1 on time · ½ late · 0 missed**; score = points ÷ steps, one decimal, one
+company-wide ladder, calendar months. **10 steps** to be on the ladder. A finished month is **frozen**;
+its top three are the **employees of the month**. August 2026 is frozen: 🥇 Jyoti 99.8 · 🥈 Ravina 96.7 ·
+🥉 Lalit Sharma 95.9 (13 ranked). September to date: 20 ranked, recomputed on each run.
 
-**Notes:** the board has **no person dimension at all** today, and that is the size of this job.
-[MasterControlCenter.tsx](frontend/src/apps/fms-control-center/pages/MasterControlCenter.tsx) is
-process-shaped — one row per FMS — and every adapter returns an `FmsSnapshot` of totals plus
-step/stage breakdowns, counts only, nobody's name in it
-([adapters/types.ts](frontend/src/apps/fms-control-center/adapters/types.ts)). So a ranking means
-threading a per-person dimension through all nine adapters, not adding a widget to existing data.
+**Where people see it.** On the **home screen (My Control Center)** — a rank chip in the greeting banner
+("#9 of 20 · 23 on-time steps to pass #8") and a **My work | Ranking** tab (`/home?view=ranking`). The same
+panel also sits on `/fms-control-center`. Every internal staff login can read it (no Control Center grant
+needed); customer logins cannot.
 
-The raw material does exist per FMS: steps stamp who completed them and when (Order to Dispatch
-carries `actorId` per step, Production stamps `mhAt` / `qcAt` / `pkAt` and the rest), and every FMS
-carries a step-SLA model, so **on-time vs late per person** is derivable rather than invented.
-Nothing ranks anyone today — no leaderboard, no score, anywhere in the codebase. The nearest
-existing per-user read is the Master Report's `UserAccess` page, but that is access and last-seen,
-not throughput.
+**Decided by the user, 18-09-2026**
+| Question | Answer |
+|---|---|
+| What is scored | FMS steps: on time 1, late ½, missed 0; score = points ÷ steps given |
+| Ladder | One, company-wide |
+| Minimum | 10 steps in the month; below it, a **provisional place** ("#21 of 21, provisional") — off the official ladder, podium and employees of the month |
+| Who sees what | **Everyone sees the full ladder** (rank, name, score, step count). A person's split by process and step-by-step detail stay private; **admins can see anyone's steps** |
+| Window | Calendar month, resets on the 1st; last month's top 3 on the page, earlier months on a wall |
+| Where | Home screen (banner chip + Ranking tab), and the FMS Control Center page |
+| Idle modules | An admin switch per module; **Travel Desk, Employee Exit, Asset Maintenance start switched off** (not in use on 18-09) |
+| Credit check (Dispatch) | **Left out**: deciding credit restarts its own clock, so every decided check reads on time (840 in Aug) |
+| Stand-ins | Follow each module's own Completed list (HR onboarding → whoever set the joining date; General Purchase handover → first handover phase) |
+| OCPI (no My Work rule) | Overdue steps charged to its step owners + the deal's own raiser, with an edit grant |
 
-**Worth settling before building:**
-- [ ] What the rank actually measures — steps closed, steps closed **on time**, or something that
-      cannot be won by picking easy work. Counting volume alone rewards whoever handles the
-      fastest steps, not whoever keeps the process moving.
-- [ ] Ranked across everyone, or within a department / module / role? Comparing a dispatch clerk
-      with a QC checker on one ladder may not mean anything.
-- [ ] Does everyone see the full table, or only their own position and the top few?
-- [ ] Over what window — this week, this month, rolling?
-- [ ] Does this belong on the existing board, or on **PC-1**'s new coordinator dashboard? Both
-      screens are in play at once.
+**Built on the recommended rules:** (1) a month scores steps **closed in it** plus steps **still overdue at its
+end**; (2) the closer gets the credit, an overdue open step is charged to **everyone whose My Work lists it**;
+(3) held, cancelled, untimed, "raised"/"submitted" steps and edits count for nobody; (4) **admins are not
+ranked**, plus an admin-kept exclusion list — started with **Quality Control** and **Quality Assurance**
+(shared logins); (5) FMS steps only, no Task Management; (6) nightly, finished months frozen; (7) one-decimal
+scores, ties share a rank; (8) privacy enforced in the RPC. A frozen month is only charged to people whose
+account existed on its last day.
+
+**How it works.** No due date is stored anywhere, so SQL never recomputes one. The `fms-ranking` edge
+function runs each module's own code (`frontend/src/apps/fms-control-center/ranking/modules/`, bundled by
+`supabase/ranking/build.mjs` with the IST clock shims) — one call per module, because all of them in one
+request needs ~2.3 s of CPU against the ~2 s cap. It writes one row per scored step (`fms_rank_steps`); SQL
+adds them up (`fms_rank_rescore`). The build **fails** if a Control Center FMS is neither scored nor excused
+(Employee Exit is excused: 0 cases, and its Completed builder still lives in its store).
+
+**Verified 18-09-2026:** the dispatch register's days-late (6,828 steps) and Production's Cycle Time (1,405)
+agree exactly; every module's due dates agree browser (IST) vs server (UTC + shims); a step closed at 00:15
+IST the day after its due date is late; a re-run leaves frozen August byte-identical; the Purchase / Import /
+HR refactors change no existing answer (1,017 PO due dates, 162 candidates, the HR queue compared old vs new);
+RPC privacy tested as a non-admin in rolled-back transactions.
+
+**Counted for nobody (August):** 876 credit checks · 32 HR disqualifications (no actor recorded) · 17 HR
+Revise & Resubmit / Collect Resumes · test records 15 dispatch, 9 HR (MRF-2627-0019), 35 OCPI (`ZZ TEST` +
+QT-M0040/42/45/53) · 75 untimed (Inward, Log Book) · 1 Purchase rejection with no time.
+
+**Operating it**
+- ✅ **Nightly run armed** 18-09-2026 — `fms-ranking-nightly`, `22 19 * * *` (00:52 IST), calls `fms_rank_kick()`;
+  its answer lands in `net._http_response`. Proved end to end the same evening (pg_net 200, September
+  recomputed, August untouched). Stop it with `…130000_cc1_fms_ranking_nightly_rollback.sql`. A manual run:
+  POST `{run:true}` to `fms-ranking` with the `x-dispatch-secret` header (`{run:true,dryRun:true}` writes nothing).
+- Admins: exclusions and per-module switches in the Ranking panel's admin section; "Preview as" shows any
+  employee's exact view.
+- Migrations applied: `20261127120000/121000/122000/123000/130000_cc1_*` (each has a `_rollback.sql`). ⚠ The first
+  rollback deletes every ranking, frozen months included.
+- Follow-ups worth a task of their own: Dispatch should keep credit check's original clock start so it can
+  count; Employee Exit needs its Completed builder moved out of the store before it can be scored.
 
 ---
 
@@ -9362,6 +11555,1129 @@ twice.
       spelling groups and the 25 junk rows?
 
 ---
+
+### OD-13 · Let the CUSTOMER punch their own order — a separate, much smaller ordering app  🔴  `[ ]` LIVE — awaiting the first real customer
+*Raised 2026-09-04 · from the client · **High priority** · audited the same day against the code, the
+RLS policies, the live RPCs and the two named customers' real data · **nothing executed**, by
+instruction*
+
+#### ✅ P0 SHIPPED 04-09-2026 — the security gate is closed (frontend build green, migrations applied)
+
+Finding 3 said "three tables are readable by any signed-in user". Measured against the live
+database, that was one of **five** holes, and three of the others were worse:
+
+| | Found | Closed by |
+|---|---|---|
+| **207** tables with `USING (true)`, 2 of them readable by `anon` with **no login at all** | `20261109120000` |
+| **21 storage policies** across 5 buckets gated on the bucket name alone — read, overwrite **and DELETE** | `20261109130000` |
+| **~205** `SECURITY DEFINER` functions with no permission check; 46 guarded, 4 rewritten | `20261109140000` |
+| 1 table with **RLS switched off**, `anon` holding `TRUNCATE` | `20261109130000` |
+| The org-wide people directory listed, and answered to, anybody | `od13_p0c1` |
+
+**How it works.** One column, `profiles.is_external`, and one predicate, `public.is_staff(uid)`.
+Every existing row defaults to `false`, so every rule is provably a no-op for our own team —
+asserted inside the migration, which aborts if a single staff profile would lose access.
+
+**Three traps that would each have broken something, found before they did:**
+- **pg_cron runs six of the guarded functions as `postgres` with no JWT.** The obvious guard
+  (`not is_staff(...)`) would have silently killed every nightly job. It reads
+  `auth.uid() is not null and not is_staff(...)` instead.
+- **`revoke ... from anon` did nothing.** Functions carry `EXECUTE` to `PUBLIC` by default, so
+  anon inherited it — and since an anon call has no `sub`, `auth.uid()` is NULL and the new guard
+  *waved it through*. Only `revoke ... from public` actually closed it.
+- **46 functions are called inside RLS policies.** A `raise` there hard-errors the query instead
+  of returning false, so guarding them would have broken reads for the very accounts it restricts.
+  The sweep re-checks `pg_policies` per function rather than trusting a list.
+
+**Rollback rehearsed, not just written** (`20261109120001`): applied → rolled back → counts matched
+the baseline exactly (207 open, 13 anon-role) → re-applied. Pre-state is in
+`public._rls_baseline_20260904`; the set altered is in `public._od13_p0_touched`.
+
+##### Then we sat in the customer's chair, and found four more (`20261109150000`)
+
+The four migrations above each verified themselves **with their own predicate**. P0a's check was
+"0 policies still read `USING (true)`" — which proves the sweep swept what the sweep looked for,
+and nothing else. So a real customer-shaped login was put in the chair instead: a live `profiles`
+row temporarily shaped like one (`is_external`, role employee, no department, no HOD, no app grant,
+tasks and notifications removed) with `request.jwt.claims` and `role` set exactly as PostgREST sets
+them, inside a transaction forced to roll back. It enumerates **all 295 tables**, not a sample.
+
+| Still open after P0a–P0d | Why the sweep missed it |
+|---|---|
+| `app_lead_masters_global_select` | `auth.uid() IS NOT NULL`, not `true` — and granted to `{public}` |
+| `fms_travel_step_assignees_select` | the **twin** of the policy P0a narrowed *by hand* in dispatch |
+| `task_remark_mentions` INSERT `WITH CHECK (true)` | P0a only ever looked at `cmd = 'SELECT'` |
+| 7 × `*_master_requests_insert` | any signed-in account could file a master request in seven modules |
+
+🔴 The travel one is the sharpest. P0a narrowed `fms_dispatch_step_assignees_select` away from this
+exact predicate, in a section written specifically about it — and left the identical policy in Travel
+Desk standing, because it was never in the generated set and nobody looked for siblings. **One
+narrowing by hand is a narrowing of one table.**
+
+**Result, before → after:** 10 of 295 tables → **2 of 295** (`profiles` and `user_roles`, both
+own-row). Storage **0 of 3,124** objects. Every guarded RPC refuses. **Positive control on the same
+row as ordinary staff: 195 of 295 tables and 235 storage objects — unchanged.**
+
+⚠ **`is_external` says "not staff". It does not take a role away.** The first run of this sweep
+reported *219 of 295 open* and looked catastrophic. That was the test being wrong: it borrowed the
+founding **admin's** row, and every `*_write` policy is `FOR ALL` (so it covers SELECT) and
+permissive (so `is_admin` ORs straight past `is_staff`). Model the account, don't just flip the flag.
+
+🔴 **STILL OPEN, AND BIGGER THAN OD-13 — needs its own decision.** **611 other `SECURITY DEFINER`
+functions in `public` remain executable by `anon`** through the same default `PUBLIC` grant, and
+they bypass RLS by definition. That is the whole RPC surface, reachable with the anon key that
+ships in the frontend bundle, with no login. It is **not** a blocker for the customer logins (a
+customer is `authenticated`, and the functions that matter now refuse them), but it is a live hole
+today. Closing it means deciding which RPCs the signed-out landing page legitimately needs, which
+has to be tested rather than assumed.
+
+⚠ **Four** functions this entry earlier called unguarded are **not**: `pc_step_owner_contacts()`
+raises unless `pc_is_coordinator()`, `leads_dashboard_salespeople()` filters on
+`leads_dashboard_can_read()`, and `fms_ocpi_last_contact_for()` / `fms_hr_module_user_ids()` each
+carry `and public.is_staff(auth.uid())` inside their `WHERE`. A guard in a `WHERE` clause is
+invisible to a regex looking for one after `BEGIN` — that classifier has now produced four false
+positives, so read the body before believing it.
+
+#### ✅ P1–P5 SHIPPED 04-09-2026 — the app exists and a customer has driven it end to end
+
+**The Orange Order Desk is built and works.** A real external login placed **SO-2627-1132** through
+the screen, changed it, watched our team complete it at credit check, and was correctly refused once
+the window shut. Build green; 13 migrations applied. Full log in
+[OD-13-CHECKLIST.md](OD-13-CHECKLIST.md).
+
+| | What shipped |
+|---|---|
+| **P1** | Two tables (`customer_orgs` / `customer_logins`) + one Setup screen. **Adding a customer is now a ten-minute admin job** — proved by adding a third through the screen alone, no SQL and no deploy |
+| **P2** | The customer raises without joining step owners; the named recipient can see AND action the order |
+| **P3** | `intake_source`, the edit/cancel window, and four customer-facing write RPCs |
+| **P4** | Credit check completes the order: three pickers above the credit fields, and the item lines re-point to the chosen book |
+| **P5** | `apps/customer-orders/` — its own shell, four screens, and a single labels module |
+
+**The customer reads no table.** Their entire screen is three `SECURITY DEFINER` RPCs. That is what
+let P0 be a clean "staff only" sweep with no exceptions to reason about, and it is how "the customer
+never sees the ticked ledger list" is honoured — by never sending it.
+
+🔴 **Three defects were found only by sitting in the browser, and two were serious:**
+
+- **"Change this order" was destructive.** `my_orders` returned the item NAME and not the ID —
+  everything needed to *display* an order and nothing needed to *re-open* one. The edit form would
+  have opened with every quantity filled and every item blank, and `replace_customer_lines` deletes
+  before it inserts, so saving would have emptied the order rather than failing. ⚠ The tempting fix
+  is to match the line back by name; `scopeParties.ts` already says join by id, never by name, and
+  it would have worked until the first item renamed in Tally.
+- **The closed-window sentence contradicted the status eight lines above it** — *"we are checking it
+  now"* over *"this order is now being prepared"*. The window shuts on any credit decision, and a
+  HOLD is one, so the two disagreed on every held order and the second was simply false. Both the
+  screen and the server's two refusals now say "gone past the point where it can be changed", which
+  makes no claim about our state.
+- An item **on** an order can leave the customer's list; a picker handed a value with no option
+  renders blank, so the customer would have saved an order one line shorter without noticing.
+
+**Two audited risks stopped being assertions and became measurements.** The named recipient reads
+`see=true, act=true` on a real null-location order (Corrections 3 and 6 are two different bugs and
+both are closed). And on a credit hold with a deliberately internal reason, **all four notifications
+went to our person and none to the customer** — who can read 0 notification rows and 0 activity rows.
+
+#### ✅ P6–P7 SHIPPED 04-09-2026 · P7b 05-09-2026 — everything but the two real logins
+
+**P6** (`5245913`) — the password re-pin exemption, the Edge Function no longer copying a password
+into `user_metadata`, and the External signal in the five places that assumed every `profiles` row is
+staff. 🔴 It also uncovered a **PRE-EXISTING** bug with nothing to do with OD-13: an admin
+saving their own record **permanently demoted themselves**, because `setUserRole` deleted their
+`user_roles` row before inserting the new one, under a policy that reads that very table. Hit live;
+the row was restored by hand, nobody else was affected, and the write now inserts first.
+
+**P7** (`dca5321`) — the part-delivered case walked end to end on **SO-2627-1133** (100 KGS placed,
+40 approved, shipped, invoiced, gate-passed, delivered). At the moment it matters the obvious rule
+said *window OPEN* and ours said *window SHUT* — without the rounds clause the customer could have
+cancelled an order that had already shipped, straight into Sales Return. Staff flow proved unmoved:
+**297 tables / 0 errors** as an ordinary non-admin, five storage buckets reading fully, nine modules
+rendering with zero console errors.
+
+**P7b** (05-09) — the dry run for Bishen and Ganga, done on a **test** login so it needed nothing
+from the client. Their real ledgers produce working pickers: **62** items for Bishen (83 mapping rows
+across 3 books) and **63** for Ganga (79 across 2), none missing a unit — Correction 2's
+de-duplication working on live data. Their other ledgers carry zero mappings, so ticking them would
+add nothing.
+
+🔴 **And it found the last defect, which is Correction 3 one level down.** The orders policy's
+customer arm reads `fms_dispatch_customer_logins` and `_orgs` **inline**, and a policy is evaluated
+**as the caller** — so those reads meet their own RLS, and both tables are coordinator-only. Neither
+credit-check owner is a coordinator, so `fms_dispatch_can_see_order` said **true** while the actual
+`select` returned **nothing**: the first real customer order would have been announced to somebody who
+then could not open it. ⚠ No test through `can_see_order` could have found it — that function is
+`SECURITY DEFINER` and never meets the policy, which is why every P7 check passed. Fixed in
+`20261112120000` by moving the arm behind a `SECURITY DEFINER` helper: Jayshree **936 → 937**,
+non-recipients unchanged at **0 / 936**, the customer still sees only their own 2, line items /
+activity / rounds all reading their true counts, cost unchanged at **7 ms** with every arm an
+InitPlan, and the rollback rehearsed on live data rather than read.
+
+✅ **LIVE ON master 11-09-2026** — cherry-picked to `oo-master` together with OD-14 (`623fd13`,
+Vercel green), eight OD-13 commits in order. **Still to do: the real logins only** — add each
+customer in Setup → Customer Logins, where their items are now mapped in the same dialog (OD-14).
+⚠ The login email is a **username, not an address**: `order-to-dispatch` email is off,
+`work-snapshot` skips `is_external`, and `announce` drops the customer from internal notifications, so
+nothing is ever sent to it — the two firms' real addresses are not needed to create the accounts.
+What IS needed is a decision: **who is named on each customer**. 13 staff hold edit on
+`order-to-dispatch`; **2** own the credit-check step — Jayshree Patil (collection@) and LALIT SHARMA
+(delhioffice@). Naming both is what avoids Q8's single point of failure.
+
+✅ **ALL TEST DATA DELETED 11-09-2026**, on instruction, because the module is live. Four customer
+records (`ZZ TEST Kalahansh`, `ZZ DEMO Bhoomi Fashion` and two `Bishen Dyeing` seeds), their four
+logins and sign-in accounts, and their 12 orders. **There are now ZERO customers and no test
+login** — create one, marked `ZZ TEST`, before this is browser-tested again.
+
+---
+
+**The ask.** Today only our team raises a sales order. Open that to customers. Give **two customers**
+logins to start — **Bishen Dyeing** and **Ganga Fashions** — and show them **nothing but ordering**.
+Not "Order to Dispatch": an **ordering app**, in their language. Everything after the order is
+placed stays exactly as it is.
+
+**What the customer fills in, and what they never see:**
+
+| Field | Today | For the customer |
+|---|---|---|
+| Dispatch type | picked | **not shown** |
+| Order date | picked | **today, automatic** |
+| Billing company | picked | **not shown** — derived, ours to know |
+| Dispatch location (our site) | picked | **not shown** — derived |
+| Customer | picked | **themselves, automatic** |
+| Customer location | picked | **mapped in advance** |
+| Item type | picked | **kept** |
+| Items | picked | **kept** — only items mapped to them |
+| Remarks | typed | **kept** |
+
+Then: raise it, see it, edit it. **No "request a new item"** — if it is not on their list, there is
+no request path at all.
+
+
+#### ✅ Decided with the client, 04-09-2026
+
+**⚠ SUPERSEDED 10-09-2026 BY OD-14 — the customer picks the company.** Q1 sent this question to
+credit check because *guessing* it would be wrong about half the time, and that reasoning was sound.
+It does not apply to *asking the customer*: they know which Orange company invoices them, and the
+five Tally books read as three names through `mst_companies.alias` + `.location` (O-tec, Enterprise,
+Colorix). The order now arrives WITH a billing company, and the person writing it up may still change
+it — as may credit check, through **Reopen details**. Everything below is kept as the record of why it
+was decided the other way first. **Q11 is NOT superseded:** the customer sees our COMPANY names, which
+are on every invoice we send them, and never the ticked LEDGER list.
+
+**Q1 · The billing company — OPTION C. Locked.** The customer never sees it and never picks it. The
+order arrives with **no billing company**, and **our team fills it in at the credit check step**,
+which is where somebody already looks at every order.
+
+⚠ **This is a change to the order's shape, not just to a form.** Today
+`fms_dispatch_submit_order` **hard-refuses** a missing company — *"Choose the company that bills this
+order"* — and `fms_dispatch_orders.company_id` is asked for at intake precisely because the person
+raising it is the one who knows. Option C means:
+- a customer-raised order is **legitimately incomplete** on arrival, and every screen and query that
+  assumes a company must tolerate a null one until credit check;
+- `fms_dispatch_assert_customer_of_company` cannot run at intake — it has no company to check
+  against — so it moves to the moment the company is chosen;
+- **credit check becomes a two-part step** for these orders: pick the billing company, *then* decide
+  the credit. It is also the natural place for the dispatch location and dispatch type (Q2).
+
+✅ **It is the right call for the reason the data gives:** both named customers are split roughly
+50/50 across two books *right now*, so any rule that guesses would be wrong about half the time —
+and a wrong guess here is refused by the server, which would simply stop the customer ordering.
+
+**Q2 · Dispatch location and dispatch type — SAME AS Q1. Locked.** The customer sees neither. Both
+are filled by our team **at credit check**, alongside the billing company.
+
+⚠ **All three are server-enforced today**, so all three refusals move: `fms_dispatch_submit_order`
+demands `dispatch_type in ('local','transport')`, demands `company_id` against an active master, and
+demands `location_id` whenever the chosen company has any active site. A customer-raised order
+satisfies **none** of them at intake.
+
+✅ **So credit check is now the completion step, and that is the cleanest reading of it.** One person,
+one screen, four decisions in order: **billing company → dispatch location → dispatch type → credit
+verdict**. The first three are facts our team already knows and the customer never did.
+
+⚠ **Two things follow that are easy to miss:**
+- **The order needs a state before credit check that means *incomplete*, not *awaiting credit***.
+  Today `fms_dispatch_submit_order` stamps `awaiting_credit_check` / `credit_check` directly. A
+  customer order landing there looks identical to a staff order that is genuinely ready, and the
+  credit owner would open it to find three empty fields with nothing saying why.
+- **`fms_dispatch_announce` routes the new order to `fms_dispatch_step_owner_ids('credit_check')`,
+  and those owner-sets are PER LOCATION** — NOIDA 1, SURAT-HOJIWALA 1, SURAT-SACHIN 1. With no
+  location on the order there is **no location-specific owner to notify**, and the null-location
+  fallback row holds **0 people**. 🔴 **A customer order would therefore be announced to nobody and
+  sit unseen.** Whoever builds this must decide who gets told about an order that has no site yet.
+
+**Q3 · One login per CUSTOMER, not per person — OPTION A. Locked, for now.** Everyone at Bishen
+shares one account; everyone at Ganga shares another. Two accounts to issue.
+
+✅ **This makes Finding 2's read problem disappear for now.** `fms_dispatch_orders_select` already
+grants `raised_by = auth.uid()`, and with one shared login **every order that customer placed was
+raised by that same uid** — so "my orders" is already exactly "my company's orders", with no new
+predicate and no new column read at query time. **Do not build the per-customer predicate yet.**
+
+⚠ **But it is a "for now", and the thing that breaks it is the obvious next request.** The moment a
+second person at Bishen wants their own login, `raised_by` splits the history in two and each sees
+half. Build the identity column (Finding 4) **anyway** — it is what makes the switch to per-person
+logins a settings change rather than a rebuild — but the *query* can lean on `raised_by` until then.
+
+⚠ **A shared login has three costs, and they should be accepted knowingly rather than discovered:**
+- **No accountability.** `raised_by` and `requester_name` will read *"Bishen Dyeing"* on every order,
+  so who at Bishen placed it is unrecorded and unrecoverable. If that ever matters commercially,
+  it matters retrospectively, and the data will not be there.
+- **The password is shared, so it does not really get revoked.** ⚠ In this portal a user's
+  **mobile number doubles as their initial login password** (`CLAUDE.md`, `adminUserApi.ts`) — that
+  convention is fine for staff and is **not** fine for an external shared account. **These two
+  accounts need a real password set deliberately**, not a phone number.
+- **Password reset and "who do I call" both point at a company, not a person.** Decide which of our
+  people owns each customer account before it is issued.
+
+⚠ **And it settles "which Bishen?" more neatly than expected.** Because Q1 defers the billing company
+to credit check, the login does **not** need to resolve to one of the five Bishen party rows at order
+time — it maps to the customer, and **our team picks the book afterwards**. The remaining question is
+narrower: does the login also cover the `-OLD MACHINE` and `(MACHINE)` ledgers, or only the main one?
+
+**Q4 · The customer SEES RATES. Locked — and it is the largest piece of work in this task.**
+The client's reason: *"we have finalized the rates for each customer, so they should see these
+prices."*
+
+🔴 **CORRECTION, AND IT CHANGES THE SIZE OF THIS.** An earlier draft of this entry said *"the order
+lines carry rates, and the order register and detail screens print them."* **That was wrong and was
+not checked before it was written.** Read off `information_schema` on 04-09-2026:
+
+| Table | Columns | Rate? |
+|---|---|---|
+| `fms_dispatch_order_items` | `id · order_id · line_no · item_id · quantity · line_remark · dispatched_qty · ship_qty · lot_no · unit · bill_qty` | **none** |
+| `fms_dispatch_customer_items` | `id · customer_id · item_id · active · sort_order · created_by · created_at · updated_at` | **none** |
+
+**A sweep of every `mst_*` and `fms_dispatch_*` table for a `rate` / `price` / `amount` / `value`
+column returns nothing but `fms_dispatch_config.value` and `fms_dispatch_counters.last_value`,
+neither of which is money.**
+
+✅ **So Order to Dispatch is, by design, a QUANTITY document.** The price first exists when the sales
+bill is raised in Tally, two steps later. That is a coherent design, not an oversight — the module
+tracks what moves, and Tally prices it.
+
+🔴 **Which means showing a rate to the customer is not a display toggle. It is a new capability:**
+1. **The finalised per-customer rates have to live somewhere.** They exist commercially — the client
+   says so — but they do **not** exist in this system. Either a new per-customer rate master is
+   built and maintained by hand, or they are read from Tally's own price lists / price levels.
+   ⚠ **Whether the ConnectWave mirror exposes a price list at all is UNKNOWN and must be checked** —
+   the same gap OD-12 hit with batches, and it could not be checked here because the ConnectWave MCP
+   needed an authorisation this session did not have.
+2. **A rate the customer can see is a rate we are quoting them.** A stale or wrong number on that
+   screen is a commercial statement, not a cosmetic bug. It needs an owner, a change trail, and a
+   rule for what happens when it is missing for an item.
+3. **It has to survive the order.** If the customer sees ₹X on the order and the Tally invoice says
+   ₹Y, that is a dispute. Decide whether the rate is **frozen onto the order line** at raise time
+   (recommended — it is what the customer agreed to) or re-read live each time the order is opened.
+4. **Then it must be reconciled against the sales bill**, or nobody finds out they diverged.
+
+⚠ **This is comfortably bigger than the ordering screen itself.** It should be **phased separately**
+and, if it is not ready, the first release can ship **quantities only** — the customer still places
+orders, and the price conversation stays where it is today. **That is a decision for the client, and
+it is worth putting to them plainly rather than letting the release slip to wait for a rate master.**
+
+**Q5 · Release 1 ships WITHOUT rates — OPTION B. Locked.** Bishen and Ganga get logins and start
+ordering on **item · quantity · remarks**. No price is shown, because none exists to show.
+
+✅ **Nothing is hidden from the customer that our own team can see.** The intake grid today is
+**Item · Qty · Unit · Remark** and the word *"Rate"* appears **nowhere in the Order to Dispatch app**
+— not the form, not the order detail, not the register export, not the database. So release 1 gives
+the customer the same document our staff raise, minus the fields Q1/Q2 moved to credit check. There
+is no second-class view to explain.
+
+**Rates become their own task when it is wanted** (Q4 records what it costs). It is not a follow-up
+detail on this entry — it is a rate master, a freeze-onto-the-order rule, and a reconciliation
+against the Tally bill. ⚠ **Do not let it be smuggled in as "just add a column"** at the end of the
+customer-portal build.
+
+**Q6 · The customer sees SIMPLE STAGES in plain words — OPTION B. Locked.** Never an internal step
+name, and never *"credit check"*.
+
+**The six internal steps ([steps.ts:43-48](frontend/src/apps/order-to-dispatch/lib/steps.ts#L43)) and
+what the customer is shown instead** — a proposal to confirm, not a decision taken:
+
+| Internal step | Internal title | Customer sees |
+|---|---|---|
+| `sales_order` | Sales Order | **Placed** |
+| `credit_check` | Confirm Credit Limit | **Placed** — deliberately indistinguishable |
+| `material_status` | Check Material Status | **Being prepared** |
+| `sales_bill` | Generate Sales Bill | **Being prepared** |
+| `gate_out` | Gate Outward Entry | **Dispatched** |
+| `dispatch_confirm` | Confirmation on Dispatch | **Delivered** |
+
+⚠ **Collapsing `credit_check` into "Placed" is the whole point of the mapping, and it has a
+consequence: an order parked on a credit hold looks identical to one moving normally.** That is
+intended — a customer must not learn their credit is the hold-up from a status chip — but it means
+**somebody has to tell them by phone when an order is genuinely stuck.** A silent "Placed" for two
+weeks is worse than a call. Decide who owns that.
+
+⚠ **Three states are NOT steps and still need customer wording**, or they will leak an internal one:
+- **On hold** — `fms_dispatch_hold_order` parks an order outside the step flow.
+- **Cancelled** — `fms_dispatch_cancel_order`.
+- **Partly dispatched** — an order ships in **rounds** and comes back for the balance. The customer
+  will see "Dispatched" while half the order is still here unless the wording covers it. This is the
+  most likely one to be missed, because it is the normal case rather than an edge.
+
+⚠ **The mapping must live in ONE place** — a single lookup in the customer app — not spread across
+the screens. Add a step later and a scattered mapping shows the internal name at exactly the moment
+nobody is looking.
+
+**⚠ SHARPENED 10-09-2026 BY OD-14.** Q7 said the window shuts "when our team touches the order", and
+warned that the moment had to be driven by the real step rather than the status word. There is now a
+step that names it exactly: an order sits at `awaiting_order_completion` until somebody opens it under
+**New Customer Orders**, and `fms_dispatch_customer_window_open` admits that status alongside
+`awaiting_credit_check`. The practical effect is that the window is a little longer and a great deal
+easier to explain.
+
+**Q7 · The customer may edit only until our team touches the order — OPTION A. Locked.** While the
+order still reads **Placed** to them it is theirs to change. The moment credit check is actioned it
+locks, and a change becomes a phone call.
+
+⚠ **"Until our team touches it" is not the same as "while it says Placed", and the difference is the
+bug waiting to happen.** Q6 deliberately maps **both** `sales_order` and `credit_check` to *Placed*,
+so the customer's own status chip **cannot** tell them when the window shut. The lock must be driven
+by the **real** step and stated on the screen in words — *"This order is now being prepared and can
+no longer be changed"* — not inferred from the label. Otherwise the customer sees *Placed*, presses
+Edit, and is refused with no explanation.
+
+⚠ **The window is genuinely short, and that is the trade accepted here.** A customer order lands at
+`awaiting_credit_check` the instant it is submitted, and under **Q1/Q2** credit check is now also
+where our team fills in the billing company, dispatch location and dispatch type — so it is a step
+somebody attends to quickly. In practice the customer may have minutes, not hours. **Worth telling
+Bishen and Ganga that plainly when the logins are handed over**, rather than letting them discover it.
+
+
+**Q8 · Who is told when a customer places an order — a NAMED person, SET IN SETUP, per customer.
+Locked.** *"When we set up this configuration of the customer, we can set who will get this
+notification in the settings. Option B, but we will have to set this up. We don't have to hardcode
+this."*
+
+**Why it is needed at all.** `fms_dispatch_submit_order` announces a new order to
+`fms_dispatch_step_owner_ids('credit_check')`, and those owner-sets are **per location** — NOIDA 1,
+SURAT-HOJIWALA 1, SURAT-SACHIN 1, with **0** in the null-location fallback row. Under **Q1/Q2** a
+customer order carries **no location**, so 🔴 **it would be announced to nobody and sit unseen.**
+
+**The shape:** a **per-customer recipient**, chosen in **Setup** beside the rest of that customer's
+configuration — the same screen that maps the login to the customer, the customer location and the
+item list. ⚠ **A person, picked from a list. Never a constant in the code**, and never inferred from
+the location, because there is no location yet.
+
+⚠ **Three things this must get right, all of which are how a routing setting normally fails:**
+- **It cannot be optional.** An unset recipient reproduces exactly the bug it exists to fix — silence.
+  Either refuse to issue the customer's login until it is set, or fall back to **every** credit-check
+  owner across all three sites and say on screen that it is doing so. **Do not fall back to nobody.**
+- **The named person must still be able to SEE the order.** `fms_dispatch_announce` filters its
+  recipient list through `fms_dispatch_can_see_order(uid, location, raiser)` before writing a single
+  notification — so naming somebody who is not a credit-check owner, a coordinator or an admin sends
+  them **nothing**, silently, with no error anywhere. Validate the choice at the moment it is saved,
+  not at the moment an order arrives.
+- **One person is a single point of failure.** Leave, illness, or a resignation and customer orders
+  stop being seen. Allow more than one name per customer, even if only one is used today.
+
+⚠ **This is the second per-customer setting to appear** (after the login mapping itself), which
+confirms the shape: **customer setup is its own Setup screen**, not a column bolted onto an existing
+master.
+
+
+**Q9 · Customer logins get a REAL password, not their mobile number — OPTION A. Locked.**
+
+**The convention it breaks with, deliberately.** In this portal a user's **mobile number IS their
+initial login password** — set on create and **re-pinned on save**
+([store.tsx:343](frontend/src/core/platform/store.tsx#L343): `if (patch.phone) await
+setUserPasswordViaFunction(id, patch.phone)`). For staff that is a convenience. For an account
+outside the company it means **anyone who knows Bishen's phone number can sign in as Bishen**.
+
+✅ **A real password is already possible** — the `set-password` action on the `admin-users` Edge
+Function takes any string of **6 characters or more** and does not care that it matches a phone
+number. **No new plumbing is needed to SET one.**
+
+🔴 **The problem is that it does not STAY set.** The re-pin at `store.tsx:343` fires on any save
+carrying a phone value, so an admin who later opens that customer's record to change a name, a
+department, anything — and saves — **silently resets the password back to the mobile number**. Nobody
+is told. The customer's login keeps working, and the account quietly becomes guessable again.
+
+⚠ **So Option A is two pieces of work, not one**, and the second is the one that will be forgotten:
+1. Set a real password on each of the two accounts.
+2. **Make the account exempt from the re-pin.** The external-account flag from Finding 4 is the
+   natural switch: if the account is external, skip the phone→password re-pin entirely.
+   ⚠ Also drop `user_metadata.phone = password`, which the Edge Function writes alongside
+   ([admin-users/index.ts:94](supabase/functions/admin-users/index.ts#L94)) and which would otherwise
+   record the new password in the user's metadata.
+
+⚠ **Two smaller things worth settling when the logins are handed over:**
+- **How the password reaches Bishen and Ganga.** Not in the same email as the link, and not in the
+  work list. The client shares it directly.
+- **Can they change it themselves?** `/account` exists in the portal shell — but **Q-shell** (see
+  Finding 5) asks whether a customer should see that shell at all. If they get no account screen,
+  every password change becomes a call to us.
+
+**Q10 · The customer MAY cancel their own order — same window as editing (while it still reads
+*Placed*). Locked.**
+
+✅ **The server already allows it, and needs no change to permit it.** `fms_dispatch_cancel_order`
+reads:
+
+```
+if not (fms_dispatch_is_coordinator(v_uid) or v_raiser = v_uid) then
+  raise exception 'Only the person who raised this order, a coordinator or an admin can cancel it';
+```
+
+**The raiser may cancel** — deliberately, and the comment says so. With **Q3**'s one-login-per-customer,
+the customer *is* the raiser on every one of their orders. So this is a screen and a rule, not a
+permission fight.
+
+🔴 **But the server's window is FAR wider than the one we just agreed, and that gap is the whole
+risk.** The RPC allows a cancel right up to **gate-out** (`go_at`) — so as written a customer could
+cancel an order **after the sales bill has been raised**, which drops it into the **Sales Return**
+step: real accounting work, an invoice to unwind, our people picking up the pieces. It refuses only
+once the vehicle has left.
+
+⚠ **Hiding the button is NOT a limit.** The customer holds a real session; the RPC is a callable
+endpoint. A UI-only narrowing is a suggestion, not a rule — the same lesson as Finding 3. **The
+window has to be enforced on the server**, e.g. an external account may cancel only while
+`current_step = 'credit_check'` and the step is unactioned. Client-side too, for the message.
+
+⚠ **A cancel reason is required by the RPC.** Decide what a customer types, or whether the app sends
+a fixed one (*"Cancelled by customer"*). ⚠ It lands in the activity trail and is read by our team —
+so a free-text box from a customer is a message to staff, not just a field.
+
+⚠ **And somebody must be told.** Same problem as **Q8**: a cancel by a customer with no location on
+the order announces to the same empty owner-set. The per-customer recipient from Q8 covers it —
+**use the same setting, do not invent a second one.**
+
+**⚠ STILL STANDS AFTER OD-14, with one line to read carefully.** The customer never sees the ticked
+LEDGER list and still reads no table — their whole screen is RPCs, which is how this is honoured. What
+OD-14 added is a picker of our COMPANIES, which is a different thing: "O-tec — Surat" is on their
+invoices already. The tick list remains a limit on US, and it is what the server uses to resolve which
+ledger a chosen company bills from.
+
+**Q11 · One login per customer, mapped to a TICK LIST of ledgers in Setup. Locked.**
+
+**The shape.** The customer's Setup record carries a **list** of `mst_parties` ids — the ledgers this
+login may be billed under — not one. For Bishen that is the **five** rows named
+`BISHEN DYEING PRINTING & WEAVING MILLS`, one in each company book; `(MACHINE)` and `-OLD MACHINE`
+are **left unticked**, being machine sales rather than consumable buying.
+
+⚠ **The customer NEVER picks a ledger, and never sees the list.** That was the confusion worth
+settling: five ledgers are not five choices, they are **one customer sitting in five of our books**,
+all carrying the identical name. The customer sees *"Bishen Dyeing"* and one order form. **Our team
+picks the billing company at credit check (Q1), and the ledger follows from it.**
+
+✅ **So the tick list is a limit on US, not a question for them.** It is what makes the credit-check
+choice safe: it says which books this customer may legitimately be billed from, so
+`fms_dispatch_assert_customer_of_company` can only ever be satisfied, never surprised.
+
+⚠ **Why NOT one login per ledger** — the option first proposed and set aside: Bishen's main name alone
+exists in **five** books, so ledger-per-login means five accounts, five passwords and five order
+histories for one customer, and "my orders" fragments across them. One login with a tick list gives
+the same control and none of that.
+
+🔴 **The consequence that needs a decision: the ITEM LIST is keyed to ONE ledger, not to the tick
+list.** `fms_dispatch_customer_items.customer_id` is a single party id, and **all 36 of Bishen's
+mapped items and all 28 of Ganga's sit under exactly one book** — ORANGE O TEC ENTERPRISES — while
+their orders split roughly 50/50 across two. So:
+- read the item list from the ticked ledger that happens to hold the mapping and the customer sees
+  their items whichever book bills them — **but which ledger holds it is an accident today**; or
+- **union the mappings across every ticked ledger** — recommended, since it is the same company
+  buying the same ink, and it survives somebody mapping an item under the other book later.
+⚠ Either way, **do not read the mapping off the billing company**, because at order time there is no
+billing company yet (Q1). The item list must come from the *customer*, not the book.
+
+**Q12 · The customer NEVER sees the portal shell — OPTION A. Locked.** Sign in and land **straight on
+the ordering screen**. No launcher, no workspace, no Orange One chrome, no card to click through.
+
+**What that touches** — the shell is not one component, it is the whole signed-in frame:
+- **`App.tsx` routing.** `/home` is the landing today. An external account must be redirected to the
+  ordering app's `basePath` at sign-in, and **bounced back if it ever reaches `/home`** — not merely
+  shown an empty launcher. ⚠ `visibleApps` would already render exactly one card
+  ([homeNav.tsx:55](frontend/src/core/workspace/homeNav.tsx#L55)), so the launcher is *harmless*, and
+  that is precisely why it would get left in.
+- **`AppShell` / `Topbar` / `UserMenu`** (`core/shared/components/layout/`) — shared across every app
+  and reused by instruction. The customer app needs its **own minimal frame**: their company name,
+  a sign-out, and nothing else. ⚠ Reusing the portal shell here is the default and the wrong default.
+- **`/account`.** A real route today, outside any app. Decide: either give the customer a **cut-down**
+  account page — **password change and nothing else** — or block the route and accept that every
+  password reset is a phone call to us. ⚠ Q9 already flagged this; it is now the deciding factor.
+- **The bell and notifications.** Built for staff and carrying staff wording. An external account
+  should get **nothing** until somebody designs what a customer is told.
+
+⚠ **The name on the page matters and is part of the deliverable.** The client asked for wording twice.
+**Nowhere may it read "Order to Dispatch", "FMS", "Orange One Hub", or any internal step name.**
+It is *their* ordering app, in their words.
+
+⚠ **A separate `AppManifest` is what makes all of this simple** rather than a pile of conditionals —
+its own `basePath`, its own name, its own shell. **The one catch stays as Finding 5 records it:**
+`fms_dispatch_can_raise` hard-codes `module_can_edit(uid,'order-to-dispatch')`, so that function must
+learn the new app id, or the customer ends up holding a hidden grant to a module they must never see.
+---
+
+#### 🔴 FINDING 1 — "the billing company comes automatically from the customer" cannot work as stated
+
+This is the biggest thing in the task, and it is not a detail.
+
+**A customer is not one row.** `mst_parties` holds **one row per ledger per Tally book**.
+**BISHEN DYEING PRINTING & WEAVING MILLS exists as five separate party rows across five companies**
+(plus two machine variants); **GANGA FASHION PVT LTD as two** (plus one). So "the company of the
+logged-in customer" has **five possible answers** for Bishen.
+
+**And both customers are actively billed under TWO companies right now** — measured on their real
+orders, 11-08-2026 to 03-09-2026:
+
+| Customer | ORANGE O TEC ENTERPRISES PVT LTD | ORANGE O TEC PRIVATE LIMITED | |
+|---|---:|---:|---|
+| **BISHEN DYEING** | **6 orders** | **5 orders** | ~50/50 |
+| **GANGA FASHION** | **7 orders** | **6 orders** | ~50/50 |
+
+Somebody internal is choosing the billing company **per order**, and that choice is real and current.
+A single derived value would silently send roughly **half** of these orders to the wrong book — and
+`fms_dispatch_submit_order` then calls `fms_dispatch_assert_customer_of_company`, which refuses the
+pair outright, so the customer would simply be unable to order at all half the time.
+
+⚠ **The same applies to the dispatch location.** The RPC **requires** `location_id` whenever the
+company has any active site: *"Choose the location this order dispatches from"*. It is **our** site,
+not theirs, and today it is chosen by the person raising the order.
+
+⚠ **And to dispatch type.** The RPC hard-refuses anything but `local` / `transport`. A customer order
+must carry one, so something has to decide it.
+
+**So three fields the client wants "automatic" are, today, three real decisions.** They are not
+lookups. Whoever builds this needs a stated rule for each — and the honest options are:
+
+- **Ask the customer anyway**, in their own words (*"deliver to"*, *"how should this come?"*).
+- **Pre-map it** — a per-customer default set in Setup, editable by us. ⚠ Then somebody internal must
+  correct half of Bishen's orders after the fact.
+- **Let our team fill it at credit check**, so the customer order arrives deliberately incomplete and
+  is completed by us. **Recommended** — it matches what actually happens today, and it is the only
+  option that does not guess.
+
+---
+
+#### 🔴 FINDING 2 — the only way to let a customer raise an order also lets them read every order at that site
+
+`fms_dispatch_submit_order` calls `fms_dispatch_can_raise(uid)`, which is
+`module_can_edit(uid,'order-to-dispatch') AND fms_dispatch_can_raise__ungated(uid)` — and the second
+half means **named in `fms_dispatch_step_owners` for `sales_order`** (owners ARE configured today:
+NOIDA 1, SURAT-HOJIWALA 3, SURAT-SACHIN 3, so the "unconfigured, therefore open" arm does not apply).
+
+**But `fms_dispatch_step_owners` is also a READ grant.** From `fms_dispatch_orders_select`:
+
+```
+OR EXISTS (select 1 from fms_dispatch_step_owners o
+            where auth.uid() = ANY (o.employee_ids)
+              and (o.location_id is null or o.location_id = fms_dispatch_orders.location_id))
+```
+
+🔴 **So adding a customer to `sales_order` owners — the only way to let them raise anything — would
+let them read EVERY order at that location.** Bishen would see Ganga's orders, and everybody else's:
+quantities, rates, PO numbers, remarks. **This is the single hardest problem in the task** and it
+must be solved before a login is issued, not after.
+
+✅ **The good news:** an `edit` grant on its own does **not** open the module. `fms_dispatch_orders_select`
+grants blanket read to `module_is_viewer` — level **`view` exactly**, not `edit`. So a customer at
+`edit` who owns no step sees only `raised_by = auth.uid()`. The read path is nearly right already;
+it is the **raise** path that drags the leak in.
+
+⚠ **`raised_by = auth.uid()` is PER-LOGIN, not per-customer.** Two people at Bishen would not see
+each other's orders — and the client asked that the customer can "view the order that was raised".
+A new predicate is needed: *this order's customer is my customer*.
+
+---
+
+#### 🔴 FINDING 3 — three tables are readable by ANY signed-in user, and today that is fine only because everyone is staff
+
+Read straight off `pg_policies`:
+
+| Table | SELECT policy | What a customer login would see |
+|---|---|---|
+| `mst_parties` | **`true`** | **all 7,913 party rows** — every customer's name, GSTIN, credit limit, phone, email, address |
+| `mst_items` | **`true`** | every item in the group |
+| `fms_dispatch_customer_items` | **`true`** | **the entire who-buys-what map**, for every customer |
+
+🔴 **That third one is competitive intelligence about our whole book**, and it is one `fetch` away in
+DevTools. The app filtering the picker down to "only this customer's items" is **presentation**, not
+protection — the same warning `scope.tsx` already carries for receivables: *"UI-level scoping only;
+the raw data still reaches the browser."* With staff-only logins that is a tolerable position. **The
+day a customer signs in, it is a disclosure.**
+
+**This is the gate on the whole task.** Nothing else here is dangerous; this is.
+
+---
+
+#### FINDING 4 — nothing today says "this login IS this customer"
+
+`profiles` carries no customer, party, ledger or external-user column — checked. And the role
+vocabulary is `admin | hod | sub_hod | employee`
+([types.ts:12](frontend/src/core/platform/types.ts#L12)): **there is no "external" or "customer"
+role.** An `employee` who is really a customer would fall into every place that assumes staff —
+@mention pickers, the org directory, `list_org_people()`, Master Report's user pages, HR screens.
+
+**So the first thing to build is an identity, and it needs to answer two questions, not one:**
+1. **Which customer is this?** — and, given Finding 1, that is a set of party rows, not one row.
+2. **Is this person staff at all?** — because a dozen screens quietly assume yes.
+
+Additive, per the repo's Supabase rule: a new nullable column (e.g. `profiles.customer_party_ids uuid[]`)
+plus a flag that marks the account external. ⚠ **Model it on `receivables_salespersons`, and read
+[scopeParties.ts](frontend/src/apps/receivables-hub/lib/scopeParties.ts) before writing a line** —
+it documents three traps already paid for once: an empty scope must mean *nothing*, never
+*everything*; the scope must **fail closed while loading**; and the join is by id, never by name.
+
+---
+
+#### FINDING 5 — the launcher is already safe; the shell around it is not
+
+`visibleApps` filters `status === "live" && hasModule(a.id)`
+([homeNav.tsx:55](frontend/src/core/workspace/homeNav.tsx#L55)), so a customer granted **one** app
+sees **one** card. ✅ Nothing extra leaks onto the launcher.
+
+⚠ But they still land on `/home` inside the Orange One portal shell — the topbar, the user menu, the
+"workspace" framing, `/account`. **That is our internal product, shown to a customer.** Decide
+deliberately whether they get the shell at all, or land straight on the ordering screen.
+
+⚠ **A separate app is the right shape, and it has one specific catch.** Giving the customer a new
+manifest (say `customer-orders`, its own `basePath`, its own name and wording) and granting **only**
+that keeps them out of `/order-to-dispatch` entirely via `RequireModule`. **But
+`fms_dispatch_can_raise` hard-codes `module_can_edit(uid,'order-to-dispatch')`** — so either that
+function learns the second app id, or the customer must hold an `order-to-dispatch` grant they are
+never shown. **The first is much safer**; the second is a grant nobody can see and everybody forgets.
+
+---
+
+#### FINDING 6 — emails are OFF today, and that is load-bearing
+
+`email_module_settings` says `order-to-dispatch` → **`enabled = false`**. So `fms_dispatch_announce`
+writes bell notifications and sends no mail.
+
+⚠ **The moment someone switches that on, a customer who is a `sales_order` step owner starts
+receiving our internal step emails** — credit-check chasers, gate-pass notices, whatever the payload
+carries. `fms_dispatch_announce` narrows recipients with `fms_dispatch_can_see_order`, which is the
+same predicate as the leak in Finding 2. **Whoever flips that switch must know a customer is on the
+list.** Related: [fms-module-email-is-live] — other modules are already sending.
+
+---
+
+#### What the screen itself needs
+
+- [ ] **A new app module** — folder, `AppManifest`, registered in `apps/registry.tsx`. Wording is
+      part of the deliverable, not decoration: **no "dispatch", no "FMS", no internal step names**.
+      Something like **"Place an Order"** / **"My Orders"**, and an app name a customer would say out
+      loud. ⚠ The client asked for this explicitly — do not ship "Order to Dispatch" with fields hidden.
+- [ ] **The order screen: five controls, not twelve.** Item type · items · quantity · remarks ·
+      submit. Their own name and location shown as **text, not a picker**, so they can see it is
+      right without being able to change it.
+- [ ] **The item picker offers only their mapped items.** Bishen has **36** mapped, Ganga **28**
+      (`fms_dispatch_customer_items`, measured 04-09). ⚠ Both mappings sit under **one** company —
+      ORANGE O TEC ENTERPRISES — while their orders split across two, so the mapping and the billing
+      book do not line up today. Worth resolving with Finding 1, not separately.
+- [ ] **No master-request path at all.** ✅ Half of this is already true — **OD-2** removed customer
+      and item from `REQUESTABLE_DISPATCH_MASTER_TYPES`. What remains is hiding
+      `MapCustomerItemModal` (which writes a mapping immediately, with no approval) and the Master
+      Requests nav item.
+- [ ] **My Orders** — their own orders, plain status wording (Q6). ✅ **No new predicate needed for
+      release 1:** with one shared login per customer (Q3) every order they placed carries the same
+      `raised_by`, which `fms_dispatch_orders_select` already grants. ⚠ The day a second person at
+      Bishen gets their own login, that breaks — see Q3.
+- [x] **Edit — SETTLED (Q7):** editable until credit check is actioned, then read-only with a note.
+      ⚠ Drive the lock off the REAL step, not the customer-facing label — Q6 maps two steps to
+      *Placed*, so the label cannot tell them the window shut.
+
+#### Phase plan
+
+- [ ] **P0 · Close Finding 3 first.** Tighten the three `true` policies before any customer login
+      exists. This is the only item that is unsafe to defer, and it is independent of everything else.
+- [ ] **P1 · The identity.** The nullable columns, the Admin user-form controls, and the
+      external-account flag.
+- [x] **P2 · SETTLED 04-09-2026 (Q1, Q2).** All three — billing company, dispatch location, dispatch
+      type — are filled by our team **at credit check**. The customer sees none of them. Credit check
+      becomes the completion step: company → location → type → credit verdict.
+- [ ] **P3 · Solve the raise-vs-read collision** (Finding 2) — a customer must be able to raise
+      without joining `sales_order` step owners. Likely a dedicated predicate in
+      `fms_dispatch_can_raise__ungated` plus a customer arm on `fms_dispatch_orders_select`.
+- [ ] **P4 · The app** — manifest, wording, the five-control screen, My Orders, edit.
+- [ ] **P5 · Walk it as a customer** on a real login. ⚠ **Sign in as the customer account itself** and
+      open DevTools: the test is not "does the screen look right", it is **"what can this account
+      read"**. Check `mst_parties`, `mst_items` and `fms_dispatch_customer_items` by hand.
+- [ ] **P6 · Then issue the two logins.**
+
+#### To settle with the client
+
+- [x] ~~**Billing company, dispatch location, dispatch type**~~ **ANSWERED 04-09 — Q1 and Q2.**
+- [x] ~~**Which Bishen?**~~ **ANSWERED 04-09** — one login, a tick list of ledgers in Setup, machine
+      ledgers left out. See Q11.
+- [x] ~~**One login per customer, or one per person?**~~ **ANSWERED 04-09 — Q3: one per customer.**
+- [x] ~~**Does the customer see prices?**~~ **ANSWERED 04-09: yes** — see Q4 above. ⚠ The reasoning
+      first written here (*"the order lines carry rates"*) was **wrong**: there is no rate column
+      anywhere in this module. Showing one is a new capability, not a toggle.
+- [x] ~~**What does the customer see after they order?**~~ **ANSWERED 04-09: simple stages** — see Q6.
+- [x] ~~**Can they cancel?**~~ **ANSWERED 04-09: yes**, same window as editing — see Q10. ⚠ The
+      earlier note here called cancelling *"staff-only"*; it is not — the RPC already lets the
+      **raiser** cancel. The work is NARROWING its window, on the server, not opening it.
+
+### OD-14 · The customer picks the company, and a customer order gets its own queue  🔴  `[x]` DONE
+*Raised 2026-09-10 · from the client, while reviewing OD-13's Add-a-customer form · **DONE AND LIVE.**
+Three migrations applied to live 10-09-2026, before the frontend. Frontend deployed to orangeonehub.com
+with OD-13 — `623fd13` on 11-09-2026, Vercel green. Test data deleted 11-09. The submit fallback was
+removed 14-09 (`20261123120000_od14_submit_refuses_missing_company.sql`).*
+
+#### What shipped
+
+| | |
+|---|---|
+| Items in Setup | Add/Edit customer maps items directly — `components/CustomerOrgItemsSection.tsx`, RPC `fms_dispatch_set_customer_org_items`. The admin never picks a book; the item's own company says which ledger. Removal is soft and sweeps every ticked ledger. Book chips filter the list, multi-select |
+| Main ledger | Removed from the form. The column survives, unread |
+| Customer picks the company | "Who are you buying from?" on the Order Desk, as `alias · location`. The item list narrows to that book, matched by NAME, and `fms_dispatch_replace_customer_lines` validates by name too, so picker and validator agree |
+| New Customer Orders | Status `awaiting_order_completion`, its own queue beside the chain like Sales Return. Completed on the ordinary sales-order form at `orders/:id/complete` via `fms_dispatch_complete_customer_order`. `CustomerIntakePanel` deleted; credit check can still **Reopen details** until its verdict |
+| Who sees it | The customer's named recipients (Q8), admins, coordinators — no permission change |
+| Also fixed | Order Desk tabs were relative, so My orders led to "cannot find that order" or back to Place an order — now absolute. Focus moves to Quantity after picking an item; Enter adds the next line; phone layout numbers each line |
+
+Migrations: `20261117120000_od14_org_items_from_setup` · `…120100_od14_customer_picks_the_book` ·
+`…120200_od14_new_customer_order_step`, each with a rollback. Decisions Q1 (superseded), Q7
+(sharpened) and Q11 (still stands) are annotated under OD-13.
+
+**Nothing left in code.** The first real customer belongs to OD-13.
+
+### OD-15 · One shipment, several lots — the LOT box holds a split it cannot record  🟢  `[x]` DONE
+*Raised 2026-09-11 · from the client · **DONE AND LIVE.** Migration
+`20261122120000_od15_one_shipment_several_lots.sql` applied to live 11-09-2026, **before** the
+frontend. Frontend deployed to orangeonehub.com — `80c3a5e` on 12-09-2026 and the dropdown follow-up
+`0744e8d` on 14-09-2026, Vercel green on both. The rollback was **rehearsed on live data** — applied,
+tested, rolled back byte-identically, re-applied. Closed with the user 14-09-2026.*
+
+#### What shipped
+
+All eight build steps below are done. Two child tables, one house formatter, three RPCs rewritten,
+one new shared field used by both writers, and no reader changed.
+
+| | |
+|---|---|
+| Tables | `fms_dispatch_order_item_lots` (in-flight) · `fms_dispatch_round_item_lots` (frozen at archive) |
+| Summary | `fms_dispatch_lot_text(lots, qty)` — ONE lot covering the line gives the bare number, so 4,354 single-lot rows and the 26 serial rows stay byte-identical |
+| Normaliser | `fms_dispatch_lots_normalise(lots)` — trim, drop blanks, de-dupe, `seq` from 1; a non-numeric quantity becomes NULL rather than an error |
+| The cell | `components/LotAllocField.tsx` — one multi-select, a quantity row per lot past the first, used by Check Material Status **and** the correction screen |
+| Shared | `lib/lotPicker.ts` — the ConnectWave fetch and the book-naming MOVED out of ShipLinesGrid, not copied |
+| Readers changed | **None.** `lot_no` still carries the answer, now with the quantities in it |
+
+#### Follow-up, 14-09-2026 — the dropdown shows how much each lot holds
+
+Asked for after the first look: the lot list read as bare numbers, so a store keeper had to pick a
+lot before learning whether it could cover the line. Each dropdown row now carries Tally's balance —
+`#1453-2606994 · 90 KGS`, and per book when one lot number spans two
+(`90 KGS Noida, 6 KGS Delhi`). Frontend only, in `LotAllocField.tsx`.
+
+- ⚠ **It sits in the option LABEL**, because `MultiOption` has no `sublabel` and the shared
+  `MultiSelect.tsx` was being edited by another session. So the trigger is pinned to the bare lot
+  number (`triggerLabel`), and the "create" row checks the lot itself, so typing a lot Tally does
+  hold no longer says "(not in Tally)".
+- **Picking a lot bigger than the line is normal and silent.** A 10 KGS line from a 150 KGS lot
+  records 10 KGS from that lot; the other 140 stay in the lot and nothing here changes Tally's
+  balance. The advisory appears only the other way round — drawing MORE than Tally shows — and
+  still saves.
+
+#### 🔴 Three findings that changed the build — read these before touching any of it
+
+**1 · THE LIVE DATABASE WAS AHEAD OF `supabase/migrations/` FOR ALL THREE RPCs.** `bill_qty` is a
+live column on `fms_dispatch_order_items` and `fms_dispatch_round_items` and is written by the live
+`fms_dispatch_amend_round` — yet the string appears in **no migration file in this repo and no row of
+`supabase_migrations.schema_migrations`**. Checked three ways. The same drift shows in the other two
+(live reads `mst_items` where the newest files still read `fms_dispatch_items`), and in
+`fms_dispatch_touch_parent_order`, whose live body carries none of the comments the file shows.
+
+> Every body in the new migration was taken from `pg_proc.prosrc`. Rebuilding from the file would
+> have silently reverted the bill-quantity feature on live dispatch records. The migration asserts
+> both markers are still present, and the rollback asserts `md5(prosrc)` against the four pre-OD-15
+> bodies, so this is now checkable rather than remembered.
+
+**2 · THE ENTRY'S "three RPCs write `fms_dispatch_round_items.lot_no`" WAS HALF RIGHT.**
+`fms_dispatch_apply_ship_lines` writes **`fms_dispatch_ORDER_items.lot_no`** — the in-flight round's
+staging row. A round item does not exist until `fms_dispatch_archive_round` creates it. Hence TWO
+child tables and a copy at archive time; one table hung off round items would have had nowhere to
+hold the split for the entire time the store keeper is typing it.
+
+**3 · `FM999999990.###` ROUNDS TO A WHOLE NUMBER.** `#` is not a digit placeholder in a `to_char`
+numeric template, so the mask names no fractional digits: `to_char(0.5,'FM999999990.###')` is `'1'`.
+The lot formatter therefore uses `rtrim(trim(to_char(q,'FM999999990.999')),'.')`. **The five other
+`###` masks in the file are pre-existing exception messages, left exactly as they were** — they carry
+the same flaw and correcting a user-facing error message is a different decision, on a different day.
+
+#### The eight build steps
+
+1. `[x]` **A child table, not a second column.** Two, per finding 2. `qty` nullable, `seq` ordered,
+   `on delete cascade` matching the existing chain. Six parent-touch triggers so a lot edit reaches
+   the incremental fetch; `fms_dispatch_touch_parent_order` gained two arms.
+2. `[x]` **`lot_no` stays as the rendered summary.** Six readers untouched — the five listed plus
+   `supabase/functions/_shared/workSnapshot.bundle.js`, which the original entry did not list.
+3. `[x]` **No backfill.** Both tables started empty and the migration contains no INSERT outside the
+   functions. The editor never parses a stored string: a line with no children seeds **one** row
+   holding the whole value, so the 8 in-flight typed splits round-trip byte for byte.
+4. `[x]` **One box, a quantity per lot, ONE row by default.** A single lot shows no quantity box at
+   all — it carries 100% of the line and the server fills the figure in.
+5. `[x]` **Running total.** `18 of 30 KGS — 12 short, saved as it is.`
+6. `[x]` **Typing survives; the balance only advises.** Proved on screen with a lot Tally has never
+   heard of, and with a draw above the balance.
+7. `[x]` **The amend path carries the split.** A **presence contract**: `lots` absent keeps the
+   stored split and summary, present replaces both. ⚠ The screen's changed-line filter had to widen
+   too — it sent only lines whose *quantity* changed, so a lots-only correction would have vanished
+   silently on Save.
+8. `[x]` **Browser-tested as the storekeeper**, not as an admin.
+
+#### What was measured, 11-09-2026
+
+| | |
+|---:|---|
+| 4,454 | round-item rows; 117 with no lot; 771 distinct values |
+| 99 | hold a `/` — **26** are print-head serial numbers, **92** are real splits |
+| 52 | spell the quantity with `kg`; 9 separate with a full stop |
+| 8 | in-flight order lines carrying a hand-typed split right now |
+| 11 | server tests passed in rolled-back transactions (split, single lot, stale flat payload, remarks-only save, dropped line, archive freeze, amend keep, amend replace, amend single, cross-round leak) |
+| 1,409 | rows in the Order Register export, 1,300 with a lot — column intact |
+
+#### Verified in the browser, on live data
+
+Signed in as **LALIT SHARMA** (`delhioffice@orangeotec.com`, role `employee`), a real
+material-status owner — **not** an admin. Real lots came back from ConnectWave, so this was not the
+degraded empty state.
+
+- Single-lot line renders exactly as before: one picker, no quantity box, nothing taller.
+- Two lots: the trigger reads **"2 lots"**, not a comma-joined pair; a quantity row each; focus lands
+  on the first blank quantity.
+- `18 + 12 = 30 of 30 KGS`; `18 + 5 = 23 of 30 KGS — 7 short, saved as it is`, **Save still enabled**.
+- A drawn quantity above the Tally balance says so and saves anyway.
+- A lot Tally has never heard of is enterable, is pinned to the top of the list, and survives a
+  second lot joining.
+- The correction screen shows the new LOT column, and the hand-typed `2605941-20/26061087-10` appears
+  as **ONE** lot, unparsed, marked "not in Tally's stock for this item".
+- The order detail page still renders both historic strings unchanged.
+
+**Two faults were found only by looking at the screen, and both are fixed:**
+- `shared/lib/cn.ts` is a plain join with **no tailwind-merge**, so a `w-20` passed to `TextInput`
+  does not replace the `w-full` baked into `fieldBase` — the quantity box ate the whole cell and the
+  lot number wrapped to one character per line. The width now sits on a wrapper.
+- The correction modal was `size="lg"`; with a fourth column every item name wrapped to four lines.
+  Now `3xl`.
+
+#### Watch the first real split — not a blocker
+
+**No real two-lot dispatch had been recorded when this closed.** Pressing *Record what is going
+out* on a client order would have recorded a dispatch that did not happen, so it was deliberately
+not done in testing; everything either side of that button is proven (11 server tests, the screen,
+the correction path, the register export). The first store keeper to split a line is the first live
+run — check that order's LOT column reads like `26081298 (60), 26081284 (40)` and that
+`fms_dispatch_order_item_lots` holds its two rows.
+
+#### To settle with the client — built to the recommendation in each case
+
+1. **Must the split add up to the shipped quantity?** → **It warns and saves.** To block, raise in
+   `fms_dispatch_apply_ship_lines` after the insert — and nowhere else.
+2. **May a lot be drawn beyond its Tally balance?** → **Warns and saves**, same reason. ~3.6% of lots
+   do not resolve to a clean balance and a reporting mirror must not stop a real dispatch.
+3. **What should the Order Register column read?** → `26081298 (975), 26081284 (485)`; a single lot
+   stays bare. One function, `fms_dispatch_lot_text`, changes it. ⚠ **Worth putting to them plainly:**
+   that column already joins every ITEM in the round with `", "` — measured above on 1,300 cells — so
+   with quantities inside each summary the cell carries commas at two levels. A separate column is
+   the alternative.
+4. **The print-head serial numbers.** Not scope, and not broken: 26 rows keep working because a typed
+   string with slashes is one lot, so the summary returns it verbatim. Proved in the positive control.
+
+#### ⚠ A configuration gap found while testing, NOT fixed — it is not this task's
+
+**SAMADHAN PATIL** (`samadhanpatil6110@gmail.com`) is a `material_status` step owner for both Surat
+locations but his `app_access` holds **task-management only**. He can never open Order to Dispatch,
+so he can never act on the step he owns. Found by signing in as him. Someone should decide whether he
+gets the app or comes off the step.
+
+**Not part of this.** Production Entry carries its own free-text lot on raw-material consumption
+(`apps/production-entry/components/StepModal.tsx`). It is the same question one module over and it is
+**out of scope** — do not widen this task to reach it.
+
+*(cross-ref: **OD-12** built the picker this extends; its header comment in `ShipLinesGrid.tsx` states
+the two principles item 6 rests on · **OD-12b** is still open and unrelated to this — it is the blank
+godown on the current financial year)*
+
+---
+
+### OD-16 · 🔴 Stop asking for a quantity the lots already answer — auto-fill when the picked lots fit inside Ship now  🟢  `[x]` DONE
+*Raised 2026-09-16 · Audited the same day against the running code and the live database ·
+**High priority, client-asked** · **Built, browser-verified and shipped to master 16-09-2026**
+(`2e5f5a5` on `daily-reports`) · the three client questions below are still open, and each was built
+to its recommendation*
+
+**✅ BUILT 16-09-2026 — what shipped**
+
+- **`LotAllocField.tsx` gained `autoFill`, and only `ShipLinesGrid` turns it on.** When the picked
+  lots hold no more than Ship now, each box fills with its lot's Tally balance. It asks only when the
+  lots hold more. The boxes are **pre-filled, never hidden or locked**, so the advisory-balance rule
+  and "typing must stay possible" are untouched, the footer reads *"45 of 45 KGS"* by itself, and
+  nothing was removed (no FIX-4 sweep needed). The correction screen is unchanged; one prop opts it in.
+- **A seed needs EVERY picked lot to resolve:** known to Tally, in exactly one book, **the same book as
+  the other lots** (trap 4 widened: two lots from two books are also one dispatch drawing on two
+  books), in the line's unit, and with a balance above zero at 3 dp. Anything less asks, as before.
+- **Re-decided on every Ship now keystroke, and on every lot picked or removed.** A seeded figure is
+  the lot's balance, never derived from Ship now, so whatever Ship now ends on decides. A half-typed
+  "4" on the way to "45" leaves nothing behind.
+- **A typed figure is sacred, and so is the rest of its split.** Each row carries a `seeded` mark;
+  typing into a box drops it. Once any box holds a typed number, the field neither fills nor clears
+  that line. ⚠ This departs from "a seeded value may be cleared when the condition stops holding",
+  on purpose: seeded 6 and 4 for 10, a person corrects the 6 to 5, then lowers Ship now to 9. The lots
+  no longer fit, and clearing the 4 would throw away a figure that was right. A split reloaded from
+  the database carries no mark, so it counts as typed. The mark never reaches the server: both save
+  paths map rows to `{ lot_no, qty, seq }` by hand.
+- **Focus:** when a pick fills every box, the caret moves on to the next field via the shared
+  `advanceFocus` (the next row's Ship now, or Remarks after the last row).
+
+**🔴 Two corrections to the audit below, both proven live:**
+1. **Trap 8 was wrong to say "the way `fmtQty` renders them".** `fmtQty` groups with en-IN commas,
+   and `fms_dispatch_lots_normalise` keeps a lot qty only if it matches `^\d+(\.\d+)?$`; anything else
+   becomes **NULL, silently**. Run live, `"1,021"` came back `qty: null` and the Order Register summary
+   read `L1, L2 (1021)`. The lots on today's queue hold 1,021 · 4,200 · 10,000 · 73,550, so this would
+   have bitten on the first large split. Seeds are written `String(Number(n.toFixed(3)))`.
+2. **Trap 1's "~3.6%" is stale.** `supabase/connectwave/rpt_lot_balance.sql` re-measured negative
+   balances at **~11.4%** on 08-09-2026. `rpt_lots_for_item` never offers them (`p_min 0.0001`), so
+   they read as unknown and the line asks.
+
+**Re-measured 16-09-2026:** 557 dispatched lines carry lots (was 461); 550 single-lot; still **7**
+multi-lot (max 5 lots), all 7 summing exactly to both Ship now and the billed qty. 164 lines in
+flight, none multi-lot. All 367 Tally lots behind the 19 orders awaiting material status are `KGS`,
+matching every line, so the unit guard is a safety net that does not fire today.
+
+**Verified in the browser as the store keeper** (`ink@orangeotec.com`, Amit Sharma, Sub-HOD), on
+**SO-2627-1283 · SUPER HD YELLOW** (lots 20 / 15 / 10), with **nothing saved**:
+lots first, Ship now blank → blank boxes, as before · Ship now "4" → still blank · "45" → **20/15/10,
+"45 of 45 KGS"** · 60 → kept, *"15 short, saved as it is"* · 30 → blank, asks · back to 45 → refilled ·
+typed 18, then Ship now 50 and 30 → **18/15/10 kept both times** · dropped to one lot → quantity
+cleared, no box · a typed `ZZ-NOT-IN-TALLY` → no seeding at all · removing it re-seeded and moved the
+caret to Remarks · **CYAN: Ship now first, then two picks → seeded, caret on YELLOW's Ship now with its
+text selected** · **BLACK 1,021 + 1,015 → boxes read `1021` / `1015`**. The save was **captured, not
+sent**: every write to the project was aborted in the browser. The one request,
+`fms_dispatch_record_material_status`, carried `{lot_no, qty, seq}` only, no mark, seeded qtys `"20"`
+`"15"` `"1"` `"1"`, and the single lot `qty: ""` as before; all survived the live normaliser.
+Afterwards SO-2627-1283 was confirmed untouched (`ms_at` null, `updated_at` still 14-09), with no
+round amended and no mail queued. **Correction screen (admin):** re-picking 6 + 9 against 100
+delivered, then 30, left the boxes blank and asking. Cancelled.
+
+**Not observable live, proven in code only:** reopening a saved multi-lot split (none sits in an
+editable round, and the test did not save one), lots from two books (no order without a company is
+awaiting), and a unit mismatch.
+
+**⚠ Observation for the client:** picking lots before typing Ship now still drops the caret into the
+first box, as before. If the store keeper types a split there, the fill switches off for that line
+(typed wins). Typing Ship now instead fills the boxes. Worth a line in the store keeper's walkthrough.
+
+**The ask.** Picking a second lot always draws a quantity box against every lot and asks the store
+keeper to split by hand. It should only ask when it genuinely has to. If the **stock in the picked
+lots fits inside the Ship-now quantity**, fill each lot with what it holds and ask nothing. Ask only
+when the picked lots hold **more** than Ship now, because that is the only case where a human choice
+exists. And every comparison is against **Ship now**, not Pending.
+
+**🟢 The "Ship now, not Pending" half is already right — this is a clarification, not a defect.**
+Both writers already hand the field the shipped figure, not the pending one:
+`ShipLinesGrid.tsx:160` passes `quantity={v.ship_qty}` and `OrderDetail.tsx:867` passes the
+corrected quantity. `pendingQtyOf` is used for the Pending column and for locking a completed line,
+and it never reaches `LotAllocField`. Nothing needs undoing here; the rule simply has to stay this
+way when the auto-fill is written.
+
+**What the field does today** (`components/LotAllocField.tsx`):
+
+| | |
+|---|---|
+| One lot | **No box at all.** "One lot means 100% of it, and asks for nothing" — the server fills the figure in |
+| Two or more | A quantity box per lot, **all blank**, and the caret jumps to the first empty one |
+| The footer | *"Say how much came from each — 10 KGS in total."* until something is typed, then *"8 of 10 — 2 short, saved as it is."* |
+| Dropping back to one | **Clears the quantity**, deliberately — that row now carries the whole line |
+
+**🟢 The live data says this typing is almost pure ceremony.** Measured 16-09-2026 on
+`fms_dispatch_round_item_lots`:
+
+| | |
+|---|---|
+| Dispatch lines carrying lots since OD-15 | **461** |
+| Single-lot (asks nothing today) | **454** |
+| Multi-lot (asks every time) | **7** |
+| Most lots on one line | **5** — five boxes typed for a 50 KGS shipment |
+| 🟢 Multi-lot lines whose split does **not** sum to Ship now | **0 of 7** |
+
+Every multi-lot allocation on file lands **exactly** on the shipped quantity. Nobody has ever needed
+a split that differed from it, which is the evidence that the question is usually being asked with
+only one possible answer. ⚠ It also means the change touches ~1.5% of lines — small, but it is the
+one path people complain about.
+
+**The rule, stated precisely.** Let `capacity` = the sum of Tally's balance for every picked lot.
+- `capacity ≤ ship_now` → fill each lot with its full balance, draw no boxes.
+- `capacity > ship_now` → ask, exactly as today.
+
+**The traps. Four are blocking.**
+
+1. 🔴 **A lot Tally does not know has a capacity of ZERO, not "unknown".** `totalOf()` sums the
+   matching options and returns 0 for a lot that is absent — and absent is a real, common state:
+   **~3.6% of lots do not resolve to a clean balance**, plus every lot entered through the typing
+   escape hatch, plus everything when ConnectWave is unreachable (the field degrades to a plain box
+   by design). With a zero capacity the rule reads `0 ≤ ship_now` as "it fits" and auto-fills
+   **nothing**, silently under-allocating a line that used to prompt. **Auto-fill only when EVERY
+   picked lot has a known balance; otherwise ask, as today.**
+2. 🔴 **The balance is ADVISORY AND NEVER A GATE**, and the component header says so in capitals,
+   adding that the rule predates it and is "not ours to change" — a lot in the store keeper's hands
+   that Tally has not caught up with must stay enterable, and over-drawing is shown and **saved
+   anyway**. So auto-fill must **seed** the boxes, never lock them: every figure stays editable,
+   including above the balance, and the boxes must come back the moment the condition flips.
+3. 🔴 **Ship now is usually still empty when the lots are picked.** In the client's own screenshot
+   two lots are already ticked while Ship now reads 0 — so a fill computed once, at the moment of
+   selection, would never fire on the normal order of work. It has to **recompute when `ship_qty`
+   changes too**, and `quantity` is documented as moving "exactly as typed", so a half-typed "1" on
+   the way to "10" must not lock in a wrong split.
+4. 🔴 **A lot number is only unique within one Tally book, and `totalOf` sums across books.** A lot
+   showing *"90 in Noida, 6 in Delhi"* totals 96, but a single dispatch cannot draw from two books.
+   Auto-filling 96 would invent stock. **Do not auto-fill a lot that resolves to more than one
+   book** — leave those to the box, which is what OD-12 decided the balance line is for.
+5. ⚠ **"Fits inside" includes being short.** If the lots hold 8 and Ship now is 10, the rule fills 8
+   and leaves a 2 gap. The footer already reports that honestly — *"8 of 10 — 2 short, saved as it
+   is"* — so the recommendation is to fill and show the gap rather than fall back to asking. But it
+   is a choice, because the auto-filled line is then knowingly incomplete. Confirm with the client.
+6. ⚠ **Never overwrite a figure somebody typed.** Once a box has a value, a later change to Ship now
+   must not silently rewrite it. Fill blanks only, or track whether a row has been touched.
+7. ⚠ **Dropping to one lot clears the quantity, on purpose.** Auto-fill must not resurrect a number
+   there: a single lot carries the whole line by definition and the server writes the figure.
+8. ⚠ **Compare with the existing tolerance, not with `>`.** The file already uses `0.0005` for the
+   sum check; a raw comparison makes `10.000000001 > 10` true and asks anyway. And write the seeded
+   values the way `fmtQty` renders them — Tally reports `176.0000` and a store keeper expects `176`.
+9. ⚠ **Focus must still move on.** `setValues` schedules a `requestAnimationFrame` onto the first
+   blank quantity box. When auto-fill leaves no blank box that call finds nothing and the caret
+   stays put, against the house rule that focus moves to the next field after every selection.
+10. ⚠ **One component, two writers.** Check Material Status and the coordinator's correction screen
+    both render it. The correction screen edits an **already-dispatched** line, where Tally's
+    balances have moved on since — auto-filling there can contradict what physically went out.
+    Consider seeding on the entry path only, and decide it deliberately rather than by default.
+11. ⚠ **If the boxes are hidden rather than pre-filled, sweep for orphans.** Hiding a control whose
+    handler survives is the FIX-4 pattern; `noUnusedLocals` is false here, so an unreachable box
+    fails nothing and looks present in the code.
+
+**To discuss with Ritesh Bhai** *(each built to its recommendation 16-09-2026; each alternative is a
+one-line change)*
+- [ ] 🔴 **Short auto-fill:** lots hold 8, Ship now is 10 — fill 8 and show "2 short", or keep
+      asking? (Recommendation: fill and show.) **Built: fill and show.** To ask instead, `fits` in
+      `reseed` becomes `Math.abs(capacity - shipNow) <= QTY_EPS`.
+- [ ] **Should the boxes be hidden, or shown pre-filled and editable?** Pre-filled is safer: the
+      store keeper sees the split that is about to be saved and can correct it. **Built: pre-filled
+      and editable.**
+- [ ] **The correction screen** — same behaviour, or entry-path only? (See trap 10.) **Built: entry
+      path only.** To opt in, add `autoFill` to the `LotAllocField` in `OrderDetail.tsx`.
+
+### OD-17 · Keep credit check's original due date so it can count in the ranking  🟢  `[ ]`
+*Raised 18-09-2026 from CC-1 · ⏸ **Parked by the user, 18-09-2026** — not urgent; do it when Dispatch is next opened.*
+
+When credit is decided, the approve RPC stamps `cc_decided_at` together with `cc_at`, and `dispatchDueIso`
+anchors Credit Check on `cc_decided_at` — so a DECIDED credit check is always due the day after it was done and
+can never read as late (all 840 closed in August read "on time"; the register's Days late column says the same).
+So the monthly ranking (CC-1) leaves credit check out, for everyone, both ways.
+
+**The fix:** keep the clock start the step was really measured from (e.g. a new nullable column stamped when the
+order enters Credit Check — the submission, or the round start on a loop) and date a decided check from it. That is
+an additive column plus the `credit_check` arm of `ANCHOR_AT` in `order-to-dispatch/lib/queues.ts`. A credit
+HOLD also restarts the clock today — decide whether it should. Then remove `credit_check` from `EXCLUDED` in
+`fms-control-center/ranking/modules/orderToDispatch.ts`, rebuild the ranking bundle from master and redeploy
+`fms-ranking`.
+
+**Why it can wait:** nothing is scored wrongly today — credit checks count for nobody. The only cost is that
+whoever approves credit gets no ranking credit for that work.
+
+---
+
 
 ## Production Entry
 
@@ -10347,12 +13663,885 @@ history goes missing. He can fill it in or the QC team can decide what to do wit
 
 ---
 
+### TM-1 · 🟢 A HOD can assign a task to another HOD — and that work is scored on its own  `[x]`
+*Raised 2026-09-07 · Audited the same day against the running code and the live database ·
+**All seven open decisions settled with the client the same day** — see the foot of this entry ·
+**BUILT, APPLIED TO LIVE AND BROWSER-VERIFIED 10-09-2026***
+
+🟢 **DONE 10-09-2026.** Migration
+[20261116120000_tm1_a_hod_can_assign_to_another_hod.sql](supabase/migrations/20261116120000_tm1_a_hod_can_assign_to_another_hod.sql)
+is **applied to live**, with its rollback **rehearsed on live data** (applied → rolled back →
+re-applied) before the frontend was written. The frontend is committed on `daily-reports` and is
+**NOT yet on `master`** — that is the safe half of the ordering, since the column is additive and
+nothing reads it until the frontend ships.
+
+**What shipped**
+
+| | |
+|---|---|
+| Server | `tasks.is_peer_assignment boolean not null default false`, **no backfill** · `shift_task_to_week()` carries the flag onto a forward-reschedule continuation |
+| Picker | A second group, *Other HODs*, in Create Task — **HODs only**, so an admin→HOD task can never be stamped |
+| Board | New **Peer Tasks** screen: *Received* / *Given*, plus *All peer tasks* for admins |
+| Scoring | A third card on the Weekly Scorecard, four columns in its export, and peer work out of every other score |
+| Tagging | A **Peer** badge on the task row and on Task Detail, so the receiver sees it in My Tasks and knows why it is not in their own numbers |
+
+**Four things the audit found that the entry above did not**
+
+1. 🔴 **A forward reschedule would have stripped the classification.** `shift_task_to_week`
+   closes the task and inserts a fresh copy; a new column defaults to false on that copy, so the
+   moment a receiver pushed a peer task to next week it would have silently become their own
+   ordinary work — the one outcome the client ruled out. The migration is therefore **two
+   statements, not one**. The continuation's `created_by` becomes the shifter (RLS forces it: the
+   function is not `SECURITY DEFINER`), which is why the *Given* board is `peer AND created-by-me
+   AND NOT assigned-to-me`.
+2. 🔴 **`peerAssignableUsers` could not live in `core/platform/store.tsx`** as the entry
+   specified — that file has no access to `list_org_people()`, and adding the query there would
+   make every app in the portal fetch it. It lives in the task store, which already has both halves.
+3. 🔴 **The New Task button was gated on having a downline in three places.** Four HODs have
+   nobody under them and were turned away outright; all three gates now count peers too.
+4. 🔴 **The peer card's drill-downs landed on a broken page — found only by browser-testing
+   as a real HOD.** `taskListRouteForRole` sends a HOD to Team Tasks, which scopes to
+   `self + downline` and, with no reports, replaces the whole table with *"No team members mapped"*
+   while its own header read *"1 task across your team"*. A peer counterparty is by definition not
+   in your team. Peer links now route to the peer board. **An admin lands on All Tasks and would
+   never have seen this.**
+
+**The design decision worth keeping.** Eight screens compute an own-score from a list that is not
+pre-filtered by kind — including the *Planned vs Actual vs Next* table the client's own decision
+named. Rather than filter in eight places (the FIX-4 failure mode), the exclusion went into the
+single existing chokepoint: `countsTowardMetrics` now also excludes peer work, with
+`countsTowardPeerMetrics` for the peer block and `countsTowardWorkload` for worklists. Every
+existing call site is correct with **no edit**, anything missed fails **safe**, and because no task
+carried the flag it provably moved nothing.
+
+⚠ **Worklists deliberately still show peer tasks** — the receiver has to do the work. That
+includes the Dashboard cards, My Work, and the live 09:00 snapshot email, whose SQL twin
+`user_snapshot()` and compiled bundle cross-check each other; if an exclusion is ever added to one,
+it must go into both. `master_report_daily` also counts peer work, deliberately: it is an adoption
+report, not a score.
+
+**Verified on live data, as two throwaway HOD accounts in different departments (since deleted)**
+
+- The receiver's own weekly total read **0 tasks** while the peer card held the 1.
+- 298 recurring + 29 one-off + 1 peer = 328 = the week's total; recurring and one-off were
+  **unchanged** from before the change.
+- The task carried a real **department** — proved side by side that the old code path resolved it
+  to `null` (the assigner cannot read another department's HOD under `profiles_select`) and the new
+  one to *Ink Manufacturing*.
+- Both names rendered; the receiver was notified in-app; **no email** (Task Management email is off).
+- A forward reschedule kept the flag, and the continuation stayed off the receiver's *Given* board.
+- The sender could delete a pending peer task — the settled substitute for a Decline button.
+- Master Analysis, and **the 183 admin→HOD tasks, were untouched.** Database returned to exactly
+  6,924 tasks / 0 flagged / 14 HODs afterwards.
+
+*(Not built, as settled: peer **recurring** templates, and a Decline button.)*
+
+---
+
+
+**The ask.** Today a HOD can only assign work **down** their own tree. Let a HOD assign a task to
+**another HOD**, and score that peer-to-peer work **separately** — its own RYG block, its own
+counts — rather than folding it into either person's team numbers. Scored the same way an
+individual's My Tasks work is scored today: same selectors, same colours, its own board.
+
+---
+
+#### What actually blocks this today — one function, not the database
+
+The whole restriction is **eight lines of TypeScript**:
+
+```ts
+// core/platform/store.tsx:202-209
+const assignableUsers = (role: AppRole, userId: string): Profile[] => {
+  if (role === "admin") return profiles.filter((p) => p.id !== userId);
+  if (role === "hod" || role === "sub_hod") {
+    const ids = new Set(downlineIds(userId));   // full downline — no self
+    return profiles.filter((p) => ids.has(p.id) && p.id !== userId);
+  }
+  return [];                                     // employees have no one to assign to
+};
+```
+
+**The database already permits it.** Every task-domain policy was re-issued in
+[20260730130000_speed_up_task_rls.sql](supabase/migrations/20260730130000_speed_up_task_rls.sql),
+and each one already carries the arms a peer assignment needs:
+
+| Policy / trigger | Relevant arms | Does a HOD→HOD task pass? |
+|---|---|---|
+| `tasks_insert` | `created_by = auth.uid()` — **and nothing else** | ✅ any assignee at all |
+| `tasks_select` | `assigned_to = uid` · `created_by = uid` · admin · downline | ✅ both HODs read it |
+| `tasks_update` | `assigned_to = uid` · `created_by = uid` · admin · downline | ✅ receiver starts/completes, assigner edits |
+| `tasks_delete_pending` | `created_by = uid` · `assigned_to = uid` · admin | ✅ while pending |
+| `task_locations_rw`, `task_activity_select` | the same arms, via `EXISTS` on the task | ✅ |
+| `notify_task_assignee()` | excludes only self-assign / personal / recurring-generated / shift continuation | ✅ **notifies and emails today, unchanged** |
+| `add_task_remark()` gate | `assigned_to = uid` OR `created_by = uid` OR admin OR `is_hod_of` | ✅ both sides can comment |
+
+So this is **not** a permissions build. The server needs **one additive column** — a marker, see
+below — and everything else is frontend.
+
+#### Measured on the live database, 07-09-2026
+
+| | |
+|---|---|
+| Users by role | **14 HOD · 11 sub-HOD · 5 admin · 38 employee** |
+| Tasks, all | 6,702 (6,060 assigned, non-personal, assignee ≠ creator) |
+| **HOD → HOD tasks today** | **0.** The shape has never occurred — there is no history to classify |
+| HODs who have ever *created* a task | **3 of 14** — 5,098 to employees, 588 to sub-HODs |
+| sub-HODs who have ever created a task | **1** (one task) |
+| **Admin → HOD, outside any downline** | **134 tasks, 4 admins, 11 HODs** — the peer *shape* already exists, done by admins, and today it lands silently in the HOD's own score |
+| Admin → anyone, outside any downline | **215 tasks** (134 HOD + 40 admin + 28 sub-HOD + 13 employee) |
+| HOD/sub-HODs with a boss mapped | 12 of 25 — so **13 have nobody above them at all** |
+| `weekly_plans` rows in the whole database | **8 rows, 7 people, 4 of them HODs** |
+
+Two of those numbers drive decisions further down: the **134** (what a derived rule would
+retroactively move) and the **8** (the Planned side of the scorecard is barely used, so the peer
+block must not be built to depend on it).
+
+---
+
+#### ⚠ Do NOT implement this by adding a HOD mapping
+
+The five-minute version is to insert a `user_hods` row making HOD B report to HOD A. **It is the
+wrong edge and it changes far more than the ask.** `hod_downline()` is transitive and is read by
+policies and screens all over the module:
+
+- A gets **B's entire downline**, not B — every employee under B becomes A's to read, assign and score.
+- B and B's whole team appear in A's **Team Tasks**, **Weekly Scorecard** dropdown, **Master
+  Analysis** roll-up and **Activity**.
+- `weekly_plans_insert` / `weekly_plans_update` are keyed on `hod_downline`, so **A can now set B's
+  weekly RYG plan**.
+- It is **retroactive**: every historical task of B's team becomes visible and countable in A's
+  numbers the moment the row is inserted.
+
+A peer grant is a **lateral edge**. It must never touch `user_hods`, `hod_downline()` or
+`is_hod_of()` — leaving those alone is the design, not an omission.
+
+---
+
+#### 🔴 The decision that must be taken before any code: derive it, or stamp it?
+
+**Derived** — ask at read time, *"is `createdBy` in the assignee's HOD chain?"* Free, no migration,
+and **wrong here**, for three reasons:
+
+1. **It reclassifies work that has already been reported.** The 134 admin→HOD tasks (and 81 more
+   admin-created out-of-downline rows) match "creator is not above the assignee" *exactly*. They
+   would all become "peer" tasks on the day this ships — leaving the HODs' own scores and appearing
+   in a peer block nobody assigned. Closed weeks' scorecards would move.
+2. **The hierarchy is mutable.** `user_hods` rows are edited from the admin User form. A HOD
+   changing department, or a mapping being tidied up, silently reclassifies a year of history and
+   moves numbers in weeks that were signed off months ago.
+3. It costs a `hod_downline()` walk per row, on a table growing ~2,400 rows/month — the exact cost
+   the RLS speed-up migration was written to remove.
+
+**Stamp it.** The module already took this decision once and wrote down the reasoning —
+`tasks.from_recurring`, in [types/index.ts](frontend/src/apps/task-management/types/index.ts):
+
+> *"Durable 'born from a recurring template' flag, stamped at generation time and never cleared.
+> `recurringTaskId` is ON DELETE SET NULL, so it goes null if the template is deleted; this flag
+> survives that, keeping the task classified as recurring."*
+
+Same shape, same reason. **One additive column — `tasks.is_peer_assignment boolean not null default
+false`** — written by `insertTask` when the assignee was picked from the peer list. `created_by` is
+already the assigning HOD and `assigned_to` the receiving one, so no second column is needed to name
+the counterparty.
+
+⚠ **`default false`, and NO BACKFILL.** The assignee-notification migration set that precedent and
+said why (*"Backfilling would mark every historical task unread for everyone at once"*). Here the
+equivalent is: the 134 admin→HOD tasks **stay exactly where they are**, in the HOD's own score,
+counted the way they were counted last week. Nothing already reported moves. If the client later
+wants them reclassified that is a separate, deliberate backfill — and one that must carry the
+original dates rather than `now()`, or it corrupts the Master Report.
+
+---
+
+#### The scoring — the pattern already exists, and the trap in extending it
+
+**The Weekly Scorecard already does this exact thing.**
+[WeeklyScorecard.tsx](frontend/src/apps/task-management/pages/WeeklyScorecard.tsx) splits the week
+into *"Recurring vs one-off — each task type scored on its own; the total above is the two
+combined"*, rendering one shared `ActualScoreBlock` per slice. A peer block is **a third call to
+that same component with a third slice**. None of the arithmetic is new: `actualRygFor`,
+`reportFor` → `rygCounts` and `computeStats` all take `(tasks, personId, weekStart)` and are handed
+a pre-filtered list.
+
+> ⚠ **But recurring/one-off is a PARTITION, and a peer block breaks it.** "One-off" is defined as
+> `!isRecurringTask(t) && !t.isPersonal` in **three** places —
+> [TasksList.tsx:105](frontend/src/apps/task-management/pages/TasksList.tsx#L105),
+> [TaskBrowser.tsx:177](frontend/src/apps/task-management/components/TaskBrowser.tsx#L177) and
+> `lib/exportWeeklyScorecard.ts`. A peer task **is** a one-off, so unless that predicate is
+> narrowed, the same task is counted in the One-off card *and* the Peer card, and the two stop
+> adding up to the total above them. Narrow it in all three places in the same change — otherwise
+> the sheet and the screen disagree, which is the one thing `exportWeeklyScorecard`'s own header
+> comment warns against.
+
+**Two blocks, not one — a peer relationship has two sides:**
+
+- **Given** — tasks I assigned to other HODs. Today this is **nearly invisible to the assigner**:
+  `TeamTasks` filters on `teamIds = [self, ...downline]`, so a peer task is not there; and
+  `TasksList` defaults `relation` to `"assigned"`, so the assigner has to know to switch a dropdown
+  to *"Created by me"* to find work they handed out. **This is the gap the ask is pointing at** — it
+  is the peer equivalent of My Tasks, and it does not exist.
+- **Received** — tasks other HODs assigned to me. These already reach My Tasks (`assigned_to = uid`).
+
+**✅ DECIDED 07-09-2026 — a received peer task does NOT count in the receiving HOD's own weekly
+RYG.** It is scored in the peer block and nowhere else. Two reasons, both of which held up:
+
+- `weekly_plans` is set by an admin or by a HOD **above** the doer (`weekly_plans_insert` is keyed on
+  `hod_downline`), so **no plan can ever cover work a lateral peer dropped in.** Folding it into
+  Actual while Planned cannot move makes the Delta column on *Planned vs Actual vs Next* lie.
+- And the planned side is barely populated anyway — **8 plan rows in the entire database**. So the
+  peer block should be **actual-only**, and must not be built to wait on plans being filled in.
+
+**What follows from that, and must be built accordingly:** a HOD's existing score is untouched by
+work a peer hands them, so **no number anyone has already seen moves**. The peer block is a pure
+addition. It also means the total block on the Weekly Scorecard must **exclude** peer tasks, or the
+"recurring + one-off = total" line stops being true.
+
+---
+
+#### 🔴 Where the peer HOD's NAME comes from — four places that render blank today
+
+`profiles_select` is `id = auth.uid() OR is_admin OR is_hod_of OR same_department`. **A HOD cannot
+read another department's HOD's profile row at all**, so every `profileById(peer)` returns
+`undefined`.
+
+**No RLS widening is needed.** `list_org_people()` already exists, is `SECURITY DEFINER`, is
+executable by `authenticated`, and returns `id, name, designation, department_id, avatar_color,
+role` for the whole org — **`role` included**, which is exactly what a HOD-only picker needs. The
+task store already consumes it (`mentionablePeople`) and already has the `actorById` fallback built
+on it.
+
+⚠ **Do not "fix" this by widening `profiles_select`.** That policy is read by every app in the
+portal, and a profile row carries the phone number — which doubles as the user's login password.
+That is precisely why `list_org_people()` was written name-only in the first place.
+
+The four call sites that break until they switch:
+
+| Where | What it does now | What happens with a peer assignee |
+|---|---|---|
+| [TaskDetail.tsx:93](frontend/src/apps/task-management/pages/TaskDetail.tsx#L93) | `const owner = profileById(task.assignedTo)` | Assignee renders empty. Line 97 **already** uses `actorById` for the creator, with a comment describing this exact failure — the assignee line never got the same treatment, because an assignee was always in your downline. Now it isn't |
+| [CreateTask.tsx:31](frontend/src/apps/task-management/pages/CreateTask.tsx#L31) | `profileById(assignedTo)?.departmentId ?? null` | 🔴 Resolves to **null** — the task is born with **no department**, and Master Analysis files it under *Unassigned* forever. Must read the org list |
+| `WeeklyScorecard.tsx` `pool` | `profiles` filtered to self + downline | A peer HOD is not in the dropdown, so their peer block cannot be opened |
+| `TeamTasks.tsx` / `TaskBrowser` person filter | `people` built from `profileById` | Peer rows show a blank Assigned-to and cannot be filtered on |
+
+---
+
+#### ⚠ Do NOT widen `assignableUsers` in place — add a second function
+
+`assignableUsers` lives in the shared portal directory store but is consumed **only** by Task
+Management — six call sites. Widening it looks like a one-line win, and quietly changes three other
+things:
+
+| Caller | What it uses the list for | If the list gains peer HODs |
+|---|---|---|
+| `CreateTask.tsx:19` | the assignee picker | ✅ the intended change |
+| **`WeeklyPlanModal.tsx:18`** | **the pool of people whose weekly RYG plan you may set** | 🔴 A HOD is offered peer HODs, picks one, and the save is **refused by `weekly_plans_insert`** (`doer_id in hod_downline(uid)`). A dead option that errors on submit |
+| **`RecurringForm.tsx:37`** | the recurring-template assignee | 🔴 Silently enables **peer recurring tasks** before the server-side generators know to stamp the marker — every generated instance would be unclassified |
+| `Dashboard.tsx:47`, `TasksList.tsx:39` | `.length > 0` → show the *New Task* button | Harmless, arguably correct |
+
+**So: leave `assignableUsers` alone and add `peerAssignableUsers(userId)`** — HODs from
+`list_org_people()`, minus self — and let `CreateTask` compose the two as two groups in one picker.
+This is [FIX-4](#fixes) read forwards: before changing a shared thing, list every consumer and prove
+each one either wants the change or is untouched.
+
+---
+
+#### What to build
+
+**Server — one migration, applied BEFORE the frontend ships** (repo rule: a change that reads a new
+column goes live only after the column exists, or the load errors):
+
+1. `alter table public.tasks add column is_peer_assignment boolean not null default false;` —
+   additive, no backfill, with its rollback file beside it.
+2. Nothing else. No policy change, no new function; `hod_downline` / `is_hod_of` untouched.
+
+**Frontend:**
+
+| File | Change |
+|---|---|
+| `types/index.ts` · `database.types.ts` | `isPeerAssignment` on `Task`; keep the generated types in sync |
+| `data/fetchTaskData.ts` | `select("*")` already brings the column — add it to the row mapper |
+| `data/taskWrites.ts` → `insertTask` | accept and write `is_peer_assignment` |
+| `core/platform/store.tsx` | **new** `peerAssignableUsers(userId)` off `list_org_people()`, role `hod` (+ `sub_hod`?), minus self. `assignableUsers` untouched |
+| `pages/CreateTask.tsx` | two groups in the assignee `Combobox` ("My team" / "Other HODs"); department from the **org** list, not `profileById`; stamp the flag **only** when a HOD picked from the peer group. ⚠ The peer group is shown to HODs only — an **admin never gets it**, so an admin→HOD task stays ordinary work, per the client's rule at the foot of this entry |
+| `mock/selectors.ts` | `isPeerTask(t)`, beside `isRecurringTask` / `countsTowardMetrics` |
+| `pages/WeeklyScorecard.tsx` | a third `ActualScoreBlock` — *"Assigned by another HOD"* — and, if the client agrees, peer tasks out of the total block |
+| **new page + route + nav** | The peer board: **Given** and **Received**, each a `TaskBrowser` with its own RYG strip. `nav.tsx` entry `roles: ["admin","hod","sub_hod"]`; route wrapped in `RequireRole` in `TaskManagementApp.tsx` |
+| `lib/taskLink.ts` | `TaskKind` gains `"peer"`; `parseTaskFilters` and `LINK_PARAMS` accept it, so every peer number drills into a list that matches it |
+| `components/TaskBrowser.tsx` · `pages/TasksList.tsx` | third pill on the kind toggle; **narrow the `oneoff` predicate**; peer column + filter on the grid |
+| `pages/TaskDetail.tsx:93` | `profileById` → `actorById` for the assignee |
+| `lib/exportWeeklyScorecard.ts` | `ScorecardRow` gains `peer: Slice`; `buildScorecardRow` + `buildTeamRow` |
+| `components/DepartmentReport.tsx` · `lib/exportMasterAnalysis.ts` | decide whether peer tasks appear in the department roll-up (they carry the *receiver's* department) |
+| `pages/settings/Permissions.tsx` | the role matrix is hand-written and read-only — add *"Assign tasks to another HOD"*, or the module's own documentation of itself becomes wrong |
+
+**Grids.** The peer board is a table of rows, so per the standing rule it sorts on every column and
+filters under every column, with cascading options and a "no rows match" row rather than an empty
+state. `TaskBrowser` already does all of this — which is the reason to reuse it rather than write a
+new table.
+
+**Not in scope for round one:** peer **recurring** templates. `recurring_tasks` has the same
+`assigned_to` and the same RLS shape, but the instances are created by `generate_recurring_tasks` /
+`generate_recurring_task_now` **server-side**, so carrying the marker through is a second migration
+against live functions. One-off tasks first; recurring as a follow-up if it is actually wanted.
+
+#### What does NOT need to change — so nobody rebuilds it
+
+- **The DB permission model.** Insert, select, update and delete all already carry the
+  `created_by = uid` / `assigned_to = uid` arms (table above).
+- **Notifications and the assignment email.** `notify_task_assignee()` is hierarchy-agnostic — it
+  excludes only self-assignment, personal, recurring-generated and shift continuations. A peer
+  assignment already notifies the receiver and enqueues their email.
+- **Remarks and @mentions.** `add_task_remark`'s visibility gate has both arms, and
+  `mentionablePeople` has been org-wide since the mention picker was built.
+- **`hod_downline()` / `is_hod_of()` / `user_hods`.** Untouched, deliberately.
+- **`visibleTasks`** ([mock/store.tsx:474](frontend/src/apps/task-management/mock/store.tsx#L474)) —
+  already returns `t.assignedTo === userId || t.createdBy === userId || team.has(...)`, so both
+  sides of a peer task are already in the store. It is the *screens* that filter them out, not the
+  fetch.
+
+#### Sequencing
+
+1. Settle the questions below — the first one changes the arithmetic, so it cannot follow the build.
+2. Migration + rollback, applied to live.
+3. Store + write path + types — the flag exists and is stamped, nothing reads it yet.
+4. `CreateTask` peer picker, with the department fix.
+5. The peer board, then the scorecard block, then the export column — in that order, so each is
+   verifiable on real rows before the next depends on it.
+6. Browser-test **as a real HOD, not as an admin** — admins bypass every gate in this module, and an
+   admin-only pass would show none of the four blank-name failures above.
+
+#### Decisions — all settled 07-09-2026
+
+✅ **Every open question on this task was answered by the client on 07-09-2026. Nothing here is
+blocked; it is ready to build as specified.** Each answer is kept with its reasoning and with what
+follows from it, so the build does not have to re-derive them.
+
+- [x] ✅ **Does a peer-assigned task count in the receiving HOD's own weekly RYG?**
+      **Settled 07-09-2026 — no. The peer block only.** A HOD's own score keeps counting only their
+      own team's work, so nothing already reported changes.
+- [x] ✅ **Any HOD to any HOD, or a configured pair list?** **Settled 07-09-2026 — any HOD to any
+      HOD.** All 14 see the other 13; no pair master to build, and a new HOD can send and receive the
+      day they are created. `peerAssignableUsers()` is therefore just "role = hod, minus self" off
+      `list_org_people()` — no config table, no Setup screen.
+- [x] ✅ **Do sub-HODs take part?** **Settled 07-09-2026 — HODs only, round one.** The peer picker
+      is `role = 'hod'`; the 11 sub-HODs are out. Widening it later is a one-line change to
+      `peerAssignableUsers()` with **no data migration**, because the marker is stamped per task and
+      says nothing about roles. ⚠ Keep the nav entry `roles: ["admin","hod","sub_hod"]` as written
+      anyway — a sub-HOD must still be able to *read* a peer board, or a HOD who is also somebody's
+      sub-HOD loses the screen.
+- [x] ✅ **Who may see a peer score?** **Settled 07-09-2026 — the two HODs involved, plus admins.**
+      🟢 **This needs no server work at all:** `tasks_select` already reads
+      `assigned_to = uid OR created_by = uid OR is_admin OR downline`, which *is* this rule exactly.
+      A third HOD's browser never receives the rows, so the restriction is real, not cosmetic.
+      ⚠ The corollary for the UI: the peer board must be built from the **viewer's own** given /
+      received tasks, never from "pick a HOD and see their peer score" — that dropdown cannot be
+      populated for anyone but an admin, and building it would imply an access we just declined.
+- [x] ✅ **The 134 existing admin→HOD tasks — and every future one.** **Settled 07-09-2026, and the
+      client widened the question when answering it.** An admin handing a task to a HOD is **ordinary
+      downward work, not a peer assignment** — it happens today, *"in the future as well these kinds
+      of tasks will again come"*, and it must keep being scored the normal way. So:
+      **the 134 stay exactly where they are, and admin→HOD is never marked as peer work, ever.**
+      🔴 **This is the rule that kills the derived approach outright.** "Creator is not above the
+      assignee" matches admin→HOD *perfectly* — it would sweep up all 134 today **and every new one
+      forever**, which is the opposite of what was just asked for. Only a stamped flag, written when
+      **a HOD** picks **another HOD** from the peer group, can tell the two apart. An admin's picker
+      is the ordinary all-users list, so an admin assignment never stamps the flag by construction —
+      but the rule is now explicit, and any future change to the picker must preserve it.
+- [x] ✅ **May a HOD set a *recurring* task on a peer?** **Settled 07-09-2026 — one-off tasks only,
+      round one.** ⚠ This is the reason `assignableUsers` must be left alone rather than widened:
+      `RecurringForm.tsx:37` reads it, so widening it in place would enable peer recurring templates
+      **by accident**, and every instance `generate_recurring_tasks` produced would be unstamped and
+      therefore scored in the wrong block. Adding it later = one migration to carry the flag through
+      the two generator functions.
+- [x] ✅ **Can the receiver decline or send back?** **Settled 07-09-2026 — no Decline button.** The
+      receiver writes a remark and the sender removes the task; `tasks_delete_pending` already lets
+      the creator delete it **while it is still pending**, so that path exists today and needs no
+      build. A new `task_status` label was the alternative and was rejected — it would ripple through
+      `StatusChip`, `STATUS_FILTER_OPTIONS`, `matchesStatusFilter`, `computeStats`, `reportFor`,
+      `COLOUR_STATUSES` and every RYG bucket, and would first need an answer to *"what colour is a
+      declined task?"*.
+      ⚠ **The known cost of this choice, to watch for after go-live:** once the receiver has
+      **started** the task it is past `pending`, so the sender can no longer delete it, and the only
+      exits left are complete / revise / shift — all of which score. A task the two of them have
+      agreed to drop then sits red on the peer board with no honest way to close it. If that happens
+      in practice, the Decline button is the fix and this decision should be reopened.
+
+---
+
 ## Outstanding Dashboard (Receivables)
 
 The Zero-Collection report itself is built. Live handover doc:
 [RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md).
 
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
+
+---
+
+### RC-19 · Credit Terms Not Set — one row per customer, a block of columns per book  🔴  `[x]`
+*Raised 2026-09-16 · Audited and measured on the live mirror 17-09-2026 · Built, verified and shipped
+17-09-2026 (`e010ac4`) · ConnectWave SQL applied, rollback rehearsed, cron running*
+
+**✅ SHIPPED.** Reports → Receivables → **Credit Terms Not Set** (`reports/credit-terms`) opens on a new
+**By customer** view: one row per customer NAME with a **four-column block per book** — Days · Limit ·
+Customer since · Outstanding — the name column frozen, a two-row header, alternating block shading, and
+**Books shown** pills to hide the books you are not working on. The old per-ledger list stays as a **By
+ledger** toggle. Both views share every filter, and the Excel export carries the same shape, the same
+fills and a working freeze.
+
+**Cell states.** Each cell is judged on its own, so a customer with days set and no limit reds only the
+Limit cell.
+
+| state | Days / Limit | Customer since | Outstanding | fill |
+|---|---|---|---|---|
+| Not open in that book | **NA** | blank | blank | none |
+| Open, terms set | the values | date or blank | balance | none (alternate blocks shaded) |
+| Open, **terms not set** | blank | date or blank | balance | **subtle red** `FFF2F2` |
+| Open, **set on the bills** | blank, tooltip counts the bills | date or blank | balance | **blue** `EAF3FB` |
+| Open, **limit = ₹1** | `₹1` + *blocked* | date or blank | balance | **subtle red** |
+
+**🔴 The creation date does NOT exist in Tally's export. Do not look for it again.** Checked in BOTH
+databases on 17-09-2026. The 9,536 ledger masters carry no creation or alteration date, and the
+connector's FETCH list never asks for one. ⚠ **`APPLICABLEFROM` is a trap** — nested inside
+`LEDMAILINGDETAILS.LIST` (8,676 ledgers) and `LEDGSTREGDETAILS.LIST` (7,661), invisible to a top-level key
+scan, and it is **not** a creation date: every value is a 1 April (two are 1 July 2017, GST launch), and
+within one book a ledger with a very low `MASTERID` carries a 2025 date. It records when the address or
+GST details were last set. `MASTERID` itself is creation ORDER, per book, and is wrapped JSON
+(`{"#text": …}`) that a plain `->>` cast throws on.
+
+**What "Customer since" therefore is.** Orange One's `mst_parties.created_at` = when the masters sync first
+SAW the ledger. The sync bulk-loaded everything up to **14-08-2026 17:45:24 IST**, so for those it is only
+the load date. **42** customers have been first seen since; compared against each one's first Tally
+voucher, 29 line up (within 3 days or before), **7** had a voucher 1–3 weeks earlier and **4 were old
+customers** with vouchers 2–5 months earlier. So the column is the **EARLIER of first-seen and first
+voucher**, and only for ledgers first seen after the bulk load; everyone older reads **blank** with a
+tooltip saying why. Never a fabricated date. Both halves must load or the cell says so — first-seen alone
+is exactly the trap.
+
+**Last transaction (replaces Last activity, both views).** The old column knew only the last receipt and
+open bills, so a settled bill, a credit note or a journal was invisible. It now takes the newest of the
+last **Tally voucher**, the last receipt and the newest open bill. ⚠ **Post-dated entries do not count
+until their date** — 24 ledgers carried post-dated bank receipts up to 21-Oct-2026 on the day.
+
+**The new ConnectWave object** (`supabase/connectwave/rpt_ledger_voucher_dates*.sql`, applied to
+`ieeefdnyhzgrroifiqbb`):
+- `rpt_ledger_voucher_dates (tenant_id, ledger_guid, first_vch_date, last_vch_date, last_vch_type,
+  refreshed_at)` — one row per customer ledger (**1,266**), rebuilt whole in **~1.4 s**.
+- `rpt_ledger_voucher_dates_if_stale()` chains off **`collection_meta.refreshed_at`**, not
+  `tally_sync_state`: the rebuild reads the snapshot's ledger list, so a new debtor is only coverable once
+  `collection_refresh` has put it there.
+- Cron: `rpt-ledger-voucher-dates-after-sync` at **`1-59/5`** and `rpt-ledger-voucher-dates-nightly` at
+  **`41 18 * * *`** UTC (00:11 IST, which re-applies the post-dated cap on the new day).
+  ⚠ **Every minute offset mod 5 on this project is now taken** (0 = four `*/5` pollers + the `*/30`
+  snapshot · 2 = `rpt-sales-despatch` · 3 = Orange One's masters-sync · 4 = `rpt-soa-register` · 1 = this).
+  The next job here must be placed by measured load, not by arithmetic.
+- Anon can read it; both functions are revoked from anon/authenticated. **Rollback file written AND
+  rehearsed on live** (applied → rebuilt → rolled back, objects gone, snapshot untouched → re-applied).
+
+**Verified on live data, 17-09-2026:** 1,882 ledgers → **1,324 customers** (914 in one book, 290 · 95 · 22,
+and **3 in all five**, so **71.6%** of book cells read NA) · **180** ₹1 limits · block order read from the
+data (O-tec Surat 1,204 · Enterprise Surat 312 · O-tec Noida 177 · Enterprise Noida 108 · Colorix Surat
+81) · no customer name appears twice in one book. Checked in the browser as an admin **and as a
+salesperson-scoped HOD** (954 customers against the admin's 988, Customer since populated, scoped NA
+wording, export works). The workbook was opened in Excel: freeze at column 1 / row 3, merged book bands,
+the three fills, and real dates.
+
+**The decisions taken (all of them, for the record).**
+1. Customer since = earlier of first-seen and first voucher, blank before 14-08-2026 with a tooltip.
+2. "Set on the bills" is blue, never red — 146 ledgers are controlled from their bills, one of them 58
+   machine instalments worth ₹6.55 Cr.
+3. A ₹1 limit counts as NOT set: `₹1` + *blocked*, red.
+4. Pivot on the EXACT customer name ("… MACHINE" is a separate decision from the parent).
+5. The per-ledger view stays, and the company panel stays per ledger and says so on screen — after a
+   pivot one customer can be Complete in one book and Neither set in another.
+6. Customer-level Last transaction added (without it a reader has no activity signal for the older
+   customers, whose Customer since is blank).
+7. Fills are per cell, not per block.
+8. Post-dated vouchers ignored until their date.
+9. Filters stay LEDGER filters: a customer row shows when any ledger in a shown book matches, while the
+   blocks still tell the truth about every shown book. The Company dropdown becomes the Books shown pills.
+10. By ledger's "Last activity" became "Last transaction" too, so the page has one definition.
+11. **No money total in the pivot** — each block's Outstanding is a raw balance and may be negative, and a
+    net total would contradict the panel's positive-only "Owed with nothing set".
+12. For a scoped viewer, NA reads "not open, **or outside your view**".
+
+**Also fixed in passing:** `Clear filters` never reset the collection-team filter and there was no chip
+for it, so that filter narrowed the list with nothing on the page able to undo it.
+
+**Not done, deliberately:** the By ledger list keeps its top-bar filters (it predates the per-column
+filter row), and Customer since is not shown per ledger there.
+
+**Access:** report id `credit-terms`. Admins see it; anyone else needs it in
+`profiles.receivables_allowed_reports`. **Ritesh Tulsyan was granted it on 17-09-2026** (his list is now
+`{advances, credit-terms}`).
+
+**🔁 REVISED 18-09-2026 on the client's read of the live report (`df932fb`).**
+- 🔴 **"Customer since" is OUT of the blocks.** It could only be filled for customers created after
+  14-08-2026, so it was blank in about 98% of the grid: *"I don't understand why you have shown Customer
+  since... instead of showing it, we should have shown last activity."* Each block's fourth column is now
+  that book's **Last activity** (the newest Tally voucher, receipt or open bill on that ledger), which
+  exists for every ledger that has ever traded. The left-hand column stays as the newest across every
+  book, renamed **Last activity (any book)**; the By ledger column is **Last Activity** again too, so the
+  page has one word for one thing. The creation-date finding is preserved in this entry and in RC-20 —
+  ⚠ the mst_parties read was removed with the column, so restoring it means restoring that fetch.
+- **The report opens filtered**, on the client's instruction: **Has outstanding ON** (1,131 of 1,882
+  ledgers are at exactly zero) and **Sale type = every type except Machine and Spare Parts**. Both are
+  the ordinary controls, so either can be switched off. Counts on the day: 988 customers with a gap →
+  142 once zero balances go → **87** once machine and spares go. ⚠ Clearing filters returns to this
+  DEFAULT view, not to "no filters"; the defaults carry no chip (the button and the Sale type chip show
+  them); and the panel and strip count the same filtered set as the list, which is what keeps a figure
+  you click and the list you land on the same customers.
+- **A blue cell now reads "On bills"** in words, on screen and in the workbook. The first question asked
+  of the live report was what the blue meant, and a coloured blank cannot answer that.
+
+**Related, same day:** `send-email` gained an optional `bullets` array and `ctaUrl`/`ctaLabel` for the
+`receivables_collections_report` kind (deployed v32, commit `5eace03`), because the announcement mail
+had gone out as one escaped paragraph. ⚠ Live matched **master's** copy of that function; the
+`daily-reports` copy carries an unreleased `travel_` renderer, so deploying from that checkout would
+have dropped Complaint's email. Check the deployed bundle before any future deploy.
+
+---
+
+### RC-21 · The Sales dashboards took a minute to open  🟢  `[x]`
+*Raised 2026-09-21 by Ritesh Bhai · **LIVE 22-09-2026** (master `1230b1ca`) · 58 s → 8.3 s, verified on
+orangeonehub.com*
+
+**The complaint.** `bushra-dashboard/sales-dashboard` took 30-60 s to load. First guess — "are we reading
+the base table instead of a report table?" — was wrong: `rpt_sales_register` is a precomputed table (built
+24-Jul-2026 for Tally Reports → Sales Register; the Bushra dashboards reused it on 16-Sep). Each query
+against it costs the server only ~143 ms. The time was going somewhere else entirely.
+
+**What it actually was — three things, and only fixing all three is fast.**
+
+| | Cause | Cost |
+|---|---|---|
+| 1 | **Pages fetched one at a time.** PostgREST caps a reply at 1,000 rows here, and the window is always this FY *plus last* (product performance compares them), so 105,958 rows = **106 requests**, each waiting for the last | ~42 s |
+| 2 | **Deep OFFSET is quadratic.** `.range()` is SQL OFFSET; Postgres reaches offset N by walking N rows first. Page 1 reads 1,000 rows, the page at OFFSET 100,000 reads **101,000** to return its 1,000 (305 ms measured). Across 106 pages: **~5.5M row reads for 105,958 rows — 53× the necessary work**, all landing on one instance at once | this is why parallelising *alone* only reached ~26 s |
+| 3 | **The item lookup gated everything.** The register query is `enabled: !!lookup`, and `loadItemLookup` walked ~14k Central Masters rows over **15 sequential pages** — so nothing could even be *asked for* until ~11 s in | ~7 s of dead time |
+
+**The fix** (`lib/salesRegister.ts` `fetchWindow`, `lib/bushraSalesRegister.ts` `pageAll`). The register and
+its despatch sidecar are read as **parallel monthly chunks**: half-open `[lo, hi)` months keep the chunks
+provably disjoint, each holds ~4,400 rows so every offset inside it is shallow, and the months run together.
+Total work goes back to linear. The masters pager is parallel too, moving first contact with the register
+from ~11 s to ~3.8 s. The register, its two sidecars and the company map are now read *together* rather than
+the register waiting on the sidecars.
+
+**Measured back-to-back, same browser, same account, live data:** 57.9 s → 8.5 s locally, 8.3 s on the live
+site. The rendered page is **byte-identical** — same 23,131 lines, same KPIs, same charts, same first page of
+the detail table.
+
+⚠ **Two traps this hit, worth remembering.**
+- **Order by a UNIQUE key.** The old sort (`vch_date, tenant_id, voucher_no, line_no`) is not unique, and
+  OFFSET is only stable under a total order, so a tied row could be served on two pages or on neither. *Not
+  observed biting* — old and new return the same 27,834 rows and the same revenue to the rupee — but it was a
+  real hazard and parallel reads make it easier to hit. Now sorts by the PRIMARY KEY, with display order
+  restored by an explicit sort once the chunks are in hand.
+- **Half-open chunk bounds.** The first draft used an inclusive upper bound per month and returned **3,718
+  duplicate rows out of 105,958**. `gte(lo) & lt(hi)`, never `lte`.
+
+**Considered and dropped — a summary table (`rpt_sales_summary`).** The original plan was to pre-aggregate
+to month × company × location × type × item, cutting 27,749 rows to 6,178. It does not work here: the
+dashboard carries an **invoice-line table on the same page** (Date, Voucher No., Rate, search) and two KPIs
+that count **distinct invoices** and **distinct customers**. All three need the individual lines. Keeping the
+customer dimension only collapses 105,873 → 60,293 anyway (43%), because 781 customers × 4,180 items barely
+folds. At 8 s it is not needed; if ~3 s is ever wanted, it would have to be a summary for the charts *plus*
+the detail loaded on demand — two code paths, and a real risk of the two disagreeing.
+
+**Applies to every screen sharing `loadSalesRegister`** — all 9 Bushra Sales dashboards, the Bushra Sales
+Register and the plain Sales Register. All spot-checked after the change.
+
+---
+
+### RC-20 · A true creation date for customers from before 14-Aug-2026  🟡  `[ ]`
+*Raised 2026-09-17 out of RC-19 · Not started · Needs work in ANOTHER repo plus a full re-pull*
+
+**The ask.** RC-19's "Customer since" is blank for every customer created before the masters sync's bulk
+load, because nothing in either database records when a Tally ledger was created. Filling those blanks is
+a three-part job, and none of it lives in this repo:
+
+1. 🔴 **Probe the live Tally installation FIRST.** Tally exposes master audit information (created/altered
+   dates) only where the **edit log / "Use Tally Audit Features"** is switched on, and whether this
+   installation has it — and since when — is unknown. If it is off, the date does not exist anywhere and
+   the answer is "never available for historical ledgers". Everything below is wasted until this is known.
+2. **Connector FETCH change** in `D:/AI Development/ConnectWave-App` — `connector/internal/tally/entities.go`
+   asks for GUID, MASTERID, ALTERID, NAME, PARENT, balances, BILLCREDITPERIOD, CREDITLIMIT and the contact
+   fields, and no date. Adding one flips `SchemaSignature()`.
+3. **A full re-pull of every company**, which is the expensive half.
+
+Same shape as OD-12b. ⚠ Do not "solve" it with `APPLICABLEFROM` or `MASTERID` — see RC-19 for why both are
+wrong.
+
+---
+
+### RC-17 · Masters: one click to see who is unmapped, and every tab sorts and filters  🔴  `[x]`
+*Raised 2026-09-16 · Re-measured against the live mirror and **shipped 18-09-2026** · No database change*
+
+**The ask.** The **Customer Groups** tab had a *No collection team* chip; nothing equivalent existed for
+salesperson or category, and that chip counted only customers who **owe money**.
+
+**Why it mattered now.** The Advances report (RC-18) shows money against the customer's collection team,
+so a customer with no team is invisible to everyone scoped to one — and the untagged customers hold most
+of the unapplied advance money. This screen is where somebody finds them. Masters is **not** scoped (it
+reads ConnectWave directly, not through `useAppData`), so a Settings full-access user such as Jayshree
+sees every customer here, including ones she cannot reach on any report.
+
+**Measured on the live mirror, 18-09-2026** (the figures move daily — re-measure before quoting):
+
+| | all | owing ≥ ₹1 |
+|---|---|---|
+| Muster rows | 1,887 | — |
+| **No salesperson** | **27** | 3 |
+| **No category** | **37** | 3 |
+| **No collection team** | **1,088** | **7** ← all the old chip showed |
+| salesperson = `OTHERS` (a **real** tag, never folded in) | 678 | — |
+
+Unset teams split **128 `NULL` / 960 empty string**, so `=== null` would have reported 128. Everything
+goes through the shared `isUnset`.
+
+#### The two decisions
+
+1. **The chips count EVERY unmapped customer**, not only those who owe. The owing-only rule was
+   deliberate and right for *its* question — "who is nobody chasing?", where a credit balance means
+   nothing to collect — but it is the wrong denominator for "who needs tagging?". Its comment was
+   **rewritten**, not silently dropped, so the next reader does not restore it as a bug.
+   ⚠ **"Has balance" does NOT reproduce the old 7.** It tests `Math.abs(out) >= 1`, so it keeps credit
+   balances too: chip + Has balance reads **25**. Nothing on the screen reproduces the old 7 exactly.
+2. **The All / Unchecked / New chips were dropped; Status became a column filter.** Both tables already
+   rendered a Status column, and Red Mark records why two controls over one thing were abandoned:
+   *"two controls over the same thing would disagree the moment one of them cascades."*
+
+#### Shipped with it — every Masters tab now sorts and filters on every column
+
+`CLAUDE.md` says every grid sorts on every column and filters under every column by default. Four of the
+seven tabs did not. One new **`components/GridTable.tsx`**, generalised from the grid `AdvancesReport`
+already drove from a column array, now renders all of them:
+
+| Tab | Before |
+|---|---|
+| Salesperson & Category · Customer Groups | sorted on 1 of 9 columns; no filter row |
+| Companies & Locations | **no sort, no filter, no search at all** |
+| Other Payments | **no sort on any of 12 columns**; order hard-coded `payment_date desc` |
+| Salespersons / Collection Teams | hand-rolled sort + cascade; filters on 2 of 5 columns |
+| Red Mark · Disputed Bills | already conformed — moved onto the same table |
+
+- 🐛 **Fixed:** `NameMasterTab` offered a filter value literally spelled `—` (it did `updated_by ?? "—"`)
+  where every other grid offers `(Blank)`. Also split the two-line Updated cell into **Updated** and
+  **Updated by**, since one column cannot sort on a timestamp and filter on a person honestly.
+- **`useColumnGrid` gained `initialSort`.** Without it the conversion would have silently reordered three
+  tabs — the hook starts unsorted, while the two musters opened on Outstanding descending and Other
+  Payments on the newest payment.
+- **`describeFilters` now names the chips and, generically, every per-column selection**, so an export
+  cannot narrow 1,882 rows to 9 without saying why. That also closed the same hole on Red Mark and
+  Disputed Bills, whose exports had been understating their filters.
+- **Orphans deleted in the same commit** (FIX-4 in reverse — `noUnusedLocals` is false, so none of them
+  would ever have failed the build): `Toolbar`, `useMusterFilters`, `OutstandingHead`, the local
+  unsearchable `MultiSelect`, a duplicate `SortDir`, and the orphan-chip props no caller ever passed.
+
+**Verified signed in as Jayshree (`sub_hod`, not an admin, Settings full access, scoped to five teams):**
+counts match the database, chips cascade and reset the page, a filter matching nothing keeps the table and
+its filter row standing with **Clear filters**, blanks read `(Blank)`, self-exclusion holds (a narrowed
+column still offers its other values), and an export of a chipped + filtered view named both filters on its
+About sheet.
+
+**🔴 Still open — and it is data work, not code.** Tagging the 1,088 untagged customers is Jayshree's job,
+through the **Export / Import** buttons already on each tab. Until that is done the Advances report keeps
+hiding money from everyone scoped to a collection team.
+
+---
+
+### RC-18 · Advances Not Applied — which unapplied money belongs to which invoice  🔴  `[x]`
+*Raised 2026-09-16 · Audited against the live mirror · Report built, verified and shipped 17-09-2026 · The daily email is a separate, unbuilt task*
+
+**✅ SHIPPED 17-09-2026 — the REPORT.** Reports → Collections → **Advances Not Applied**
+(`reports/advances`, report id `advances`). **The daily email is NOT built — a separate future task** (schedule,
+recipients, runner and send were all out of scope by the client's instruction of 17-09-2026). No database change.
+
+**What the screen does.**
+- One row per customer holding unapplied credit, **grouped by salesperson** with a subtotal per group (a switch
+  flattens it). Columns: customer · company · location · salesperson · team · **Unapplied credit** · Tagged to no
+  bill · On a named ref · Named in Tally · Open bills · Pending on open bills · Outstanding · **On Account
+  (Collection Report)**. Every column sorts; filters cascade; 25 a page.
+- **Expand a row:** the vouchers Tally holds behind the money tagged to no bill (date · type · number or NEFT/RTGS
+  narration · amount), **one labelled line for whatever they do not explain** ("Opening balance, no receipt detail
+  in Tally" / "Not explained by the entries above" / "Tally's entries don't reconcile…" / "Manual Other Payment on
+  account"), each credit on a named ref, and — beside it — **the open bills to settle it against**, or "No open
+  bill to settle against yet". The lines always add up to the row, to the paisa. Links to Customer Detail.
+- **Related party** (salesperson `RELATED PARTY`) in its own section, out of every total. **Suspense** at the foot:
+  credits into the SUSPENSE ledgers, read per real Tally book (closed financial years included), not scoped.
+- **Excel:** Advances (grouped, subtotals) · Entries (every line behind every figure) · Related party · Suspense.
+- Code: `lib/advancesReport.ts` (the figure, pure) · `lib/suspenseReceipts.ts` · `lib/exportAdvances.ts` ·
+  `pages/AdvancesReport.tsx`, plus the catalogue entry, the route and the FY-pinned list.
+
+**🔴 The figure is UNCAPPED — the user's decision, 17-09-2026.** The brief's ₹13.73 Cr is
+`collection_customer_snapshot.on_account`, which `collection_refresh()` caps at the ledger's gross overdue
+(`least(named-ref credit + untagged, max(0, overdue))`). That hid **87 customers holding ₹15.00 Cr** — GOPGAN
+DIGITAL PRINTING LLP ₹4.86 Cr received on account with no open bill, RAMSHARNAM IMPEX ₹3.63 Cr M/C ADV, ZAARA'S
+₹1.00 Cr — and under the cap "no open bill to settle against" could never occur. The report shows the whole of it:
+**Unapplied credit = credit on named refs + max(0, Σ pending − outstanding)**, with the same orphan-debit guard as
+the SQL. The capped figure stays as the last column, so the Collection Report still ties.
+
+**Measured 17-09-2026 (live mirror, snapshot 13:00 IST).**
+
+| | customers | ₹ |
+|---|---|---|
+| **All unapplied credit** | **250** | **₹29.61 Cr** |
+| · tagged to no bill (incl. ₹13.15 L manual Other Payment) | | ₹16.35 Cr |
+| · on a named ref | | ₹13.27 Cr |
+| Main section | 243 | ₹19.26 Cr |
+| Related party section | 7 | ₹10.35 Cr |
+| Collection Report's capped On Account (tie-back) | 161 | ₹13.73 Cr |
+| Suspense receipts | 4 | ₹2,19,764 |
+| No open bill to settle against (78 main + 1 related) | 79 | |
+
+By collection team: Jayshree 103 · ₹11.27 Cr · Mohta ji 65 · ₹1.29 Cr · Nitesh 33 · ₹0.79 Cr · Ankita 17 · ₹0.08 Cr ·
+**(no team) 30 · ₹13.15 Cr** · **RELATED PARTY 2 · ₹3.04 Cr**. (The team "Vijay" was renamed "Ankita" on 17-09-2026,
+on the ledgers and on Jayshree's profile alike.)
+
+**Coverage, re-measured.** Of ₹16.22 Cr tagged to no bill in Tally, voucher lines name **₹84.60 L across 39
+customers** (main section ₹63.90 L / 38). 95 customers are opening balance only; on 16 the vouchers add up to MORE
+than the figure, so the guard lists none. Suspense: ₹99,710 and ₹1 in current books, **₹14,750 + ₹1,05,303 in the
+closed FY25-26 Noida Enterprises book** — found only because the routine is called with the book's real tenant.
+
+**Decisions.**
+1. Report only, no email (client, 17-09-2026).
+2. All unapplied credit, uncapped (user, 17-09-2026) — split into tagged to no bill / on a named ref / manual
+   payment, with the capped On Account as a tie-back column.
+3. RELATED PARTY (the salesperson value) in its own section, out of every total.
+4. Suspense at the foot: not scoped, money in only, every book including closed years.
+5. A "No salesperson" group, last; empty today.
+6. Access asked, not assumed — **granted 17-09-2026 to Jayshree Patil and Ritesh Tulsyan** (the user's choice).
+   Ritesh is salesperson-scoped and his list has neither RELATED PARTY nor HARI OM, so he sees 242 · ₹19.08 Cr.
+
+**🔴 Jayshree sees 218 customers · ₹13.43 Cr of the ₹29.61 Cr.** Scope is lifted only for admins, and it was
+deliberately not widened. What she cannot see is data, not code:
+- **30 customers with no collection team · ₹13.15 Cr** — COLORIX DIGITAL PRINTING SOLUTIONS LLP-SALES ₹636.00 L*,
+  RAMSHARNAM IMPEX ₹363.44 L, ZAARA'S ₹100.30 L, ORANGE O TEC ENTERPRISES PRIVATE LIMITED-NOIDA (S) ₹36.65 L*,
+  ORANGE O TEC ENTERPRISE PRIVATE LIMITED-NOIDA ₹30.00 L*, ORANGE O TEC PVT. LTD (DELHI) ₹28.58 L*, PANKAJ FASHIONS
+  PVT LTD-MACHINE ₹25.50 L, VAIBHAV ENTERPRISES MACHINE-2 ₹17.00 L, SHREE RAJ RAJSHWARI SILK MILLS ₹13.15 L, NKM
+  FASHION-MACHINE ₹13.00 L, SHREE SAI DIGITEX ₹8.06 L, PRIYANKA SILK MILLS ₹7.89 L, MITHILI PROFFESIONAL'S-Cross
+  Creation ₹6.45 L, ORCHID COLOURING-MACHINE ₹5.00 L, DASS TRENDZ ₹4.49 L, JAIN KNITTING & DIGITAL ₹4.38 L, SHREE
+  RAM INDUSTRIES ₹3.56 L, NIVYA PRINTS ₹3.49 L, SUMATI PRINTS PVT LTD-MACHINE ₹3.00 L, MANISHA TRADERS ₹1.44 L,
+  JAGANNATH SUDHIR KUMAR ₹1.30 L, ZAKOOPI INFOTECH PVT LTD-MACHINE ₹0.50 L, BANSAL TEXTILE MILLS ₹0.24 L, TRUE COLORS
+  PVT LTD ₹0.24 L*, LOTUS KNITS ₹0.24 L, VENUS MILLS PVT LTD ₹0.23 L, PROTON ENTERPRISE ₹0.20 L, ADVANCE FORM DEBTORS
+  ₹0.13 L, CLOTHERA PRIVATE LIMITED-MACHINE ₹0.10 L, M/S AVON COTTEX PRIVATE LIMITED ₹0.06 L. (* related party)
+- **2 customers in the RELATED PARTY team · ₹3.04 Cr** — ORANGE O TEC ENTERPRISES PVT LTD (SALE) ₹299.58 L,
+  ORANGE O TEC PVT LTD- SALES ₹3.99 L.
+- The fix: give those 30 a collection team in Masters, and decide whether Jayshree should hold RELATED PARTY.
+
+**Verified 17-09-2026.** As admin, on the branch and again on `master`'s code: totals tie to the SQL to the rupee;
+**all 250 customers diffed one by one against SQL** — every money figure, status, team and salesperson matches; the
+open-bill count is lower on 9, all by design (5 customers carry one debit non-bill reference the hub removes; 4
+have bills settled by manual Other Payments, 18 bills in all); each customer's entries add up to its figure; the
+workbook's sheet totals tie. One batched voucher lookup (8 calls), never per customer. **Not tested as Jayshree** —
+the user declined signing in as her.
+
+**Known limitation.** `loadOnAccountEntries` swallows a failed batch, so a lookup that fails would read as "Opening
+balance, no receipt detail". Left unchanged, as instructed.
+
+- [ ] **The daily per-salesperson email** — not built; a separate task when the client asks for it.
+- [ ] Give the 30 no-team customers a collection team in Masters (data, not code).
+- [ ] Client's call: should Jayshree hold the RELATED PARTY team?
+
+---
+
+### RC-16 · Collection Team becomes a Group-by level on the Salesperson Collection Report  🟡  `[x]`
+*Raised 2026-09-16 · Re-measured against the live mirror, built, browser-verified and **shipped
+18-09-2026** · No database change, no Edge Function — the value was already on every row*
+
+**The ask.** RC-11 added the **Collection Team** filter to the Salesperson Collection Report, but the
+**Group by** builder offered only Salesperson / Customer / Customer Group / Customer Category /
+Company / Location, so the figures could not be read team by team.
+
+**✅ SHIPPED.** *Collection Team* is now a group-by dimension like any other, with two new View chips
+(**Collection Team** and **Collection Team → Customer**). Everything downstream picked it up on its
+own, as predicted: the Excel export writes one column per level plus the `Level` column with no edit,
+and the row-count noun reads the dimension's own label ("7 COLLECTION TEAMS").
+
+**Measured on the live muster, 18-09-2026** (re-measure before quoting — `Vijay` became `Ankita`
+since 16-09):
+
+| collection team | muster rows | ledgers the report actually lists |
+|---|---|---|
+| **(none)** | **1,088** (128 `NULL` / 960 empty) | **30** |
+| Mohta ji | 251 | 224 |
+| Jayshree | 248 | 232 |
+| Nitesh | 184 | 165 |
+| Ankita | 107 | 97 |
+| RELATED PARTY | 8 | 6 |
+| **OTHERS** | **1** | **1** |
+
+⚠ **The two figures are not the same question and neither is a safe assumption.** Most untagged
+ledgers are dormant and never reach this table — 58% of the muster carries no team, but the bucket on
+screen held 30 of 755 listed ledgers on the day it shipped. It grows the moment an untagged customer
+starts billing.
+
+#### The decisions
+
+1. **The unassigned bucket is labelled "No collection team"** and keyed on a **sentinel**
+   (`"\u0000no-team"`), not on its display text — the pattern `shared/lib/blankFilter.ts` uses.
+   🔴 **`OTHERS` IS A REAL COLLECTION TEAM**, carried by one ledger today, so a bucket named after
+   any plausible word would have merged the untagged into a team the client actually uses,
+   indistinguishably. ⚠ This is the **opposite** of the salesperson dimension on the same screen,
+   where `spName()` folds the untagged into `"OTHERS"` deliberately, because there it *is* a real
+   muster value. The two dimensions behave differently on purpose.
+2. **It sorts to the bottom, whatever the column and whatever the direction.** It is an absence, not
+   a team; pinning it means the sort always orders the *teams*, and the top row is never ambiguous.
+   Verified against five sorts in both directions, including the alphabetical label sort where it
+   would otherwise land between `Nitesh` and `OTHERS`.
+3. **The Excel header now names the Collection Team and Salesperson filters.** It printed Company,
+   Location, Sale Type, Segment and Search and neither of these, so an export grouped by team and
+   filtered to one team could not say which team it was.
+
+**One thing beyond the ask, same commit.** The Collection Team filter had **no filter chip on this
+screen** — the Dashboard, the Risk Register and Credit Terms all show one, this report alone did not,
+so the only thing on the page that said a team was selected was the control itself. Grouping by team
+makes a forgotten filter far easier to misread (one bucket, and nothing explaining why), so the chip
+is now there, worded exactly as its siblings word it: `Team: Ankita`.
+
+#### What did NOT change, and why
+
+- 🔴 **The grouping creates a bucket the FILTER deliberately refuses to offer.**
+  `CollectionTeamMultiSelect` says so in capitals: an unassigned customer *"appears under no team, so
+  it cannot be reached from this control at all"*, because a catch-all there *"would hide the coverage
+  gap the Masters screen exists to report"*. A group-by has no such choice — every row must land
+  somewhere. So the untagged are now visible in a bucket the control above cannot select. That is
+  correct, and it is why the label reads as an absence rather than as a team.
+- ⚠ **The bucket key is the RAW, UNTRIMMED value**, deliberately unlike the neighbouring `category`
+  case which trims. The filter is `set.has(c.collectionTeam)` and its option list is built the same
+  way, so a team stored with a stray space has to bucket under exactly the string the filter can
+  select, or group and filter quietly disagree about the same customer. (No stray-space value exists
+  on the muster today; the rule is what keeps that true.)
+- ⚠ **A team is per LEDGER, not per customer name**, and this report keeps per-ledger granularity so a
+  name never clubs across companies. `PROTON ENTERPRISE` appears twice under *No collection team* —
+  once as `Enterprise · Surat`, once as `O-tec · Surat` — and a customer trading in two companies can
+  legitimately show under two different teams. Expect it to be reported as duplication; the
+  "Company · Location" sub-label is what explains it.
+- **"Clear all" still does not clear the Collection Team filter** — and it does not on the Dashboard
+  or the Risk Register either, so this was left alone rather than made to diverge on one screen. Now
+  that the chip is there, a filter that survives "Clear all" is at least visible. Worth fixing across
+  the three screens in one pass.
+
+**Verified 18-09-2026** on the live mirror, against the running code (`npm run build` is the gate —
+there is no test runner):
+
+- Group by Collection Team → 7 buckets, the six real teams plus *No collection team*; `OTHERS` stays
+  its own row. The buckets sum to the Grand Total to within display rounding (₹0.014 Cr on ₹69.19 Cr).
+- The unassigned bucket sits last under Due Pending ↑/↓, Outstanding ↑/↓ and the label sort.
+- Group by Collection Team → Customer: `NITYA PRINT` under `OTHERS`, `RAMSHARNAM IMPEX` under
+  *No collection team* — both confirmed against `ext_ledger_group.collection_team` on ConnectWave.
+- Filter to one team while grouped by team → exactly one bucket, every figure equal to the Grand
+  Total.
+- Export grouped by team: `Level | Collection Team | Customer | Company | Location | …`, header row
+  reads `Collection Team: Ankita`.
+- **As a collector, not as an admin** (Ankita, `employee`, scoped to team `Ankita`): "1 COLLECTION
+  TEAM", her team only, no unassigned bucket, a narrow table that renders normally, and figures
+  identical to the admin's team-filtered view. Her session was minted for the test and revoked
+  immediately with `scope=local`.
+
+**Still open — the siblings, deliberately not touched.** The *Collection Performance* report has the
+same gap through the shared `ZC_DIMENSIONS` in `lib/collections.ts`, and Overdue Aging / DSO /
+Customer Category read the shared `zcDimValue`. Adding it there is the same case again, but on
+`ConsolidatedCustomer`, whose `collectionTeams[]` is an array that *excludes* the unassigned ones — so
+the fold is **not** identical and must not be copied blind. Ask before doing it.
 
 ---
 
@@ -10524,7 +14713,154 @@ browser never holds write access. New master writes go the same way; do not add 
 
 ---
 
-### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[ ]`
+### RC-13 · Disputed bills — a master of the bills in dispute, and the screen that works it  `[x]`
+🟢 **SHIPPED 17-09-2026** (master `082958d`, taken by content from daily-reports `1452894`). Seeded with
+**26** disputes from Jayshree's sheet, every remark and item byte-identical. Tested as Nitesh on a session
+minted server-side (no password), then revoked.
+
+| Deploy step | When (IST) | State |
+|---|---|---|
+| ConnectWave SQL `supabase/connectwave/disputed_bills.sql` | 17-09 02:21 | applied → **rollback rehearsed on live** (table gone, `ext_redmark` 54 rows / 0 cleared / its constraint intact) → re-applied. Check constraint proven to refuse a note-less clear (23514) |
+| `muster-write` Edge Function | 17-09 02:24 | **v12** live. v11 was diffed first: identical to the repo once line endings are normalised (md5 `504ef616…`), so nobody's change was dropped or shipped by accident |
+| Seed load | 17-09 02:53 | **26 rows**, all uncleared, source `dispute_sheet`, in one statement that writes nothing unless all 26 bills are still open |
+| Frontend | 17-09 02:56 | master `082958d`. `reportCatalog.ts`, `ReceivablesHubApp.tsx`, `UserLayout.tsx` and `menus.tsx` applied as hunks onto master's newer copies |
+| Report grant | 17-09 03:00 | `disputed-bills` added for Jayshree Patil, Nitesh Prajapati, BENI MADHAV MOHTA, VIJAY (approved by the user 17-09-2026). Granted AFTER Vercel reported the frontend live (02:59), so no Permissions screen still running the old bundle could drop an id it did not know yet. Existing grants untouched |
+
+**What it does now**
+- **`ext_dispute`** (ConnectWave): one row per bill, `unique (ledger_id, bill_ref)`. It stores only what a
+  human types: remark, item description, the clear status, stewardship `checked`. `tally_name` is a display
+  fallback. RLS is on with one read policy, and anon/authenticated have **select only** (Supabase's default
+  grants were revoked, because RLS does not govern TRUNCATE).
+- **Disputed Bills report** (Reports → Customers → `reports/disputed-bills`), scoped through `allCustomers`
+  like Red Mark:
+  - **Columns:** customer · company · location · team · salesperson · bill ref · Bill (Open / *No longer
+    open*) · date · overdue · sale type · amount · pending · **Settled** · item · remark · clear status.
+  - **Settled = Amount − Pending**, with the split on hover (see findings).
+  - A **Bill no longer open** tile opens exactly those rows.
+  - **Default view Uncleared**, with the shared toggle. Clear / Reopen uses the shared note dialog, with the
+    dispute's own wording.
+  - **Admins / Settings full access** also get *Add disputed bills* and an inline remark edit. The edit
+    writes **only the remark**.
+  - The Excel export carries the as-on date and the bill-wise note. Pinned to Both FYs.
+- **Settings → Masters → Disputed Bills** (beside Red Mark):
+  - Remark, item and checked are edited inline. Only the changed fields are sent.
+  - Clear / Reopen, and Delete (for mistakes; the dialog says to use Clear if the dispute was settled).
+  - Export / Import follows the Red Mark contract: import edits details and can clear with a note, but never
+    adds, removes or reopens.
+  - The tab loads its own data, so the other tabs don't pay for the 6,000-row read.
+  - It shows no money, on purpose (raw snapshot vs the dashboard's netted figures). The money is on the
+    report.
+- **Add a bill** (the same dialog on both screens):
+  1. Pick a customer. Only customers with an open bill are listed.
+  2. Their open bills are shown, overdue first; focus moves to the first bill.
+  3. Tick one or more bills (bills already on the list are **greyed out**, cleared ones say *reopen it
+     there*), type a remark, save.
+  - Nothing about money or dates is typed.
+  - The server re-checks that each bill is open **for that customer** (400 otherwise) and refuses a
+    duplicate with a readable 409.
+  - Several bills are inserted in one statement: all land or none.
+- **`muster-write`:** `CLEARABLE` now separates the **row key** from the **authorisation key**. A dispute
+  is found by `id`, and the ledger read off that row decides who may clear it. Red Mark still authorises
+  before reading, exactly as before.
+  - `insert/update/delete_dispute` sit behind the admin gate.
+  - `clear/reopen_dispute` go through `authorizeClear` ahead of it.
+- **Shared components:** `ClearNoteDialog` and `ClearStatusBadge` take a `copy` prop (`RED_MARK_COPY` /
+  `DISPUTE_COPY` in `lib/clearStatus.ts`) and default to Red Mark's. Red Mark's dialog was checked word for
+  word against HEAD. The dispute wording does not claim anything moves "everywhere", because a cleared
+  dispute moves no other screen.
+
+**Verified** (17-09-2026)
+- **API, 38/38**, as Nitesh (collector) and the admin test account:
+  - Own-team `clear_dispute` 200; another team's 403; no note 400; double clear / double reopen 409;
+    missing id 404.
+  - `insert/update/delete_dispute` as Nitesh 403.
+  - Duplicate add 409; a bill that is not open, or another customer's bill, 400.
+  - The anon key reads the table but cannot write it (42501).
+  - Red Mark: own clear 200 then reopen 200, other team 403, `update/delete_redmark` 403.
+- **Clearing one of two disputes on N.H.H. TEXTILE PROCESSORS left the other untouched**, confirmed by
+  reading ConnectWave back: `cleared_by` / `updated_by` = the caller.
+- **Browser, as admin:**
+  - Added 2 bills through the dialog; re-opening the dialog showed both disabled.
+  - Inline remark edit changed only `remarks`.
+  - Settled = Amount − Pending on every row (AJANTA DIGITAL INDUSTRIES INK/26-27/730: ₹70,800 − ₹14,160 =
+    ₹56,640).
+  - A dispute on a bill Tally no longer holds read *No longer open* under the tile, and was not dropped.
+  - Masters export/import: 2 written, 1 refused for a missing clear note.
+  - Delete through the Masters tab.
+- **Browser, as Nitesh** (the report grant injected in the browser only):
+  - Only his team's 4 test disputes; Vijay's JAY MATAJI hidden.
+  - No Add, no remark edit, Clear enabled.
+  - Clear → reopen through the dialog.
+- **Clean-up:** every test dispute deleted (table back to 0 before the seed). Red Mark's 54 rows are
+  **identical to the pre-test backup** (table md5 `ed2c1dd9…`), including EVOKE FASHION, which was cleared
+  and reopened in the API test and then restored with its triggers held.
+
+**The seed — Jayshree's DISPUTE tab, re-measured 17-09-2026**
+- **38 rows → 26 loaded, 12 not loaded, 0 ambiguous.** Matching was exact on customer name → ledger plus
+  the bill reference, and every match was unique.
+- **Remarks: sheet 20 = 11 on the 26 loaded + 9 on the 12 not loaded.** Table after load: **11 remarks, 11
+  items**, compared **row by row by string and md5: 26/26 identical**. Row 17's curly apostrophe survived.
+- By collection team: Jayshree 12 · Vijay 7 · Nitesh 4 · Mohta ji 3.
+- **Two loaded remarks already read as settled**, and were loaded uncleared on the user's decision, for
+  Jayshree to clear with her own note:
+  - ANISHA THE COLOUR CO. SPARE/25-26/1420 — *"NO DISPUTE"*
+  - RAJIV SILK MILLS HEAD/25-26/211 — *"Dispute resolved. The customer will make the payment by the 20th."*
+- Four loaded bills have been part-paid since the sheet (SWASTIK SPARE/25-26/2022 ₹88,300 → ₹19,116;
+  CLOTHERA INK/25-26/7367 ₹15,222 → ₹472, INK/25-26/8189 ₹41,536 → ₹5,192; NITIN INK/N/24-25/659 ₹53,808 →
+  ₹43,808).
+- **The 12 NOT loaded** (bill no longer open in Tally, most likely settled since 02-09), recorded here so
+  their remarks are not lost:
+
+  | Row | Salesperson | Customer | Bill | Date | Pending in sheet | Remark |
+  |---|---|---|---|---|---|---|
+  | 3 | AAYUSH SIR | SWASTIK DIGITAL | HD/HG/25-26/286 | 18-12-2025 | ₹2,65,500 | 50K DIS cn DONE |
+  | 5 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/25-26/2494 | 17-03-2026 | ₹5,534 | 10% DIS DN |
+  | 6 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/51 | 04-04-2026 | ₹2,697 | 10% DIS DN |
+  | 7 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/108 | 15-04-2026 | ₹2,643 | 10% DIS DN |
+  | 8 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/109 | 15-04-2026 | ₹12,390 | 10% DIS DN |
+  | 9 | AAYUSH SIR | SWASTIK DIGITAL | SPARE/26-27/110 | 15-04-2026 | ₹34,152 | 10% DIS DN |
+  | 10 | NAKUL JI | PANORAMMA PRINT | SPARE/26-27/110 | 28-06-2025 | ₹6,55,490 | CLEAR |
+  | 13 | NAKUL JI | VISHNU HARI DIGITAL CREATION | INK/24-25/7727 | 31-01-2025 | ₹23,010 | customer will issue payment this week |
+  | 19 | NAKUL JI | S K ENTERPRISE | INK/25-26/152 | 05-04-2025 | ₹1,21,540 | NAKUL JI WILL CLEAR THIS MATTER NEXT WEEK |
+  | 28 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8163 | 30-01-2026 | ₹1,416 | — |
+  | 29 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8188 | 31-01-2026 | ₹15,399 | — |
+  | 31 | NAKUL JI | CLOTHERA PRIVATE LIMITED | INK/25-26/8483 | 14-02-2026 | ₹71,656 | — |
+
+**Decisions, as built** (the brief's recommended answers; items 4 and 5 confirmed by the user 17-09-2026)
+1. **Where the screen lives: both** — a report for daily work, a Masters tab for bulk edits. Collectors
+   cannot open Settings, so the report is the only place they can clear.
+2. **Who adds a dispute and edits a remark: admins and Settings full access**, like Red Mark; collectors
+   clear and reopen their own customers' disputes. *Alternative if the client wants collectors editing
+   remarks:* a second narrow door that writes only `remarks`, authorised per ledger.
+3. **The sheet's `type` is an item description**, so `item_description` is its own nullable column; sale
+   type is shown live beside it. *Alternative:* fold it into the remark.
+4. **The 12 bills no longer open were not loaded**; they are listed above.
+5. **Report access is a live permission change**. See the Report grant row in the deploy table.
+
+**Findings worth keeping**
+- 🔴 **The brief's "five numbers" trap does not hold on Live.** `connectwaveFetcher` sets `receiptAdj`,
+  `creditNoteAdj`, `debitNoteAdj` and `journalAdj` to **0 on every bill**. The invoice snapshot nets them per
+  bill and does not split them, and only `otherPaymentAdj` is ever filled. So a five-way breakdown would have
+  shown four zeros. The report shows **one Settled figure = Amount − Pending**, which reconciles by
+  construction, with *In Tally* vs *manual Other Payments* on hover. No open bill has an Other Payment
+  against it today.
+- 🟡 **On an opening bill (`is_opening`), Amount is what was still owed when the books began**, not the
+  invoice value, so Settled counts only what came in since. The hover says so.
+- 🟡 **The same bill can read differently in Masters and on the report.** The dashboard nets manual Other
+  Payments into `pending` and drops a few cash-voucher "bills" (`liveNonBillRefs`); the raw snapshot does
+  neither. That is why the Masters grid carries no money.
+- 🟡 **247 open-bill rows have pending ≤ 0** (advances, unapplied credits). The add dialog offers only bills
+  still owed.
+- 🟡 `fetchAll` in `musterApi.ts` now accepts several order columns: `collection_invoice_snapshot` is unique
+  only on the pair, and paging on one column can repeat a row and drop another.
+
+**Still open — follow-ups, not part of RC-13**
+- [ ] 🟡 **Tell Jayshree two loaded disputes already say they are settled** (ANISHA, RAJIV SILK MILLS HEAD/25-26/211)
+      and that clearing is hers, with a note.
+- [ ] 🟡 **Should a dispute carry an owner or a target date?** Still open (see *To settle*); almost every
+      remark names a person and a deadline.
+- [ ] The Red Mark remarks that were never loaded remain an RC-12 follow-up.
+
 *Raised 2026-09-03 · Audited the same day against the code and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **DISPUTE***
 
@@ -10679,7 +15015,77 @@ column.
       deadline (*"Nakul Sir … by this week"*). Those are two columns that could be filtered and chased
       instead of read.
 
-### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[ ]`
+### RC-12 · Red Mark — a Clear status on the master, and the report management actually reads  `[x]`
+🟢 **SHIPPED AND LIVE 16-09-2026 23:26 IST** (master `3deb91e`, Vercel success). Built from daily-reports
+`d744318` (14:06) + `1914a3c` compact table (23:07) + `44f92a7` as-on date over the balances (23:22).
+Verified on live data and on orangeonehub.com as Nitesh. **The 54 red marks were left exactly as found
+(0 cleared).** Nothing is cleared until somebody clears it.
+
+| Deploy step | When (IST) | State |
+|---|---|---|
+| ConnectWave SQL `supabase/connectwave/redmark_clear_status.sql` | 16-09 13:39 | applied → **rollback rehearsed on live** (54 rows, `checked`/`reason` untouched) → re-applied. Check constraint proven to refuse a note-less clear (23514) |
+| `muster-write` Edge Function | 16-09 13:41 | **v11** live. ⚠ Also carried RC-11's team-rename cascade (`543ddb7`), which v10 never had — approved |
+| Frontend | 16-09 23:26 | master `3deb91e`. `UserLayout.tsx` applied as a hunk onto master's newer copy |
+| Report grant | 16-09 23:28 | `red-mark-customers` added for Nitesh, BENI MADHAV MOHTA, VIJAY; Reports un-hidden for Nitesh (it shows only granted reports) |
+
+**What it does now**
+- **Clear / Reopen** on the Red Mark master (Settings → Masters) AND on the report, because collectors
+  cannot open Settings. Note required on clear (UI, server, and a DB check constraint). Reopen keeps the
+  last clearing's who/when/note as history; who reopened is `updated_by`. Delete stays, for mistakes only,
+  and is visibly different (red icon vs a labelled green Clear).
+- **Who may clear** — its own rule in `muster-write` (`authorizeClear`), handled BEFORE the admin gate,
+  which is untouched: admin or Settings full-access on anyone; otherwise an `edit` module grant AND the
+  ledger's `ext_ledger_group.collection_team` in the caller's `receivables_collection_teams`. Fails closed.
+- **`blocked` = has an UNCLEARED red mark** (`connectwaveFetcher`). Every reader moved with that one line.
+- **The report**: as-on date over Outstanding/Due, three rolling months of receipts and sales, bounced
+  cheques, Rcvd ÷ Due, current-month sales flagged red on uncleared rows, a *Billed this month* tile
+  (**10** on day one), the clear status and toggle, all in the Excel. Pinned to Both FYs. Compact
+  single-line rows with the customer column pinned.
+- **Import** can clear (Yes + a note) but **never reopens**: a sheet exported before somebody cleared a case
+  still says No. A missing Cleared column means no change.
+- **Reusable for RC-13**: `lib/clearStatus.ts` (`useCanClear`, views, `describeClear`), `ClearStatusToggle`,
+  `ClearNoteDialog`, `ClearStatusBadge`, `components/gridColumns.tsx` + `lib/useColumnGrid.ts` (sort +
+  cascading filters, lifted out of NameMasterTab), and the `CLEARABLE` registry in `muster-write`.
+
+**Verified** (16-09-2026)
+- As **Nitesh** (session minted server-side, no password handled, then revoked): own ledger clear 200;
+  another team's 403; `update_redmark` / `delete_redmark` 403; no note 400; double clear / reopen 409.
+- **Every surface moved**: SAMEER ENTERPRISES cleared → Dashboard tile 33 → 32, gone from the Risk
+  Register `?redmark=1` and the Credit Terms badge; reopened → back to 33.
+- **Uncleared wins**: R STUDIO (Ent Surat) cleared while its Otec Surat ledger stayed red — the tile did
+  NOT move and R STUDIO stayed on the Risk Register.
+- **Hand-checked to the rupee**: GOPAL HOME FURNISHING - MACHINE — Rcv Jul ₹30.00 L, Aug ₹3.00 L, Outstanding
+  = Due ₹19.57 L, 538 days — against `collection_customer_snapshot`. Outstanding and Due rebuilt bill by bill
+  for KALAHANSH FASHIONS LLP-MACHINE (₹74.04 L = 12 open bills; ₹30.00 L = the ones past due).
+- **Live as Nitesh** on orangeonehub.com: the report opens, 11 rows (his team only), 11 Clear buttons
+  enabled, *Billed this month* 2, no Settings.
+
+**Findings worth keeping**
+- 🔴 **The scheduled Collection email does NOT move on a clear.** It builds with `defaultFilters()`, where
+  `blockedOnly: false` (`supabase/collectionsreport/reportSpec.ts`). Only a MANUAL send from a screen with
+  *Red Mark only* ticked changes. The brief assumed otherwise.
+- 🔴 **Receipts are gross, and it matters here**: GOPAL - MACHINE reads ₹33 L received / 169% of due while
+  all ₹33 L bounced. The Bounced column exists for exactly this row.
+- 🟡 **Bounced comes from `collection_range_facts`, not `MonthFacts`.** Under Live, `MonthFacts.chequeReturns`
+  is the year's total spread by receipt weight — an estimate. The RPC reads dated vouchers, but counts only
+  Payment vouchers named **CHQ.R** (not refunds or unlabelled bounces), so the column says so.
+- 🟡 **Nobody but admins could open the Red Mark report** before this: every collector's
+  `receivables_allowed_reports` was empty (empty = no reports). Granted as above.
+- 🟡 `insert_redmark` upserted without the clear fields, so re-adding a cleared customer would have left
+  them cleared and invisible. It now sets `cleared: false`.
+
+**Still open — follow-ups, not part of RC-12**
+- [ ] 🔴 **The sheet's ~20 remarks were never loaded** — `reason` is NULL on all 54 rows, so the Reason
+      column is blank everywhere. Source: `Misc/Jayshree/DISPUTE & REDMARK.xlsx`, tab REDMARK. Needs a
+      ledger match with unmatched rows reported; ask the user before loading.
+- [x] ~~🟡 **Jayshree still cannot open the report**~~ — **granted by the user 16-09-2026 23:54 IST** in
+      Settings → Permissions: `red-mark-customers` (plus `zero-collections`) ticked and the Reports menu
+      switched on. Verified on her profile: Reports no longer hidden, `edit` access, all five teams, so she
+      sees all 54 red marks and can clear any of them. ⚠ On that screen a plain menu is a single on/off
+      tick — there is no "Standard" pill; only Settings carries a Hidden / Full access pair.
+- [ ] 🟡 **Tell whoever reads the Collection mail** that Red Mark counts can now fall on their own when a
+      case is cleared — on the screens, and on any manual *Red Mark only* send.
+
 *Raised 2026-09-03 · Audited the same day against the code, the live musters and the supplied sheet ·
 Source: [Misc/Jayshree/DISPUTE & REDMARK.xlsx](Misc/Jayshree/DISPUTE%20&%20REDMARK.xlsx), tab **REDMARK***
 
@@ -10776,28 +15182,28 @@ column that can never go stale or be forgotten.
 #### What to build
 
 **Part A — the master**
-- [ ] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
-- [ ] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
+- [x] `cleared` + `cleared_at` + `cleared_by` + `clear_note` on `ext_redmark` (additive migration).
+- [x] Muster Editor: a **Clear / Reopen** action per row, a status column, and a **default filter of
       Uncleared** with All / Cleared / Uncleared beside it.
-- [ ] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
+- [x] Keep Delete, and make the two visibly different actions — Clear is routine, Delete is a
       correction.
 
 **Part B — export / import**
-- [ ] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
+- [x] Add **Cleared** (and the clear note) to `redMarkIo`'s export columns and `buildPlan`, so a
       batch can be cleared from Excel the way Salesperson/Reason/Checked already are.
-- [ ] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
+- [x] ⚠ Import still **cannot add or remove** a red mark — that is deliberate today. Adding a
       *Cleared* column does not change it, and clearing-by-import is exactly the safe middle
       ground: it settles a case without letting a spreadsheet flag or unflag customers wholesale.
 
 **Part C — the report**
-- [ ] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
+- [x] Extend `RedMarkCustomersReport` rather than building a second one. Add the **Clear status** and
       the **as-on date**, stated on the page and carried into the export — an outstanding figure with
       no date on it is unreadable a week later.
-- [ ] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
+- [x] **Received — last THREE months, not one** *(decided 03-09-2026)*. This month plus the two before
       it, from `MonthFacts.receipts`. The columns roll forward on their own; nobody hand-adds a month
       the way the sheet does with its JUN / JULY / Aug. One number cannot tell a first miss from a
       long silence, which is the whole question on a red-marked customer.
-- [ ] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
+- [x] 🔴 **Sales this month, and FLAG IT WHEN IT IS NOT ZERO** *(added by the client 03-09-2026)*.
       A red-marked customer should not be being supplied. If we billed them anything this month the
       row must shout — that is a control, not a statistic.
       ✅ The data is already there and the codebase already says why: `MonthFacts.sales` is documented
@@ -10805,9 +15211,9 @@ column that can never go stale or be forgotten.
       unused for exactly this.
       Worth a KPI tile too: **N red-marked customers were billed this month**. That is the number
       management will act on, and nothing in the app can answer it today.
-- [ ] **Percentage = received ÷ due**, computed. Never imported — see To settle.
-- [ ] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
-- [ ] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
+- [x] **Percentage = received ÷ due**, computed. Never imported — see To settle.
+- [x] Default the report to **uncleared** too, matching the master, with the same three-way toggle.
+- [x] Keep the existing columns; they already cover the sheet's Total outstanding and DUE AS ON
       (`outstanding` and `overdue`).
 
 #### The traps
@@ -10881,15 +15287,42 @@ behaving differently.
 
 
 ### RC-11 · Collection Team — fill it, filter on it, and scope each collector to their own customers  🔴  `[~]`
+⚠ **Found 14-09-2026: the collection-team rename cascade (`543ddb7`) was committed but never deployed.**
+`muster-write` v10 (09-09) predated it, so renaming a team in Settings → Masters did NOT move users'
+`receivables_collection_teams`. It went live with **RC-12's v11 deploy, 16-09-2026 13:41 IST**.
 🟢 **BUILT, LOADED AND BROWSER-VERIFIED 10-09-2026.** Every customer who owes money now has a
 collection team — **648 owing, 0 unmapped, ₹0.00 unaccounted** — a user can be scoped by team
 instead of by salesperson, and all 13 salesperson filters have a team twin beside them.
-⚠ **Nobody is tagged to a team yet, deliberately**, so nothing changed for any real user on the day
-it shipped. Switching a person over is a two-click admin action, and it is not reversible for them
-without a second one: Nitesh would go from 1,326 customers to 156, Vijay from 319 to 114.
-⚠ **The gap re-opens on its own** — `collection_refresh()` enrols every new customer with no team,
-so the count drifts back up unless somebody looks. The **No collection team** button on Settings →
-Masters → Customer Groups is where they look. Only P6 (the scheduled email) is open, by choice.
+🔴 **SUPERSEDED 10-09-2026 — the tags are now SET and the scoping is LIVE.** This line used to read
+*"nobody is tagged to a team yet, deliberately, so nothing changed for any real user"*. That is no
+longer true and must not be read as reassurance. Four people are tagged: **BENI MADHAV MOHTA** →
+`Mohta ji`, **Nitesh Prajapati** → `Nitesh`, **VIJAY** → `Vijay`, **Jayshree Patil** → all five
+(`Jayshree`, `Mohta ji`, `Nitesh`, `OTHERS`, `Vijay`). So Nitesh now sees **156** customers where he
+saw 1,326, and Vijay **114** where he saw 319. ✅ **Confirmed intended by Ritesh Bhai 10-09-2026** —
+leave it live. Untagging is the only way back, and it is a two-click admin action.
+🟢 **The gap no longer re-opens on its own — CLOSED 10-09-2026.** `collection_refresh()` used to
+enrol every new customer with no team at all, so the count drifted back up unless somebody looked.
+It now stamps `collection_team = 'Jayshree'` on each new debtor ledger, the way it has always
+stamped `salesperson = 'OTHERS'` (the client's call). See
+`supabase/connectwave/collection_refresh_default_collection_team.sql`, with a rollback beside it,
+both rehearsed on the live function. Existing rows are untouched — the insert carries
+`on conflict (ledger_id) do nothing`.
+⚠ **It patches the LIVE function body rather than redefining it, deliberately.** ConnectWave's own
+APPLY-ORDER.md records that the deployed `collection_refresh` is AHEAD of every repo copy, so
+pasting a full body from a file would silently revert fixes that exist only in the database. The
+script replaces one insert and raises if it does not find it exactly once.
+⚠ **And it costs a signal.** The **No collection team** button on Settings → Masters → Customer
+Groups will now stay at zero for new arrivals, so it stops being how anyone notices that a new
+customer needs an owner. What remains is `checked = false` — the **New** filter on that same tab,
+which is what that flag was always for. Tell whoever watches that screen.
+Measured 10-09-2026 before the patch: all **648 customers who actually owe money are mapped**, and
+the unassigned remainder owe nothing.
+
+🔴 **P6 — the scheduled collection email split by collector — is DEFERRED, not forgotten.**
+*(Ritesh Bhai, 10-09-2026: "not now".)* Until it is built, the scheduled mail is unchanged: it does
+**not** split by team, so a collector's **screen** is scoped while their **email** is not. That
+divergence is now a deliberate position rather than an oversight — say so if anyone asks why the two
+disagree. Everything else in RC-11 is done.
 *Raised 2026-09-03 · Audited the same day against the code, the muster masters and the supplied
 sheet · Source file: [Misc/Jayshree/UPDATED MASTER SHEET.xlsx](Misc/Jayshree/UPDATED%20MASTER%20SHEET.xlsx)*
 

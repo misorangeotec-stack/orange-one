@@ -14,6 +14,8 @@ import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
 import { isLivePosition, lastActivityIso, POSITION_STATUSES } from "../../lib/positions";
 import { isOpenCandidate } from "../../lib/queues";
+import { CLOCK_LABEL, outOf, targetProgress, type TargetProgress } from "../../lib/targets";
+import { todayIso } from "@/shared/lib/time";
 import { REQ_STATUS_LABEL } from "../../lib/format";
 import type { Requisition } from "../../types";
 
@@ -73,6 +75,20 @@ export default function PositionsList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, s]);
 
+  // NR-7. Computed per row on render: the store already holds every candidate,
+  // interview and onboarding, so this is a filter over data in hand, not a fetch.
+  const today = todayIso();
+  const progressOf = (r: Requisition): TargetProgress => {
+    const cands = s.candidatesFor(r.id);
+    const obs = cands
+      .map((c) => s.onboardingForCandidate(c.id))
+      .filter((o): o is NonNullable<typeof o> => !!o);
+    return targetProgress(r, cands, s.interviews, obs, today);
+  };
+  /** How many of the three bars this position clears. A bar with no target set does not count. */
+  const barsMet = (p: TargetProgress): number =>
+    (p.cvMet ? 1 : 0) + (p.shortlistMet ? 1 : 0) + (p.directorMet ? 1 : 0);
+
   const columns: QueueColumn<Requisition>[] = useMemo(
     () => [
       {
@@ -80,8 +96,9 @@ export default function PositionsList() {
         header: "Position",
         cell: (r) => {
           const live = isLivePosition(r);
+          // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
           return (
-            <div className="flex items-center gap-3">
+            <span className="inline-flex max-w-full items-center gap-3">
               {/* A ring around the live dot, so "open" reads straight down the column. */}
               <span
                 className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${live ? "bg-ryg-green/12" : "bg-page"}`}
@@ -89,19 +106,19 @@ export default function PositionsList() {
               >
                 <span className={`h-2 w-2 rounded-full ${live ? "bg-ryg-green" : "bg-grey-2/50"}`} />
               </span>
-              <div className="min-w-0">
+              <span className="min-w-0 truncate">
                 <Link
                   to={`/hr-recruitment/positions/${r.id}`}
-                  className={`block truncate text-[14px] font-semibold leading-tight hover:text-orange hover:underline ${live ? "text-navy" : "text-grey"}`}
+                  className={`text-[14px] font-semibold leading-tight hover:text-orange hover:underline ${live ? "text-navy" : "text-grey"}`}
                 >
                   {r.jobTitle}
                 </Link>
-                <div className="mt-0.5 text-[11.5px] text-grey-2">
+                <span className="ml-1.5 text-[11.5px] text-grey-2">
                   {r.mrfNo}
                   {r.positionKind === "replacement" && " · replacement"}
-                </div>
-              </div>
-            </div>
+                </span>
+              </span>
+            </span>
           );
         },
         sortValue: (r) => r.jobTitle,
@@ -128,6 +145,8 @@ export default function PositionsList() {
             {isLivePosition(r) ? "Open" : REQ_STATUS_LABEL[r.status]}
           </span>
         ),
+        // A pill: never cut, no handle (PF-20).
+        resize: false,
         sortValue: (r) => (isLivePosition(r) ? 0 : 1),
         filter: { kind: "select", get: (r) => (isLivePosition(r) ? "Open" : REQ_STATUS_LABEL[r.status]) },
         tdClassName: "whitespace-nowrap",
@@ -148,6 +167,78 @@ export default function PositionsList() {
         filter: { kind: "select", get: (r) => jobTypeName(r.jobTypeId) },
         tdClassName: "whitespace-nowrap",
       },
+      // ---- NR-7 · how this position is doing against the numbers HR set -------
+      // Two columns, not five: the clock is one fact people sort by, and the three
+      // bars are one fact people scan. Both sort and both filter, per the standing
+      // rule for every grid in this file.
+      {
+        key: "closure",
+        header: "Closure",
+        cell: (r) => {
+          const p = progressOf(r);
+          if (p.clock === "not-set") return <span className="text-grey-2">Not set</span>;
+          if (p.clock === "not-started") return <span className="text-grey-2">Not posted</span>;
+          const tone = p.clock === "missed" ? "text-ryg-red" : p.clock === "met" ? "text-ryg-green" : "text-navy";
+          return (
+            <span className={`text-[12.5px] font-semibold tabular-nums ${tone}`}>
+              {p.daysUsed} <span className="font-normal text-grey-2">/ {r.targetCloseDays}d</span>
+            </span>
+          );
+        },
+        // Sorted by how much of the period is gone, so the ones about to break the
+        // promise sit next to the ones that already have. A position with no period
+        // set sorts last rather than pretending to be on time.
+        sortValue: (r) => {
+          const p = progressOf(r);
+          if (p.clock === "not-set" || p.daysUsed == null || !r.targetCloseDays) return -1;
+          return p.daysUsed / r.targetCloseDays;
+        },
+        filter: { kind: "select", get: (r) => CLOCK_LABEL[progressOf(r).clock] },
+        exportValue: (r) => {
+          const p = progressOf(r);
+          return p.clock === "not-set" ? "No period set" : `${p.daysUsed} of ${r.targetCloseDays} days · ${CLOCK_LABEL[p.clock]}`;
+        },
+        tdClassName: "whitespace-nowrap",
+      },
+      {
+        key: "bars",
+        header: "Targets met",
+        cell: (r) => {
+          const p = progressOf(r);
+          const chips: { k: string; text: string; ok: boolean | null }[] = [
+            { k: "cv", text: `CV ${outOf(p.newCvs, p.cvTarget)}`, ok: p.cvMet },
+            { k: "hod", text: `HOD ${p.shortlisted}/${p.shortlistTarget}`, ok: p.shortlistMet },
+            { k: "dir", text: `Dir ${p.director}/${p.directorTarget}`, ok: p.directorMet },
+          ];
+          return (
+            <span className="flex gap-1">
+              {chips.map((c) => (
+                <span
+                  key={c.k}
+                  className={
+                    c.ok === null
+                      ? "rounded-pill border border-line px-1.5 py-0.5 text-[11px] text-grey-2"
+                      : c.ok
+                        ? "rounded-pill bg-[#E9F7EF] px-1.5 py-0.5 text-[11px] font-medium text-ryg-green"
+                        : "rounded-pill bg-[#FDECEC] px-1.5 py-0.5 text-[11px] font-medium text-ryg-red"
+                  }
+                >
+                  {c.text}
+                </span>
+              ))}
+            </span>
+          );
+        },
+        sortValue: (r) => barsMet(progressOf(r)),
+        filter: { kind: "select", get: (r) => `${barsMet(progressOf(r))} of 3 met` },
+        exportValue: (r) => {
+          const p = progressOf(r);
+          return `CVs ${outOf(p.newCvs, p.cvTarget)} · HOD ${p.shortlisted}/${p.shortlistTarget} · directors ${p.director}/${p.directorTarget}`;
+        },
+        // One line, so a row stays one line high: three stacked chips made every
+        // row in the grid three times taller than it needed to be.
+        tdClassName: "whitespace-nowrap",
+      },
       {
         key: "candidates",
         header: "Candidates",
@@ -155,14 +246,16 @@ export default function PositionsList() {
           const cands = s.candidatesFor(r.id);
           if (!cands.length) return <span className="text-[12.5px] text-grey-2">None yet</span>;
           const live = cands.filter(isOpenCandidate).length;
+          // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
           return (
-            <div className="whitespace-nowrap">
+            <>
               <span className="text-[13px] font-semibold tabular-nums text-navy">{cands.length}</span>
               <span className="ml-1.5 text-[12px] text-grey-2">{live} in play</span>
-            </div>
+            </>
           );
         },
         sortValue: (r) => s.candidatesFor(r.id).length,
+        filter: { kind: "number", get: (r) => s.candidatesFor(r.id).length },
         exportValue: (r) => s.candidatesFor(r.id).length,
         tdClassName: "whitespace-nowrap",
       },
@@ -175,21 +268,23 @@ export default function PositionsList() {
           const joined = s.seatsJoined(r.id);
           const pct = r.positionsRequired > 0 ? Math.min(100, (joined / r.positionsRequired) * 100) : 0;
           const full = joined >= r.positionsRequired;
+          // One line (PF-20): the meter sits BESIDE the count instead of under it.
           return (
-            <div className="w-[74px]">
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
               <span className="text-[12.5px] font-semibold tabular-nums text-navy">
                 {joined} <span className="font-normal text-grey-2">/ {r.positionsRequired}</span>
               </span>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line">
+              <span className="inline-block h-1.5 w-[44px] overflow-hidden rounded-full bg-line align-middle">
                 <span
                   className="block h-full rounded-full"
                   style={{ width: `${pct}%`, background: full ? "#27AE60" : "#FF6A1F" }}
                 />
-              </div>
-            </div>
+              </span>
+            </span>
           );
         },
         sortValue: (r) => (r.positionsRequired > 0 ? s.seatsJoined(r.id) / r.positionsRequired : 0),
+        filter: { kind: "number", get: (r) => s.seatsJoined(r.id) },
         exportValue: (r) => `${s.seatsJoined(r.id)} of ${r.positionsRequired} filled`,
       },
       {
@@ -209,12 +304,16 @@ export default function PositionsList() {
           return <span className="text-grey">{iso ? formatDateDMY(iso) : "—"}</span>;
         },
         sortValue: (r) => lastActivityIso(r, s.candidatesFor(r.id)) ?? "",
+        filter: { kind: "date", get: (r) => (lastActivityIso(r, s.candidatesFor(r.id)) ?? "").slice(0, 10) },
         exportValue: (r) => formatDateDMY(lastActivityIso(r, s.candidatesFor(r.id))),
         tdClassName: "whitespace-nowrap",
       },
       {
         key: "team",
         header: "Hiring team",
+        // Avatars: never cut, no handle (PF-20). It still sorts and filters by the names behind
+        // them, so "everything X is hiring for" is one pick.
+        resize: false,
         cell: (r) => {
           // NR-3: org-wide — see PositionPipeline. A cross-department head was dropped here too.
           const names = r.hiringManagerIds.map((id) => s.personNameOrNull(id)).filter((n): n is string => !!n);

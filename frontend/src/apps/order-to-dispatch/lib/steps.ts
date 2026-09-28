@@ -14,6 +14,12 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * order — and one awaiting its sales return — leaves every queue, and an order
  * that loops re-enters the material-status queue as round N+1.
  *
+ * ⚠ OD-14's "New Customer Orders" is NOT a seventh entry here, and not a queue on
+ *   `sales_order` either. It sits beside the chain the way Sales Return does, for
+ *   the same four reasons listed under SALES_RETURN_KEY below — chiefly that it is
+ *   completed by its own page and its own RPC rather than through `StepModal`, so
+ *   it has no `RECORD_RPC`, no `LOCK` arm and no `STEP_CONFIG` to give.
+ *
  * Statuses are NOT step keys — closed / on_hold / cancelled live in DispatchStatus
  * (types/index.ts), never here.
  *

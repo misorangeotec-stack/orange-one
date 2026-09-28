@@ -31,7 +31,7 @@ export default function PoList() {
     { key: "value", header: "Value", cell: (p) => <MoneyCell inrValue={p.totalValue} fxValue={p.totalValueFx} currency={p.currency} />, sortValue: (p) => p.totalValue, filter: { kind: "number", get: (p) => p.totalValue }, tdClassName: "whitespace-nowrap" },
     { key: "advance", header: "Advance", cell: (p) => <MoneyCell inrValue={p.advancePaid} fxValue={s.paidFxForPo(p.id)} currency={p.currency} />, sortValue: (p) => p.advancePaid, filter: { kind: "number", get: (p) => p.advancePaid }, tdClassName: "whitespace-nowrap" },
     { key: "pending", header: "Pending", cell: (p) => <MoneyCell inrValue={s.pendingAmount(p)} fxValue={s.pendingFxAmount(p)} currency={p.currency} />, sortValue: (p) => s.pendingAmount(p), filter: { kind: "number", get: (p) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
-    { key: "stage", header: "Stage", cell: (p) => <span className={poStageBadge(p.currentStage)}>{stageLabel(p)}</span>, sortValue: (p) => stageLabel(p), filter: { kind: "select", get: (p) => stageLabel(p) }, tdClassName: "whitespace-nowrap" },
+    { key: "stage", header: "Stage", cell: (p) => <span className={poStageBadge(p.currentStage)}>{stageLabel(p)}</span>, sortValue: (p) => stageLabel(p), filter: { kind: "select", get: (p) => stageLabel(p) }, tdClassName: "whitespace-nowrap", resize: false /* a pill: never cut (PF-20) */ },
   ];
 
   return (

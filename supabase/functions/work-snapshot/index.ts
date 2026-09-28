@@ -35,6 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
   COVERED_APP_IDS,
   DELIBERATELY_UNCOVERED,
+  UNIVERSAL_APP_IDS,
   assertIstClock,
   computeSnapshot,
   loadDatasets,
@@ -78,7 +79,7 @@ interface Person {
  */
 async function loadPeople(): Promise<Person[]> {
   const [profiles, roles, access] = await Promise.all([
-    admin.from("profiles").select("id,name,email"),
+    admin.from("profiles").select("id,name,email,is_external"),
     admin.from("user_roles").select("user_id,role"),
     admin.from("app_access").select("user_id,app_id"),
   ]);
@@ -96,14 +97,37 @@ async function loadPeople(): Promise<Person[]> {
     byUser.set(a.user_id as string, list);
   }
 
-  return (profiles.data ?? []).map((p) => {
+  return (profiles.data ?? [])
+    // ⚠ EXTERNAL ACCOUNTS ARE NOT PEOPLE HERE — OD-13.
+    //
+    // This digest is our internal daily work list: what each person has open
+    // across Task Management, Order to Dispatch and the rest. A customer login is
+    // a `profiles` row like any other, and the live settings are `enabled = true`,
+    // `include_users = null` (meaning EVERYONE) and `skip_when_empty = false`
+    // (meaning "send even with nothing open"). So without this line, the moment a
+    // customer's account is created they start receiving our internal digest at
+    // 09:00 IST — with no further action by anybody, and nothing on any screen
+    // saying so.
+    //
+    // Filtered HERE, in the one function that answers "who exists", rather than by
+    // adding customers to an exclusion list somebody has to maintain: this way the
+    // eleventh customer is safe for the same reason the first one is.
+    .filter((p) => !p.is_external)
+    .map((p) => {
     const isAdmin = adminIds.has(p.id as string);
     return {
       id: p.id as string,
       name: (p.name as string) ?? "",
       email: (p.email as string) ?? null,
       isAdmin,
-      appIds: isAdmin ? [...COVERED_APP_IDS] : byUser.get(p.id as string) ?? [],
+      // A universal app is held by everyone and has NO `app_access` row, so a
+      // non-admin's grants alone would leave it out and the mail would count
+      // nobody's work in it. Union it in from apps/universal.ts (re-exported by
+      // the bundle) — `countableFor` still intersects with COVERED_APP_IDS, so
+      // a universal module that is not wired here changes nothing.
+      appIds: isAdmin
+        ? [...COVERED_APP_IDS]
+        : [...new Set([...(byUser.get(p.id as string) ?? []), ...UNIVERSAL_APP_IDS])],
     };
   });
 }

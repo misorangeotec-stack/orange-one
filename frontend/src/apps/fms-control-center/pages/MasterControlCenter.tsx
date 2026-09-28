@@ -4,12 +4,14 @@ import { formatDate } from "@/shared/lib/time";
 import { fmsAdapters } from "../adapters/registry";
 import { addDaysIso, todayLocalIso } from "../lib/buckets";
 import FmsRow from "../components/FmsRow";
+import RankingPanel from "../components/ranking/RankingPanel";
 
 const TH = "px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-grey-2 whitespace-nowrap";
 
 /**
- * The master scoreboard: one row per FMS, showing the step-work due today
- * (split into In Queue vs already Delayed), tomorrow, and the day after.
+ * The master scoreboard: the monthly ranking of people (CC-1) above one row per
+ * FMS, showing the step-work due today (split into In Queue vs already Delayed),
+ * tomorrow, and the day after.
  *
  * Counts come straight from each FMS's own queue predicates via its adapter, so
  * a number here always matches that FMS's queue pages.
@@ -25,9 +27,13 @@ export default function MasterControlCenter() {
   const rows = fmsAdapters.filter((a) => hasModule(a.appId));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <h1 className="text-[22px] font-bold text-navy">FMS Control Center</h1>
+
+      <RankingPanel />
+
       <div>
-        <h1 className="text-[22px] font-bold text-navy">FMS Control Center</h1>
+        <h2 className="text-[20px] font-bold text-navy">Processes</h2>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Pending work across every process, by the day it falls due. A count is one <strong>step</strong> of work on one
           entry — the same entry can be waiting at two steps at once. Click a process to open its own control center.

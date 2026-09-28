@@ -33,6 +33,8 @@ export interface RequestInput {
   handoverName: string | null;
   /** Inward only: true / false; null on outward (the RPC rejects a null inward value). */
   labTestingRequired: boolean | null;
+  /** Inward only: does the sample also need machine testing after the inward work? */
+  machineTestingRequired: boolean | null;
   handoverRecipientId: string | null;
   handoverRecipientName: string | null;
   transportBorne: TransportBorne | null;
@@ -40,38 +42,50 @@ export interface RequestInput {
   additionalInfo: string | null;
 }
 
+/** ONE payload for raise AND edit — the edit RPC re-checks the same rules. */
+const requestPayload = (input: RequestInput) => ({
+  company_id: input.companyId,
+  receive_via: input.receiveVia,
+  direction: input.direction,
+  requirement_type: input.requirementType ?? "",
+  requester_name: input.requesterName,
+  party_name: input.partyName ?? "",
+  party_address: input.partyAddress ?? "",
+  party_contact_name: input.partyContactName ?? "",
+  party_contact_mobile: input.partyContactMobile ?? "",
+  // ALWAYS send this key, even empty: its PRESENCE is what tells the RPC this
+  // is the new client, which is what switches the outward party-block
+  // requirements on. Drop the key and outward silently stops validating.
+  sender_id: input.senderId ?? "",
+  sender_name: input.senderName ?? "",
+  product_desc: input.productDesc,
+  sample_items: input.sampleItems,
+  collector_id: input.collectorId ?? "",
+  handover_name: input.handoverName ?? "",
+  // Pass '' when null so the RPC's nullif() sees "unset"; 'true'/'false' otherwise.
+  lab_testing_required: input.labTestingRequired === null ? "" : String(input.labTestingRequired),
+  // Same '' = unset convention. An absent/empty value is "not required" server-side.
+  machine_testing_required: input.machineTestingRequired === null ? "" : String(input.machineTestingRequired),
+  handover_recipient_id: input.handoverRecipientId ?? "",
+  handover_recipient_name: input.handoverRecipientName ?? "",
+  transport_borne: input.transportBorne ?? "",
+  desired_result: input.desiredResult ?? "",
+  additional_info: input.additionalInfo ?? "",
+});
+
 export async function submitRequest(input: RequestInput): Promise<string> {
-  const { data, error } = await db.rpc("fms_sampling_submit_request", {
-    p: {
-      company_id: input.companyId,
-      receive_via: input.receiveVia,
-      direction: input.direction,
-      requirement_type: input.requirementType ?? "",
-      requester_name: input.requesterName,
-      party_name: input.partyName ?? "",
-      party_address: input.partyAddress ?? "",
-      party_contact_name: input.partyContactName ?? "",
-      party_contact_mobile: input.partyContactMobile ?? "",
-      // ALWAYS send this key, even empty: its PRESENCE is what tells the RPC this
-      // is the new client, which is what switches the outward party-block
-      // requirements on. Drop the key and outward silently stops validating.
-      sender_id: input.senderId ?? "",
-      sender_name: input.senderName ?? "",
-      product_desc: input.productDesc,
-      sample_items: input.sampleItems,
-      collector_id: input.collectorId ?? "",
-      handover_name: input.handoverName ?? "",
-      // Pass '' when null so the RPC's nullif() sees "unset"; 'true'/'false' otherwise.
-      lab_testing_required: input.labTestingRequired === null ? "" : String(input.labTestingRequired),
-      handover_recipient_id: input.handoverRecipientId ?? "",
-      handover_recipient_name: input.handoverRecipientName ?? "",
-      transport_borne: input.transportBorne ?? "",
-      desired_result: input.desiredResult ?? "",
-      additional_info: input.additionalInfo ?? "",
-    },
-  });
+  const { data, error } = await db.rpc("fms_sampling_submit_request", { p: requestPayload(input) });
   if (error) throw new Error(error.message);
   return data as string;
+}
+
+/**
+ * Edit the intake form — allowed only until the request's first step is recorded
+ * (fms_sampling_request_editable). May re-route the request, exactly as a raise would.
+ */
+export async function updateRequest(requestId: string, input: RequestInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_request", { p_req: requestId, p: requestPayload(input) });
+  if (error) throw new Error(error.message);
 }
 
 /* ------------------------------- stage records ---------------------------- */
@@ -170,7 +184,7 @@ export async function updateLabStart(requestId: string, input: LabStartInput): P
   if (error) throw new Error(error.message);
 }
 
-/** lab_process PASS 2 — testing done. Comment + document are both required. */
+/** lab_process PASS 2 — testing done. Comment required; the document is optional. */
 export interface LabCompleteInput {
   labCompletedDate: string | null;
   labComment: string;
@@ -204,6 +218,81 @@ export async function recordLabComplete(requestId: string, input: LabCompleteInp
 }
 export async function updateLabComplete(requestId: string, input: LabCompleteInput): Promise<void> {
   const { error } = await db.rpc("fms_sampling_update_lab_complete", { p_req: requestId, p: labCompletePayload(input) });
+  if (error) throw new Error(error.message);
+}
+
+/* ------------- machine testing: the tail on either inward branch ----------- */
+
+/** machine_process PASS 1 — the tentative result date. Does NOT advance the request. */
+export interface MachineStartInput {
+  machineTentativeDate: string;
+  /** Remarks. One field shared with pass 2, so BOTH passes send it. */
+  machineNote: string | null;
+}
+const machineStartPayload = (input: MachineStartInput) => ({
+  machine_tentative_date: input.machineTentativeDate,
+  machine_note: input.machineNote ?? "",
+});
+export async function recordMachineStart(requestId: string, input: MachineStartInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_record_machine_start", { p_req: requestId, p: machineStartPayload(input) });
+  if (error) throw new Error(error.message);
+}
+export async function updateMachineStart(requestId: string, input: MachineStartInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_machine_start", { p_req: requestId, p: machineStartPayload(input) });
+  if (error) throw new Error(error.message);
+}
+
+/** machine_process PASS 2 — testing done. Comment required; the document is optional. */
+export interface MachineCompleteInput {
+  machineCompletedDate: string | null;
+  machineComment: string;
+  machineResultToId: string | null;
+  machineResultToName: string | null;
+  machineNote: string | null;
+  /** Only on update: also correct the tentative date. */
+  machineTentativeDate?: string | null;
+  /** Pass a key (even null) to REPLACE the attachment; omit both keys to keep it. */
+  docPath?: string | null;
+  docName?: string | null;
+}
+const machineCompletePayload = (input: MachineCompleteInput) => {
+  const p: Record<string, unknown> = {
+    machine_completed_date: input.machineCompletedDate ?? "",
+    machine_comment: input.machineComment,
+    machine_note: input.machineNote ?? "",
+    machine_result_to_id: input.machineResultToId ?? "",
+    machine_result_to_name: input.machineResultToName ?? "",
+  };
+  if (input.machineTentativeDate !== undefined) p.machine_tentative_date = input.machineTentativeDate ?? "";
+  // The RPC keys off `p ? 'machine_doc_path'`: send the key only when replacing.
+  if (input.docPath !== undefined) p.machine_doc_path = input.docPath ?? "";
+  if (input.docName !== undefined) p.machine_doc_name = input.docName ?? "";
+  return p;
+};
+export async function recordMachineComplete(requestId: string, input: MachineCompleteInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_record_machine_complete", { p_req: requestId, p: machineCompletePayload(input) });
+  if (error) throw new Error(error.message);
+}
+export async function updateMachineComplete(requestId: string, input: MachineCompleteInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_machine_complete", { p_req: requestId, p: machineCompletePayload(input) });
+  if (error) throw new Error(error.message);
+}
+
+/** machine_result — the recipient confirms the machine result. CLOSES the request. */
+export interface MachineResultInput {
+  machineResultReceivedDate: string | null;
+  machineResultReceivedNote: string | null;
+}
+const machineResultPayload = (input: MachineResultInput) => ({
+  machine_result_received_date: input.machineResultReceivedDate ?? "",
+  machine_result_received_note: input.machineResultReceivedNote ?? "",
+});
+export async function recordMachineResultReceived(requestId: string, input: MachineResultInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_record_machine_result_received", { p_req: requestId, p: machineResultPayload(input) });
+  if (error) throw new Error(error.message);
+}
+export async function updateMachineResultReceived(requestId: string, input: MachineResultInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_machine_result_received", { p_req: requestId, p: machineResultPayload(input) });
   if (error) throw new Error(error.message);
 }
 
@@ -386,6 +475,11 @@ export async function uploadReceivedDocument(requestId: string, file: File): Pro
 /** Upload the lab-process report (inward lab branch); returns the stored path + name. */
 export async function uploadLabDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
   return uploadDocument(requestId, "lab", file);
+}
+
+/** Upload the machine-testing report; returns the stored path + name. */
+export async function uploadMachineDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+  return uploadDocument(requestId, "machine", file);
 }
 
 /** Upload the outward gate pass / dispatch document; returns the stored path + name. */

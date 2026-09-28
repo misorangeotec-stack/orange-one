@@ -88,12 +88,17 @@ export default function Dashboard() {
   const openLab = openBy("lab");
   const openNoLab = openBy("no_lab");
   const openOutward = openBy("outward");
+  // Machine testing is a tail, so this counts the requests sitting IN it right
+  // now — not every request that will eventually run it (that is what the
+  // Machine Requests list shows).
+  const openMachine = openBy("machine");
 
   const kpiTiles: KpiTile[] = [
     { key: "pending", label: "Pending today", value: counts.delayed + counts.today, hint: "delayed + due today", size: "hero", tone: counts.delayed + counts.today > 0 ? "red" : undefined },
     { key: "openLab", label: "Open — lab testing", value: openLab, hint: "not yet closed", href: "/sampling/lab-requests" },
     { key: "openNoLab", label: "Open — no lab testing", value: openNoLab, hint: "not yet closed", href: "/sampling/no-lab-requests" },
     { key: "openOutward", label: "Open — outward", value: openOutward, hint: "not yet closed", href: "/sampling/outward-requests" },
+    { key: "openMachine", label: "Open — machine testing", value: openMachine, hint: "not yet closed", href: "/sampling/machine-requests" },
     { key: "delayed", label: "Delayed", value: counts.delayed, hint: "past due", tone: counts.delayed > 0 ? "red" : undefined },
     { key: "done", label: "Completed (30d)", value: completed30, hint: "closed on any path" },
   ];

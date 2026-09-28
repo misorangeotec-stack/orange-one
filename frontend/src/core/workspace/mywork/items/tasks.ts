@@ -10,10 +10,20 @@ import type { WorkItem } from "../types";
  *   downline's tasks, so without it a manager's personal list fills up with their
  *   team's work.
  *
- * ⚠ `notApplicable` / `isPersonal` mirror `countsTowardMetrics`
+ * ⚠ `notApplicable` / `isPersonal` mirror `countsTowardWorkload`
  *   (task-management/mock/selectors.ts) — the same two exclusions every other
  *   dashboard metric applies. It is inlined rather than imported because that
  *   module re-exports from the React store, which the server cannot load.
+ *
+ * ⚠ IT DELIBERATELY DOES **NOT** EXCLUDE PEER TASKS, and must not start.
+ *   `countsTowardMetrics` gained a `!isPeerAssignment` arm in TM-1 so a peer
+ *   task stays out of the receiver's own SCORE. This is not a score — it is
+ *   what somebody owes, and a peer task is work they have to do. Adding the
+ *   arm here would silently drop it from My Work AND from the live 09:00
+ *   snapshot email, whose SQL twin `public.user_snapshot()` does not exclude
+ *   it either. The two are compared against each other on purpose
+ *   (work-snapshot carries SQL's count through as `tasks_sql` to catch drift),
+ *   so if either ever gains the arm, BOTH must.
  *
  * ⚠ A DENY-LIST, DELIBERATELY. A status added later counts as OPEN, so new work
  *   can never vanish from someone's list without anyone noticing. Getting this

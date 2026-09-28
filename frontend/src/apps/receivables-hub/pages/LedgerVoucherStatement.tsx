@@ -35,8 +35,14 @@ import { loadLedgerVouchers, buildLedgerStatement, periodLabelFor, type LedgerVo
 import { exportLedgerVouchersXlsx } from "@hub/lib/exportFinancialStatements";
 import { isPartyInScope, useScopedParties } from "@hub/lib/scopeParties";
 import NothingInScope from "@hub/components/NothingInScope";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 const PAGE_SIZE = 25;
 
 /** yyyymmdd → dd-mm-yyyy for display. Blank on a bad/absent date. */
@@ -151,7 +157,7 @@ export default function LedgerVoucherStatement() {
   if (!live) {
     return (
       <div className="p-6 max-w-[900px] mx-auto space-y-4">
-        <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Tally Reports
         </Link>
         <Card className="rounded-card border-border bg-surface">
@@ -179,7 +185,7 @@ export default function LedgerVoucherStatement() {
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
       <div>
         <Link
-          to={`${BASE}/reports/ledger-voucher`}
+          to={`${BASE}/ledger-voucher`}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1"
         >
           <ArrowLeft className="h-3 w-3" /> Ledger Vouchers

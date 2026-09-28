@@ -119,6 +119,8 @@ export default function FgTransferQueue() {
         <p className="text-[13.5px] text-grey-2 mt-1">Select the cards ready for transfer, then upload the Tally voucher to close them.</p>
       </div>
       <QueueTable<ProductionRequest>
+        // PF-20: a fixed width key — FG Lot No. comes and goes with the data.
+        resizeKey="production-entry.fg-transfer"
         rows={rows}
         rowKey={(r) => r.id}
         columns={columns}

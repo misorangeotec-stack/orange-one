@@ -54,7 +54,7 @@ export default function TripDetail() {
 
   // Deep-linked confirmation from the form: it names the number that was minted,
   // which is what somebody quotes when they chase it.
-  const justSubmitted = params.get("submitted");
+  const submittedParam = params.get("submitted");
 
   if (!trip) return <NotFound />;
 
@@ -85,6 +85,20 @@ export default function TripDetail() {
   const approverNames = trip.approverManagerIds
     .map((x) => personById(x)?.name)
     .filter(Boolean) as string[];
+
+  /*
+    ⚠ THE BANNER IS ABOUT A MOMENT, AND THE URL IT LIVES IN OUTLASTS IT. It was
+      rendered on the `?submitted=` parameter alone, which nothing ever clears —
+      so approve the trip, pay the advance, book it, and six steps later a booked
+      trip still announced "has gone for approval. It is with Riya Kumari", who
+      by then owed it nothing. It survived a reload too, because the parameter
+      is in the address. Gate it on the trip still being where submit left it.
+  */
+  const justSubmitted =
+    submittedParam &&
+    (trip.status === "awaiting_manager_approval" || trip.status === "awaiting_director_approval")
+      ? submittedParam
+      : null;
 
   /*
     ⚠ A RETURNED TRIP IS EDITABLE, AND WITHOUT THIS "send back for clarification"
@@ -141,13 +155,13 @@ export default function TripDetail() {
       </div>
 
       {/*
-        §3.5's consequence, stated on the trip rather than left in an activity
+        Section 3.5's consequence, stated on the trip rather than left in an activity
         row. The downgrade happened at submit; anyone reading the caps later
         would otherwise take TC-D for this person's ordinary entitlement.
       */}
       {trip.tcDowngradedFrom && (
         <div className="rounded-xl bg-[#FFF7E6] px-4 py-3 text-[12.5px] text-navy">
-          <strong>Reimbursed at TC-D under §3.5.</strong> This trip was put on record more than{" "}
+          <strong>Reimbursed at TC-D under Section 3.5.</strong> This trip was put on record more than{" "}
           {s.config.policy.emergencyWindowHours} hours after departure, so it was reduced from{" "}
           {trip.tcDowngradedFrom}. Every figure below is the reduced one.
         </div>
@@ -201,7 +215,7 @@ export default function TripDetail() {
           approve button beside an editable amount.
 
         ⚠ THE CLAIM PANEL ALSO SHOWS FOR A CANCELLED TRIP. `cancelled_pending_claim`
-          is a journey that did not happen and money that did — a §4.1
+          is a journey that did not happen and money that did — a Section 4.1
           cancellation charge, or an advance to hand back.
       */}
       {(trip.status === "booked" || trip.status === "cancelled_pending_claim") && (
@@ -269,7 +283,7 @@ export default function TripDetail() {
               {trip.isEmergency && (
                 <div className="sm:col-span-2">
                   <Field
-                    label="Emergency travel (§3.5)"
+                    label="Emergency travel (Section 3.5)"
                     value={trip.emergencyReason ?? "No reason recorded"}
                     emphasis="quiet"
                   />

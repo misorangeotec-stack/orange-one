@@ -76,7 +76,7 @@ export interface TicketReading {
   endTime: string;
   ticketCost: number | null;
   otherCharges: number | null;
-  /** ⚠ §11.3 excludes foreign currency entirely, so anything but INR is a WARNING. */
+  /** ⚠ Section 11.3 excludes foreign currency entirely, so anything but INR is a WARNING. */
   currency: string;
   passengers: string[];
   confidence: "high" | "medium" | "low";
@@ -195,7 +195,7 @@ export async function requestCancellation(tripId: string, reason: string): Promi
 /**
  * The desk cancels and the trip is routed by what is left to settle.
  *
- * ⚠ `kind` IS NOT COSMETIC. §4.1 makes a cancellation charge reimbursable when
+ * ⚠ `kind` IS NOT COSMETIC. Section 4.1 makes a cancellation charge reimbursable when
  *   the reason is BUSINESS and not when it is personal, and phase 8 reads it to
  *   decide whether the charge may be claimed at all.
  */

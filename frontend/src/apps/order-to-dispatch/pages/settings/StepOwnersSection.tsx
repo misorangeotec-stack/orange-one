@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useDispatchStore } from "../../store";
 import { OWNER_STEPS, type OwnerStepKey } from "../../lib/steps";
 
@@ -107,6 +110,20 @@ export default function StepOwnersSection() {
     }
   };
 
+  /**
+   * PF-20: one line per row, a long owner list cut at the table's cut width and whole on hover.
+   * A settings matrix, so no drag handles (the user, 19-09-2026).
+   */
+  const fit = useColumnWidths("tb", ["step", "location", "owners"]);
+  const cut = (col: string, node: ReactNode) =>
+    fit.on ? (
+      <FitCell fit={fit} col={col} cap={FIT.CUT}>
+        {node}
+      </FitCell>
+    ) : (
+      node
+    );
+
   const editingStep = OWNER_STEPS.find((st) => st.key === editing?.step);
   const editingSite = editing?.locationId ? s.masterName("company_location", editing.locationId) : "All locations";
   const overridden = !!editing?.locationId && !!s.stepOwnerFor(editing.step, editing.locationId);
@@ -153,7 +170,7 @@ export default function StepOwnersSection() {
                 <th className="font-medium px-4 py-3">Owners</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {OWNER_STEPS.map((st) => {
                 const isOpen = expanded.has(st.key);
                 return (
@@ -180,7 +197,7 @@ export default function StepOwnersSection() {
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-3">{ownerCell(st.key, null)}</td>
+                      <td className="px-4 py-3">{cut("owners", ownerCell(st.key, null))}</td>
                     </tr>
 
                     {isOpen &&
@@ -197,18 +214,23 @@ export default function StepOwnersSection() {
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5 whitespace-nowrap text-grey pl-8">
-                            {site.name}
-                            {/* Every company that dispatches from this site, not
-                                one. The site used to be stored once per company,
-                                so a single name was the whole truth; now it is
-                                one shed serving several, and naming only the
-                                first would read as "this row is that company's". */}
-                            <span className="text-grey-2 text-[12px]">
-                              {" "}
-                              · {site.companyIds.map((id) => s.masterName("company", id)).join(" · ")}
-                            </span>
+                            {cut(
+                              "location",
+                              <>
+                                {site.name}
+                                {/* Every company that dispatches from this site, not
+                                    one. The site used to be stored once per company,
+                                    so a single name was the whole truth; now it is
+                                    one shed serving several, and naming only the
+                                    first would read as "this row is that company's". */}
+                                <span className="text-grey-2 text-[12px]">
+                                  {" "}
+                                  · {site.companyIds.map((id) => s.masterName("company", id)).join(" · ")}
+                                </span>
+                              </>,
+                            )}
                           </td>
-                          <td className="px-4 py-2.5">{ownerCell(st.key, site.id)}</td>
+                          <td className="px-4 py-2.5">{cut("owners", ownerCell(st.key, site.id))}</td>
                         </tr>
                       ))}
                   </>

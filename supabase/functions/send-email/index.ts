@@ -244,6 +244,8 @@ const PAGE = "#F6F9FD";
 const LINE = "#E9EEF6";
 const GREY = "#64748B";
 const GREY2 = "#8A99B0";
+/** The hold tile's colour, matching the screen's teal (vite.config.ts `teal`). */
+const TEAL = "#2EC4B6";
 const FONT = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /** Initials for the actor avatar (first + last word). */
@@ -374,6 +376,22 @@ function itemList(items: Array<{ name: string; meta?: string; value?: string; su
   </table>`;
 }
 /** Orange-tinted note/reason box. */
+/**
+ * Points, one per LINE, each with its own bullet.
+ *
+ * ⚠ THIS EXISTS BECAUSE A PARAGRAPH IS NOT A LIST. An announcement whose points were joined into one
+ *   escaped paragraph (noteBox collapses newlines, like any HTML) reads as a dump and was rejected by
+ *   the client on 18-09-2026. Anything written as points must arrive as points.
+ */
+function bulletLines(items: string[]): string {
+  if (!items.length) return "";
+  const rows = items.map((t) => `<tr>
+    <td valign="top" style="padding:3px 9px 3px 0;font-family:${FONT};font-size:15px;line-height:1.5;color:${ORANGE};font-weight:700;">&#8226;</td>
+    <td valign="top" style="padding:3px 0;font-family:${FONT};font-size:14.5px;line-height:1.5;color:${NAVY};">${esc(t)}</td>
+  </tr>`).join("");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px;">${rows}</table>`;
+}
+
 function noteBox(label: string, text: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr>
     <td style="background:${ORANGE_SOFT};border-radius:10px;padding:13px 16px;font-family:${FONT};">
@@ -572,26 +590,153 @@ async function compose(row: Row): Promise<Composed | null> {
 
     const headline = str(p.headline, "Your receivables report");
     const body = str(p.body);
+    // Optional, and both are additive: a report SEND carries neither, so it renders exactly as before.
+    // An announcement carries points (one line each) and a button to open the thing being announced.
+    const bullets = (Array.isArray(p.bullets) ? p.bullets : []).filter((b): b is string => typeof b === "string" && !!b);
+    const ctaUrl = str(p.ctaUrl);
     const fileList = files.length
       ? itemList(files.map((f) => ({ name: f.filename, meta: f.mime.includes("pdf") ? "PDF summary" : "Excel workbook" })))
       : "";
     const inner =
       (actorName !== "A colleague" ? actorRow(actorName, "sent you a report") : "") +
-      (body ? noteBox("Message", body) : "") +
+      (body ? (bullets.length ? `<div style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">${esc(body)}</div>` : noteBox("Message", body)) : "") +
+      bulletLines(bullets) +
+      (ctaUrl ? cta(ctaUrl, str(p.ctaLabel, "Open the report")) : "") +
+      fileList;
+
+    return {
+      subject: str(p.subject, headline),
+      // eyebrow / tag / footerNote are optional overrides for an announcement that is not about
+      // receivables (the PF-16 backup notice). Absent, the mail renders exactly as before.
+      // eyebrow and tag are escaped by emailShell; footerNote is escaped here.
+      html: emailShell({
+        eyebrow: str(p.eyebrow, "Receivables"),
+        headline,
+        inner,
+        tag: str(p.tag, "Outstanding Dashboard"),
+        footer: str(p.footerNote)
+          ? `<b style="color:${GREY};">Orange One Hub</b> &middot; ${esc(str(p.footerNote))}`
+          : `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
+      }),
+      text: [headline, body, ...bullets.map((b) => `- ${b}`), ctaUrl, ...files.map((f) => f.filename)]
+        .filter(Boolean).join("\n\n"),
+      replyTo,
+      files,
+    };
+  }
+
+  // ---- the evening DAILY REPORT (DR-3) -------------------------------------
+  // Queued by the GitHub runner in supabase/dailyreport/entry.ts, once the PDF is
+  // in `report-exports`. One row per recipient, because this sender has no Cc.
+  //
+  // ⚠ ITS OWN BRANCH, NOT THE GENERIC PREFIX LIST, AND NOT THE RECEIVABLES ONE.
+  //   `daily_report_` is not in the module-prefix list above, so without this the
+  //   mail would reach markSkipped(row, "unknown kind") and vanish with no error
+  //   anywhere — the failure mode a scheduled send cannot afford.
+  //
+  //   It would have been possible to reuse `receivables_collections_report`,
+  //   which since PF-18 accepts `eyebrow` / `tag` / `footerNote` / `bullets`
+  //   overrides and would render this acceptably. It is deliberately NOT reused:
+  //   `kind` is how somebody finds a mail in `email_outbox` six weeks later, and
+  //   filing the Daily Report under a receivables key would cost that permanently
+  //   to save twenty lines once.
+  //
+  // Deliberately plain, and in the house style for outbound mail: the figures
+  // first, as points rather than a paragraph, then one pointer to the attachment.
+  // No em dash anywhere in the copy - it reads as machine-written.
+  if (row.kind === "daily_report_evening") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const bucket = str(p.bucket, "report-exports");
+    const files = (Array.isArray(p.attachments) ? p.attachments : [])
+      .map((a) => a as Record<string, unknown>)
+      .filter((a) => typeof a.path === "string")
+      .map((a) => ({
+        bucket,
+        path: String(a.path),
+        filename: str(a.filename, String(a.path).split("/").pop() ?? "daily-report.pdf"),
+        mime: str(a.mime, "application/pdf"),
+      }));
+
+    const headline = str(p.headline, "Daily Report");
+    const lead = str(p.body);
+
+    // ⚠ THE POINTS ARRIVE AS AN ARRAY, NOT AS A NEWLINE-JOINED STRING, AND THE
+    //   DIFFERENCE IS LOAD-BEARING. The first cut had the runner join the day's
+    //   figures with newlines and this branch split them apart again. That is two
+    //   encodings of one list, and HTML collapses newlines, so any reader of the
+    //   payload who forgot to split got a paragraph of run-together figures. The
+    //   client rejected exactly that shape for the announcements on 18-09-2026.
+    //   `bullets` is the same field the receivables branch already takes.
+    const points = (Array.isArray(p.bullets) ? p.bullets : [])
+      .filter((b): b is string => typeof b === "string" && !!b);
+
+    const fileList = files.length
+      ? itemList(files.map((f) => ({ name: f.filename, meta: "PDF" })))
+      : "";
+
+    const inner =
+      (lead ? `<div style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">${esc(lead)}</div>` : "") +
+      bulletLines(points) +
       fileList;
 
     return {
       subject: str(p.subject, headline),
       html: emailShell({
-        eyebrow: "Receivables",
+        eyebrow: "Daily Report",
         headline,
         inner,
-        tag: "Outstanding Dashboard",
-        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
+        tag: "Daily Report",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; sent automatically every evening.<br>You're receiving this because you are on this report's distribution list.`,
       }),
-      text: `${headline}\n\n${body}\n\n${files.map((f) => f.filename).join("\n")}`,
+      text: [headline, lead, ...points.map((t) => `- ${t}`), ...files.map((f) => f.filename)]
+        .filter(Boolean).join("\n\n"),
       replyTo,
       files,
+    };
+  }
+
+  // ---- the Daily Report DID NOT GO OUT -------------------------------------
+  // Queued by pg_cron (daily_report_email_watchdog) once the slot's grace window
+  // has closed with no row in daily_report_email_send_log.
+  //
+  // ⚠ SAME REASONING AS `collections_report_missed` BELOW, AND THE SAME TRAP: the
+  //   one mail that reports a silent failure must not itself be dropped silently.
+  //   Every workflow run exits SUCCESS, because "not due" is a success, and a
+  //   dropped tick creates no run at all - so a missed slot is invisible to
+  //   everyone unless this arrives.
+  if (row.kind === "daily_report_missed") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
+
+    const forDate = str(p.for_date);
+    const dateLabel = forDate ? ddmmyyyy(forDate) : "";
+    const slot = str(p.slot_ist, "20:30");
+    const grace = num(p.grace_minutes) || 60;
+    const reason = str(p.reason, "unknown");
+    const lastKick = str(p.last_kick_at);
+
+    const points = [
+      `The ${slot} IST slot for ${dateLabel || "today"} passed with nothing sent.`,
+      `The grace window of ${grace} minutes has now closed, so it will not go out on its own.`,
+      `The gate says: ${reason}`,
+      lastKick ? `The database last poked the runner at ${lastKick} IST.` : "The database has no record of poking the runner.",
+      "To send it by hand: run the Daily report workflow with mode=scheduled.",
+    ].filter(Boolean);
+
+    const headline = `Daily Report was not sent${dateLabel ? ` for ${dateLabel}` : ""}`;
+    return {
+      subject: str(p.subject, headline),
+      html: emailShell({
+        eyebrow: "Daily Report",
+        headline,
+        inner: bulletLines(points),
+        tag: "Daily Report",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; scheduled send watchdog.`,
+      }),
+      text: [headline, ...points.map((t) => `- ${t}`)].join("\n\n"),
+      replyTo,
     };
   }
 
@@ -1012,9 +1157,11 @@ async function compose(row: Row): Promise<Composed | null> {
     const dueToday = num(tl.dueToday);
     const next2 = num(tl.next2);
     const noDate = num(tl.noDate);
+    const hold = num(tl.hold);
 
+    // Five tiles now, so the fixed width is a fifth rather than a quarter.
     const tile = (label: string, value: string, color: string, sub = "") => `
-      <td width="25%" style="padding:0 3px;">
+      <td width="20%" style="padding:0 3px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAGE};border:1px solid ${LINE};border-radius:11px;">
           <tr><td align="center" style="padding:12px 4px;font-family:${FONT};">
             <div style="font-size:23px;font-weight:800;color:${color};line-height:1.1;">${esc(value)}</div>
@@ -1025,12 +1172,18 @@ async function compose(row: Row): Promise<Composed | null> {
       </td>`;
 
     /**
-     * The four tiles, in the screen's order and with the screen's labels
-     * (MyWorkToday.tsx:90-95). They were suppressed while this mail could only
+     * The tiles, in the screen's order and with the screen's labels
+     * (MyWorkToday.tsx `TILES`). They were suppressed while this mail could only
      * count one module — a tile reading "6 overdue" beside a dashboard reading
      * "11 overdue" is worse than no tile, because the reader trusts whichever
      * they saw last. Now that every wired module is counted by the screen's own
-     * code, the same four numbers are the same four numbers.
+     * code, the same numbers are the same numbers.
+     *
+     * ON HOLD / PARTIAL is the fifth, and it is here for that same reason: the
+     * screen stopped counting parked work as due, so a mail that still did would
+     * be exactly the disagreement this block exists to prevent. It is NOT part of
+     * the total — nothing on it is owed today — which is why it comes last and in
+     * teal rather than red or amber.
      *
      * ⚠ Only restore a tile when the payload genuinely covers every module the
      * reader holds. If `snapshot.uncounted` is ever non-empty these totals are a
@@ -1041,6 +1194,7 @@ async function compose(row: Row): Promise<Composed | null> {
       ${tile("Due today", String(dueToday), dueToday > 0 ? AMBER : GREY, "Needs closing today")}
       ${tile("Next 2 days", String(next2), next2 > 0 ? NAVY : GREY, "Tomorrow + day after")}
       ${tile("No date set", String(noDate), noDate > 0 ? GREY : GREY, "Untimed work")}
+      ${tile("On hold / Partial", String(hold), hold > 0 ? TEAL : GREY, "Parked — not due")}
     </tr></table>`;
 
     const th2 = (label: string, align = "right") =>
@@ -1168,7 +1322,7 @@ async function compose(row: Row): Promise<Composed | null> {
         footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; your personal daily snapshot.<br>You are receiving this because you have a login. Overdue counts tasks past their due date as of today, India time.`,
       }),
       text: `Your Orange One snapshot${dateLabel ? `, ${dateLabel}` : ""}\n\n`
-        + `Overdue ${overdue} | Due today ${dueToday} | Next 2 days ${next2} | No date ${noDate}\n\n`
+        + `Overdue ${overdue} | Due today ${dueToday} | Next 2 days ${next2} | No date ${noDate} | On hold/Partial ${hold}\n\n`
         + (sources.length
             ? sources.map((s) =>
                 `- ${str(s.module)}: ${num(s.items)} items, ${num(s.overdue)} overdue`).join("\n")

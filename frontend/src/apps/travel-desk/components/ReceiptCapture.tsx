@@ -20,7 +20,7 @@ import type { BillReading } from "../data/travelClaimWrites";
  *
  * ⚠ THE CATEGORY IS A HINT, NOT A DECISION — and it is deliberately NOT applied
  *   automatically. The category decides whether a line is reimbursable at all
- *   (§15 refuses alcohol BY THE CATEGORY), which cap applies, and whether a
+ *   (Section 15 refuses alcohol BY THE CATEGORY), which cap applies, and whether a
  *   receipt is mandatory. A model guessing "Meal" over a bar bill would move
  *   money. It is shown as a suggestion for the traveller to pick.
  *
@@ -60,7 +60,7 @@ export default function ReceiptCapture({
       const notes: string[] = [];
       if (r.currency && r.currency !== "INR") {
         notes.push(
-          `The bill is in ${r.currency}. Policy §11.3 does not cover foreign currency — claim what was actually charged in rupees.`,
+          `The bill is in ${r.currency}. Policy Section 11.3 does not cover foreign currency — claim what was actually charged in rupees.`,
         );
       }
       if (r.confidence === "low") {

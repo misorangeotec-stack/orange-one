@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { fyCode, ocNoPreview } from "../lib/format";
+import { fyCode, ocNoPreview, periodCode } from "../lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -88,6 +88,7 @@ export function QuotationSeriesWarning() {
 export function OcSeriesWarning() {
   const s = useOcpiStore();
   const fy = fyCode();
+  const period = periodCode();
   if (s.config.ocSeries[fy]?.confirmed) return null;
 
   return (
@@ -99,7 +100,7 @@ export function OcSeriesWarning() {
           blanked the year instead and showed `OTPL/OC/1/26-nnnn` — an invented
           number, inside the one warning whose job is to show what is coming.
       */}
-      This deal takes <b>{ocNoPreview(fy)}</b> from a counter nobody has checked against the
+      This deal takes <b>{ocNoPreview(period)}</b> from a counter nobody has checked against the
       paper register. If the real series is ahead of it, the order confirmation goes out under a
       number a customer already holds &mdash; and unlike a quotation, that number ends up on
       something signed.{" "}

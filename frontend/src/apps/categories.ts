@@ -43,6 +43,7 @@
 
 export type AppCategory =
   | "productivity"
+  | "reports"
   | "sampling"
   | "production"
   | "quality"
@@ -55,6 +56,16 @@ export type AppCategory =
 
 export const CATEGORIES: { key: AppCategory; label: string }[] = [
   { key: "productivity", label: "Productivity" },
+  // Second, and belonging to no department on purpose. The report catalogue spent its life
+  // as a menu inside the Outstanding Dashboard, where finance, inventory and Tally reports
+  // were reached through a receivables app that most of their readers had no other use for.
+  // Filing it under Sales & Receivables here would have rebuilt the same misfiling one level
+  // up. It reads the whole company, so it sits on its own — and high, because "I need a
+  // number" is a daily errand, not a departmental workflow.
+  //
+  // The group carries ONE app (apps/reports/) but many rows: it is a catalogue, so the
+  // sidebar lists its sections rather than a single link — see `menuEntries` in apps/types.
+  { key: "reports", label: "Reports" },
   // ── the plant floor: sample it, make it, and the machines that do the making ─
   { key: "sampling", label: "Sampling" },
   { key: "production", label: "Production" },

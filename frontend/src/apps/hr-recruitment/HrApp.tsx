@@ -100,6 +100,7 @@ export default function HrApp() {
             <Route path="master-requests" element={<MasterRequests />} />
             <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
             <Route path="sandbox" element={<RequireRealAdmin><SandboxLauncher /></RequireRealAdmin>} />
+
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="*" element={<Navigate to="/hr-recruitment" replace />} />

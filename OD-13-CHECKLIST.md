@@ -1,0 +1,538 @@
+# OD-13 — execution checklist
+
+Working checklist for the approved plan (`~/.claude/plans/task-od-13-eventual-rose.md`).
+Ticked as each step is **done and verified**, not when it is written.
+
+Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified · `[!]` blocked / needs a decision
+
+---
+
+## P0 — Close the four security holes  ·  ships as its own commit, before anything else
+
+### P0-0 · Safety net (do this first, always)
+- [x] `_rls_baseline_20260904` — snapshot every `public` policy (name, cmd, roles, qual, with_check) before touching one
+- [x] `_storage_policy_baseline_20260904` — same for `storage.objects`
+- [x] Write `ROLLBACK-P0.sql` that regenerates every policy from those two tables
+- [x] **Rehearse the rollback on live**: apply → verify → roll back → verify the counts match the baseline → re-apply
+      *(a rollback that has only been read is not a rollback)*
+
+### P0-1 · The identity primitive
+- [x] Migration: `profiles.is_external boolean not null default false`
+- [x] Migration: `public.is_staff(uid)` — `uid is not null and not exists (… is_external)`, STABLE SECURITY DEFINER
+- [x] Verify: `is_staff()` returns true for every existing profile row (count must equal total)
+
+### P0-2 · The 207 table policies
+- [x] `DO` block over `pg_policies` (`public`, `cmd='SELECT'`, `qual='true'`) → `TO authenticated USING (is_staff(auth.uid()))`
+- [x] Narrow `fms_dispatch_activity_select` (+ `and is_staff(...)`) — stops the customer reading credit-hold reasons
+- [x] Narrow `fms_dispatch_step_assignees_select` (+ `and is_staff(...)`)
+- [x] Verify: zero remaining `qual='true'` SELECT policies in `public`
+- [x] Verify: zero remaining `{public}`-role SELECT policies on those tables
+
+### P0-3 · The six storage buckets
+- [x] `fms-import-docs` · `fms-purchase-docs` · `fms-production-docs` · `fms-sampling-docs` · `fms-asset-docs`
+      → add `AND is_staff(auth.uid())` to SELECT, INSERT, UPDATE **and DELETE**
+- [x] Verify: no `storage.objects` policy remains that is a bare `bucket_id = '…'`
+
+### P0-4 · The RLS-disabled backup table
+- [x] `alter table pc_resolve_rpc_backup_20261012 enable row level security` (no policy = deny)
+- [x] Verify: `anon` and `authenticated` can no longer select from it
+
+### P0-5 · The SECURITY DEFINER functions  ← the biggest single piece of P0
+- [x] Produce the classification list: 205 unguarded functions → `helper` / `delegating` / `needs-guard`
+- [x] Verify each `delegating` one actually checks in its inner function (do not assume)
+- [x] Guard every `needs-guard` function with `if not is_staff(auth.uid()) then raise …`
+- [x] `list_org_people()` + `list_org_people_detail()` — exclude `is_external` rows AND refuse external callers
+- [x] Master Report access-matrix RPC — same exclusion
+- [x] Verify: re-run the classification query — 46 guarded + 4 rewritten; **~160 low-risk helpers deferred to P3**
+      *(⚠ the classifier is a regex on the body and misses a guard that lives in a `WHERE` clause — it wrongly
+      flagged `fms_ocpi_last_contact_for` and `fms_hr_module_user_ids`, both of which are correctly gated)*
+- [!] 🔴 **611 SECURITY DEFINER functions are still executable by `anon`** (default PUBLIC grant, bypasses RLS).
+      Bigger than OD-13 and needs its own pass — see WORKLIST. **Not a blocker for the customer login** (they are
+      `authenticated`, and the guarded ones now refuse them), but it is a live hole for anyone with the anon key.
+
+### P0-e · The holes P0a stepped over  ·  found by P0-7, not by re-running P0a's own check
+- [x] `app_lead_masters_global_select` — SELECT, role `{public}`, `auth.uid() IS NOT NULL` → `is_staff`
+- [x] `fms_travel_step_assignees_select` — the twin of the policy P0a narrowed **by hand** in dispatch, and missed here
+- [x] `task_remark_mentions` INSERT `WITH CHECK (true)` — P0a only ever looked at `cmd='SELECT'`
+- [x] 7 × `*_master_requests_insert` — any signed-in account could file a master request in seven modules
+- [x] Verify: **zero** permissive policies in `public`/`storage` on **any** command still admit a bare signed-in account
+
+### P0-6 · Frontend, minimum for P0
+- [x] `liveDirectory.ts:28` — add `is_external` to the explicit column list (or it never reaches the browser)
+- [x] `types.ts` `Profile.isExternal`; `session.tsx` `isExternal`
+- [x] `database.types.ts` + the local row cast in `liveDirectory.ts` + the 8 seed profiles in `data.ts`
+- [x] `npm run build` green
+
+### P0-7 · Prove it
+**Method, and a deviation worth knowing.** No throwaway auth account was created. A real `profiles`
+row was *shaped* like a customer login inside a transaction that was then forced to roll back —
+`is_external = true`, role employee, no department, no HOD, no app grant, and its tasks/notifications
+removed — with `request.jwt.claims` and `role` set exactly as PostgREST sets them per request. This
+is faithful (it is the same RLS path an HTTP call takes) and it is **stronger than a DevTools sweep,
+because it enumerates all 295 tables instead of a sample**. It also avoids creating a `profiles` row
+that the live `work-snapshot` job would auto-enrol and email at 09:00 IST — Correction 8, unfixed
+until P6. Data was verified intact afterwards (6,455 tasks, 400 notifications, 219 app grants, 0 external).
+
+- [x] ~~Create a throwaway account~~ → modelled in a rolled-back transaction instead (above)
+- [x] Every table: **2 of 295 return a row** — `profiles` and `user_roles`, both own-row. Correct.
+- [x] Storage: **0 of 3,124 objects** visible; delete refused
+- [x] Guarded RPCs: `mst_refresh_party_companies`, `mst_refresh_item_companies`, `fms_asset_next_seq`,
+      `fms_purchase_next_seq`, `generate_recurring_tasks` → all *Not authorized*;
+      `list_org_people` / `_detail` → **0 rows** (empty by design, so pickers do not error)
+- [x] Writes: `task_remark_mentions` insert → refused by RLS
+- [x] **Positive control** — the same row as ordinary staff: **195 of 295 tables**, **235 storage objects**,
+      and the five formerly-bare buckets still read (import 29, production 107, purchase 89, sampling 10)
+- [x] `npm run build` green
+- [ ] As ordinary staff in the browser: walk Order to Dispatch, Procurement, Import, HR, Travel, Production
+      *(the SQL positive control proves the policies; this proves the screens)*
+- [ ] Commit P0 on its own · update WORKLIST.md OD-13
+
+> ⚠ **The trap this phase caught, and it is the reason P0-7 exists.** P0a verified itself with its own
+> predicate — "0 policies still read `USING (true)`" — which proves only that the sweep swept what it
+> looked for. Sitting in the seat found four more holes it could never have reported. The first run of
+> the sweep also reported **219 of 295 open**, which was the *test* being wrong, not the lock: it
+> borrowed the founding admin's row, and every `*_write` policy is `FOR ALL` (so it covers SELECT) and
+> permissive (so `is_admin` ORs straight past `is_staff`). **`is_external` says "not staff"; it does not
+> take a role away.** Model the account, don't just flip the flag.
+
+---
+
+## P1 — The identity, built for N customers  ·  DB + screen done
+
+- [x] Migration: `fms_dispatch_customer_orgs` (display_name, party_ids, primary_party_id, customer_location,
+      notify_user_ids, default_location_id, default_dispatch_type, active) — `active` defaults **false**
+- [x] Migration: `fms_dispatch_customer_logins` (profile_id PK, org_id, active)
+- [x] `fms_dispatch_customer_org_of(uid)` helper — requires the login **and** the org to be active
+- [x] `fms_dispatch_save_customer_org(p jsonb)` — validates: ≥1 ledger, all `is_customer` + active,
+      `primary_party_id ∈ party_ids`, **≥1 notify user** with edit access, and readiness before activating
+- [x] ⚠ **AND ONE NOBODY WOULD THINK TO ADD**: at most **one ticked ledger per billing company**.
+      Two make "which Bishen?" ambiguous at credit check and P4's re-point a coin toss. A ledger with
+      **no** company is refused too — it could never be chosen, so ticking it is a trap
+- [x] RLS on both tables: admins + dispatch coordinators only
+- [x] Setup → **Customer Logins** section: grid (sort + filter every column), add/edit
+- [x] **"Add a customer"** single action: org → auth user (`is_external`, real password) →
+      grant `customer-orders` **only** → login row. Org first, so a failure never orphans an auth account
+- [x] Readiness check: refuses to activate with no ledgers / no main ledger / no recipient / **no mapped items**,
+      and **names** what is missing rather than counting it
+- [x] `admin-users` Edge Function: `isExternal` + explicit `password` on create — staff path byte-identical.
+      Deployed (v13). ⚠ First deploy used `--no-verify-jwt` and flipped `verify_jwt` off against
+      `config.toml`; caught and redeployed. **Deploy without the flag — the CLI reads config.toml.**
+- [x] Verify: 10 refusals proved in a rolled-back transaction; readiness `item_count = 62` for Bishen's
+      five ledgers, matching the audit's predicted distinct-item count exactly
+- [x] ✅ **Verify: a third customer added end-to-end through the Setup screen alone** — done in the
+      browser on 04-09-2026 with the user's go-ahead, as **ZZ TEST Kalahansh** (3 ticked ledgers,
+      80 items, Bushra as recipient). No SQL, no migration, no deploy. The account is REAL and kept
+      on purpose: P5 needs something to build the Order Desk against. Delete on request.
+- [x] The picker told the three Kalahansh ledgers apart by book (`· Colorix — Surat`, `· Enterprise`,
+      `· O-tec`) and listed the two `-MACHINE` ledgers separately, so they were visibly not ticked
+- [x] The main-ledger picker offered **only the three ticked**, and the recipient list only people
+      with edit access to Order to Dispatch
+- [x] The created account: `is_external true`, `is_staff FALSE`, **exactly one grant**
+      (`customer-orders:edit` — no `task-management` default, Correction 9 avoided), `phone null`,
+      linked to its org, `can_raise true` via the customer branch. **The login works.**
+
+#### 🔴 Two defects the browser found that review had not
+
+- [x] **Chrome autofilled the ADMIN'S OWN email and password into the new-customer login fields.**
+      The password manager sees an email box beside a password box, decides it is a sign-in form, and
+      fills in the signed-in admin's credentials — in plain text once the eye is clicked, in a field
+      about to be handed to an outside firm. Worst case the admin changes only the email and gives a
+      customer a login whose password is the admin's own. Fixed with `autoComplete="new-password"` on
+      all three login fields; `"off"` is NOT enough, Chrome ignores it on inputs it has decided are a
+      login. **Verified gone: the fields came back empty on the next load.**
+- [x] **The dialog was too narrow** (`lg`). Now `3xl` with a genuine two-column layout — widening
+      alone would only have added whitespace beside the same single file of fields. ⚠ The first
+      attempt put three controls in a row and `FieldLabel` lays its hint on the SAME LINE as the
+      label: at a third of the dialog the hint wrapped to five lines and pushed its input a row below
+      the other two. Two columns, short hints, and the long explanation moved to a sentence beneath.
+      **Both are invisible in the markup and only appear on screen.**
+- [x] `reload()` is now **awaited before the dialog closes**, on both save paths. I saw a stale
+      "0 customers" once right after creating and could NOT reproduce it — the identical reload
+      demonstrably refreshes on the edit path, so it was most likely my screenshot racing the
+      refetch. Awaiting it costs nothing and removes the question; on the FIRST customer that
+      window would read "0 customers" under a full empty state, and the obvious response to that
+      is to press Add again and make a second account for the same firm.
+
+#### ✅ P0-7 re-run properly — a LIVE external account, over HTTP, not a SQL simulation
+
+- [x] 22 tables read through PostgREST as the customer: every master and every FMS table **0 rows**;
+      `profiles` and `app_access` **1 row each** (their own); `fms_dispatch_customer_orgs` /
+      `_logins` **0** — the ticked-ledger list never reaches them (Q11 honoured by never sending it)
+- [x] All **11 storage buckets: 0 objects**; a delete against `fms-purchase-docs` removed nothing
+- [x] `mst_refresh_party_companies`, `generate_recurring_tasks` → **Not authorized**;
+      `list_org_people` / `_detail` → 0 rows; the two admin RPCs → 0 rows
+- [x] And the three that ARE theirs work: profile **1**, items **80**, orders **0**
+- [x] 🔴 **Correction 8 proved, not asserted.** With **65 profiles — 64 staff + 1 real external
+      account** — the work-snapshot dry run returns **`wouldSend: 64`**. Before the fix it would have
+      been 65, and the customer would have received our internal work digest at 09:00 IST.
+
+## P2 — Raise without joining step owners  ·  DONE
+
+- [x] `fms_dispatch_can_raise` branches on `customer_org_of`
+- [x] `fms_dispatch_orders_select` + `fms_dispatch_can_see_order`: recipient arm **and** same-org arm
+- [x] ⚠ The policy spells the arm out as an `EXISTS` instead of calling the helper: the helper takes
+      `raised_by`, which varies per row, so it cannot be an InitPlan and would run two nested
+      SECURITY DEFINER calls per order across ~4,000 rows — the 472 ms lesson in `20260730130000`
+- [x] `fms_dispatch_can_act__ungated`: recipient arm, **before** the assignee check
+- [x] Client recipient arm — **in `canActOn`, not `isStepOwner`** (Correction 6). `isStepOwner` also
+      answers "do I own this step anywhere" for the nav; widening it would give a recipient a nav entry
+      for every step of a module they own no step in. Fed by `fms_dispatch_customer_order_actors()`,
+      which returns two columns and keeps the ticked-ledger list on the server
+- [x] `fms_dispatch_announce`: external recipients dropped from every type not on a **customer-safe
+      allowlist**, which is `{}` for release 1 — so turning the module's email switch on can never
+      post an internal step alert to a customer's inbox
+- [x] Verify: `can_raise` agrees with the ORIGINAL expression for all 64 profiles (0 disagreements);
+      the new read arm is false for every (profile × existing raiser) pair, so P2 is provably a no-op today
+- [x] Verify with a **non-admin, non-coordinator, non-step-owner** recipient (Bushra), so the `true`s
+      can only come from the new arm: Correction 3 reproduced (`false` before) then fixed (`true` after);
+      Jayshree, not named, still `false`; the customer can act on **nothing**; the credit-hold reason
+      produced **0** notification rows for the customer and **1** for the recipient
+
+> ⚠ **Found while testing, NOT introduced, and deliberately not changed.**
+> `fms_dispatch_is_step_owner__ungated` reads `p_location is null or o.location_id is null or …`, so a
+> null location means **any** location — while `fms_dispatch_can_see_order` treats the same null as
+> "the fallback grant only". The comment on `fms_dispatch_is_natural_step_owner` says "covered by the
+> fallback grant only", which its own callee contradicts. Effect on a customer order: every credit-check
+> owner at every site may *act* on it but cannot *see* it, so it is inert today — visibility is the
+> binding constraint. Changing it would move the staff flow, which this task must not do.
+
+## P3 — The order shape  ·  DONE
+
+- [x] Migration: `intake_source`, `intake_completed_at`; `dispatch_type drop not null`
+      *(the existing CHECK already passes on NULL, so no constraint edited and no row rewritten)*
+- [x] `fms_dispatch_submit_customer_order(p jsonb)` — a **sibling** of `submit_order`, never a branch
+- [x] `fms_dispatch_customer_window_open(p_order)` — **including the rounds test** (Correction 5)
+- [x] `fms_dispatch_update_customer_order` + `fms_dispatch_cancel_customer_order` (window, then hand off)
+- [x] 🔴 **`fms_dispatch_replace_customer_lines` — the plan said reuse `replace_lines` unchanged, and
+      that is wrong.** It validates against the order's single `customer_id` (the provisional primary
+      ledger), so **26 of the 62 items the picker offers Bishen would be refused** — in our internal
+      words, "Add the pair in Central Masters". The sibling validates against the union of ticked ledgers
+- [x] `fms_dispatch_announce` also **adds** the org's named recipients: on a customer order the twelve
+      call sites' own choices resolve to nobody, so a customer cancellation would have reached no one
+- [x] `fms_dispatch_my_customer_profile()` / `_my_items()` / `_my_orders()` — the customer reads **no
+      table directly**. `my_items()` de-duplicates by name (62 for Bishen, matching the audit)
+- [x] `DispatchType | null` — the audit said 9 sites in 6 files; it is **17 `tsc` positions across the
+      same 6 files** (`StageQueue`'s union inference multiplies them). One helper, `dispatchTypeText()`
+- [x] "Not yet decided", not a bare `—` — delivered here, where the sites were being touched anyway
+- [x] `SalesOrderFormState.dispatchType` widened to `DispatchType | ""`; a new staff order still starts
+      at "local", and `toInput` **throws** rather than casting, so a caller that skips `validate()` fails loudly
+- [x] Correct the two now-false comments (`stepConfig.ts` "no step legitimately does not know them",
+      `OrderRefPanel.tsx` "settled the moment the order is raised") — plus the `DispatchType` doc comment
+- [x] Verify: submit → notify (recipient 1, customer 0) → `my_orders` reads *placed*, `can_change` true →
+      edit inside the window → credit check → window shut, edit **and** cancel refused →
+      **part-delivered loop-back: the obvious rule reopens (`t`), ours stays shut (`f`), the customer
+      reads *part_dispatched* not *placed*, and the cancel is refused by the SERVER**
+- [x] Verify: an item mapped only to a NON-primary book is accepted (`NOVACRON YELLOW XKS HD 1000`)
+- [x] `npm run build` green; SO counter unchanged (1131) — the counter is a table, so tests roll back
+
+## P4 — Credit check completes the order  ·  DONE
+
+- [x] `fms_dispatch_complete_customer_intake` — company → location → type, ledger-limited,
+      re-points `customer_id`, **re-points item lines to the billing book**, stamps completion
+- [x] `fms_dispatch_record_credit_check` refuses while incomplete — patched by substitution
+      (Mechanic A), anchored on the `can_act` line, aborting rather than writing an unanchored body
+- [x] `fms_dispatch_customer_intake_options(order)` — the picker offers only what the server accepts
+- [x] `StepModal` completion section (only for an incomplete customer intake, only on `credit_check`),
+      seeded from the org defaults. Saved **before** the verdict, as its own call: the verdict RPC
+      refuses while incomplete, so the order of the two is load-bearing, and a verdict that then fails
+      for its own reasons leaves the details already saved rather than three fields to re-type
+- [x] `DispatchStepper` orphan fallback names the real recipients — Correction 6.
+      ⚠ **Scoped to the orphan case only.** My first version named the recipients on *every* step of a
+      customer order; once credit check fills in the site, the ordinary per-site owners are right again
+      for every step after it. The recipients own the order's ARRIVAL, not the whole flow
+- [x] "Not yet decided" wording (delivered in P3); company/location filters routed through
+      `blankFilter.ts` so they read "(Blank)" like every other grid instead of an em-dash that sorts
+      among the company names — blank on **every** customer order until credit check, so no longer rare
+- [x] Verify: 7 checks in a rolled-back transaction — verdict refused while incomplete, off-list company
+      refused, completion re-points the ledger and stamps, lines 1-of-3 → 2-of-3 in the billing book,
+      verdict then accepted, second completion refused, customer window shut
+
+> ⚠ **A known edge, measured and deliberately NOT fixed.** After completion, an ADMIN saving the order
+> through the ordinary staff Edit form hits `fms_dispatch_replace_lines`, which needs an
+> `mst_party_items` row for the pair — present for only **36 of 62** possible lines on the primary
+> company and **0 of 62** on two of the books. It is pre-existing (true today of any staff order whose
+> lines cross books; 219 of 4,009 live lines already do) and OD-13 makes it likelier, not new. The
+> alternatives are worse: restricting the picker to items in every book cuts Bishen from 62 items to a
+> handful; re-pointing only where the mapping exists drops the primary case from 59 lines to 36, trading
+> invoice-book correctness — which is what decision 3 asks for — for an admin-only editing convenience;
+> and creating the missing rows is a silent write to a governed central master. An ordinary clerk never
+> reaches this path at all, because `canEditOrder` requires raiser/admin/coordinator.
+
+## P5 — The Orange Order Desk  ·  DONE, and walked end to end in the browser
+
+- [x] `apps/customer-orders/` + `appInfo.ts` entry + `registry.tsx` registration. Registered like
+      any other module ON PURPOSE even though no member of staff will use it: registering is what
+      puts it in the Module Access matrix and the User form, which is the only way an admin can
+      SEE who holds a customer login. An unregistered id still works as an `app_access` grant —
+      it is simply a grant nobody can find, which is the failure this module was audited for.
+- [x] Own minimal shell (`OrderDeskShell`) — **not** `AppShell`, **not** `UserMenu`. No sidebar,
+      no breadcrumb, no bell, no Home link, and the logo does NOT link (every other logo in the
+      portal points at `/`, the marketing landing page — a dead end with a "Sign in" button on
+      it for somebody already signed in).
+- [x] Place an order · My orders · One order · Change password
+- [x] `lib/customerLabels.ts` — every sentence that is not the customer's own data. The status
+      map only RENDERS: `fms_dispatch_my_orders` collapses the state server-side, so the browser
+      never holds a step name to re-derive one from.
+- [x] Item picker de-duplicates by name across books. **Proved on screen: 80 options, 80
+      distinct, zero duplicates**, grouped "Heads / Ink / Spare Parts" — not `spare_parts`.
+- [x] `HomeLayout` redirect for external accounts (not `Login.tsx` — the directory carrying
+      `isExternal` has not loaded when it navigates). Placed AFTER the hooks, or the hook count
+      changes between renders when the directory arrives.
+- [x] `/account` too — `RequireModule` cannot cover it, because it is portal furniture rather
+      than an app. A customer typing the path would land on "My Account" with a department, a
+      designation and a Home link into the staff launcher. Sent to their own password screen.
+- [x] Wording sweep. Nowhere in the app: "Order to Dispatch", "FMS", "Orange One Hub",
+      "dispatch", "credit check", or any step name.
+- [x] The browser TAB. Nothing else in the portal sets `document.title`, so the customer's tab,
+      history and bookmark all read "Orange One — One Platform. Every Workflow." — our internal
+      name and our marketing line. Set to "Orange Order Desk", and RESTORED on unmount so an
+      admin who looks and leaves does not keep it over the Control Center.
+
+#### 🔴 Three defects found while building and testing, none visible in review
+
+- [x] **`fms_dispatch_my_orders` returned the item NAME and not the item ID, which made
+      "Change this order" DESTRUCTIVE.** Everything needed to display an order; nothing needed
+      to re-open one. The edit form pre-selects each line in a picker keyed on the id, so it
+      would have opened with every quantity filled and every item blank — and
+      `replace_customer_lines` DELETES before it inserts, so saving would have emptied the
+      order rather than failing loudly. On a one-line order it happens to raise "Add at least
+      one item"; on a two-line order where one item resolved, the save succeeds and the order
+      silently loses a line. ⚠ The tempting fix — match the line back by NAME — is a trap this
+      codebase has already written down (`scopeParties.ts`: join by id, never by name), and it
+      would have appeared to work until the first item renamed in Tally.
+      Migration `20261110140000`.
+- [x] **The closed-window sentence contradicted the status eight lines above it.** On screen,
+      in one glance: *"Placed · We have your order and are checking it now"* over *"This order
+      is now being PREPARED and can no longer be changed."* The window shuts on ANY recorded
+      credit decision and a HOLD is one — `cc_decided_at` stamped, buttons gone, status
+      deliberately still "Placed" because Q6 forbids saying a hold happened. So the two were
+      guaranteed to disagree on every held order, and the sentence asserted something FALSE:
+      a held order is sitting still, not being prepared. Now: "This order has gone past the
+      point where it can be changed." It makes no claim about our state, so it contradicts no
+      pill. **The server's two refusals changed with it** (migration `20261110150000`) — they
+      are near-identical on purpose, so a stale tab racing a decision shows the customer the
+      same sentence twice rather than two different explanations.
+- [x] **An item ON an order can have left the customer's list since**, and a `Combobox` handed
+      a value with no matching option renders EMPTY — the customer would have seen a quantity
+      against a blank item, assumed it was still loading, and saved an order one line shorter.
+      Now it keeps its name in a "No longer on your list" group and says what is wrong.
+
+#### ✅ Walked end to end on the live database, as the real customer login
+
+- [x] Placed **SO-2627-1132** through the screen: `intake_source='customer'`, company, site and
+      dispatch type all NULL, provisional ledger KALAHANSH FASHIONS LLP, requester the display
+      name. The duplicate-item guard fired and disabled the button before it went.
+- [x] 🔴 **Corrections 3 and 6 proved on a real null-location order**: the named recipient
+      Bushra reads `see=true`, `act=true`, and was the only person told. Not a simulation.
+- [x] Changed it (25 → 40 KGS) — item and note preserved, which is the `item_id` fix working.
+- [x] **The server refuses, not just the buttons.** On a REAL staff order (a nil UUID never
+      reaches the ownership check and proves nothing): read → `[]`, customer update/cancel →
+      "That is not your order", and even the staff cancel RPC → "Only the person who raised
+      this order, a coordinator or an admin can cancel it".
+- [x] **P4's completion panel, in a browser for the first time.** The company picker offered
+      exactly the three ticked companies — not all thirty. Choosing one turned Dispatch
+      location from optional into required and filled it with O-tec's two real sites.
+- [x] **`record_credit_check` refuses an incomplete intake even for an ADMIN calling it
+      directly**: "Fill in the billing company, dispatch location and dispatch type for this
+      customer order first."
+- [x] 🔴 **Correction 4 proved on live data, not asserted.** Credit hold recorded with a
+      deliberately internal reason. All four notifications went to Bushra; `is_the_customer`
+      is FALSE on every one. As the customer: notification rows readable **0**, activity rows
+      readable **0**, the word "INTERNAL" nowhere on their screen.
+- [x] Window shut on `cc_decided_at`: buttons gone, and the RPCs refuse a hand-made call with
+      the same wording the screen shows.
+- [x] Change password: both validations, a real change, and a change back — then signed in
+      again to prove it. `user_metadata` holds only `email_verified` and `name` — **no phone,
+      no password**. The self-service path never touches the admin re-pin machinery.
+- [x] Routing, as the customer: `/home` → `/order-desk`, `/account` → `/order-desk/password`,
+      `/order-to-dispatch` → `RequireModule` → `/home` → `/order-desk`. The two guards compose;
+      nobody is trapped in a loop.
+- [x] As an ADMIN: the app explains itself instead of failing, and points at Setup.
+- [x] Test order **cancelled and cleaned up** — the fake hold reason named a real colleague and
+      Bushra was holding a notification about it. The customer's screen now reads "Cancelled",
+      which verified that mapping on the way out.
+
+## P6 — Passwords and the staff-assumption fixes
+
+- [ ] `store.tsx:343` — skip the re-pin for external accounts
+- [ ] `admin-users/index.ts:94` — drop `user_metadata.phone = password`
+- [ ] `admin-users` create — explicit password for external, never derived from phone
+- [ ] `UserForm.tsx` — External toggle; hide staff fields; drop the mobile-as-password rule;
+      **start `moduleLevels` empty** (Correction 9)
+- [x] 🔴 `work-snapshot` sender — skips `is_external` (Correction 8). **Done early, before any account
+      exists, because it fires on account CREATION rather than on anything the customer does.**
+      Filtered inside `loadPeople()`, the one function that answers "who exists", so the eleventh
+      customer is safe for the same reason the first is — no exclusion list to maintain.
+      Proved on the live deployment: `wouldSend = 64`, unchanged, so it narrows nothing for staff.
+      Confirmed the risk was real: **all 64 profiles received today's digest** at 09:00 IST
+- [ ] `Hierarchy.tsx:14`, `Users.tsx`, `ModuleAccess.tsx`, `exportUsers.ts` — External signal
+
+## P7 — Verify the whole thing  ·  DONE
+
+- [x] `npm run build` green
+- [x] Full flow on a real login (place → notify → complete → status → edit refusal → cancel) — P5
+- [x] **Credit-hold case**: our reason is absent from the customer's notification rows — P5
+- [x] A third customer added through Setup alone — P1
+
+#### 🔴 The part-delivered case, walked end to end on a real order
+
+**SO-2627-1133** — 100 KGS placed by the customer, **40 approved**, shipped, invoiced, gate-passed
+and confirmed delivered. Every step through the real screens, with a real (test) invoice PDF and
+receiver copy uploaded to storage.
+
+- [x] **Both answers side by side, on live data, at the moment it matters:**
+
+      status = awaiting_credit_check · cc_status = NULL · cc_decided_at = NULL · rounds = 1
+
+      the OBVIOUS rule (status + cc_decided_at) says   window OPEN   ← would have reopened
+      ours (+ the rounds clause)          says         window SHUT
+
+      `record_dispatch_confirm` sends an exhausted order back to credit and deliberately wipes
+      `cc_status`, `cc_at` and `cc_decided_at`. So without the rounds clause the customer could
+      have cancelled an order that had already shipped and been invoiced — straight into Sales
+      Return, the precise outcome Q10 says must be prevented on the server.
+- [x] The customer's screen reads **"Partly dispatched · Part of this order has been sent. The rest
+      is still with us."** — NOT "Placed", which is what the step alone would have said. This is
+      why the status mapping tests rounds BEFORE step, and it is the only way that state is
+      reachable at all.
+- [x] Change and Cancel are **both gone**, and both **refused by the server** when called directly —
+      not merely hidden.
+- [x] Credit check offered exactly the three ticked companies again, and the partial-approval panel
+      capped the release at 40 of 100 with "The stock check will not be able to send more than this."
+
+#### ✅ Staff flow proved unmoved — measured, not assumed
+
+- [x] **Positive control, re-run after everything**, as an ordinary NON-ADMIN staff member (Bushra,
+      role employee, 10 grants) with the JWT set exactly as PostgREST sets it: **297 tables, 0
+      errors.** Every module she is granted returns rows — purchase 58, import 30, supplies 3,
+      sampling 31, production 163, COAs 24, dispatch 5, tasks 770, `mst_items` **14,383**,
+      `mst_parties` **7,915**. The zeros are all explained: HR / Travel / OCPI are modules she has
+      no grant for, and `fms_customer_requests` is step-owner scoped by a policy P0 never touched.
+- [x] **Storage: all five buckets P0b narrowed read FULLY for staff** — purchase 89/89, import
+      29/29, production 107/107, sampling 10/10, asset 0/0. The already-gated buckets still scope
+      as before (dispatch 8 of 2,282, HR 0 of 133).
+      ⚠ The first run of this reported "staff sees nothing" — because `storage.buckets` is itself
+      RLS-protected, so enumerating it as a staff user returned no rows and the loop body never ran.
+      A test that silently does nothing looks exactly like a catastrophic finding.
+- [x] **Nine modules loaded in the browser** — Procurement, Import, HR, Travel, Production,
+      Sampling, OCPI, Task Management, Asset Maintenance — all render with real content and **zero
+      console errors**. (Task Management first read as empty; it is simply the heaviest and had not
+      finished mounting inside the sweep's 2.2s. Fine on a full load.)
+- [x] 🔴 **The one schema change that could have leaked into the staff path was tested directly.**
+      P3 dropped `dispatch_type NOT NULL` so a customer order can arrive without one — if the column
+      constraint had been the only thing enforcing it, staff could now raise an order with no
+      dispatch type. `fms_dispatch_submit_order` still answers **"Dispatch type must be Local or
+      Transport"**. The RPC's own validation was doing the work all along.
+- [x] **A staff order raised through the normal form**: `useSalesOrderForm` changed in P3, so this
+      is not a formality. Local still pre-selected, the same cascade (company → site → customer →
+      item), the same validation order — **SO-2627-1134** raised and landed on its detail page.
+      Cancelled immediately afterwards.
+- [x] The whole downstream chain was exercised for real on 1133: material status → sales bill (with
+      a Tally invoice no. and an uploaded PDF) → gate outward (**OTEC-2609-082**) → delivery
+      confirmation with a receiver copy. Identical machinery for staff and customer orders.
+
+#### Test data left behind, deliberately
+
+| Order | State | Why |
+|---|---|---|
+| **SO-2627-1132** | cancelled | The P5 end-to-end. Cancelled after testing. |
+| **SO-2627-1133** | **on hold** | The part-delivery proof. ⚠ **Held, NOT cancelled** — cancelling a part-delivered order is what drops it into Sales Return, so the tidy-up must not do the very thing the test exists to prevent. The hold reason says so on the record. |
+| **SO-2627-1134** | cancelled | The staff-form proof. |
+
+The hold on 1133 announced to six of our people and **zero to the customer** — the raiser-drop holds
+on the `held` announcement type too, not only on `credit_on_hold`.
+
+## P7b — The dry run for the two real customers, and what it turned up  ·  05-09-2026
+
+Run because the two real logins were the only thing left waiting on the client, and none of it
+needed them: a test login can be pointed at a real customer's ledgers, and a predicate can be
+judged against real people, without an account existing or anybody being told anything.
+
+#### ✅ Bishen's and Ganga's item pickers, through the real RPC on the real ledgers
+
+`fms_dispatch_my_items()` called as the live `ZZ TEST` customer login, with the test org's
+`party_ids` temporarily repointed at each firm's actual mapped ledgers, in a **rolled-back**
+transaction — so this is the shipped function over the shipped data, and the test org came back
+byte-identical.
+
+| Customer | Ticked books | Mapping rows | **Items the picker offers** | Missing a unit | Types |
+|---|---|---|---|---|---|
+| BISHEN DYEING | 3 (OOT PL · OOT Ent · OOT Ent NOIDA) | 36 + 36 + 11 = 83 | **62** | 0 | ink, head, spare_parts |
+| GANGA FASHION | 2 (OOT PL · OOT Ent) | 51 + 28 = 79 | **63** | 0 | ink, head, spare_parts |
+
+83 → 62 and 79 → 63 is Correction 2's de-duplication doing its job on live data: the same ink
+exists once per Tally book, and `distinct on (i.name)` folds them. Neither picker is empty and
+neither has an item without a unit, which is what the P1 readiness check exists to catch.
+
+Their other ledgers (`…-OLD MACHINE`, `…(MACHINE)`, the two dormant NOIDA/COLORIX books) carry
+**zero** mappings, so ticking them would add nothing and is not needed.
+
+#### 🔴 The recipient could not see the order. Correction 3, again, one level down.
+
+Found by asking the last question the client's two names would have answered anyway: *can the
+people we would actually name see the order?* Measured on the real credit-check owners.
+
+`fms_dispatch_can_see_order(Jayshree, null, <customer>)` → **true**.
+`fms_dispatch_can_act('credit_check', <order>, Jayshree)` → **true**.
+The actual RLS `select` from `fms_dispatch_orders`, as Jayshree → **the order is not in the 936
+rows she sees.**
+
+The policy's customer arm reads `fms_dispatch_customer_logins` and `fms_dispatch_customer_orgs`
+inline, and a **policy is evaluated as the caller** — so those two reads meet their own RLS. Both
+tables are `USING (fms_dispatch_is_coordinator(…))`. Neither credit-check owner is a coordinator:
+
+```
+select count(*) from fms_dispatch_customer_logins  (as Jayshree) -> 0
+select count(*) from fms_dispatch_customer_orgs    (as Jayshree) -> 0
+```
+
+So the `exists` was false for exactly the people the arm was written for. The first real customer
+order would have been announced to someone who then could not open it — the precise symptom
+Correction 3 exists to prevent, reintroduced by the fix for it.
+
+⚠ **No test through `fms_dispatch_can_see_order` could ever have found this.** That function is
+`SECURITY DEFINER`, so it reads those tables as the definer and never meets the policy. Every P7
+check went through it and passed. The client was already safe by accident of good judgement —
+`customerOrgs.ts` reads a `SECURITY DEFINER` RPC and its header says the table is coordinator-only.
+The policy was the one reader that went at the tables directly.
+
+**Fixed** in `20261112120000_od13_p7b_the_recipient_arm_could_not_read_its_own_tables.sql`: the arm
+moves behind `fms_dispatch_customer_raisers_for(uuid)`, a `STABLE SECURITY DEFINER` helper, in the
+same hoisted shape as the four arms above it (`raised_by = any(coalesce((select …), '{}'))`).
+
+- [x] **Blast radius established before writing anything** — `pg_policies` searched for every policy
+      whose `qual` or `with_check` names either table: **one**, `fms_dispatch_orders_select`. Every
+      related function (`can_see_order`, `can_act`, `can_act__ungated`, `customer_org_of`,
+      `customer_order_actors`, `announce`, `my_orders`) is already `SECURITY DEFINER` and unaffected.
+- [x] **Equivalence asserted as the definer, before the lock** — old arm vs new arm over every
+      (profile, order) pair, **0 disagreements**. It is the same rule; only who may evaluate it moved.
+- [x] **Proved under RLS, which is the only place the change is visible** — Jayshree 936 → **937**,
+      and the order she could not see is the one that arrived.
+- [x] **Negative control**: Gorakh Pawar (staff, not named, not a coordinator) — still **0 / 936**.
+      Nothing widened for anybody who was not named.
+- [x] **The customer is still boxed in**: the `ZZ TEST` login sees **2** orders, **0** of them
+      raised by anyone else. The new helper leaks nothing.
+- [x] **She can read the whole order, not just its header** — line items 1, activity 5, rounds 0,
+      each matching the true count exactly. Checked rather than inferred, since "it follows from the
+      orders policy" is the reasoning that produced this bug.
+- [x] **Cost unchanged** — `EXPLAIN ANALYZE` shows every arm as an InitPlan with `loops=1`,
+      including the new one; **7.08 ms** for 937 rows. The hoisting won back in `20261111120000`
+      is intact, and the new arm is cheaper than the correlated `EXISTS` it replaces.
+- [x] **Rollback rehearsed on live data, not read** — applied, confirmed the defect genuinely
+      returns (Jayshree back to **0 / 936**), then rolled forward and re-confirmed **1 / 937**.
+- [x] Every probe ran inside a **rolled-back** transaction. `SO-2627-1132` and `1133` and the test
+      org are byte-identical afterwards, and **nobody was notified of anything**.
+
+#### The one thing still genuinely outstanding, and it is not testable
+
+Who at Orange O Tec is named on each customer. It is a decision, not a check — but it is now a pick
+from a list rather than a blank: **13 staff** hold edit on `order-to-dispatch`, of whom **2** own the
+credit-check step — **Jayshree Patil** (collection@) and **LALIT SHARMA** (delhioffice@). Naming
+both is what stops Q8's single point of failure.
+
+## P8 — Issue the two logins  ·  only on explicit go-ahead
+
+- [ ] Confirm with the user before creating real accounts
+- [ ] Bishen Dyeing · Ganga Fashions
+- [ ] Cherry-pick to `oo-master`; do not merge this shared branch
+- [ ] WORKLIST.md OD-13 closed with date + commit

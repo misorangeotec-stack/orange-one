@@ -315,10 +315,12 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     fetchAll<{ guid: string; sub_group: string | null }>(
       () => sb.from("v_ledger_detail").select("guid,sub_group").contains("group_chain", ["Sundry Debtors"]),
       ["guid"]),
-    // Red Mark master (ext_redmark) — a hand-kept list keyed by the Tally GUID. Presence of a row
-    // flags the customer as "Red Mark" on the Live (Tally) screens (KPI/badge/filter/report). This
-    // REPLACES the old creditLimit===1 sentinel as the driver of the flag on this source.
-    fetchAll<{ ledger_id: string }>(() => sb.from("ext_redmark").select("ledger_id"), ["ledger_id"]),
+    // Red Mark master (ext_redmark) — a hand-kept list keyed by the Tally GUID. A row that is not
+    // CLEARED flags the customer as "Red Mark" on the Live (Tally) screens (KPI/badge/filter/
+    // report). This REPLACES the old creditLimit===1 sentinel as the driver of the flag on
+    // this source.
+    fetchAll<{ ledger_id: string; cleared: boolean }>(
+      () => sb.from("ext_redmark").select("ledger_id,cleared"), ["ledger_id"]),
     // The "Data updated as of" banner: the REAL last Tally sync time (any company, IST clock string),
     // not collection_meta.refreshed_at — that is re-stamped nightly by the snapshot job even when nothing
     // synced, so it would read "today" on a day with no pull. This RPC returns max(tally_sync_run.finished_at)
@@ -337,7 +339,19 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     groupRows.map((g) => [g.ledger_id, isUnset(g.collection_team) ? "" : (g.collection_team as string)]),
   );
   // Red Mark membership by Tally GUID (= Customer.id). `blocked` carries the Red Mark flag on Live.
-  const redmarkSet = new Set(redmarkRows.map((r) => r.ledger_id));
+  //
+  // ⚠ CLEARED ROWS ARE SKIPPED, AND THIS ONE LINE IS THE WHOLE OF "cleared removes the Red Mark
+  //   EVERYWHERE" (RC-12, decided by the client 03-09-2026). `blocked` used to be row PRESENCE, so
+  //   a settled customer stayed flagged until the record was deleted. Every reader of the flag
+  //   moves with this line rather than each learning about `cleared`: the Dashboard tile and its
+  //   ?redmark=1 link, the Risk Register filter, the Credit Terms column, "Red Mark only" on the
+  //   Category / DSO / Overdue-Aging reports, the Customer Detail badge, hubAlerts' critical
+  //   alerts, and the Red Mark report itself.
+  //
+  // ⚠ THE RECORD IS NOT DELETED — it is still in the master, marked cleared, and the Red Mark
+  //   report reads ext_redmark DIRECTLY (not this flag) so it can still show cleared cases under
+  //   its All / Cleared toggle.
+  const redmarkSet = new Set(redmarkRows.filter((r) => r.cleared !== true).map((r) => r.ledger_id));
   const cust = custRows.map((r) => toCustomer(r, resolveCompany(r.tenant_id, r.company))).map((c) => {
     const tallyGroup = tallyGroupByGuid.get(c.id);
     const blocked = redmarkSet.has(c.id);

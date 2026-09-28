@@ -277,7 +277,7 @@ interface TravelStoreValue {
   setMasterOwners: (type: TravelMasterType, userIds: string[]) => Promise<void>;
 
   /**
-   * Does this band need a Director as well (§3.2)?
+   * Does this band need a Director as well (Section 3.2)?
    *
    * ⚠ READS THE MATRIX, NOT A CONSTANT. Mirrored in SQL by
    *   fms_travel_next_stop, which is the only thing that actually routes — this
@@ -287,7 +287,7 @@ interface TravelStoreValue {
   needsDirector: (bandNo: number | null) => boolean;
 
   /**
-   * What this person still owes in unreconciled advance — the figure §11.2 hangs
+   * What this person still owes in unreconciled advance — the figure Section 11.2 hangs
    * its hardest rule on.
    *
    * ⚠ COMPUTED FROM THE SAME SNAPSHOT EVERY SCREEN READS, so the warning on the
@@ -297,7 +297,7 @@ interface TravelStoreValue {
    *   refusal is never a surprise.
    */
   outstandingAdvanceFor: (userId: string | null, excludeTripId?: string | null) => number;
-  /** §11.1 — the most that may be advanced on this trip. Null with no estimate. */
+  /** Section 11.1 — the most that may be advanced on this trip. Null with no estimate. */
   advanceCeiling: (trip: Trip) => number | null;
 
   claimLinesOf: (tripId: string) => ClaimLine[];
@@ -437,9 +437,23 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
     const assigneeOfStep = (tripId: string | null | undefined, step: string): string | null =>
       tripId ? assigneeByKey.get(tripId + '|' + step) ?? null : null;
 
-    /** Who owns a step when nobody is assigned. Mirrors fms_travel_is_natural_step_owner. */
+    /**
+     * Who owns a step when nobody is assigned. Mirrors fms_travel_is_natural_step_owner.
+     *
+     * ⚠ THE `claim` ARM IS LOAD-BEARING AND WAS MISSING. The SQL has always returned
+     *   true for the trip's own TRAVELLER on the claim step — it is their claim — and
+     *   this mirror did not, so the server would have accepted a filing that the screen
+     *   would not let anybody type. Every field of "What actually happened" rendered
+     *   greyed out for the one person who is meant to fill it in, and the rail read
+     *   "Claim · Unassigned" while every other step named somebody. Nobody is a step
+     *   owner of `claim` and nobody should be, so for an ordinary employee the module
+     *   simply stopped after the trip was booked.
+     *
+     *   Invisible from an admin login, which is a coordinator and returns true above.
+     */
     const isNaturalStepOwner = (step: StepKey, trip: Trip | null | undefined, uid: string): boolean => {
       if (isManagerStep(step) && trip?.approverManagerIds.includes(uid)) return true;
+      if (step === 'claim' && trip?.travellerId === uid) return true;
       if (ownersOf(step).includes(uid)) return true;
       return step === 'request' && ownersOf('request').length === 0;
     };
@@ -488,11 +502,18 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       // against and is where a hand-back returns it. Mirrors fms_travel_can_act.
       const assignee = assigneeOfStep(trip?.id, step);
       if (assignee) return assignee === userId;
-      if (isManagerStep(step) && trip?.approverManagerIds.includes(userId)) return true;
-      if (isOwner(step)) return true;
-      // The origin step is open to any editor while it has no owners; naming
-      // owners closes it to them, admins and coordinators.
-      return step === "request" && ownersOf("request").length === 0;
+      /*
+        ⚠ DELEGATES RATHER THAN RESTATING, BECAUSE RESTATING IS WHAT WENT WRONG.
+          These three arms used to be copied out here, and the copy fell behind:
+          `isNaturalStepOwner` gained the traveller's claim arm and this did not, so
+          the same question got two answers depending on which one a screen happened
+          to ask. `fms_travel_can_act` has exactly this shape — assignee first, then
+          the natural owner — and now so does this.
+
+          The origin step being open to any editor while it has no owners lives in
+          `isNaturalStepOwner` too, with the rest of them.
+      */
+      return isNaturalStepOwner(step, trip, userId);
     };
 
     const canRaise = canActOn("request");

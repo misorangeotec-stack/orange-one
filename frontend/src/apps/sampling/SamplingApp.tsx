@@ -6,6 +6,7 @@ import type { StepKey } from "./lib/steps";
 import SamplingLayout from "./SamplingLayout";
 import Dashboard from "./pages/Dashboard";
 import NewRequest from "./pages/requests/NewRequest";
+import EditRequest from "./pages/requests/EditRequest";
 import MyRequests from "./pages/requests/MyRequests";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
@@ -13,6 +14,8 @@ import CollectQueue from "./pages/queues/CollectQueue";
 import SampleReceivedQueue from "./pages/queues/SampleReceivedQueue";
 import SampleToLabQueue from "./pages/queues/SampleToLabQueue";
 import LabProcessQueue from "./pages/queues/LabProcessQueue";
+import MachineProcessQueue from "./pages/queues/MachineProcessQueue";
+import MachineResultQueue from "./pages/queues/MachineResultQueue";
 import ResultReceivedQueue from "./pages/queues/ResultReceivedQueue";
 import SendQueue from "./pages/queues/SendQueue";
 import ConfirmQueue from "./pages/queues/ConfirmQueue";
@@ -93,9 +96,11 @@ export default function SamplingApp() {
               would keep the "All Requests" link highlighted alongside their own. */}
           <Route path="lab-requests" element={<RequestsList branch="lab" />} />
           <Route path="no-lab-requests" element={<RequestsList branch="no_lab" />} />
+          <Route path="machine-requests" element={<RequestsList branch="machine" />} />
           <Route path="outward-requests" element={<RequestsList branch="outward" />} />
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
+          <Route path="requests/:id/edit" element={<RequireEdit><EditRequest /></RequireEdit>} />
           {/* "Sample Received at Lab" retired 08-08-2026 — its rows moved to collect.
               Kept as a redirect so an old bookmark or email link still lands somewhere. */}
           <Route path="queues/receive" element={<Navigate to="/sampling/queues/collect" replace />} />
@@ -104,6 +109,8 @@ export default function SamplingApp() {
           <Route path="queues/to-lab" element={<RequireQueue step="sample_to_lab"><SampleToLabQueue /></RequireQueue>} />
           <Route path="queues/lab" element={<RequireQueue step="lab_process"><LabProcessQueue /></RequireQueue>} />
           <Route path="queues/result-received" element={<RequireQueue step="result_received"><ResultReceivedQueue /></RequireQueue>} />
+          <Route path="queues/machine" element={<RequireQueue step="machine_process"><MachineProcessQueue /></RequireQueue>} />
+          <Route path="queues/machine-result" element={<RequireQueue step="machine_result"><MachineResultQueue /></RequireQueue>} />
           <Route path="queues/send" element={<RequireQueue step="send_sample"><SendQueue /></RequireQueue>} />
           <Route path="queues/confirm" element={<RequireQueue step="confirm_receipt"><ConfirmQueue /></RequireQueue>} />
           <Route path="queues/testing" element={<RequireQueue step="testing"><TestingQueue /></RequireQueue>} />

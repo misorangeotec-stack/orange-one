@@ -1,6 +1,9 @@
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { STATUS_LABEL, dmy } from "./format";
 import { signedPages } from "./signatures";
+import { conditionsFor, render } from "./conditions";
+import { tokensFor } from "./tokens";
+import type { DealFacts } from "./fieldSpec";
 import type { OcpiDeal, OcpiMachine } from "../types";
 
 /**
@@ -29,6 +32,20 @@ export interface RegisterDeps {
   machineById: (id: string | null) => OcpiMachine | undefined;
   companyName: (id: string | null) => string;
   personName: (id: string | null) => string;
+  /*
+    R4 · WHAT THIS DEAL'S CATEGORY AND DRYER SAY IT CARRIES — needed only because
+    the Billing name column now RENDERS its template instead of printing it raw.
+
+    ⚠ IT CANNOT BE DERIVED FROM THE DEAL ROW. `dryerType` is a category NAME and
+      `machineCategoryId` an id; only the master rows say what either means. The
+      one caller holds the store, so it passes `factsForDeal(...)` per row —
+      exactly what every PDF caller already does.
+
+    ⚠ `heads` / `noHeads` do not read `facts` at all, but `dryer`, `centering`
+      and `usd` share the same string, so a register that resolved the head pair
+      against an open default would still get the others wrong.
+  */
+  factsFor: (deal: OcpiDeal) => DealFacts;
 }
 
 export function exportDealRegister(
@@ -37,12 +54,27 @@ export function exportDealRegister(
   filters: string[] = [],
 ): void {
   const machine = (d: OcpiDeal) => deps.machineById(d.machineId)?.name ?? "";
-  const billingName = (d: OcpiDeal) => deps.machineById(d.machineId)?.billingName ?? "";
+  /*
+    R4 · RENDERED, NOT RAW. This column printed the template verbatim, which was
+    invisible until `billing_name` gained `[[if heads]]` markers — at which point
+    every row of a spreadsheet somebody reconciles against Tally would carry
+    marker syntax. `piPdf.ts` and `ocPdf.ts` have always rendered this column;
+    this file and `quotationPdf.ts` were the two that did not.
+  */
+  const billingName = (d: OcpiDeal) => {
+    const m = deps.machineById(d.machineId);
+    if (!m?.billingName) return "";
+    return render(m.billingName, tokensFor({ deal: d }), conditionsFor({ deal: d, facts: deps.factsFor(d) })).text;
+  };
   const yesNo = (v: boolean | null) => (v === null ? "" : v ? "Yes" : "No");
 
   const columns: ExportColumn<OcpiDeal>[] = [
-    { header: "Quotation No.", width: 14, value: (d) => d.quotationNo ?? "" },
-    { header: "OC No.", width: 20, value: (d) => d.ocNo ?? "" },
+    // ⚠ 24, NOT 14/20 (R6). `OTPL/QT/2627/SEP/0001` is 21 characters where
+    //   `QT-M0067` was 8; at the old widths both columns clipped in Excel. The
+    //   register still carries three shapes — pre-OCPI-36, OCPI-36 and R6 — and
+    //   24 holds the longest of them.
+    { header: "Quotation No.", width: 24, value: (d) => d.quotationNo ?? "" },
+    { header: "OC No.", width: 24, value: (d) => d.ocNo ?? "" },
     { header: "Status", width: 30, value: (d) => STATUS_LABEL[d.status] },
     { header: "Raised", width: 13, value: (d) => dmy(d.createdAt) },
     { header: "Customer", width: 30, value: (d) => d.customerName ?? "" },
@@ -60,6 +92,13 @@ export function exportDealRegister(
     //   Read from the machine, so it follows a re-description — unlike the
     //   contract, which keeps the name it was issued under.
     { header: "Billing name", width: 44, value: (d) => billingName(d) },
+    // R8 · the heading as this deal will PRINT it — the salesperson's choice
+    // where they made one, the machine master's otherwise. Sits beside the
+    // billing name for the same reason that column exists: it is what somebody
+    // reconciling this register against Tally has to match on, and Tally files
+    // both 84433250 and 84433910 against the same machines.
+    { header: "HSN code", width: 12,
+      value: (d) => d.hsnCode?.trim() || deps.machineById(d.machineId)?.hsnCode || "" },
     { header: "Machines", width: 9, value: (d) => d.machineCount ?? "" },
     { header: "Print heads", width: 11, value: (d) => d.headCount ?? "" },
     { header: "Type of head", width: 26, value: (d) => d.headType ?? "" },
@@ -235,7 +274,7 @@ export function exportDealRegister(
         The `delivery_days` COLUMN itself stays and the 20 deals that answered it
         keep their answer; it is the export that would have misled.
     */
-    { header: "Tentative delivery date", width: 20, value: (d) => dmy(d.deliveryDate) },
+    { header: "Shipment terms", width: 24, value: (d) => d.deliveryDays ?? "" },
     { header: "Revisions", width: 10, value: (d) => d.quotationVersionNo },
     { header: "Sent back", width: 10, value: (d) => d.reworkCount },
     { header: "Sent for approval", width: 15, value: (d) => dmy(d.qsAt) },

@@ -132,6 +132,8 @@ export default function Masters() {
                 ),
               sortValue: (r) => (r.qcRequired ? "Yes" : "No"),
               filter: { get: (r) => (r.qcRequired ? "Yes" : "No") },
+              // A pill: never cut, no handle (PF-20).
+              resize: false,
             },
           ] as MasterColumn<Category>[]}
           fields={[...masterFields("category", ctx), itemTypesField]}

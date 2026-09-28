@@ -32,18 +32,21 @@ export default function RequestsList() {
       header: "Item / Service",
       cell: (r) => <span className="text-navy">{r.itemName ?? "—"}</span>,
       filter: { kind: "text", get: (r) => r.itemName ?? "" },
+      sortValue: (r) => r.itemName ?? "",
     },
     {
       key: "type",
       header: "Type",
       cell: (r) => <span className="text-grey-2">{requestTypeLabel(r.requestType)}</span>,
       filter: { kind: "select", get: (r) => requestTypeLabel(r.requestType) },
+      sortValue: (r) => requestTypeLabel(r.requestType),
     },
     {
       key: "for",
       header: "Requested for",
       cell: (r) => <span className="text-grey">{r.requestedForName}</span>,
       filter: { kind: "text", get: (r) => r.requestedForName },
+      sortValue: (r) => r.requestedForName,
     },
     {
       key: "department",
@@ -57,12 +60,15 @@ export default function RequestsList() {
       key: "qty",
       header: "Qty",
       cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
+      sortValue: (r) => r.quantity,
+      filter: { kind: "number", get: (r) => parseFloat(r.quantity) || 0 },
     },
     {
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
       filter: { kind: "select", get: (r) => r.status },
+      sortValue: (r) => r.status,
     },
     {
       key: "submitted",
@@ -70,6 +76,7 @@ export default function RequestsList() {
       cell: (r) => <span className="text-grey-2">{formatDate(r.submittedAt)}</span>,
       sortValue: (r) => r.submittedAt,
       tdClassName: "whitespace-nowrap",
+      filter: { kind: "date", get: (r) => r.submittedAt?.slice(0, 10) ?? "" },
     },
   ];
 
