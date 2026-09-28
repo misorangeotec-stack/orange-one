@@ -10,6 +10,7 @@ import { hrExitApp } from "./hr-exit/meta";
 import { learningDevelopmentApp } from "./learning-development/meta";
 import { hrReportsApp } from "./hr-reports/meta";
 import { travelDeskApp } from "./travel-desk/meta";
+import { helpDeskApp } from "./help-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
@@ -69,6 +70,12 @@ export const apps: AppManifest[] = [
   // every booked leg, the advance, the expense claim and the settlement, so the
   // entitlement checked before booking is the one enforced on the claim.
   travelDeskApp,
+  // HR Help Desk — the front door for every HR question. UNIVERSAL: anyone may
+  // need to ask HR something, so there are no app_access rows and the Module
+  // Access matrix will show it as admins-only (see apps/universal.ts). The
+  // CATEGORY is the router — it decides the owner, the TAT, the escalation
+  // ladder and whether the ticket is confidential.
+  helpDeskApp,
   // Granted per user like every other module (was universal — see apps/universal.ts).
   officeSuppliesApp,
   // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
@@ -209,6 +216,12 @@ export const grantableModules: GrantableModule[] = [
  */
 export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
   "mobile-app",
+  // Universal, so there are NO app_access rows to hold at "view" — a view-only
+  // grant here would be a switch that changes nothing. Worse, the module's SQL
+  // gate cannot consult module_can_edit at all (it is false for every non-admin
+  // on a universal module), so view-only could not be enforced even if it were
+  // offered. Only Full access is shown.
+  "help-desk",
   // PF-18: the grant means "may post", and nothing else. Reading announcements needs
   // no grant, so a view-only Announcements grant would give nothing while looking
   // like access. Only Full access is offered.

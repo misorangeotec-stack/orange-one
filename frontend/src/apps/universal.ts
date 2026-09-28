@@ -55,6 +55,27 @@ export const UNIVERSAL_APP_IDS: readonly string[] = [
    *   the people who own them, and RLS withholds the rest.
    */
   "learning-development",
+  /*
+   * HR Help Desk. Anyone may need to ask HR something, so a per-user grant would
+   * mean ticking 70 boxes before the first question could be asked — and one more
+   * for every joiner.
+   *
+   * Safe for the same reason L&D is: opening the app grants nobody any data. A
+   * plain employee's nav offers the dashboard, their own tickets, the raise form
+   * and the two queues that land on THEM; `fms_help_can_see` withholds every
+   * other ticket, and the three confidential categories (grievance, POSH,
+   * disciplinary) are withheld even from the rest of the HR team.
+   *
+   * ⚠⚠ AND IT CHANGES HOW THE MODULE'S SQL GATE HAD TO BE WRITTEN.
+   *   `public.module_level()` knows nothing about this file — it reads
+   *   `app_access` — so `module_can_edit(uid, 'help-desk')` is FALSE for every
+   *   non-admin. The house gate shape used by Travel Desk and Complaint would
+   *   therefore have locked all 70 people out of a module the launcher was
+   *   showing them, with nothing looking wrong. No `fms_help_*` function gates on
+   *   it, and a migration assertion proves none does. The same is true of
+   *   `fms_ld_is_step_owner`. Read this before making a fifth app universal.
+   */
+  "help-desk",
 ];
 
 export const isUniversalApp = (appId: string): boolean => UNIVERSAL_APP_IDS.includes(appId);

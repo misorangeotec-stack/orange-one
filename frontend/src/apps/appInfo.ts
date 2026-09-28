@@ -219,6 +219,14 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/travel-desk",
     category: "hr",
   },
+  // The HR front door: one place to ask HR anything, routed by the category the
+  // employee picks. Filed under HR rather than Productivity even though everyone
+  // uses it — a reader looking for it is looking for HR.
+  "help-desk": {
+    name: "Help Desk",
+    basePath: "/help-desk",
+    category: "hr",
+  },
   "leads-dashboard": {
     name: "Leads Dashboard",
     basePath: "/leads-dashboard",

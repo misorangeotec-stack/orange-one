@@ -1860,6 +1860,466 @@ export type Database = {
           },
         ]
       }
+      fms_help_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_help_activity_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_help_categories: {
+        Row: {
+          active: boolean
+          code: string
+          confidential: boolean
+          created_at: string
+          department_id: string | null
+          escalation_l1_ids: string[]
+          escalation_l1_label: string | null
+          escalation_l2_ids: string[]
+          escalation_l2_label: string | null
+          external_partner_label: string | null
+          handoff_app_id: string | null
+          id: string
+          name: string
+          owner_ids: string[]
+          requires_note: boolean
+          sort_order: number
+          tat_days: number | null
+          tat_text: string | null
+          tracks_external_escalation: boolean
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          confidential?: boolean
+          created_at?: string
+          department_id?: string | null
+          escalation_l1_ids?: string[]
+          escalation_l1_label?: string | null
+          escalation_l2_ids?: string[]
+          escalation_l2_label?: string | null
+          external_partner_label?: string | null
+          handoff_app_id?: string | null
+          id?: string
+          name: string
+          owner_ids?: string[]
+          requires_note?: boolean
+          sort_order?: number
+          tat_days?: number | null
+          tat_text?: string | null
+          tracks_external_escalation?: boolean
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          confidential?: boolean
+          created_at?: string
+          department_id?: string | null
+          escalation_l1_ids?: string[]
+          escalation_l1_label?: string | null
+          escalation_l2_ids?: string[]
+          escalation_l2_label?: string | null
+          external_partner_label?: string | null
+          handoff_app_id?: string | null
+          id?: string
+          name?: string
+          owner_ids?: string[]
+          requires_note?: boolean
+          sort_order?: number
+          tat_days?: number | null
+          tat_text?: string | null
+          tracks_external_escalation?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_help_categories_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_help_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      fms_help_counters: {
+        Row: {
+          last_value: number
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          last_value?: number
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          last_value?: number
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_help_master_requests: {
+        Row: {
+          created_at: string
+          created_category_id: string | null
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          id: string
+          proposed_name: string
+          reason: string | null
+          requested_by: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_category_id?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          proposed_name: string
+          reason?: string | null
+          requested_by: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_category_id?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          proposed_name?: string
+          reason?: string | null
+          requested_by?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_help_master_requests_created_category_id_fkey"
+            columns: ["created_category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_help_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_help_master_requests_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_help_master_requests_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_help_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_help_notifications_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_help_notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_help_step_owners: {
+        Row: {
+          created_at: string
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_help_step_owners_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_help_tickets: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          assignee_id: string | null
+          body: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          category_id: string
+          closed_at: string | null
+          closed_reason: string | null
+          confirmed_at: string | null
+          created_at: string
+          csat_note: string | null
+          csat_rating: number | null
+          current_step: string | null
+          escalated_l1_at: string | null
+          escalated_l2_at: string | null
+          external_escalated_at: string | null
+          external_ref: string | null
+          handoff_app_id: string | null
+          handoff_entity_id: string | null
+          handoff_ref: string | null
+          held_at: string | null
+          held_by: string | null
+          hold_from_status: string | null
+          hold_reason: string | null
+          id: string
+          info_answered_at: string | null
+          info_from_user_id: string | null
+          info_requested_at: string | null
+          other_note: string | null
+          raised_at: string
+          raised_by: string | null
+          recategorised_from: string | null
+          reopen_count: number
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          round_no: number
+          status: string
+          subject: string
+          ticket_no: string
+          updated_at: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          assignee_id?: string | null
+          body?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          category_id: string
+          closed_at?: string | null
+          closed_reason?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          csat_note?: string | null
+          csat_rating?: number | null
+          current_step?: string | null
+          escalated_l1_at?: string | null
+          escalated_l2_at?: string | null
+          external_escalated_at?: string | null
+          external_ref?: string | null
+          handoff_app_id?: string | null
+          handoff_entity_id?: string | null
+          handoff_ref?: string | null
+          held_at?: string | null
+          held_by?: string | null
+          hold_from_status?: string | null
+          hold_reason?: string | null
+          id?: string
+          info_answered_at?: string | null
+          info_from_user_id?: string | null
+          info_requested_at?: string | null
+          other_note?: string | null
+          raised_at?: string
+          raised_by?: string | null
+          recategorised_from?: string | null
+          reopen_count?: number
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          round_no?: number
+          status?: string
+          subject: string
+          ticket_no: string
+          updated_at?: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          assignee_id?: string | null
+          body?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          category_id?: string
+          closed_at?: string | null
+          closed_reason?: string | null
+          confirmed_at?: string | null
+          created_at?: string
+          csat_note?: string | null
+          csat_rating?: number | null
+          current_step?: string | null
+          escalated_l1_at?: string | null
+          escalated_l2_at?: string | null
+          external_escalated_at?: string | null
+          external_ref?: string | null
+          handoff_app_id?: string | null
+          handoff_entity_id?: string | null
+          handoff_ref?: string | null
+          held_at?: string | null
+          held_by?: string | null
+          hold_from_status?: string | null
+          hold_reason?: string | null
+          id?: string
+          info_answered_at?: string | null
+          info_from_user_id?: string | null
+          info_requested_at?: string | null
+          other_note?: string | null
+          raised_at?: string
+          raised_by?: string | null
+          recategorised_from?: string | null
+          reopen_count?: number
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          round_no?: number
+          status?: string
+          subject?: string
+          ticket_no?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_help_tickets_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_help_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_help_tickets_recategorised_from_fkey"
+            columns: ["recategorised_from"]
+            isOneToOne: false
+            referencedRelation: "fms_help_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_activity: {
         Row: {
           actor_id: string | null
@@ -10280,6 +10740,48 @@ export type Database = {
       fms_exit_withdraw_case: {
         Args: { p_case: string; p_reason: string }
         Returns: undefined
+      }
+      fms_help_announce: {
+        Args: {
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
+        }
+        Returns: undefined
+      }
+      fms_help_can_act: {
+        Args: { p_step_key: string; p_ticket: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_help_can_add_doc: {
+        Args: { p_name: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_help_can_see: {
+        Args: { p_ticket: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_help_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_help_raise: {
+        Args: {
+          p_attachments?: Json
+          p_body?: string
+          p_category: string
+          p_mentions?: string[]
+          p_other_note?: string
+          p_subject: string
+        }
+        Returns: string
+      }
+      fms_help_step_owner_ids: {
+        Args: { p_step_key: string }
+        Returns: string[]
       }
       fms_hr_acknowledge_requisition: {
         Args: { p_req: string }
