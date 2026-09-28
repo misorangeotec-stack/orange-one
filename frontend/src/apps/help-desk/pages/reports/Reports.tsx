@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import { TextInput, FieldLabel } from "@/shared/components/ui/Form";
-import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
+import { formatDateDMY } from "@/shared/lib/date";
 import { useHelpStore } from "../../store";
 import {
   fetchConfidentialRegister,
