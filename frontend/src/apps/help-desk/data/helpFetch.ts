@@ -233,3 +233,174 @@ export async function fetchHelpData(): Promise<HelpData> {
     config: cfg,
   };
 }
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * The monthly MIS (HD-10) — PDF step 11.
+ *
+ * ⚠ THIS IS THE ONLY READ IN THE MODULE THAT SEES EVERY HELP TICKET rather than
+ *   just the reader's. `fms_help_can_see` withholds tickets from anyone outside
+ *   the desk, which makes an honest desk-wide compliance figure impossible to
+ *   compute in the browser — a percentage that silently omits what the reader
+ *   cannot see is worse than none, because it looks authoritative. So the server
+ *   does it, and checks the caller itself.
+ *
+ * ⚠ IT EXCLUDES THE THREE CONFIDENTIAL CATEGORIES FROM EVERY COUNT, and returns
+ *   `excludedConfidential` so the screen can say how many it left out. A total
+ *   that quietly included grievances would tell a reader how many exist.
+ */
+export interface MisSlaRow {
+  code?: string;
+  category?: string;
+  ownerId?: string;
+  raised: number;
+  resolved: number;
+  /** Tickets that HAD a deadline. The compliance denominator. */
+  timed: number;
+  within: number;
+  /** Governed by policy rather than working days — never scored either way. */
+  untimed: number;
+}
+
+export interface Mis {
+  from: string;
+  to: string;
+  asOf: string;
+  frtTargetMinutes: number;
+  excludedConfidential: number;
+  raised: number;
+  slaByCategory: MisSlaRow[];
+  slaByOwner: MisSlaRow[];
+  ageing: { band: string; tickets: number }[];
+  trend: { month: string; code: string; category: string; tickets: number }[];
+  firstResponse: {
+    answered: number;
+    neverAnswered: number;
+    medianMinutes: number | null;
+    withinTarget: number;
+  };
+  resolution: {
+    resolved: number;
+    avgHours: number | null;
+    reopened: number;
+    reopenedTwicePlus: number;
+    firstContact: number;
+  };
+  closure: {
+    closed: number;
+    confirmed: number;
+    autoClosed: number;
+    cancelled: number;
+    stillOpen: number;
+    rated: number;
+    csatAvg: number | null;
+  };
+}
+
+const slaRow = (r: any): MisSlaRow => ({
+  code: r.code,
+  category: r.category,
+  ownerId: r.owner_id,
+  raised: r.raised ?? 0,
+  resolved: r.resolved ?? 0,
+  timed: r.timed ?? 0,
+  within: r.within ?? 0,
+  untimed: r.untimed ?? 0,
+});
+
+export async function fetchMis(fromIso: string, toIso: string): Promise<Mis> {
+  const { data, error } = await (supabase as any).rpc("fms_help_mis", {
+    p_from: fromIso,
+    p_to: toIso,
+  });
+  if (error) throw new Error(error.message);
+  const d = data as any;
+  return {
+    from: d.from,
+    to: d.to,
+    asOf: d.as_of,
+    frtTargetMinutes: d.frt_target_minutes ?? 30,
+    excludedConfidential: d.excluded_confidential ?? 0,
+    raised: d.raised ?? 0,
+    slaByCategory: (d.sla_by_category ?? []).map(slaRow),
+    slaByOwner: (d.sla_by_owner ?? []).map(slaRow),
+    ageing: (d.ageing ?? []).map((a: any) => ({ band: a.band, tickets: a.tickets ?? 0 })),
+    trend: (d.trend ?? []).map((t: any) => ({
+      month: t.month, code: t.code, category: t.category, tickets: t.tickets ?? 0,
+    })),
+    firstResponse: {
+      answered: d.first_response?.answered ?? 0,
+      neverAnswered: d.first_response?.never_answered ?? 0,
+      medianMinutes: d.first_response?.median_minutes ?? null,
+      withinTarget: d.first_response?.within_target ?? 0,
+    },
+    resolution: {
+      resolved: d.resolution?.resolved ?? 0,
+      avgHours: d.resolution?.avg_hours ?? null,
+      reopened: d.resolution?.reopened ?? 0,
+      reopenedTwicePlus: d.resolution?.reopened_twice_plus ?? 0,
+      firstContact: d.resolution?.first_contact ?? 0,
+    },
+    closure: {
+      closed: d.closure?.closed ?? 0,
+      confirmed: d.closure?.confirmed ?? 0,
+      autoClosed: d.closure?.auto_closed ?? 0,
+      cancelled: d.closure?.cancelled ?? 0,
+      stillOpen: d.closure?.still_open ?? 0,
+      rated: d.closure?.rated ?? 0,
+      csatAvg: d.closure?.csat_avg ?? null,
+    },
+  };
+}
+
+/** One row of the confidential register — dates and status, never the complaint. */
+export interface RegisterRow {
+  ticketNo: string;
+  category: string;
+  code: string;
+  raisedAt: string;
+  raisedBy: string | null;
+  acknowledgedAt: string | null;
+  /** The HR Head's KRA 12 measure: acknowledged within one working day. */
+  ackedNextDay: boolean | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  status: string;
+  reopenCount: number;
+  escalatedL1At: string | null;
+  escalatedL2At: string | null;
+}
+
+/**
+ * Riya's KRA 12 register.
+ *
+ * ⚠ IT CARRIES NO SUBJECT, NO BODY AND NO RESOLUTION, by design. A register
+ *   proves the case was logged and answered in time; reprinting the complaint
+ *   would be an easier second copy of the thing the gate protects.
+ */
+export async function fetchConfidentialRegister(
+  fromIso: string,
+  toIso: string,
+): Promise<RegisterRow[]> {
+  const { data, error } = await (supabase as any).rpc("fms_help_confidential_register", {
+    p_from: fromIso,
+    p_to: toIso,
+  });
+  if (error) throw new Error(error.message);
+  return ((data as any[]) ?? []).map((r) => ({
+    ticketNo: r.ticket_no,
+    category: r.category,
+    code: r.code,
+    raisedAt: r.raised_at,
+    raisedBy: r.raised_by,
+    acknowledgedAt: r.acknowledged_at,
+    ackedNextDay: r.acked_next_day ?? null,
+    resolvedAt: r.resolved_at,
+    closedAt: r.closed_at,
+    status: r.status,
+    reopenCount: r.reopen_count ?? 0,
+    escalatedL1At: r.escalated_l1_at,
+    escalatedL2At: r.escalated_l2_at,
+  }));
+}

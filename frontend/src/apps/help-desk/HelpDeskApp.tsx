@@ -10,6 +10,7 @@ import TicketsList from "./pages/tickets/TicketsList";
 import TicketDetail from "./pages/tickets/TicketDetail";
 import StepQueue from "./pages/queues/StepQueue";
 import ControlCenter from "./pages/monitoring/ControlCenter";
+import Reports from "./pages/reports/Reports";
 import AccessDenied from "./pages/system/AccessDenied";
 import ComingSoon from "./pages/system/ComingSoon";
 import NotFound from "./pages/system/NotFound";
@@ -71,17 +72,7 @@ export default function HelpDeskApp() {
           ))}
 
           <Route path="monitoring" element={<RequireDesk><ControlCenter /></RequireDesk>} />
-          <Route
-            path="reports"
-            element={
-              <RequireDesk>
-                <ComingSoon
-                  title="Reports — HD-10"
-                  detail="SLA compliance, ageing, category trend, first response, reopened tickets and the confidential register. These are the monthly HR Helpdesk MIS."
-                />
-              </RequireDesk>
-            }
-          />
+          <Route path="reports" element={<RequireDesk><Reports /></RequireDesk>} />
           <Route
             path="masters"
             element={
