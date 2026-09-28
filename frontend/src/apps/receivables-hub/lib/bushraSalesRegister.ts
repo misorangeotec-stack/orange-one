@@ -243,11 +243,18 @@ const OVERRIDES_TABLE = "bushra_central_master_overrides";
 /**
  * The overrides, or none — and NEVER an error that takes the report down with it.
  *
- * Code reaches an environment before a migration does, and it has here: 20261212120000
- * is written but not yet applied to live. Every figure on these dashboards was correct
- * before the Bushra Central Master existed and is still correct without it — the
+ * Code reaches an environment before a migration does. 20261212120000 IS applied to live
+ * (checked 28-09-2026: table present, RLS on, four policies), so this guard is now for the
+ * environments that are behind rather than for production. Every figure on these dashboards
+ * was correct before the Bushra Central Master existed and is still correct without it — the
  * overrides sharpen the classification, they are not load-bearing. So a missing table
  * means "no corrections yet", exactly as an empty one does.
+ *
+ * ⚠ AN EMPTY READ IS NOT PROOF THERE ARE NO CORRECTIONS. RLS answers a disallowed read
+ *   with zero rows, not an error, so a reader without the grant gets the same answer as a
+ *   reader of an empty table. 20261218120000 widened the SELECT policy to holders of
+ *   outstanding-dashboard for exactly that reason; before it, 15 of them silently saw
+ *   central's uncorrected values here.
  *
  * Only that one failure is swallowed. A permission refusal or a network fault still
  * throws, because those mean the corrections EXIST and are not reaching the figures —
