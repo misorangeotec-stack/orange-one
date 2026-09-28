@@ -10766,8 +10766,17 @@ renamed on 29-07-2026; the folder, the app id, the `fms_supplies_*` schema and t
 document prefix all keep the old word on purpose, because they are persisted identifiers.
 
 ### GP-1 · Walk the module as every kind of user, and write the manual  `[!]`
-*Raised 2026-09-28 · **SHIPPED 28-09-2026** on branch `general-purchase` (`f0758d45`), `npm run build`
-green. **NOT PUSHED** — waiting on the user's word, per the localhost-then-live rule.*
+*Raised 2026-09-28 · **LIVE 28-09-2026.** `f0758d45` + `03d43c9b`, merged to master as `b0cf9879`,
+Vercel green. The two migrations were already applied, so the module is now whole again — the
+interim mismatch noted below is closed.*
+
+*⚠ **The merge was not clean and git did not say so.** PF-20's table sweep had landed on the same
+three files. Three real conflicts, plus **ten duplicate object properties git auto-merged with no
+marker** — a second `sortValue` or `filter` in one column literal, caught only by `tsc` TS1117.
+Where the two sides genuinely disagreed: Qty stays a TEXT filter (free text by design; a numeric
+filter buckets "2 boxes" as 2 and anything non-numeric as 0), Status stays the LABEL (master had
+reintroduced the raw-column defect this branch fixed), and Requested-for took master's searchable
+select. See [[automerge-duplicates-object-keys]].*
 
 *🟢 **The manual is written and ready to share with HR:**
 https://claude.ai/artifact/XHN4ANrP33areEGYsifiLd — 36 steps, every screen photographed from the
@@ -10839,10 +10848,9 @@ quotes a fix.
 12. 🟡 **The Control Center printed "Handover" twice**, identical numbers on consecutive lines, because
     the stage holds exactly one step of the same name.
 
-**⚠ THE TWO MIGRATIONS ARE ALREADY APPLIED LIVE** and the frontend is not. Both are tightenings, so
-the direction is safe, but until `f0758d45` ships the deployed page still shows a view-only user the
-"Request new entry" button and the database now refuses it with a raw RLS error. One person holds a
-view-only grant (Shruti). Ship the frontend or accept that for the interim.
+**The two migrations and the frontend are both live now**, so they agree again. For the few hours
+between them, a view-only user would have seen the "Request new entry" button and been refused by a
+raw RLS error; one person holds a view-only grant (Shruti) and the window has closed.
 
 **⚠ THREE REAL EMAILS WENT OUT.** General Purchase email was ON when the walk started; two test
 requests mailed Riya Kumari, Rohan Jariwala and Dharmishtha Prajapati before it was noticed. The
