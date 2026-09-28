@@ -62,6 +62,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | 🔴 **One signed K64 order confirmation.** K64 is the best-selling machine and **there is no OC for it anywhere** — every PDF, Word and PowerPoint file in both years was swept, and the only two K64 folders (109 Laxmipati, 120 Modi) hold Performa Invoices with no contract body. So the one machine that sells most has never been checked against a paper a customer signed. It is covered three weaker ways — 7 of its 9 clauses are byte-identical to Homer K24's, which *was* checked; its own deck covers the other 2; the two PIs cover the money and terms — but none of them can answer the question that matters: **does a real K64 contract carry a clause its deck omits?** That is exactly how the K32 consumables list went missing | Bushra | **OCPI-37** — the audit is done; this closes its one real blind spot | 2026-09-03 |
 | **The wording Orange actually intends to offer on `Mini Lario`.** Its deck (supplied 02-09) carries **`MARKEM-IMAJE`** — another manufacturer — inside its limited-warranty, limitation-of-liability, indemnity, data-privacy and governing-law clauses, so those terms appear to have been lifted from a third party's contract rather than written for Orange O Tec. Transcribed as they stand, an Orange contract would offer another firm's warranty disclaimer and bind the customer to their dispute resolution. Nobody should transcribe this deck until a person has said which of those clauses Orange means to stand behind | Ritesh Bhai | Blocks building the Mini Lario template; nothing else | 2026-09-03 |
 | 🟢 **Feedback on the General Purchase walkthrough**, now that the module has been walked as every kind of user and the manual is written. Owed with it: **a process coordinator**, **an owner for the Items and Service-type masters**, and **two or three names on the reassignment list** — without those three, holding a request, approving a new item and reassigning an approval are all admin-only, and the person who runs the module can do none of them | HR, via Dharmishtha Prajapati | **GP-1** | 2026-09-28 |
+| 🔴 **The Attendance & Payroll feature list, AND an HROne login.** The brief is to REPLICATE HROne, so the list defines the module and the login is needed to study it first-hand. Nothing should be built without both. ⚠ It decides TWO modules: Exit is deferred to sit on top of this. Discussion moved from 28-09 to **Thu 01-10-2026**. Three things to settle in the list: attendance *reporting* over a biometric export vs attendance *capture*; payroll *run* vs payroll *recorded*; and whether PF/ESIC registration comes here or stays with the consultant | Ritesh Bhai / HR | **AP-1**, and **EX-1** behind it | 2026-09-28 |
 
 ---
 
@@ -7670,12 +7671,122 @@ ruled blank. Use it after every UI run; the PDF is the ground truth, not the pay
 
 ---
 
-## HR  *(two new modules)*
+## HR  *(the week 1 / week 2 programme)*
 
 *(cross-ref: **PF-13** — Recruitment's HOD / probation / `hr_head_approval` / `final_decision` and Exit's `hr_head_approval` / `fnf_approve` all rest on one person; **PF-14** — Travel Desk's director, advance and finance steps have nobody configured at all)*
 
+### Where each HR module stands  *(board, from the client 28-09-2026, figures read off live)*
+
+The ten-module HR programme, split into two weeks. **The Status column is the client's own call**;
+the Access and In use columns are read off `app_access` and the modules' own tables on 28-09-2026,
+because a module can be "done" and still be reaching nobody, and those are different problems.
+
+#### Week 1
+
+| # | Module | Status | Access | In use |
+|---|---|---|---|---|
+| 1 | **Talent Acquisition** (New Recruitment) | 🟢 Done, shared for final feedback | 17 edit, 1 view | 31 requisitions, 182 candidates |
+| 2 | **Learning & Development** | 🟢 Done, shared for final feedback. Was a wholly new module | Universal, no grant needed | ⚠ **0 sessions, 0 nominations** |
+| 3 | **Stationery** (= General Purchase) | 🟢 Done, shared for final feedback. Access, manual and walkthrough all shared | 32 edit, 1 view | 19 requests |
+| 4 | **Asset Requisition** (= Asset Maintenance) | 🟢 Done, shared for final feedback. Access and manual shared | ⚠ **2 edit, 1 view** | 40 assets, 1 job |
+| 5 | **Help Desk** | 🟡 **In progress**, going out for feedback 28-09-2026 — see HD-1 | Not live | — |
+| 6 | **Knowledge Base** | 🟡 **Due by 04-10-2026** (end of this week) — see KB-1 | Not live | — |
+| 7 | **Exit** | ⏸ **Deferred behind Attendance & Payroll** — see EX-1 | 4 edit, 1 view | **0 cases** |
+
+#### Week 2
+
+| # | Module | Status | Access | In use |
+|---|---|---|---|---|
+| 1 | **Travel Desk** | 🟢 Done, shared for feedback | 7 edit | 25 trips |
+| 2 | **Attendance & Payroll** | 🔴 **Waiting on the client** — the feature list, and HROne access. Discussion moved to **Thu 01-10-2026**. See AP-1 | Not built | — |
+| 3 | **Employee Engagement** | ⚪ **Not started.** No scoping discussion has happened yet. See EE-1 | Not built | — |
+
+#### Four things this board makes visible that the module entries do not
+
+- 🔴 **Exit now depends on Attendance & Payroll** (client, 28-09-2026). It is no longer "launch it or
+  drop it" as EX-1 was written: Attendance & Payroll comes first, then Exit is built on top of it.
+  That also makes EX-1's "the module is finished, do we want it" framing incomplete — the answer is
+  now "yes, but not yet, and not in its current shape".
+- ⚠ **Learning & Development is shipped, universal and completely unused.** Every employee can open
+  it today and `fms_ld_sessions` holds nothing. "Done and shared for feedback" and "reaching nobody"
+  are both true, and only the second one costs anything to fix.
+- ⚠ **Asset Requisition has three people on it**, against 32 on General Purchase. The manual went out
+  on 28-09; the access list did not grow with it. Worth checking that is deliberate.
+- **Travel Desk's own entry (TR-1) is stale.** It still reads "ON HOLD at Karan Bhai's request" with
+  "ZERO `travel-desk` grants". There are now **7 grants and 25 trips**, and the client counts it as
+  shared for feedback. Corrected in place below.
+
+### HD-1 · Help Desk — the ticketing module  `[~]`
+*Raised 2026-09-28 · **IN PROGRESS**, going out to HR for feedback on 28-09-2026 (client's word).*
+
+Week 1, item 5. Being built now on branch `help-desk`: the foundations and the ticket-category master
+that routes every ticket are committed there, and **nothing is on `master` and no `fms_hd_*` table
+exists on the live database**.
+
+⚠ **It is also the answer to one KRA that is currently unanswerable.** Dharmistha's sheet scores
+"IT complaint escalation and follow-up" at 5%, and nothing in the hub records an IT complaint today
+(see GP-1's KRA mapping, where that line is banded *built, not live*). A ticket, an owner, an
+escalation and a closure are exactly what this module records, so it closes that gap the day it
+ships.
+
+### AP-1 · Attendance & Payroll  `[!]`
+*Raised 2026-09-28 · 🔴 **BLOCKED — waiting on the client for the feature list AND for HROne
+access.** Nothing has been built and nothing should start until both arrive. The scoping discussion
+was due 28-09 and is **moved to Thursday 01-10-2026** (client travelling).*
+
+*🔴 **THE BRIEF IS "REPLICATE HROne", and that is much bigger than the module name suggests.** Asked
+for on 28-09-2026: the list of features needed to replicate the HROne software, plus a login so it
+can be studied first-hand. Read that before estimating anything — this is not an attendance screen
+with a payroll report bolted on.*
+
+Week 2, item 2, and the **pivot of the whole second week**: Exit (EX-1) has been deferred to sit on
+top of it, so the list this is waiting on decides the shape of two modules, not one.
+
+**What is already known about the ground it has to stand on, from work done elsewhere:**
+- ⚠ **Attendance is biometric and lives entirely outside the hub.** There is no attendance or leave
+  table of any kind, on any branch. Whatever this becomes, it starts with an integration or an
+  import, not a screen. Recorded while mapping Dharmistha's KRA 11, which asks for "minimum 75%
+  attendance" and cannot be answered today.
+- ⚠ **Payroll is Tally's, and the hub reads Tally for receivables only.** HR Exit's own settlement
+  deliberately stops at "Finance marked it paid" and writes nothing to payroll (see EX-1's scope
+  note). Any payroll write is new ground, not an extension.
+- **PF and ESIC have no home either.** The only rows anywhere are recurring Task Management tasks for
+  paying the monthly challan, which belong to Finance. A joiner's registration is a different event
+  with no table, and it is 5% of Dharmistha's sheet.
+
+**To ask for, when the list is requested:** whether this is attendance *reporting* over a biometric
+export, or attendance *capture*; whether payroll means running it or recording it; and whether PF and
+ESIC registration comes in here or stays with the consultant.
+
+⚠ **If HROne really is being replaced, it settles five KRAs at once and nobody has connected the two
+yet.** Dharmistha's sheet names HROne in five of its twelve KRAs — ID activation within 48 hours of
+joining, department and reporting-manager mapping, master changes within 2 working days, ID
+deactivation within 2 working days of the last working day, and asset movements. Every one of them is
+banded unmeasurable in GP-1's KRA mapping for exactly one reason: **HROne is a different system and
+the hub holds none of it.** Replicate it here and those five stop being a scope boundary and start
+being ordinary columns. That is a reason to scope this carefully, not quickly.
+
+### EE-1 · Employee Engagement  `[ ]`
+*Raised 2026-09-28 · ⚪ **NOT STARTED.** No scoping discussion has happened yet — there is nothing to
+estimate and nothing to build against.*
+
+Week 2, item 3. The one module on the board with no agreed content at all.
+
+**The one thing already known:** Khushi Soni's job is "engagement, celebrations, rewards and internal
+communication" — it is spelled out in Tanisha's own Responsibility Boundary matrix, where three rows
+are explicitly transferred from Tanisha to Khushi. So the person this module is for is already
+identified, and **she is the only one of the four HR executives with no KRA sheet transcribed**
+(see the HR Reports work under KPI-3). Scoping this module and writing her sheet are the same
+conversation.
+
+⚠ **PF-18 Announcements already covers a slice of "internal communication"** — one message on every
+screen of the hub, live since 19-09-2026. Worth settling whether engagement extends that or sits
+beside it, before anything is designed.
+
 ### EX-1 · 🟢 HR Exit module — built and deployed, never launched. Do we launch it?  `[ ]`
-*Raised 2026-09-03 · 🟢 **Low priority** · **Status: NOT LAUNCHED** — this is a decision, not a build*
+*Raised 2026-09-03 · 🟢 **Low priority** · **Status: NOT LAUNCHED***
+
+*⏸ **SUPERSEDED IN PART, 28-09-2026.** The client has put Exit BEHIND Attendance & Payroll: that module is built first, then Exit is built on top of it. So the question below is no longer "launch it or drop it" — it is wanted, and not in its current shape. Read AP-1 before acting on anything in this entry.*
 
 **The module is finished and live on the server, and nobody has ever used it.** Measured 03-09-2026:
 
@@ -7718,7 +7829,11 @@ although the store's queue has one.
 — Exit is listed as excused, with this reason.
 
 ### KB-1 · 🟢 HR knowledge base — a second brain over the HR documents  `[~]`
-*Raised 2026-08-20 · **🟢 Low priority, IN PROGRESS (03-09-2026).** A demo has already been built and
+*Raised 2026-08-20 · **🟡 DUE BY 04-10-2026** (end of this week), per the client on 28-09-2026.
+The LIVE build has not begun; a demo was built and shown on 03-09-2026 and is a spike, not progress.
+⚠ The permissions question below has to be settled BEFORE anything is indexed, and the week is short.*
+
+*A demo has already been built and
 shown; what remains is turning it into something live. ⚠ The permissions question below must be
 settled BEFORE anything is indexed — retro-fitting who-may-read-what after the fact means
 re-indexing the whole corpus.*
@@ -7753,10 +7868,11 @@ the same shape.
 database holds **22 trips** from the build. It is being held back deliberately, not because anything
 is broken.*
 
-⚠ **Two things to know when it comes off hold:** `app_access` holds **ZERO `travel-desk` grants**, so
-today nobody but an admin can open it; and go-live still waits on **H1**, the band → travel-category
-contradiction in the policy (§2 has two tables that disagree, affecting 23 of 59 employees). Neither
-is new work — both are recorded in detail below and in [TRAVEL-DESK.md](TRAVEL-DESK.md).
+⚠ **HALF OF THIS IS NOW OUT OF DATE (checked 28-09-2026).** `app_access` no longer holds zero
+`travel-desk` grants — there are **7**, the module holds **25 trips**, and the client counts it as
+shared for feedback. What has NOT moved is **H1**, the band → travel-category contradiction in the
+policy (§2 has two tables that disagree, affecting 23 of 59 employees); go-live still waits on it.
+Recorded in detail below and in [TRAVEL-DESK.md](TRAVEL-DESK.md).
 
 *Raised 2026-08-20 · Unblocked 2026-08-20 · **Built 23–24 Aug 2026.** Ten phases, each verified
 against the live database and the running app before the next started. Live log:
@@ -10766,8 +10882,17 @@ renamed on 29-07-2026; the folder, the app id, the `fms_supplies_*` schema and t
 document prefix all keep the old word on purpose, because they are persisted identifiers.
 
 ### GP-1 · Walk the module as every kind of user, and write the manual  `[!]`
-*Raised 2026-09-28 · **SHIPPED 28-09-2026** on branch `general-purchase` (`f0758d45`), `npm run build`
-green. **NOT PUSHED** — waiting on the user's word, per the localhost-then-live rule.*
+*Raised 2026-09-28 · **LIVE 28-09-2026.** `f0758d45` + `03d43c9b`, merged to master as `b0cf9879`,
+Vercel green. The two migrations were already applied, so the module is now whole again — the
+interim mismatch noted below is closed.*
+
+*⚠ **The merge was not clean and git did not say so.** PF-20's table sweep had landed on the same
+three files. Three real conflicts, plus **ten duplicate object properties git auto-merged with no
+marker** — a second `sortValue` or `filter` in one column literal, caught only by `tsc` TS1117.
+Where the two sides genuinely disagreed: Qty stays a TEXT filter (free text by design; a numeric
+filter buckets "2 boxes" as 2 and anything non-numeric as 0), Status stays the LABEL (master had
+reintroduced the raw-column defect this branch fixed), and Requested-for took master's searchable
+select. See [[automerge-duplicates-object-keys]].*
 
 *🟢 **The manual is written and ready to share with HR:**
 https://claude.ai/artifact/XHN4ANrP33areEGYsifiLd — 36 steps, every screen photographed from the
@@ -10839,10 +10964,9 @@ quotes a fix.
 12. 🟡 **The Control Center printed "Handover" twice**, identical numbers on consecutive lines, because
     the stage holds exactly one step of the same name.
 
-**⚠ THE TWO MIGRATIONS ARE ALREADY APPLIED LIVE** and the frontend is not. Both are tightenings, so
-the direction is safe, but until `f0758d45` ships the deployed page still shows a view-only user the
-"Request new entry" button and the database now refuses it with a raw RLS error. One person holds a
-view-only grant (Shruti). Ship the frontend or accept that for the interim.
+**The two migrations and the frontend are both live now**, so they agree again. For the few hours
+between them, a view-only user would have seen the "Request new entry" button and been refused by a
+raw RLS error; one person holds a view-only grant (Shruti) and the window has closed.
 
 **⚠ THREE REAL EMAILS WENT OUT.** General Purchase email was ON when the walk started; two test
 requests mailed Riya Kumari, Rohan Jariwala and Dharmishtha Prajapati before it was noticed. The

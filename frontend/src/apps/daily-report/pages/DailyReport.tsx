@@ -21,8 +21,8 @@ import { SALE_TYPE_LABEL, SALE_TYPE_ORDER, type SaleType } from "../lib/saleType
 import {
   allBandsTotal, bandMoney, cellFor, companyColumnLabel, entityTotal,
   FACILITY_BALANCE_NOTE, facilityRows, groupSales,
-  isBankOnlyLocation, pivotCompanies, pivotMoney, pivotSales, purchaseTotal, salesTotals, saleKind,
-  tradeTotal, TRADE_BANDS,
+  isBankOnlyLocation, MONEY_FOLD_FLOOR_LACS, pivotCompanies, pivotMoney, pivotSales, purchaseTotal,
+  SALE_FOLD_FLOOR_LACS, salesTotals, saleKind, tradeTotal, TRADE_BANDS,
   type LocationFilter, type MoneyBand,
 } from "../lib/aggregate";
 import { buildDailyReportInput, HISTORY_DAYS, historyFrom } from "../lib/reportInput";
@@ -93,7 +93,7 @@ function MoneyDetail({ bands }: { bands: MoneyBand[] }) {
             band total <span className="tabular-nums font-semibold text-navy">{fmtMoney(b.totalLacs)}</span>
           </span>
         </div>
-        <PivotGrid rows={rows} unit={null} noun={b.kind} />
+        <PivotGrid rows={rows} unit={null} noun={b.kind} floorLacs={MONEY_FOLD_FLOOR_LACS} />
       </div>
     );
   };
@@ -1010,6 +1010,7 @@ export default function DailyReport() {
             rows={rows}
             unit={isInk ? "kg" : "qty"}
             noun="sales"
+            floorLacs={SALE_FOLD_FLOOR_LACS[t]}
           />
         </Section>
         {outwardLines.length > 0 && (
