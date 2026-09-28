@@ -9,6 +9,7 @@ import { todayIso } from "./lib/format";
 import DailyReport from "./pages/DailyReport";
 import BankBalances from "./pages/BankBalances";
 import BankAccounts from "./pages/BankAccounts";
+import EmailSettings from "./pages/EmailSettings";
 
 /** Wires the portal session into the shared AppShell, as every app does. */
 function DailyReportLayout() {
@@ -44,6 +45,9 @@ export default function DailyReportApp() {
         <Route index element={<DailyReport />} />
         <Route path="bank-balances" element={<BankBalances />} />
         <Route path="bank-accounts" element={<BankAccounts />} />
+        {/* Admin-only in practice; the page itself says so rather than the route hiding it, so a
+            non-admin who follows a link gets an explanation instead of a silent redirect. */}
+        <Route path="email" element={<EmailSettings />} />
         <Route path="*" element={<Navigate to="/daily-report" replace />} />
       </Route>
     </Routes>

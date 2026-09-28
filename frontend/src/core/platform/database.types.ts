@@ -8523,6 +8523,36 @@ export type Database = {
       // NOTHING READS EITHER TABLE YET — there is no scheduler; see the migration header.
       // Admin-readable, and read-only through the API: the sole writer is the SECURITY DEFINER
       // `collections_report_mark_sent`, called by the runner. Migration 20260922120000.
+      daily_report_email_send_log: {
+        Row: {
+          balances_entered: number | null
+          balances_expected: number | null
+          note: string | null
+          queued: number
+          report_key: string
+          run_at: string
+          sent_for_date: string
+        }
+        Insert: {
+          balances_entered?: number | null
+          balances_expected?: number | null
+          note?: string | null
+          queued?: number
+          report_key: string
+          run_at?: string
+          sent_for_date: string
+        }
+        Update: {
+          balances_entered?: number | null
+          balances_expected?: number | null
+          note?: string | null
+          queued?: number
+          report_key?: string
+          run_at?: string
+          sent_for_date?: string
+        }
+        Relationships: []
+      }
       collections_report_send_log: {
         Row: {
           note: string | null
@@ -10498,6 +10528,25 @@ export type Database = {
       // The scheduled send's gate — "should anything go out right now, and to whom". Granted to
       // `authenticated` so the delivery panel can read back what the runner will actually do
       // instead of asserting it from a hard-coded string. Migration 20260922120000.
+      daily_report_email_due: {
+        Args: { p_now?: string; p_report_key?: string }
+        Returns: Json
+      }
+      daily_report_email_mark_sent: {
+        Args: {
+          p_balances_entered?: number | null
+          p_balances_expected?: number | null
+          p_for_date: string
+          p_note?: string | null
+          p_queued: number
+          p_report_key: string
+        }
+        Returns: boolean
+      }
+      set_daily_report_email_armed: {
+        Args: { p_armed: boolean }
+        Returns: boolean
+      }
       collections_report_due: {
         Args: { p_now?: string; p_report_key?: string }
         Returns: Json

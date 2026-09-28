@@ -61,6 +61,8 @@ Work held up because someone owes us something. If a task is late, this is the f
 | 🔴 **What should a contract say when the machine is sold WITHOUT print heads?** Folder 108 (MK Fashion) is a real signed deal for a machine supplied without heads — its own composition line reads `WITH STANDARD ACCESSORIES (Without printheads)`. Entered exactly that way on 04-09, the row stored `incl_head = false` and **the contract printed the opposite**: `WITH STANDARD ACCESSORIES (With 8 printheads)`. **Ten of the 21 templates assert the heads unconditionally** — Fab Pro 1I/2I/3I · Homer K32 · K64 · all three Alpha IIs · P8S · Rocket — while the dryer and the centring device beside them ARE guarded. There is no `[[if head]]` to write: `conditions.ts` exposes only `dryer`, `centering` and `usd`. 🟢 **The switch is ours and is safe to build** (a `head` condition plus its SQL twin, additive). ⚠ **The replacement sentence is contract text on ten machines and is NOT ours to invent** — folder 108's own *(Without printheads)* is the obvious candidate. Ritesh Bhai, 04-09: keep it in the artifact and settle it with him. 🔴 **The same fault is on the INVOICE too, and there it needs no new condition** (OCPI-46, 04-09): folder 108's generated PI reads `LARGE FORMAT INKJET PRINTER WITH 8 HEADS WITH STD. ACCESSORIES` against the real paper's `(WITHOUT PRINTHEADS)`. The invoice takes its description from `billing_name` — one fixed string per machine — so it cannot vary by deal. 🟢 OCPI-45 already routes billing names through the same conditional engine as the contract's supply line, so the `head` switch built for the contract fixes the invoice in the same stroke | Ritesh Bhai / Bushra | **OCPI-42 · N-10** | 2026-09-04 |
 | 🔴 **One signed K64 order confirmation.** K64 is the best-selling machine and **there is no OC for it anywhere** — every PDF, Word and PowerPoint file in both years was swept, and the only two K64 folders (109 Laxmipati, 120 Modi) hold Performa Invoices with no contract body. So the one machine that sells most has never been checked against a paper a customer signed. It is covered three weaker ways — 7 of its 9 clauses are byte-identical to Homer K24's, which *was* checked; its own deck covers the other 2; the two PIs cover the money and terms — but none of them can answer the question that matters: **does a real K64 contract carry a clause its deck omits?** That is exactly how the K32 consumables list went missing | Bushra | **OCPI-37** — the audit is done; this closes its one real blind spot | 2026-09-03 |
 | **The wording Orange actually intends to offer on `Mini Lario`.** Its deck (supplied 02-09) carries **`MARKEM-IMAJE`** — another manufacturer — inside its limited-warranty, limitation-of-liability, indemnity, data-privacy and governing-law clauses, so those terms appear to have been lifted from a third party's contract rather than written for Orange O Tec. Transcribed as they stand, an Orange contract would offer another firm's warranty disclaimer and bind the customer to their dispute resolution. Nobody should transcribe this deck until a person has said which of those clauses Orange means to stand behind | Ritesh Bhai | Blocks building the Mini Lario template; nothing else | 2026-09-03 |
+| 🟢 **Feedback on the General Purchase walkthrough**, now that the module has been walked as every kind of user and the manual is written. Owed with it: **a process coordinator**, **an owner for the Items and Service-type masters**, and **two or three names on the reassignment list** — without those three, holding a request, approving a new item and reassigning an approval are all admin-only, and the person who runs the module can do none of them | HR, via Dharmishtha Prajapati | **GP-1** | 2026-09-28 |
+| 🔴 **The Attendance & Payroll feature list, AND an HROne login.** The brief is to REPLICATE HROne, so the list defines the module and the login is needed to study it first-hand. Nothing should be built without both. ⚠ It decides TWO modules: Exit is deferred to sit on top of this. Discussion moved from 28-09 to **Thu 01-10-2026**. Three things to settle in the list: attendance *reporting* over a biometric export vs attendance *capture*; payroll *run* vs payroll *recorded*; and whether PF/ESIC registration comes here or stays with the consultant | Ritesh Bhai / HR | **AP-1**, and **EX-1** behind it | 2026-09-28 |
 
 ---
 
@@ -1879,62 +1881,123 @@ Excel read back):
   not built.
 - **The email:** DR-3.
 
-### DR-3 · Daily Report — email it every evening  `[ ]`
-*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 so closing DR-2
-did not close this · **The client wants this next***
+### DR-3 · Daily Report — email it every evening  `[x]`
+*Raised 2026-09-16 by Ritesh Bhai as the delivery half of DR-2 · Split out 17-09-2026 · **BUILT
+28-09-2026, proved end to end, and DISARMED** · The same entry is DR-3 in master's WORKLIST*
 
-**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection report
-already goes out.
+**The ask.** Generate the daily report as a PDF and send it every evening, the way the Collection
+report already goes out.
 
-**🟢 The document is ready.** `lib/exportDailyPdf.ts` exposes `dailyReportPdfBlob`, and DR-2 settled
-its shape. What is missing is everything around it: the runner, the schedule, the recipients and the
-send.
+**🟢 The four shape decisions, taken 28-09-2026.** Every evening at **20:30 IST** · **PDF only** ·
+**one report covering all locations** · it sends **at the fixed time whether or not the bank balances
+have been typed**, and says on the mail how many were.
 
-**🟢 Copy the Collection report's delivery — the CURRENT pattern, not the first one.**
-- **Waking.** The waking moved to **pg_cron on 29-08-2026**. The first design ticked GitHub's `schedule`
-  every 30 minutes, and on this repo that decayed from ~40 ticks a day to one, then **missed a Saturday
-  slot outright**. Now a pg_cron job asks the gate RPC and, only when a send is due, fires GitHub's
-  `workflow_dispatch` via `net.http_post`. GitHub's own cron stays only as a backstop, which cannot
-  double-send because the runner re-asks the gate and the send log claims the slot.
-- **Runner.** `.github/workflows/collections-report.yml` checks out, runs `npm ci`, **bundles the app's
-  own TypeScript** (`supabase/collectionsreport/build.mjs`), builds and sends. Needs **Node 22+**.
-- **Modes.** `dry-run` (the default: build, send nothing), `sample`, `scheduled`.
-- **The decision lives in the database** (`collections_report_due()`), so the settings screen and the
-  rule the sender obeys are one object.
+**🟢 What is built.**
+- **One input, two callers** — `lib/reportInput.ts`. `DailyXlsxInput` used to be assembled inside
+  `pages/DailyReport.tsx` from about a dozen React memos, so a server job would have had to
+  re-derive it: a second definition of "what the report is for this day and this location", free to
+  drift. The page now renders from the same object it exports, and the runner calls the same
+  function. `exportInput` is gone; both export buttons take `input` directly.
+- **The gate** — `20261212120000_daily_report_email.sql`. `daily_report_email_due()` is the single
+  answer to "should it go out now, and to whom": the arming lever, the report's own switch, the
+  schedule, the send day, the slot, the grace window (60 min) and the send log. Reuses the shared
+  `report_email_*` tables under the key `daily-report`, so no schema was added for configuration and
+  per-location copies would cost a *key*, not a migration.
+- **The waking** — `20261212120100_daily_report_email_kick.sql`. pg_cron `daily-report-email-kick`
+  (`7-59/15`) asks the gate and only fires `workflow_dispatch` when due; `daily-report-email-watchdog`
+  (`11-59/30`) mails when a slot passes unserved. **Both minutes were chosen by arithmetic** against
+  all 17 live jobs — `*/15` collides with the collections kick, the watchdog and the outbox sweep.
+- **The runner** — `supabase/dailyreport/` + `.github/workflows/daily-report.yml`. Bundles the app's
+  own TypeScript (three guards kept: legacy-receivables refusal, browser-globals scan,
+  `tsc --noEmit`). Three modes; `dry-run` is the default. Needed a fifth substitution the Collection
+  report does not: `@hub/lib/scope`, because one unused React hook in `scopeParties.ts` drags the
+  whole portal session into a Node job.
+- **The mail** — `daily_report_evening` and `daily_report_missed` branches in `send-email/index.ts`.
+- **The screen** — Daily Report → **Email**. Switch, frequency/time/days, and the address list. The
+  status banner is read from the gate, never asserted in the component.
 
-**🔴 It does not run in an Edge Function, and that is measured.** Edge Functions allow **~2 seconds of CPU
-per request, cumulative — yielding does not reset it**. Drawing the Collection report is ~40 seconds of
-CPU; this report is smaller, but it is the same shape of work under the same ceiling.
+**🟢 Proved, not assumed.**
+- Both migrations and every branch of the gate rehearsed against **live data inside a transaction
+  that was then rolled back**: disarmed, not-yet, due, missed, already-sent, nobody-to-send-to,
+  dedup on a second `mark_sent`, zero-queued refusal, and the watchdog alerting exactly once over
+  three runs. The rehearsal **found two real bugs** (below).
+- The runner ran for real in `dry-run` on three dates. 6-page PDF, verified with pdf.js: rupee signs
+  intact, no blank boxes, headline figures present, and "0 of 11" stated on the Bank page. The
+  figures are identical before and after the refactor.
+- `npm run build` green; the bundle reports no browser code and typechecks.
 
-**The traps (each cost real time on the Collection report):**
-- **Dispatch silently does nothing:**
-  - if the body omits `inputs.mode='scheduled'` (the input defaults to `dry-run` and reports success);
-  - if `ref` is not `master`;
-  - if the request has no `User-Agent` (pg_net adds none);
-  - if the token is not `misorangeotec-stack`'s.
-- **The token is borrowed.** `private.collections_report_kick_config.github_pat` holds the `gh` CLI's
-  OAuth token, not a dedicated PAT. Decide whether this report shares it or gets its own.
-- **Secrets go in a `private.*_config` table, not Vault** (Vault holds nothing and is used nowhere).
-- **Every run exits "success".** "Not due" is a successful run, and a dropped tick makes no run at all,
-  so a **watchdog** must alert when a slot passes unserved. A new outbox `kind` also needs its renderer
-  in `send-email`, or it is `markSkipped` silently.
-- **Scheduled workflows run only from the default branch.** GitHub also disables a scheduled workflow
-  after 60 days without a commit.
-- **Do not put cron jobs on `*/5` or `*/15` boundaries.** Those already carry other jobs; the house slots
-  are minutes 3, 8, 13 … 58.
-- **Arming it is a live send.** Build behind the same two-switch gate, prove it with `dry-run`, then
-  `sample`, before a recipient is added.
-- **Every figure must keep coming from `lib/aggregate.ts`**, so the mailed PDF cannot disagree with the
-  screen.
-- **The bank balances and the credit facility are typed by hand each evening** (discussion items 3 and
-  5). An email sent before they are typed will say "0 of 11 entered". Decide whether the send waits
-  for them, or goes regardless and says so.
+**🔴 Two bugs the rehearsal caught, both of which would have shipped silently.**
+1. The watchdog's empty-list suppression tested the gate's `reason` for `'nobody to send to'` — which
+   the gate can never return once the window has closed, because it checks the grace window first
+   and says `'missed …'`. The suppression was dead code, so a database with no distribution list
+   would have mailed the alert **every night**. It now checks the recipient table directly.
+2. `strays` (salesperson rows filed under this key, which reach nobody) was built beside the
+   recipients, so it appeared only on the `due` and `nobody to send to` answers. On 364 evenings out
+   of 365 the gate says `not yet` or `already sent today`, so the warning was invisible. It is now
+   resolved first and travels on every answer.
 
-**To discuss with Ritesh Bhai:**
-- [ ] **When does it send, and to whom?** Management and the CFO — which addresses?
-- [ ] **Does it attach the Excel workbook as well as the PDF?**
-- [ ] **Does it wait for the bank balances to be typed**, or send at a fixed time regardless?
-- [ ] **Which location?** One all-locations report, or separate Surat and Noida copies as the old sheets were?
+Also worth keeping: `daily_report_email_watchdog` takes a `p_now` clock, unlike the Collection
+report's, which reads `now()` internally and therefore shipped unproven. The clock is why the two
+bugs above were found rather than waited for.
+
+**🔴 And one claim that had to be corrected.** The drawing was *estimated* at ~2.5s to argue it could
+not be an Edge Function. **Measured: 1.6s on a quiet day, 1.8-2.0s on a busy one** (259 sale lines).
+That is *on* the 2s ceiling, not over it — which is a worse place to be, since it fails intermittently
+on the busiest days at 20:30 while every run reports success. The runner is still right; the migration
+and `entry.ts` now state the measurement instead of the estimate, and say to measure a December day
+before anyone revisits it.
+
+**⚠ THE REAL BLOCKER IS NOT CODE: NOBODY HAS EVER TYPED AN EVENING.** Measured on live 28-09-2026:
+11 active bank accounts, **0 rows** in `daily_report_bank_balances`, **0** in
+`daily_report_cc_limits`, and **0** `app_access` grants for `daily-report` (`UNIVERSAL_APP_IDS` is
+empty, so only admins can open it). Until somebody is granted the module and types an evening, every
+report goes out with an empty Bank page and no credit facility, saying "0 of 11 accounts entered".
+
+**🟢 LIVE 28-09-2026.** Master `ed05eae5`, Vercel deployed, both migrations applied and recorded,
+`send-email` v35, pg_cron armed, and the whole chain proved: a sample was delivered and read, a dry
+run produced identical figures on GitHub's own runner, and `daily_report_email_dispatch` was shown to
+reach GitHub (204) so the 20:30 poke is exercised rather than assumed.
+
+**Schedule as set: Monday to Saturday at 20:30 IST** — `days_of_week = {1,2,3,4,5,6}`. Changed from
+`daily` on 28-09 when Ritesh Bhai pointed out Orange works a six-day week: Sunday is the only closed
+day, so a daily schedule would have mailed an empty report every Sunday evening. Proved on the gate:
+due on Monday, due on Saturday, "not a send day" on Sunday.
+
+**Recipients: `e.techie4@gmail.com` only.** Adding anyone else is a live send and is the owner's call
+— one row in `report_email_recipients`, or the Daily Report → Email screen.
+
+**⚠ THE ONE THING STILL OWED IS NOT CODE.** Nobody has been granted the module and nobody has typed a
+bank balance, so every evening's mail says "0 of 11 accounts were entered" and the bank page and the
+credit facility are empty. Fix in the UI, no deploy: **Admin → Users → the person → Daily Report →
+Full access** (View is not enough — the RLS and `set_daily_report_evening` both require
+`access_level = 'edit'`), then they type the evening at /daily-report/bank-balances.
+
+**Also still owed, and cheap:** the kick borrows the `gh` CLI's token. It has its own config row, so
+`select set_daily_report_email_kick_pat('<a real PAT>', 'e.techie4@gmail.com');` decouples it from the
+Collection report, where a `gh auth logout` would otherwise stop both.
+
+**How it went live, kept because the order matters if it is ever repeated.**
+1. [ ] Merge to `master`. A scheduled workflow only exists on the default branch, and the kick's
+   `git_ref` is `master`; the runner bundles whatever `master` holds, so anything not there is not in
+   the mail.
+2. [ ] Apply both migrations (they ship disarmed, switched off, unscheduled and unlisted; the asserts
+   fail if any of that is untrue).
+3. [ ] Deploy `send-email`. ⚠ The repo copy was **stale against the deployed function** (v34, 24-Sep,
+   carrying the `complaint_` prefix and the PF-18 bullet/cta overrides). It has been caught up from
+   the live source first; deploy from that, not from an older branch.
+4. [ ] Grant the module to whoever types the balances, and get one evening typed.
+5. [ ] `select set_daily_report_email_kick_pat('<token>', '<alert email>');` — its **own** token, not
+   the collections kick's borrowed `gh` CLI credential, so one revocation cannot stop both reports.
+6. [ ] Run the workflow by hand with `mode: dry-run` and read the artifact.
+7. [ ] Set the switch, the schedule (daily 20:30) and **one** recipient, then `mode: sample` to that
+   address alone. Read the real mail.
+8. [ ] Only on the owner's word: add the real recipients, then
+   `select set_daily_report_email_armed(true);` — **last, and theirs.** Nothing sends before it.
+
+To stop it at any time without losing the schedule or the list:
+`update private.daily_report_email_config set armed = false;`
+
+---
 
 ## OCPI  *(new module)*
 
@@ -7608,12 +7671,122 @@ ruled blank. Use it after every UI run; the PDF is the ground truth, not the pay
 
 ---
 
-## HR  *(two new modules)*
+## HR  *(the week 1 / week 2 programme)*
 
 *(cross-ref: **PF-13** — Recruitment's HOD / probation / `hr_head_approval` / `final_decision` and Exit's `hr_head_approval` / `fnf_approve` all rest on one person; **PF-14** — Travel Desk's director, advance and finance steps have nobody configured at all)*
 
+### Where each HR module stands  *(board, from the client 28-09-2026, figures read off live)*
+
+The ten-module HR programme, split into two weeks. **The Status column is the client's own call**;
+the Access and In use columns are read off `app_access` and the modules' own tables on 28-09-2026,
+because a module can be "done" and still be reaching nobody, and those are different problems.
+
+#### Week 1
+
+| # | Module | Status | Access | In use |
+|---|---|---|---|---|
+| 1 | **Talent Acquisition** (New Recruitment) | 🟢 Done, shared for final feedback | 17 edit, 1 view | 31 requisitions, 182 candidates |
+| 2 | **Learning & Development** | 🟢 Done, shared for final feedback. Was a wholly new module | Universal, no grant needed | ⚠ **0 sessions, 0 nominations** |
+| 3 | **Stationery** (= General Purchase) | 🟢 Done, shared for final feedback. Access, manual and walkthrough all shared | 32 edit, 1 view | 19 requests |
+| 4 | **Asset Requisition** (= Asset Maintenance) | 🟢 Done, shared for final feedback. Access and manual shared | ⚠ **2 edit, 1 view** | 40 assets, 1 job |
+| 5 | **Help Desk** | 🟡 **In progress**, going out for feedback 28-09-2026 — see HD-1 | Not live | — |
+| 6 | **Knowledge Base** | 🟡 **Due by 04-10-2026** (end of this week) — see KB-1 | Not live | — |
+| 7 | **Exit** | ⏸ **Deferred behind Attendance & Payroll** — see EX-1 | 4 edit, 1 view | **0 cases** |
+
+#### Week 2
+
+| # | Module | Status | Access | In use |
+|---|---|---|---|---|
+| 1 | **Travel Desk** | 🟢 Done, shared for feedback | 7 edit | 25 trips |
+| 2 | **Attendance & Payroll** | 🔴 **Waiting on the client** — the feature list, and HROne access. Discussion moved to **Thu 01-10-2026**. See AP-1 | Not built | — |
+| 3 | **Employee Engagement** | ⚪ **Not started.** No scoping discussion has happened yet. See EE-1 | Not built | — |
+
+#### Four things this board makes visible that the module entries do not
+
+- 🔴 **Exit now depends on Attendance & Payroll** (client, 28-09-2026). It is no longer "launch it or
+  drop it" as EX-1 was written: Attendance & Payroll comes first, then Exit is built on top of it.
+  That also makes EX-1's "the module is finished, do we want it" framing incomplete — the answer is
+  now "yes, but not yet, and not in its current shape".
+- ⚠ **Learning & Development is shipped, universal and completely unused.** Every employee can open
+  it today and `fms_ld_sessions` holds nothing. "Done and shared for feedback" and "reaching nobody"
+  are both true, and only the second one costs anything to fix.
+- ⚠ **Asset Requisition has three people on it**, against 32 on General Purchase. The manual went out
+  on 28-09; the access list did not grow with it. Worth checking that is deliberate.
+- **Travel Desk's own entry (TR-1) is stale.** It still reads "ON HOLD at Karan Bhai's request" with
+  "ZERO `travel-desk` grants". There are now **7 grants and 25 trips**, and the client counts it as
+  shared for feedback. Corrected in place below.
+
+### HD-1 · Help Desk — the ticketing module  `[~]`
+*Raised 2026-09-28 · **IN PROGRESS**, going out to HR for feedback on 28-09-2026 (client's word).*
+
+Week 1, item 5. Being built now on branch `help-desk`: the foundations and the ticket-category master
+that routes every ticket are committed there, and **nothing is on `master` and no `fms_hd_*` table
+exists on the live database**.
+
+⚠ **It is also the answer to one KRA that is currently unanswerable.** Dharmistha's sheet scores
+"IT complaint escalation and follow-up" at 5%, and nothing in the hub records an IT complaint today
+(see GP-1's KRA mapping, where that line is banded *built, not live*). A ticket, an owner, an
+escalation and a closure are exactly what this module records, so it closes that gap the day it
+ships.
+
+### AP-1 · Attendance & Payroll  `[!]`
+*Raised 2026-09-28 · 🔴 **BLOCKED — waiting on the client for the feature list AND for HROne
+access.** Nothing has been built and nothing should start until both arrive. The scoping discussion
+was due 28-09 and is **moved to Thursday 01-10-2026** (client travelling).*
+
+*🔴 **THE BRIEF IS "REPLICATE HROne", and that is much bigger than the module name suggests.** Asked
+for on 28-09-2026: the list of features needed to replicate the HROne software, plus a login so it
+can be studied first-hand. Read that before estimating anything — this is not an attendance screen
+with a payroll report bolted on.*
+
+Week 2, item 2, and the **pivot of the whole second week**: Exit (EX-1) has been deferred to sit on
+top of it, so the list this is waiting on decides the shape of two modules, not one.
+
+**What is already known about the ground it has to stand on, from work done elsewhere:**
+- ⚠ **Attendance is biometric and lives entirely outside the hub.** There is no attendance or leave
+  table of any kind, on any branch. Whatever this becomes, it starts with an integration or an
+  import, not a screen. Recorded while mapping Dharmistha's KRA 11, which asks for "minimum 75%
+  attendance" and cannot be answered today.
+- ⚠ **Payroll is Tally's, and the hub reads Tally for receivables only.** HR Exit's own settlement
+  deliberately stops at "Finance marked it paid" and writes nothing to payroll (see EX-1's scope
+  note). Any payroll write is new ground, not an extension.
+- **PF and ESIC have no home either.** The only rows anywhere are recurring Task Management tasks for
+  paying the monthly challan, which belong to Finance. A joiner's registration is a different event
+  with no table, and it is 5% of Dharmistha's sheet.
+
+**To ask for, when the list is requested:** whether this is attendance *reporting* over a biometric
+export, or attendance *capture*; whether payroll means running it or recording it; and whether PF and
+ESIC registration comes in here or stays with the consultant.
+
+⚠ **If HROne really is being replaced, it settles five KRAs at once and nobody has connected the two
+yet.** Dharmistha's sheet names HROne in five of its twelve KRAs — ID activation within 48 hours of
+joining, department and reporting-manager mapping, master changes within 2 working days, ID
+deactivation within 2 working days of the last working day, and asset movements. Every one of them is
+banded unmeasurable in GP-1's KRA mapping for exactly one reason: **HROne is a different system and
+the hub holds none of it.** Replicate it here and those five stop being a scope boundary and start
+being ordinary columns. That is a reason to scope this carefully, not quickly.
+
+### EE-1 · Employee Engagement  `[ ]`
+*Raised 2026-09-28 · ⚪ **NOT STARTED.** No scoping discussion has happened yet — there is nothing to
+estimate and nothing to build against.*
+
+Week 2, item 3. The one module on the board with no agreed content at all.
+
+**The one thing already known:** Khushi Soni's job is "engagement, celebrations, rewards and internal
+communication" — it is spelled out in Tanisha's own Responsibility Boundary matrix, where three rows
+are explicitly transferred from Tanisha to Khushi. So the person this module is for is already
+identified, and **she is the only one of the four HR executives with no KRA sheet transcribed**
+(see the HR Reports work under KPI-3). Scoping this module and writing her sheet are the same
+conversation.
+
+⚠ **PF-18 Announcements already covers a slice of "internal communication"** — one message on every
+screen of the hub, live since 19-09-2026. Worth settling whether engagement extends that or sits
+beside it, before anything is designed.
+
 ### EX-1 · 🟢 HR Exit module — built and deployed, never launched. Do we launch it?  `[ ]`
-*Raised 2026-09-03 · 🟢 **Low priority** · **Status: NOT LAUNCHED** — this is a decision, not a build*
+*Raised 2026-09-03 · 🟢 **Low priority** · **Status: NOT LAUNCHED***
+
+*⏸ **SUPERSEDED IN PART, 28-09-2026.** The client has put Exit BEHIND Attendance & Payroll: that module is built first, then Exit is built on top of it. So the question below is no longer "launch it or drop it" — it is wanted, and not in its current shape. Read AP-1 before acting on anything in this entry.*
 
 **The module is finished and live on the server, and nobody has ever used it.** Measured 03-09-2026:
 
@@ -7656,7 +7829,11 @@ although the store's queue has one.
 — Exit is listed as excused, with this reason.
 
 ### KB-1 · 🟢 HR knowledge base — a second brain over the HR documents  `[~]`
-*Raised 2026-08-20 · **🟢 Low priority, IN PROGRESS (03-09-2026).** A demo has already been built and
+*Raised 2026-08-20 · **🟡 DUE BY 04-10-2026** (end of this week), per the client on 28-09-2026.
+The LIVE build has not begun; a demo was built and shown on 03-09-2026 and is a spike, not progress.
+⚠ The permissions question below has to be settled BEFORE anything is indexed, and the week is short.*
+
+*A demo has already been built and
 shown; what remains is turning it into something live. ⚠ The permissions question below must be
 settled BEFORE anything is indexed — retro-fitting who-may-read-what after the fact means
 re-indexing the whole corpus.*
@@ -7691,10 +7868,11 @@ the same shape.
 database holds **22 trips** from the build. It is being held back deliberately, not because anything
 is broken.*
 
-⚠ **Two things to know when it comes off hold:** `app_access` holds **ZERO `travel-desk` grants**, so
-today nobody but an admin can open it; and go-live still waits on **H1**, the band → travel-category
-contradiction in the policy (§2 has two tables that disagree, affecting 23 of 59 employees). Neither
-is new work — both are recorded in detail below and in [TRAVEL-DESK.md](TRAVEL-DESK.md).
+⚠ **HALF OF THIS IS NOW OUT OF DATE (checked 28-09-2026).** `app_access` no longer holds zero
+`travel-desk` grants — there are **7**, the module holds **25 trips**, and the client counts it as
+shared for feedback. What has NOT moved is **H1**, the band → travel-category contradiction in the
+policy (§2 has two tables that disagree, affecting 23 of 59 employees); go-live still waits on it.
+Recorded in detail below and in [TRAVEL-DESK.md](TRAVEL-DESK.md).
 
 *Raised 2026-08-20 · Unblocked 2026-08-20 · **Built 23–24 Aug 2026.** Ten phases, each verified
 against the live database and the running app before the next started. Live log:
@@ -10696,6 +10874,162 @@ the person who owes it.
   needs it. See **FIX-4**.
 
 ---
+
+## General Purchase  *(office & facility requisitions)*
+
+The module the folder calls `office-supplies` and everything else calls General Purchase. It was
+renamed on 29-07-2026; the folder, the app id, the `fms_supplies_*` schema and the `SUPPLY-`
+document prefix all keep the old word on purpose, because they are persisted identifiers.
+
+### GP-1 · Walk the module as every kind of user, and write the manual  `[!]`
+*Raised 2026-09-28 · **LIVE 28-09-2026.** `f0758d45` + `03d43c9b`, merged to master as `b0cf9879`,
+Vercel green. The two migrations were already applied, so the module is now whole again — the
+interim mismatch noted below is closed.*
+
+*⚠ **The merge was not clean and git did not say so.** PF-20's table sweep had landed on the same
+three files. Three real conflicts, plus **ten duplicate object properties git auto-merged with no
+marker** — a second `sortValue` or `filter` in one column literal, caught only by `tsc` TS1117.
+Where the two sides genuinely disagreed: Qty stays a TEXT filter (free text by design; a numeric
+filter buckets "2 boxes" as 2 and anything non-numeric as 0), Status stays the LABEL (master had
+reintroduced the raw-column defect this branch fixed), and Requested-for took master's searchable
+select. See [[automerge-duplicates-object-keys]].*
+
+*🟢 **The manual is written and ready to share with HR:**
+https://claude.ai/artifact/XHN4ANrP33areEGYsifiLd — 36 steps, every screen photographed from the
+live system, same shape as the Asset Maintenance and Travel Desk walkthroughs. A copy of the HTML,
+the 23 screenshots, FINDINGS.md and RESTORE.md are in
+`Misc/Ritesh Bhai/general-purchase-walkthrough-2026-09-28/` (untracked).*
+
+**How it was tested.** Every persona in turn on master's code, against live data, through the ZZ TEST
+account `zz.test.ananya@orangeotec.com`: ungranted → view-only → requester → holder of a reassigned
+approval → second approver → handover owner → admin. Plus the whole lifecycle on both routes: raise,
+first approval, reassign, reject, second approval, handover, delivery, correct a recorded entry,
+hold, resume, cancel, edit, and a master request raised and rejected. Four ZZ TEST requests
+(`SUPPLY-2627-0025` to `0028`) carried it; **all of it has been deleted** and the module is back to
+19 requests / 42 activity / 67 notifications / 1 master request, matched against a pre-run snapshot.
+
+⚠ **Every finding was re-checked against a PRODUCTION build**, not just the dev server. That mattered:
+the Edit form appearing blank turned out to be React's development-only double render defeating the
+seed guard, and is NOT a live defect. It is written up in FINDINGS.md so nobody re-finds it and
+quotes a fix.
+
+**Twelve defects found and fixed** (`f0758d45`, each re-verified in the browser):
+
+1. 🔴 **Setup → Raising & Routing opened with both lists empty and Save live.** It is the DEFAULT tab,
+   so it mounts before the store's fetch lands, and `useState(saved)` captures once. Two pickers
+   rendered their placeholder over **15 saved requesters and 8 saved HOD designations**, Save enabled.
+   One press writes `[]` to both: nobody but an admin can raise, and the designation rule that routes
+   nearly every request straight to Management is emptied. Verified on the production build.
+   The card directly beneath it on the same tab — `ReassignPoolSection` — already had the fix, so one
+   screenshot shows two live Save buttons and one correctly greyed.
+   **Same shape in four more sections:** Coordinators, Due Dates (would have cut Handover from 3
+   working days to 1), Step Owners and Master Owners (both seed-on-open, the second shape).
+   Fixed with the `edited ?? saved` pattern plus a `dirty` and `isLoading` gate; the two modals refuse
+   to open while loading. See [[usestate-of-store-value-wipes-the-list]] — this is the fourth module
+   it has been found in.
+2. 🔴 **A view-only grant could write.** "Request new entry" on the Masters page was ungated (the twin
+   button on Master Requests was not), and the INSERT policy asked only `is_staff` — every employee in
+   the company, grant or no grant. Proved on live data: the view-only test account created a
+   `fms_supplies_master_requests` row and the admins were notified. Fixed in both halves; migration
+   `20260928120100` narrows the policy to `module_can_edit(..., 'office-supplies')`.
+3. 🔴 **Reassign allowed self-approval.** `fms_supplies_submit_request` is careful never to route a
+   request to its raiser or its subject; `fms_supplies_reassign_request` refused only "to yourself".
+   Proved: `SUPPLY-2627-0026` ended with `raised_by = requested_for_user_id = assigned_approver_id =
+   first_approver_id`, all one account. Fixed in the picker and in the RPC (`20260928120000`).
+4. 🔴 **Finishing the work closed the gate.** `canSeeQueue('first_approval')` was gated on *holding*
+   an open reassigned request, so the holder lost the whole First Approval page — Completed tab
+   included — the moment the request moved on, and was told to ask an admin for a role nobody had
+   taken. Now asks "has anything ever been handed to me". Exactly the AM-6 defect #1 shape; see
+   [[finishing-work-can-close-the-gate]].
+5. 🟠 **`FieldLabel` wrapped `ChoiceButtons` twice**, so clicking the word "Location" silently selected
+   **Plant** and clicking "Type of request" pressed the first option. Known and unfixed since
+   19-09-2026. Fixed here with a new shared `FieldHeading` in `shared/components/ui/Form.tsx`, which
+   the other four files can now use — see GP-2.
+6. 🟠 **A permanently false red warning on Setup** told the admin the HOD-designation list "matches no
+   one for now". 66 of 70 profiles carry a designation and that rule routes nearly every request in
+   the module. Now derived.
+7. 🟠 **"Completed 15" opened on one row.** The tab counted everybody while the table is scoped to
+   Mine. Now `stage.rows.length`, as Asset Maintenance and Order to Dispatch already do.
+8. 🟠 **The Status filter offered raw column values** — `pending_handover`, `on_hold` — beside a table
+   reading "Awaiting handover". Now reads the labels.
+9. 🟠 **Five columns could not be sorted and two could not be filtered** on All Requests, with more
+   gaps on My Requests and all three queues, and **Master Requests was a hand-built table with
+   neither**. All fixed; Master Requests is now a `QueueTable` with an Excel export.
+10. 🟠 **A delivered request still said "Awaiting approval from X · reassigned".**
+    `assigned_approver_id` is deliberately never cleared and the line was unconditional.
+11. 🟡 **Approver names rendered as an em dash** on Request Detail, Master Requests and both Setup
+    owner tables — `profileById` is the RLS-scoped directory. Live on a real request:
+    `SUPPLY-2627-0016` read "Second approval (Management) · DONE · 18-09-2026 · —" for anyone outside
+    Management. Now `personName`, the org-wide list. See [[org-wide-picker-breaks-name-lookups]].
+12. 🟡 **The Control Center printed "Handover" twice**, identical numbers on consecutive lines, because
+    the stage holds exactly one step of the same name.
+
+**The two migrations and the frontend are both live now**, so they agree again. For the few hours
+between them, a view-only user would have seen the "Request new entry" button and been refused by a
+raw RLS error; one person holds a view-only grant (Shruti) and the window has closed.
+
+**⚠ THREE REAL EMAILS WENT OUT.** General Purchase email was ON when the walk started; two test
+requests mailed Riya Kumari, Rohan Jariwala and Dharmishtha Prajapati before it was noticed. The
+switch was turned off for the rest of the walk and **turned back on afterwards** — it is ON now, as
+it was before. Worth a word to those three, since the mails refer to requests that no longer exist.
+See [[fms-module-email-is-live]].
+
+#### Five settings nobody has made — for HR to decide, not bugs
+
+| What | Consequence today |
+|---|---|
+| No process coordinator | **Hold and the Control Center are admin-only.** The person who runs the module cannot pause a request stuck with a vendor |
+| No master owner on any of the five masters | Every "please add this item" falls to the admins; **Dharmishtha cannot reach the Masters screen at all** |
+| The reassignment pool is empty | Reassign can only offer the department head who already holds the request. The button works and has nowhere to send anything |
+| All 14 named requesters hold an HOD designation or head their own department | **First approval effectively never fires.** It only fills for a request raised *on behalf of* a junior in a department the raiser does not head. ⚠ And **Director is not on the HOD list** while President, CFO, GM, DGM, Manager, Senior Manager, HR Head and Plant Head are |
+| Three live departments have no HOD | After Sales - Application, AI & tech, and **"new test dept"** — which looks like test residue in the live department master. A request needing approval is refused at submit with a clear message |
+
+### GP-2 · The `FieldLabel` around a button group, in the other four modules  `[ ]`
+*Raised 2026-09-28, out of GP-1.*
+
+`FieldLabel` is a `<label>`, so wrapping `ChoiceButtons` means a click on the question text presses the
+FIRST option. Flagged 19-09-2026 as 15 places in 5 files; **General Purchase's two are now fixed** and
+`shared/components/ui/Form.tsx` has gained a `FieldHeading` that is the drop-in replacement.
+
+Still open: OCPI `QuotationForm.tsx` (6), Sampling `SampleRequestFields.tsx` (5), and the Procurement
+and Import `PoModals.tsx` (1 each). Each is a two-line swap now the helper exists. Worth doing in one
+pass, and worth grepping for new ones at the same time — the trap is invisible in review because the
+markup reads perfectly.
+
+### GP-3 · "Close 95% within 3 working days" is scored on what was CLOSED  `[ ]`
+*Raised 2026-09-28, out of GP-1 and the KRA mapping.*
+
+Dharmistha's KRA 4 is General Purchase line for line, and `kpi_facts` answers it from the Handover
+step, whose SLA already IS the 3 working days the sheet asks for. But the framework engine offers only
+`doneOfGiven` and `onTimeOfDone`, and this line needs **on time ÷ received**.
+
+The consequence is not a rounding difference. A request left open is invisible to the figure, so the
+percentage cannot fall while work piles up — it simply **stops being produced**. That is the live
+state today: seven handovers against her name, three already overdue, none closed, and the KRA shows
+no number at all. A blank there is not an absence of evidence; it is the evidence, and nothing on the
+page says so except the gap text.
+
+Either add an `onTimeOfGiven` basis to `hr-reports/lib/rows.ts`, or have the scorecard print the open
+and overdue counts beside any `onTimeOfDone` line. The second is cheaper and probably better: the
+same caveat applies to KRA 10 and to every on-time line on Saloni's and Tanisha's sheets.
+
+### GP-4 · Dharmistha's weekly report cannot be rendered  `[ ]`
+*Raised 2026-09-28, out of GP-1.*
+
+Her weekly review report is transcribed (`hr-reports/report/dharmisthaWeekly.ts`, 59 boxes, 16
+sections) and deliberately **NOT** registered in `FORMS`.
+
+`formFor` returning non-null is the one thing that flips `WeeklyReview.tsx` from the honest empty
+state to the rendered report, and that page is **not generic**: it binds `const form = weeklyReviewForm`
+and hand-writes every section against Saloni's field codes — the recruitment funnel, the buddy
+program, the 90-day passport tracker. Registering her would not give her her own report. It would give
+her Saloni's, under her name, which is the exact failure the note above `FORMS` describes.
+
+Her gap list is readable instead, behind a new form picker on `/hr-reports/weekly-review-fields`.
+Rendering her filled report means making `WeeklyReview.tsx` render `personForm` generically —
+section, block, field, value — with the bespoke Saloni grids kept as an opt-in. That is the build to
+quote, and it unlocks every future sheet at the same time.
+
 
 ## Asset Maintenance  *(service & maintenance)*
 

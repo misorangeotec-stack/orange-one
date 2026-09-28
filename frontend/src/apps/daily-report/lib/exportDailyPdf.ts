@@ -18,11 +18,13 @@
  *
  * WHY THE LISTS FOLD, AND WHY THEY STILL ADD UP
  *   Above FOLD_MIN customers a list names those making up FOLD_SHARE of its total
- *   and folds the rest into one "Remaining N" line, followed by a TOTAL — so a
- *   page lists the few that matter and still foots to the figure on page one.
- *   Free-of-charge customers are never folded. The rule is `foldList` in
- *   aggregate.ts; the screen and the workbook read the same function. The
- *   workbook lists every customer.
+ *   AND every customer at or above that list's money floor (DR-4, 21-09-2026 —
+ *   `SALE_FOLD_FLOOR_LACS` / `MONEY_FOLD_FLOOR_LACS`), and folds the rest into one
+ *   "Remaining N" line, followed by a TOTAL — so a page lists the few that matter
+ *   and still foots to the figure on page one. Free-of-charge customers are never
+ *   folded. The rule is `foldList` in aggregate.ts; the screen reads the same
+ *   function, and the FLOOR IS PASSED IN because `foldList` cannot tell an ink
+ *   list from a receipts band. The workbook lists every customer.
  *
  * WHY LINKS ARE DEFERRED
  *   Page 1 is drawn before the pages it points at exist, so it cannot know their
@@ -51,7 +53,8 @@ import { formatDateTime } from "@/shared/lib/time";
 import { PARTY_KIND_LABEL, type PartyKind } from "../data/dailyReport";
 import {
   bandMoney, cellFoc, cellFor, companyColumnLabel, entityTotal, FACILITY_BALANCE_NOTE,
-  facilityRows, foldList, FOLD_MIN, FOLD_SHARE, groupSales, isBankOnlyLocation, pivotCompanies,
+  facilityRows, foldList, FOLD_MIN, FOLD_SHARE, groupSales, isBankOnlyLocation,
+  MONEY_FOLD_FLOOR_LACS, pivotCompanies, SALE_FOLD_FLOOR_LACS,
   pivotMoney, pivotSales, saleKind, salesTotals, tradeTotal, TRADE_BANDS,
   type MoneyBand, type PivotCell, type PivotRow,
 } from "./aggregate";
@@ -245,11 +248,22 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
   // facility is sanctioned to a company, not to one of its locations.
   const facility = facilityRows(d.facilityAccounts, d.balances, d.ccLimits, d.date);
 
+  // The floors read back in RUPEES — he set them as ₹50,000 / ₹25,000 / ₹1,00,000
+  // and a note that said "0.5 L" would not be the number he asked for. Built from
+  // the constants, never typed twice, so moving a floor moves the sentence with it.
+  const rupees = (lacs: number) => `₹${Math.round(lacs * 100000).toLocaleString("en-IN")}`;
+  const floorNote = [
+    ...SALE_TYPE_ORDER
+      .filter((t) => SALE_FOLD_FLOOR_LACS[t] > 0)
+      .map((t) => `${rupees(SALE_FOLD_FLOOR_LACS[t])} on ${SALE_TYPE_LABEL[t].toLowerCase()}`),
+    `${rupees(MONEY_FOLD_FLOOR_LACS)} on the money pages`,
+  ].join(", ");
+
   const notes = [
     BASIS_NOTE,
     BLANK_NOTE,
     "The Received and Paid figures count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. Every other counterparty is listed on the Money pages below its own divider and is not in that figure.",
-    `A list of more than ${FOLD_MIN} names the customers making up ${Math.round(FOLD_SHARE * 100)}% of its total and folds the rest into one Remaining line; its TOTAL still adds up to the figure on page one. The Excel workbook lists every customer.`,
+    `A list of more than ${FOLD_MIN} names the customers making up ${Math.round(FOLD_SHARE * 100)}% of its total, AND every customer at or above the list's own floor — ${floorNote}. The rest fold into one Remaining line; its TOTAL still adds up to the figure on page one. The Excel workbook lists every customer.`,
     "Goods sent free of charge are counted in quantity, never in amount, and are never folded. Goods out on approval are not counted as sales.",
     "A company appears as a column in a list only when that list has a customer for it.",
     ...(facility.length > 0
@@ -585,9 +599,10 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
     rows: PivotRow[],
     unit: "kg" | "qty" | null,
     noun: PartyKind | "sales",
+    floorLacs: number,
   ): number => {
     const companies = pivotCompanies(rows);
-    const fold = foldList(rows);
+    const fold = foldList(rows, floorLacs);
     const cellOf = (r: PivotRow) => (alias: string) => r.cells[alias];
     const whole = (t: { qty: number; amountLacs: number; focQty: number }): PivotCell =>
       ({ qty: t.qty, amountLacs: t.amountLacs, focQty: t.focQty });
@@ -720,8 +735,11 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
    * TOTAL stranded at the top of the next one. Capped at a page: a list longer
    * than that has to break somewhere, and breaking at once is no better.
    */
-  const listRoom = (rows: PivotRow[], goods: boolean): number => {
-    const f = foldList(rows);
+  const listRoom = (rows: PivotRow[], goods: boolean, floorLacs: number): number => {
+    // ⚠ THE SAME FLOOR drawPivot WILL USE. This folds a second time purely to
+    //   measure; a floor here that differs from the one below reserves room for a
+    //   shorter list and strands the TOTAL at the top of the next page.
+    const f = foldList(rows, floorLacs);
     const lines = f.named.length + (f.remaining ? 1 : 0) + f.focOnly.length + 1;
     const need = 29 + (goods ? 14 : 0) + 15 + lines * 14 + 18;
     return Math.min(need, floor() - 110);
@@ -745,7 +763,8 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
       const g = groups.find((x) => x.saleType === t);
       if (!g) continue;
       const rows = salePivots.get(t) ?? [];
-      y = ensureRoom(y, listRoom(rows, true));
+      const floorLacs = SALE_FOLD_FLOOR_LACS[t];
+      y = ensureRoom(y, listRoom(rows, true, floorLacs));
       y = listHeading(
         // A line that went entirely free says so, as on page one — not "₹0.00 L".
         y, SALE_TYPE_LABEL[t], g.revenueLacs === 0 && g.qty > 0 && g.focQty >= g.qty ? "free" : fmtMoney(g.revenueLacs),
@@ -754,7 +773,7 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
       if (t === "other") {
         y = noteLine(y, "These lines carry a voucher type no product-line rule covers yet. They are listed rather than dropped; add a rule on ConnectWave and they move into their product line.");
       }
-      y = drawPivot(y, rows, t === "ink" ? "kg" : "qty", "sales");
+      y = drawPivot(y, rows, t === "ink" ? "kg" : "qty", "sales", floorLacs);
     }
 
     if (approvals.length > 0) {
@@ -810,12 +829,12 @@ export async function buildDailyReportPdf(d: DailyPdfInput): Promise<jsPDF> {
     }
     const drawBand = (b: MoneyBand) => {
       const rows = pivotMoney(b.rows);
-      y = ensureRoom(y, listRoom(rows, false));
+      y = ensureRoom(y, listRoom(rows, false, MONEY_FOLD_FLOOR_LACS));
       y = listHeading(
         y, PARTY_KIND_LABEL[b.kind], fmtMoney(b.totalLacs),
         `${rows.length} ${listNoun(b.kind, rows.length)} · ${b.rows.length} ${b.rows.length === 1 ? "entry" : "entries"}`,
       );
-      y = drawPivot(y, rows, null, b.kind);
+      y = drawPivot(y, rows, null, b.kind, MONEY_FOLD_FLOOR_LACS);
     };
     const trade = bands.filter((b) => TRADE_BANDS.includes(b.kind));
     const other = bands.filter((b) => !TRADE_BANDS.includes(b.kind));

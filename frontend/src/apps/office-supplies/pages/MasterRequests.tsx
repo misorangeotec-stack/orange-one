@@ -1,14 +1,10 @@
 import { useMemo, useState } from "react";
-import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import Tabs from "@/shared/components/ui/Tabs";
 import Combobox from "@/shared/components/ui/Combobox";
-import EmptyState from "@/shared/components/ui/EmptyState";
-import Pagination from "@/shared/components/ui/Pagination";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { usePagination } from "@/shared/lib/usePagination";
 import { formatDate } from "@/shared/lib/time";
 import RequestMasterModal from "../components/RequestMasterModal";
 import { useSuppliesStore } from "../store";
@@ -38,15 +34,15 @@ export default function MasterRequests() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const nameOf = (id: string | null) => (id ? (s.profileById(id)?.name ?? "—") : "—");
+  // Org-wide, not the RLS-scoped directory: a requester in another department
+  // resolved to "—" on a screen whose whole job is to say who asked for the entry.
+  const nameOf = (id: string | null) => s.personName(id);
   const categoryName = (id: string) => s.categoryById(id)?.name ?? "—";
 
   const rows = useMemo(() => {
     const list = tab === "review" ? s.resolvableRequests : tab === "mine" ? s.myMasterRequests : s.masterRequests;
     return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [tab, s.resolvableRequests, s.myMasterRequests, s.masterRequests]);
-
-  const pg = usePagination(rows, { resetKey: tab });
 
   const unassigned = REQUESTABLE_SUPPLY_MASTER_TYPES.filter((m) => s.isMasterUnassigned(m.value));
 
@@ -123,6 +119,71 @@ export default function MasterRequests() {
 
   const approveFields = approving ? masterFields(approving.masterType, ctx) : [];
 
+  /** `describePayload` renders the proposal; its text is what the filter and sort read. */
+  const proposedText = (r: SupplyMasterRequest): string => {
+    const payload = r.proposedPayload as Record<string, unknown>;
+    const name = String(payload.name ?? "");
+    const cat = payload.category_id ? categoryName(String(payload.category_id)) : "";
+    return cat ? `${name} · ${cat}` : name;
+  };
+
+  const columns: QueueColumn<SupplyMasterRequest>[] = [
+    {
+      key: "type",
+      header: "Type",
+      cell: (r) => <span className="font-medium text-navy">{masterTypeLabel(r.masterType)}</span>,
+      sortValue: (r) => masterTypeLabel(r.masterType),
+      filter: { kind: "select", get: (r) => masterTypeLabel(r.masterType) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "proposed",
+      header: "Proposed",
+      cell: (r) => describePayload(r.masterType, r.proposedPayload, categoryName),
+      sortValue: proposedText,
+      filter: { kind: "text", get: proposedText },
+    },
+    {
+      key: "by",
+      header: "Requested by",
+      cell: (r) => nameOf(r.requestedBy),
+      sortValue: (r) => nameOf(r.requestedBy),
+      filter: { kind: "select", get: (r) => nameOf(r.requestedBy) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "date",
+      header: "Date",
+      cell: (r) => formatDate(r.createdAt),
+      // Orders on the ISO timestamp, never the dd-mm-yyyy the cell prints.
+      sortValue: (r) => r.createdAt,
+      filter: { kind: "date", get: (r) => r.createdAt.slice(0, 10) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (r) => statusBadge(r.status),
+      sortValue: (r) => r.status,
+      filter: { kind: "select", get: (r) => r.status },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "outcome",
+      header: "Outcome",
+      cell: (r) =>
+        r.status === "approved" ? (
+          <span className="text-ryg-green">Added to {masterTypePlural(r.masterType)}</span>
+        ) : r.reviewNote ? (
+          <span className="text-grey">{r.reviewNote}</span>
+        ) : (
+          <span className="text-grey-2">—</span>
+        ),
+      sortValue: (r) => (r.status === "approved" ? `Added to ${masterTypePlural(r.masterType)}` : r.reviewNote ?? ""),
+      filter: { kind: "text", get: (r) => (r.status === "approved" ? `Added to ${masterTypePlural(r.masterType)}` : r.reviewNote ?? "") },
+    },
+  ];
+
   const emptyMessage =
     tab === "review"
       ? "Nothing waiting on you. New-master requests for the masters you own will appear here."
@@ -160,67 +221,35 @@ export default function MasterRequests() {
 
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
-      <Card className="overflow-hidden">
-        {rows.length === 0 ? (
-          <EmptyState title="No requests" message={emptyMessage} />
-        ) : (
-          <>
-            <ScrollableTable>
-              <table className="w-full text-[13.5px]">
-                <thead>
-                  <tr className="text-left text-grey-2 border-b border-line">
-                    <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
-                    <th className="font-medium px-4 py-3">Type</th>
-                    <th className="font-medium px-4 py-3">Proposed</th>
-                    <th className="font-medium px-4 py-3">Requested by</th>
-                    <th className="font-medium px-4 py-3">Date</th>
-                    <th className="font-medium px-4 py-3">Status</th>
-                    <th className="font-medium px-4 py-3">Outcome</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pg.pageItems.map((r) => {
-                    const canResolve = r.status === "pending" && s.canManage(r.masterType);
-                    return (
-                      <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {canResolve ? (
-                            <>
-                              <button onClick={() => openApprove(r)} className="text-[12.5px] font-semibold text-ryg-green hover:underline mr-3">
-                                Approve
-                              </button>
-                              <button onClick={() => { setNote(""); setErr(null); setRejecting(r); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
-                                Reject
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-grey-2 text-[12.5px]">{r.status === "pending" ? "Awaiting review" : "—"}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
-                        <td className="px-4 py-3">{describePayload(r.masterType, r.proposedPayload, categoryName)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{nameOf(r.requestedBy)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
-                        <td className="px-4 py-3">{statusBadge(r.status)}</td>
-                        <td className="px-4 py-3">
-                          {r.status === "approved" ? (
-                            <span className="text-ryg-green">Added to {masterTypePlural(r.masterType)}</span>
-                          ) : r.reviewNote ? (
-                            <span className="text-grey">{r.reviewNote}</span>
-                          ) : (
-                            <span className="text-grey-2">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </ScrollableTable>
-            <Pagination state={pg} rowsLabel="requests" />
-          </>
-        )}
-      </Card>
+      {/* Every column sorts, and every column filters — the module's default. This was a
+          hand-built table with neither, so a reviewer could not put the pending rows
+          first, group by type, or find one requester's entries. */}
+      <QueueTable<SupplyMasterRequest>
+        rows={rows}
+        rowKey={(r) => r.id}
+        columns={columns}
+        initialSort={{ key: "date", dir: "desc" }}
+        rowsLabel="requests"
+        emptyTitle="No requests"
+        emptyMessage={emptyMessage}
+        readOnly={!canReview}
+        actions={(r) => {
+          const canResolve = r.status === "pending" && s.canManage(r.masterType);
+          if (!canResolve) {
+            return <span className="text-grey-2 text-[12.5px]">{r.status === "pending" ? "Awaiting review" : "—"}</span>;
+          }
+          return (
+            <>
+              <button onClick={() => openApprove(r)} className="text-[12.5px] font-semibold text-ryg-green hover:underline mr-3">
+                Approve
+              </button>
+              <button onClick={() => { setNote(""); setErr(null); setRejecting(r); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
+                Reject
+              </button>
+            </>
+          );
+        }}
+      />
 
       <RequestMasterModal open={raising} onClose={() => setRaising(false)} masterType={null} onRequested={() => setTab("mine")} />
 

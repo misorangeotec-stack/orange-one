@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { TextInput } from "@/shared/components/ui/Form";
@@ -13,14 +13,28 @@ import type { StepSlaMap } from "../../lib/sla";
 export default function StepDueDatesSection() {
   const s = useSuppliesStore();
   const queueSteps = STEPS.filter((st) => !st.noQueue);
-  const [days, setDays] = useState<Record<string, string>>(() => {
+
+  /**
+   * ⚠ THE BOXES FOLLOW THE STORE UNTIL THE FIRST EDIT. A lazy `useState(() => …)`
+   *   reads `s.stepSla` ONCE, and the store loads asynchronously — so a tab opened
+   *   before the fetch lands is seeded from DEFAULT_STEP_SLA (1 / 1 / 1) and Save
+   *   writes that over the configured map. Handover is 3 working days on live data;
+   *   one stray Save would have silently cut it to 1 and turned every open handover
+   *   red two days early. Same fix as RaisingSection.
+   */
+  const fromStore = useMemo(() => {
     const out: Record<string, string> = {};
     for (const st of queueSteps) out[st.key] = String(s.stepSla[st.key]?.days ?? 1);
     return out;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.stepSla]);
+  const [edited, setEdited] = useState<Record<string, string> | null>(null);
+  const days = edited ?? fromStore;
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const dirty = edited !== null && queueSteps.some((st) => (edited[st.key] ?? "") !== (fromStore[st.key] ?? ""));
 
   const save = async () => {
     setBusy(true);
@@ -33,6 +47,7 @@ export default function StepDueDatesSection() {
         map[st.key as StepKey] = { ...map[st.key as StepKey], days: n };
       }
       await s.setStepSla(map);
+      setEdited(null);
       setSaved(true);
     } catch (e) {
       setErr((e as Error).message);
@@ -61,7 +76,8 @@ export default function StepDueDatesSection() {
                 className="w-20 text-center"
                 inputMode="numeric"
                 value={days[st.key] ?? ""}
-                onChange={(e) => { setDays((p) => ({ ...p, [st.key]: e.target.value })); setSaved(false); }}
+                disabled={s.isLoading}
+                onChange={(e) => { const v = e.target.value; setEdited((p) => ({ ...(p ?? fromStore), [st.key]: v })); setSaved(false); }}
               />
               <span className="text-[12.5px] text-grey-2">working days</span>
             </div>
@@ -69,8 +85,8 @@ export default function StepDueDatesSection() {
         ))}
       </div>
       <div className="flex items-center gap-3 pt-1">
-        <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
-        {saved && <span className="text-[12.5px] text-ryg-green">Saved.</span>}
+        <Button size="sm" onClick={save} disabled={busy || s.isLoading || !dirty}>{busy ? "Saving…" : "Save"}</Button>
+        {saved && !dirty && <span className="text-[12.5px] text-ryg-green">Saved.</span>}
         {err && <span className="text-[12.5px] text-ryg-red">{err}</span>}
       </div>
     </Card>

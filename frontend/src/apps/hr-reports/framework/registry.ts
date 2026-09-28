@@ -35,6 +35,7 @@ import { dharmisthaFramework } from "./dharmistha";
 import { riyaFramework } from "./riya";
 import type { ReportForm } from "../report/types";
 import { weeklyReviewForm } from "../report/weeklyReview";
+import { dharmisthaWeeklyForm } from "../report/dharmisthaWeekly";
 
 /** A sheet, plus the jobs — or, where the job is not enough, the people — it is FOR. */
 export interface FrameworkEntry {
@@ -90,30 +91,35 @@ export const FRAMEWORKS: FrameworkEntry[] = [
     people: ["travel@orangeotec.com"],
   },
   /*
-   * The three sheets added with the Help Desk (28-09-2026), all pinned by person
-   * for the SAME reason as the two above: Saloni, Tanisha and Khushi are all
-   * "Human Resources · Executive" in the directory and do three different jobs.
-   * Dharmistha shares that designation too. Delete `people` and put the real
-   * designation in `appliesTo` the day HR gives these roles distinct titles.
+   * The four sheets below are all pinned BY PERSON, and Dharmistha's comment says
+   * why better than a note here would: Saloni, Tanisha, Khushi and Dharmistha are
+   * all "Human Resources - Executive" in the directory and do four different jobs.
    */
   {
     framework: khushiFramework,
-    // Her KRA 5 IS the Help Desk, word for word — the line the module was built for.
+    // Her KRA 5 IS the Help Desk, word for word. It is the line the module was
+    // built for, and the only `system` line on her sheet.
     appliesTo: [],
     people: ["khushi@orangeotec.com"],
   },
   {
     framework: dharmisthaFramework,
-    // The Help Desk sheet's "Receptionist cum HR Executive". Her KRA 4 and KRA 9
-    // are both answered by this module; KRA 9 is why the IT Support category exists.
+    // "FINAL UPDATED KRA & KPI FRAMEWORK - Executive - HR & Admin".
+    //
+    // PINNED BY PERSON FOR THE SAME REASON AS THE TWO ABOVE, and this one makes the
+    // collision impossible to miss: Dharmistha Prajapati is "Human Resources -
+    // Executive" in the directory, exactly like Saloni, Tanisha and Khushi. Four
+    // people, one department+designation pair, four different jobs. Her document's
+    // own title is "Executive - HR & Admin"; give that designation to the directory
+    // and this entry can move to `appliesTo` and the job-based model works again.
     appliesTo: [],
     people: ["office@orangeotec.com"],
   },
   {
     framework: riyaFramework,
-    // ⚠ The HR HEAD, and the only sheet here NOT keyed to an Executive. She has a
-    //   distinct designation ("HR Head"), so this one could key on the job — but it
-    //   is pinned for consistency with the four above until all five move together.
+    // The HR HEAD, and the only sheet here NOT keyed to an Executive. She has a
+    // distinct designation ("HR Head"), so this one could key on the job. It is
+    // pinned for consistency with the four above until all five move together.
     appliesTo: [],
     people: ["riya@orangeotec.com"],
   },
@@ -203,7 +209,32 @@ export const FORMS: FormEntry[] = [
     appliesTo: [],
     people: ["recruitment@orangeotec.com"],
   },
+  // ⚠ DHARMISTHA'S WEEKLY FORM IS TRANSCRIBED AND DELIBERATELY NOT LISTED HERE.
+  //
+  //   `formFor` returning non-null is the ONE thing that flips WeeklyReview.tsx from
+  //   the honest empty state to the rendered report — and that page is not generic.
+  //   It binds `const form = weeklyReviewForm` and hand-writes every section against
+  //   Saloni's field codes: the recruitment funnel, the buddy program, the 90-day
+  //   passport tracker. Listing her here would therefore not give her her own report.
+  //   It would give her SALONI'S report, with Saloni's questions, under her name —
+  //   which is precisely the failure the note above FORMS describes: a scorecard
+  //   scoring the wrong targets is visible the moment somebody reads it, a form asking
+  //   the wrong questions gets filled in week after week and the answers look like data.
+  //
+  //   So she keeps the empty state, and her form lives where it is safe and useful: the
+  //   gap list at /hr-reports/weekly-review-fields reads any form as data, and now
+  //   offers both. Rendering her filled report needs WeeklyReview.tsx to render
+  //   `personForm` generically — a real build, and the right one to quote.
 ];
+
+/**
+ * Every form the lab has transcribed, whether or not anybody is pinned to it.
+ *
+ * Separate from FORMS on purpose: this list is for READING a form's coverage, which is
+ * safe for any form; FORMS decides whose weekly report RENDERS, which today is only
+ * safe for the one the page was written against.
+ */
+export const ALL_FORMS: ReportForm[] = [weeklyReviewForm, dharmisthaWeeklyForm];
 
 export function formFor(person: {
   department: string | null;

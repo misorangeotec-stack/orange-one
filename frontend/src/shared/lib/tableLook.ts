@@ -30,6 +30,12 @@ export const TABLE_LOOK_ON: readonly string[] = [
   // with these and is held back only because another session is mid-change in it.
   "fms-control-center", "master-report", "process-coordinator", "leads-dashboard",
   "customer-orders", "bushra-central-master",
+  // Two small modules, one round (28-09).
+  "office-supplies", "asset-maintenance",
+  "ocpi", "complaint",
+  // "core" is the screens no module owns: the launcher, Admin, My Account, My Work Today and the
+  // announcements history, where `currentAppId` returns null.
+  "core",
 ];
 
 /**
@@ -41,14 +47,44 @@ export const TABLE_LOOK_ON: readonly string[] = [
  */
 export const TABLE_DRAG_ON: readonly string[] = ["task-management"];
 
+/**
+ * The Outstanding Dashboard and the Reports app are switched on PAGE BY PAGE, not as a module.
+ *
+ * ⚠ THE USER ASKED FOR THIS (28-09-2026): "there are many screens that we are not using ... I don't
+ *   want to touch the screens that we are not using". Between them the two apps hold 62 page files
+ *   and a 65-report catalogue, of which only 30 reports are granted to anybody at all. So the list
+ *   below is the nine screens they named as their working day, and a page that is not on it renders
+ *   exactly as it did before — the same guarantee the module list gives, one level down.
+ *
+ * Paths are as `normalisePath` writes them, so an id becomes `:id`.
+ */
+export const HUB_PAGES_ON: readonly string[] = [
+  "/outstanding-dashboard",
+  "/outstanding-dashboard/risk-register",
+  "/outstanding-dashboard/followups",
+  "/outstanding-dashboard/alerts",
+  "/outstanding-dashboard/salesperson-analysis",
+  "/outstanding-dashboard/salesperson-collection",
+  "/outstanding-dashboard/customer/:id",
+  "/outstanding-dashboard/group/:id",
+  "/reports/disputed-bills",
+  "/reports/red-mark",
+];
+
+/** The two apps whose screens are listed one by one above. */
+const PAGE_GATED = ["outstanding-dashboard", "reports"];
+
 /** Whether the tables on this URL have the one-line look (which always includes the drag). */
 export function tableLookOn(pathname: string): boolean {
-  return TABLE_LOOK_ON.includes(currentAppId(pathname) ?? "core");
+  const id = currentAppId(pathname) ?? "core";
+  if (PAGE_GATED.includes(id)) return HUB_PAGES_ON.includes(normalisePath(pathname));
+  return TABLE_LOOK_ON.includes(id);
 }
 
 /** Whether the tables on this URL can be dragged — the look's modules, plus the drag-only ones. */
 export function tableDragOn(pathname: string): boolean {
   const id = currentAppId(pathname) ?? "core";
+  if (PAGE_GATED.includes(id)) return HUB_PAGES_ON.includes(normalisePath(pathname));
   return TABLE_LOOK_ON.includes(id) || TABLE_DRAG_ON.includes(id);
 }
 

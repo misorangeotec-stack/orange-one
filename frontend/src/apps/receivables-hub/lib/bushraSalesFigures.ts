@@ -71,17 +71,33 @@ export const NOT_SET = "(Not set)";
 /** A blank classification is a real, pickable value — "what is still untyped?" — never a gap. */
 export const orNotSet = (v: string | null | undefined) => v || NOT_SET;
 
-/** How a row is read on every dimension the dashboards and the mail share. */
+/**
+ * A DISCOUNT LINE HAS NO STOCK ITEM, so it has no Category, Ink Type, Group or Colour to read —
+ * and it must not be filed under "(Not set)", which has to mean what it says: the item IS there,
+ * its Central Masters record is not filled in.
+ *
+ * Left together the two swamp each other. On the Ink dashboard for FY 2025-26 the item-less
+ * "DISCOUNT & RATE DIFFERENCE@18% (INK)" lines come to about −9 Cr (they take Sales-Type Ink from
+ * their own particulars tag, which is the point of that tag); the genuinely untyped ink sales
+ * beside them are positive. Netted into one bucket the sum went negative, the ring dropped it —
+ * a donut cannot draw a negative slice — and untyped sales read as a deduction instead of as
+ * sales. So a discount line answers "Discount" on every dimension, exactly as it already does on
+ * Type, and "(Not set)" is left holding sales alone.
+ */
+const itemDim = (get: (r: Row) => string | null | undefined) => (r: Row) =>
+  (isDiscountLine(r) ? DISCOUNT_TYPE : orNotSet(get(r)));
+
+/** How a row is read on every dimension the dashboards, the report tables and the mail share. */
 export const DIMS = {
   month: (r: Row) => `${MONTHS[Number(r.vch_date.slice(4, 6)) - 1]}-${r.vch_date.slice(2, 4)}`,
   location: (r: Row) => orNotSet(r.location_name),
   company: (r: Row) => r.company,
   type: (r: Row) => (isDiscountLine(r) ? DISCOUNT_TYPE : r.type),
   salesType: (r: Row) => productOf(r.sales_type),
-  category: (r: Row) => orNotSet(r.item_category),
-  inkType: (r: Row) => orNotSet(r.ink_type),
-  group: (r: Row) => orNotSet(r.item_group),
-  colour: (r: Row) => orNotSet(r.colour),
+  category: itemDim((r) => r.item_category),
+  inkType: itemDim((r) => r.ink_type),
+  group: itemDim((r) => r.item_group),
+  colour: itemDim((r) => r.colour),
   party: (r: Row) => r.party,
 } as const;
 export type DimKey = keyof typeof DIMS;

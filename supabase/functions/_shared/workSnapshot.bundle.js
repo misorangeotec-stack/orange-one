@@ -8405,7 +8405,12 @@ function helpDeskWorkItems(data, uid) {
     const owners = stepOwedBy(t, cat, t.currentStep);
     if (!owners.includes(uid)) continue;
     out.push({
-      id: `help-desk:${t.id}:${t.currentStep}:${t.roundNo}`,
+      // ⚠ EXACTLY THREE PARTS: `source:entityId:stepKey`. The ranking reads
+      //   these back with `parseItems`, which THROWS on any other shape, and
+      //   the first draft appended the round as a fourth. The round belongs on
+      //   the scorer's `stepId`, not here — a person only ever owes the
+      //   CURRENT round of a ticket, so the home screen needs no round at all.
+      id: `help-desk:${t.id}:${t.currentStep}`,
       source: "help-desk",
       sourceLabel: label,
       ref: t.ticketNo,
@@ -8422,7 +8427,11 @@ function helpDeskWorkItems(data, uid) {
       //   screen's approvals tile, which is for decisions somebody is blocking.
       //   Confirming a resolution looks like one and is not: the work is already
       //   done and nobody is waiting on the answer.
-      onHold: t.status === "on_hold"
+      // ⚠ `isHeld`, not a due-date trick. `holdAwareBucketOf` files a held row
+      //   under `hold` and keeps the dueIso it HAD — seeing what it was due is
+      //   useful — so a ticket somebody deliberately parked stops showing red
+      //   without disappearing.
+      isHeld: t.status === "on_hold"
     });
   }
   return out;

@@ -61,6 +61,7 @@ export default function StepQueue({ step }: { step: StepKey }) {
         </Link>
       ),
       sortValue: (r) => r.complaintNo,
+      // No filter, as on the requests list: every complaint number is unique.
       tdClassName: "whitespace-nowrap",
     },
     {
@@ -128,6 +129,7 @@ export default function StepQueue({ step }: { step: StepKey }) {
       header: "Due",
       cell: (r) => <DueCell dueIso={s.dueIsoFor(r, step)} />,
       sortValue: (r) => s.dueIsoFor(r, step) ?? "9999-12-31",
+      filter: { kind: "date", get: (r) => s.dueIsoFor(r, step) ?? "" },
       tdClassName: "whitespace-nowrap",
     },
     {
