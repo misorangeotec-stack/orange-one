@@ -41,6 +41,13 @@ export const QUEUE_PATH: Record<StepKey, string> = {
  *   ignored.
  */
 const QUEUE_LABEL: Partial<Record<StepKey, string>> = {
+  // ⚠ THESE MUST MATCH THE HEADING ON THE QUEUE PAGE ITSELF (pages/queues/StepQueue
+  //   HEADING). Found in the browser walk-through: the sidebar said "Acknowledge
+  //   Receipt" and the page it opened said "To pick up", which reads as two
+  //   different screens. The step's own `title` is the DATABASE's word for it and
+  //   belongs on the ticket, not in a menu.
+  acknowledge: "To pick up",
+  resolve: "To answer",
   awaiting_info: "HR is waiting on you",
   confirm: "Confirm a resolution",
 };

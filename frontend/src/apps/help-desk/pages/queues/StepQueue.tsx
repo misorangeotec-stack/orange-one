@@ -139,7 +139,18 @@ export default function StepQueue({ step }: { step: StepKey }) {
           resizeKey={`helpDeskQueue-${step}`}
           actions={(e) => {
             const t = s.tickets.find((x) => x.id === e.ticketId);
-            return t ? <TicketActions ticket={t} /> : null;
+            if (!t) return null;
+            // ⚠ THE ROW IS CLICKABLE, SO THE ACTIONS MUST STOP THE CLICK. Without
+            //   this, `onRowClick` fires first and navigates to the ticket page
+            //   before the dialog can open — every button in this column looked
+            //   dead and just opened the ticket instead. Found by walking the
+            //   queue in a browser; nothing in the type-checker or the SQL tests
+            //   can see it. Same guard as receivables' PendingQueue.
+            return (
+              <span onClick={(ev) => ev.stopPropagation()}>
+                <TicketActions ticket={t} />
+              </span>
+            );
           }}
         />
       </div>
