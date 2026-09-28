@@ -30,7 +30,7 @@ import { INK_COMPANIES, fmtQty } from "../lib/inkMis";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import {
   godownChoiceSig, godownGroupKey, loadGodownChoice, loadGodownSplit, saveGodownChoice,
-  type GodownChoice,
+  type GodownCell, type GodownChoice, type ItemFacts,
 } from "../lib/godowns";
 
 export default function InkGodowns() {
@@ -73,35 +73,50 @@ export default function InkGodowns() {
       const cw = getConnectwaveSupabase();
       const out: Record<
         string,
-        { godowns: string[]; held: Record<string, number>; groups: Record<string, [string, number][]> }
+        {
+          godowns: string[];
+          held: Record<string, GodownCell>;
+          groups: Record<string, [string, GodownCell][]>;
+        }
       > = {};
       for (const c of INK_COMPANIES) {
-        // Which group each item belongs to, so a godown can be broken down. Two columns for the
-        // whole book, which is small beside the lot table it is joined to.
-        const groupOf = new Map<string, string>();
+        // Each item's group, Tally closing and base unit. The closing is what turns a lot share
+        // into stock, and the unit stops a PCS lot being counted into a KGS item.
+        const facts = new Map<string, ItemFacts>();
         const PAGE = 1000;
         for (let offset = 0; ; offset += PAGE) {
           const { data: rows, error: e } = await cw
             .from("rpt_stock_summary_item")
-            .select("item,primary_group")
+            .select("item,primary_group,closing_qty,base_unit")
             .eq("company_guid", c.guid)
             .eq("tenant_id", `acct_orange::${c.guid}`)
             .range(offset, offset + PAGE - 1)
-            .returns<{ item: string; primary_group: string | null }[]>();
+            .returns<{
+              item: string; primary_group: string | null;
+              closing_qty: number | null; base_unit: string | null;
+            }[]>();
           if (e) throw new Error(e.message);
           const page = rows ?? [];
-          for (const r of page) groupOf.set(r.item, (r.primary_group ?? "").trim().toUpperCase());
+          for (const r of page) {
+            facts.set(r.item, {
+              group: (r.primary_group ?? "").trim().toUpperCase(),
+              closing: Number(r.closing_qty) || 0,
+              unit: (r.base_unit ?? "").trim().toUpperCase(),
+            });
+          }
           if (page.length < PAGE) break;
         }
 
-        const split = await loadGodownSplit(c.guid, groupOf);
-        const held: Record<string, number> = {};
-        for (const m of split.byItem.values()) {
-          for (const [g, qty] of m) held[g] = (held[g] ?? 0) + qty;
-        }
-        const groups: Record<string, [string, number][]> = {};
+        const split = await loadGodownSplit(c.guid, facts);
+        const held: Record<string, GodownCell> = {};
+        for (const [g, cell] of split.totals) held[g] = cell;
+        const groups: Record<string, [string, GodownCell][]> = {};
         for (const [godown, m] of split.groupsByGodown) {
-          groups[godown] = [...m.entries()].sort((a, b) => b[1] - a[1]);
+          // A group whose estimated stock rounds away is stale lot history, not stock on a
+          // shelf — Tally does not list it under the godown and neither should this.
+          groups[godown] = [...m.entries()]
+            .filter(([, cell]) => Math.round(cell.qty) !== 0)
+            .sort((a, b) => b[1].qty - a[1].qty);
         }
         out[c.key] = { godowns: split.godowns, held, groups };
       }
@@ -164,10 +179,13 @@ export default function InkGodowns() {
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          Tally does not keep a closing balance per godown, so the share each godown holds is
-          taken from the lot balances and applied to Tally's item total. Each item still ties
-          Tally exactly; the split between godowns is an estimate. Tick nothing for a book to
-          read it whole.
+          <strong>These figures will not match Tally's Godown Summary.</strong> ConnectWave has no
+          closing balance per godown, so the share each godown holds is taken from the lot
+          balances and applied to Tally's item total. A lot counts wholly against the godown it
+          moved to last, so stock split between two godowns lands in one. Measured against Tally
+          for Finished Goods-Sachin, which Tally puts at 30,935: this reads 21,450, about 31% low.
+          Each item's total still ties Tally exactly, and a book with nothing ticked is read
+          whole and is unaffected.
         </p>
       </div>
 
@@ -245,8 +263,11 @@ export default function InkGodowns() {
                             </span>
                           )}
                         </button>
-                        <span className="tabular-nums text-xs text-muted-foreground">
-                          {fmtQty(info.held[g])}
+                        <span className="whitespace-nowrap tabular-nums text-xs text-muted-foreground">
+                          {fmtQty(info.held[g]?.qty ?? 0)}
+                          <span className="ml-2 opacity-70">
+                            {info.held[g]?.items ?? 0} items
+                          </span>
                         </span>
                       </div>
 
@@ -255,7 +276,7 @@ export default function InkGodowns() {
                           {!groups.length && (
                             <p className="text-xs text-muted-foreground">Nothing held here.</p>
                           )}
-                          {groups.map(([group, qty]) => (
+                          {groups.map(([group, cell]) => (
                             <label key={group} className="flex items-center gap-2 text-xs">
                               <input
                                 type="checkbox"
@@ -266,8 +287,9 @@ export default function InkGodowns() {
                               <span className="flex-1 truncate" title={group}>
                                 {group}
                               </span>
-                              <span className="tabular-nums text-muted-foreground">
-                                {fmtQty(qty)}
+                              <span className="whitespace-nowrap tabular-nums text-muted-foreground">
+                                {fmtQty(cell.qty)}
+                                <span className="ml-2 opacity-70">{cell.items} items</span>
                               </span>
                             </label>
                           ))}

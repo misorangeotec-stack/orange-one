@@ -23,17 +23,57 @@
  * in `unsplit` so the screen can say how much of the book is being taken on trust.
  *
  * The lot table is small (about 4,600 rows for that book) and is read once per company.
+ *
+ * ─── WHAT THE PICKER SHOWS, AND WHY IT IS NOT TALLY'S GODOWN SUMMARY ─────────────────────
+ *
+ * The figures beside each godown are the SAME estimate the sheet uses — each item's Tally
+ * closing multiplied by the share of its lots sitting there — not the raw lot quantities, which
+ * are a different and much larger number (Finished Goods-Sachin: 52,296 of lots behind 21,450 of
+ * stock). Showing lots made the screen disagree with itself.
+ *
+ * It still does not match Tally's own Godown Summary, and cannot. Measured against that report
+ * for Finished Goods-Sachin, which Tally puts at 30,935 KGS:
+ *
+ *   raw lot balances            52,296   +69%
+ *   share x Tally closing       21,450   -31%   <- what this screen shows
+ *   signed netting per godown  -63,680   negative on 38 of its items
+ *
+ * The cause is structural: the mirror carries no opening balance per godown, and a lot's whole
+ * balance is attributed to whichever godown it moved to LAST, so a batch split between Sachin and
+ * Hojiwala lands entirely in one of them. Godown-wise stock is therefore indicative. The item
+ * total always ties Tally exactly; only the split between godowns is inferred.
+ *
+ * Quantities are also unit-guarded: a lot line measured in PCS or LTR is not added to an item
+ * whose base unit is KGS, which was quietly inflating every godown that holds mixed stock.
  */
 import { useEffect, useState } from "react";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
+/** What a godown, or one group inside it, is holding: estimated stock and how many items. */
+export interface GodownCell {
+  /** Estimated stock — each item's Tally closing times its share of lots here. */
+  qty: number;
+  /** How many items make up that quantity. Asked for directly, and it keeps qty honest. */
+  items: number;
+}
+
+/** What the split needs to know about an item to turn lot shares into stock. */
+export interface ItemFacts {
+  group: string;
+  closing: number;
+  /** Base unit, so a PCS lot is never added to a KGS item. */
+  unit: string;
+}
+
 export interface GodownSplit {
-  /** item name → godown (upper case) → quantity held, negatives clamped away. */
+  /** item name → godown (upper case) → lot quantity held, negatives clamped away. The SHARE. */
   byItem: Map<string, Map<string, number>>;
   /** Every godown name seen, for the picker. */
   godowns: string[];
-  /** godown → stock group → quantity held there. What the picker lists under a godown. */
-  groupsByGodown: Map<string, Map<string, number>>;
+  /** godown → estimated stock and item count. */
+  totals: Map<string, GodownCell>;
+  /** godown → stock group → estimated stock and item count. What opens under a godown. */
+  groupsByGodown: Map<string, Map<string, GodownCell>>;
   /** Items with no lot evidence at all; their company figure is used unchanged. */
   unsplit: number;
 }
@@ -54,15 +94,17 @@ const PAGE = 1000;
 
 export async function loadGodownSplit(
   companyGuid: string,
-  /** item name → its stock group, so a godown can be broken down by group. */
-  groupOf: Map<string, string> = new Map(),
+  /** item name → its group, Tally closing and base unit. Empty means shares only. */
+  facts: Map<string, ItemFacts> = new Map(),
 ): Promise<GodownSplit> {
   const cw = getConnectwaveSupabase();
-  const rows: { stock_item: string; last_godown: string | null; balance: number | null }[] = [];
+  const rows: {
+    stock_item: string; last_godown: string | null; balance: number | null; uom: string | null;
+  }[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await cw
       .from("rpt_lot_balance")
-      .select("stock_item,last_godown,balance")
+      .select("stock_item,last_godown,balance,uom")
       .eq("company_guid", companyGuid)
       .range(offset, offset + PAGE - 1)
       .returns<typeof rows>();
@@ -72,24 +114,47 @@ export async function loadGodownSplit(
     if (page.length < PAGE) break;
   }
 
+  const up = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
+
+  // Pass one: the shares. Lots in a unit the item is not measured in are not its stock.
   const byItem = new Map<string, Map<string, number>>();
   const godowns = new Set<string>();
-  const groupsByGodown = new Map<string, Map<string, number>>();
   for (const r of rows) {
     const qty = r.balance ?? 0;
     if (qty <= 0) continue; // a negative lot is a book error, not a holding
-    const godown = (r.last_godown ?? "").trim().toUpperCase() || "(NO GODOWN)";
+    const unit = facts.get(r.stock_item)?.unit;
+    if (unit && up(r.uom) !== unit) continue;
+    const godown = up(r.last_godown) || "(NO GODOWN)";
     godowns.add(godown);
     const m = byItem.get(r.stock_item) ?? new Map<string, number>();
     m.set(godown, (m.get(godown) ?? 0) + qty);
     byItem.set(r.stock_item, m);
-
-    const group = groupOf.get(r.stock_item) || "(NO GROUP)";
-    const g = groupsByGodown.get(godown) ?? new Map<string, number>();
-    g.set(group, (g.get(group) ?? 0) + qty);
-    groupsByGodown.set(godown, g);
   }
-  return { byItem, godowns: [...godowns].sort(), groupsByGodown, unsplit: 0 };
+
+  // Pass two: turn each share into stock, so the screen shows what the sheet will use.
+  const totals = new Map<string, GodownCell>();
+  const groupsByGodown = new Map<string, Map<string, GodownCell>>();
+  const add = (cells: Map<string, GodownCell>, key: string, qty: number) => {
+    const cur = cells.get(key) ?? { qty: 0, items: 0 };
+    cur.qty += qty;
+    cur.items += 1;
+    cells.set(key, cur);
+  };
+  for (const [item, m] of byItem) {
+    const f = facts.get(item);
+    const lotTotal = [...m.values()].reduce((a, b) => a + b, 0);
+    if (lotTotal <= 0) continue;
+    const closing = f?.closing ?? 0;
+    for (const [godown, lot] of m) {
+      const qty = closing * (lot / lotTotal);
+      add(totals, godown, qty);
+      const cells = groupsByGodown.get(godown) ?? new Map<string, GodownCell>();
+      add(cells, f?.group || "(NO GROUP)", qty);
+      groupsByGodown.set(godown, cells);
+    }
+  }
+
+  return { byItem, godowns: [...godowns].sort(), totals, groupsByGodown, unsplit: 0 };
 }
 
 /**

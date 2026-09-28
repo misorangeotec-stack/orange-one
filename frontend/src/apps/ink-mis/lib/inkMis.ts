@@ -59,7 +59,7 @@
  * let the two drift apart silently, which is worse than a read-only import.
  */
 import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
-import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit } from "./godowns";
+import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit, type ItemFacts } from "./godowns";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
 /* ------------------------------------------------------------------- the books */
@@ -387,11 +387,16 @@ export async function loadInkPositions(
   await Promise.all(
     INK_COMPANIES.filter((c) => (godownChoice[c.key] ?? []).length).map(async (c) => {
       try {
-        const groupOf = new Map<string, string>();
+        const facts = new Map<string, ItemFacts>();
         for (const row of raw) {
-          if (row.company_guid === c.guid) groupOf.set(row.item, norm(row.primary_group));
+          if (row.company_guid !== c.guid) continue;
+          facts.set(row.item, {
+            group: norm(row.primary_group),
+            closing: Number(row.closing_qty) || 0,
+            unit: norm(row.base_unit),
+          });
         }
-        splits.set(c.key, await loadGodownSplit(c.guid, groupOf));
+        splits.set(c.key, await loadGodownSplit(c.guid, facts));
       } catch {
         // A godown read that fails must not take the whole sheet down; the book simply shows
         // its company total, which is what it did before any of this existed.
