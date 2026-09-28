@@ -32,6 +32,7 @@ export const TABLE_LOOK_ON: readonly string[] = [
   "customer-orders", "bushra-central-master",
   // Two small modules, one round (28-09).
   "office-supplies", "asset-maintenance",
+  "ocpi",
 ];
 
 /**
