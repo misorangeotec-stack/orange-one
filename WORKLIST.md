@@ -61,6 +61,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | 🔴 **What should a contract say when the machine is sold WITHOUT print heads?** Folder 108 (MK Fashion) is a real signed deal for a machine supplied without heads — its own composition line reads `WITH STANDARD ACCESSORIES (Without printheads)`. Entered exactly that way on 04-09, the row stored `incl_head = false` and **the contract printed the opposite**: `WITH STANDARD ACCESSORIES (With 8 printheads)`. **Ten of the 21 templates assert the heads unconditionally** — Fab Pro 1I/2I/3I · Homer K32 · K64 · all three Alpha IIs · P8S · Rocket — while the dryer and the centring device beside them ARE guarded. There is no `[[if head]]` to write: `conditions.ts` exposes only `dryer`, `centering` and `usd`. 🟢 **The switch is ours and is safe to build** (a `head` condition plus its SQL twin, additive). ⚠ **The replacement sentence is contract text on ten machines and is NOT ours to invent** — folder 108's own *(Without printheads)* is the obvious candidate. Ritesh Bhai, 04-09: keep it in the artifact and settle it with him. 🔴 **The same fault is on the INVOICE too, and there it needs no new condition** (OCPI-46, 04-09): folder 108's generated PI reads `LARGE FORMAT INKJET PRINTER WITH 8 HEADS WITH STD. ACCESSORIES` against the real paper's `(WITHOUT PRINTHEADS)`. The invoice takes its description from `billing_name` — one fixed string per machine — so it cannot vary by deal. 🟢 OCPI-45 already routes billing names through the same conditional engine as the contract's supply line, so the `head` switch built for the contract fixes the invoice in the same stroke | Ritesh Bhai / Bushra | **OCPI-42 · N-10** | 2026-09-04 |
 | 🔴 **One signed K64 order confirmation.** K64 is the best-selling machine and **there is no OC for it anywhere** — every PDF, Word and PowerPoint file in both years was swept, and the only two K64 folders (109 Laxmipati, 120 Modi) hold Performa Invoices with no contract body. So the one machine that sells most has never been checked against a paper a customer signed. It is covered three weaker ways — 7 of its 9 clauses are byte-identical to Homer K24's, which *was* checked; its own deck covers the other 2; the two PIs cover the money and terms — but none of them can answer the question that matters: **does a real K64 contract carry a clause its deck omits?** That is exactly how the K32 consumables list went missing | Bushra | **OCPI-37** — the audit is done; this closes its one real blind spot | 2026-09-03 |
 | **The wording Orange actually intends to offer on `Mini Lario`.** Its deck (supplied 02-09) carries **`MARKEM-IMAJE`** — another manufacturer — inside its limited-warranty, limitation-of-liability, indemnity, data-privacy and governing-law clauses, so those terms appear to have been lifted from a third party's contract rather than written for Orange O Tec. Transcribed as they stand, an Orange contract would offer another firm's warranty disclaimer and bind the customer to their dispute resolution. Nobody should transcribe this deck until a person has said which of those clauses Orange means to stand behind | Ritesh Bhai | Blocks building the Mini Lario template; nothing else | 2026-09-03 |
+| 🟢 **Feedback on the General Purchase walkthrough**, now that the module has been walked as every kind of user and the manual is written. Owed with it: **a process coordinator**, **an owner for the Items and Service-type masters**, and **two or three names on the reassignment list** — without those three, holding a request, approving a new item and reassigning an approval are all admin-only, and the person who runs the module can do none of them | HR, via Dharmishtha Prajapati | **GP-1** | 2026-09-28 |
 
 ---
 
@@ -10696,6 +10697,154 @@ the person who owes it.
   needs it. See **FIX-4**.
 
 ---
+
+## General Purchase  *(office & facility requisitions)*
+
+The module the folder calls `office-supplies` and everything else calls General Purchase. It was
+renamed on 29-07-2026; the folder, the app id, the `fms_supplies_*` schema and the `SUPPLY-`
+document prefix all keep the old word on purpose, because they are persisted identifiers.
+
+### GP-1 · Walk the module as every kind of user, and write the manual  `[!]`
+*Raised 2026-09-28 · **SHIPPED 28-09-2026** on branch `general-purchase` (`f0758d45`), `npm run build`
+green. **NOT PUSHED** — waiting on the user's word, per the localhost-then-live rule.*
+
+*🟢 **The manual is written and ready to share with HR:**
+https://claude.ai/artifact/XHN4ANrP33areEGYsifiLd — 36 steps, every screen photographed from the
+live system, same shape as the Asset Maintenance and Travel Desk walkthroughs. A copy of the HTML,
+the 23 screenshots, FINDINGS.md and RESTORE.md are in
+`Misc/Ritesh Bhai/general-purchase-walkthrough-2026-09-28/` (untracked).*
+
+**How it was tested.** Every persona in turn on master's code, against live data, through the ZZ TEST
+account `zz.test.ananya@orangeotec.com`: ungranted → view-only → requester → holder of a reassigned
+approval → second approver → handover owner → admin. Plus the whole lifecycle on both routes: raise,
+first approval, reassign, reject, second approval, handover, delivery, correct a recorded entry,
+hold, resume, cancel, edit, and a master request raised and rejected. Four ZZ TEST requests
+(`SUPPLY-2627-0025` to `0028`) carried it; **all of it has been deleted** and the module is back to
+19 requests / 42 activity / 67 notifications / 1 master request, matched against a pre-run snapshot.
+
+⚠ **Every finding was re-checked against a PRODUCTION build**, not just the dev server. That mattered:
+the Edit form appearing blank turned out to be React's development-only double render defeating the
+seed guard, and is NOT a live defect. It is written up in FINDINGS.md so nobody re-finds it and
+quotes a fix.
+
+**Twelve defects found and fixed** (`f0758d45`, each re-verified in the browser):
+
+1. 🔴 **Setup → Raising & Routing opened with both lists empty and Save live.** It is the DEFAULT tab,
+   so it mounts before the store's fetch lands, and `useState(saved)` captures once. Two pickers
+   rendered their placeholder over **15 saved requesters and 8 saved HOD designations**, Save enabled.
+   One press writes `[]` to both: nobody but an admin can raise, and the designation rule that routes
+   nearly every request straight to Management is emptied. Verified on the production build.
+   The card directly beneath it on the same tab — `ReassignPoolSection` — already had the fix, so one
+   screenshot shows two live Save buttons and one correctly greyed.
+   **Same shape in four more sections:** Coordinators, Due Dates (would have cut Handover from 3
+   working days to 1), Step Owners and Master Owners (both seed-on-open, the second shape).
+   Fixed with the `edited ?? saved` pattern plus a `dirty` and `isLoading` gate; the two modals refuse
+   to open while loading. See [[usestate-of-store-value-wipes-the-list]] — this is the fourth module
+   it has been found in.
+2. 🔴 **A view-only grant could write.** "Request new entry" on the Masters page was ungated (the twin
+   button on Master Requests was not), and the INSERT policy asked only `is_staff` — every employee in
+   the company, grant or no grant. Proved on live data: the view-only test account created a
+   `fms_supplies_master_requests` row and the admins were notified. Fixed in both halves; migration
+   `20260928120100` narrows the policy to `module_can_edit(..., 'office-supplies')`.
+3. 🔴 **Reassign allowed self-approval.** `fms_supplies_submit_request` is careful never to route a
+   request to its raiser or its subject; `fms_supplies_reassign_request` refused only "to yourself".
+   Proved: `SUPPLY-2627-0026` ended with `raised_by = requested_for_user_id = assigned_approver_id =
+   first_approver_id`, all one account. Fixed in the picker and in the RPC (`20260928120000`).
+4. 🔴 **Finishing the work closed the gate.** `canSeeQueue('first_approval')` was gated on *holding*
+   an open reassigned request, so the holder lost the whole First Approval page — Completed tab
+   included — the moment the request moved on, and was told to ask an admin for a role nobody had
+   taken. Now asks "has anything ever been handed to me". Exactly the AM-6 defect #1 shape; see
+   [[finishing-work-can-close-the-gate]].
+5. 🟠 **`FieldLabel` wrapped `ChoiceButtons` twice**, so clicking the word "Location" silently selected
+   **Plant** and clicking "Type of request" pressed the first option. Known and unfixed since
+   19-09-2026. Fixed here with a new shared `FieldHeading` in `shared/components/ui/Form.tsx`, which
+   the other four files can now use — see GP-2.
+6. 🟠 **A permanently false red warning on Setup** told the admin the HOD-designation list "matches no
+   one for now". 66 of 70 profiles carry a designation and that rule routes nearly every request in
+   the module. Now derived.
+7. 🟠 **"Completed 15" opened on one row.** The tab counted everybody while the table is scoped to
+   Mine. Now `stage.rows.length`, as Asset Maintenance and Order to Dispatch already do.
+8. 🟠 **The Status filter offered raw column values** — `pending_handover`, `on_hold` — beside a table
+   reading "Awaiting handover". Now reads the labels.
+9. 🟠 **Five columns could not be sorted and two could not be filtered** on All Requests, with more
+   gaps on My Requests and all three queues, and **Master Requests was a hand-built table with
+   neither**. All fixed; Master Requests is now a `QueueTable` with an Excel export.
+10. 🟠 **A delivered request still said "Awaiting approval from X · reassigned".**
+    `assigned_approver_id` is deliberately never cleared and the line was unconditional.
+11. 🟡 **Approver names rendered as an em dash** on Request Detail, Master Requests and both Setup
+    owner tables — `profileById` is the RLS-scoped directory. Live on a real request:
+    `SUPPLY-2627-0016` read "Second approval (Management) · DONE · 18-09-2026 · —" for anyone outside
+    Management. Now `personName`, the org-wide list. See [[org-wide-picker-breaks-name-lookups]].
+12. 🟡 **The Control Center printed "Handover" twice**, identical numbers on consecutive lines, because
+    the stage holds exactly one step of the same name.
+
+**⚠ THE TWO MIGRATIONS ARE ALREADY APPLIED LIVE** and the frontend is not. Both are tightenings, so
+the direction is safe, but until `f0758d45` ships the deployed page still shows a view-only user the
+"Request new entry" button and the database now refuses it with a raw RLS error. One person holds a
+view-only grant (Shruti). Ship the frontend or accept that for the interim.
+
+**⚠ THREE REAL EMAILS WENT OUT.** General Purchase email was ON when the walk started; two test
+requests mailed Riya Kumari, Rohan Jariwala and Dharmishtha Prajapati before it was noticed. The
+switch was turned off for the rest of the walk and **turned back on afterwards** — it is ON now, as
+it was before. Worth a word to those three, since the mails refer to requests that no longer exist.
+See [[fms-module-email-is-live]].
+
+#### Five settings nobody has made — for HR to decide, not bugs
+
+| What | Consequence today |
+|---|---|
+| No process coordinator | **Hold and the Control Center are admin-only.** The person who runs the module cannot pause a request stuck with a vendor |
+| No master owner on any of the five masters | Every "please add this item" falls to the admins; **Dharmishtha cannot reach the Masters screen at all** |
+| The reassignment pool is empty | Reassign can only offer the department head who already holds the request. The button works and has nowhere to send anything |
+| All 14 named requesters hold an HOD designation or head their own department | **First approval effectively never fires.** It only fills for a request raised *on behalf of* a junior in a department the raiser does not head. ⚠ And **Director is not on the HOD list** while President, CFO, GM, DGM, Manager, Senior Manager, HR Head and Plant Head are |
+| Three live departments have no HOD | After Sales - Application, AI & tech, and **"new test dept"** — which looks like test residue in the live department master. A request needing approval is refused at submit with a clear message |
+
+### GP-2 · The `FieldLabel` around a button group, in the other four modules  `[ ]`
+*Raised 2026-09-28, out of GP-1.*
+
+`FieldLabel` is a `<label>`, so wrapping `ChoiceButtons` means a click on the question text presses the
+FIRST option. Flagged 19-09-2026 as 15 places in 5 files; **General Purchase's two are now fixed** and
+`shared/components/ui/Form.tsx` has gained a `FieldHeading` that is the drop-in replacement.
+
+Still open: OCPI `QuotationForm.tsx` (6), Sampling `SampleRequestFields.tsx` (5), and the Procurement
+and Import `PoModals.tsx` (1 each). Each is a two-line swap now the helper exists. Worth doing in one
+pass, and worth grepping for new ones at the same time — the trap is invisible in review because the
+markup reads perfectly.
+
+### GP-3 · "Close 95% within 3 working days" is scored on what was CLOSED  `[ ]`
+*Raised 2026-09-28, out of GP-1 and the KRA mapping.*
+
+Dharmistha's KRA 4 is General Purchase line for line, and `kpi_facts` answers it from the Handover
+step, whose SLA already IS the 3 working days the sheet asks for. But the framework engine offers only
+`doneOfGiven` and `onTimeOfDone`, and this line needs **on time ÷ received**.
+
+The consequence is not a rounding difference. A request left open is invisible to the figure, so the
+percentage cannot fall while work piles up — it simply **stops being produced**. That is the live
+state today: seven handovers against her name, three already overdue, none closed, and the KRA shows
+no number at all. A blank there is not an absence of evidence; it is the evidence, and nothing on the
+page says so except the gap text.
+
+Either add an `onTimeOfGiven` basis to `hr-reports/lib/rows.ts`, or have the scorecard print the open
+and overdue counts beside any `onTimeOfDone` line. The second is cheaper and probably better: the
+same caveat applies to KRA 10 and to every on-time line on Saloni's and Tanisha's sheets.
+
+### GP-4 · Dharmistha's weekly report cannot be rendered  `[ ]`
+*Raised 2026-09-28, out of GP-1.*
+
+Her weekly review report is transcribed (`hr-reports/report/dharmisthaWeekly.ts`, 59 boxes, 16
+sections) and deliberately **NOT** registered in `FORMS`.
+
+`formFor` returning non-null is the one thing that flips `WeeklyReview.tsx` from the honest empty
+state to the rendered report, and that page is **not generic**: it binds `const form = weeklyReviewForm`
+and hand-writes every section against Saloni's field codes — the recruitment funnel, the buddy
+program, the 90-day passport tracker. Registering her would not give her her own report. It would give
+her Saloni's, under her name, which is the exact failure the note above `FORMS` describes.
+
+Her gap list is readable instead, behind a new form picker on `/hr-reports/weekly-review-fields`.
+Rendering her filled report means making `WeeklyReview.tsx` render `personForm` generically —
+section, block, field, value — with the bespoke Saloni grids kept as an opt-in. That is the build to
+quote, and it unlocks every future sheet at the same time.
+
 
 ## Asset Maintenance  *(service & maintenance)*
 
