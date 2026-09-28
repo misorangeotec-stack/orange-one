@@ -62,7 +62,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | 🔴 **One signed K64 order confirmation.** K64 is the best-selling machine and **there is no OC for it anywhere** — every PDF, Word and PowerPoint file in both years was swept, and the only two K64 folders (109 Laxmipati, 120 Modi) hold Performa Invoices with no contract body. So the one machine that sells most has never been checked against a paper a customer signed. It is covered three weaker ways — 7 of its 9 clauses are byte-identical to Homer K24's, which *was* checked; its own deck covers the other 2; the two PIs cover the money and terms — but none of them can answer the question that matters: **does a real K64 contract carry a clause its deck omits?** That is exactly how the K32 consumables list went missing | Bushra | **OCPI-37** — the audit is done; this closes its one real blind spot | 2026-09-03 |
 | **The wording Orange actually intends to offer on `Mini Lario`.** Its deck (supplied 02-09) carries **`MARKEM-IMAJE`** — another manufacturer — inside its limited-warranty, limitation-of-liability, indemnity, data-privacy and governing-law clauses, so those terms appear to have been lifted from a third party's contract rather than written for Orange O Tec. Transcribed as they stand, an Orange contract would offer another firm's warranty disclaimer and bind the customer to their dispute resolution. Nobody should transcribe this deck until a person has said which of those clauses Orange means to stand behind | Ritesh Bhai | Blocks building the Mini Lario template; nothing else | 2026-09-03 |
 | 🟢 **Feedback on the General Purchase walkthrough**, now that the module has been walked as every kind of user and the manual is written. Owed with it: **a process coordinator**, **an owner for the Items and Service-type masters**, and **two or three names on the reassignment list** — without those three, holding a request, approving a new item and reassigning an approval are all admin-only, and the person who runs the module can do none of them | HR, via Dharmishtha Prajapati | **GP-1** | 2026-09-28 |
-| 🔴 **The final list of features and pointers for Attendance & Payroll.** Nothing has been built and nothing should start without it. ⚠ It decides the shape of TWO modules, not one: Exit has been deferred to sit on top of Attendance & Payroll, so this list blocks week 2 entirely. Three things to settle in it: attendance *reporting* over a biometric export vs attendance *capture*; payroll *run* vs payroll *recorded*; and whether PF/ESIC registration comes in here or stays with the consultant | Ritesh Bhai / HR | **AP-1**, and **EX-1** behind it | 2026-09-28 |
+| 🔴 **The Attendance & Payroll feature list, AND an HROne login.** The brief is to REPLICATE HROne, so the list defines the module and the login is needed to study it first-hand. Nothing should be built without both. ⚠ It decides TWO modules: Exit is deferred to sit on top of this. Discussion moved from 28-09 to **Thu 01-10-2026**. Three things to settle in the list: attendance *reporting* over a biometric export vs attendance *capture*; payroll *run* vs payroll *recorded*; and whether PF/ESIC registration comes here or stays with the consultant | Ritesh Bhai / HR | **AP-1**, and **EX-1** behind it | 2026-09-28 |
 
 ---
 
@@ -7686,11 +7686,11 @@ because a module can be "done" and still be reaching nobody, and those are diffe
 | # | Module | Status | Access | In use |
 |---|---|---|---|---|
 | 1 | **Talent Acquisition** (New Recruitment) | 🟢 Done, shared for final feedback | 17 edit, 1 view | 31 requisitions, 182 candidates |
-| 2 | **Learning & Development** | 🟢 Done, shared for feedback. Was a wholly new module | Universal, no grant needed | ⚠ **0 sessions, 0 nominations** |
-| 3 | **Stationery** (= General Purchase) | 🟢 Done. Access shared, manual and walkthrough shared | 32 edit, 1 view | 19 requests |
-| 4 | **Asset Requisition** (= Asset Maintenance) | 🟢 Done. Access shared, manual shared | ⚠ **2 edit, 1 view** | 40 assets, 1 job |
-| 5 | **Help Desk** | 🟡 **In progress** — see HD-1 | Not live | — |
-| 6 | **Knowledge Base** | ⚪ **Not started** — see KB-1 | Not live | — |
+| 2 | **Learning & Development** | 🟢 Done, shared for final feedback. Was a wholly new module | Universal, no grant needed | ⚠ **0 sessions, 0 nominations** |
+| 3 | **Stationery** (= General Purchase) | 🟢 Done, shared for final feedback. Access, manual and walkthrough all shared | 32 edit, 1 view | 19 requests |
+| 4 | **Asset Requisition** (= Asset Maintenance) | 🟢 Done, shared for final feedback. Access and manual shared | ⚠ **2 edit, 1 view** | 40 assets, 1 job |
+| 5 | **Help Desk** | 🟡 **In progress**, going out for feedback 28-09-2026 — see HD-1 | Not live | — |
+| 6 | **Knowledge Base** | 🟡 **Due by 04-10-2026** (end of this week) — see KB-1 | Not live | — |
 | 7 | **Exit** | ⏸ **Deferred behind Attendance & Payroll** — see EX-1 | 4 edit, 1 view | **0 cases** |
 
 #### Week 2
@@ -7698,7 +7698,7 @@ because a module can be "done" and still be reaching nobody, and those are diffe
 | # | Module | Status | Access | In use |
 |---|---|---|---|---|
 | 1 | **Travel Desk** | 🟢 Done, shared for feedback | 7 edit | 25 trips |
-| 2 | **Attendance & Payroll** | 🔴 **Waiting on the client** — the final feature list. See AP-1 | Not built | — |
+| 2 | **Attendance & Payroll** | 🔴 **Waiting on the client** — the feature list, and HROne access. Discussion moved to **Thu 01-10-2026**. See AP-1 | Not built | — |
 | 3 | **Employee Engagement** | ⚪ **Not started.** No scoping discussion has happened yet. See EE-1 | Not built | — |
 
 #### Four things this board makes visible that the module entries do not
@@ -7717,7 +7717,7 @@ because a module can be "done" and still be reaching nobody, and those are diffe
   shared for feedback. Corrected in place below.
 
 ### HD-1 · Help Desk — the ticketing module  `[~]`
-*Raised 2026-09-28 · **IN PROGRESS** (client's status, 28-09-2026).*
+*Raised 2026-09-28 · **IN PROGRESS**, going out to HR for feedback on 28-09-2026 (client's word).*
 
 Week 1, item 5. Being built now on branch `help-desk`: the foundations and the ticket-category master
 that routes every ticket are committed there, and **nothing is on `master` and no `fms_hd_*` table
@@ -7730,8 +7730,14 @@ escalation and a closure are exactly what this module records, so it closes that
 ships.
 
 ### AP-1 · Attendance & Payroll  `[!]`
-*Raised 2026-09-28 · 🔴 **BLOCKED — waiting on the client for the final list of features and
-pointers to work on.** Nothing has been built and nothing should start until that list arrives.*
+*Raised 2026-09-28 · 🔴 **BLOCKED — waiting on the client for the feature list AND for HROne
+access.** Nothing has been built and nothing should start until both arrive. The scoping discussion
+was due 28-09 and is **moved to Thursday 01-10-2026** (client travelling).*
+
+*🔴 **THE BRIEF IS "REPLICATE HROne", and that is much bigger than the module name suggests.** Asked
+for on 28-09-2026: the list of features needed to replicate the HROne software, plus a login so it
+can be studied first-hand. Read that before estimating anything — this is not an attendance screen
+with a payroll report bolted on.*
 
 Week 2, item 2, and the **pivot of the whole second week**: Exit (EX-1) has been deferred to sit on
 top of it, so the list this is waiting on decides the shape of two modules, not one.
@@ -7751,6 +7757,14 @@ top of it, so the list this is waiting on decides the shape of two modules, not 
 **To ask for, when the list is requested:** whether this is attendance *reporting* over a biometric
 export, or attendance *capture*; whether payroll means running it or recording it; and whether PF and
 ESIC registration comes in here or stays with the consultant.
+
+⚠ **If HROne really is being replaced, it settles five KRAs at once and nobody has connected the two
+yet.** Dharmistha's sheet names HROne in five of its twelve KRAs — ID activation within 48 hours of
+joining, department and reporting-manager mapping, master changes within 2 working days, ID
+deactivation within 2 working days of the last working day, and asset movements. Every one of them is
+banded unmeasurable in GP-1's KRA mapping for exactly one reason: **HROne is a different system and
+the hub holds none of it.** Replicate it here and those five stop being a scope boundary and start
+being ordinary columns. That is a reason to scope this carefully, not quickly.
 
 ### EE-1 · Employee Engagement  `[ ]`
 *Raised 2026-09-28 · ⚪ **NOT STARTED.** No scoping discussion has happened yet — there is nothing to
@@ -7815,9 +7829,9 @@ although the store's queue has one.
 — Exit is listed as excused, with this reason.
 
 ### KB-1 · 🟢 HR knowledge base — a second brain over the HR documents  `[~]`
-*Raised 2026-08-20 · **🟢 Low priority.** ⚪ **The client's status on 28-09-2026 is NOT STARTED**,
-and that is not a contradiction of the line below: a demo was built and shown on 03-09-2026, and the
-LIVE build has not begun. Treat the demo as a spike, not as progress.*
+*Raised 2026-08-20 · **🟡 DUE BY 04-10-2026** (end of this week), per the client on 28-09-2026.
+The LIVE build has not begun; a demo was built and shown on 03-09-2026 and is a spike, not progress.
+⚠ The permissions question below has to be settled BEFORE anything is indexed, and the week is short.*
 
 *A demo has already been built and
 shown; what remains is turning it into something live. ⚠ The permissions question below must be
