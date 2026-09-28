@@ -20,9 +20,21 @@ import { STEPS, type StepKey } from "../../lib/steps";
  *   list; the SQL `fms_complaint_is_step_owner` reads `employee_ids` and nothing
  *   else. Saving a department with no employees grants nobody.
  *
- * There is no source split here (contrast Sampling's Domestic/Export): RM and FG
- * complaints run the same steps and the same people handle both.
+ * ⚠ `assignee` IS DELIBERATELY ABSENT FROM THIS TABLE. It is the one step with
+ *   no configurable owners: management NAME the person when they reassign an
+ *   imported-material complaint, so the step is owned by whoever is on that row.
+ *   Listing it would offer an admin a setting that grants nothing — and, worse,
+ *   would read as though the people saved in it were the ones who get assigned.
+ *
+ * There is no source split here (contrast Sampling's Domestic/Export): the raw-
+ * material branch runs DIFFERENT steps from the finished-good one, but each step
+ * is still one desk with one owner list, so this table needs no notion of it.
  */
+
+/**
+ * The steps an admin may staff. See the ⚠ above for the one that is missing.
+ */
+const OWNABLE_STEPS = STEPS.filter((st) => st.key !== "assignee");
 export default function StepOwnersSection() {
   const s = useComplaintStore();
   const [editing, setEditing] = useState<StepKey | null>(null);
@@ -103,7 +115,7 @@ export default function StepOwnersSection() {
             </tr>
           </thead>
           <tbody>
-            {STEPS.map((st) => {
+            {OWNABLE_STEPS.map((st) => {
               const owner = s.ownerFor(st.key);
               const ids = owner?.employeeIds ?? [];
               return (
@@ -114,6 +126,21 @@ export default function StepOwnersSection() {
                     {st.noQueue && (
                       <div className="text-[11px] text-grey-2">
                         Raising is the step — it has no queue
+                      </div>
+                    )}
+                    {st.key === "rm_management" && (
+                      <div className="text-[11px] text-grey-2">
+                        Imported raw-material complaints land here
+                      </div>
+                    )}
+                    {st.key === "management_review" && (
+                      <div className="text-[11px] text-grey-2">
+                        The final sign-off on every complaint
+                      </div>
+                    )}
+                    {st.key === "purchase" && (
+                      <div className="text-[11px] text-grey-2">
+                        Domestic raw-material complaints only
                       </div>
                     )}
                   </td>

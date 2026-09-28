@@ -15,7 +15,7 @@ import type { Trip } from "../../types";
 /**
  * Every rupee of travel advance the company has not got back.
  *
- * ⚠ THIS REPORT IS WHY §11.2 IS ENFORCEABLE AT ALL. "No second travel advance to
+ * ⚠ THIS REPORT IS WHY Section 11.2 IS ENFORCEABLE AT ALL. "No second travel advance to
  *   an employee who has an outstanding unreconciled advance" was in the policy
  *   before this module existed and could not be applied, because nothing in the
  *   business could answer "who owes what". A rule nobody can evaluate is a rule
@@ -27,7 +27,7 @@ import type { Trip } from "../../types";
  *   net it off. Those rows are the whole point of the report: they are the ones
  *   that fall out of every other list and are never chased.
  *
- * ⚠ AGEING IS FROM THE DAY THE MONEY LEFT, not from the trip's dates. §11's
+ * ⚠ AGEING IS FROM THE DAY THE MONEY LEFT, not from the trip's dates. Section 11's
  *   30-day recovery window runs from disbursement, and a trip whose departure
  *   keeps slipping would otherwise never appear to age.
  */
@@ -144,6 +144,7 @@ export default function OutstandingAdvances() {
         align: "right",
         cell: (t) => money(t.advancePaidAmount),
         sortValue: (t) => t.advancePaidAmount ?? 0,
+        filter: { kind: "number", get: (t) => t.advancePaidAmount ?? 0 },
         exportValue: (t) => t.advancePaidAmount ?? 0,
         tdClassName: "whitespace-nowrap",
       },
@@ -153,6 +154,7 @@ export default function OutstandingAdvances() {
         align: "right",
         cell: (t) => money(t.advanceRecoveredAmount),
         sortValue: (t) => t.advanceRecoveredAmount ?? 0,
+        filter: { kind: "number", get: (t) => t.advanceRecoveredAmount ?? 0 },
         exportValue: (t) => t.advanceRecoveredAmount ?? 0,
         tdClassName: "whitespace-nowrap",
         defaultHidden: true,
@@ -194,7 +196,7 @@ export default function OutstandingAdvances() {
         <h1 className="text-[19px] font-bold text-navy">Outstanding advances</h1>
         <p className="max-w-3xl text-[13px] text-grey">
           Travel advance the company has paid out and not yet got back — netted against a claim at
-          settlement, or handed back on a trip that never happened. Policy §11.2 refuses a second
+          settlement, or handed back on a trip that never happened. Policy Section 11.2 refuses a second
           advance to anybody appearing here.
         </p>
       </div>
@@ -230,7 +232,7 @@ export default function OutstandingAdvances() {
         exportNotes={[
           "Amounts are in Indian Rupees, as full figures — the Domestic Travel Policy forbids lakh/crore abbreviation.",
           "“Still owed” is what was paid less anything recovered. A trip drops off this list when the settlement step nets it against the claim.",
-          "“Days out” counts from the day the money left, not from the trip's dates — §11's recovery window runs from disbursement.",
+          "“Days out” counts from the day the money left, not from the trip's dates — Section 11's recovery window runs from disbursement.",
           "A cancelled or rejected trip that drew an advance stays here until the money is recorded as returned; no claim is coming to net it off.",
         ]}
         columnPicker={{ storageKey: "travel-outstanding-advances" }}

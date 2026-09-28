@@ -10,17 +10,17 @@ import { tripDueIso } from "../../lib/queues";
 import type { Trip } from "../../types";
 
 /**
- * Claims waiting on the reporting manager (§11.1, step 7).
+ * Claims waiting on the reporting manager (Section 11.1, step 7).
  *
  * ⚠ THE DISALLOWED COLUMN IS THE WHOLE REASON THIS SCREEN IS USEFUL. The engine
  *   has already applied every cap by the time a claim reaches here, so a
  *   reviewer's job is not to re-derive the arithmetic — it is to judge the
  *   things arithmetic cannot: was this journey necessary, is the business meal
- *   plausible, does the §7.3 exception hold. A row showing a large disallowance
+ *   plausible, does the Section 7.3 exception hold. A row showing a large disallowance
  *   is where that judgement is most likely to be needed, so it is sortable.
  *
  * ⚠ A NEGATIVE NET IS MONEY COMING BACK, and it is shown as such rather than
- *   floored at zero. That figure is what §11.2 blocks the next advance on.
+ *   floored at zero. That figure is what Section 11.2 blocks the next advance on.
  */
 export default function ClaimReviewQueue() {
   const s = useTravelStore();
@@ -77,6 +77,7 @@ export default function ClaimReviewQueue() {
         header: "Claimed",
         cell: (t) => money(t.claimTotal),
         sortValue: (t) => t.claimTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.claimTotal ?? 0 },
         exportValue: (t) => t.claimTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -102,6 +103,7 @@ export default function ClaimReviewQueue() {
         header: "Allowance",
         cell: (t) => money(t.daTotal),
         sortValue: (t) => t.daTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.daTotal ?? 0 },
         exportValue: (t) => t.daTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -142,8 +144,8 @@ export default function ClaimReviewQueue() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Claim review</h1>
         <p className="text-[13px] text-grey">
-          Every cap has already been applied by the time a claim reaches here (§7, §9, §10, §15).
-          What is left is the judgement the arithmetic cannot make — §12 allows two working days.
+          Every cap has already been applied by the time a claim reaches here (Section 7, Section 9, Section 10, Section 15).
+          What is left is the judgement the arithmetic cannot make — Section 12 allows two working days.
         </p>
       </div>
 

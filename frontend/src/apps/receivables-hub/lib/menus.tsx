@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
-import { REPORT_CATEGORIES, REPORTS, categoryHref, type ReportCategoryId } from "@hub/lib/reportCatalog";
+import type { ReportCategoryId } from "@hub/lib/reportCatalog";
 import { BUSHRA_DASHBOARDS, dashboardGroupHref, groupPageIds, groupPaths } from "@hub/lib/bushraDashboards";
 import { useSession } from "@/core/platform/session";
 
@@ -43,42 +43,13 @@ import { useSession } from "@/core/platform/session";
 // hub, which is exactly the drift the shared list exists to prevent.
 export const BASE = appBasePath("outstanding-dashboard");
 
-/**
- * A sub-nav entry under a parent menu.
- *
- * Deliberately NOT independently permissionable: the parent's key gates the whole group.
- * Hiding a sidebar entry does not hide its route, so a per-category tick-box would only
- * look like access control while `/outstanding-dashboard/reports/balance-sheet` stayed
- * directly reachable. Real per-category permission needs the catalogue filtered AND the
- * routes guarded, which is a separate job.
- *
- * `key` is namespaced ("reports:tally") anyway, so if that job is ever done these keys
- * drop into the same deny-list with no data migration.
+/*
+ * THE SUB-NAV TYPE THAT USED TO BE HERE IS GONE, with the only two menus that ever had one.
+ * Reports and Bushra-Dashboard both moved to apps/reports/, which builds their tiers straight
+ * from the two catalogues (lib/reportCatalog.ts, lib/bushraDashboards.ts) rather than from a
+ * second copy of them shaped as menu children. Nothing left in this app is more than one
+ * level deep.
  */
-export interface ReceivablesMenuChild {
-  key: string;
-  title: string;
-  url: string;
-  icon?: LucideIcon;
-  /**
-   * Report category this child stands for, when the parent menu's sub-nav is built from the
-   * report catalogue. `visibleMenusFor` drops a category the viewer holds no report in, so the
-   * sub-nav follows the per-report grants without this file knowing anything about them.
-   */
-  categoryId?: ReportCategoryId;
-  /**
-   * Page paths this child covers, when its own `url` carries a query (a dashboard GROUP links to
-   * `?group=…`). The sidebar lights the child while the reader is on any of them — without this,
-   * opening a dashboard would leave its own group unhighlighted.
-   */
-  matchPaths?: string[];
-  /**
-   * A third tier: the screens inside a dashboard GROUP, listed under it in the sidebar so a reader
-   * can hop between them (Sales → Ink → FOC …) without going back to the landing page. `reportId`
-   * is the catalogue grant each one needs; `visibleMenusFor` drops the ones the viewer lacks.
-   */
-  pages?: { key: string; title: string; url: string; reportId: string }[];
-}
 
 export interface ReceivablesMenu {
   /** Stable id stored in the deny-list. Never reuse/rename without a data migration. */
@@ -111,8 +82,19 @@ export interface ReceivablesMenu {
    * Masters (full access) and Menu Permissions (admin).
    */
   fullAccessOnly?: boolean;
-  /** Sub-nav rendered as a collapsible group. Gated by this menu's own key, not its own. */
-  children?: ReceivablesMenuChild[];
+  /**
+   * This menu MOVED OUT to its own top-level app and is no longer drawn in the hub
+   * sidebar — but its key STAYS IN THIS LIST, because the key is what the two
+   * permission columns store.
+   *
+   * Deleting the row would have been the tidy-looking change and a silent permission
+   * change: `PERMISSION_MENUS` is derived from this list, so the row would vanish from
+   * Admin → Users and Settings → Menu Permissions, and every
+   * `receivables_hidden_menus = ['reports']` already saved would stop meaning anything.
+   * The grant an admin set must go on applying to the screens wherever they now live —
+   * so the app that owns them reads the same key (see apps/reports/meta.tsx).
+   */
+  externalApp?: boolean;
 }
 
 export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
@@ -139,43 +121,41 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "import", title: "Import Data", url: `${BASE}/import`, icon: PackageOpen, adminOnly: true },
   // The sub-nav lists CATEGORIES, not reports. One child per report would push the sidebar
   // past twenty entries as the Tally section fills in; categories stay a fixed five.
+  //
+  // MOVED OUT to /reports (apps/reports/) — see `externalApp`. The entry stays here for the
+  // permission screens and for the guards, which still ask "may this user see the `reports`
+  // menu?"; it is simply no longer drawn in this app's sidebar. `url` points at the new home
+  // so nothing here can send a reader to a path this app no longer serves.
+  //
+  // The CATEGORY CHILDREN that used to hang off it are gone rather than kept for old times'
+  // sake: the Reports app's sidebar builds its own list straight from REPORT_CATEGORIES, so a
+  // second copy here would be a list nobody reads and everybody has to keep in step.
   {
     key: "reports",
     title: "Reports",
-    url: `${BASE}/reports`,
+    url: appBasePath("reports"),
+    externalApp: true,
     // No `fullAccessNote`: Reports is a two-state menu again. Its "Full access" tier existed
     // only to unlock the Dashboards + Insights categories, which per-report grants
     // (profiles.receivables_allowed_reports, lib/reportAccess.ts) now express directly and per
     // report. Keeping both would mean an admin could tick "C-Level Dashboard" for a user and
     // have it silently do nothing.
     icon: FileText,
-    children: REPORT_CATEGORIES.map((c) => ({
-      key: `reports:${c.id}`,
-      title: c.title,
-      url: categoryHref(c.id),
-      icon: c.icon,
-      categoryId: c.id,
-    })),
   },
-  // Bushra's dashboards. The sub-nav lists GROUPS, not screens — the same rule the Reports menu
-  // follows, and for the same reason: one row per subject keeps the sidebar short as dashboards are
-  // added. The list is built from lib/bushraDashboards.ts, so a new dashboard appears here on its
-  // own. `matchPaths` is what lights a group up while you are on one of its pages.
+  // Bushra's dashboards. MOVED OUT with Reports and into the same app (apps/reports/) — see
+  // `externalApp`. Its screens are catalogued as reports under the "Bushra-Report" category, so
+  // leaving them behind would have split one section of the catalogue across two modules.
+  //
+  // The key stays here for the same reason the Reports key does: it is what
+  // profiles.receivables_hidden_menus stores, and the guard on the moved routes still asks for
+  // it. The GROUP CHILDREN went with the screens — the Reports app's sidebar builds them from
+  // lib/bushraDashboards.ts, which is where they always came from.
   {
     key: "bushra-dashboard",
     title: "Bushra-Dashboard",
-    url: `${BASE}/bushra-dashboard`,
+    url: `${appBasePath("reports")}/bushra-dashboard`,
     icon: LayoutDashboard,
-    children: BUSHRA_DASHBOARDS.map((g) => ({
-      key: `bushra-dashboard:${g.id}`,
-      title: g.title,
-      url: dashboardGroupHref(g.id),
-      icon: g.icon,
-      matchPaths: groupPaths(g),
-      pages: g.pages
-        .filter((p) => p.status === "live" && p.path)
-        .map((p) => ({ key: `bushra-dashboard:${g.id}:${p.id}`, title: p.title, url: `${BASE}/${p.path}`, reportId: p.id })),
-    })),
+    externalApp: true,
   },
   {
     key: "settings",
@@ -190,78 +170,45 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
 ];
 
 /**
- * Menus a given user may see. Admins see all; a non-admin sees every non-admin-only menu
- * not in their deny-list. Pure helper so the sidebar and the route guard share one rule.
+ * Menus a given user may see IN THIS APP'S SIDEBAR. Admins see all; a non-admin sees every
+ * non-admin-only menu not in their deny-list. Pure helper so the sidebar and the route guard
+ * share one rule.
  *
  * `adminKeys` is the full-access allow-list. It does NOT make a hidden menu appear (that is
  * the deny-list's job, and a menu you cannot see is one you cannot use) — it only decides
  * whether a full-access-only menu (Settings) is worth showing at all.
  *
- * `allowedReportIds` is the per-report grant set (lib/reportAccess.ts). It shapes the Reports
- * menu in two ways, and both matter:
- *   - a sub-nav CATEGORY the viewer holds no report in is dropped, so the sidebar never offers
- *     a category that opens on an empty list;
- *   - the Reports menu itself disappears when the viewer holds nothing at all, rather than
- *     inviting them into a page that can only tell them they have no reports.
- * The Bushra-Dashboard menu follows the same two rules. Its screens are catalogued reports
- * (see lib/bushraDashboards.ts), so a GROUP the viewer holds no screen in is dropped, and the
- * menu disappears when they hold none. Its menu key can still hide it further; it can never
- * grant a screen.
- * Passing `null` means "don't apply report grants" — used by the permission screens, which
- * need the complete menu list to render their matrix.
+ * `externalApp` menus are dropped at every branch: their key is still live — canSeeMenu,
+ * hasMenuFullAccess and both permission screens keep answering for it, and the moved routes
+ * are still guarded by it — but the screens behind it are drawn by another app now.
+ *
+ * ⚠ IT NO LONGER TAKES THE PER-REPORT GRANT SET. It used to, to shape the Reports and
+ *   Bushra-Dashboard sub-navs and to hide either menu from a viewer who held none of its
+ *   screens. Both menus left for apps/reports/, which applies exactly those two rules itself
+ *   (`reportCategoriesFor` for the sections, `canOpen` in its manifest for the module). A
+ *   parameter that no longer changes any result is worse than no parameter: it reads like
+ *   access control while doing nothing.
  */
 export function visibleMenusFor(
   isAdmin: boolean,
   hiddenKeys: string[],
   adminKeys: string[] = [],
-  allowedReportIds: ReadonlySet<string> | null = null,
 ): ReceivablesMenu[] {
-  const holdsDashboardGroup = (groupId: string) => {
-    const g = BUSHRA_DASHBOARDS.find((x) => x.id === groupId);
-    return !!g && !!allowedReportIds && groupPageIds(g).some((id) => allowedReportIds.has(id));
-  };
-
-  const shapeReports = (m: ReceivablesMenu): ReceivablesMenu => {
-    if (!m.children || !allowedReportIds) return m;
-    if (m.key === "reports") {
-      return {
-        ...m,
-        children: m.children.filter(
-          (c) =>
-            !c.categoryId ||
-            REPORTS.some((r) => r.category === c.categoryId && allowedReportIds.has(r.id)),
-        ),
-      };
-    }
-    if (m.key === "bushra-dashboard") {
-      return {
-        ...m,
-        children: m.children
-          .filter((c) => holdsDashboardGroup(c.key.slice("bushra-dashboard:".length)))
-          .map((c) => ({ ...c, pages: c.pages?.filter((p) => allowedReportIds.has(p.reportId)) })),
-      };
-    }
-    return m;
-  };
-
-  // Admins bypass the deny-list and the full-access tier, but still get the sub-nav shaped —
-  // for them `allowedReportIds` holds every report, so nothing is actually dropped.
-  if (isAdmin) return RECEIVABLES_MENUS.map(shapeReports);
+  // Admins bypass the deny-list and the full-access tier.
+  if (isAdmin) return RECEIVABLES_MENUS.filter((m) => !m.externalApp);
 
   const hidden = new Set(hiddenKeys);
   const elevated = new Set(adminKeys);
   return RECEIVABLES_MENUS.filter(
     (m) =>
       !m.adminOnly &&
+      // Moved to its own app: still permissioned by this key, just not drawn here.
+      !m.externalApp &&
       !hidden.has(m.key) &&
       // A full-access-only menu (Settings) has nothing to show without the grant, so it is
       // not merely thinner for an ungranted user — it is absent.
-      (!m.fullAccessOnly || elevated.has(m.key)) &&
-      // Same reasoning for Reports with no grants: an empty catalogue is not a menu.
-      (m.key !== "reports" || !allowedReportIds || REPORTS.some((r) => allowedReportIds.has(r.id) && !r.governedByMenu)) &&
-      // And for Bushra-Dashboard: no screen granted, no menu.
-      (m.key !== "bushra-dashboard" || !allowedReportIds || BUSHRA_DASHBOARDS.some((g) => holdsDashboardGroup(g.id))),
-  ).map(shapeReports);
+      (!m.fullAccessOnly || elevated.has(m.key)),
+  );
 }
 
 /** May this user open the menu at all? Admins always can. */

@@ -10,6 +10,7 @@ import { hrExitApp } from "./hr-exit/meta";
 import { learningDevelopmentApp } from "./learning-development/meta";
 import { hrReportsApp } from "./hr-reports/meta";
 import { travelDeskApp } from "./travel-desk/meta";
+import { helpDeskApp } from "./help-desk/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
@@ -19,6 +20,7 @@ import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
+import { reportsApp } from "./reports/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { ocpiApp } from "./ocpi/meta";
@@ -69,6 +71,12 @@ export const apps: AppManifest[] = [
   // every booked leg, the advance, the expense claim and the settlement, so the
   // entitlement checked before booking is the one enforced on the claim.
   travelDeskApp,
+  // HR Help Desk — the front door for every HR question. UNIVERSAL: anyone may
+  // need to ask HR something, so there are no app_access rows and the Module
+  // Access matrix will show it as admins-only (see apps/universal.ts). The
+  // CATEGORY is the router — it decides the owner, the TAT, the escalation
+  // ladder and whether the ticket is confidential.
+  helpDeskApp,
   // Granted per user like every other module (was universal — see apps/universal.ts).
   officeSuppliesApp,
   // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
@@ -115,6 +123,12 @@ export const apps: AppManifest[] = [
   // because they are hub-native components; this manifest mounts that subtree
   // under its own basePath and chrome. See customer-onboarding/meta.tsx.
   customerOnboardingApp,
+  // Reports — the Outstanding Dashboard's report catalogue, promoted to the main
+  // menu the same way Customer Onboarding was, and with the same arrangement: its
+  // pages still live under apps/receivables-hub/ because they are hub-native
+  // components, and this manifest mounts that subtree under its own basePath and
+  // chrome. It carries NO grant of its own (`accessAppId`) — see reports/meta.tsx.
+  reportsApp,
   leadsDashboardApp,
   // OCPI — the machine SALE before there is an order to dispatch: a quotation
   // drafted and revised through the negotiation, approved, then turned into an
@@ -149,8 +163,8 @@ export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
 
 /**
  * A grantable "module" is anything an admin can switch on per user in Module
- * Access / the User form. That's every web app PLUS virtual modules that aren't
- * web launcher cards — e.g. the mobile app, whose grant (`app_id: "mobile-app"`)
+ * Access / the User form. That's every INDEPENDENTLY GRANTED web app PLUS virtual
+ * modules that aren't web launcher cards — e.g. the mobile app, whose grant (`app_id: "mobile-app"`)
  * gates login to the Orange One mobile Leads app. Kept separate from `apps` so
  * the workspace launcher and router (which use `apps`/`liveApps`) never render or
  * mount it as a web app.
@@ -168,15 +182,21 @@ export interface GrantableModule {
 }
 
 export const grantableModules: GrantableModule[] = [
-  ...apps.map((a) => ({
-    id: a.id,
-    name: a.name,
-    status: a.status,
-    universal: isUniversalApp(a.id),
-    category: a.category,
-    order: a.order,
-    subGroup: a.subGroup,
-  })),
+  // `accessAppId` apps are skipped: they ride another module's grant, so a row here would
+  // offer a switch writing an app_access id that nothing ever reads — and the module the
+  // switch appeared to control would carry on following the grant it actually rides.
+  // Reports is the one such app today (it rides `outstanding-dashboard`).
+  ...apps
+    .filter((a) => !a.accessAppId)
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      status: a.status,
+      universal: isUniversalApp(a.id),
+      category: a.category,
+      order: a.order,
+      subGroup: a.subGroup,
+    })),
   // Virtual module: no web app, no launcher entry, no menu item — it only gates
   // login to the mobile Leads app. Categorised so it isn't stranded in "Other".
   { id: "mobile-app", name: appName("mobile-app"), status: "live", category: appCategory("mobile-app"), order: 10 },
@@ -200,6 +220,12 @@ export const grantableModules: GrantableModule[] = [
  */
 export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
   "mobile-app",
+  // Universal, so there are NO app_access rows to hold at "view" — a view-only
+  // grant here would be a switch that changes nothing. Worse, the module's SQL
+  // gate cannot consult module_can_edit at all (it is false for every non-admin
+  // on a universal module), so view-only could not be enforced even if it were
+  // offered. Only Full access is shown.
+  "help-desk",
   // PF-18: the grant means "may post", and nothing else. Reading announcements needs
   // no grant, so a view-only Announcements grant would give nothing while looking
   // like access. Only Full access is offered.

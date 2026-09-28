@@ -11,7 +11,7 @@ import type { DaDay, ClaimPreview } from "../types";
  *   and the only alternative to printing the reason on the row is a traveller
  *   asking Finance, and Finance re-deriving the engine to answer.
  *
- * ⚠ READ-ONLY TO THE TRAVELLER. §8 is an entitlement computed from dates, times,
+ * ⚠ READ-ONLY TO THE TRAVELLER. Section 8 is an entitlement computed from dates, times,
  *   the city's tier and the trip's length — not a figure anybody types. What the
  *   traveller CAN change is the input: the actual times, whether the customer
  *   fed them, whether family joined. Those are on the claim form above this.
@@ -79,7 +79,7 @@ export default function DaPanel({
     <Card className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <div className="text-[13px] font-semibold text-navy">Daily allowance (§8)</div>
+          <div className="text-[13px] font-semibold text-navy">Daily allowance (Section 8)</div>
           <p className="mt-0.5 text-[11.5px] text-grey-2">
             {isFrozen
               ? "Frozen when the claim was filed. A later change to the rate card does not move these figures."

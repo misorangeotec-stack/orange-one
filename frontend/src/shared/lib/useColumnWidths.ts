@@ -209,14 +209,15 @@ export function useColumnWidths(kind: "qt" | "mc" | "tb", ids: readonly string[]
 /* ---------------------------- hover on a cut cell --------------------------- */
 
 /**
- * Is the cell's text cut? The wrapper, or a child that truncates on its own (`span.block.truncate`).
- * Only an element that CLIPS counts — content spilling out of a never-cut cell is still visible.
+ * What in this cell is cut — the wrapper, or a child that truncates on its own
+ * (`span.block.truncate`) — or null when nothing is. Only an element that CLIPS counts: content
+ * spilling out of a never-cut cell is still visible.
  */
-function isCut(wrap: HTMLElement): boolean {
+function cutElement(wrap: HTMLElement): HTMLElement | null {
   for (const el of [wrap, ...wrap.querySelectorAll<HTMLElement>("*")]) {
-    if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth && getComputedStyle(el).overflowX !== "visible") return true;
+    if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth && getComputedStyle(el).overflowX !== "visible") return el;
   }
-  return false;
+  return null;
 }
 
 /**
@@ -263,8 +264,14 @@ function showWholeTextIfCut(e: MouseEvent<HTMLElement>) {
   const ours = td.hasAttribute("data-fit-title");
   if (td.hasAttribute("title") && !ours) return;
   const wrap = td.querySelector<HTMLElement>(":scope > [data-fit-cell]");
-  if (wrap && isCut(wrap) && !wrap.querySelector("[title]")) {
-    td.setAttribute("title", renderedText(wrap));
+  const cut = wrap ? cutElement(wrap) : null;
+  /*
+   * A `title` the author put ON THE CUT TEXT (or on something wrapping it) is their own tooltip
+   * and wins. One further in — an avatar's name, a meter's explanation — says nothing about the
+   * text being cut, so it must not silence the whole cell.
+   */
+  if (cut && !(cut.closest("[title]") && wrap!.contains(cut.closest("[title]")!))) {
+    td.setAttribute("title", renderedText(wrap!));
     td.setAttribute("data-fit-title", "");
   } else if (ours) {
     td.removeAttribute("title");

@@ -52,8 +52,14 @@ import {
 } from "@hub/lib/productionExpenses";
 import { loadPackingMaterial, packingPerKg, packingTotals } from "@hub/lib/packingMaterial";
 import { useReportAccess } from "@hub/lib/reportAccess";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 const CHART_GRID = "hsl(220 15% 92%)";
 const AXIS_TICK = { fontSize: 11, fill: "hsl(220 10% 45%)" };
 const LABEL_FILL = "hsl(220 20% 30%)";

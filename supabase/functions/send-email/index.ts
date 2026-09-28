@@ -625,6 +625,121 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
 
+  // ---- the evening DAILY REPORT (DR-3) -------------------------------------
+  // Queued by the GitHub runner in supabase/dailyreport/entry.ts, once the PDF is
+  // in `report-exports`. One row per recipient, because this sender has no Cc.
+  //
+  // ⚠ ITS OWN BRANCH, NOT THE GENERIC PREFIX LIST, AND NOT THE RECEIVABLES ONE.
+  //   `daily_report_` is not in the module-prefix list above, so without this the
+  //   mail would reach markSkipped(row, "unknown kind") and vanish with no error
+  //   anywhere — the failure mode a scheduled send cannot afford.
+  //
+  //   It would have been possible to reuse `receivables_collections_report`,
+  //   which since PF-18 accepts `eyebrow` / `tag` / `footerNote` / `bullets`
+  //   overrides and would render this acceptably. It is deliberately NOT reused:
+  //   `kind` is how somebody finds a mail in `email_outbox` six weeks later, and
+  //   filing the Daily Report under a receivables key would cost that permanently
+  //   to save twenty lines once.
+  //
+  // Deliberately plain, and in the house style for outbound mail: the figures
+  // first, as points rather than a paragraph, then one pointer to the attachment.
+  // No em dash anywhere in the copy - it reads as machine-written.
+  if (row.kind === "daily_report_evening") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const bucket = str(p.bucket, "report-exports");
+    const files = (Array.isArray(p.attachments) ? p.attachments : [])
+      .map((a) => a as Record<string, unknown>)
+      .filter((a) => typeof a.path === "string")
+      .map((a) => ({
+        bucket,
+        path: String(a.path),
+        filename: str(a.filename, String(a.path).split("/").pop() ?? "daily-report.pdf"),
+        mime: str(a.mime, "application/pdf"),
+      }));
+
+    const headline = str(p.headline, "Daily Report");
+    const lead = str(p.body);
+
+    // ⚠ THE POINTS ARRIVE AS AN ARRAY, NOT AS A NEWLINE-JOINED STRING, AND THE
+    //   DIFFERENCE IS LOAD-BEARING. The first cut had the runner join the day's
+    //   figures with newlines and this branch split them apart again. That is two
+    //   encodings of one list, and HTML collapses newlines, so any reader of the
+    //   payload who forgot to split got a paragraph of run-together figures. The
+    //   client rejected exactly that shape for the announcements on 18-09-2026.
+    //   `bullets` is the same field the receivables branch already takes.
+    const points = (Array.isArray(p.bullets) ? p.bullets : [])
+      .filter((b): b is string => typeof b === "string" && !!b);
+
+    const fileList = files.length
+      ? itemList(files.map((f) => ({ name: f.filename, meta: "PDF" })))
+      : "";
+
+    const inner =
+      (lead ? `<div style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">${esc(lead)}</div>` : "") +
+      bulletLines(points) +
+      fileList;
+
+    return {
+      subject: str(p.subject, headline),
+      html: emailShell({
+        eyebrow: "Daily Report",
+        headline,
+        inner,
+        tag: "Daily Report",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; sent automatically every evening.<br>You're receiving this because you are on this report's distribution list.`,
+      }),
+      text: [headline, lead, ...points.map((t) => `- ${t}`), ...files.map((f) => f.filename)]
+        .filter(Boolean).join("\n\n"),
+      replyTo,
+      files,
+    };
+  }
+
+  // ---- the Daily Report DID NOT GO OUT -------------------------------------
+  // Queued by pg_cron (daily_report_email_watchdog) once the slot's grace window
+  // has closed with no row in daily_report_email_send_log.
+  //
+  // ⚠ SAME REASONING AS `collections_report_missed` BELOW, AND THE SAME TRAP: the
+  //   one mail that reports a silent failure must not itself be dropped silently.
+  //   Every workflow run exits SUCCESS, because "not due" is a success, and a
+  //   dropped tick creates no run at all - so a missed slot is invisible to
+  //   everyone unless this arrives.
+  if (row.kind === "daily_report_missed") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
+
+    const forDate = str(p.for_date);
+    const dateLabel = forDate ? ddmmyyyy(forDate) : "";
+    const slot = str(p.slot_ist, "20:30");
+    const grace = num(p.grace_minutes) || 60;
+    const reason = str(p.reason, "unknown");
+    const lastKick = str(p.last_kick_at);
+
+    const points = [
+      `The ${slot} IST slot for ${dateLabel || "today"} passed with nothing sent.`,
+      `The grace window of ${grace} minutes has now closed, so it will not go out on its own.`,
+      `The gate says: ${reason}`,
+      lastKick ? `The database last poked the runner at ${lastKick} IST.` : "The database has no record of poking the runner.",
+      "To send it by hand: run the Daily report workflow with mode=scheduled.",
+    ].filter(Boolean);
+
+    const headline = `Daily Report was not sent${dateLabel ? ` for ${dateLabel}` : ""}`;
+    return {
+      subject: str(p.subject, headline),
+      html: emailShell({
+        eyebrow: "Daily Report",
+        headline,
+        inner: bulletLines(points),
+        tag: "Daily Report",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; scheduled send watchdog.`,
+      }),
+      text: [headline, ...points.map((t) => `- ${t}`)].join("\n\n"),
+      replyTo,
+    };
+  }
+
   // ---- the Collection report DID NOT GO OUT --------------------------------
   // Queued by pg_cron (collections_report_watchdog) once the slot's grace window
   // has closed with no row in collections_report_send_log.
@@ -1224,7 +1339,17 @@ async function compose(row: Row): Promise<Composed | null> {
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_") || row.kind.startsWith("complaint_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_") || row.kind.startsWith("complaint_") || row.kind.startsWith("help-desk_")) {
+    // ⚠ A KIND MATCHING NONE OF THESE FALLS THROUGH TO markSkipped BELOW — it
+    //   does not error, does not retry, and the outbox row looks handled. So a
+    //   module can queue mail correctly and deliver nothing, with no failure
+    //   anywhere to notice. PF-18 shipped that way. Adding a module here is
+    //   part of building it, not a follow-up.
+    //
+    // ⚠ travel_ AND learning-development_ ARE STILL MISSING FROM THE DEPLOYED
+    //   COPY (checked 28-09-2026). Both have email switched off, so nothing is
+    //   being lost — but whoever next deploys this file should add them rather
+    //   than discover it when somebody turns a gate on.
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
@@ -1252,15 +1377,26 @@ async function compose(row: Row): Promise<Composed | null> {
     // a document page rather than a step queue.
     const isOcpi = row.kind.startsWith("ocpi_");
     const isComplaint = row.kind.startsWith("complaint_");
-    const appLabel = isComplaint ? "Complaint (RM/FG)" : isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isComplaint ? "/complaint" : isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isComplaint ? "Quality · Complaint" : isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    /* ⚠⚠ A CONFIDENTIAL HELP DESK TICKET MAILS NO SUBJECT AND NO BODY.
+       fms_help_announce builds the payload with `subject: null` and
+       `confidential: true` for grievance / POSH / disciplinary, because an
+       inbox is the least controlled place in the company — forwarded,
+       searched, read on a shared phone — and decision D4 is that those are
+       readable only in the hub, by named people. The mail says the ticket
+       needs them and links to it. Never "helpfully" fall back to a subject
+       line here. */
+    const isHelpDesk = row.kind.startsWith("help-desk_");
+    const appLabel = isHelpDesk ? "Help Desk" : isComplaint ? "Complaint (RM/FG)" : isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isHelpDesk ? "/help-desk" : isComplaint ? "/complaint" : isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isHelpDesk ? "HR · Help Desk" : isComplaint ? "Quality · Complaint" : isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
     const headline = str(p.headline, str(p.text, `${appLabel} update`));
     const eyebrow = str(p.eyebrow, appLabel);
-    const ctaPath = str(p.ctaPath, basePath);
+    // Help Desk names the ticket directly in `path`; every other module uses
+    // `ctaPath`. Both fall back to the module root.
+    const ctaPath = str(p.ctaPath, str(p.path, basePath));
     const link = APP_BASE_URL ? `${APP_BASE_URL}${ctaPath}` : "";
     const note = (p.note && typeof p.note === "object") ? (p.note as { label?: string; text?: string }) : null;
     const inner =
@@ -1280,6 +1416,8 @@ async function compose(row: Row): Promise<Composed | null> {
             ? `You're receiving this because you're on the panel for this interview.`
             : isHr || isExit
             ? `You're receiving this because you own this master, or you raised the request.`
+            : isHelpDesk
+            ? `You're receiving this because this help ticket needs you.`
             : `You're receiving this because you're the next actor on this ${appLabel} document.`
         } Replies reach the person who acted.`,
       }),

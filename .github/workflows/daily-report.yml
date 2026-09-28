@@ -1,0 +1,169 @@
+# =============================================================================
+# The evening Daily Report (DR-3) — what the business did today, mailed as a PDF.
+#
+# Shape, decided 28-09-2026: every evening at 20:30 IST · PDF only · one report covering all
+# locations · sent at the fixed time whether or not the eleven bank balances have been typed.
+#
+# WHY A GITHUB RUNNER AND NOT AN EDGE FUNCTION
+#   Measured for THIS report on 28-09-2026: the 6-page PDF draws in 1.6s on a quiet day and
+#   1.8-2.0s on a busy one (259 sale lines). The Edge ceiling is 2s of CPU per request and the
+#   budget is CUMULATIVE — yielding does not reset it — so the drawing alone lands ON the limit
+#   before the register JSON is parsed and two Poppins faces are embedded.
+#
+#   A figure sitting exactly at the limit is worse than one clearly over it: it fails
+#   intermittently, on the busiest days, at 20:30, while every run still reports success. A runner
+#   has no such cap, and it has the repository checked out — so the mail is built by the app's OWN
+#   TypeScript (`lib/reportInput.ts`, the function `pages/DailyReport.tsx` renders from) rather than
+#   by a second implementation that would drift away from the screen.
+#
+# WHAT THIS FILE DECIDES: NOTHING.
+#   `daily_report_email_due()` answers "should anything go out right now, and to whom", checking the
+#   arming switch, the report's own switch, the schedule an admin set, the send day, the slot, the
+#   grace window and the send log. The gate step below asks it and stops if the answer is no. So
+#   changing the time, the recipients, or turning the whole thing off, takes effect at the next tick
+#   with no deploy and no edit here.
+#
+# ⚠ THE REAL TIMER IS pg_cron, NOT THE `schedule:` BLOCK BELOW.
+#   GitHub's own scheduler is kept only as a free backstop, and on this repository it is a poor one:
+#   in Aug-2026 it decayed from ~40 ticks a day to ONE and missed the Collection report's Saturday
+#   slot outright. `daily-report-email-kick` in the database does the waking (see migration
+#   20261212120100) and fires this workflow by `workflow_dispatch` only when a send is actually due.
+#   The backstop cannot double-send: the job re-asks the gate, and the send log claims the slot.
+#
+# ⚠ SCHEDULED WORKFLOWS ONLY RUN FROM THE DEFAULT BRANCH. Until this file is on `master`, the cron
+#   below does not exist as far as GitHub is concerned — a `workflow_dispatch` from a branch will
+#   still work, the timer will not. The same applies to the pg_cron kick, whose `git_ref` is
+#   `master`: a dispatch naming a ref that does not carry this file is a 404 nobody sees.
+#
+# ⚠ AND GITHUB DISABLES A SCHEDULED WORKFLOW AFTER 60 DAYS WITH NO COMMITS TO THE REPOSITORY.
+#   It emails the owner when it does. This repo is under daily development so it is unlikely, but it
+#   is a silent stop rather than a failure, which is the kind worth writing down.
+# =============================================================================
+
+name: Daily report
+
+on:
+  schedule:
+    # A backstop only — see the header. Every half hour; the first step is a single HTTP call that
+    # costs a second or two and stops there on all but the one tick a day that is due.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run builds and sends nothing · sample mails only sample_to · scheduled is the real send"
+        type: choice
+        default: dry-run
+        options: [dry-run, sample, scheduled]
+      sample_to:
+        description: "MODE=sample only — the single address the sample goes to"
+        type: string
+        default: ""
+      for_date:
+        description: "dry-run/sample only — the day to report on (YYYY-MM-DD). Blank = today IST."
+        type: string
+        default: ""
+
+# A slot must never be served twice. The send log in the database is the real guarantee; this stops
+# two runs racing towards it in the first place. `cancel-in-progress: false` on purpose — killing a
+# run that has already queued some of the mail would be worse than letting it finish.
+concurrency:
+  group: daily-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CONNECTWAVE_URL: ${{ secrets.CONNECTWAVE_URL }}
+      CONNECTWAVE_ANON_KEY: ${{ secrets.CONNECTWAVE_ANON_KEY }}
+      MODE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.mode }}
+      SAMPLE_TO: ${{ inputs.sample_to }}
+      FOR_DATE: ${{ inputs.for_date }}
+
+    steps:
+      # ── The gate ──────────────────────────────────────────────────────────
+      # Asked BEFORE the checkout and the install, because on 47 of the 48 daily ticks the answer is
+      # no and there is no reason to spend two minutes finding that out. A dispatched run skips the
+      # gate: someone asking for it by hand has already decided.
+      - name: Is anything due?
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+            echo "dispatched by hand (MODE=$MODE) — not asking the scheduler"
+            exit 0
+          fi
+          answer=$(curl -sS -X POST "$SUPABASE_URL/rest/v1/rpc/daily_report_email_due" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" -d '{}')
+          echo "$answer" | jq -r 'if .due then "DUE for \(.forDate) — \((.book|length)) recipient(s), bank balances \(.balances.entered) of \(.balances.expected)" else "not due: \(.reason)" end'
+          # A salesperson row under this report's key reaches nobody — this report has no
+          # per-salesperson version. Said out loud even on a tick that does nothing: it is the
+          # failure that otherwise looks exactly like success.
+          echo "$answer" | jq -r 'if (.strays // []) | length > 0 then "WARNING salesperson rows on this list reach nobody: \((.strays|join(", ")))" else empty end'
+          if [ "$(echo "$answer" | jq -r '.due')" = "true" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out
+        if: steps.gate.outputs.run == 'yes'
+        uses: actions/checkout@v4
+
+      # ⚠ 24, NOT 20, AND NOT BY PREFERENCE.
+      #   supabase-js builds a RealtimeClient inside `createClient` whether or not anything
+      #   subscribes, and that needs a global `WebSocket`. Node gained one in 22, so on 20 the job
+      #   dies at module load with "Node.js 20 detected without native WebSocket support" before a
+      #   single row is read. 24 is also the version this was verified on locally, so the runner and
+      #   the desk are running the same thing.
+      - name: Node
+        if: steps.gate.outputs.run == 'yes'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The app's own install. The builder bundles the app's TypeScript and uses the app's jsPDF, so
+      # there is no second dependency tree to keep in step.
+      - name: Install
+        if: steps.gate.outputs.run == 'yes'
+        run: npm ci
+        working-directory: frontend
+
+      # Built here rather than committed: a stale bundle that no longer matches the report's rules is
+      # exactly the drift this design exists to avoid. The build also refuses to compile anything
+      # that reaches for the browser or for the dead legacy receivables project, and it typechecks
+      # these files — which `npm run build` never sees.
+      - name: Bundle the report builder
+        if: steps.gate.outputs.run == 'yes'
+        run: node supabase/dailyreport/build.mjs
+
+      - name: Build and send
+        if: steps.gate.outputs.run == 'yes'
+        env:
+          # ⚠ THE COLLECTION REPORT'S VARIABLE NAME, ON PURPOSE. `brandAssetsServer.ts` is SHARED by
+          #   both jobs rather than copied, and it reads this name. Renaming it would mean editing a
+          #   working production path to make a new job read prettier.
+          COLLECTIONS_REPORT_PUBLIC_DIR: ${{ github.workspace }}/frontend/public
+          OUT_DIR: ${{ github.workspace }}/daily-report-out
+        run: node supabase/dailyreport/dist/daily-report.cjs
+
+      # Only in dry-run, and only so a person can open what the scheduler would have posted without
+      # anything being posted. A real run leaves its file in the `report-exports` bucket instead.
+      - name: Keep the dry-run file
+        if: steps.gate.outputs.run == 'yes' && env.MODE == 'dry-run'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-report
+          path: daily-report-out
+          retention-days: 7

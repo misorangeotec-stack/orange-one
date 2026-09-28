@@ -9,7 +9,7 @@ import type { PassengerInput } from "../data/travelTripWrites";
  * Who is on the ticket.
  *
  * ⚠ A PASSENGER IS NOT A CLAIMANT, and the form says so rather than assuming the
- *   reader knows. Reimbursement is personal — Policy §11 pays into one
+ *   reader knows. Reimbursement is personal — Policy Section 11 pays into one
  *   employee's account — so a second EMPLOYEE travelling alongside raises their
  *   own trip. What this list is for is the airline: a booking needs a name, a
  *   gender and a date of birth for every seat, including a customer or a spouse

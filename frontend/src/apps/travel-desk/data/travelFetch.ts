@@ -209,7 +209,7 @@ function mapPolicy(raw: any): TravelPolicyConfig {
 }
 
 /**
- * The approval matrix, with §3.2's own answer as the floor.
+ * The approval matrix, with Section 3.2's own answer as the floor.
  *
  * ⚠ THE FALLBACK IS "BOTH", NOT "EITHER". A missing or malformed config row must
  *   not quietly drop an approval: the safe direction on a spending control is
@@ -610,7 +610,7 @@ export async function fetchTravelData(): Promise<TravelData> {
     reassignPoolUserIds: (cfg.get("reassign_pool")?.user_ids as string[] | undefined) ?? [],
     companyIdentity: {
       legalName: str(identity.legal_name),
-      // ⚠ Blank until Finance confirms it. Policy §7.1 and §11.3 both carry the
+      // ⚠ Blank until Finance confirms it. Policy Section 7.1 and Section 11.3 both carry the
       //   GSTIN as "[⚠ CONFIRM with Finance]", and a placeholder number printed
       //   on guidance an employee hands a hotel is worse than a visible gap.
       gstin: str(identity.gstin),

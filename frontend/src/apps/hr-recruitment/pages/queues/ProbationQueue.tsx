@@ -90,14 +90,15 @@ export default function ProbationQueue() {
       cell: (p) => {
         const c = candOf(p);
         const o = s.onboardingById(p.onboardingId);
+        // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
         return (
-          <div>
-            <div className="font-medium text-navy">{c?.name ?? "Unknown"}</div>
-            <div className="text-[12px] text-grey-2">
+          <>
+            <span className="font-medium text-navy">{c?.name ?? "Unknown"}</span>
+            <span className="ml-1.5 text-[12px] text-grey-2">
               {reqOf(p)?.jobTitle ?? "—"}
               {o?.employeeCode && ` · ${o.employeeCode}`}
-            </div>
-          </div>
+            </span>
+          </>
         );
       },
       sortValue: (p) => candOf(p)?.name ?? "",
@@ -143,6 +144,7 @@ export default function ProbationQueue() {
       header: "Joined",
       cell: (p) => <span className="text-grey">{formatDateDMY(p.joiningDate)}</span>,
       sortValue: (p) => p.joiningDate,
+      filter: { kind: "date", get: (p) => p.joiningDate ?? "" },
       exportValue: (p) => formatDateDMY(p.joiningDate),
       tdClassName: "whitespace-nowrap",
     },
@@ -173,6 +175,7 @@ export default function ProbationQueue() {
         );
       },
       sortValue: (p) => s.checkinsFor(p.id).filter((c) => c.completedAt).length,
+      filter: { kind: "number", get: (p) => s.checkinsFor(p.id).filter((c) => c.completedAt).length },
       exportValue: (p) =>
         `${s.checkinsFor(p.id).filter((c) => c.completedAt).length} of ${CHECKIN_DAYS.length} complete`,
     },
@@ -181,6 +184,7 @@ export default function ProbationQueue() {
       header: "Due",
       cell: (p) => <DueCell dueIso={dueOf(p)} />,
       sortValue: (p) => dueOf(p) ?? "9999",
+      filter: { kind: "date", get: (p) => dueOf(p) ?? "" },
       exportValue: (p) => formatDateDMY(dueOf(p)),
       tdClassName: "whitespace-nowrap",
     },

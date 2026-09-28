@@ -150,6 +150,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       header: "Recorded",
       cell: (e) => <span className="text-grey whitespace-nowrap">{formatDateTime(e.atIso)}</span>,
       sortValue: (e) => e.atIso,
+      filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) },
     },
     {
       key: "by",

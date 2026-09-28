@@ -86,24 +86,31 @@ export default function RequestQueue({
         </Link>
       ),
       sortValue: ({ request }) => request.reqNo,
+      filter: { kind: "text", get: ({ request }) => request.reqNo },
       tdClassName: "whitespace-nowrap",
     },
     {
       key: "item",
       header: "Item / Service",
       cell: ({ request: r }) => <span className="text-navy">{r.itemName ?? "—"}</span>,
+      sortValue: ({ request }) => request.itemName ?? "",
       filter: { kind: "text", get: ({ request }) => request.itemName ?? "" },
     },
     {
       key: "type",
       header: "Type",
       cell: ({ request: r }) => <span className="text-grey-2">{requestTypeLabel(r.requestType)}</span>,
+      sortValue: ({ request }) => requestTypeLabel(request.requestType),
       filter: { kind: "select", get: ({ request }) => requestTypeLabel(request.requestType) },
     },
     {
       key: "for",
       header: "Requested for",
       cell: ({ request: r }) => <span className="text-grey">{r.requestedForName}</span>,
+      sortValue: ({ request }) => request.requestedForName,
+      // A searchable multi-select, not a text box: this repo's default for a name
+      // column, and MultiSelect forces its search box on however many names there are.
+      filter: { kind: "select", get: ({ request }) => request.requestedForName },
     },
     {
       key: "department",
@@ -113,7 +120,13 @@ export default function RequestQueue({
       filter: { kind: "select", get: ({ request }) => deptName(request.departmentId) },
       tdClassName: "whitespace-nowrap",
     },
-    { key: "qty", header: "Qty", cell: ({ request: r }) => <span className="text-grey-2">{r.quantity}</span> },
+    {
+      key: "qty",
+      header: "Qty",
+      cell: ({ request: r }) => <span className="text-grey-2">{r.quantity}</span>,
+      sortValue: ({ request }) => request.quantity,
+      filter: { kind: "text", get: ({ request }) => request.quantity },
+    },
     {
       key: "due",
       header: "Due",
@@ -122,7 +135,9 @@ export default function RequestQueue({
         const overdue = dueIso < today;
         return <span className={overdue ? "text-ryg-red font-semibold" : "text-navy"}>{dmy(dueIso)}</span>;
       },
+      // `sortValue` orders on the ISO date, never the dd-mm-yyyy the cell prints.
       sortValue: ({ dueIso }) => dueIso ?? "9999-99-99",
+      filter: { kind: "date", get: ({ dueIso }) => dueIso ?? "" },
     },
   ];
 
@@ -150,6 +165,7 @@ export default function RequestQueue({
       key: "item",
       header: "Item / Service",
       cell: (e) => <span className="text-navy">{e.row.itemName ?? "—"}</span>,
+      sortValue: (e) => e.row.itemName ?? "",
       filter: { kind: "text", get: (e) => e.row.itemName ?? "" },
     },
     {
@@ -157,6 +173,7 @@ export default function RequestQueue({
       header: "Requested for",
       cell: (e) => <span className="text-grey">{e.row.requestedForName}</span>,
       sortValue: (e) => e.row.requestedForName,
+      filter: { kind: "select", get: (e) => e.row.requestedForName },
     },
     // Reads the entry's OWN `departmentId`, stamped at build time in lib/queues.ts
     // — not a lookup off `e.row`. The filter runs per row per sort comparison, so
@@ -169,7 +186,13 @@ export default function RequestQueue({
       filter: { kind: "select", get: (e) => deptName(e.departmentId) },
       tdClassName: "whitespace-nowrap",
     },
-    { key: "qty", header: "Qty", cell: (e) => <span className="text-grey-2">{e.row.quantity}</span> },
+    {
+      key: "qty",
+      header: "Qty",
+      cell: (e) => <span className="text-grey-2">{e.row.quantity}</span>,
+      sortValue: (e) => e.row.quantity,
+      filter: { kind: "text", get: (e) => e.row.quantity },
+    },
     isHandover
       ? {
           // Handover's outcome is a delivery, not an approve/reject.
@@ -233,6 +256,7 @@ export default function RequestQueue({
           <span className="text-grey-2">—</span>
         ),
       sortValue: (e) => e.editedAtIso ?? "",
+      filter: { kind: "date", get: (e) => (e.editedAtIso ?? "").slice(0, 10) },
       tdClassName: "whitespace-nowrap",
     },
   ];
@@ -250,11 +274,15 @@ export default function RequestQueue({
         </p>
       </div>
 
+      {/* ⚠ `completedCount` is `stage.rows.length`, not `completedEntries.length`. The
+          pending count is scoped to me and the completed one was not, so the tab read
+          "Completed 15" and opening it showed ONE row — the scope toggle beneath it
+          defaults to Mine. Asset Maintenance and Order to Dispatch count it this way. */}
       <StageTabs
         mode={stage.mode}
         onMode={stage.setMode}
         pendingCount={rows.length}
-        completedCount={completedEntries.length}
+        completedCount={stage.rows.length}
         scope={stage.scope}
         onScope={stage.setScope}
       />

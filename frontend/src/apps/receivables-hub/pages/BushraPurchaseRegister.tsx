@@ -22,8 +22,14 @@ import { loadItemLookup } from "@hub/lib/bushraSalesRegister";
 import { loadBushraPurchaseRegister, type BushraPurchaseRow } from "@hub/lib/bushraPurchaseRegister";
 import { PURCHASE_REGISTER_LOCAL, loadPurchaseSnapshot } from "@hub/lib/purchaseRegister";
 import { exportPurchaseRegisterXlsx } from "@hub/lib/exportPurchaseRegister";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 
 const nf = (max: number) => new Intl.NumberFormat("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: max });
 const fmtQty = (n: number) => (n === 0 ? "—" : nf(3).format(n));
@@ -216,7 +222,7 @@ export default function BushraPurchaseRegister() {
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to={`${BASE}/reports?cat=bushra-report`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to={`${BASE}?cat=bushra-report`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3 w-3" /> Bushra-Report
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

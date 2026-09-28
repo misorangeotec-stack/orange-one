@@ -13,14 +13,14 @@ import type { Trip } from "../../types";
  * Trips waiting on money before they leave.
  *
  * ⚠ THIS QUEUE IS DUE BEFORE ITS TRIPS DEPART, NOT AFTER SOMETHING COMPLETED —
- *   the only step in the module measured that way. §11.1 wants the advance
+ *   the only step in the module measured that way. Section 11.1 wants the advance
  *   credited before the employee travels; money that lands afterwards has missed
  *   the point entirely. `TRIGGER_STEPS` marks it `before: true` and the due date
  *   counts BACKWARDS from the planned departure with `addWorkingDaysSigned`, so
  *   a row here goes red while there is still time to act rather than once the
  *   traveller has already gone.
  *
- * ⚠ THE OUTSTANDING COLUMN IS THE §11.2 WARNING. It shows what the traveller
+ * ⚠ THE OUTSTANDING COLUMN IS THE Section 11.2 WARNING. It shows what the traveller
  *   already owes on OTHER trips, so Finance can see the refusal coming instead
  *   of meeting it on the Save button.
  */
@@ -84,7 +84,7 @@ export default function AdvanceQueue() {
       },
       {
         key: "ceiling",
-        header: "§11.1 ceiling",
+        header: "Section 11.1 ceiling",
         align: "right",
         cell: (t) => money(s.advanceCeiling(t)),
         sortValue: (t) => s.advanceCeiling(t) ?? 0,
@@ -111,7 +111,7 @@ export default function AdvanceQueue() {
           return o > 0 ? <span className="font-semibold text-ryg-red">{money(o)}</span> : <span className="text-grey-2">—</span>;
         },
         sortValue: (t) => owingOf(t),
-        filter: { kind: "select", get: (t) => (owingOf(t) > 0 ? "Blocked by §11.2" : "Clear") },
+        filter: { kind: "select", get: (t) => (owingOf(t) > 0 ? "Blocked by Section 11.2" : "Clear") },
         exportValue: (t) => owingOf(t),
         tdClassName: "whitespace-nowrap",
       },
@@ -133,7 +133,7 @@ export default function AdvanceQueue() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Travel Advance</h1>
         <p className="text-[13px] text-grey">
-          Money that has to reach the traveller before they leave (§11.1). The due date on this step
+          Money that has to reach the traveller before they leave (Section 11.1). The due date on this step
           counts <strong>backwards</strong> from the departure date — a row goes red while there is
           still time to act.
         </p>

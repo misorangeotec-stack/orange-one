@@ -352,19 +352,22 @@ export default function PipelineDashboard() {
         key: "candidate",
         header: "Candidate",
         alwaysVisible: true,
+        // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
         cell: (c) => (
-          <div className="flex items-center gap-2.5">
-            <Avatar name={c.name} color={tintFor(c.id)} size={28} />
-            <div className="min-w-0">
+          <span className="inline-flex max-w-full items-center gap-2.5">
+            <span className="shrink-0">
+              <Avatar name={c.name} color={tintFor(c.id)} size={28} />
+            </span>
+            <span className="min-w-0 truncate">
               <button
                 onClick={() => openCandidate(c.id)}
-                className="block truncate text-left text-[14px] font-semibold leading-tight text-navy hover:text-orange hover:underline"
+                className="text-left text-[14px] font-semibold leading-tight text-navy hover:text-orange hover:underline"
               >
                 {c.name}
               </button>
-              <div className="mt-0.5 text-[11.5px] text-grey-2">{c.candidateNo ?? "—"}</div>
-            </div>
-          </div>
+              <span className="ml-1.5 text-[11.5px] text-grey-2">{c.candidateNo ?? "—"}</span>
+            </span>
+          </span>
         ),
         sortValue: (c) => c.name,
         // One box that finds a person however you remember them.
@@ -380,16 +383,17 @@ export default function PipelineDashboard() {
         cell: (c) => {
           const r = s.requisitionById(c.requisitionId);
           if (!r) return <span className="text-grey-2">—</span>;
+          // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
           return (
-            <div className="min-w-0">
+            <>
               <Link
                 to={`/hr-recruitment/positions/${r.id}`}
-                className="block truncate text-[13px] font-medium text-navy hover:text-orange hover:underline"
+                className="text-[13px] font-medium text-navy hover:text-orange hover:underline"
               >
                 {r.jobTitle}
               </Link>
-              <div className="mt-0.5 text-[11.5px] text-grey-2">{r.mrfNo}</div>
-            </div>
+              <span className="ml-1.5 text-[11.5px] text-grey-2">{r.mrfNo}</span>
+            </>
           );
         },
         sortValue: positionLabel,
@@ -402,13 +406,13 @@ export default function PipelineDashboard() {
         cell: (c) => {
           const phase = PHASE_OF[c.stage];
           return (
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-navy">
+            <span className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap text-[12.5px] text-navy">
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
                 style={{ background: PHASE_FILL[phase] }}
                 aria-hidden="true"
               />
-              {MATRIX_PHASES.find((p) => p.key === phase)?.label ?? phase}
+              <span className="min-w-0 truncate">{MATRIX_PHASES.find((p) => p.key === phase)?.label ?? phase}</span>
             </span>
           );
         },
@@ -439,6 +443,8 @@ export default function PipelineDashboard() {
             </span>
           );
         },
+        // A pill: never cut, no handle (PF-20).
+        resize: false,
         sortValue: (c) => STAGE_LABEL[c.stage],
         // Options are listed, not derived: a stage nobody is currently in must still
         // be selectable, or you cannot ask "is anyone at Round 3?" and get "no".
@@ -452,18 +458,19 @@ export default function PipelineDashboard() {
         cell: (c) => {
           const fit = s.fitFor(c.id);
           if (!fit) return <span className="text-[12.5px] text-grey-2">Not scored</span>;
+          // One line (PF-20): the bar sits BESIDE the score instead of under it.
           return (
-            <div className="w-[64px]" title={`Scored ${formatDateDMY(fit.scoredAt)}`}>
+            <span className="inline-flex items-center gap-2 whitespace-nowrap" title={`Scored ${formatDateDMY(fit.scoredAt)}`}>
               <span className="text-[12.5px] font-semibold tabular-nums text-navy">
                 {fit.overall} <span className="font-normal text-grey-2">/ 10</span>
               </span>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-line">
+              <span className="inline-block h-1.5 w-[38px] overflow-hidden rounded-full bg-line align-middle">
                 <span
                   className="block h-full rounded-full"
                   style={{ width: `${fit.overall * 10}%`, background: fitFill(fit.overall) }}
                 />
-              </div>
-            </div>
+              </span>
+            </span>
           );
         },
         // Unscored sorts as -1, never as 0: "no read yet" is not "read, and weak".
@@ -521,6 +528,7 @@ export default function PipelineDashboard() {
         header: "Due",
         cell: (c) => <DueCell dueIso={s.candidateDueIso(c)} />,
         sortValue: (c) => s.candidateDueIso(c) ?? "9999",
+        filter: { kind: "date", get: (c) => s.candidateDueIso(c) ?? "" },
         exportValue: (c) => formatDateDMY(s.candidateDueIso(c)),
         tdClassName: "whitespace-nowrap",
       },

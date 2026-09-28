@@ -11,7 +11,15 @@ import {
   partyLabelOf,
   partyRoleOf,
 } from "../lib/format";
-import { COMPLAINT_TYPE_LABEL, COMPLAINT_TYPES, type ComplaintType } from "../types";
+import {
+  COMPLAINT_TYPE_LABEL,
+  COMPLAINT_TYPES,
+  RM_ORIGIN_DESTINATION,
+  RM_ORIGIN_LABEL,
+  RM_ORIGINS,
+  type ComplaintType,
+  type RmOrigin,
+} from "../types";
 import { nowLocalInput, type ComplaintFormApi } from "../pages/requests/useComplaintForm";
 
 /**
@@ -35,7 +43,11 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
 
   const companyOpts = s.companies.map((c) => ({ value: c.id, label: c.name }));
   const partyOpts = f.partyOptions.map((p) => ({ value: p.id, label: p.name }));
-  const itemOpts = f.partyItems.map((i) => ({
+  // ⚠ `itemOptions`, NOT the party catalogue. It folds in the search hits and —
+  //   critically — whatever is already selected, so an item resolved from a LOT
+  //   still renders on the RM side, where the catalogue is always empty. See
+  //   useComplaintForm.
+  const itemOpts = f.itemOptions.map((i) => ({
     value: i.id,
     label: i.name,
     sublabel: i.category ?? undefined,
@@ -65,6 +77,47 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
         <h2 className="text-[15px] font-bold text-navy">The LOT facing the issue</h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {/*
+            ⚠ FIRST IN THE CARD, AND BEFORE THE LOT NO., because it is the only
+              field on this form that changes what HAPPENS rather than what
+              something is called: Domestic sends the complaint to the purchase
+              department, Import sends it to management. Asked here, the user
+              answers it while they are still thinking about where the material
+              came from — and the hint below says out loud whose desk they are
+              choosing, so the routing is never a surprise on submit.
+
+            ⚠ RAW MATERIAL ONLY. A finished-good complaint has no such thing, so
+              the field is absent rather than disabled — and `setComplaintType`
+              clears the answer when the type is switched either way.
+          */}
+          {t === "raw_material" && (
+            <div>
+              <FieldLabel
+                strong
+                label="Type"
+                required
+                hint={
+                  f.form.rmOrigin
+                    ? `goes to ${RM_ORIGIN_DESTINATION[f.form.rmOrigin as RmOrigin]}`
+                    : "who handles this complaint"
+                }
+              >
+                <Combobox
+                  value={f.form.rmOrigin}
+                  onChange={(v) => f.set("rmOrigin", v as "" | RmOrigin)}
+                  options={RM_ORIGINS.map((v) => ({
+                    value: v,
+                    label: RM_ORIGIN_LABEL[v],
+                    sublabel: RM_ORIGIN_DESTINATION[v],
+                  }))}
+                  placeholder="Domestic or Import"
+                  clearable
+                />
+              </FieldLabel>
+              <ErrorText>{f.errorFor("rmOrigin")}</ErrorText>
+            </div>
+          )}
+
           <div>
             <FieldLabel strong label={lotLabelOf(t)} required>
               <TextInput
@@ -245,9 +298,15 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
             <FieldLabel strong label="Item name" required>
               <Combobox
                 value={f.form.itemId}
-                onChange={(v) => f.pickItem(f.partyItems.find((i) => i.id === v) ?? null)}
+                onChange={(v) => f.pickItem(f.itemOptions.find((i) => i.id === v) ?? null)}
                 options={itemOpts}
-                placeholder={f.form.partyId ? "Search this party's items" : "Pick a party first"}
+                placeholder={
+                  !f.form.partyId
+                    ? "Pick a party first"
+                    : itemOpts.length === 0
+                      ? "Type the item name below to search"
+                      : "Search items"
+                }
                 disabled={!f.form.partyId}
                 searchable
                 wrapLabel
@@ -255,12 +314,33 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               />
             </FieldLabel>
             {!f.form.itemId && (
-              <TextInput
-                className="mt-2"
-                value={f.form.itemName}
-                onChange={(e) => f.set("itemName", e.target.value)}
-                placeholder="…or type the item name"
-              />
+              <>
+                {/*
+                  ONE BOX, TWO JOBS. It has always been the free-text fallback —
+                  a complaint may legitimately name an item that is not in
+                  mst_items, and refusing it would block the complaint rather
+                  than fix the master. It now ALSO drives the item search, so
+                  typing the name surfaces the real rows in the picker above.
+
+                  That matters most on the RM side: `mst_party_items` is a
+                  customer catalogue built from the sales register, so a vendor
+                  has no items in it and the picker would otherwise be a dropdown
+                  that never opens onto anything.
+                */}
+                <TextInput
+                  className="mt-2"
+                  value={f.form.itemName}
+                  onChange={(e) => f.set("itemName", e.target.value)}
+                  placeholder="…or type the item name to search"
+                />
+                {f.itemCatalogueEmpty && f.form.partyId && f.form.itemName.trim().length < 2 && (
+                  <p className="mt-1 text-[12px] text-grey-2">
+                    {partyRoleOf(t) === "Vendor"
+                      ? "Vendors have no item catalogue — type two letters to search all items."
+                      : "This party has no catalogue yet — type two letters to search all items."}
+                  </p>
+                )}
+              </>
             )}
             <ErrorText>{f.errorFor("itemName")}</ErrorText>
           </div>

@@ -112,7 +112,11 @@ export default function Scorecard() {
   const deptName = (id: string | null) => (id ? (departments.find((d) => d.id === id)?.name ?? null) : null);
   const personDept = deptName(person.departmentId);
   // The sheet belongs to the JOB, so it is re-read whenever the chosen person changes.
-  const framework = frameworkFor({ department: personDept, designation: person.designation });
+  const framework = frameworkFor({
+    department: personDept,
+    designation: person.designation,
+    email: person.email,
+  });
 
   // What the reader has typed, per person and per period.
   // ⚠ EVERY HOOK BELOW RUNS WHETHER OR NOT THIS JOB HAS A SHEET. React requires the

@@ -38,7 +38,7 @@ interface PoItemLike { id: string; poId: string; requestItemId: string; qty?: nu
 
 export interface ProcurementEmailDeps {
   vendors: Named[];
-  companies: Named[];
+  companies: (Named & { location?: string | null })[];
   categories: Named[];
   items: Named[];
   requests: RequestLike[];
@@ -79,7 +79,12 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
   const { vendors, companies, categories, items, requests, requestItems, pos, poItems } = deps;
 
   const vName = (id?: string | null) => (id ? vendors.find((v) => v.id === id)?.name ?? dash : dash);
-  const cName = (id?: string | null) => (id ? companies.find((c) => c.id === id)?.name ?? dash : dash);
+  // A company is a Tally book and two books share an alias (O-tec in Surat and
+  // in Noida), so the site is part of the name — same as companyLabel.
+  const cName = (id?: string | null) => {
+    const c = id ? companies.find((x) => x.id === id) : undefined;
+    return c ? (c.location ? `${c.name} — ${c.location}` : c.name) : dash;
+  };
   const catName = (id?: string | null) => (id ? categories.find((c) => c.id === id)?.name ?? dash : dash);
   const iName = (id: string) => items.find((i) => i.id === id)?.name ?? "Unknown item";
   const lineOf = (id: string) => requestItems.find((l) => l.id === id);
@@ -444,6 +449,34 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         note: reasonNote("Note", note),
         ctaLabel: "Open RM Domestic", ctaPath: `${B}/requests`,
+      };
+    },
+
+    // Hold / remarks at the Generate PO step — raised by the PO Desk, sent to the requester.
+    poOnHold(requestId: string, remarks: string | null, updated: boolean): ProcurementEmailMeta {
+      const req = reqOf(requestId);
+      const lines = linesOfRequest(requestId);
+      return {
+        subject: `PO on hold${req?.requestNo ? ` (Req #${req.requestNo})` : ""}${updated ? " - remarks updated" : ""}`,
+        eyebrow: "PO on hold",
+        headline: updated ? "Remarks updated on a requisition held at PO generation" : "Your requisition is on hold at PO generation",
+        action: updated ? "updated the remarks on a requisition on hold" : "put a requisition on hold before raising its PO",
+        docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
+        rows: [{ label: "Vendor", value: vendorOfLines(lines) }, totalsOf(lines).row],
+        note: reasonNote("Remarks", remarks),
+        ctaLabel: "Open the requisition", ctaPath: `${B}/requests/${requestId}`,
+      };
+    },
+    poResumed(requestId: string, remarks: string | null): ProcurementEmailMeta {
+      const req = reqOf(requestId);
+      return {
+        subject: `PO resumed${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`,
+        eyebrow: "PO resumed", headline: "Your requisition is back on track for its PO",
+        action: "resumed PO generation for a requisition",
+        docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
+        rows: [{ label: "Vendor", value: vendorOfLines(linesOfRequest(requestId)) }],
+        note: reasonNote("Remarks", remarks),
+        ctaLabel: "Open the requisition", ctaPath: `${B}/requests/${requestId}`,
       };
     },
 

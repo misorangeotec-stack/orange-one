@@ -33,6 +33,7 @@ const DISPATCH: ComboOption[] = [
   { value: "pending", label: "Pending" },
   { value: "dispatched", label: "Dispatched" },
   { value: "delayed", label: "Delayed" },
+  { value: "partial", label: "Partial Dispatch" },
 ];
 const CONDITION: ComboOption[] = [
   { value: "good", label: "Good" },
@@ -476,6 +477,8 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   const [revised, setRevised] = useState("");
   const [remarks, setRemarks] = useState("");
   const [piRemarks, setPiRemarks] = useState("");
+  /** Partial Dispatch: the quantity per PO line in THIS lot. */
+  const [lotQty, setLotQty] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /** A quick read-only look at a vendor PI, opened from the reference panel. */
@@ -502,7 +505,8 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
       setErr(null);
       return;
     }
-    setStatus(latest?.dispatchStatus ?? "pending");
+    setStatus(latest?.dispatchStatus === "partial" ? "pending" : latest?.dispatchStatus ?? "pending");
+    setLotQty({});
     // Actual dispatch is a FACT — the day the goods really left — so it seeds
     // ONLY from a prior follow-up that actually recorded a dispatch. It must
     // never seed from the dispatch DUE date: that is a future promise, and
@@ -524,12 +528,13 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   const draftKeyStr = usePoStepDraftKey("follow_up", open && !readOnly, editing?.id ?? po?.id);
   const draft = useStepDraft({
     key: draftKeyStr,
-    values: { status, actual, lr, transport, revised, remarks, piRemarks },
+    values: { status, actual, lr, transport, revised, remarks, piRemarks, lotQty },
     apply: (v) => {
       setStatus(v.status);
+      setLotQty(v.lotQty ?? {});
       // Keep `onStatusChange`'s invariant: an actual dispatch date only means
       // anything on a `dispatched` follow-up.
-      setActual(v.status === "dispatched" ? v.actual : "");
+      setActual(v.status === "dispatched" || v.status === "partial" ? v.actual : "");
       setLr(v.lr);
       setTransport(v.transport);
       setRevised(v.revised);
@@ -545,11 +550,54 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   // says the goods have NOT left.
   const onStatusChange = (next: string) => {
     setStatus(next);
-    if (next !== "dispatched") setActual("");
+    if (next !== "dispatched" && next !== "partial") setActual("");
   };
+
+  // Partial Dispatch: ordered, dispatched so far and the balance, per PO line.
+  const poLines = s.poItemsForPo(po.id).map((it) => {
+    const line = s.lineById(it.requestItemId);
+    const sent = s.dispatchedQtyForPoItem(it.id);
+    return {
+      id: it.id,
+      name: line ? s.itemLabel(line.itemId) : "—",
+      unit: line?.unit ?? "",
+      ordered: it.qty,
+      sent,
+      balance: Math.max(0, Math.round((it.qty - sent) * 1000) / 1000),
+    };
+  });
+  const partial = status === "partial";
 
   const save = async () => {
     setErr(null);
+    if (partial) {
+      if (!actual) return setErr("Enter the date this lot left the vendor.");
+      if (actual > todayLocalIso()) return setErr("Enter a dispatch date on or before today.");
+      const lot = poLines
+        .map((l) => ({ l, q: Number(lotQty[l.id] || 0) }))
+        .filter((x) => x.q > 0);
+      if (lot.length === 0) return setErr("Enter the quantity dispatched in this lot for at least one item.");
+      const over = lot.find((x) => x.q > x.l.balance + 0.0005);
+      if (over) return setErr(`${over.l.name}: only ${over.l.balance} ${over.l.unit} is left to dispatch.`);
+      setBusy(true);
+      try {
+        await s.recordPartialDispatch({
+          poId: po.id,
+          actualDispatchDate: actual,
+          lrNo: lr.trim() || null,
+          transportDetails: transport.trim() || null,
+          remarks: remarks.trim() || null,
+          items: lot.map((x) => ({ poItemId: x.l.id, qty: x.q })),
+        });
+        draft.clear();
+        onClose();
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (status === "dispatched" && !actual) return setErr("Enter the date the goods actually left the vendor.");
     // `max` on the input only constrains the picker — save runs from a button,
     // not a form submit, so a typed or pasted date arrives unchecked. This is
@@ -586,9 +634,56 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-3.5">
-            <FieldLabel label="Dispatch Status"><ChoiceButtons value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance ariaLabel="Dispatch Status" /></FieldLabel>
+            <FieldLabel label="Dispatch Status"><ChoiceButtons value={status} onChange={onStatusChange} options={editing ? DISPATCH.filter((o) => o.value !== "partial") : DISPATCH} autoAdvance ariaLabel="Dispatch Status" /></FieldLabel>
+            {partial && (
+              <div className="space-y-1.5">
+                <div className={SECTION_HEADING_CLASS}>Quantity dispatched in this lot</div>
+                <div className="overflow-x-auto rounded-xl border border-line">
+                  <table className="w-full min-w-[420px] text-[12.5px]">
+                    <thead>
+                      <tr className="border-b border-line bg-page/60 text-left text-grey-2">
+                        <th className="px-2.5 py-1.5 font-medium">Item</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Ordered</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Dispatched</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Balance</th>
+                        <th className="w-28 px-2 py-1.5 font-medium">This lot</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {poLines.map((l) => {
+                        const now = Number(lotQty[l.id] || 0);
+                        const after = Math.max(0, Math.round((l.balance - now) * 1000) / 1000);
+                        return (
+                          <tr key={l.id} className="border-b border-line/70 last:border-0">
+                            <td className="px-2.5 py-1.5 font-medium text-navy">{l.name}</td>
+                            <td className="whitespace-nowrap px-2 py-1.5 text-right">{l.ordered} {l.unit}</td>
+                            <td className="whitespace-nowrap px-2 py-1.5 text-right">{l.sent}</td>
+                            <td className={cn("whitespace-nowrap px-2 py-1.5 text-right font-semibold", l.balance === 0 ? "text-ryg-green" : "text-navy")}>
+                              {now > 0 ? <>{after} <span className="font-normal text-grey-2">after</span></> : l.balance}
+                            </td>
+                            <td className="px-2 py-1">
+                              <TextInput
+                                type="number"
+                                min={0}
+                                max={l.balance}
+                                step="any"
+                                value={lotQty[l.id] ?? ""}
+                                disabled={l.balance === 0}
+                                onChange={(e) => setLotQty((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                                placeholder={l.balance === 0 ? "done" : "0"}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <Hint>The PO stays on Follow-up until every balance is zero. The goods of this lot can be received (GRN) straight away.</Hint>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
-              <FieldLabel label="Actual Dispatch Date" required={status === "dispatched"}>
+              <FieldLabel label={partial ? "Lot Dispatch Date" : "Actual Dispatch Date"} required={status === "dispatched" || partial}>
                 <TextInput type="date" value={actual} max={todayLocalIso()} onChange={(e) => setActual(e.target.value)} />
                 <Hint>The day the goods actually left — cannot be in the future</Hint>
               </FieldLabel>
@@ -641,10 +736,17 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
                 return (
                   <div key={f.id} className="px-3 py-2 text-[12.5px]">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold capitalize text-navy">{f.dispatchStatus}</span>
+                      <span className="font-semibold capitalize text-navy">{f.dispatchStatus === "partial" ? "Partial dispatch" : f.dispatchStatus}</span>
                       <span className="text-grey-2">{formatDate(f.createdAt)} · {who}</span>
                     </div>
                     {bits.length > 0 && <div className="text-grey mt-0.5">{bits.join(" · ")}</div>}
+                    {s.followupItemsForFollowup(f.id).length > 0 && (
+                      <div className="text-grey mt-0.5">
+                        {s.followupItemsForFollowup(f.id)
+                          .map((fi) => `${poLines.find((l) => l.id === fi.poItemId)?.name ?? "Item"}: ${fi.qty}`)
+                          .join(" · ")}
+                      </div>
+                    )}
                     {f.remarks && <div className="text-navy mt-0.5">{f.remarks}</div>}
                   </div>
                 );
@@ -697,7 +799,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
       // GRN, so it is the wrong number to show when correcting one of them.
       init[it.id] = editing
         ? String(s.grnItemsForGrn(editing.id).find((g) => g.poItemId === it.id)?.receivedQty ?? 0)
-        : String(Math.max(0, it.qty - it.receivedQty));
+        : String(Math.max(0, Math.min(it.qty, s.receiveCapForPoItem(it.id) ?? it.qty) - it.receivedQty));
     }
     setQty(init);
     setErr(null);
@@ -1598,7 +1700,7 @@ export function RequestCancelModal({ po, open, onClose }: { po: PurchaseOrder; o
   );
 }
 
-/** Approver-only — cancel the PO, optionally resolving a logged request. */
+/** The purchase department (sourcing owners), the PO's approver or an admin — cancel the PO before any goods are received or booked in Tally, optionally resolving a logged request. A remark is mandatory. */
 export function CancelPoModal({ po, request, open, onClose }: { po: PurchaseOrder; request: PoCancelRequest | null; open: boolean; onClose: () => void }) {
   const s = useProcurementStore();
   const [reason, setReason] = useState("");
@@ -1613,7 +1715,7 @@ export function CancelPoModal({ po, request, open, onClose }: { po: PurchaseOrde
 
   const save = async () => {
     setErr(null);
-    if (!reason.trim()) return setErr("A reason for the cancellation is required.");
+    if (!reason.trim()) return setErr("A remark is required to cancel this PO.");
     setBusy(true);
     try {
       await s.cancelPo(po.id, reason.trim(), request?.id ?? null);
@@ -1631,10 +1733,10 @@ export function CancelPoModal({ po, request, open, onClose }: { po: PurchaseOrde
       <div className="space-y-3.5">
         {po.advancePaid > 0 && (
           <p className="rounded-xl border border-ryg-red/30 bg-[#FDECEC] px-3 py-2 text-[12.5px] text-ryg-red">
-            An advance of {inr(po.advancePaid)} has already been paid on this PO — arrange the refund with the vendor separately. Note it in the reason below.
+            An advance of {inr(po.advancePaid)} has already been paid on this PO — arrange the refund with the vendor separately. Note it in the remark below.
           </p>
         )}
-        <FieldLabel label="Reason" required>
+        <FieldLabel label="Remark" required>
           <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this PO being cancelled?" />
         </FieldLabel>
         <p className="text-[12.5px] text-grey-2">Cancelling marks the PO and its order lines cancelled and removes it from all work queues.</p>

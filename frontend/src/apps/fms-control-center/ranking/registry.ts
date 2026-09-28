@@ -14,6 +14,7 @@
  */
 import type { AnyScorer } from "./types";
 import { assetMaintenanceScorer } from "./modules/assetMaintenance";
+import { helpDeskScorer } from "./modules/helpDesk";
 import { hrRecruitmentScorer } from "./modules/hrRecruitment";
 import { importScorer } from "./modules/import";
 import { learningDevelopmentScorer } from "./modules/learningDevelopment";
@@ -38,6 +39,7 @@ export const RANKED_MODULES: Record<string, AnyScorer> = {
   "asset-maintenance": assetMaintenanceScorer,
   ocpi: ocpiScorer,
   "learning-development": learningDevelopmentScorer,
+  "help-desk": helpDeskScorer,
 };
 
 /**

@@ -93,14 +93,15 @@ function StepQueuePage({
     {
       key: "jobTitle",
       header: "Position",
+      // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
       cell: (r) => (
-        <div>
-          <div className="font-medium text-navy">{r.jobTitle}</div>
-          <div className="text-[12px] text-grey-2">
+        <>
+          <span className="font-medium text-navy">{r.jobTitle}</span>
+          <span className="ml-1.5 text-[12px] text-grey-2">
             {r.positionsRequired} {r.positionsRequired === 1 ? "seat" : "seats"}
             {r.positionKind === "replacement" && " · replacement"}
-          </div>
-        </div>
+          </span>
+        </>
       ),
       sortValue: (r) => r.jobTitle,
       filter: { kind: "text", get: (r) => r.jobTitle },
@@ -109,12 +110,16 @@ function StepQueuePage({
       key: "raisedBy",
       header: "Raised by",
       cell: (r) => <span className="text-grey">{person(r.requesterId)}</span>,
+      sortValue: (r) => person(r.requesterId),
       filter: { kind: "text", get: (r) => person(r.requesterId) },
     },
     {
       key: "salary",
       header: "Salary",
       cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod)}</span>,
+      // Sorts on the budget's floor, so "who is most expensive" is one click.
+      sortValue: (r) => r.salaryMin ?? r.salaryMax ?? 0,
+      filter: { kind: "number", get: (r) => r.salaryMin ?? r.salaryMax ?? 0 },
       exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod),
     },
     {
@@ -122,6 +127,7 @@ function StepQueuePage({
       header: "Raised on",
       cell: (r) => <span className="text-grey">{formatDateDMY(r.requestDate)}</span>,
       sortValue: (r) => r.requestDate,
+      filter: { kind: "date", get: (r) => r.requestDate },
       exportValue: (r) => formatDateDMY(r.requestDate),
       tdClassName: "whitespace-nowrap",
     },
@@ -130,6 +136,7 @@ function StepQueuePage({
       header: "Due",
       cell: (r) => <DueCell dueIso={dueOf(r)} />,
       sortValue: (r) => dueOf(r) ?? "9999",
+      filter: { kind: "date", get: (r) => dueOf(r) ?? "" },
       exportValue: (r) => formatDateDMY(dueOf(r)),
       tdClassName: "whitespace-nowrap",
     },
@@ -252,13 +259,14 @@ export function MrfApprovalsQueue() {
     {
       key: "jobTitle",
       header: "Position",
+      // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
       cell: (r) => (
-        <div>
-          <div className="font-medium text-navy">{r.jobTitle}</div>
-          <div className="text-[12px] text-grey-2">
+        <>
+          <span className="font-medium text-navy">{r.jobTitle}</span>
+          <span className="ml-1.5 text-[12px] text-grey-2">
             {r.positionsRequired} {r.positionsRequired === 1 ? "seat" : "seats"}
-          </div>
-        </div>
+          </span>
+        </>
       ),
       sortValue: (r) => r.jobTitle,
       filter: { kind: "text", get: (r) => r.jobTitle },
@@ -267,25 +275,33 @@ export function MrfApprovalsQueue() {
       key: "raisedBy",
       header: "Raised by",
       cell: (r) => <span className="text-grey">{person(r.requesterId)}</span>,
+      sortValue: (r) => person(r.requesterId),
       filter: { kind: "text", get: (r) => person(r.requesterId) },
     },
     {
       key: "salary",
       header: "Salary",
       cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod)}</span>,
+      // Sorts on the budget's floor, so "who is most expensive" is one click.
+      sortValue: (r) => r.salaryMin ?? r.salaryMax ?? 0,
+      filter: { kind: "number", get: (r) => r.salaryMin ?? r.salaryMax ?? 0 },
       exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod),
     },
     {
       key: "stage",
       header: "Waiting on",
       cell: (r) => <StatusPill status={r.status} />,
+      sortValue: (r) => (r.status === "hr_review" ? "HR Head" : "Management"),
       filter: { kind: "select", get: (r) => (r.status === "hr_review" ? "HR Head" : "Management") },
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
     {
       key: "due",
       header: "Due",
       cell: (r) => <DueCell dueIso={dueOf(r)} />,
       sortValue: (r) => dueOf(r) ?? "9999",
+      filter: { kind: "date", get: (r) => dueOf(r) ?? "" },
       exportValue: (r) => formatDateDMY(dueOf(r)),
       tdClassName: "whitespace-nowrap",
     },

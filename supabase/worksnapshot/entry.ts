@@ -69,6 +69,7 @@ import { fetchDispatchData, type DispatchData } from "@/apps/order-to-dispatch/d
 import { fetchAssetData, type AssetData } from "@/apps/asset-maintenance/data/assetFetch";
 import { fetchTravelData, type TravelData } from "@/apps/travel-desk/data/travelFetch";
 import { fetchLdData, type LdData } from "@/apps/learning-development/data/ldFetch";
+import { fetchHelpData, type HelpData } from "@/apps/help-desk/data/helpFetch";
 
 // THE RULES THEMSELVES — the same files My Work Today renders from. Not copies.
 import { taskWorkItems } from "@/core/workspace/mywork/items/tasks";
@@ -83,6 +84,7 @@ import { dispatchWorkItems } from "@/core/workspace/mywork/items/orderToDispatch
 import { assetWorkItems } from "@/core/workspace/mywork/items/assetMaintenance";
 import { travelDeskWorkItems } from "@/core/workspace/mywork/items/travel-desk";
 import { learningDevelopmentWorkItems } from "@/core/workspace/mywork/items/learning-development";
+import { helpDeskWorkItems } from "@/core/workspace/mywork/items/help-desk";
 
 // ── What a caller gets back ───────────────────────────────────────────────────
 
@@ -149,6 +151,7 @@ export interface Datasets {
   asset?: AssetData;
   travel?: TravelData;
   ld?: LdData;
+  help?: HelpData;
 }
 
 /**
@@ -183,6 +186,7 @@ export const COVERED_APP_IDS = [
   "order-to-dispatch",
   "asset-maintenance",
   "learning-development",
+  "help-desk",
 ] as const;
 export type CoveredAppId = (typeof COVERED_APP_IDS)[number];
 
@@ -285,6 +289,7 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     want.has("asset-maintenance") ? fetchAssetData().then((d) => void (out.asset = d)) : null,
     want.has("travel-desk") ? fetchTravelData().then((d) => void (out.travel = d)) : null,
     want.has("learning-development") ? fetchLdData().then((d) => void (out.ld = d)) : null,
+    want.has("help-desk") ? fetchHelpData().then((d) => void (out.help = d)) : null,
   ]);
   assertCutoffHandled([
     out.hr?.config?.stepSla as never,
@@ -295,6 +300,7 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     out.disp?.config?.stepSla as never,
     out.asset?.config?.stepSla as never,
     out.ld?.config?.step_sla as never,
+    out.help?.config?.step_sla as never,
   ]);
   return out;
 }
@@ -363,6 +369,12 @@ export function computeSnapshot(
   if (data.asset && has.has("asset-maintenance")) all = all.concat(assetWorkItems(data.asset, userId, isAdmin));
   if (data.travel && has.has("travel-desk")) all = all.concat(travelDeskWorkItems(data.travel, userId, isAdmin));
   if (data.ld && has.has("learning-development")) all = all.concat(learningDevelopmentWorkItems(data.ld, userId, isAdmin));
+  // ⚠ NO isAdmin ARGUMENT, unlike every line above it. Help Desk's items
+  //   function takes only the user: an admin has no wider claim on a ticket
+  //   than anybody else here, because every step is owned by a named person
+  //   or by a category's owners. Passing one would have to mean something,
+  //   and the only thing it could mean is "give the admin every ticket".
+  if (data.help && has.has("help-desk")) all = all.concat(helpDeskWorkItems(data.help, userId));
 
   const scoped = isAdmin ? all.filter((i) => i.assignment === "direct") : all;
 

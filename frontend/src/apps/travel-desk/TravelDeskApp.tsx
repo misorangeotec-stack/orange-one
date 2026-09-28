@@ -175,7 +175,7 @@ function TravelDeskRoutes() {
         <Route path="monitoring" element={<Loaded><ControlCenter /></Loaded>} />
         <Route path="reports" element={<Loaded><TripRegister /></Loaded>} />
         {/*
-          ⚠ NOT GATED ON THE ADVANCE STEP, deliberately. This is the report §11.2
+          ⚠ NOT GATED ON THE ADVANCE STEP, deliberately. This is the report Section 11.2
             is unenforceable without, and the people who need it are not only the
             people who disburse: an approver about to wave through a request with
             an advance on it needs to know the traveller already owes. The trips

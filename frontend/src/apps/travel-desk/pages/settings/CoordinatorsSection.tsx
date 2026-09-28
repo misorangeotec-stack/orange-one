@@ -12,7 +12,7 @@ import { useTravelStore } from "../../store";
  *   people and not a department. `fms_travel_can_act` returns true for them
  *   before it looks at any step owner, which is what lets the desk book a trip,
  *   upload a ticket, record a refund and raise a request on behalf of senior
- *   management (PRD §3).
+ *   management (PRD Section 3).
  *
  * ⚠ IT DOES NOT LET THEM APPROVE THEIR OWN TRAVEL. That is the one thing the
  *   blanket authority is explicitly cut back on: `fms_travel_decide` refuses

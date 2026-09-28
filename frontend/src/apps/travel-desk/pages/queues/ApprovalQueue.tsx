@@ -18,7 +18,7 @@ import type { Trip } from "../../types";
  *
  * ⚠ THE QUEUE LISTS; THE TRIP DECIDES. There is deliberately no approve button
  *   on a row here. Every figure this decision turns on — the hotel cap for that
- *   band in that city's tier, the class of travel, whether §3.5 has already
+ *   band in that city's tier, the class of travel, whether Section 3.5 has already
  *   downgraded it — lives on the trip screen beside the request. An approve
  *   button in a list is an approval given without seeing any of it, which is
  *   precisely the habit this module exists to end.
@@ -149,7 +149,7 @@ export default function ApprovalQueue({
             )}
             {t.tcDowngradedFrom && (
               <span className="rounded-pill bg-[#FDECEC] px-2 py-0.5 text-[11px] font-semibold text-ryg-red">
-                §3.5 → TC-D
+                Section 3.5 → TC-D
               </span>
             )}
             {t.returnedAt === null && t.returnedStage && (
@@ -165,7 +165,7 @@ export default function ApprovalQueue({
         sortValue: (t) => (t.tcDowngradedFrom ? 2 : t.isEmergency ? 1 : 0),
         filter: {
           kind: "select",
-          get: (t) => (t.tcDowngradedFrom ? "§3.5 → TC-D" : t.isEmergency ? "Emergency" : "—"),
+          get: (t) => (t.tcDowngradedFrom ? "Section 3.5 → TC-D" : t.isEmergency ? "Emergency" : "—"),
         },
       },
       {
@@ -190,7 +190,7 @@ export default function ApprovalQueue({
         <h1 className="text-[19px] font-bold text-navy">{title}</h1>
         <p className="text-[13px] text-grey">
           {step === "director_approval"
-            ? `Trips from bands ${s.config.approvalMatrix.directorFromBand} and above, which §3.2 sends to a Director as well as to the reporting manager.`
+            ? `Trips from bands ${s.config.approvalMatrix.directorFromBand} and above, which Section 3.2 sends to a Director as well as to the reporting manager.`
             : "Trips waiting on their reporting manager. Open one to see the entitlement it is measured against, then decide."}
         </p>
       </div>

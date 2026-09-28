@@ -53,6 +53,7 @@ export default function ControlCenter() {
             {(snapshot.stages ?? []).map((stage) => (
               <StageRows key={stage.label} label={stage.label} counts={stage.counts} steps={stage.steps} />
             ))}
+            {/* See StageRows: a stage holding ONE step prints only the stage line. */}
           </tbody>
         </table>
       </Card>
@@ -60,6 +61,15 @@ export default function ControlCenter() {
   );
 }
 
+/**
+ * One stage band, then its steps.
+ *
+ * ⚠ A STAGE HOLDING ONE STEP PRINTS ONLY ITSELF. "Handover" is a stage with a single
+ *   step also called Handover (lib/steps.ts STAGES), so the table used to print the
+ *   word twice, one line under the other, carrying identical numbers — which reads
+ *   like the module counting the same work in two places. The Approval stage has two
+ *   real steps and is unaffected.
+ */
 function StageRows({
   label,
   counts,
@@ -69,6 +79,7 @@ function StageRows({
   counts: Record<Bucket, number>;
   steps: { stepKey: string; label: string; counts: Record<Bucket, number> }[];
 }) {
+  const showSteps = steps.length > 1;
   return (
     <>
       <tr className="bg-navy/[0.03] border-b border-line">
@@ -79,7 +90,7 @@ function StageRows({
           </td>
         ))}
       </tr>
-      {steps.map((st) => (
+      {showSteps && steps.map((st) => (
         <tr key={st.stepKey} className="border-b border-line/70 last:border-0">
           <td className="px-4 py-2.5 pl-8 text-grey">{st.label}</td>
           {BUCKETS.map((b) => (

@@ -4,6 +4,9 @@ import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea, Select } from "@/shared/components/ui/Form";
 import { formatDateDMY } from "@/shared/lib/date";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { FIT } from "@/shared/lib/tableLook";
 import { useTravelStore } from "../store";
 import { money, LEG_LABEL } from "../lib/format";
 import TicketCapture from "./TicketCapture";
@@ -93,6 +96,8 @@ export default function LegRows({ trip }: { trip: Trip }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // PF-20: the text columns drag; money, the dates and the row buttons keep their width.
+  const fit = useColumnWidths("tb", ["kind", "carrier", "route", "dates", "ref", "ticket", "other", "refund", "net", "do"]);
   const editable =
     s.canActOn("booking", trip) &&
     !["draft", "closed", "cancelled", "rejected"].includes(trip.status);
@@ -108,10 +113,39 @@ export default function LegRows({ trip }: { trip: Trip }) {
     () => s.airlines.filter((a) => a.active).map((a) => ({ value: a.id, label: a.name })),
     [s.airlines],
   );
-  const hotelOptions = useMemo(
-    () => s.hotels.filter((h) => h.active).map((h) => ({ value: h.id, label: h.name })),
-    [s.hotels],
-  );
+  /**
+   * Hotels, with the ones in the city being stayed in FIRST and every option
+   * carrying its own city.
+   *
+   * ⚠ THE MASTER HAS ALWAYS CARRIED `city_id`; this picker ignored it. Every
+   *   hotel in the company was offered for every stay, unlabelled, so booking a
+   *   Mumbai night against "Courtyard by Marriott, Ahmedabad" took one click and
+   *   nothing on the screen disagreed. The row then reads Ahmedabad in the
+   *   Carrier column and Mumbai in the Route column, and only a human notices.
+   *
+   * ⚠ GROUPED, NOT FILTERED. A hard filter would hide a hotel whose city is
+   *   blank or recorded wrong, and the booker would have no way to pick the one
+   *   they actually booked — the picker and the data must agree even when the
+   *   data is untidy. So the right city floats to the top and the rest stay
+   *   reachable under a heading that says what they are.
+   */
+  const hotelOptions = useMemo(() => {
+    const cityName = new Map(s.cities.map((c) => [c.id, c.name]));
+    const stayCityId = form.kind === "hotel" ? form.toCityId : null;
+    const stayCityName = stayCityId ? cityName.get(stayCityId) : null;
+    const rows = s.hotels
+      .filter((h) => h.active)
+      .map((h) => ({
+        value: h.id,
+        label: h.name,
+        sublabel: h.cityId ? (cityName.get(h.cityId) ?? undefined) : "No city on the master",
+        here: !!stayCityId && h.cityId === stayCityId,
+      }));
+    if (!stayCityName) return rows.map(({ here: _here, ...o }) => o);
+    return [...rows]
+      .sort((a, b) => (a.here === b.here ? 0 : a.here ? -1 : 1))
+      .map(({ here, ...o }) => ({ ...o, group: here ? `In ${stayCityName}` : "Other cities" }));
+  }, [s.hotels, s.cities, form.kind, form.toCityId]);
   const busOptions = useMemo(
     () => s.busOperators.filter((b) => b.active).map((b) => ({ value: b.id, label: b.name })),
     [s.busOperators],
@@ -264,10 +298,12 @@ export default function LegRows({ trip }: { trip: Trip }) {
         <h2 className="text-[12px] font-semibold uppercase tracking-wide text-navy">
           What was booked
         </h2>
-        <span className="text-[12.5px] text-grey">
+        <span className="flex items-center gap-2 text-[12.5px] text-grey">
           {legs.length
             ? `${legs.length} ${legs.length === 1 ? "booking" : "bookings"} · ${money(total)}`
             : "nothing yet"}
+          {/* PF-20: appears only once a column here has been dragged. */}
+          <ResetWidths fit={fit} cols={["carrier", "route", "ref"]} label="" />
         </span>
       </div>
 
@@ -276,19 +312,19 @@ export default function LegRows({ trip }: { trip: Trip }) {
           <table className="w-full min-w-[720px] text-[12.5px]">
             <thead>
               <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
-                <th className="py-1.5 pr-3">Kind</th>
-                <th className="py-1.5 pr-3">Carrier / hotel</th>
-                <th className="py-1.5 pr-3">Route</th>
-                <th className="py-1.5 pr-3">Dates</th>
-                <th className="py-1.5 pr-3">Ref</th>
-                <th className="py-1.5 pr-3 text-right">Ticket</th>
-                <th className="py-1.5 pr-3 text-right">Other</th>
-                <th className="py-1.5 pr-3 text-right">Refund</th>
-                <th className="py-1.5 pr-3 text-right">Net</th>
+                <FitTh fit={fit} col="kind" resize={false} className="py-1.5 pr-3">Kind</FitTh>
+                <FitTh fit={fit} col="carrier" className="py-1.5 pr-3">Carrier / hotel</FitTh>
+                <FitTh fit={fit} col="route" className="py-1.5 pr-3">Route</FitTh>
+                <FitTh fit={fit} col="dates" resize={false} className="py-1.5 pr-3">Dates</FitTh>
+                <FitTh fit={fit} col="ref" className="py-1.5 pr-3">Ref</FitTh>
+                <FitTh fit={fit} col="ticket" resize={false} className="py-1.5 pr-3 text-right">Ticket</FitTh>
+                <FitTh fit={fit} col="other" resize={false} className="py-1.5 pr-3 text-right">Other</FitTh>
+                <FitTh fit={fit} col="refund" resize={false} className="py-1.5 pr-3 text-right">Refund</FitTh>
+                <FitTh fit={fit} col="net" resize={false} className="py-1.5 pr-3 text-right">Net</FitTh>
                 <th className="py-1.5" />
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {legs.map((l) => (
                 <tr key={l.id} className="border-b border-line last:border-b-0">
                   <td className="py-1.5 pr-3">
@@ -299,17 +335,23 @@ export default function LegRows({ trip }: { trip: Trip }) {
                       </span>
                     )}
                   </td>
-                  <td className="py-1.5 pr-3">{carrierName(l)}</td>
+                  <td className="py-1.5 pr-3">
+                    <FitCell fit={fit} col="carrier" cap={FIT.CUT}>{carrierName(l)}</FitCell>
+                  </td>
                   <td className="py-1.5 pr-3 text-grey">
-                    {[s.cityById(l.fromCityId)?.name, s.cityById(l.toCityId)?.name]
-                      .filter(Boolean)
-                      .join(" → ") || "—"}
+                    <FitCell fit={fit} col="route" cap={FIT.CUT}>
+                      {[s.cityById(l.fromCityId)?.name, s.cityById(l.toCityId)?.name]
+                        .filter(Boolean)
+                        .join(" → ") || "—"}
+                    </FitCell>
                   </td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-grey">
                     {l.startOn ? formatDateDMY(l.startOn) : "—"}
                     {l.endOn && l.endOn !== l.startOn ? ` – ${formatDateDMY(l.endOn)}` : ""}
                   </td>
-                  <td className="py-1.5 pr-3 text-grey">{l.bookingRef ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-grey">
+                    <FitCell fit={fit} col="ref" cap={FIT.CUT}>{l.bookingRef ?? "—"}</FitCell>
+                  </td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-right">{money(l.ticketCost)}</td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-right">{money(l.otherCharges)}</td>
                   <td className="whitespace-nowrap py-1.5 pr-3 text-right">
@@ -391,18 +433,29 @@ export default function LegRows({ trip }: { trip: Trip }) {
               </Select>
             </FieldLabel>
 
-            <FieldLabel label="Direction">
-              <Select
-                value={form.direction}
-                onChange={(e) => set({ direction: e.target.value as LegDirection })}
-              >
-                {DIRECTION_OPTIONS.map((d) => (
-                  <option key={d.value} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </Select>
-            </FieldLabel>
+            {/*
+              ⚠ A HOTEL HAS NO DIRECTION. Switching the kind to Hotel already
+                forces `direction` to "local" above, but the control stayed on
+                screen and stayed editable — so a booker could set a hotel to
+                Outbound and it saved that way, which is the one value the
+                kind-change guard exists to prevent. Every other leg-shaped
+                field (From, Departure time, Arrival time) is conditioned on
+                the kind; this one was missed.
+            */}
+            {form.kind !== "hotel" && (
+              <FieldLabel label="Direction">
+                <Select
+                  value={form.direction}
+                  onChange={(e) => set({ direction: e.target.value as LegDirection })}
+                >
+                  {DIRECTION_OPTIONS.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </Select>
+              </FieldLabel>
+            )}
 
             <FieldLabel
               label={form.kind === "hotel" ? "Hotel" : form.kind === "flight" ? "Airline" : form.kind === "bus" ? "Operator" : "Carrier"}

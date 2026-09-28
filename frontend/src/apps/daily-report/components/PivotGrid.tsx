@@ -55,6 +55,9 @@ const STICKY_FOOT = `sticky left-0 z-[1] bg-muted ${STICKY_EDGE}`;
 /** Opens a company's column group, so the eye can tell O-tec's pair from Enterprise's. */
 const GROUP_EDGE = "border-l border-border";
 
+/** A floor back in RUPEES: he set ₹50,000, and "0.5 L" is not the number he asked for. */
+const rupeeFloor = (lacs: number) => `₹${Math.round(lacs * 100000).toLocaleString("en-IN")}`;
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
@@ -65,12 +68,19 @@ const FocBadge = () => (
 );
 
 export default function PivotGrid({
-  rows, unit, noun,
+  rows, unit, noun, floorLacs = 0,
 }: {
   rows: PivotRow[];
   /** "kg" for ink, "qty" for countable goods, null for money — which has no quantity. */
   unit: "kg" | "qty" | null;
   noun: PartyKind | "sales";
+  /**
+   * THIS list's money floor, ₹ lakhs — every customer at or above it is named
+   * whatever the 80% cut says (DR-4). The caller passes it because `foldList`
+   * is handed rows and cannot tell an ink list from a receipts band. 0 leaves
+   * the 80% cut on its own.
+   */
+  floorLacs?: number;
 }) {
   // THIS list's companies only — a company with no customer here gets no column (the user's call,
   // 17-09-2026: Colorix trades on a few days a month, and an empty Colorix column is noise).
@@ -81,7 +91,7 @@ export default function PivotGrid({
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [page, setPage] = useState(1);
 
-  const fold = useMemo(() => foldList(rows), [rows]);
+  const fold = useMemo(() => foldList(rows, floorLacs), [rows, floorLacs]);
   const folds = fold.remaining !== null;
   const expanded = showAll || !folds;
   // Free-of-charge-only customers are real customers, so they stay in the sortable body; the list
@@ -171,6 +181,7 @@ export default function PivotGrid({
             <span>
               The {fold.named.length} {listNoun(noun, fold.named.length)} making up{" "}
               {Math.round(FOLD_SHARE * 100)}% of the total
+              {floorLacs > 0 && <>, and every one at or above {rupeeFloor(floorLacs)}</>}
               {fold.focOnly.length > 0 && <>, and every free-of-charge {listNoun(noun, 1)}</>}; the other{" "}
               {fold.remaining?.count} are folded into one line.
             </span>
