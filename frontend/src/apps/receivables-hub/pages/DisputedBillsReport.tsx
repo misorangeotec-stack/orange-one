@@ -492,7 +492,7 @@ function DisputedBillsInner() {
             </div>
           ) : (
             <ScrollableTable>
-              <Table className="text-xs">
+              <Table resizeKey="disputed-bills" className="text-xs">
                 <TableHeader>
                   {/* 1 + 6 + 3 + 3 + 3 + 1 = 17 columns */}
                   <TableRow className="bg-muted hover:bg-muted border-b-0">

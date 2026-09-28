@@ -513,7 +513,7 @@ export default function FollowupsPage() {
                 </div>
               ) : (
                 <ScrollableTable maxHeight="max-h-[calc(100vh_-_190px)]">
-                  <Table>
+                  <Table resizeKey="followups.open">
                     <TableHeader className="sticky top-0 z-30 bg-muted">
                       <TableRow>
                         <SortHead label="Customer" k="customer" sort={dueSort} onSort={onDueSort} />
@@ -648,7 +648,7 @@ export default function FollowupsPage() {
                 </div>
               ) : (
                 <ScrollableTable maxHeight="max-h-[calc(100vh_-_190px)]">
-                  <Table>
+                  <Table resizeKey="followups.done">
                     <TableHeader className="sticky top-0 z-30 bg-muted">
                       <TableRow>
                         <SortHead label="Logged On" k="logged" sort={logSort} onSort={onLogSort} />

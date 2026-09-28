@@ -2441,7 +2441,7 @@ export default function CustomerDetail() {
         </CardHeader>
         <CollapsibleContent>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="customer.invoices">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 <TableHead className="text-xs font-semibold text-foreground/70">Month</TableHead>
@@ -2724,7 +2724,7 @@ export default function CustomerDetail() {
         </CardHeader>
         <CollapsibleContent>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="customer.receipts">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {visibleTxnColumns.map((col) => {
@@ -2903,7 +2903,7 @@ export default function CustomerDetail() {
                 </p>
                 {ledgerInvoices.length > 0 && (
                   <ScrollableTable className="rounded-card border border-border">
-                    <Table>
+                    <Table resizeKey="customer.other">
                       <TableHeader>
                         <TableRow className="bg-muted/50">
                           <TableHead className="text-xs">Invoice #</TableHead>
