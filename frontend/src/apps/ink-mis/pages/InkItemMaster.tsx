@@ -29,6 +29,7 @@ import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowDown, ArrowUp, Download, LayoutDashboard, ListOrdered, Save, Search, Upload,
+  Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -42,10 +43,11 @@ import { salesFyOptions } from "@hub/lib/salesReport";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
-import { loadGodownChoice } from "../lib/godowns";
+import { useGodownChoice } from "../lib/godowns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import {
-  EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, fmtQty, loadInkPositions, loadOrder,
+  EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
+  loadInkPositions, loadOrder,
   loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields,
   saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
@@ -146,8 +148,12 @@ export default function InkItemMaster() {
   /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
   const [seen, setSeen] = useState<string[]>(() => loadSeenLines());
   const [showNewDialog, setShowNewDialog] = useState(true);
-  /** The same godown filter the dashboard uses, so Closing means the same on both screens. */
-  const [godownChoice] = useState(() => loadGodownChoice());
+  /**
+   * The same godown filter the dashboard uses, so Closing means the same on both screens — and it
+   * follows the Godowns tab's Save, so this screen needs no reopening to agree with it.
+   */
+  const godownChoice = useGodownChoice();
+  const godownLines = useMemo(() => describeGodownChoice(godownChoice), [godownChoice]);
   const [ioNotice, setIoNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -639,6 +645,20 @@ export default function InkItemMaster() {
           in is what turns several lines into one.
         </p>
       </div>
+
+      {godownLines.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <span className="inline-flex items-center gap-1 font-medium">
+            <Warehouse className="h-3.5 w-3.5" /> Closing counts only
+          </span>
+          {godownLines.map((l) => (
+            <span key={l} className="rounded border bg-background px-1.5 py-0.5">{l}</span>
+          ))}
+          <Link to={`${BASE}/godowns`} className="ml-auto underline">
+            Change
+          </Link>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[

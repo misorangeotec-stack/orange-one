@@ -42,6 +42,7 @@ import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, Search, Ship, Trash2, Wand2,
+  Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -53,11 +54,11 @@ import ReorderChart, { reorderQty } from "../components/ReorderChart";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
-import { loadGodownChoice } from "../lib/godowns";
+import { useGodownChoice } from "../lib/godowns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
-  DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, fmtDays, fmtPct,
-  fmtQty,
+  DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, describeGodownChoice,
+  fmtDays, fmtPct, fmtQty,
   INK_CATEGORIES, INK_SOURCES, SHIPMENT_STATUSES, emptyShipment, loadGroupFields, loadHolidays,
   loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
   loadShipments, loadThresholds, newId, saveHolidays, savePlans, saveShipments, saveThresholds,
@@ -117,8 +118,9 @@ export default function InkMis() {
   const [order] = useState<InkOrder>(() => loadOrder());
   const [lineFields] = useState(() => loadLines());
   const [groupFields] = useState(() => loadGroupFields());
-  /** Which godowns count, per book — set on the Godowns tab, read here. */
-  const [godownChoice] = useState(() => loadGodownChoice());
+  /** Which godowns count, per book — set and SAVED on the Godowns tab, followed here. */
+  const godownChoice = useGodownChoice();
+  const godownLines = useMemo(() => describeGodownChoice(godownChoice), [godownChoice]);
   const [scope, setScope] = useState<InkScope>("ink");
   // Four company columns collapse into one group. Remembered per browser; starts collapsed,
   // because the merged Stock column is the number the planner reads first.
@@ -1001,6 +1003,20 @@ export default function InkMis() {
           </Button>
         </div>
       </div>
+
+      {godownLines.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <span className="inline-flex items-center gap-1 font-medium">
+            <Warehouse className="h-3.5 w-3.5" /> Stock counts only
+          </span>
+          {godownLines.map((l) => (
+            <span key={l} className="rounded border bg-background px-1.5 py-0.5">{l}</span>
+          ))}
+          <Link to={`${BASE}/godowns`} className="ml-auto underline">
+            Change
+          </Link>
+        </div>
+      )}
 
       {/* Tabs — combined plus one per book. */}
       <div className="flex flex-wrap gap-1 border-b">

@@ -13,24 +13,55 @@
  * only the first is ink the planner plans. An item belongs to exactly one group, so a group tick
  * simply decides which items that godown contributes.
  *
+ * NOTHING TAKES EFFECT UNTIL SAVE. Ticking used to write straight through, so a stray click
+ * quietly changed every figure on two other screens. The ticks are a draft; Save is what the rest
+ * of the app reads, and Discard puts the draft back.
+ *
  * HOW THE FIGURE IS WORKED OUT, and why the screen says so: ConnectWave has no godown-wise
  * closing balance. The share each godown holds is taken from the lot balances, and that share is
  * applied to Tally's own item closing, which is authoritative. So the item always ties Tally; the
  * split between godowns is inferred. The reasoning and the measurements are in lib/godowns.ts.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Warehouse } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Save, Undo2, Warehouse } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { INK_COMPANIES, fmtQty } from "../lib/inkMis";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import {
-  godownGroupKey, loadGodownChoice, loadGodownSplit, saveGodownChoice, type GodownChoice,
+  godownChoiceSig, godownGroupKey, loadGodownChoice, loadGodownSplit, saveGodownChoice,
+  type GodownChoice,
 } from "../lib/godowns";
 
 export default function InkGodowns() {
+  /**
+   * `choice` is the DRAFT — what is ticked on screen. `savedChoice` is what the dashboard and the
+   * item master are actually reading. They part company the moment a box is ticked, and meet
+   * again on Save.
+   */
   const [choice, setChoice] = useState<GodownChoice>(() => loadGodownChoice());
-  useEffect(() => saveGodownChoice(choice), [choice]);
+  const [savedChoice, setSavedChoice] = useState<GodownChoice>(() => loadGodownChoice());
+  const dirty = godownChoiceSig(choice) !== godownChoiceSig(savedChoice);
+
+  const qc = useQueryClient();
+  const save = () => {
+    saveGodownChoice(choice);
+    setSavedChoice(choice);
+    // Every loaded position carries the godown filter, so the stock on both other screens is
+    // recomputed instead of standing at whatever the last choice produced.
+    void qc.invalidateQueries({ queryKey: ["inkMis", "positions"] });
+  };
+
+  // The same guard the item master uses: a draft is easy to walk away from by accident.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   /**
    * Every book's godowns, read once. The lot table is small — about 4,600 rows for the largest
@@ -105,14 +136,29 @@ export default function InkGodowns() {
     });
 
   const filtered = useMemo(
-    () => INK_COMPANIES.filter((c) => (choice[c.key] ?? []).length).length,
-    [choice],
+    () => INK_COMPANIES.filter((c) => (savedChoice[c.key] ?? []).length).length,
+    [savedChoice],
   );
 
   return (
     <div className="space-y-5">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Godowns</h1>
+        <div className="flex items-center gap-2">
+          {dirty && (
+            <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+              Not saved yet
+            </span>
+          )}
+          {dirty && (
+            <Button size="sm" variant="outline" onClick={() => setChoice(savedChoice)}>
+              <Undo2 className="mr-2 h-4 w-4" /> Discard
+            </Button>
+          )}
+          <Button size="sm" disabled={!dirty} onClick={save}>
+            <Save className="mr-2 h-4 w-4" /> Save
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -242,9 +288,10 @@ export default function InkGodowns() {
       </div>
 
       <p className="text-xs text-muted-foreground">
+        {dirty && <strong className="text-amber-700">Save to apply. </strong>}
         {filtered === 0
-          ? "No book is filtered: every company is counted whole, as before."
-          : `${filtered} book${filtered === 1 ? " is" : "s are"} filtered. Reload the dashboard to see the change.`}
+          ? "Saved: no book is filtered, every company is counted whole."
+          : `Saved: ${filtered} book${filtered === 1 ? " is" : "s are"} filtered. The dashboard and item master count only the ticked stock.`}
       </p>
     </div>
   );

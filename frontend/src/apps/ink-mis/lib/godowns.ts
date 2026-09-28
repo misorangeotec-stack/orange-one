@@ -24,6 +24,7 @@
  *
  * The lot table is small (about 4,600 rows for that book) and is read once per company.
  */
+import { useEffect, useState } from "react";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
 export interface GodownSplit {
@@ -126,6 +127,8 @@ export const hasGodownEvidence = (split: GodownSplit | undefined, item: string):
 /* ------------------------------------------------------------------ the planner's choice */
 
 const KEY = "ink-mis:godowns:v1";
+/** Raised when the choice is SAVED, so a screen already open follows it without a reload. */
+const CHANGED = "ink-mis:godowns-changed";
 
 /** Chosen godowns per company key. An empty or missing list means the whole company. */
 export type GodownChoice = Record<string, string[]>;
@@ -146,4 +149,39 @@ export const saveGodownChoice = (c: GodownChoice) => {
   } catch {
     /* private mode: the choice still applies for this visit */
   }
+  window.dispatchEvent(new Event(CHANGED));
 };
+
+/**
+ * The choice as one comparable string, so "changed since it was saved?" does not depend on the
+ * order things were ticked in. An empty list means the whole book, so it is left out of the
+ * signature entirely — untick everything and you are back where you started.
+ */
+export const godownChoiceSig = (c: GodownChoice): string =>
+  Object.keys(c)
+    .filter((k) => (c[k] ?? []).length)
+    .sort()
+    .map((k) => `${k}=${[...(c[k] ?? [])].sort().join(",")}`)
+    .join(";");
+
+/**
+ * The SAVED choice, for the screens that only read it.
+ *
+ * Reading it once at mount was enough while each screen was its own route, but it left the link
+ * between screens resting on a remount nobody promised. It now follows the save itself: CHANGED
+ * for this tab, `storage` for another tab of the same browser. A fresh object with the same
+ * contents hashes to the same react-query key, so this cannot set off a refetch by itself.
+ */
+export function useGodownChoice(): GodownChoice {
+  const [choice, setChoice] = useState<GodownChoice>(() => loadGodownChoice());
+  useEffect(() => {
+    const sync = () => setChoice(loadGodownChoice());
+    window.addEventListener(CHANGED, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(CHANGED, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+  return choice;
+}

@@ -59,7 +59,7 @@
  * let the two drift apart silently, which is worse than a read-only import.
  */
 import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
-import { godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit } from "./godowns";
+import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit } from "./godowns";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
 /* ------------------------------------------------------------------- the books */
@@ -305,6 +305,22 @@ export interface InkPositionsResult {
 }
 
 const norm = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
+
+/**
+ * The godown choice in words, one line per filtered book.
+ *
+ * A screen showing a filtered Closing figure has to say which shelf it is counting, or the number
+ * reads as a wrong number. Books with no choice are left out: they are counted whole.
+ */
+export function describeGodownChoice(choice: GodownChoice): string[] {
+  const out: string[] = [];
+  for (const c of INK_COMPANIES) {
+    const chosen = choice[c.key] ?? [];
+    if (!chosen.length) continue;
+    out.push(`${c.label}: ${chosen.map((e) => e.split(GROUP_SEP).join(" \u203a ")).join(", ")}`);
+  }
+  return out;
+}
 
 export const masterKey = (companyKey: string, item: string) => `${companyKey}|${norm(item)}`;
 
