@@ -441,11 +441,47 @@ const CHANGED = "ink-mis:godowns-changed";
 /** Chosen godowns per company key. An empty or missing list means the whole company. */
 export type GodownChoice = Record<string, string[]>;
 
+/**
+ * Drop picks that no longer mean anything for a book.
+ *
+ * A book that was being narrowed by godown before it moved to stock groups still has its old
+ * godown picks sitting in this browser. They are dead weight — `godownShare` ignores them the
+ * moment a group pick exists — but they were still being LISTED, so the dashboard banner read
+ * "Otec Surat: (NO GODOWN) > PRINTING INK, GODOWN 42A,42B,43A,43B > PRINTING INK, ..." and looked
+ * as though nothing had been updated.
+ *
+ * The rule needs no knowledge of which book is which: if a book has any whole-book group pick,
+ * that is how it is being narrowed now, and its godown picks are history. A book with only godown
+ * picks is left exactly as it is.
+ */
+const cleanChoice = (v: GodownChoice): GodownChoice => {
+  const out: GodownChoice = {};
+  for (const [book, list] of Object.entries(v)) {
+    if (!Array.isArray(list)) continue;
+    const groups = list.filter(isWholeGroupKey);
+    const kept = [...new Set(groups.length ? groups : list)].filter(Boolean);
+    if (kept.length) out[book] = kept;
+  }
+  return out;
+};
+
 export const loadGodownChoice = (): GodownChoice => {
   try {
     const raw = window.localStorage.getItem(KEY);
     const v = raw ? (JSON.parse(raw) as GodownChoice) : {};
-    return v && typeof v === "object" ? v : {};
+    if (!v || typeof v !== "object") return {};
+    const clean = cleanChoice(v);
+    // Write the tidied version back so this happens once, not on every read. Deliberately NOT
+    // through saveGodownChoice: that raises CHANGED, which is what called this in the first
+    // place, and the two would chase each other.
+    if (JSON.stringify(clean) !== JSON.stringify(v)) {
+      try {
+        window.localStorage.setItem(KEY, JSON.stringify(clean));
+      } catch {
+        /* private mode: the tidy-up just happens again next time */
+      }
+    }
+    return clean;
   } catch {
     return {};
   }
