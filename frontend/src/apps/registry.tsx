@@ -230,6 +230,12 @@ export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
   // no grant, so a view-only Announcements grant would give nothing while looking
   // like access. Only Full access is offered.
   "announcements",
+  // INK IMS: everything the planner types (the numbering, lead times, consignments,
+  // godown picks) is held in THEIR OWN BROWSER, not in a table this app could gate.
+  // The screens have no read-only mode to fall back on, so a view-only grant would
+  // have let its holder change every one of those values while the admin form said
+  // otherwise. Only Full access is offered, and it is honest.
+  "ink-mis",
 ]);
 
 /** The access levels a module offers, in display order. */

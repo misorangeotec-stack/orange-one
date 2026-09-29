@@ -36,7 +36,7 @@
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -52,7 +52,11 @@ import {
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import ReorderChart, { reorderQty } from "../components/ReorderChart";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
-import HeaderFilter, { isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
+import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
+import {
+  applySort, cascadedOptions, fixedOptions, rowsPassing,
+  type CellValue, type SortState,
+} from "../lib/grid";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { useGodownChoice } from "../lib/godowns";
 import { salesFyOptions } from "@hub/lib/salesReport";
@@ -109,6 +113,16 @@ export default function InkMis() {
       if (!isFilterActive(next)) delete out[id];
       return out;
     });
+  /**
+   * WHICH COLUMN ORDERS THE SHEET. `null` is the planner's own numbering from the item master,
+   * which is how the sheet opens and the order it is normally read in.
+   *
+   * Sorting is not a threat to that numbering: No. is a column like any other, so one click on
+   * its heading is the labelled way home from any other order. The alternative considered and
+   * rejected was leaving this screen unsortable to protect the numbering, which would have left
+   * the planner unable to ask the question the sheet exists for — which ink has the least cover.
+   */
+  const [sort, setSort] = useState<SortState>(null);
   const [editing, setEditing] = useState(false);
   const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
   const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
@@ -227,7 +241,72 @@ export default function InkMis() {
 
   const companyKey = tab === "combined" ? null : tab;
 
-  const rows: InkRow[] = useMemo(() => {
+  /**
+   * What one column holds for one row. A string for the columns you read, a number for the ones
+   * you compare, null where a figure has not been worked out — the single place that knows how
+   * a column id maps to a value, read by the filters, by the sort and by the cascade.
+   *
+   * ⚠ DECLARED ABOVE THE ROWS THAT CALL IT, and that is a fix rather than tidiness. It used to
+   *   sit two hundred lines BELOW the row memo that calls it. A `const` is not hoisted, so the
+   *   first tick of any column filter re-ran that memo, reached a binding this render had not
+   *   initialised yet, and took the screen down with "Cannot access 'cellValue' before
+   *   initialization". An unfiltered table never entered the branch, which is exactly why it
+   *   got this far unseen.
+   */
+  const cellValue = useCallback(
+    (r: InkRow, id: string): CellValue => {
+      if (id.startsWith("co:")) return r.byCompany[id.slice(3)] ?? 0;
+      if (id.startsWith("ship:") || id.startsWith("plant:")) {
+        const sid = id.slice(id.indexOf(":") + 1);
+        const ship = shipments.find((x) => x.id === sid);
+        if (!ship || !r.itemCode) return 0;
+        return ship.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0);
+      }
+      switch (id) {
+        case "no": return order[r.key] ?? order[r.legacyKey] ?? null;
+        case "group": return r.group;
+        case "code": return r.itemCode;
+        case "description": return r.description;
+        case "remark": return r.remark;
+        case "category": return r.category;
+        case "source": return sourceLabel(r.source);
+        case "m3": return r.plan.threeMonthAvg;
+        case "pd": return r.plan.perDayAvg;
+        case "lead": return r.plan.leadTime;
+        case "safety": return r.plan.safetyFactor;
+        case "days": return r.daysCover;
+        case "withEta": return r.daysCoverWithIncoming;
+        case "monthMax": return r.monthMaxLevel;
+        case "dailyMax": return r.dailyMaxLevel;
+        case "stock": return r.stock;
+        case "incoming": return r.incoming;
+        case "plantTotal": return r.plant;
+        case "etdTotal": return r.etd;
+        case "total": return r.total;
+        default: return null;
+      }
+    },
+    [order, shipments],
+  );
+
+  /** Which control a heading's funnel opens. Everything else is a number range. */
+  const FILTER_KIND: Record<string, "text" | "list" | "number"> = {
+    group: "list",
+    code: "text",
+    description: "text",
+    remark: "list",
+    category: "list",
+    source: "list",
+  };
+
+  /**
+   * Every line the tab shows, AFTER the search box but BEFORE any column filter.
+   *
+   * Kept separate from `rows` because it is what the cascade reads: a column's dropdown is built
+   * from these narrowed by every filter except its own, which is what stops the planner
+   * assembling a combination that matches nothing.
+   */
+  const searchedRows: InkRow[] = useMemo(() => {
     const built = positions.map((p) => {
       const base = plans[p.key] ?? plans[p.legacyKey] ?? EMPTY_PLAN;
       // The company tabs use that book's own sales; Combined uses the group's.
@@ -245,29 +324,23 @@ export default function InkMis() {
     // to watch — so no stock filter second-guesses it. `positions` is already numbered-only.
     const scoped = built;
     const q = search.trim().toUpperCase();
-    const searched = q
+    return q
       ? scoped.filter((r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q))
       : scoped;
-    return searched.filter((r) =>
-      Object.entries(colFilters).every(([id, f]) => {
-        if (!isFilterActive(f)) return true;
-        const v = cellValue(r, id);
-        if (typeof v === "number" || v === null) {
-          // A blank cell fails any range: "20 and over" is not a claim an unknown can satisfy.
-          if (v === null) return false;
-          if (f.min !== undefined && v < f.min) return false;
-          if (f.max !== undefined && v > f.max) return false;
-          return true;
-        }
-        const text = v ?? "";
-        if (f.text?.trim() && !text.toUpperCase().includes(f.text.trim().toUpperCase())) return false;
-        if (f.list?.length && !f.list.includes(text)) return false;
-        return true;
-      }),
-    );
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
-    // sorting again would throw it away.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, colFilters, order]);
+    // sorting again would throw it away. A sort the planner ASKS for is applied below.
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
+
+  /**
+   * What is on screen: the filters, then the planner's chosen order.
+   *
+   * With no sort chosen the rows keep the numbering the item master gave them, which is the
+   * order the sheet is read in. One click on the No. heading always returns to it.
+   */
+  const rows: InkRow[] = useMemo(
+    () => applySort(rowsPassing(searchedRows, colFilters, cellValue), sort, cellValue),
+    [searchedRows, colFilters, sort, cellValue],
+  );
 
   /**
    * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
@@ -308,72 +381,18 @@ export default function InkMis() {
 
 
   /**
-   * What one column holds for one row. A string for the columns you read, a number for the ones
-   * you compare, null where a figure has not been worked out — the single place that knows how
-   * a column id maps to a value, used by the filters and by nothing else.
+   * The values a list filter offers: every value the OTHER filters still allow, plus anything
+   * already ticked here so a choice can always be undone. See `lib/grid.ts` for why the column
+   * is excluded from its own options rather than the cascade being switched off.
+   *
+   * Remark is the one fixed vocabulary. Its three values are what the cover maths concludes, and
+   * they stay on offer whether or not any line currently reads them, so "what needs ordering"
+   * can be asked before knowing whether anything does.
    */
-  const cellValue = (r: InkRow, id: string): string | number | null => {
-    if (id.startsWith("co:")) return r.byCompany[id.slice(3)] ?? 0;
-    if (id.startsWith("ship:") || id.startsWith("plant:")) {
-      const sid = id.slice(id.indexOf(":") + 1);
-      const ship = shipments.find((x) => x.id === sid);
-      if (!ship || !r.itemCode) return 0;
-      return ship.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0);
-    }
-    switch (id) {
-      case "no": return order[r.key] ?? order[r.legacyKey] ?? null;
-      case "group": return r.group;
-      case "code": return r.itemCode;
-      case "description": return r.description;
-      case "remark": return r.remark;
-      case "category": return r.category;
-      case "source": return sourceLabel(r.source);
-      case "m3": return r.plan.threeMonthAvg;
-      case "pd": return r.plan.perDayAvg;
-      case "lead": return r.plan.leadTime;
-      case "safety": return r.plan.safetyFactor;
-      case "days": return r.daysCover;
-      case "withEta": return r.daysCoverWithIncoming;
-      case "monthMax": return r.monthMaxLevel;
-      case "dailyMax": return r.dailyMaxLevel;
-      case "stock": return r.stock;
-      case "incoming": return r.incoming;
-      case "plantTotal": return r.plant;
-      case "etdTotal": return r.etd;
-      case "total": return r.total;
-      default: return null;
-    }
-  };
-
-  /** Which control a heading's funnel opens. Everything else is a number range. */
-  const FILTER_KIND: Record<string, "text" | "list" | "number"> = {
-    group: "list",
-    code: "text",
-    description: "text",
-    remark: "list",
-    category: "list",
-    source: "list",
-  };
-
-  /**
-   * The values a list filter offers, taken from every line the tab shows — NOT from the rows
-   * left after filtering, or the value you just picked would be the only one left to pick.
-   */
-  const listOptions = useMemo(() => {
-    const cache: Record<string, string[]> = {};
-    return (id: string) => {
-      if (cache[id]) return cache[id];
-      const seen = new Set<string>();
-      for (const p of positions) {
-        if (id === "group") seen.add(p.group);
-        else if (id === "category") seen.add(p.category);
-        else if (id === "source") seen.add(sourceLabel(p.source));
-      }
-      if (id === "remark") ["NEW ORDER REQUIRED", "EXCESS STOCK", ""].forEach((v) => seen.add(v));
-      cache[id] = [...seen].sort((a, b) => a.localeCompare(b));
-      return cache[id];
-    };
-  }, [positions]);
+  const listOptions = (id: string) =>
+    id === "remark"
+      ? fixedOptions(["NEW ORDER REQUIRED", "EXCESS STOCK", ""], colFilters.remark?.list)
+      : cascadedOptions(searchedRows, colFilters, cellValue, id);
 
   /** The funnel itself, dropped into a heading. */
   const colFilter = (id: string) => (
@@ -383,6 +402,16 @@ export default function InkMis() {
       options={FILTER_KIND[id] === "list" ? listOptions(id) : undefined}
       onChange={(next) => setColFilter(id, next)}
     />
+  );
+
+  /**
+   * A whole heading: the words sort, the funnel filters. Every column on this sheet goes through
+   * here, so a column cannot be added with one and not the other.
+   */
+  const colHead = (label: ReactNode, id: string) => (
+    <ColumnHead label={label} id={id} sort={sort} setSort={setSort}>
+      {colFilter(id)}
+    </ColumnHead>
   );
 
   const filtersOn = Object.keys(colFilters).length > 0;
@@ -908,8 +937,7 @@ export default function InkMis() {
           {s.status === "PLANT" ? "Plant week" : s.status}
         </div>
         <div>
-          {s.reference || "(no ref)"}
-          {colFilter(`${s.status === "PLANT" ? "plant" : "ship"}:${s.id}`)}
+          {colHead(s.reference || "(no ref)", `${s.status === "PLANT" ? "plant" : "ship"}:${s.id}`)}
         </div>
         <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
       </>
@@ -1281,76 +1309,77 @@ export default function InkMis() {
             <TableRow>
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
-                  No.{colFilter("no")}
+                  {colHead("No.", "no")}
                   {headHandle}
                 </ResizableHead>
               )}
               {on("group") && (
                 <ResizableHead {...pinHead("group")} cols={cols}>
-                  Group{colFilter("group")}
+                  {colHead("Group", "group")}
                 </ResizableHead>
               )}
               <ResizableHead {...pinHead("code")} cols={cols}>
-                Item code{colFilter("code")}
+                {colHead("Item code", "code")}
                 {/* Second home for the heading's grab strip, for when No. is hidden. */}
                 {!on("no") && headHandle}
               </ResizableHead>
               {on("description") && (
                 <ResizableHead {...pinHead("description")} cols={cols}>
-                  Description{colFilter("description")}
+                  {colHead("Description", "description")}
                 </ResizableHead>
               )}
               {on("remark") && (
                 <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">
-                  Remark{colFilter("remark")}
+                  {colHead("Remark", "remark")}
                 </ResizableHead>
               )}
               {on("m3") && (
                 <ResizableHead id="m3" cols={cols} className="text-right">
-                  3-month avg{colFilter("m3")}
+                  {colHead("3-month avg", "m3")}
                 </ResizableHead>
               )}
               {on("pd") && (
                 <ResizableHead id="pd" cols={cols} className="text-right">
-                  Per day avg{colFilter("pd")}
+                  {colHead("Per day avg", "pd")}
                 </ResizableHead>
               )}
               {on("lead") && (
                 <ResizableHead id="lead" cols={cols} className="text-right">
-                  Lead time{colFilter("lead")}
+                  {colHead("Lead time", "lead")}
                 </ResizableHead>
               )}
               {on("safety") && (
                 <ResizableHead id="safety" cols={cols} className="text-right">
-                  Safety{colFilter("safety")}
+                  {colHead("Safety", "safety")}
                 </ResizableHead>
               )}
               {on("days") && (
                 <ResizableHead id="days" cols={cols} className="text-right">
-                  Days cover{colFilter("days")}
+                  {colHead("Days cover", "days")}
                 </ResizableHead>
               )}
               {on("withEta") && (
                 <ResizableHead id="withEta" cols={cols} className="text-right">
-                  <span className="text-[10px] font-normal">Days cover with ETA</span>
-                  {colFilter("withEta")}
+                  {colHead(
+                    <span className="text-[10px] font-normal">Days cover with ETA</span>,
+                    "withEta",
+                  )}
                 </ResizableHead>
               )}
               {on("monthMax") && (
                 <ResizableHead id="monthMax" cols={cols} className="text-right">
-                  Month max{colFilter("monthMax")}
+                  {colHead("Month max", "monthMax")}
                 </ResizableHead>
               )}
               {on("dailyMax") && (
                 <ResizableHead id="dailyMax" cols={cols} className="text-right">
-                  Daily max{colFilter("dailyMax")}
+                  {colHead("Daily max", "dailyMax")}
                 </ResizableHead>
               )}
               {showCompanyCols &&
                 INK_COMPANIES.map((c) => (
                   <ResizableHead key={c.key} id={`co:${c.key}`} cols={cols} className="text-right">
-                    {c.label}
-                    {colFilter(`co:${c.key}`)}
+                    {colHead(c.label, `co:${c.key}`)}
                   </ResizableHead>
                 ))}
               <ResizableHead
@@ -1358,8 +1387,10 @@ export default function InkMis() {
                 cols={cols}
                 className={`text-right font-semibold ${!companyKey && !showCompanyCols ? "border-x" : ""}`}
               >
-                {companyKey ? "Stock" : showCompanyCols ? "Total stock" : "Stock (4 companies)"}
-                {colFilter("stock")}
+                {colHead(
+                  companyKey ? "Stock" : showCompanyCols ? "Total stock" : "Stock (4 companies)",
+                  "stock",
+                )}
               </ResizableHead>
               {showShipmentCols &&
                 shipmentCols.map((s) => (
@@ -1374,7 +1405,7 @@ export default function InkMis() {
                 ))}
               {cols.isVisible("incoming") && (
                 <ResizableHead id="incoming" cols={cols} className="text-right">
-                  ETA + at port{colFilter("incoming")}
+                  {colHead("ETA + at port", "incoming")}
                 </ResizableHead>
               )}
               {showPlantCols &&
@@ -1389,24 +1420,24 @@ export default function InkMis() {
                   </ResizableHead>
                 ))}
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
-                Plant total{colFilter("plantTotal")}
+                {colHead("Plant total", "plantTotal")}
               </ResizableHead>
               {cols.isVisible("etdTotal") && (
                 <ResizableHead id="etdTotal" cols={cols} className="text-right">
-                  ETD total{colFilter("etdTotal")}
+                  {colHead("ETD total", "etdTotal")}
                 </ResizableHead>
               )}
               <ResizableHead id="total" cols={cols} className="text-right font-semibold">
-                Total{colFilter("total")}
+                {colHead("Total", "total")}
               </ResizableHead>
               {cols.isVisible("category") && (
                 <ResizableHead id="category" cols={cols} className="min-w-[10rem]">
-                  Category{colFilter("category")}
+                  {colHead("Category", "category")}
                 </ResizableHead>
               )}
               {cols.isVisible("source") && (
                 <ResizableHead id="source" cols={cols} className="min-w-[9rem]">
-                  Import/Plant{colFilter("source")}
+                  {colHead("Import/Plant", "source")}
                 </ResizableHead>
               )}
             </TableRow>
@@ -1464,12 +1495,35 @@ export default function InkMis() {
               </TableRow>
             )}
 
+            {/*
+              AN EMPTY RESULT IS NOT AN EMPTY TABLE. The row goes in the tbody so the headings,
+              the sort toggles and the funnels all stay on screen: swapping the whole table for a
+              message would take away the very controls that could undo the filter, leaving a
+              reload as the only way back. It also says WHICH of the two emptinesses this is, and
+              offers the way out where the filters are the cause.
+            */}
             {!isLoading && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
-                  {positions.length === 0
-                    ? "No numbered items yet. Give an item a number in the item master to show it here."
-                    : "No inks to show."}
+                  {positions.length === 0 ? (
+                    "No numbered items yet. Give an item a number in the item master to show it here."
+                  ) : filtersOn || search.trim() ? (
+                    <span className="inline-flex flex-wrap items-center justify-center gap-2">
+                      No ink matches the filters you have set.
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          clearFilters();
+                          setSearch("");
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    </span>
+                  ) : (
+                    "No inks to show."
+                  )}
                 </TableCell>
               </TableRow>
             )}
