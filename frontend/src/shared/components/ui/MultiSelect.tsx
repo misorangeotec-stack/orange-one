@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 import { matchesSearch } from "@/shared/lib/search";
@@ -38,6 +38,7 @@ export default function MultiSelect({
   disabled,
   className,
   triggerClassName,
+  trigger,
   align = "left",
   searchable,
   chips,
@@ -64,6 +65,25 @@ export default function MultiSelect({
   className?: string;
   /** Extra classes on the trigger button — used to slim it down inside a table cell. */
   triggerClassName?: string;
+  /**
+   * Draw the trigger yourself, replacing the summary + count + caret button entirely.
+   *
+   * ⚠ OPT-IN, and it changes nothing for the ~190 existing call sites. It exists because a
+   *   column HEADING has no room for the normal trigger: Ink IMS puts a filter on each of
+   *   ~30 headings, and a full-width bordered control in every one of them would be wider
+   *   than the table. A funnel icon opens the SAME menu, so the search box, Select all /
+   *   Clear, the pinned selection and the blank handling are the hub's, not a second
+   *   implementation that drifts.
+   *
+   * ⚠ The default button's classes are DROPPED, not merged, when this is given: `cn` here
+   *   is clsx with no Tailwind merge, so a `w-4` handed in via `triggerClassName` would
+   *   lose to the default `w-full` and the control would still be full width. With a custom
+   *   trigger the caller owns the classes outright.
+   *
+   * The arrow-key guard is kept either way, so ↓ opens the menu instead of scrolling a
+   * ScrollableTable underneath it.
+   */
+  trigger?: (state: { open: boolean; count: number }) => ReactNode;
   align?: "left" | "right";
   /** Force the search box on/off; default: show once there are more than 6 options. */
   searchable?: boolean;
@@ -241,26 +261,52 @@ export default function MultiSelect({
     if (!open) setQ("");
   }, [open]);
 
+  /**
+   * Shared by both triggers, so a custom one keeps the guard rather than quietly losing it.
+   */
+  const onTriggerKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    // Open with the arrow keys (native Enter/Space already toggles the button).
+    if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      // An arrow key inside a scroll container would otherwise ALSO scroll it:
+      // ScrollableTable claims the arrows and only bails for INPUT/TEXTAREA/SELECT,
+      // never for a button. Without this, ↓ on a queue's filter scrolls the table
+      // instead of opening the menu — which is exactly what a native <select> did
+      // not do. Mirrors the same guard in Combobox.
+      e.stopPropagation();
+      setOpen(true);
+    }
+  };
+
   return (
     <div className={cn("relative", className)} ref={ref}>
+      {trigger ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={(e) => {
+            // A heading is often clickable itself (Ink IMS sorts on it), so the funnel must
+            // not sort the column on its way to opening the menu.
+            e.stopPropagation();
+            if (!disabled) setOpen((o) => !o);
+          }}
+          onKeyDown={onTriggerKeyDown}
+          className={triggerClassName}
+          // A custom trigger is usually an icon with no text, so it would otherwise reach a
+          // screen reader as an unnamed button. `triggerLabel` draws nothing here (the summary
+          // it normally replaces is not rendered), so it serves as the name instead.
+          aria-label={triggerLabel}
+          title={triggerLabel}
+        >
+          {trigger({ open, count: selectedLabels.length })}
+        </button>
+      ) : (
       <button
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (disabled) return;
-          // Open with the arrow keys (native Enter/Space already toggles the button).
-          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-            e.preventDefault();
-            // An arrow key inside a scroll container would otherwise ALSO scroll it:
-            // ScrollableTable claims the arrows and only bails for INPUT/TEXTAREA/SELECT,
-            // never for a button. Without this, ↓ on a queue's filter scrolls the table
-            // instead of opening the menu — which is exactly what a native <select> did
-            // not do. Mirrors the same guard in Combobox.
-            e.stopPropagation();
-            setOpen(true);
-          }
-        }}
+        onKeyDown={onTriggerKeyDown}
         className={cn(
           "w-full flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-left transition",
           "outline-none focus:border-orange focus:ring-4 focus:ring-orange/10",
@@ -279,6 +325,7 @@ export default function MultiSelect({
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
+      )}
 
       {/* In `options` order, so a grouped list keeps its categories together. */}
       {chips && selected.length > 0 && (

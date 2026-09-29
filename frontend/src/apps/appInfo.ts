@@ -99,6 +99,16 @@ export const APPS: Record<string, AppInfo> = {
     category: "sampling",
   },
   /**
+   * INK IMS — ink inventory planning. Its own module, filed under its own menu group.
+   * Deliberately NOT part of the Receivables Hub: different report, different owners.
+   */
+  "ink-mis": {
+    name: "Ink IMS",
+    basePath: "/ink-mis",
+    // Its own menu group, "IMS Sheet", next to Purchase — asked for by the planner.
+    category: "ims",
+  },
+  /**
    * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
    * in the browser (like Ink IMS); Central Masters itself is never written.
    */

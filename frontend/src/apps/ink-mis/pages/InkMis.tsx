@@ -1,0 +1,1815 @@
+/**
+ * INK MIS — the ink planning dashboard.
+ *
+ * The Hub port of the planner's Excel sheet. One line per ink, stock merged across the four
+ * books, the hand-entered pipeline alongside it, and the cover maths that decides what to order.
+ *
+ * FIVE VIEWS, one tab each: Combined, then each book on its own. Combined is the default
+ * because that is the decision the planner actually makes — ink is moved between books, so a
+ * shortage in one book is only a shortage if the group as a whole is short.
+ *
+ * ─── WHAT IS TALLY'S AND WHAT IS THE PLANNER'S ───────────────────────────────────────────
+ *
+ * The four stock columns and the consumption figure come from Tally through ConnectWave and
+ * cannot be edited here. Everything else on the row — the averages, lead time, safety factor
+ * and every consignment — is the planner's own. The column header group says which is which,
+ * because a planner who mistakes a typed number for a Tally number will trust it too much.
+ *
+ * ─── THE FORMULAS, TAKEN FROM THE SHEET ──────────────────────────────────────────────────
+ *
+ *   Month max level  = three-month average × lead time × safety factor
+ *   Daily max level  = per-day average     × lead time × safety factor
+ *   Days cover       = stock ÷ per-day average
+ *   Days with ETA    = (stock + ETA + at port) ÷ per-day average
+ *   Cover %          = stock ÷ month max level
+ *
+ * All five were reproduced from the planner's own figures before this screen was written, so
+ * the numbers here should match the sheet cell for cell given the same inputs.
+ *
+ * BOTH AVERAGES COME FROM THE SALES REGISTER, filled by a button rather than recomputed on
+ * every render, so a planner's override for a launch or a one-off run survives. The rule and
+ * the evidence for it are in lib/inkMis.ts — in short, branch and related sales are the group
+ * moving ink to itself and must be excluded, and the per-day divisor is working days ELAPSED
+ * this month, not the whole month. Per-day is NOT the three-month average over ninety.
+ *
+ * ETD IS EXCLUDED FROM COVER. Only ETA and AT PORT count towards the total, matching the
+ * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
+ */
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { appBasePath } from "../../appInfo";
+import { useQuery } from "@tanstack/react-query";
+import {
+  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, Search, Ship, Trash2, Wand2,
+  Warehouse,
+} from "lucide-react";
+import { Button } from "@hub/components/ui/button";
+import { Input } from "@hub/components/ui/input";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@hub/components/ui/table";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import ReorderChart, { reorderQty } from "../components/ReorderChart";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
+import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
+import {
+  applySort, cascadedOptions, fixedOptions, rowsPassing,
+  type CellValue, type SortState,
+} from "../lib/grid";
+import { ResizableHead, useTableColumns } from "../lib/tableColumns";
+import { useGodownChoice } from "../lib/godowns";
+import { salesFyOptions } from "@hub/lib/salesReport";
+import {
+  DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, describeGodownChoice,
+  fmtDays, fmtPct, fmtQty,
+  INK_CATEGORIES, INK_SOURCES, SHIPMENT_STATUSES, emptyShipment, loadGroupFields, loadHolidays,
+  loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
+  loadShipments, loadThresholds, newId, saveHolidays, savePlans, saveShipments, saveThresholds,
+  sourceLabel, workingDaysElapsed,
+  type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
+  type InkThresholds, type LeadDaysRule, type Shipment, type ShipmentStatus,
+} from "../lib/inkMis";
+
+const BASE = appBasePath("ink-mis");
+
+/** The sheet's conditional formatting, kept close to the original so the screen reads the
+ *  same way at a glance: red is a shortage, purple is money sitting still. */
+const BAND_CLASS: Record<InkBand, string> = {
+  low: "bg-red-100 text-red-900 font-semibold",
+  mid: "bg-amber-100 text-amber-900 font-semibold",
+  normal: "bg-emerald-50 text-emerald-900",
+  excess: "bg-fuchsia-100 text-fuchsia-900",
+  none: "",
+};
+
+const BAND_LABEL: Record<InkBand, string> = {
+  low: "Below 33%",
+  mid: "33–66%",
+  normal: "Normal",
+  excess: "Excess",
+  none: "Not planned",
+};
+
+export default function InkMis() {
+  const fyOptions = useMemo(() => salesFyOptions(), []);
+  const fy = fyOptions[0];
+
+  const [tab, setTab] = useState<string>("combined");
+  const [search, setSearch] = useState("");
+  /**
+   * A FILTER ON EVERY HEADING, keyed by column id.
+   *
+   * The old filter row could only carry four of them, so the columns a planner most wants to
+   * narrow — stock, days of cover, a consignment's quantities — could not be filtered at all. A
+   * funnel on each heading scales to thirty columns and costs no screen.
+   *
+   * An empty entry means "no filter", never "match nothing".
+   */
+  const [colFilters, setColFilters] = useState<Record<string, ColumnFilter>>({});
+  const setColFilter = (id: string, next: ColumnFilter) =>
+    setColFilters((prev) => {
+      const out = { ...prev, [id]: next };
+      if (!isFilterActive(next)) delete out[id];
+      return out;
+    });
+  /**
+   * WHICH COLUMN ORDERS THE SHEET. `null` is the planner's own numbering from the item master,
+   * which is how the sheet opens and the order it is normally read in.
+   *
+   * Sorting is not a threat to that numbering: No. is a column like any other, so one click on
+   * its heading is the labelled way home from any other order. The alternative considered and
+   * rejected was leaving this screen unsortable to protect the numbering, which would have left
+   * the planner unable to ask the question the sheet exists for — which ink has the least cover.
+   */
+  const [sort, setSort] = useState<SortState>(null);
+  const [editing, setEditing] = useState(false);
+  const [plans, setPlans] = useState<Record<string, InkPlan>>(() => loadPlans());
+  const [thresholds, setThresholds] = useState<InkThresholds>(() => loadThresholds());
+  // The item master and the row order are OWNED BY THE ITEM MASTER SCREEN. Read here, never
+  // written, so there is one place that edits them and no chance of two screens disagreeing.
+  const [overrides] = useState<InkOverrides>(() => loadOverrides());
+  const [order] = useState<InkOrder>(() => loadOrder());
+  const [lineFields] = useState(() => loadLines());
+  const [groupFields] = useState(() => loadGroupFields());
+  /** Which godowns count, per book — set and SAVED on the Godowns tab, followed here. */
+  const godownChoice = useGodownChoice();
+  const godownLines = useMemo(() => describeGodownChoice(godownChoice), [godownChoice]);
+  const [scope, setScope] = useState<InkScope>("ink");
+  // Four company columns collapse into one group. Remembered per browser; starts collapsed,
+  // because the merged Stock column is the number the planner reads first.
+  const [companiesOpen, setCompaniesOpen] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ink-mis:companies-open") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:companies-open", companiesOpen ? "1" : "0");
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }, [companiesOpen]);
+  const [holidays, setHolidays] = useState<string[]>(() => loadHolidays());
+
+  /**
+   * CONSIGNMENTS ARE EDITED HERE TOO, not only on the pipeline screen.
+   *
+   * The decision to order is taken in a meeting, looking at this sheet: cover, lead time, what
+   * is already coming. Sending the planner to another tab to record what was just agreed means
+   * the sheet on screen is wrong for as long as that takes, so a column can be added, filled and
+   * deleted right here. The pipeline screen remains the fuller view — notes, per-ink lists — and
+   * both write the same store.
+   *
+   * These are NOT part of the data query's key, so typing a quantity re-renders and nothing
+   * reloads.
+   */
+  const [shipments, setShipments] = useState<Shipment[]>(() => loadShipments());
+  useEffect(() => saveShipments(shipments), [shipments]);
+
+  useEffect(() => savePlans(plans), [plans]);
+  useEffect(() => saveThresholds(thresholds), [thresholds]);
+  useEffect(() => saveHolidays(holidays), [holidays]);
+
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["inkMis", "positions", fy, overrides, scope, order, lineFields, groupFields, godownChoice],
+    queryFn: () =>
+      loadInkPositions(
+        fy, undefined, undefined, overrides, scope, order, lineFields, groupFields, godownChoice,
+      ),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  /**
+   * ONLY NUMBERED LINES REACH THE DASHBOARD. The planner gives a line a number in the item
+   * master when they want it on the sheet; a line whose number is blank stays in the item
+   * master (with its closing stock) and nowhere else. Everything below — rows, totals, the
+   * missing-code warning — reads this list, never the unfiltered one.
+   *
+   * The COUNT of what is left out is shown on the item master, not here. This screen is the
+   * planner's sheet, and a standing notice about items they chose to leave off it is noise on
+   * the one screen that should carry only what they asked for.
+   */
+  const allPositions = useMemo(() => data?.rows ?? [], [data]);
+  const positions = useMemo(
+    () => allPositions.filter((p) => (order[p.key] ?? order[p.legacyKey]) !== undefined),
+    [allPositions, order],
+  );
+  const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
+
+  /* ------------------------------------------------- averages from the Sales Register */
+
+  /**
+   * BOTH AVERAGES LOAD WITH THE PAGE, from the Sales Register:
+   *
+   *   three-month average = the three complete months before this one, summed, over 3
+   *   per-day average     = this month so far, over the working days elapsed (Sundays out)
+   *
+   * They used to appear only after pressing a button, which is why the columns sat empty: the
+   * report never asked on its own, and a press made before the stock had loaded filled nothing.
+   *
+   * A number the planner types still wins, and is flagged as typed (see InkPlan.manual). Clearing
+   * the box hands that ink back to the live figure.
+   *
+   * Needs the stock load first — the register carries item NAMES, and the name-to-line bridge is
+   * built from the stock rows — hence `enabled`.
+   */
+  const nameToCode = data?.nameToCode;
+  const holidayKey = [...holidays].sort().join(",");
+  const consumptionQuery = useQuery({
+    queryKey: ["inkMis", "consumption", fy, overrides, scope, holidayKey],
+    queryFn: () => loadInkConsumption(nameToCode ?? new Map(), new Date(), new Set(holidays)),
+    enabled: Boolean(nameToCode && nameToCode.size),
+    staleTime: 5 * 60 * 1000,
+  });
+  const consumption = consumptionQuery.data;
+  const workingDays = workingDaysElapsed(new Date(), new Set(holidays));
+  const typedCount = Object.values(plans).filter(
+    (p) => p.manual?.threeMonthAvg || p.manual?.perDayAvg,
+  ).length;
+
+  const clearTypedAverages = () =>
+    setPlans((prev) => {
+      const next: Record<string, InkPlan> = {};
+      for (const [k, p] of Object.entries(prev)) next[k] = { ...p, manual: {} };
+      return next;
+    });
+
+  /* ------------------------------------------------------------------ the rows */
+
+  const companyKey = tab === "combined" ? null : tab;
+
+  /**
+   * What one column holds for one row. A string for the columns you read, a number for the ones
+   * you compare, null where a figure has not been worked out — the single place that knows how
+   * a column id maps to a value, read by the filters, by the sort and by the cascade.
+   *
+   * ⚠ DECLARED ABOVE THE ROWS THAT CALL IT, and that is a fix rather than tidiness. It used to
+   *   sit two hundred lines BELOW the row memo that calls it. A `const` is not hoisted, so the
+   *   first tick of any column filter re-ran that memo, reached a binding this render had not
+   *   initialised yet, and took the screen down with "Cannot access 'cellValue' before
+   *   initialization". An unfiltered table never entered the branch, which is exactly why it
+   *   got this far unseen.
+   */
+  const cellValue = useCallback(
+    (r: InkRow, id: string): CellValue => {
+      if (id.startsWith("co:")) return r.byCompany[id.slice(3)] ?? 0;
+      if (id.startsWith("ship:") || id.startsWith("plant:")) {
+        const sid = id.slice(id.indexOf(":") + 1);
+        const ship = shipments.find((x) => x.id === sid);
+        if (!ship || !r.itemCode) return 0;
+        return ship.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0);
+      }
+      switch (id) {
+        case "no": return order[r.key] ?? order[r.legacyKey] ?? null;
+        case "group": return r.group;
+        case "code": return r.itemCode;
+        case "description": return r.description;
+        case "remark": return r.remark;
+        case "category": return r.category;
+        case "source": return sourceLabel(r.source);
+        case "m3": return r.plan.threeMonthAvg;
+        case "pd": return r.plan.perDayAvg;
+        case "lead": return r.plan.leadTime;
+        case "safety": return r.plan.safetyFactor;
+        case "days": return r.daysCover;
+        case "withEta": return r.daysCoverWithIncoming;
+        case "monthMax": return r.monthMaxLevel;
+        case "dailyMax": return r.dailyMaxLevel;
+        case "stock": return r.stock;
+        case "incoming": return r.incoming;
+        case "plantTotal": return r.plant;
+        case "etdTotal": return r.etd;
+        case "total": return r.total;
+        default: return null;
+      }
+    },
+    [order, shipments],
+  );
+
+  /** Which control a heading's funnel opens. Everything else is a number range. */
+  const FILTER_KIND: Record<string, "text" | "list" | "number"> = {
+    group: "list",
+    code: "text",
+    description: "text",
+    remark: "list",
+    category: "list",
+    source: "list",
+  };
+
+  /**
+   * Every line the tab shows, AFTER the search box but BEFORE any column filter.
+   *
+   * Kept separate from `rows` because it is what the cascade reads: a column's dropdown is built
+   * from these narrowed by every filter except its own, which is what stops the planner
+   * assembling a combination that matches nothing.
+   */
+  const searchedRows: InkRow[] = useMemo(() => {
+    const built = positions.map((p) => {
+      const base = plans[p.key] ?? plans[p.legacyKey] ?? EMPTY_PLAN;
+      // The company tabs use that book's own sales; Combined uses the group's.
+      const live = consumption?.get(p.key);
+      const src = companyKey ? live?.byCompany[companyKey] : live;
+      const plan: InkPlan = {
+        ...base,
+        threeMonthAvg: base.manual?.threeMonthAvg ? base.threeMonthAvg : (src?.threeMonthAvg ?? 0),
+        perDayAvg: base.manual?.perDayAvg ? base.perDayAvg : (src?.perDayAvg ?? 0),
+      };
+      return deriveInkRow(p, plan, shipments, thresholds, companyKey);
+    });
+    // EVERY NUMBERED LINE SHOWS, stock or not. The number is the planner's decision that a line
+    // belongs on the sheet — an ink at zero stock that they numbered is exactly the one they want
+    // to watch — so no stock filter second-guesses it. `positions` is already numbered-only.
+    const scoped = built;
+    const q = search.trim().toUpperCase();
+    return q
+      ? scoped.filter((r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q))
+      : scoped;
+    // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
+    // sorting again would throw it away. A sort the planner ASKS for is applied below.
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
+
+  /**
+   * What is on screen: the filters, then the planner's chosen order.
+   *
+   * With no sort chosen the rows keep the numbering the item master gave them, which is the
+   * order the sheet is read in. One click on the No. heading always returns to it.
+   */
+  const rows: InkRow[] = useMemo(
+    () => applySort(rowsPassing(searchedRows, colFilters, cellValue), sort, cellValue),
+    [searchedRows, colFilters, sort, cellValue],
+  );
+
+  /**
+   * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
+   *
+   * Split in two: shipments first, then the plant's weekly orders, so the sheet reads
+   * left-to-right as bought-in supply and then made-here supply, with a total after each.
+   */
+  const inScope = useMemo(
+    () =>
+      shipments
+        .filter((s) => !companyKey || s.company === companyKey)
+        // EMPTY COLUMNS STAY. This used to drop any consignment with no quantities on it, which
+        // made a column added here invisible the moment it was created — there is nowhere to type
+        // a quantity until the column exists. An empty column is the planner's to fill or delete.
+        .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")),
+    [shipments, companyKey],
+  );
+  const shipmentCols = useMemo(() => inScope.filter((s) => s.status !== "PLANT"), [inScope]);
+  const plantCols = useMemo(() => inScope.filter((s) => s.status === "PLANT"), [inScope]);
+
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (t, r) => ({
+          stock: t.stock + r.stock,
+          plant: t.plant + r.plant,
+          etd: t.etd + r.etd,
+          eta: t.eta + r.eta,
+          atPort: t.atPort + r.atPort,
+          total: t.total + r.total,
+        }),
+        { stock: 0, plant: 0, etd: 0, eta: 0, atPort: 0, total: 0 },
+      ),
+    [rows],
+  );
+
+  const reorderCount = rows.filter((r) => r.band === "low" || r.band === "mid").length;
+
+
+  /**
+   * The values a list filter offers: every value the OTHER filters still allow, plus anything
+   * already ticked here so a choice can always be undone. See `lib/grid.ts` for why the column
+   * is excluded from its own options rather than the cascade being switched off.
+   *
+   * Remark is the one fixed vocabulary. Its three values are what the cover maths concludes, and
+   * they stay on offer whether or not any line currently reads them, so "what needs ordering"
+   * can be asked before knowing whether anything does.
+   */
+  const listOptions = (id: string) =>
+    id === "remark"
+      ? fixedOptions(["NEW ORDER REQUIRED", "EXCESS STOCK", ""], colFilters.remark?.list)
+      : cascadedOptions(searchedRows, colFilters, cellValue, id);
+
+  /** The funnel itself, dropped into a heading. */
+  const colFilter = (id: string) => (
+    <HeaderFilter
+      kind={FILTER_KIND[id] ?? "number"}
+      value={colFilters[id]}
+      options={FILTER_KIND[id] === "list" ? listOptions(id) : undefined}
+      onChange={(next) => setColFilter(id, next)}
+    />
+  );
+
+  /**
+   * A whole heading: the words sort, the funnel filters. Every column on this sheet goes through
+   * here, so a column cannot be added with one and not the other.
+   */
+  const colHead = (label: ReactNode, id: string) => (
+    <ColumnHead label={label} id={id} sort={sort} setSort={setSort}>
+      {colFilter(id)}
+    </ColumnHead>
+  );
+
+  const filtersOn = Object.keys(colFilters).length > 0;
+  const clearFilters = () => setColFilters({});
+
+  // The company columns exist only on Combined, and only when the group is open.
+  const cols = useTableColumns("dashboard");
+  /**
+   * ROW HEIGHT, dragged the same way column width is.
+   *
+   * Sixty-four inks at the default spacing is a lot of scrolling for a sheet whose whole job is
+   * to be read across; pulling the rows tighter fits half again as many on screen. Height is set
+   * by the cells' vertical padding, which is what actually makes a row tall — setting a height on
+   * the row itself only fights the padding and clips the text.
+   *
+   * ONE HEIGHT FOR EVERY ROW, not one per row. A report where row nine is taller than row ten
+   * reads as a mistake, and the planner wants more lines on screen, not a particular line bigger.
+   */
+  const ROW_PAD_DEFAULT = 16;
+  const [rowPad, setRowPad] = useState<number>(() => {
+    try {
+      const v = Number(window.localStorage.getItem("ink-mis:row-pad"));
+      return Number.isFinite(v) && v > 0 ? Math.min(v, 28) : ROW_PAD_DEFAULT;
+    } catch {
+      return ROW_PAD_DEFAULT;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:row-pad", String(rowPad));
+    } catch {
+      /* private mode: the height still applies for this visit */
+    }
+  }, [rowPad]);
+
+  /** Drag any row's bottom edge; double-click it to go back to the default. */
+  const startRowDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startPad = rowPad;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: MouseEvent) =>
+      // Halved: the padding sits above AND below, so a 20px drag is a 20px taller row.
+      setRowPad(Math.min(28, Math.max(2, startPad + (ev.clientY - startY) / 2)));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  /**
+   * The HEADING row has its own height, dragged the same way.
+   *
+   * Its cells wrap onto two or three lines — "3-month avg", "Per day avg" — so the heading is
+   * the tallest row on the sheet and costs the most to leave alone.
+   */
+  const HEAD_PAD_DEFAULT = 16;
+  const [headPad, setHeadPad] = useState<number>(() => {
+    try {
+      const v = Number(window.localStorage.getItem("ink-mis:head-pad"));
+      return Number.isFinite(v) && v > 0 ? Math.min(v, 28) : HEAD_PAD_DEFAULT;
+    } catch {
+      return HEAD_PAD_DEFAULT;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:head-pad", String(headPad));
+    } catch {
+      /* private mode: the height still applies for this visit */
+    }
+  }, [headPad]);
+
+  const startHeadDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startPad = headPad;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: MouseEvent) =>
+      setHeadPad(Math.min(28, Math.max(2, startPad + (ev.clientY - startY) / 2)));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  /** The heading's own grab strip, along the bottom of the first frozen heading. */
+  const headHandle = (
+    <span
+      role="separator"
+      aria-orientation="horizontal"
+      title="Drag to make the heading row taller or shorter. Double-click to reset."
+      onMouseDown={startHeadDrag}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        setHeadPad(HEAD_PAD_DEFAULT);
+      }}
+      className="absolute inset-x-0 bottom-0 h-[5px] cursor-row-resize hover:bg-primary/30"
+    />
+  );
+
+  /**
+   * ROW HEIGHT IS DRAGGED FROM ANYWHERE IN THE TABLE, the way a spreadsheet does it.
+   *
+   * The grab strip used to live only in the leftmost cell, so the planner had to scroll back to
+   * the left edge to reach it. Rather than put a strip in all thirty cells of every row, the
+   * whole body listens: a press within a few pixels of a row's bottom edge starts the drag, and
+   * the cursor changes there so the edge announces itself.
+   *
+   * It stays clear of inputs, or a click into a quantity box near the edge of a row would begin
+   * a resize instead of putting the caret where it was aimed.
+   */
+  const EDGE = 8;
+
+  const nearRowEdge = (e: React.MouseEvent) => {
+    const el = e.target as HTMLElement | null;
+    if (!el || el.closest("input, select, textarea, button, [role=separator]")) return false;
+    const row = el.closest("tr");
+    if (!row) return false;
+    return e.clientY >= row.getBoundingClientRect().bottom - EDGE;
+  };
+
+  /**
+   * COLUMN WIDTH IS DRAGGED FROM ANYWHERE TOO.
+   *
+   * A body cell does not know which column it is in, so it asks: the heading at the same cell
+   * index carries the id (data-col-id), which keeps one copy of the column order instead of two
+   * that can drift apart.
+   */
+  const columnAt = (e: React.MouseEvent): string | null => {
+    const el = e.target as HTMLElement | null;
+    if (!el || el.closest("input, select, textarea, button, [role=separator]")) return null;
+    const td = el.closest("td");
+    const table = td?.closest("table");
+    if (!td || !table) return null;
+    if (e.clientX < td.getBoundingClientRect().right - EDGE) return null;
+    // The heading row is the one with as many cells as the body row — not the company band.
+    const cells = td.parentElement?.children.length ?? 0;
+    const head = [...(table.tHead?.rows ?? [])].find((r) => r.cells.length === cells);
+    const th = head?.cells[td.cellIndex] as HTMLElement | undefined;
+    return th?.dataset.colId ?? null;
+  };
+
+  const startColumnDrag = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    const td = (e.target as HTMLElement).closest("td");
+    const startX = e.clientX;
+    const startW = td?.getBoundingClientRect().width ?? 120;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.cursor = "col-resize";
+    const move = (ev: MouseEvent) => cols.setWidth(id, startW + (ev.clientX - startX));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  const bodyMouseMove = (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    e.currentTarget.style.cursor = nearRowEdge(e)
+      ? "row-resize"
+      : columnAt(e)
+        ? "col-resize"
+        : "";
+  };
+
+  const bodyMouseDown = (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    if (nearRowEdge(e)) {
+      startRowDrag(e);
+      return;
+    }
+    const id = columnAt(e);
+    if (id) startColumnDrag(e, id);
+  };
+
+  const bodyDoubleClick = (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    if (nearRowEdge(e)) {
+      setRowPad(ROW_PAD_DEFAULT);
+      return;
+    }
+    const id = columnAt(e);
+    if (id) cols.setWidth(id, undefined);
+  };
+
+  /** Frozen by default; a narrow screen is better off without the pin eating its width. */
+  const [freeze, setFreeze] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ink-mis:freeze") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:freeze", freeze ? "1" : "0");
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }, [freeze]);
+  const showCompanyCols = !companyKey && companiesOpen && cols.isVisible("companies");
+  const showShipmentCols = cols.isVisible("shipments");
+  const showPlantCols = cols.isVisible("plant");
+
+  /**
+   * The planning block, left of the stock columns. Item code is not hideable: without it a row
+   * cannot be identified. Stock and Total are not hideable either — they are the answer.
+   */
+  /**
+   * FROZEN LEAD COLUMNS.
+   *
+   * The sheet is thirty columns wide, so by the time the planner has scrolled out to a
+   * consignment column the ink's name is long gone and they cannot tell which row they are
+   * typing into. The identity block — number, group, code, description — is pinned to the left
+   * and the rest scrolls under it.
+   *
+   * A pinned column needs a KNOWN width, or every offset after it is a guess; these are the
+   * widths used when the planner has not resized one, and the same numbers drive both the cell
+   * and the offset of its neighbours. Resizing still works: `widthOf` wins where it is set.
+   */
+  const PINNED = ["no", "group", "code", "description"] as const;
+  const PIN_WIDTH: Record<string, number> = { no: 56, group: 160, code: 144, description: 256 };
+
+  /**
+   * EVERY COLUMN HAS A WIDTH, and the table is laid out FIXED.
+   *
+   * Dragging a column narrower did nothing before: with the browser's automatic layout a column
+   * can never be thinner than its widest cell, so a width was a suggestion the table declined.
+   * Fixed layout obeys the width and the cell clips — which is what the planner asked for, and
+   * what a spreadsheet does.
+   *
+   * The widths ride a <colgroup>. Fixed layout otherwise takes them from the table's FIRST row,
+   * which here is the company band with its colspans, and the columns would land anywhere.
+   */
+  const DEFAULT_WIDTH = (id: string): number => {
+    if (PIN_WIDTH[id] !== undefined) return PIN_WIDTH[id];
+    if (id === "remark") return 150;
+    if (id === "category") return 130;
+    if (id === "source") return 110;
+    if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
+    if (id === "stock" || id === "total" || id === "etdTotal") return 110;
+    return 90;
+  };
+
+  const LEAD_COLS = [
+    // The planner's own row number. On the sheet because "why is this line here?" is otherwise
+    // unanswerable from the dashboard — the order is theirs, and they should be able to see it
+    // rather than infer it from the position.
+    { id: "no", label: "No." },
+    { id: "group", label: "Group" },
+    { id: "code", label: "Item code", locked: true },
+    { id: "description", label: "Description" },
+    { id: "remark", label: "Remark" },
+    { id: "m3", label: "3-month avg" },
+    { id: "pd", label: "Per day avg" },
+    { id: "lead", label: "Lead time" },
+    { id: "safety", label: "Safety" },
+    { id: "days", label: "Days cover" },
+    { id: "withEta", label: "With ETA" },
+    { id: "monthMax", label: "Month max" },
+    { id: "dailyMax", label: "Daily max" },
+  ];
+  const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+
+  /**
+   * The columns actually rendered, in order. Mirrors the heading row exactly — if one changes,
+   * so must the other, and a mismatch shows up immediately as columns of the wrong width.
+   */
+  const columnPlan = useMemo(() => {
+    const ids = leadVisible.map((c) => c.id);
+    if (showCompanyCols) ids.push(...INK_COMPANIES.map((c) => `co:${c.key}`));
+    ids.push("stock");
+    if (showShipmentCols) ids.push(...shipmentCols.map((x) => `ship:${x.id}`));
+    if (cols.isVisible("incoming")) ids.push("incoming");
+    if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
+    ids.push("plantTotal");
+    if (cols.isVisible("etdTotal")) ids.push("etdTotal");
+    ids.push("total");
+    if (cols.isVisible("category")) ids.push("category");
+    if (cols.isVisible("source")) ids.push("source");
+    return ids;
+  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
+
+  /**
+   * The table is EXACTLY as wide as its columns, set inline.
+   *
+   * The shared Table component hard-codes `w-full`, and its class joiner does not resolve
+   * conflicts, so a `w-auto` of mine simply lost. A full-width fixed table spreads whatever
+   * space is left over across the columns — so narrowing one silently widened the rest and the
+   * drag looked dead. An inline width beats any class, and the leftover space becomes scroll.
+   */
+  const tableWidth = useMemo(
+    () => columnPlan.reduce((t, id) => t + (cols.widthOf(id) ?? DEFAULT_WIDTH(id)), 0),
+    [columnPlan, cols],
+  );
+
+  /**
+   * Offsets are MEASURED, never assumed.
+   *
+   * The first version added up the widths it had asked for, but a table lays its columns out to
+   * fit their contents and hands back something else — so every frozen column after the first
+   * sat at the wrong offset and the block overlapped itself, which is exactly what it looked
+   * like. Each frozen heading is measured and the next one starts where that one really ends.
+   *
+   * Body cells get the offset and a solid background, and NO width: the column's width belongs
+   * to the table, and forcing a second opinion on it is what pulled them out of line.
+   */
+  const pinEls = useRef<Record<string, HTMLTableCellElement | null>>({});
+  const [pinLeft, setPinLeft] = useState<Record<string, number>>({});
+
+  const measurePins = useCallback(() => {
+    const out: Record<string, number> = {};
+    let x = 0;
+    for (const id of PINNED) {
+      const el = pinEls.current[id];
+      if (!el) continue;
+      out[id] = x;
+      x += el.getBoundingClientRect().width;
+    }
+    setPinLeft((prev) => {
+      const same =
+        Object.keys(out).length === Object.keys(prev).length &&
+        Object.entries(out).every(([k, v]) => Math.abs((prev[k] ?? -1) - v) < 0.5);
+      return same ? prev : out;
+    });
+  }, []);
+
+  useLayoutEffect(measurePins);
+  useEffect(() => {
+    const els = Object.values(pinEls.current).filter(Boolean) as HTMLTableCellElement[];
+    if (!els.length) return;
+    const ro = new ResizeObserver(measurePins);
+    els.forEach((el) => ro.observe(el));
+    window.addEventListener("resize", measurePins);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measurePins);
+    };
+  }, [measurePins, rows.length, freeze, cols.hidden.length]);
+
+  /**
+   * `relative` and `sticky` are both position rules, and the one that wins is whichever CSS
+   * loads last — not the one written last in the class list. Adding "relative" to these cells
+   * for the row-height grab strip quietly UNSTUCK them, so Item code scrolled away under the
+   * frozen Description beside it and the column read as empty.
+   *
+   * So position is decided in one place: sticky when frozen, relative when not. Either way the
+   * cell is positioned, which is all the grab strip needs.
+   */
+  const pinCell = (id: string, tone = "bg-background") => {
+    const left = pinLeft[id];
+    if (!freeze || left === undefined) return { className: "relative", style: undefined as CSSProperties | undefined };
+    return {
+      className: `sticky z-[2] ${tone}`,
+      style: { left } as CSSProperties,
+    };
+  };
+  const on = (id: string) => leadVisible.some((c) => c.id === id);
+  const columnOptions = [
+    ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
+    { value: "companies", label: "Stock by company" },
+    { value: "shipments", label: "Consignment columns" },
+    { value: "plant", label: "Plant weekly columns" },
+    { value: "incoming", label: "ETA + at port" },
+    { value: "etdTotal", label: "ETD total" },
+    { value: "category", label: "Category" },
+    { value: "source", label: "Import/Plant" },
+  ];
+  const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
+
+  /* --------------------------------------------------- consignment columns, inline */
+
+  /**
+   * A new column lands on the far right of a table thirty columns wide, which is off screen —
+   * the planner pressed the button and saw nothing happen. So the column is remembered, scrolled
+   * to, and ringed until it is touched.
+   */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const newColumnRef = useRef<HTMLTableCellElement | null>(null);
+
+  useEffect(() => {
+    if (!justAdded) return;
+    newColumnRef.current?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" });
+    const t = window.setTimeout(() => setJustAdded(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [justAdded]);
+
+  const addColumn = (status: ShipmentStatus) => {
+    const today = new Date().toISOString().slice(0, 10);
+    // Scoped to the book in view, so a column added on a company tab is visible there; on
+    // Combined it stays unattached, which is how the sheet has always worked.
+    const column = {
+      ...emptyShipment(),
+      status,
+      date: today,
+      company: companyKey ?? "",
+      lines: [],
+    };
+    setShipments((prev) => [...prev, column]);
+    setJustAdded(column.id);
+  };
+
+  const patchColumn = (id: string, patch: Partial<Shipment>) =>
+    setShipments((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
+  const removeColumn = (id: string, label: string) => {
+    if (!window.confirm(`Delete the ${label} column? Its quantities are removed with it.`)) return;
+    setShipments((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  /** One cell: the quantity of one ink on one consignment. Blank removes the line entirely. */
+  const setCellQty = (shipmentId: string, itemCode: string, raw: string) =>
+    setShipments((prev) =>
+      prev.map((s) => {
+        if (s.id !== shipmentId) return s;
+        const qty = Number(raw);
+        const rest = s.lines.filter((l) => l.itemCode !== itemCode);
+        if (!raw.trim() || !Number.isFinite(qty) || qty === 0) return { ...s, lines: rest };
+        return { ...s, lines: [...rest, { id: newId(), itemCode, qty }] };
+      }),
+    );
+
+  const setPlan = (code: string, patch: Partial<InkPlan>) =>
+    setPlans((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_PLAN), ...patch } }));
+
+  /** Typing an average marks it typed; emptying the box gives the ink back to the live figure. */
+  const setAverage = (code: string, field: "threeMonthAvg" | "perDayAvg", raw: string) =>
+    setPlans((prev) => {
+      const cur = prev[code] ?? EMPTY_PLAN;
+      const typed = raw.trim() !== "";
+      return {
+        ...prev,
+        [code]: {
+          ...cur,
+          [field]: typed ? Number(raw) || 0 : 0,
+          manual: { ...cur.manual, [field]: typed },
+        },
+      };
+    });
+
+  /** Props for a pinned HEADING: its id, its measured offset, and the cell to measure. */
+  const pinHead = (id: string) => ({
+    id,
+    stickyLeft: freeze ? pinLeft[id] : undefined,
+    fallbackWidth: PIN_WIDTH[id],
+    measureRef: (el: HTMLTableCellElement | null) => {
+      pinEls.current[id] = el;
+    },
+    className: freeze ? "bg-card" : "",
+  });
+
+  /** Merge a pinned cell's props with the classes the cell already wanted. */
+  const pinMerge = (
+    pinned: { className: string; style: CSSProperties | undefined },
+    extra: string,
+  ) => ({ className: `${pinned.className} ${extra}`.trim(), style: pinned.style });
+
+  /** A consignment column heading: read-only until Edit values is on, then fully editable. */
+  const consignmentHeader = (s: Shipment) => (
+    <span ref={s.id === justAdded ? newColumnRef : undefined} className="block">
+      {consignmentHeaderBody(s)}
+    </span>
+  );
+
+  const consignmentHeaderBody = (s: Shipment) =>
+    editing ? (
+      <div className="space-y-1 text-left font-normal">
+        <div className="flex items-center gap-1">
+          <select
+            className="h-6 w-full min-w-0 rounded border bg-background px-1 text-[10px]"
+            value={s.status}
+            onChange={(e) => patchColumn(s.id, { status: e.target.value as ShipmentStatus })}
+          >
+            {SHIPMENT_STATUSES.map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            title="Delete this column"
+            aria-label="Delete this column"
+            className="shrink-0 text-muted-foreground hover:text-red-600"
+            onClick={() => removeColumn(s.id, s.reference || s.status)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <Input
+          className="h-6 w-full min-w-0 px-1 text-[11px]"
+          placeholder="Reference"
+          value={s.reference}
+          onChange={(e) => patchColumn(s.id, { reference: e.target.value })}
+        />
+        <Input
+          type="date"
+          className="h-6 w-full min-w-0 px-1 text-[10px]"
+          value={s.date}
+          onChange={(e) => patchColumn(s.id, { date: e.target.value })}
+        />
+      </div>
+    ) : (
+      <>
+        <div className="text-[10px] uppercase text-muted-foreground">
+          {s.status === "PLANT" ? "Plant week" : s.status}
+        </div>
+        <div>
+          {colHead(s.reference || "(no ref)", `${s.status === "PLANT" ? "plant" : "ship"}:${s.id}`)}
+        </div>
+        <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
+      </>
+    );
+
+  /** One consignment cell. Typed straight into while Edit values is on. */
+  const consignmentCell = (s: Shipment, r: InkRow) => {
+    const q = s.lines
+      .filter((l) => r.itemCode && l.itemCode === r.itemCode)
+      .reduce((t, l) => t + l.qty, 0);
+    return (
+      <TableCell key={s.id} className="text-right tabular-nums">
+        {editing && r.itemCode ? (
+          <Input
+            type="number"
+            inputMode="decimal"
+            className="h-8 w-20 text-right"
+            value={q || ""}
+            onChange={(e) => setCellQty(s.id, r.itemCode, e.target.value)}
+          />
+        ) : (
+          (q ? fmtQty(q) : "")
+        )}
+      </TableCell>
+    );
+  };
+
+  /* --------------------------------------------------------------------- export */
+
+  const exportCsv = () => {
+    const head = [
+      "No.", "Group", "Item code", "Description", "Remark",
+      "3-month avg", "Per day avg", "Lead time", "Safety factor",
+      "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
+      ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
+      "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
+      "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
+      "Import/Plant", "To order",
+    ];
+    const body = rows.map((r) => [
+      order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
+      r.plan.threeMonthAvg, r.plan.perDayAvg, r.plan.leadTime, r.plan.safetyFactor,
+      r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
+      ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
+      r.stock,
+      ...shipmentCols.map((s) =>
+        s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
+      ),
+      r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
+      reorderQty(r),
+    ]);
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [head, ...body].map((line) => line.map(esc).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `INK MIS ${tab} ${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /* ----------------------------------------------------------------------- view */
+
+  const tabs = [{ key: "combined", label: "Combined" }, ...INK_COMPANIES.map((c) => ({ key: c.key, label: c.label }))];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Ink MIS</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
+            <Download className="mr-2 h-4 w-4" /> Export
+          </Button>
+          <Button size="sm" variant="secondary" asChild>
+            <Link to={`${BASE}/items`}>
+              <ListChecks className="mr-2 h-4 w-4" /> Item master
+            </Link>
+          </Button>
+          <Button size="sm" asChild>
+            <Link to={`${BASE}/pipeline`}>
+              <Ship className="mr-2 h-4 w-4" /> ETD / ETA entry
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {godownLines.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <span className="inline-flex items-center gap-1 font-medium">
+            <Warehouse className="h-3.5 w-3.5" /> Stock counts only
+          </span>
+          {godownLines.map((l) => (
+            <span key={l} className="rounded border bg-background px-1.5 py-0.5">{l}</span>
+          ))}
+          <Link to={`${BASE}/godowns`} className="ml-auto underline">
+            Change
+          </Link>
+        </div>
+      )}
+
+      {/* Tabs — combined plus one per book. */}
+      <div className="flex flex-wrap gap-1 border-b">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm transition-colors ${
+              tab === t.key
+                ? "border-primary font-semibold text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary strip — ONE LINE. Six boxed cards pushed the table below the fold, and the
+          table is the report; these are context, so they read as a single row of figures and
+          wrap only when the window is genuinely narrow. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border bg-card px-3 py-2 text-sm">
+        {[
+          { label: "Inks", value: String(rows.length) },
+          { label: "Stock", value: fmtQty(totals.stock) },
+          { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
+          { label: "Plant", value: fmtQty(totals.plant) },
+          { label: "ETD", value: fmtQty(totals.etd) },
+          { label: "Needs ordering", value: String(reorderCount) },
+        ].map((c) => (
+          <span key={c.label} className="whitespace-nowrap">
+            <span className="text-muted-foreground">{c.label} </span>
+            <strong className="tabular-nums">{c.value}</strong>
+          </span>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="w-64 pl-8"
+            placeholder="Search code or description"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <select
+          className="h-9 rounded-md border bg-background px-2 text-sm"
+          value={scope}
+          onChange={(e) => setScope(e.target.value as InkScope)}
+          title="Which items this report lists"
+        >
+          <option value="ink">Ink groups only</option>
+          <option value="all">Every stock group</option>
+        </select>
+        <Button
+          variant={editing ? "default" : "outline"}
+          size="sm"
+          onClick={() => setEditing((v) => !v)}
+        >
+          <Pencil className="mr-2 h-4 w-4" /> {editing ? "Done editing" : "Edit values"}
+        </Button>
+        {editing && (
+          <>
+            {(["ETD", "ETA", "AT PORT", "PLANT"] as ShipmentStatus[]).map((st) => (
+              <Button key={st} variant="outline" size="sm" onClick={() => addColumn(st)}>
+                <Plus className="mr-1 h-4 w-4" /> {st}
+              </Button>
+            ))}
+          </>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void consumptionQuery.refetch()}
+          disabled={consumptionQuery.isFetching || !nameToCode}
+        >
+          <Wand2 className="mr-2 h-4 w-4" />
+          {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
+        </Button>
+        {filtersOn && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        )}
+        <MultiSelect
+          values={visibleColumnIds}
+          onChange={(v) => cols.setHidden(columnOptions.map((o) => o.value).filter((id) => !v.includes(id)))}
+          options={columnOptions}
+          triggerLabel="Columns"
+          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+        />
+        <span className="inline-flex items-center gap-1 text-sm" title="Row height">
+          <span className="text-muted-foreground">Rows</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Shorter rows"
+            onClick={() => setRowPad((v) => Math.max(2, v - 3))}
+          >
+            −
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Taller rows"
+            onClick={() => setRowPad((v) => Math.min(28, v + 3))}
+          >
+            +
+          </Button>
+        </span>
+        <span className="inline-flex items-center gap-1 text-sm" title="Heading height">
+          <span className="text-muted-foreground">Heading</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Shorter heading"
+            onClick={() => setHeadPad((v) => Math.max(2, v - 3))}
+          >
+            −
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            aria-label="Taller heading"
+            onClick={() => setHeadPad((v) => Math.min(28, v + 3))}
+          >
+            +
+          </Button>
+        </span>
+        <label className="inline-flex items-center gap-2 text-sm" title="Keep number, group, code and description on screen while you scroll right">
+          <input type="checkbox" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} />
+          Freeze name columns
+        </label>
+        {cols.customised && (
+          <Button variant="ghost" size="sm" onClick={cols.reset} title="Show every column at its automatic width">
+            Reset columns
+          </Button>
+        )}
+        {(["low", "mid", "normal", "excess"] as InkBand[]).map((b) => (
+          <span key={b} className={`rounded px-2 py-1 text-xs ${BAND_CLASS[b]}`}>
+            {BAND_LABEL[b]}
+          </span>
+        ))}
+      </div>
+
+      {/* The standing explanation of how the averages are worked out has gone: it said the same
+          thing on every visit and cost a band across the page. What is left appears only when it
+          changes what the planner should believe — a failure, or their own typed figures sitting
+          on top of the live ones. The rule itself lives on the two column headings and in
+          lib/inkMis.ts. */}
+      {(consumptionQuery.isError || typedCount > 0) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {consumptionQuery.isError && (
+            <span>
+              Could not read the Sales Register:{" "}
+              {consumptionQuery.error instanceof Error ? consumptionQuery.error.message : "unknown error"}
+            </span>
+          )}
+          {typedCount > 0 && (
+            <button type="button" className="font-semibold underline" onClick={clearTypedAverages}>
+              {typedCount} ink{typedCount === 1 ? " has" : "s have"} typed averages — use live figures
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+          Could not load stock: {error instanceof Error ? error.message : "unknown error"}
+        </div>
+      )}
+
+      {needsCode > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{needsCode}</strong> line{needsCode === 1 ? "" : "s"} have no item code, so
+            the same ink in two books is still showing as two lines.
+          </span>
+          <Button size="sm" variant="outline" asChild className="ml-auto">
+            <Link to={`${BASE}/items`}>
+              <ListChecks className="mr-2 h-4 w-4" /> Fill codes in the item master
+            </Link>
+          </Button>
+        </div>
+      )}
+
+      <ReorderChart rows={rows} />
+
+      {/*
+        THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
+        A sticky heading pins to its scrolling ancestor, so with the page doing the scrolling
+        there was nothing for it to pin to and the headings simply left. Giving the table a
+        height of its own fixes that, and keeps the left/right buttons above it on screen
+        instead of stranded at the top of a long page.
+      */}
+      <div
+        style={{
+          ["--ink-row-pad" as string]: `${rowPad}px`,
+          ["--ink-head-pad" as string]: `${headPad}px`,
+        }}
+        className={
+          // ONE ROW, ONE LINE. A long item code wrapped onto a second line and that row alone
+          // grew, so the sheet read as if two items shared a bucket. Cells now stay on one line
+          // and clip with an ellipsis; the full text is a column-width drag away, and the row
+          // height the planner set is the height every row keeps.
+          "[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] " +
+          "[&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)] " +
+          "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap"
+        }
+      >
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
+        <Table
+          style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
+          className={
+            "table-fixed [&_thead_th]:overflow-hidden " +
+            // Every heading sticks to the top of that box. The two rows that must NOT stick —
+            // the company band above and the filter row below — switch it back off, or all
+            // three would pile up at the same offset.
+            "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-[4] [&_thead_th]:bg-card"
+          }
+        >
+          <colgroup>
+            {columnPlan.map((id) => (
+              <col key={id} style={{ width: cols.widthOf(id) ?? DEFAULT_WIDTH(id) }} />
+            ))}
+          </colgroup>
+          <TableHeader>
+            {!companyKey && cols.isVisible("companies") && (
+              <TableRow className="bg-card hover:bg-card [&>th]:!static">
+                {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
+                <TableHead
+                  colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1}
+                  className="border-x text-center"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCompaniesOpen((v) => !v)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-foreground hover:underline"
+                    title={showCompanyCols ? "Collapse the four companies into one column" : "Show each company's stock"}
+                  >
+                    {showCompanyCols ? "− All four companies" : "+ All four companies"}
+                  </button>
+                </TableHead>
+                <TableHead
+                  colSpan={
+                    (showShipmentCols ? shipmentCols.length : 0) +
+                    (cols.isVisible("incoming") ? 1 : 0) +
+                    (showPlantCols ? plantCols.length : 0) +
+                    2
+                  }
+                />
+              </TableRow>
+            )}
+            <TableRow>
+              {on("no") && (
+                <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
+                  {colHead("No.", "no")}
+                  {headHandle}
+                </ResizableHead>
+              )}
+              {on("group") && (
+                <ResizableHead {...pinHead("group")} cols={cols}>
+                  {colHead("Group", "group")}
+                </ResizableHead>
+              )}
+              <ResizableHead {...pinHead("code")} cols={cols}>
+                {colHead("Item code", "code")}
+                {/* Second home for the heading's grab strip, for when No. is hidden. */}
+                {!on("no") && headHandle}
+              </ResizableHead>
+              {on("description") && (
+                <ResizableHead {...pinHead("description")} cols={cols}>
+                  {colHead("Description", "description")}
+                </ResizableHead>
+              )}
+              {on("remark") && (
+                <ResizableHead id="remark" cols={cols} className="min-w-[11rem]">
+                  {colHead("Remark", "remark")}
+                </ResizableHead>
+              )}
+              {on("m3") && (
+                <ResizableHead id="m3" cols={cols} className="text-right">
+                  {colHead("3-month avg", "m3")}
+                </ResizableHead>
+              )}
+              {on("pd") && (
+                <ResizableHead id="pd" cols={cols} className="text-right">
+                  {colHead("Per day avg", "pd")}
+                </ResizableHead>
+              )}
+              {on("lead") && (
+                <ResizableHead id="lead" cols={cols} className="text-right">
+                  {colHead("Lead time", "lead")}
+                </ResizableHead>
+              )}
+              {on("safety") && (
+                <ResizableHead id="safety" cols={cols} className="text-right">
+                  {colHead("Safety", "safety")}
+                </ResizableHead>
+              )}
+              {on("days") && (
+                <ResizableHead id="days" cols={cols} className="text-right">
+                  {colHead("Days cover", "days")}
+                </ResizableHead>
+              )}
+              {on("withEta") && (
+                <ResizableHead id="withEta" cols={cols} className="text-right">
+                  {colHead(
+                    <span className="text-[10px] font-normal">Days cover with ETA</span>,
+                    "withEta",
+                  )}
+                </ResizableHead>
+              )}
+              {on("monthMax") && (
+                <ResizableHead id="monthMax" cols={cols} className="text-right">
+                  {colHead("Month max", "monthMax")}
+                </ResizableHead>
+              )}
+              {on("dailyMax") && (
+                <ResizableHead id="dailyMax" cols={cols} className="text-right">
+                  {colHead("Daily max", "dailyMax")}
+                </ResizableHead>
+              )}
+              {showCompanyCols &&
+                INK_COMPANIES.map((c) => (
+                  <ResizableHead key={c.key} id={`co:${c.key}`} cols={cols} className="text-right">
+                    {colHead(c.label, `co:${c.key}`)}
+                  </ResizableHead>
+                ))}
+              <ResizableHead
+                id="stock"
+                cols={cols}
+                className={`text-right font-semibold ${!companyKey && !showCompanyCols ? "border-x" : ""}`}
+              >
+                {colHead(
+                  companyKey ? "Stock" : showCompanyCols ? "Total stock" : "Stock (4 companies)",
+                  "stock",
+                )}
+              </ResizableHead>
+              {showShipmentCols &&
+                shipmentCols.map((s) => (
+                  <ResizableHead
+                    key={s.id}
+                    id={`ship:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
+                    {consignmentHeader(s)}
+                  </ResizableHead>
+                ))}
+              {cols.isVisible("incoming") && (
+                <ResizableHead id="incoming" cols={cols} className="text-right">
+                  {colHead("ETA + at port", "incoming")}
+                </ResizableHead>
+              )}
+              {showPlantCols &&
+                plantCols.map((s) => (
+                  <ResizableHead
+                    key={s.id}
+                    id={`plant:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
+                    {consignmentHeader(s)}
+                  </ResizableHead>
+                ))}
+              <ResizableHead id="plantTotal" cols={cols} className="text-right">
+                {colHead("Plant total", "plantTotal")}
+              </ResizableHead>
+              {cols.isVisible("etdTotal") && (
+                <ResizableHead id="etdTotal" cols={cols} className="text-right">
+                  {colHead("ETD total", "etdTotal")}
+                </ResizableHead>
+              )}
+              <ResizableHead id="total" cols={cols} className="text-right font-semibold">
+                {colHead("Total", "total")}
+              </ResizableHead>
+              {cols.isVisible("category") && (
+                <ResizableHead id="category" cols={cols} className="min-w-[10rem]">
+                  {colHead("Category", "category")}
+                </ResizableHead>
+              )}
+              {cols.isVisible("source") && (
+                <ResizableHead id="source" cols={cols} className="min-w-[9rem]">
+                  {colHead("Import/Plant", "source")}
+                </ResizableHead>
+              )}
+            </TableRow>
+          </TableHeader>
+
+          <TableBody
+            onMouseMove={bodyMouseMove}
+            onMouseDown={bodyMouseDown}
+            onDoubleClick={bodyDoubleClick}
+          >
+            {/* TOTALS FIRST. They were in a footer, which on a table this tall meant scrolling
+                past every row to read the one line that summarises them. */}
+            {rows.length > 0 && (
+              <TableRow className="border-b-2 bg-muted/50 font-semibold hover:bg-muted/50">
+                <TableCell colSpan={leadVisible.length}>Total — {rows.length} inks</TableCell>
+                {showCompanyCols &&
+                  INK_COMPANIES.map((c) => (
+                    <TableCell key={c.key} className="text-right tabular-nums">
+                      {fmtQty(rows.reduce((t, r) => t + (r.byCompany[c.key] ?? 0), 0))}
+                    </TableCell>
+                  ))}
+                <TableCell className="text-right tabular-nums">{fmtQty(totals.stock)}</TableCell>
+                {showShipmentCols &&
+                  shipmentCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
+                {cols.isVisible("incoming") && (
+                  <TableCell className="text-right tabular-nums">
+                    {fmtQty(totals.eta + totals.atPort)}
+                  </TableCell>
+                )}
+                {showPlantCols &&
+                  plantCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
+                <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
+                {cols.isVisible("etdTotal") && (
+                  <TableCell className="text-right tabular-nums">{fmtQty(totals.etd)}</TableCell>
+                )}
+                <TableCell className="text-right tabular-nums">{fmtQty(totals.total)}</TableCell>
+                {cols.isVisible("category") && <TableCell />}
+                {cols.isVisible("source") && <TableCell />}
+              </TableRow>
+            )}
+
+            {isLoading && (
+              <TableRow>
+                <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
+                  Loading ink stock from ConnectWave…
+                </TableCell>
+              </TableRow>
+            )}
+
+            {/*
+              AN EMPTY RESULT IS NOT AN EMPTY TABLE. The row goes in the tbody so the headings,
+              the sort toggles and the funnels all stay on screen: swapping the whole table for a
+              message would take away the very controls that could undo the filter, leaving a
+              reload as the only way back. It also says WHICH of the two emptinesses this is, and
+              offers the way out where the filters are the cause.
+            */}
+            {!isLoading && rows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
+                  {positions.length === 0 ? (
+                    "No numbered items yet. Give an item a number in the item master to show it here."
+                  ) : filtersOn || search.trim() ? (
+                    <span className="inline-flex flex-wrap items-center justify-center gap-2">
+                      No ink matches the filters you have set.
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          clearFilters();
+                          setSearch("");
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    </span>
+                  ) : (
+                    "No inks to show."
+                  )}
+                </TableCell>
+              </TableRow>
+            )}
+
+            {rows.map((r) => (
+              <TableRow key={r.key}>
+                {on("no") && (
+                  <TableCell
+                    {...pinMerge(pinCell("no"), "text-right text-xs tabular-nums text-muted-foreground")}
+                  >
+                    {order[r.key] ?? order[r.legacyKey] ?? ""}
+                  </TableCell>
+                )}
+                {on("group") && (
+                  <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
+                )}
+                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
+                  {r.itemCode}
+                </TableCell>
+                {on("description") && (
+                  <TableCell {...pinCell("description")}>{r.description}</TableCell>
+                )}
+                {on("remark") && (
+                  <TableCell>
+                    {r.remark && (
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          r.remark === "EXCESS STOCK" ? "bg-fuchsia-100 text-fuchsia-900" : "bg-red-100 text-red-900"
+                        }`}
+                      >
+                        {r.remark}
+                      </span>
+                    )}
+                  </TableCell>
+                )}
+
+                {/* Planner inputs — the four editable cells. */}
+                {(
+                  [
+                    ["m3", "threeMonthAvg", r.plan.threeMonthAvg],
+                    ["pd", "perDayAvg", r.plan.perDayAvg],
+                    ["lead", "leadTime", r.plan.leadTime],
+                    ["safety", "safetyFactor", r.plan.safetyFactor],
+                  ] as [string, keyof InkPlan, number][]
+                )
+                  .filter(([id]) => on(id))
+                  .map(([id, field, value]) => (
+                    <TableCell key={id} className="text-right tabular-nums">
+                      {editing ? (
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          className="h-8 w-20 text-right"
+                          value={value || ""}
+                          onChange={(e) =>
+                            field === "threeMonthAvg" || field === "perDayAvg"
+                              ? setAverage(r.key, field, e.target.value)
+                              : setPlan(r.key, { [field]: Number(e.target.value) || 0 })
+                          }
+                        />
+                      ) : (
+                        fmtDays(value || null)
+                      )}
+                    </TableCell>
+                  ))}
+
+                {on("days") && (
+                  <TableCell
+                    className={`text-right tabular-nums ${
+                      r.daysCover !== null && r.daysCover < daysRedFor(r.plan.leadTime, thresholds)
+                        ? "bg-red-100 font-semibold text-red-900"
+                        : ""
+                    }`}
+                  >
+                    {fmtDays(r.daysCover)}
+                  </TableCell>
+                )}
+                {on("withEta") && (
+                  <TableCell
+                    className={`text-right tabular-nums ${
+                      r.daysCoverWithIncoming !== null &&
+                      r.daysCoverWithIncoming < daysRedFor(r.plan.leadTime, thresholds)
+                        ? "bg-red-100 font-semibold text-red-900"
+                        : ""
+                    }`}
+                  >
+                    {fmtDays(r.daysCoverWithIncoming)}
+                  </TableCell>
+                )}
+                {on("monthMax") && <TableCell className="text-right tabular-nums">{fmtQty(r.monthMaxLevel)}</TableCell>}
+                {on("dailyMax") && <TableCell className="text-right tabular-nums">{fmtQty(r.dailyMaxLevel)}</TableCell>}
+
+                {showCompanyCols &&
+                  INK_COMPANIES.map((c) => (
+                    <TableCell key={c.key} className="text-right tabular-nums">
+                      {fmtQty(r.byCompany[c.key])}
+                    </TableCell>
+                  ))}
+
+                <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.stockBand]}`}>
+                  {fmtQty(r.stock)}
+                  {r.stockPct !== null && (
+                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.stockPct)}</div>
+                  )}
+                </TableCell>
+
+                {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
+
+                {cols.isVisible("incoming") && (
+                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.incomingBand]}`}>
+                    {fmtQty(r.incoming)}
+                  </TableCell>
+                )}
+                {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
+                <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
+                {cols.isVisible("etdTotal") && (
+                  <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
+                )}
+                <TableCell className={`text-right font-semibold tabular-nums ${BAND_CLASS[r.band]}`}>
+                  {fmtQty(r.total)}
+                  {r.coverPct !== null && (
+                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>
+                  )}
+                </TableCell>
+                {cols.isVisible("category") && (
+                  <TableCell className="text-xs">{r.category}</TableCell>
+                )}
+                {cols.isVisible("source") && (
+                  <TableCell className="text-xs">{sourceLabel(r.source)}</TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+
+        </Table>
+      </ScrollableTable>
+      </div>
+
+      {/* Holidays. Sundays come out automatically; these are the extra closures. Kept visible
+          rather than buried, because every date added raises every per-day average. */}
+      <details className="rounded-md border p-3 text-sm">
+        <summary className="cursor-pointer font-medium">
+          Working days — {workingDaysElapsed(new Date(), new Set(holidays))} so far this month
+        </summary>
+        <div className="mt-3 space-y-3">
+          <p className="text-muted-foreground">
+            Sundays are already excluded. Add public holidays and any other closure here, then
+            fill the averages again. The per-day average divides this month's sales by the
+            working days that have passed, so each date you add raises it.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {holidays.length === 0 && (
+              <span className="text-muted-foreground">No holidays added.</span>
+            )}
+            {[...holidays].sort().map((h) => (
+              <span
+                key={h}
+                className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs"
+              >
+                {`${h.slice(6, 8)}-${h.slice(4, 6)}-${h.slice(0, 4)}`}
+                <button
+                  type="button"
+                  aria-label={`Remove ${h}`}
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setHolidays((prev) => prev.filter((d) => d !== h))}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <Input
+            type="date"
+            className="w-48"
+            onChange={(e) => {
+              const ymd = e.target.value.replace(/-/g, "");
+              if (!ymd) return;
+              setHolidays((prev) => (prev.includes(ymd) ? prev : [...prev, ymd]));
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </details>
+
+      {/* Band thresholds. Exposed because the sheet's cut-offs were read off its colouring
+          rather than documented, so the planner must be able to correct them. */}
+      <details className="rounded-md border p-3 text-sm">
+        <summary className="cursor-pointer font-medium">Colour thresholds</summary>
+        <div className="mt-3 flex flex-wrap gap-4">
+          {(
+            [
+              ["low", "Red below", thresholds.low],
+              ["mid", "Amber below", thresholds.mid],
+              ["excess", "Purple at or above", thresholds.excess],
+              ["excessRemark", "Excess remark at or above", thresholds.excessRemark],
+              ["daysRed", "Days cover red below, when no rule matches (days)", thresholds.daysRed],
+            ] as [keyof InkThresholds, string, number][]
+          ).map(([field, label, value]) => (
+            <label key={field} className="space-y-1">
+              <span className="block text-xs text-muted-foreground">{label} (%)</span>
+              <Input
+                type="number"
+                className="w-28"
+                value={value}
+                onChange={(e) =>
+                  setThresholds((t) => ({ ...t, [field]: Number(e.target.value) || 0 }))
+                }
+              />
+            </label>
+          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-end"
+            onClick={() => setThresholds(DEFAULT_THRESHOLDS)}
+          >
+            Reset
+          </Button>
+        </div>
+
+        {/* The red line per lead time: a table the planner keeps, not arithmetic. */}
+        <div className="mt-4">
+          <div className="text-xs font-medium">Red line by lead time</div>
+          <div className="mt-2 space-y-1">
+            {thresholds.daysRules.map((rule, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Lead time</span>
+                <Input
+                  type="number"
+                  className="h-8 w-20"
+                  value={rule.lead}
+                  onChange={(e) =>
+                    setThresholds((t) => ({
+                      ...t,
+                      daysRules: t.daysRules.map((x, j) =>
+                        j === i ? { ...x, lead: Number(e.target.value) || 0 } : x,
+                      ),
+                    }))
+                  }
+                />
+                <span className="text-muted-foreground">red below</span>
+                <Input
+                  type="number"
+                  className="h-8 w-20"
+                  value={rule.days}
+                  onChange={(e) =>
+                    setThresholds((t) => ({
+                      ...t,
+                      daysRules: t.daysRules.map((x, j) =>
+                        j === i ? { ...x, days: Number(e.target.value) || 0 } : x,
+                      ),
+                    }))
+                  }
+                />
+                <span className="text-muted-foreground">days</span>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-red-600"
+                  aria-label="Remove this rule"
+                  onClick={() =>
+                    setThresholds((t) => ({
+                      ...t,
+                      daysRules: t.daysRules.filter((_, j) => j !== i),
+                    }))
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() =>
+              setThresholds((t) => ({
+                ...t,
+                daysRules: [...t.daysRules, { lead: 0, days: t.daysRed } as LeadDaysRule],
+              }))
+            }
+          >
+            <Plus className="mr-1 h-4 w-4" /> Add a lead time
+          </Button>
+        </div>
+      </details>
+    </div>
+  );
+}
