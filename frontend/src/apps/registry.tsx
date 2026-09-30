@@ -15,6 +15,7 @@ import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { bushraCentralMasterApp } from "./bushra-central-master/meta";
+import { inkStabilisationApp } from "./ink-stabilisation/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -86,6 +87,8 @@ export const apps: AppManifest[] = [
   // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
   // central master live and keeps every change in the browser; nothing is written back.
   bushraCentralMasterApp,
+  // Ink Stabilisation — Surat ink lots and their 3/6/9-month retests; read-only ConnectWave.
+  inkStabilisationApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.

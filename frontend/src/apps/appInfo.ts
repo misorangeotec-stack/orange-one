@@ -107,6 +107,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/bushra-central-master",
     category: "control",
   },
+  /**
+   * INK STABILISATION — Enterprises Surat's manufactured ink lots and their 3 / 6 / 9-month
+   * retests. Read-only from ConnectWave.
+   */
+  "ink-stabilisation": {
+    name: "Ink Stabilisation",
+    basePath: "/ink-stabilisation",
+    category: "quality",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
