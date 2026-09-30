@@ -20,9 +20,10 @@ WHAT ONE RUN DOES
      Tally (ConnectWave) when the database says so (Sundays), uploaded and its
      md5 checked. Not encrypted (client's decision 18-09-2026); setting the
      BACKUP_AGE_RECIPIENT secret turns age encryption back on.
-  4. RETENTION — only after tonight's dump is verified: keep the newest N dumps
+  4. RETENTION, only after tonight's dump is verified: keep the newest N DAYS
      of that database (7 / 4), delete the rest permanently (not to Drive's bin,
-     which would still count against the space for 30 days).
+     which would still count against the space for 30 days). Days, not files:
+     see the warning in dump_database.
   5. Uploads "Files index.csv", "HOW TO RESTORE.txt" and a plain-words run log,
      then reports back (backup_run_finish). The watchdog emails if no success.
 
@@ -359,17 +360,34 @@ def dump_database(label: str, url: str, root: str, prefix: str, keep: int, stats
     enc.unlink()
     log(f"{label}: {human(dump_bytes)} dump -> {name} ({human(enc_bytes)}), verified, {time.time() - t0:.0f}s")
 
-    # Retention: count-based, and only now that tonight's copy is proven.
+    # Retention, and only now that tonight's copy is proven.
     r = rclone("lsf", drive(folder), "--files-only", capture=True)
     # Both kinds count, so the copies taken while encryption was on age out
-    # through the same "keep the newest N" as the plain ones (names sort by date).
+    # through the same rule as the plain ones (names sort by date).
     mine = sorted(f for f in r.stdout.splitlines()
                   if f.startswith(prefix + "_") and (f.endswith(".dump") or f.endswith(".dump.age")))
-    removed = []
-    for old in mine[:-keep] if len(mine) > keep else []:
+
+    # ⚠ COUNT THE DAYS, NOT THE FILES. A failed run is retried (max_attempts, 3
+    #   by default) and EVERY attempt takes its own dump, so counting files let
+    #   one bad night eat three of the seven slots. It really happened: the
+    #   report-exports crash failed 29 and 30 September 2026, and by the sixth
+    #   failure "7 daily dumps" had become seven copies of three days
+    #   (28, 29, 30 Sep). Two more nights and the history would have been one day
+    #   deep, which is exactly when a backup is supposed to save you.
+    #   A later attempt on a day supersedes the earlier ones, so only the last
+    #   copy of each kept day survives; "keep 7" means 7 days again.
+    days: dict[str, list[str]] = {}
+    for f in mine:
+        d = f[len(prefix) + 1:][:10]          # <prefix>_YYYY-MM-DD_HHMM.dump
+        readable = (len(d) == 10 and d[4] == "-" and d[7] == "-"
+                    and d[:4].isdigit() and d[5:7].isdigit() and d[8:].isdigit())
+        # A name we cannot read a date out of gets a slot of its own; it is never
+        # merged with another file, so a surprise can only cost space, not a copy.
+        days.setdefault(d if readable else f, []).append(f)
+    kept = sorted({max(days[d]) for d in sorted(days)[-keep:]} | {name})
+    removed = [f for f in mine if f not in kept]
+    for old in removed:
         rclone("deletefile", drive(f"{folder}/{old}"), "--drive-use-trash=false", "--log-level", "ERROR")
-        removed.append(old)
-    kept = mine[-keep:]
     if removed:
         log(f"{label}: removed {len(removed)} older copy(ies): {', '.join(removed)}")
 
