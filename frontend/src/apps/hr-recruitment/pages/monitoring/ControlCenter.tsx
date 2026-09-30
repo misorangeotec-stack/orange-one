@@ -150,19 +150,22 @@ export default function ControlCenter() {
       .map((id) => s.profileById(id))
       .filter(Boolean);
     if (!owners.length) return <span className="text-grey-2">Unassigned</span>;
+    // One line (PF-20): "name · phone" per owner, owners comma-separated; cut with "…" and shown
+    // whole on hover when there are several.
     return (
-      <div className="space-y-0.5">
-        {owners.map((p) => (
-          <div key={p!.id} className="leading-tight">
-            <div className="text-navy">{p!.name}</div>
+      <>
+        {owners.map((p, i) => (
+          <span key={p!.id}>
+            {i > 0 && <span className="text-grey-2">, </span>}
+            <span className="text-navy">{p!.name}</span>
             {p!.phone ? (
-              <div className="text-[12px] tabular-nums text-grey-2">{p!.phone}</div>
+              <span className="text-[12px] tabular-nums text-grey-2"> · {p!.phone}</span>
             ) : (
-              <div className="text-[12px] italic text-grey-2/60">no number</div>
+              <span className="text-[12px] italic text-grey-2/60"> · no number</span>
             )}
-          </div>
+          </span>
         ))}
-      </div>
+      </>
     );
   };
 

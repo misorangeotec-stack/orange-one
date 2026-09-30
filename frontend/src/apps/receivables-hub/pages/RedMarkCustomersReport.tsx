@@ -553,7 +553,7 @@ function RedMarkCustomersInner() {
                 The sticky cells need a SOLID background (bg-muted / bg-surface), or the columns
                 scrolling underneath show through.
               */}
-              <Table className="text-xs">
+              <Table resizeKey="red-mark-customers" className="text-xs">
                 <TableHeader>
                   {/* Group row. Column count: 1 + 5 + 3 + 5 + 1 + 3 + 4 = 22.
                       The balances carry their date IN THE HEADER, not just in the page intro: a

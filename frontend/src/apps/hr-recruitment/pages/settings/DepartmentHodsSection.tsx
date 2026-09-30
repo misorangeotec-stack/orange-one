@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { personOptions } from "../../lib/people";
 import { useHrStore } from "../../store";
 
@@ -42,6 +45,12 @@ import { useHrStore } from "../../store";
  */
 export default function DepartmentHodsSection() {
   const s = useHrStore();
+  /**
+   * PF-20: one line per row — the "Not set — … are on record as heads" sentence is cut and shown
+   * whole on hover instead of wrapping to three lines. A settings matrix: no drag. The row being
+   * edited keeps its full height, because the picker lives in it.
+   */
+  const fit = useColumnWidths("tb", ["department", "hod"]);
 
   /** `null` = following the saved row. An array = this admin has edited it. */
   const [openDept, setOpenDept] = useState<string | null>(null);
@@ -129,7 +138,7 @@ export default function DepartmentHodsSection() {
                 <th className="py-2 pr-3 font-semibold" />
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {departments.map((d) => {
                 const saved = s.departmentHodsFor(d.id);
                 const suggested = s.suggestedHodsFor(d.id);
@@ -159,18 +168,24 @@ export default function DepartmentHodsSection() {
                           />
                         </div>
                       ) : saved.length > 0 ? (
-                        <span className="text-navy">{saved.map(nameOf).join(", ")}</span>
+                        <FitCell fit={fit} col="hod" cap={FIT.CUT}>
+                          <span className="text-navy">{saved.map(nameOf).join(", ")}</span>
+                        </FitCell>
                       ) : suggested.length > 0 ? (
                         // A SUGGESTION, drawn as one. It is what the portal already knows,
                         // not something anybody has stated, so it is never saved on its own.
-                        <span className="text-grey-2">
-                          Not set — {suggested.map(nameOf).join(", ")}{" "}
-                          {suggested.length === 1
-                            ? "is on record as the head"
-                            : "are on record as heads"}
-                        </span>
+                        <FitCell fit={fit} col="hod" cap={FIT.CUT}>
+                          <span className="text-grey-2">
+                            Not set — {suggested.map(nameOf).join(", ")}{" "}
+                            {suggested.length === 1
+                              ? "is on record as the head"
+                              : "are on record as heads"}
+                          </span>
+                        </FitCell>
                       ) : (
-                        <span className="text-grey-2">Not set — nobody is on record as its head</span>
+                        <FitCell fit={fit} col="hod" cap={FIT.CUT}>
+                          <span className="text-grey-2">Not set — nobody is on record as its head</span>
+                        </FitCell>
                       )}
                     </td>
 

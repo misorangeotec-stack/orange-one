@@ -117,7 +117,7 @@ export default function MasterReport() {
       filter: { kind: "text", get: (r) => r.label },
       exportValue: (r) => r.label,
       cell: (r) => (
-        <span className="inline-block">
+        <span className="inline-flex max-w-full items-baseline truncate">
           {r.detailPath ? (
             <Link to={r.detailPath} className="font-semibold text-navy hover:text-orange">
               {r.label}
@@ -125,9 +125,10 @@ export default function MasterReport() {
           ) : (
             <span className="font-semibold text-navy">{r.label}</span>
           )}
+          {/* One line (PF-20): the note follows the name instead of sitting under it. */}
           {r.usageFromVisits && (
             <span
-              className="block text-[11px] text-grey-2"
+              className="ml-1.5 text-[11px] text-grey-2"
               title="Nothing is entered here — this module is judged on how many people open it"
             >
               view-only · judged on opens
@@ -247,8 +248,8 @@ export default function MasterReport() {
       sortValue: lastActivitySort,
       exportValue: (r) => (r.lastSignalAt ? formatDateTime(r.lastSignalAt) : "never"),
       // The relative label stays primary — it is what makes a stale module jump
-      // out of the column — with the real date beneath it, so a reader has
-      // something to quote and file against.
+      // out of the column — with the real date AFTER it (one line since PF-20), so a reader
+      // still has something to quote and file against.
       //
       // The COMBINED signal (entry or open), because for a view-only module an
       // open is the only thing that ever happens; showing its last entry would
@@ -257,10 +258,10 @@ export default function MasterReport() {
         const at = r.lastSignalAt;
         const openWasLatest = !!r.lastVisitAt && r.lastVisitAt === at;
         return (
-          <span className="inline-block text-right">
+          <span className="inline-block whitespace-nowrap text-right">
             <span className={at ? "text-grey" : "text-grey-2/70"}>{sinceLabel(at)}</span>
             {at && (
-              <span className="block text-[11.5px] text-grey-2">
+              <span className="ml-1.5 text-[11.5px] text-grey-2">
                 {formatDate(at.slice(0, 10))}
                 {openWasLatest && (
                   <span className="ml-1" title="The most recent thing here was someone opening it">

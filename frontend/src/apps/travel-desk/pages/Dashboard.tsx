@@ -63,7 +63,7 @@ export default function Dashboard() {
   );
 
   /**
-   * Advances drawn and not yet settled — the figure Policy §11.2 hangs its
+   * Advances drawn and not yet settled — the figure Policy Section 11.2 hangs its
    * hardest rule on ("no second travel advance to an employee who has an
    * outstanding unreconciled advance").
    *

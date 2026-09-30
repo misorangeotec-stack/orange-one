@@ -12,13 +12,13 @@ import type { Trip } from "../types";
 /**
  * Finance's two actions on an advance: agree the figure, then move the money.
  *
- * ⚠ TWO ACTIONS, NOT ONE. §11.1 gives them different owners and different
+ * ⚠ TWO ACTIONS, NOT ONE. Section 11.1 gives them different owners and different
  *   deadlines — the HOD agrees within a working day, Finance transfers within
  *   two — and in practice the figure is settled days before the payment goes
  *   out. One button would mean an advance could only be agreed by somebody able
  *   to make a transfer.
  *
- * ⚠ THE §11.2 BALANCE IS SHOWN BEFORE THE BUTTON, NOT AFTER IT. The RPC refuses
+ * ⚠ THE Section 11.2 BALANCE IS SHOWN BEFORE THE BUTTON, NOT AFTER IT. The RPC refuses
  *   a second advance while an earlier one is unreconciled; showing the figure
  *   here means the refusal is never a surprise, and Finance can see whose money
  *   is outstanding without leaving the screen.
@@ -70,14 +70,14 @@ export default function AdvancePanel({ trip }: { trip: Trip }) {
         <h2 className={SECTION_HEADING_CLASS}>Travel advance</h2>
         <span className="text-[11.5px] text-grey-2">
           asked for {money(trip.advanceRequestedAmount)}
-          {ceiling !== null && ` · §11.1 ceiling ${money(ceiling)}`}
+          {ceiling !== null && ` · Section 11.1 ceiling ${money(ceiling)}`}
         </span>
       </div>
 
       {owing > 0 && (
         <p className="mt-2 rounded-lg bg-[#FDECEC] px-3 py-2 text-[12.5px] text-ryg-red">
           <strong>{money(owing)} is still unreconciled</strong> for {trip.travellerName} on another
-          trip. Policy §11.2 does not allow a second advance until that is settled or recovered, and
+          trip. Policy Section 11.2 does not allow a second advance until that is settled or recovered, and
           the payment below will be refused.
         </p>
       )}
@@ -96,14 +96,14 @@ export default function AdvancePanel({ trip }: { trip: Trip }) {
             onChange={(e) => setAmount(e.target.value)}
           />
         </FieldLabel>
-        <FieldLabel label="Note" hint="why the figure differs from the request, if it does">
+        <FieldLabel label="Note" hint="Why it differs, if it does">
           <TextArea value={note} onChange={(e) => setNote(e.target.value)} rows={1} />
         </FieldLabel>
       </div>
 
       {overCap && (
         <p className="mt-2 text-[12.5px] text-ryg-red">
-          §11.1 caps this at {money(ceiling)} — 90% of the estimated cost. Either lower the figure,
+          Section 11.1 caps this at {money(ceiling)} — 90% of the estimated cost. Either lower the figure,
           or ask the traveller to correct the estimate.
         </p>
       )}
@@ -128,7 +128,7 @@ export default function AdvancePanel({ trip }: { trip: Trip }) {
           Record the payment
         </div>
         <p className="mt-1 text-[12px] text-grey-2">
-          This is what closes the step and sends the trip on to booking. §11.1 wants the money to
+          This is what closes the step and sends the trip on to booking. Section 11.1 wants the money to
           land <strong>before</strong> departure — the due date on this step counts backwards from
           it for exactly that reason.
         </p>
@@ -184,7 +184,7 @@ export default function AdvancePanel({ trip }: { trip: Trip }) {
  * ⚠ THIS IS THE ONLY WAY OUT FOR A CANCELLED TRIP. The money left, the journey
  *   never happened, and settlement — which is what normally clears an advance —
  *   is unreachable because the trip died before the claim. Without this the
- *   traveller is barred from every future advance by §11.2, for ever, through no
+ *   traveller is barred from every future advance by Section 11.2, for ever, through no
  *   fault of theirs.
  */
 export function AdvanceRecoveryPanel({ trip }: { trip: Trip }) {
@@ -215,7 +215,7 @@ export function AdvanceRecoveryPanel({ trip }: { trip: Trip }) {
       <p className="mt-1 text-[12.5px] text-grey">
         This trip is {trip.status} and drew {money(trip.advancePaidAmount)}, so no claim is coming to
         net it against. {money(owed)} is still outstanding, and until it is recorded as returned
-        §11.2 blocks {trip.travellerName} from any further advance.
+        Section 11.2 blocks {trip.travellerName} from any further advance.
       </p>
 
       <div className="mt-3 grid gap-4 sm:grid-cols-2">

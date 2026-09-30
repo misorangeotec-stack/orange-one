@@ -24,7 +24,7 @@ import type { TripStatus, TravelCategory, CityTier, LegKind } from "../types";
  *   distinction: "—" says nobody has worked this out yet; "₹0" says they worked
  *   it out and the answer was nothing. Same reasoning as hr-exit's F&F money().
  *
- * There is deliberately no currency argument. Policy §11.3: "Expenses in foreign
+ * There is deliberately no currency argument. Policy Section 11.3: "Expenses in foreign
  * currency are NOT covered under this policy." A trip is priced in rupees or it
  * is not this module's business.
  */

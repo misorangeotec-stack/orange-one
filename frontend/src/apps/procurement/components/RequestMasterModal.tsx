@@ -65,7 +65,8 @@ export default function RequestMasterModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const ctx = useMasterFieldCtx();
+  // A rate request picks from every company's stock book; nothing else here does.
+  const ctx = useMasterFieldCtx({ withItemBooks: open && mt === "vendor_item_price" });
 
   const typeOptions: ComboOption[] = MASTER_TYPES.map((m) => ({ value: m.value, label: m.label }));
 

@@ -1,0 +1,1233 @@
+/**
+ * INK MIS — the printing-ink stock position across all four books, plus the incoming
+ * pipeline (ETD / ETA / AT PORT) that the planner maintains by hand.
+ *
+ * This is the Hub port of the Excel sheet the team keeps for ink planning. Two halves:
+ *
+ *   1. STOCK comes from Tally, through the ConnectWave mirror. Nothing here is typed in.
+ *      `loadInkPositions` reuses `loadStockSummary` (the rpt_stock_summary_window RPC) and
+ *      merges the four books onto ONE line per item code.
+ *
+ *   2. PLANNING INPUTS AND SHIPMENTS are the planner's own numbers — three-month average,
+ *      per-day average, lead time, safety factor, and every ETD/ETA consignment. Tally has
+ *      no such data, so it lives in the browser (see `store` below).
+ *
+ * ─── THE MERGE KEY IS THE ITEM CODE ──────────────────────────────────────────────────────
+ *
+ * THE PLANNER'S DESCRIPTION WINS, then the item code.
+ *
+ * A description they typed is a deliberate statement that these rows are the same ink, and it is
+ * the only thing that reaches across books Tally disagrees about: "SUBLIMATION INK F-SERIES
+ * BLACK" in two books and "SUBLIMATION INKS BLACK-F SERIES (FLOTEC)" in the third is one ink,
+ * whatever the codes say. Where they have not written one, the item code merges the books as
+ * before, and failing that the row stands alone.
+ *
+ * Two rows given the SAME description therefore become one line even if their codes differ. That
+ * is the point of typing it, not a hazard to guard against.
+ *
+ * Verified against the planner's sheet on 12-Sep-2026: FG-H-BLACK merged to 6,435 and
+ * FG-H-LIGHT-MAGENTA to 2,280, both matching the sheet exactly.
+ *
+ * Rows with NO item code cannot join and are counted in `unmapped` rather than dropped in
+ * silence — a blank code is a master-data gap somebody has to fix, not a rounding detail.
+ *
+ * That gap is not theoretical. Checked against the planner's sheet, 25 of 29 lines tied; all
+ * four that did not were uncoded rows in Otec Surat. H6K Black is the clearest: 1,085 coded in
+ * Otec Noida plus 3,745 uncoded in Otec Surat is exactly the 4,830 on the sheet. So `aliases`
+ * lets the planner point an uncoded Tally item at a code and close the gap here, without
+ * waiting on the item master. Fixing the code in Tally is still the better repair — an alias
+ * is local to one browser — which is why the screen says so.
+ *
+ * ─── WHICH GROUP HOLDS THE INK ───────────────────────────────────────────────────────────
+ *
+ * Three books keep ink under the top-level group PRINTING INK. Enterprises Surat keeps it
+ * under FINISHED GOODS, because that book manufactures it. So the group filter is PER BOOK.
+ *
+ * Two traps, both of which return near-empty tables if you get them wrong:
+ *   - Filter on `primary_group` (the TOP-level group), never `stock_group`, which holds the
+ *     leaf. `stock_group = 'PRINTING INK'` matches a couple of dozen rows out of thousands.
+ *   - Enterprises Surat is taken at COMPANY level, not by godown. Netting its two finished-
+ *     goods godowns from voucher lines produces negative balances, because the mirror holds
+ *     movements but no per-godown opening. Company level ties to the planner's sheet where
+ *     godown netting does not (Light Magenta: 280 company, 297 netted, 280 on the sheet).
+ */
+/*
+ * The ONLY things this app takes from the Receivables Hub are these two DATA helpers: the
+ * ConnectWave client and the stock loader. Both are plain reads of the shared Tally mirror that
+ * every report reads. No UI, no routes, no state crosses between the two apps, and nothing here
+ * writes to anything the Hub owns. Copying them instead would fork the stock-summary rules and
+ * let the two drift apart silently, which is worse than a read-only import.
+ */
+import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
+import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit, type ItemFacts } from "./godowns";
+import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
+
+/* ------------------------------------------------------------------- the books */
+
+export interface InkCompany {
+  /** Short key used in the UI, the tab routes and the local store. */
+  key: string;
+  guid: string;
+  label: string;
+  /** Top-level stock group that holds printing ink IN THIS BOOK. */
+  inkGroups: string[];
+  /**
+   * How this book is narrowed on the Godowns screen.
+   *
+   * "group" reads Tally's Stock Summary and ticks STOCK GROUPS — Printing Ink, Paper Roll,
+   * Machinery. It is exact: the totals ARE Tally's own closing figures, nothing is inferred.
+   * Three of the four books work this way, because their stock effectively sits in one place
+   * and the useful question is which groups count, not which shelf.
+   *
+   * "godown" walks the vouchers godown by godown. Only Enterprises Surat needs it, because its
+   * ink really is spread across Sachin, Hojiwala, Production and Lab. It costs 38,000 voucher
+   * lines to read and the split carries an estimate (see lib/godowns.ts).
+   */
+  splitBy: "group" | "godown";
+}
+
+export const INK_COMPANIES: InkCompany[] = [
+  {
+    key: "otec-surat",
+    guid: "a4e100d1-3b6f-4193-876a-c754f1a74552",
+    label: "Otec Surat",
+    inkGroups: ["PRINTING INK"],
+    splitBy: "group",
+  },
+  {
+    key: "otec-noida",
+    guid: "53d35745-5246-4e1a-a27a-d4769f245b50",
+    label: "Otec Noida",
+    inkGroups: ["PRINTING INK"],
+    splitBy: "group",
+  },
+  {
+    key: "ent-surat",
+    guid: "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e",
+    label: "Enterprises Surat",
+    inkGroups: ["FINISHED GOODS"],
+    splitBy: "godown",
+  },
+  {
+    key: "ent-noida",
+    guid: "779c26f4-3fd8-46bd-9995-4f9916c98856",
+    label: "Enterprises Noida",
+    inkGroups: ["PRINTING INK"],
+    splitBy: "group",
+  },
+];
+
+export const INK_COMPANY_GUIDS = INK_COMPANIES.map((c) => c.guid);
+const BY_GUID = new Map(INK_COMPANIES.map((c) => [c.guid, c]));
+
+/* ------------------------------------------------------------------ stock side */
+
+/** One ink, merged across the four books. Quantities only — ink is bought and sold in KGS. */
+export interface InkPosition {
+  /** Merge key: the planner's description where they typed one, else the item code, else a
+   *  per-book synthetic key. */
+  key: string;
+  /** The key this line had before a description re-keyed it — see InkMasterRow.legacyKey. */
+  legacyKey: string;
+  /** Displayed in the Item Code column. Empty when nothing supplies one yet. */
+  itemCode: string;
+  /** False when no code exists anywhere, so this line cannot merge across books. */
+  coded: boolean;
+  /** Which book/item rows fed this line — the link back to the item master. */
+  sources: { companyKey: string; item: string }[];
+  /**
+   * What the dashboard prints: the planner's own description where they have written one, and
+   * TALLY'S NAME until then. Never blank — an unnamed line is harder to read than one carrying
+   * Tally's warehouse wording, and the planner renames the ones that matter as they go.
+   */
+  description: string;
+  /**
+   * The planner's own description from the item master, empty until they write one.
+   *
+   * Kept separate from `description` so a screen can tell "renamed by the planner" from "still
+   * Tally's wording" — the dashboard shows `description` either way.
+   *
+   * First non-empty one wins where several books feed one line; they are describing one ink.
+   */
+  customDescription: string;
+  /** Leaf stock group, for the sheet's "Group" column. */
+  group: string;
+  /** The planner's category and source, from the item master. Empty until they set them.
+   *  First non-empty wins where several books feed one line — it is one ink. */
+  category: string;
+  source: string;
+  baseUnit: string;
+  /** Closing quantity per book, keyed by `InkCompany.key`. Absent book means zero. */
+  byCompany: Record<string, number>;
+  /** Sum of `byCompany` — the merged line. */
+  stock: number;
+  /** Outward quantity over the loaded window, per book and merged. Feeds "fill from Tally". */
+  consumedByCompany: Record<string, number>;
+  consumed: number;
+}
+
+/**
+ * The planner's own item master, keyed `<companyKey>|<TALLY ITEM NAME>`.
+ *
+ * Tally's item master is incomplete — most items carry no code, and the group is whatever the
+ * book happens to file them under. Rather than wait for Tally to be tidied, the planner keeps
+ * the corrections here and they win over Tally on the report.
+ *
+ * Keyed per book, not globally: the same name can be a different ink in a different company,
+ * and one shared key would merge two things that are not the same.
+ *
+ * Any blank field falls through to Tally's own value. An override is a correction, not a
+ * replacement, so clearing a box restores what Tally says instead of blanking the column.
+ */
+export interface InkOverride {
+  code: string;
+  group: string;
+  description: string;
+}
+
+/**
+ * Category and Import/Plant belong to the PRINTED LINE, not to one book's row.
+ *
+ * Code, group and description are per book — the same ink genuinely carries different codes and
+ * sits in different groups in different companies. Chemistry and where it is bought from do not
+ * change between books, so these are keyed on the merge key, exactly like the row number and the
+ * lead time. Set it once on any row and every book's row for that ink shows it.
+ */
+export interface InkLineFields {
+  category: string;
+  source: string;
+  /**
+   * How many weeks of plant orders this ink runs on. Only meaningful for a Plant ink: it says
+   * how many weekly lines the planner expects to enter, so the dashboard can show whether they
+   * have entered them. Blank means one week.
+   */
+  weeks?: number;
+}
+
+export type InkLines = Record<string, Partial<InkLineFields>>;
+
+/**
+ * The same two fields, set for a whole GROUP.
+ *
+ * Chemistry follows the group: everything in "UV INK" is the same chemistry, bought the same way.
+ * So setting the category on one item sets it for the group, and its siblings fill themselves in
+ * — which is the difference between classifying 1,437 items and classifying a few dozen groups.
+ *
+ * Keyed on the group name, upper-cased, because the same group can be spelled either way in
+ * different books.
+ */
+export type InkGroupFields = Record<string, Partial<InkLineFields>>;
+
+/**
+ * The ink chemistries the planner sorts by. OTHERS is theirs to pick; it is never guessed.
+ */
+export const INK_CATEGORIES = [
+  "REACTIVE", "SUBLIMATION", "PIGMENT", "DISPERSE", "CHEMICAL", "OTHERS",
+] as const;
+
+/**
+ * Read the category out of the item's own name.
+ *
+ * Tally names carry the chemistry — "REACTIVE INK H-SERIES BLACK", "KY DISPERSE INK ULTRA RED" —
+ * so 742 of the 1,437 ink items classify themselves and the planner only fills the rest.
+ *
+ * Checked against every ink name in the four books on 16-Sep-2026: the only names matching two
+ * patterns are the four "DIGISTAR SUBLI-SONIC" items, settled above. Anything unmatched returns "", which
+ * leaves the box empty rather than guessing OTHERS — a wrong category filters an ink out of the
+ * planner's view, which is worse than an empty one they can see and fill.
+ *
+ * DISPERSE is matched as a whole word on purpose: "SUBLIMATION DISPERSION SUPER HD CYAN" is a
+ * sublimation ink, and a loose "DISPERS" would have claimed it.
+ */
+const CATEGORY_RULES: [string, RegExp][] = [
+  // DIGISTAR is a reactive range, by the planner's instruction. It leads the list because four
+  // items are named "DIGISTAR SUBLI-SONIC ..." and would otherwise read as sublimation; their
+  // call, and the only names where two rules compete at all.
+  ["REACTIVE", /REACTIVE|DIGISTAR/],
+  ["PIGMENT", /PIGMENT/],
+  ["CHEMICAL", /CHEMICAL/],
+  ["SUBLIMATION", /SUBLIMATION|SUBLI\b/],
+  ["DISPERSE", /\bDISPERSED?\b/],
+];
+
+export function detectCategory(itemName: string | null | undefined): string {
+  const n = norm(itemName);
+  if (!n) return "";
+  for (const [category, pattern] of CATEGORY_RULES) if (pattern.test(n)) return category;
+  return "";
+}
+
+/**
+ * How an ink reaches the shelf. Three values, because they are three different lead times and
+ * three different people to chase, which is the whole reason the planner wants to filter on it.
+ */
+export const INK_SOURCES = [
+  { value: "import", label: "Import" },
+  { value: "domestic", label: "Domestic" },
+  { value: "plant", label: "Plant" },
+] as const;
+
+export const sourceLabel = (v: string) =>
+  INK_SOURCES.find((s) => s.value === v)?.label ?? "";
+
+export type InkOverrides = Record<string, Partial<InkOverride>>;
+
+/** One book's view of an item, as the item master lists it. */
+export interface InkMasterRow {
+  key: string;
+  companyKey: string;
+  company: string;
+  /** Tally's item name — the identity, and not editable. */
+  item: string;
+  tallyCode: string;
+  tallyGroup: string;
+  /** Tally's own name for the item, what Description falls back to. */
+  tallyDescription: string;
+  baseUnit: string;
+  closingQty: number;
+  /** What the report will actually use, after the override is applied. */
+  effectiveCode: string;
+  effectiveGroup: string;
+  /** Planner-only fields: Tally has no equivalent, so there is nothing to fall back to. */
+  category: string;
+  source: string;
+  effectiveDescription: string;
+  /** True when nothing anywhere supplies a code, so this item cannot merge across books. */
+  needsCode: boolean;
+  /** The dashboard line this row feeds. Ordering is keyed on THIS, not on the row, because
+   *  several books' rows share one printed line and must share its position. */
+  mergeKey: string;
+  /**
+   * What the line was keyed on before a description was typed for it.
+   *
+   * Typing a description re-keys the line, and a number, lead time or category attached to the
+   * old key would otherwise vanish from the screen — which reads as lost work. Both screens fall
+   * back to this key when the new one holds nothing.
+   */
+  legacyKey: string;
+}
+
+export interface InkPositionsResult {
+  rows: InkPosition[];
+  /** Every item in every book, whether coded or not — what the item master edits. */
+  master: InkMasterRow[];
+  /** Newest mirror build time across the four books. */
+  builtAt: string | null;
+  /** Items in a godown-filtered book with no lot evidence, so shown at their company figure. */
+  unsplitItems: number;
+  /** `<companyKey>|<ITEM NAME>` → merge key. The Sales Register carries names, not codes,
+   *  so this is the bridge `loadInkConsumption` joins on. Per book, because the same name
+   *  can be a different code in a different company. */
+  nameToCode: Map<string, string>;
+}
+
+const norm = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
+
+/**
+ * The godown choice in words, one line per filtered book.
+ *
+ * A screen showing a filtered Closing figure has to say which shelf it is counting, or the number
+ * reads as a wrong number. Books with no choice are left out: they are counted whole.
+ */
+export function describeGodownChoice(choice: GodownChoice): string[] {
+  const out: string[] = [];
+  for (const c of INK_COMPANIES) {
+    const chosen = choice[c.key] ?? [];
+    if (!chosen.length) continue;
+    out.push(`${c.label}: ${chosen
+      .map((e) =>
+        e.startsWith(GROUP_SEP)
+          ? e.slice(GROUP_SEP.length)
+          : e.split(GROUP_SEP).join(" › "),
+      )
+      .join(", ")}`);
+  }
+  return out;
+}
+
+export const masterKey = (companyKey: string, item: string) => `${companyKey}|${norm(item)}`;
+
+/**
+ * Merge key for an item with no code anywhere.
+ *
+ * An uncoded item still gets a line — it is real stock and hiding it was the old behaviour
+ * the planner rejected. It simply cannot merge with the same ink in another book until a code
+ * exists, so it is keyed by book and name and stands alone. The `~` prefix cannot collide with
+ * a real code and sorts these to the end.
+ */
+const soloKey = (companyKey: string, item: string) => `~${companyKey}|${norm(item)}`;
+
+/** Which items the dashboard lists. "ink" is the planner's four ink groups; "all" is the lot. */
+export type InkScope = "ink" | "all";
+
+/**
+ * The planner's row order, merge key → position. Sparse on purpose: only the lines they have
+ * deliberately placed appear, and everything else falls in behind them.
+ *
+ * Keyed on the MERGE key rather than the master row, because one printed line can be fed by
+ * four books and they cannot sit in four different places.
+ */
+export type InkOrder = Record<string, number>;
+
+function isInk(row: StockSummaryRow): boolean {
+  const company = BY_GUID.get(row.company_guid);
+  if (!company) return false;
+  return company.inkGroups.includes(norm(row.primary_group));
+}
+
+/**
+ * Load every item in the four books, apply the planner's item master, and merge.
+ *
+ * NOTHING IS DROPPED FOR WANT OF A CODE. An item with no code still gets its own line, keyed
+ * by book and name; it merges with the same ink elsewhere the moment a code exists. Hiding
+ * uncoded stock was the earlier behaviour and it hid real kilos.
+ *
+ * `scope` decides what the dashboard lists. Both scopes cost the same: the loader already
+ * fetches every row and the ink filter is applied here, in the browser.
+ */
+export async function loadInkPositions(
+  fy: string,
+  from?: string,
+  to?: string,
+  overrides: InkOverrides = {},
+  scope: InkScope = "ink",
+  order: InkOrder = {},
+  lines: InkLines = {},
+  groups: InkGroupFields = {},
+  godownChoice: GodownChoice = {},
+): Promise<InkPositionsResult> {
+  const raw = await loadStockSummary(INK_COMPANY_GUIDS, fy, from, to);
+
+  /*
+   * GODOWN FILTER, where the planner has set one.
+   *
+   * Only the books with a choice are read, so a sheet with no godown filter costs nothing. The
+   * split itself is a SHARE applied to Tally's closing — see lib/godowns.ts for why it cannot be
+   * a balance, and for the measurements behind that.
+   */
+  const splits = new Map<string, GodownSplit>();
+  let unsplitItems = 0;
+  await Promise.all(
+    INK_COMPANIES.filter(
+      (c) => c.splitBy === "godown" && (godownChoice[c.key] ?? []).length,
+    ).map(async (c) => {
+      try {
+        const facts = new Map<string, ItemFacts>();
+        for (const row of raw) {
+          if (row.company_guid !== c.guid) continue;
+          facts.set(row.item, {
+            group: norm(row.primary_group),
+            closing: Number(row.closing_qty) || 0,
+            opening: Number(row.opening_qty) || 0,
+            unit: norm(row.base_unit),
+          });
+        }
+        splits.set(c.key, await loadGodownSplit(c.guid, facts));
+      } catch {
+        // A godown read that fails must not take the whole sheet down; the book simply shows
+        // its company total, which is what it did before any of this existed.
+      }
+    }),
+  );
+  const inScope = scope === "all" ? raw.filter((r) => BY_GUID.has(r.company_guid)) : raw.filter(isInk);
+
+  const merged = new Map<string, InkPosition>();
+  const master: InkMasterRow[] = [];
+  const nameToCode = new Map<string, string>();
+  let builtAt: string | null = null;
+
+  /** The same godown-filtered figure the dashboard uses, for the item master's Closing column. */
+  const qtyForMaster = (row: StockSummaryRow, companyKey: string) => {
+    const chosen = godownChoice[companyKey] ?? [];
+    if (!chosen.length) return Number(row.closing_qty) || 0;
+    return (
+      (Number(row.closing_qty) || 0) *
+      godownShare(splits.get(companyKey), row.item, chosen, norm(row.primary_group))
+    );
+  };
+
+  for (const row of inScope) {
+    if (row.built_at && (!builtAt || row.built_at > builtAt)) builtAt = row.built_at;
+
+    const company = BY_GUID.get(row.company_guid);
+    if (!company) continue;
+
+    const key = masterKey(company.key, row.item);
+    const ov = overrides[key] ?? {};
+
+    // The planner's master wins over Tally, and a blank falls through to Tally's own value.
+    const tallyCode = norm(row.item_code);
+    const tallyGroup = row.stock_group || row.primary_group || "";
+    const tallyName = row.item_name || row.item || "";
+
+    const effectiveCode = norm(ov.code) || tallyCode;
+    const effectiveGroup = (ov.group ?? "").trim() || tallyGroup;
+    const effectiveDescription = (ov.description ?? "").trim() || tallyName;
+
+    // "D:" cannot collide with a code, which may be any word.
+    const typedDescription = norm(ov.description);
+    const codeKey = effectiveCode || soloKey(company.key, row.item);
+    const mergeKeyForRow = typedDescription ? `D:${typedDescription}` : codeKey;
+    const lineOv = lines[mergeKeyForRow] ?? {};
+    const groupOv = groups[norm(effectiveGroup)] ?? {};
+    /*
+     * Three sources, narrowest first: something set on THIS ink beats something set on its whole
+     * group, which beats what the item's own name says. So a group can be classified in one go
+     * and a single odd ink inside it can still be corrected on its own.
+     */
+    const effectiveCategory =
+      (lineOv.category ?? "").trim() ||
+      (groupOv.category ?? "").trim() ||
+      detectCategory(tallyName || row.item);
+    const effectiveSource = (lineOv.source ?? "").trim() || (groupOv.source ?? "").trim();
+
+    master.push({
+      key,
+      mergeKey: mergeKeyForRow,
+      legacyKey: codeKey,
+      companyKey: company.key,
+      company: company.label,
+      item: row.item,
+      tallyCode,
+      tallyGroup,
+      tallyDescription: tallyName,
+      baseUnit: row.base_unit || "",
+      // Tally sends no quantity at all for an item that has never moved, and the mirror passes
+      // that through as null, which slips past a `=== 0` test. Coerced once, and carrying the
+      // same godown filter the dashboard uses, so both screens agree on what is on the shelf.
+      closingQty: qtyForMaster(row, company.key),
+      effectiveCode,
+      effectiveGroup,
+      category: effectiveCategory,
+      source: effectiveSource,
+      effectiveDescription,
+      needsCode: !effectiveCode,
+    });
+
+    // THE ONE KEY, computed once above. This used to be recomputed here from the code alone,
+    // which quietly undid the description merge: the item master keyed a line one way while the
+    // dashboard line, the sales-register bridge and the planning inputs keyed it another. The
+    // visible symptom was an average that never arrived, because the figure was filed under a key
+    // no row asked for.
+    const mergeKey = mergeKeyForRow;
+    nameToCode.set(key, mergeKey);
+
+    let pos = merged.get(mergeKey);
+    if (!pos) {
+      pos = {
+        key: mergeKey,
+        legacyKey: codeKey,
+        itemCode: effectiveCode,
+        coded: Boolean(effectiveCode),
+        sources: [],
+        description: effectiveDescription || row.item,
+        customDescription: (ov.description ?? "").trim(),
+        group: effectiveGroup,
+        category: effectiveCategory,
+        source: effectiveSource,
+        baseUnit: row.base_unit || "KGS",
+        byCompany: {},
+        stock: 0,
+        consumedByCompany: {},
+        consumed: 0,
+      };
+      merged.set(mergeKey, pos);
+    }
+
+    pos.sources.push({ companyKey: company.key, item: row.item });
+
+    // Books disagree on how fully an item is named; keep the most descriptive one. A description
+    // the planner typed always wins, whatever its length.
+    if (ov.description?.trim()) pos.description = ov.description.trim();
+    else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
+    if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
+    if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
+    // A line merged by DESCRIPTION can be fed by books that disagree about the code, and the
+    // first row to arrive may be the one Tally has no code for — which left the Item code column
+    // blank on a line that plainly has a code in another book. The first real code fills it.
+    if (!pos.itemCode && effectiveCode) {
+      pos.itemCode = effectiveCode;
+      pos.coded = true;
+    }
+    if (!pos.category) pos.category = effectiveCategory;
+    if (!pos.source) pos.source = effectiveSource;
+
+    const chosen = godownChoice[company.key] ?? [];
+    const split = splits.get(company.key);
+    const qty = chosen.length
+      ? row.closing_qty * godownShare(split, row.item, chosen, norm(row.primary_group))
+      : row.closing_qty;
+    if (chosen.length && split && row.closing_qty !== 0 && !hasGodownEvidence(split, row.item)) {
+      unsplitItems++;
+    }
+
+    pos.byCompany[company.key] = (pos.byCompany[company.key] ?? 0) + qty;
+    pos.stock += qty;
+    pos.consumedByCompany[company.key] =
+      (pos.consumedByCompany[company.key] ?? 0) + row.outward_qty;
+    pos.consumed += row.outward_qty;
+  }
+
+  // THE PLANNER'S ORDER WINS. Their sheet is not alphabetical — it runs Eco, then E-series, then
+  // H-series and so on, the order they actually work in — so a positioned line sits exactly where
+  // they put it. Anything unpositioned falls in behind, coded first and then alphabetically, which
+  // is only a starting arrangement for items they have not placed yet.
+  const rows = [...merged.values()].sort((a, b) => {
+    const pa = order[a.key] ?? order[a.legacyKey];
+    const pb = order[b.key] ?? order[b.legacyKey];
+    if (pa !== undefined && pb !== undefined) return pa - pb;
+    if (pa !== undefined) return -1;
+    if (pb !== undefined) return 1;
+    if (a.coded !== b.coded) return a.coded ? -1 : 1;
+    return (a.itemCode || a.description).localeCompare(b.itemCode || b.description);
+  });
+  master.sort(
+    (a, b) => a.company.localeCompare(b.company) || a.item.localeCompare(b.item),
+  );
+  return { rows, master, builtAt, nameToCode, unsplitItems };
+}
+
+/* ---------------------------------------------------------------- consumption */
+
+/**
+ * The two consumption figures, read from the Sales Register.
+ *
+ *   three-month average = the three COMPLETE months before this one, summed and divided by 3
+ *   per-day average     = THIS month so far, divided by the working days elapsed
+ *
+ * ─── WHAT COUNTS AS CONSUMPTION ──────────────────────────────────────────────────────────
+ *
+ * Not every line in the register is ink leaving the group. Two whole categories are the same
+ * ink moving inside it, and counting them inflates every reorder level on the page:
+ *
+ *   BRANCH SALE    one book selling to another of our own books — Enterprises Surat to
+ *                  Enterprises Noida, Otec Surat to Otec Noida. The ink has not been consumed,
+ *                  it has been relocated, and the receiving book's own sale counts it again.
+ *   RELATED SALE   sales to related entities, which the planner also leaves out.
+ *
+ * Sales returns are netted off rather than ignored, since the ink came back.
+ *
+ * This was not guessed. Six filter combinations were tested against the planner's sheet: taking
+ * every line runs 34% high, and this rule reproduces 12 of 18 three-month averages EXACTLY with
+ * the rest inside 3%. Widening it back to all lines is a regression, not a simplification.
+ *
+ * ─── WORKING DAYS ────────────────────────────────────────────────────────────────────────
+ *
+ * Sundays are excluded and the count runs to TODAY, not to the month end — dividing a part-month
+ * by a whole month's days would understate the daily rate badly in the first week.
+ *
+ * Public holidays are NOT excluded by default. The planner asked for them, but excluding only
+ * Sundays is what reproduces their own figures, so the holiday list starts empty and is theirs
+ * to fill; every date added raises every per-day average.
+ */
+export interface InkConsumption {
+  /** Merged across the four books — what the Combined tab shows. */
+  threeMonthAvg: number;
+  perDayAvg: number;
+  /** The same two figures for each book on its own, keyed by `InkCompany.key`. The company tabs
+   *  must use these: a book's cover is its own stock against its own sales, not the group's. */
+  byCompany: Record<string, { threeMonthAvg: number; perDayAvg: number }>;
+}
+
+/** Register `type` values that are the group moving ink to itself, not selling it. */
+const INTERNAL_TYPES = new Set(["BRANCH SALE", "RELATED SALE"]);
+
+const monthKey = (ymd: string) => ymd.slice(0, 6);
+
+/** First day of the month `back` months before `d`, as yyyymmdd. */
+function monthStart(d: Date, back: number): string {
+  const x = new Date(d.getFullYear(), d.getMonth() - back, 1);
+  return `${x.getFullYear()}${String(x.getMonth() + 1).padStart(2, "0")}01`;
+}
+
+/**
+ * Working days from the 1st of `d`'s month up to and including `d`.
+ * Sundays are always excluded; `holidays` are extra yyyymmdd dates to skip.
+ * Never returns 0 — a division guard, since day 1 of a month can be a Sunday.
+ */
+export function workingDaysElapsed(d: Date, holidays: Set<string> = new Set()): number {
+  let n = 0;
+  for (let day = 1; day <= d.getDate(); day++) {
+    const x = new Date(d.getFullYear(), d.getMonth(), day);
+    if (x.getDay() === 0) continue;
+    const ymd = `${x.getFullYear()}${String(x.getMonth() + 1).padStart(2, "0")}${String(day).padStart(2, "0")}`;
+    if (holidays.has(ymd)) continue;
+    n++;
+  }
+  return Math.max(n, 1);
+}
+
+/**
+ * Read the register for the four ink books and return both averages per item code.
+ *
+ * The register carries the item NAME, not its code, so the join runs through `nameToCode` —
+ * built per book from the same stock rows the dashboard already has, because the same name can
+ * carry different codes in different books.
+ */
+export async function loadInkConsumption(
+  nameToCode: Map<string, string>,
+  today: Date = new Date(),
+  holidays: Set<string> = new Set(),
+): Promise<Map<string, InkConsumption>> {
+  const cw = getConnectwaveSupabase();
+  const from = monthStart(today, 3);
+  const to = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+
+  const PAGE = 1000;
+  const rows: { company_guid: string; particulars: string; quantity: number; vch_date: string; type: string }[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await cw
+      .from("rpt_sales_register")
+      .select("company_guid,particulars,quantity,vch_date,type")
+      .in("company_guid", INK_COMPANY_GUIDS)
+      .gte("vch_date", from)
+      .lte("vch_date", to)
+      // A stable order across pages. Ordering by date alone lets the database return tied rows
+      // in a different sequence on each page request, which can skip or repeat lines at page
+      // boundaries — invisible, and it silently moves every average.
+      .order("vch_date", { ascending: true })
+      .order("voucher_guid", { ascending: true })
+      .order("line_no", { ascending: true })
+      .range(offset, offset + PAGE - 1)
+      .returns<typeof rows>();
+    if (error) throw new Error(error.message);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  const byGuid = new Map(INK_COMPANIES.map((c) => [c.guid, c.key]));
+  const priorMonths = [monthKey(monthStart(today, 1)), monthKey(monthStart(today, 2)), monthKey(monthStart(today, 3))];
+  const thisMonth = monthKey(to);
+
+  // Keyed `<mergeKey>` for the group and `<mergeKey>\u0001<companyKey>` for one book (a control character, since item names can contain any printable one).
+  const prior = new Map<string, number>();
+  const current = new Map<string, number>();
+  const add = (m: Map<string, number>, k: string, q: number) => m.set(k, (m.get(k) ?? 0) + q);
+
+  for (const r of rows) {
+    const companyKey = byGuid.get(r.company_guid);
+    if (!companyKey) continue;
+    const type = (r.type ?? "").trim().toUpperCase();
+    if (INTERNAL_TYPES.has(type)) continue;
+
+    const code = nameToCode.get(`${companyKey}|${norm(r.particulars)}`);
+    if (!code) continue;
+
+    // The register's sign is not a reliable direction marker, so magnitude plus the TYPE is.
+    const qty = Math.abs(r.quantity ?? 0) * (type.includes("RETURN") ? -1 : 1);
+    const month = monthKey(String(r.vch_date));
+    const target = month === thisMonth ? current : priorMonths.includes(month) ? prior : null;
+    if (!target) continue;
+    add(target, code, qty);
+    add(target, `${code}\u0001${companyKey}`, qty);
+  }
+
+  const days = workingDaysElapsed(today, holidays);
+  const avg = (k: string) => ({
+    threeMonthAvg: Math.round((prior.get(k) ?? 0) / 3),
+    perDayAvg: Math.round((current.get(k) ?? 0) / days),
+  });
+  const out = new Map<string, InkConsumption>();
+  for (const k of new Set([...prior.keys(), ...current.keys()])) {
+    if (k.includes("\u0001")) continue;
+    const byCompany: InkConsumption["byCompany"] = {};
+    for (const c of INK_COMPANIES) byCompany[c.key] = avg(`${k}\u0001${c.key}`);
+    out.set(k, { ...avg(k), byCompany });
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------- the pipeline */
+
+/**
+ * Where a consignment has got to. The planner's sheet uses exactly these three headings, and
+ * they are a lifecycle, not a free choice:
+ *   ETD      ordered, not yet shipped — an expected departure
+ *   ETA      shipped, on the water — an expected arrival
+ *   AT PORT  landed, clearing customs
+ *   PLANT    a week's order placed on our own plant, dated its Monday. Not a shipment and not
+ *            imported, but it is supply arriving on a date, which is the only thing the planning
+ *            maths cares about, so it rides the same entry screen and the same edits. One entry
+ *            per week; an ink set to two weeks in the item master wants two of them.
+ * A consignment that has been received is DELETED, because from then on it is in the stock
+ * figure and counting it twice would overstate cover.
+ */
+export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT", "PLANT"] as const;
+export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
+
+/** One item and quantity inside a consignment — a single cell of the sheet's shipment column. */
+export interface ShipmentLine {
+  id: string;
+  itemCode: string;
+  qty: number;
+}
+
+/** One consignment — one column of the planner's sheet. */
+export interface Shipment {
+  id: string;
+  /** The planner's own reference: OTPL/INK/33, OTEC260819-1, PP, BIB … */
+  reference: string;
+  status: ShipmentStatus;
+  /** Expected date, ISO yyyy-mm-dd. Departure when status is ETD, otherwise arrival. */
+  date: string;
+  /** Optional landing book, as an `InkCompany.key`. Blank means it shows only on the
+   *  combined dashboard, which is how the Excel sheet behaves today. */
+  company: string;
+  note: string;
+  lines: ShipmentLine[];
+}
+
+/** Planning inputs the planner maintains per ink. Tally cannot supply these. */
+export interface InkPlan {
+  /** Quantity consumed over the last three months. */
+  threeMonthAvg: number;
+  /** Working-day average. NOT threeMonthAvg/90 — the planner sets it per ink. */
+  perDayAvg: number;
+  /** Months of cover to order against. */
+  leadTime: number;
+  safetyFactor: number;
+  /**
+   * Which averages the planner TYPED. An average without its flag is not a stored value at all —
+   * the dashboard reads it live from the Sales Register every time.
+   *
+   * The flag exists because an older version saved the averages into the browser when a button
+   * was pressed. Stored like that, they froze at the day of the click and then blocked the live
+   * figure forever. Values saved before this flag existed carry no flag, so they are ignored and
+   * the live figure shows — which is the point.
+   */
+  manual?: { threeMonthAvg?: boolean; perDayAvg?: boolean };
+}
+
+export const EMPTY_PLAN: InkPlan = { threeMonthAvg: 0, perDayAvg: 0, leadTime: 0, safetyFactor: 1 };
+
+/**
+ * Colour bands, as percentages of the month max level. Defaults reproduce the sheet's
+ * conditional formatting: below 33 red, 33–66 amber, 66–120 green, 120 and over purple.
+ * `excessRemark` is deliberately lower than `excess` — the sheet flags "excess stock" in the
+ * remark column from 100%, while the cell only turns purple at 120%.
+ */
+export interface InkThresholds {
+  low: number;
+  mid: number;
+  excess: number;
+  excessRemark: number;
+  /** Days of cover below which the Days cover cell turns red, when no rule below matches. */
+  daysRed: number;
+  /**
+   * The red line PER LEAD TIME.
+   *
+   * How exposed the planner can afford to be depends on how long a replacement takes: three
+   * months' lead wants thirty days in hand, a month and a half wants twenty. That is a table of
+   * their own, not arithmetic — so they keep it, and anything without a rule falls back to
+   * `daysRed`.
+   */
+  daysRules: LeadDaysRule[];
+}
+
+export interface LeadDaysRule {
+  lead: number;
+  days: number;
+}
+
+/** The red line for one line's lead time. */
+export const daysRedFor = (leadTime: number, t: InkThresholds): number =>
+  t.daysRules.find((r) => r.lead === leadTime)?.days ?? t.daysRed;
+
+export const DEFAULT_THRESHOLDS: InkThresholds = {
+  low: 33,
+  mid: 66,
+  excess: 120,
+  excessRemark: 100,
+  daysRed: 30,
+  daysRules: [
+    { lead: 1.5, days: 20 },
+    { lead: 3, days: 30 },
+  ],
+};
+
+/* ------------------------------------------------------------------ derivation */
+
+export type InkBand = "low" | "mid" | "normal" | "excess" | "none";
+
+/** Everything the dashboard prints for one ink, once stock and plan are combined. */
+export interface InkRow extends InkPosition {
+  plan: InkPlan;
+  /** Incoming by status, from the consignments in scope. */
+  etd: number;
+  eta: number;
+  atPort: number;
+  /** ETA + AT PORT. Goods on the water or landed — what the sheet adds to stock. */
+  incoming: number;
+  /** Ordered on our own plant, across every weekly line entered for this ink. */
+  plant: number;
+  /** Stock + incoming. The sheet's "ETA + AT PORT + STOCK" grand total. */
+  total: number;
+  monthMaxLevel: number;
+  dailyMaxLevel: number;
+  /** Days of cover on stock alone, and with incoming. Null when no per-day average is set. */
+  daysCover: number | null;
+  daysCoverWithIncoming: number | null;
+  /**
+   * The same target read at four points, because the planner judges the line four times: what is
+   * on the shelf, what is arriving, what those come to together, and what everything they have
+   * arranged comes to. One colour on one column answered only one of those questions.
+   */
+  coverPct: number | null;          // the headline: everything arranged, against the target
+  band: InkBand;
+  stockPct: number | null;          // shelf only
+  stockBand: InkBand;
+  incomingPct: number | null;       // ETA + at port only
+  incomingBand: InkBand;
+  remark: "NEW ORDER REQUIRED" | "EXCESS STOCK" | "";
+}
+
+function bandFor(pct: number | null, t: InkThresholds): InkBand {
+  if (pct === null) return "none";
+  if (pct < t.low) return "low";
+  if (pct < t.mid) return "mid";
+  if (pct < t.excess) return "normal";
+  return "excess";
+}
+
+/**
+ * Combine a merged stock line with the planner's inputs and the consignments.
+ *
+ * `companyKey` scopes the whole calculation to one book: stock becomes that book's own
+ * closing, and only consignments tagged to that book count as incoming. Pass null for the
+ * combined view, where every consignment counts whether or not it names a book.
+ */
+export function deriveInkRow(
+  pos: InkPosition,
+  plan: InkPlan,
+  shipments: Shipment[],
+  thresholds: InkThresholds,
+  companyKey: string | null,
+): InkRow {
+  const stock = companyKey ? (pos.byCompany[companyKey] ?? 0) : pos.stock;
+
+  let etd = 0;
+  let eta = 0;
+  let atPort = 0;
+  let plant = 0;
+  for (const s of shipments) {
+    if (companyKey && s.company !== companyKey) continue;
+    for (const line of s.lines) {
+      // An uncoded line has itemCode "", and so does a consignment line with no ink chosen yet.
+      // Without this guard every blank consignment line would count as incoming for EVERY
+      // uncoded item.
+      if (!pos.itemCode || line.itemCode !== pos.itemCode) continue;
+      if (s.status === "ETD") etd += line.qty;
+      else if (s.status === "ETA") eta += line.qty;
+      else if (s.status === "AT PORT") atPort += line.qty;
+      else plant += line.qty;
+    }
+  }
+
+  // ETA and AT PORT are goods already moving toward us; plant orders are supply we have
+  // committed the plant to make. Both count towards cover, which is why days-with-ETA includes
+  // plant, while ETD — not yet shipped by a supplier — still does not.
+  const incoming = eta + atPort;
+  const committed = incoming + plant;
+  const monthMaxLevel = plan.threeMonthAvg * plan.leadTime * plan.safetyFactor;
+  const dailyMaxLevel = plan.perDayAvg * plan.leadTime * plan.safetyFactor;
+  // Days are whole days. A cover of 30.4 is not a more precise answer than 30, it is a
+  // decimal place nobody can act on.
+  const daysCover = plan.perDayAvg > 0 ? Math.round(stock / plan.perDayAvg) : null;
+  const daysCoverWithIncoming =
+    plan.perDayAvg > 0 ? Math.round((stock + committed) / plan.perDayAvg) : null;
+
+  /*
+   * COVER IS JUDGED ON THE TOTAL, not on stock alone.
+   *
+   * The colour band and the remark used to read stock against the target, so an ink with 3,000
+   * kilos on the water still showed "new order required" in red — and an order placed against
+   * that reading would be a second order for ink already bought. The total is what the planner
+   * has arranged: stock, ETA, at port, plant orders and what is on order but not yet shipped.
+   */
+  const pctOf = (qty: number) => (monthMaxLevel > 0 ? (qty / monthMaxLevel) * 100 : null);
+  const stockPct = pctOf(stock);
+  const incomingPct = pctOf(incoming);
+  const coverPct = pctOf(stock + committed + etd);
+
+  let remark: InkRow["remark"] = "";
+  if (coverPct !== null) {
+    remark = coverPct >= thresholds.excessRemark ? "EXCESS STOCK" : "NEW ORDER REQUIRED";
+  }
+
+  return {
+    ...pos,
+    stock,
+    plan,
+    etd,
+    eta,
+    atPort,
+    incoming,
+    plant,
+    // The planner's Total column adds everything they have arranged: stock, ink on the water,
+    // the plant's weekly orders, and what has been ordered but not yet shipped.
+    total: stock + committed + etd,
+    monthMaxLevel,
+    dailyMaxLevel,
+    daysCover,
+    daysCoverWithIncoming,
+    coverPct,
+    band: bandFor(coverPct, thresholds),
+    stockPct,
+    stockBand: bandFor(stockPct, thresholds),
+    incomingPct,
+    incomingBand: bandFor(incomingPct, thresholds),
+    remark,
+  };
+}
+
+/* ----------------------------------------------------------------- local store */
+
+/**
+ * The planner's numbers live in the browser, by an explicit decision: no table was added to
+ * the shared database for this. Consequences the UI must own up to — the data is visible only
+ * on this machine and this browser profile, and clearing site data loses it. Hence the export
+ * and import buttons on the entry screen, which are the backup.
+ *
+ * Every read is defensive. A half-written or hand-edited value must not blank the dashboard,
+ * so a parse failure falls back to the default rather than throwing.
+ */
+const KEY_PLANS = "ink-mis:plans:v1";
+const KEY_SHIPMENTS = "ink-mis:shipments:v1";
+const KEY_THRESHOLDS = "ink-mis:thresholds:v1";
+const KEY_ALIASES = "ink-mis:aliases:v1";     // superseded by KEY_OVERRIDES; read once, to migrate
+const KEY_OVERRIDES = "ink-mis:items:v1";
+const KEY_ORDER = "ink-mis:order:v1";
+const KEY_LINES = "ink-mis:lines:v1";
+const KEY_GROUPS = "ink-mis:groups:v1";
+const KEY_SEEN = "ink-mis:seen:v1";
+const KEY_HOLIDAYS = "ink-mis:holidays:v1";
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed == null ? fallback : (parsed as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key: string, value: unknown): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Private browsing, or the quota is full. The screen keeps working on in-memory state;
+    // warning on every keystroke would be worse than losing an unsaved edit.
+  }
+}
+
+export const loadPlans = (): Record<string, InkPlan> => readJson(KEY_PLANS, {});
+export const savePlans = (p: Record<string, InkPlan>) => writeJson(KEY_PLANS, p);
+
+export const loadShipments = (): Shipment[] => {
+  const rows = readJson<Shipment[]>(KEY_SHIPMENTS, []);
+  return Array.isArray(rows) ? rows.filter((r) => r && typeof r.id === "string") : [];
+};
+export const saveShipments = (s: Shipment[]) => writeJson(KEY_SHIPMENTS, s);
+
+export const loadThresholds = (): InkThresholds => {
+  const stored = readJson<Partial<InkThresholds>>(KEY_THRESHOLDS, {});
+  return {
+    ...DEFAULT_THRESHOLDS,
+    ...stored,
+    // A copy saved before the rules existed comes back without them; the defaults stand in.
+    daysRules: Array.isArray(stored.daysRules) ? stored.daysRules : DEFAULT_THRESHOLDS.daysRules,
+  };
+};
+export const saveThresholds = (t: InkThresholds) => writeJson(KEY_THRESHOLDS, t);
+
+/**
+ * The item master. Reads the superseded alias store once and folds it in, so the codes the
+ * planner already typed are not lost to a rename of the storage key.
+ */
+export const loadOverrides = (): InkOverrides => {
+  const current = readJson<InkOverrides>(KEY_OVERRIDES, {});
+  const legacy = readJson<Record<string, string>>(KEY_ALIASES, {});
+  if (!Object.keys(legacy).length) return current;
+  const merged: InkOverrides = { ...current };
+  for (const [k, code] of Object.entries(legacy)) {
+    if (!merged[k]?.code && typeof code === "string" && code.trim()) {
+      merged[k] = { ...merged[k], code: code.trim().toUpperCase() };
+    }
+  }
+  return merged;
+};
+
+/** Empty fields are dropped rather than stored, so "cleared" and "never set" stay the same
+ *  thing — both fall through to Tally. */
+export const saveOverrides = (o: InkOverrides) => {
+  const clean: InkOverrides = {};
+  for (const [k, v] of Object.entries(o)) {
+    const row: Partial<InkOverride> = {};
+    if (v.code?.trim()) row.code = v.code.trim().toUpperCase();
+    if (v.group?.trim()) row.group = v.group.trim();
+    if (v.description?.trim()) row.description = v.description.trim();
+    if (Object.keys(row).length) clean[k] = row;
+  }
+  writeJson(KEY_OVERRIDES, clean);
+};
+
+export const loadLines = (): InkLines => readJson<InkLines>(KEY_LINES, {});
+
+/** Empty fields are dropped, so "cleared" and "never set" stay the same thing. */
+export const saveLines = (l: InkLines) => {
+  const clean: InkLines = {};
+  for (const [k, v] of Object.entries(l)) {
+    const row: Partial<InkLineFields> = {};
+    if (v.category?.trim()) row.category = v.category.trim().toUpperCase();
+    if (v.source?.trim()) row.source = v.source.trim();
+    if (Object.keys(row).length) clean[k] = row;
+  }
+  writeJson(KEY_LINES, clean);
+};
+
+export const loadGroupFields = (): InkGroupFields => readJson<InkGroupFields>(KEY_GROUPS, {});
+export const saveGroupFields = (g: InkGroupFields) => {
+  const clean: InkGroupFields = {};
+  for (const [k, v] of Object.entries(g)) {
+    const row: Partial<InkLineFields> = {};
+    if (v.category?.trim()) row.category = v.category.trim().toUpperCase();
+    if (v.source?.trim()) row.source = v.source.trim();
+    if (Object.keys(row).length) clean[k] = row;
+  }
+  writeJson(KEY_GROUPS, clean);
+};
+
+/**
+ * Lines the planner has already been shown.
+ *
+ * The item master lists what is on the shelf, so an ink that was empty and has just been bought
+ * ARRIVES in the list on its own. Without a record of what was already there, that arrival is
+ * silent and the ink sits unnumbered — invisible on the dashboard — until somebody happens to
+ * scroll past it. This set is what makes "new since you last looked" answerable.
+ */
+export const loadSeenLines = (): string[] => {
+  const v = readJson<string[]>(KEY_SEEN, []);
+  return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
+};
+export const saveSeenLines = (keys: string[]) => writeJson(KEY_SEEN, [...new Set(keys)]);
+
+export const loadOrder = (): InkOrder => {
+  const raw = readJson<InkOrder>(KEY_ORDER, {});
+  const out: InkOrder = {};
+  for (const [k, v] of Object.entries(raw)) if (Number.isFinite(v)) out[k] = Number(v);
+  return out;
+};
+export const saveOrder = (o: InkOrder) => writeJson(KEY_ORDER, o);
+
+/**
+ * Renumber in steps of ten, in the order given. The gaps are the point: they leave room to drop
+ * a line between two others by typing a number, without renumbering the whole sheet.
+ */
+export function renumber(keysInOrder: string[]): InkOrder {
+  const out: InkOrder = {};
+  keysInOrder.forEach((k, i) => {
+    out[k] = (i + 1) * 10;
+  });
+  return out;
+}
+
+/** Extra non-working days, yyyymmdd. Sundays are excluded already and are not listed here. */
+export const loadHolidays = (): string[] => {
+  const v = readJson<string[]>(KEY_HOLIDAYS, []);
+  return Array.isArray(v) ? v.filter((d) => /^\d{8}$/.test(d)) : [];
+};
+export const saveHolidays = (d: string[]) => writeJson(KEY_HOLIDAYS, d);
+
+/** `crypto.randomUUID` is not available on every browser the team uses; this always is. */
+export function newId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function emptyShipment(): Shipment {
+  return {
+    id: newId(),
+    reference: "",
+    status: "ETD",
+    date: "",
+    company: "",
+    note: "",
+    lines: [{ id: newId(), itemCode: "", qty: 0 }],
+  };
+}
+
+/* ------------------------------------------------------------------ backup i/o */
+
+export interface InkBackup {
+  kind: "ink-mis-backup";
+  version: 1;
+  savedAt: string;
+  plans: Record<string, InkPlan>;
+  shipments: Shipment[];
+  thresholds: InkThresholds;
+  overrides: InkOverrides;
+  order: InkOrder;
+  lines: InkLines;
+  groupFields: InkGroupFields;
+  seenLines: string[];
+  holidays: string[];
+}
+
+export function buildBackup(): InkBackup {
+  return {
+    kind: "ink-mis-backup",
+    version: 1,
+    savedAt: new Date().toISOString(),
+    plans: loadPlans(),
+    shipments: loadShipments(),
+    thresholds: loadThresholds(),
+    overrides: loadOverrides(),
+    order: loadOrder(),
+    lines: loadLines(),
+    groupFields: loadGroupFields(),
+    seenLines: loadSeenLines(),
+    holidays: loadHolidays(),
+  };
+}
+
+/** Restore a backup file. Throws with a readable message rather than half-applying one. */
+export function applyBackup(text: string): InkBackup {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("That file is not valid JSON.");
+  }
+  const b = parsed as Partial<InkBackup>;
+  if (!b || b.kind !== "ink-mis-backup") {
+    throw new Error("That file is not an INK MIS backup.");
+  }
+  savePlans(b.plans ?? {});
+  saveShipments(Array.isArray(b.shipments) ? b.shipments : []);
+  saveThresholds({ ...DEFAULT_THRESHOLDS, ...(b.thresholds ?? {}) });
+  saveOverrides(b.overrides ?? {});
+  saveOrder(b.order ?? {});
+  saveLines(b.lines ?? {});
+  saveGroupFields(b.groupFields ?? {});
+  saveSeenLines(Array.isArray(b.seenLines) ? b.seenLines : []);
+  saveHolidays(Array.isArray(b.holidays) ? b.holidays : []);
+  return b as InkBackup;
+}
+
+/* -------------------------------------------------------------------- display */
+
+const nf0 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
+
+/** Zero prints as a dash. A real zero and an unknown read the same on paper, and the sheet
+ *  the planner works from uses a dash for both. */
+export const fmtQty = (n: number | null | undefined): string =>
+  !n ? "–" : nf0.format(Math.round(n));
+
+export const fmtDays = (n: number | null | undefined): string =>
+  n === null || n === undefined || !Number.isFinite(n) ? "–" : nf1.format(n);
+
+export const fmtPct = (n: number | null | undefined): string =>
+  n === null || n === undefined || !Number.isFinite(n) ? "–" : `${nf0.format(n)}%`;

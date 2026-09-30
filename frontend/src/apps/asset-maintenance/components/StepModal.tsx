@@ -79,8 +79,27 @@ export default function StepModal({
     if (dateKey && !next[dateKey] && !editing) {
       next[dateKey] = s.todayIso;
     }
-    // Verification defaults to the common case, so the branch fields appear at once.
-    if (cfg.stepKey === "verify_close" && !next.vc_outcome && !editing) next.vc_outcome = "satisfactory";
+    /*
+      Verification defaults to the common case, so the branch fields appear at once.
+
+      ⚠ ON EVERY FRESH RECORD, NOT ONLY THE FIRST. A job sent back for rework keeps
+        `vc_outcome = 'rework_needed'` and the rejection text in `vc_remarks` — the
+        rework branch of fms_asset_record_verify_close writes both and clears
+        neither. Seeding only when `vc_outcome` was empty therefore re-armed the
+        SECOND pass with the FIRST pass's verdict: the verifier opened the redone
+        work to find "Rework needed" pre-selected, last time's complaint still in
+        the Remarks box, and the primary button reading "Send back". One click
+        bounced it again, quoting a problem that had just been fixed. Switching to
+        Satisfactory did not clear the remarks either, so a passed job was closed
+        carrying the reason it had failed.
+
+        `editing` is true only for a Completed-tab edit, which must keep showing
+        exactly what was stored.
+    */
+    if (cfg.stepKey === "verify_close" && !editing) {
+      next.vc_outcome = "satisfactory";
+      next.vc_remarks = "";
+    }
     setValues(next);
     setFile(null);
     setError(null);
@@ -228,9 +247,14 @@ export default function StepModal({
         */}
         {cfg.stepKey === "verify_close" && ctx.isRenewal && values.vc_outcome === "satisfactory" && (
           <p className="rounded-lg bg-[#FFF4EC] px-3 py-2 text-[12.5px] text-navy">
+            {/*
+              The type name is printed AS STORED. Lower-casing it turned "AMC
+              Renewal" into "the renewed amc renewal document" — an acronym
+              mangled mid-sentence, and the word "renewal" said twice.
+            */}
             This is a <strong>renewal</strong>. Enter the expiry shown on the renewed{" "}
-            {ctx.scheduleTypeName.toLowerCase()} document — the next reminder counts back from that
-            date, and it is often not exactly a year away.
+            <strong>{ctx.scheduleTypeName}</strong> document — the next reminder counts back from
+            that date, and it is often not exactly a year away.
           </p>
         )}
 

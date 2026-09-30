@@ -388,14 +388,13 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     const holderOfRequest = (r: SupplyRequest): string | null => r.assignedApproverId;
 
     /**
-     * Am I holding anything handed to me? The only reason somebody who heads no
+     * Has anything EVER been handed to me? The only reason somebody who heads no
      * department may reach the first-approval queue at all.
+     *
+     * ⚠ EVER, not "right now" — see the note in `canSeeQueue`. The narrower version
+     *   (open work only) threw the holder off the page the moment they finished.
      */
-    const holdsAnyReassigned = requests.some(
-      (r) =>
-        r.assignedApproverId === uid &&
-        (r.status === "pending_first_approval" || r.status === "pending_second_approval")
-    );
+    const heldAnyReassigned = requests.some((r) => r.assignedApproverId === uid);
 
     /**
      * May I hand this on, or pull it back? Broader than deciding it: the HOD keeps
@@ -425,11 +424,23 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      * is RLS-scoped, so a pool member in another department would render blank for
      * a non-admin HOD, who is precisely the person using this dialog.
      */
+    /**
+     * ⚠ NEVER THE RAISER OR THE BENEFICIARY. `fms_supplies_submit_request` is careful
+     *   never to route a request to its own raiser or subject — that safeguard is the
+     *   reason an HOD's own request skips straight to Management. Reassign used to be
+     *   able to undo it in one click: handing the approval to the person who asked for
+     *   the thing let them approve it themselves, which is exactly what happened on
+     *   SUPPLY-2627-0026 during the 28-09-2026 walkthrough (one account raised it for
+     *   itself and passed its own first approval). Mirrored in
+     *   fms_supplies_reassign_request, which is the gate.
+     */
     const reassignCandidates = (r: SupplyRequest): { id: string; name: string }[] => {
       const ids = new Set<string>(reassignPoolUserIds);
       const hod = departmentById(r.departmentId)?.hodUserId;
       if (hod) ids.add(hod);
       ids.delete(session.user?.id ?? "");
+      if (r.raisedBy) ids.delete(r.raisedBy);
+      if (r.requestedForUserId) ids.delete(r.requestedForUserId);
       return [...ids]
         .map((id) => ({ id, name: personName(id) }))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -452,7 +463,18 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       if (isModuleViewer || isProcessCoordinator) return true;
       // A holder heads no department, so without this arm the request would sit
       // in a queue they cannot open.
-      if (stepKey === "first_approval") return hodDepartmentIds.length > 0 || holdsAnyReassigned;
+      //
+      // ⚠ IT ASKS "HAVE I EVER HELD ONE", NOT "AM I HOLDING ONE NOW". Gating on open
+      //   work closes the screen the moment the work leaves it: the person who was
+      //   handed an approval decided it, the request moved to Management, and the
+      //   next render threw them out of the First Approval page — including the
+      //   Completed tab holding the decisions they had just made, which is the one
+      //   place a mistaken decision can be corrected. Reproduced on 28-09-2026: the
+      //   screen answered "Access denied", which also reads as though a role had been
+      //   taken away. `assigned_approver_id` is never cleared, and RLS already admits
+      //   the holder to the request itself, so this only re-opens what they can
+      //   already read.
+      if (stepKey === "first_approval") return hodDepartmentIds.length > 0 || heldAnyReassigned;
       return isStepOwner(stepKey);
     };
 

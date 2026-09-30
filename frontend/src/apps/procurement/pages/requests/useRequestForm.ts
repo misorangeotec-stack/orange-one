@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import { draftKey } from "@/shared/lib/draftStore";
@@ -6,15 +6,19 @@ import { useStepDraft } from "@/shared/lib/useStepDraft";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import type { MasterValues } from "../../lib/masterFields";
 import type { MasterType, RequestItem } from "../../types";
+import { asStoredDoc, type SourcingFile } from "../../components/SourcingDocsCapture";
 import { useProcurementStore } from "../../store";
 
 /**
  * Everything New Request and Edit Request share: the form state, the
- * Category → Item derivation, validation. The item-group step is hidden — an
- * item is picked straight under its category (the group is resolved behind the
- * scenes only when requesting a brand-new item). Domestic has no vendor,
+ * Company + Category → Item derivation, validation. Domestic has no vendor,
  * currency, FX or rate at request time (those are chosen at sourcing), so this
  * is the slim cousin of Import's hook.
+ *
+ * CENTRAL MASTERS. Items are the company's Tally stock book (mst_items), not a
+ * Purchase list: picking the company loads that book, and each line's category
+ * narrows it to the Tally item types the category covers. The category still
+ * decides QC, exactly as before.
  */
 
 export interface RequestLine extends LineGridRow {
@@ -84,6 +88,11 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
   const [companyId, setCompanyId] = useState("");
   const [lines, setLines] = useState<RequestLine[]>([makeEmptyLine()]);
   const [note, setNote] = useState("");
+  /**
+   * The requester's optional attachments. NOT in the draft: a File cannot be
+   * serialised, so a restored draft comes back without them.
+   */
+  const [files, setFiles] = useState<SourcingFile[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
   const [raise, setRaise] = useState<{ mt: MasterType; prefill: MasterValues } | null>(null);
@@ -96,6 +105,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     setCompanyId(init.companyId);
     setNote(init.note);
     setLines(init.lines.length > 0 ? init.lines : [makeEmptyLine()]);
+    setFiles(s.requestDocsForRequest(init.requestId).map(asStoredDoc));
   }
 
   /**
@@ -156,6 +166,15 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     },
   });
 
+  // The item picker reads the company's Tally stock book, which loads on demand.
+  // Asked for the moment a company is known — including a restored draft and an
+  // edit, where the company arrives already set.
+  const { ensureItemBook } = s;
+  useEffect(() => {
+    if (companyId) ensureItemBook(companyId);
+  }, [companyId, ensureItemBook]);
+  const itemsLoading = s.itemBookLoading(companyId);
+
   const companyOptions: ComboOption[] = useMemo(
     () => s.activeCompanies.map((c) => ({ value: c.id, label: c.location ? `${c.name} — ${c.location}` : c.name })),
     [s.activeCompanies]
@@ -165,22 +184,45 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     [s.activeCategories]
   );
 
-  /** Items under a row's category (via its groups), minus ones another row already took. */
+  /**
+   * A new requisition changing company: the items already picked are the OLD
+   * company's stock items, and a PO books against the requisition's company, so
+   * they are cleared rather than silently carried into the wrong book. Category,
+   * qty and remark stay — they are not per-company.
+   */
+  const changeCompany = (next: string) => {
+    if (next === companyId) return;
+    setCompanyId(next);
+    setLines((ls) => ls.map((l) => (l.itemId ? { ...l, itemId: "", unit: "" } : l)));
+  };
+
+  /**
+   * The company's items of the types the row's category covers, minus ones
+   * another row already took. The row's OWN item is always kept: an edited
+   * requisition can name an item that predates the category's types, or one
+   * filed under another company's book, and a picker that cannot show the
+   * current value renders it blank.
+   */
   const itemOptionsFor = (line: RequestLine): ComboOption[] => {
-    if (!line.categoryId) return [];
+    if (!line.categoryId || !companyId) return [];
     const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.itemId).map((l) => l.itemId));
-    return s
-      .itemsForCategory(line.categoryId)
-      .filter((it) => !taken.has(it.id))
-      .map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || undefined }));
+    const list = s.itemsForLine(companyId, line.categoryId).filter((it) => !taken.has(it.id));
+    const own = line.itemId ? s.itemById(line.itemId) : undefined;
+    if (own && !list.some((it) => it.id === own.id)) list.unshift(own);
+    return list.map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || undefined }));
   };
 
   const raiseItem = (line: RequestLine) => (name: string) => {
+    if (!companyId) {
+      setErr("Pick the company first.");
+      return;
+    }
     if (!line.categoryId) {
       setErr("Pick a category first.");
       return;
     }
-    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId } });
+    // The company rides along: a central item lives in one Tally book.
+    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId, company_id: companyId } });
   };
 
   const filled = lines.filter((l) => !isLineBlank(l));
@@ -196,14 +238,15 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
 
   return {
     mode,
-    companyId, setCompanyId,
+    companyId, setCompanyId: changeCompany,
     lines, setLines,
     note, setNote,
+    files, setFiles,
     err, setErr,
     requested, setRequested,
     raise, setRaise,
     companyOptions, categoryOptions,
-    itemOptionsFor, raiseItem,
+    itemOptionsFor, raiseItem, itemsLoading,
     itemById: s.itemById,
     filled, validate,
     draft,

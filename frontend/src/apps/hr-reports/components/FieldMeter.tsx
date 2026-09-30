@@ -102,6 +102,8 @@ export default function FieldMeter({
   selected,
   onSelect,
   typed,
+  /** Where the filled boxes sit on THIS form, in the caller's words. Omitted = say nothing. */
+  filledNote,
   // The two pages do different things with a chosen band — the field map NARROWS its
   // grid, the report HIGHLIGHTS the boxes in place — and the line under the legend has
   // to say which, or the reader looks for rows that were never going to disappear.
@@ -112,6 +114,7 @@ export default function FieldMeter({
   selected: FieldCoverage | null;
   onSelect: (b: FieldCoverage | null) => void;
   typed: number;
+  filledNote?: string;
   selectionNote?: (n: number, total: number) => string;
 }) {
   const bands = BANDS.map((b) => ({ ...b, n: counts[b.key] })).filter((b) => b.n > 0);
@@ -180,7 +183,13 @@ export default function FieldMeter({
         <span className="font-semibold text-navy">
           {filled} of the {total} boxes fill themselves today
         </span>{" "}
-        — nearly all of them in Section A, which New Recruitment already covers. A further{" "}
+        {/* ⚠ Where those boxes SIT is the form's business, not this meter's. It used to
+            read "nearly all of them in Section A, which New Recruitment already covers",
+            which was true of Saloni's form and false the moment a second form was
+            transcribed: Dharmistha's filled boxes are in the header, in General Purchase
+            and in Task Management, and Section A is not where they live. The caller says
+            it, or nobody does. */}
+        {filledNote ? <>{" "}— {filledNote}.</> : null} A further{" "}
         <span className="font-semibold text-orange">{counts["empty-table"]}</span> wait on somebody using a screen that is already
         live{counts["not-released"] > 0 && (
           <>

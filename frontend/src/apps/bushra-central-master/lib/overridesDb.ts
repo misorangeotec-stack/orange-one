@@ -9,6 +9,14 @@ import type { MirrorOverride, OverrideMap } from "./store";
  * `bushra_central_master_overrides` (migration 20261212120000), so what anyone saves,
  * everyone reads.
  *
+ * ⚠ "EVERYONE" IS A POLICY, AND IT HAD TO BE WIDENED ONCE ALREADY. Reads are granted to
+ *   holders of EITHER this app or outstanding-dashboard (20261218120000), because the
+ *   Bushra Sales dashboards lay these corrections over mst_items from inside that other
+ *   app. 20261212120000 named only this one, which left 15 non-admin dashboard readers
+ *   seeing the uncorrected classification — silently, since RLS answers a disallowed read
+ *   with no rows and not an error. Any NEW screen that reads this table from a third app
+ *   needs that policy widened again, or it will quietly show central's values instead.
+ *
  * ⚠ AN OVERLAY, NOT AN EDIT TO CENTRAL. `mst_items` is still never written. A row here
  *   holds only the fields that DISAGREE with what Central and Tally say, so the moment
  *   a field is absent it goes back to following its source.

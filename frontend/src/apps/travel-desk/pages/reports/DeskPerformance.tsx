@@ -8,7 +8,7 @@ import { stepCompletedIso } from "../../lib/queues";
 import type { Trip } from "../../types";
 
 /**
- * How long each step actually takes, against what §12 promised.
+ * How long each step actually takes, against what Section 12 promised.
  *
  * ⚠ MEASURED ON WORK THAT FINISHED, NOT ON WORK OUTSTANDING. A step still open
  *   has no duration yet, and counting it as zero would make a jammed queue look
@@ -27,7 +27,7 @@ import type { Trip } from "../../types";
  *
  * ⚠ IT DOES NOT NAME INDIVIDUALS. The dimension is the STEP, not the person who
  *   actioned it. A per-approver league table is a different thing with different
- *   consequences, and §12.1 puts escalation in HR's hands rather than in a
+ *   consequences, and Section 12.1 puts escalation in HR's hands rather than in a
  *   dashboard.
  */
 
@@ -127,7 +127,7 @@ export default function DeskPerformance() {
       key: "cycle",
       label: "Return to settled",
       value: median(cycles) === null ? "—" : `${median(cycles)} days`,
-      hint: "Median, calendar days. §12 promises 14 WORKING days",
+      hint: "Median, calendar days. Section 12 promises 14 WORKING days",
     },
     {
       key: "cancelled",
@@ -150,20 +150,24 @@ export default function DeskPerformance() {
         key: "step",
         header: "Step",
         alwaysVisible: true,
+        // One line (PF-20): what the step is measured from follows its name, cut
+        // with "…" and shown whole on hover.
         cell: (r) => (
-          <div>
-            <div className="font-semibold text-navy">{r.title}</div>
-            <div className="text-[11px] text-grey-2">from {r.measuredFrom.toLowerCase()}</div>
-          </div>
+          <span className="block truncate">
+            <span className="font-semibold text-navy">{r.title}</span>
+            <span className="ml-1.5 text-[11px] text-grey-2">from {r.measuredFrom.toLowerCase()}</span>
+          </span>
         ),
         sortValue: (r) => stepByKey(r.key)?.index ?? 0,
         filter: { kind: "select", get: (r) => r.title },
         exportValue: (r) => r.title,
+        resize: { width: 300 },
       },
       {
         key: "done",
         header: "Completed",
         cell: (r) => r.done,
+        filter: { kind: "number", get: (r) => r.done },
         sortValue: (r) => r.done,
         exportValue: (r) => r.done,
         tdClassName: "whitespace-nowrap text-right",
@@ -177,6 +181,7 @@ export default function DeskPerformance() {
           ) : (
             <span className="font-semibold text-navy">{r.medianDays}</span>
           ),
+        filter: { kind: "number", get: (r) => r.medianDays ?? -1 },
         sortValue: (r) => r.medianDays ?? -1,
         exportValue: (r) => r.medianDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -185,6 +190,7 @@ export default function DeskPerformance() {
         key: "mean",
         header: "Average days",
         cell: (r) => (r.meanDays === null ? <span className="text-grey-2">—</span> : r.meanDays),
+        filter: { kind: "number", get: (r) => r.meanDays ?? -1 },
         sortValue: (r) => r.meanDays ?? -1,
         exportValue: (r) => r.meanDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -193,6 +199,7 @@ export default function DeskPerformance() {
         key: "worst",
         header: "Slowest",
         cell: (r) => (r.worstDays === null ? <span className="text-grey-2">—</span> : r.worstDays),
+        filter: { kind: "number", get: (r) => r.worstDays ?? -1 },
         sortValue: (r) => r.worstDays ?? -1,
         exportValue: (r) => r.worstDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -206,6 +213,7 @@ export default function DeskPerformance() {
           ) : (
             <span className="text-grey-2">{r.target} working days</span>
           ),
+        filter: { kind: "number", get: (r) => r.target ?? -1 },
         sortValue: (r) => r.target ?? -1,
         exportValue: (r) => r.target ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -247,7 +255,7 @@ export default function DeskPerformance() {
         <p className="text-[13px] text-grey">
           How long each step took, on work that has finished. Durations are{" "}
           <strong>calendar days</strong> — a claim that sat over a weekend really did take three
-          days — while the targets from §12 are working days, so the last column is a reading rather
+          days — while the targets from Section 12 are working days, so the last column is a reading rather
           than a measurement.
         </p>
       </div>
@@ -270,7 +278,7 @@ export default function DeskPerformance() {
       <Card className="p-4">
         <div className="text-[13px] font-semibold text-navy">Why there is no per-person table</div>
         <p className="mt-1 text-[12.5px] text-grey-2">
-          The dimension here is the step, not whoever actioned it. §12.1 puts a slow approval in
+          The dimension here is the step, not whoever actioned it. Section 12.1 puts a slow approval in
           HR&rsquo;s hands to escalate, which is a conversation; a league table of approvers is a
           different instrument with different consequences, and it is not what the policy asked for.
         </p>

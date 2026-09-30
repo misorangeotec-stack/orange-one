@@ -127,7 +127,7 @@ export default function TripStepper({ trip, fit }: { trip: Trip; fit?: boolean }
           skipped: true,
           note:
             st.step === "director_approval"
-              ? `Band ${trip.snapBandNo ?? "—"} — §3.2`
+              ? `Band ${trip.snapBandNo ?? "—"} — Section 3.2`
               : st.step === "manager_approval"
                 ? "Straight to a Director"
                 : "No advance drawn",

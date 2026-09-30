@@ -10,6 +10,7 @@ import { ocpiAdapter } from "./ocpi";
 import { purchaseAdapter } from "./purchase";
 import { importAdapter } from "./import";
 import { learningDevelopmentAdapter } from "./learning-development";
+import { helpDeskAdapter } from "./help-desk";
 import type { FmsAdapter } from "./types";
 
 /**
@@ -25,4 +26,4 @@ import type { FmsAdapter } from "./types";
  *   { key: "sales", name: "Sales FMS", controlCenterPath: "", status: "coming-soon",
  *     useSnapshot: () => ({ snapshot: null, isLoading: false, error: null }) }
  */
-export const fmsAdapters: FmsAdapter[] = [purchaseAdapter, importAdapter, hrAdapter, hrExitAdapter, travelDeskAdapter, officeSuppliesAdapter, samplingAdapter, productionEntryAdapter, orderToDispatchAdapter, assetMaintenanceAdapter, ocpiAdapter, learningDevelopmentAdapter];
+export const fmsAdapters: FmsAdapter[] = [purchaseAdapter, importAdapter, hrAdapter, hrExitAdapter, travelDeskAdapter, officeSuppliesAdapter, samplingAdapter, productionEntryAdapter, orderToDispatchAdapter, assetMaintenanceAdapter, ocpiAdapter, learningDevelopmentAdapter, helpDeskAdapter];

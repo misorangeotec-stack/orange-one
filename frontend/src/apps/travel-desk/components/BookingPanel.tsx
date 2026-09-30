@@ -53,8 +53,8 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
       <Card className="border-orange/40 p-4">
         <h2 className={SECTION_HEADING_CLASS}>Booking</h2>
         <p className="mt-1 text-[12.5px] text-grey">
-          Record every flight, train, bus, cab and hotel below, then mark the trip booked. Uploading
-          the ticket is what shares it — the traveller is notified and can fetch the document.
+          Record every flight, train, bus, cab and hotel, then mark the trip booked. Uploading the
+          ticket is what shares it with the traveller.
         </p>
         {err && <p className="mt-2 break-words text-[12.5px] text-ryg-red">{err}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -86,7 +86,7 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
           </p>
           <p className="mt-2 text-[12.5px] text-grey-2">
             Cancel the bookings with the airline or hotel first, record any refund against each
-            booking below, then decide here. §4.1 makes a cancellation charge reimbursable when the
+            booking below, then decide here. Section 4.1 makes a cancellation charge reimbursable when the
             reason is <strong className="text-navy">business</strong> and not when it is personal, so
             that answer is required — it is what phase 8 reads to judge the claim.
           </p>
@@ -129,7 +129,7 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
               </p>
               <div className="mt-3">
                 <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-grey">
-                  Reason — required (§4.1)
+                  Reason — required (Section 4.1)
                 </div>
                 <Select value={kind} onChange={(e) => setKind(e.target.value as "business" | "personal")}>
                   <option value="business">
@@ -219,7 +219,7 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
         >
           <p className="text-[13px] text-grey">
             The Travel Desk unwinds the bookings and records what was refunded. Any charge that is
-            not refunded stays on the trip — reimbursable if the reason is business (§4.1) — and any
+            not refunded stays on the trip — reimbursable if the reason is business (Section 4.1) — and any
             advance already paid still has to come back.
           </p>
           <div className="mt-3">

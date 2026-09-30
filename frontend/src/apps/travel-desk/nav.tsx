@@ -87,7 +87,7 @@ export function buildTravelNav(opts: {
   nav.push(
     { label: "Control Center", to: `${B}/monitoring`, icon: ic.board, section: "Reports" },
     { label: "Trip Register", to: `${B}/reports`, icon: ic.report },
-    // §11.2 is unenforceable without this list, so it sits beside the register
+    // Section 11.2 is unenforceable without this list, so it sits beside the register
     // rather than behind it.
     { label: "Upcoming Travel", to: `${B}/reports/upcoming`, icon: ic.report },
     { label: "Outstanding Advances", to: `${B}/reports/outstanding-advances`, icon: ic.report },

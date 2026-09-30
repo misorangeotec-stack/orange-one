@@ -128,12 +128,25 @@ export default function SourcingModal({
   const lockedVendorId = requestId ? s.requestLockedVendorId(requestId) : null;
   const mixedVendors = requestId ? s.requestHasMixedVendors(requestId) : false;
 
-  const activeVendors = useMemo(() => s.vendors.filter((v) => v.active), [s.vendors]);
+  /**
+   * THE REQUISITION'S OWN COMPANY'S VENDORS ONLY. A vendor is a Tally ledger in
+   * one company's books, and the PO this becomes is booked in the requisition's
+   * company — shortlisting another book's ledger would post the purchase to the
+   * wrong company. fms_purchase_save_sourcing_request refuses it too.
+   */
+  const companyVendors = useMemo(
+    () => s.vendorsForCompany(request?.companyId ?? null),
+    [s, request?.companyId]
+  );
   // A vendor already on another row drops out of this row's dropdown — one row
-  // per vendor. The row's own pick is always kept.
+  // per vendor. The row's own pick is always kept, even if it has since been
+  // deactivated, or the saved shortlist would render as a blank.
   const vendorOptionsFor = (rowIndex: number): ComboOption[] => {
     const taken = new Set(vendors.filter((_, i) => i !== rowIndex).map((r) => r.vendorId).filter(Boolean));
-    return activeVendors.filter((v) => !taken.has(v.id)).map((v) => ({ value: v.id, label: v.name }));
+    const list = companyVendors.filter((v) => !taken.has(v.id));
+    const own = vendors[rowIndex]?.vendorId ? s.vendorById(vendors[rowIndex].vendorId) : undefined;
+    if (own && !list.some((v) => v.id === own.id)) list.unshift(own);
+    return list.map((v) => ({ value: v.id, label: v.name, sublabel: v.gstin ?? undefined }));
   };
 
   // Initialise from the requisition and whatever was sourced before.
@@ -730,7 +743,8 @@ export default function SourcingModal({
         onClose={() => setRaiseVendor(null)}
         masterType="vendor"
         lockType
-        prefill={{ name: raiseVendor ?? "" }}
+        // The requisition's company: a new vendor is a ledger in THAT book.
+        prefill={{ name: raiseVendor ?? "", company_id: request?.companyId ?? "" }}
         onRequested={(_id, _mt, name) => setRequested(name)}
       />
       )}

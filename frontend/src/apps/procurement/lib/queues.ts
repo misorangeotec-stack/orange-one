@@ -228,7 +228,8 @@ export function anyReceived(idx: ProcIndex, p: PurchaseOrder): boolean {
 /** The vendor has dispatched — from a PO-level follow-up, or a legacy PI snapshot. */
 export function isDispatched(idx: ProcIndex, p: PurchaseOrder): boolean {
   return (
-    (idx.followupsByPo.get(p.id) ?? []).some((f) => f.dispatchStatus === "dispatched") ||
+    // A partial lot counts: its goods can be received while the rest is still owed.
+    (idx.followupsByPo.get(p.id) ?? []).some((f) => f.dispatchStatus === "dispatched" || f.dispatchStatus === "partial") ||
     (idx.pisByPo.get(p.id) ?? []).some((pi) => pi.dispatchStatus === "dispatched")
   );
 }
@@ -689,6 +690,8 @@ export function paymentLockReason(data: ProcSnapshot, idx: ProcIndex, pay: Payme
 export function followupLockReason(data: ProcSnapshot, idx: ProcIndex, f: Followup): string | null {
   const t = terminalReason(poOf(data, f.poId), "follow-up");
   if (t) return t;
+  // A lot's quantities come off the balance; editing them would re-open it.
+  if (f.dispatchStatus === "partial") return "A partial-dispatch lot cannot be edited. Record the next lot instead.";
   if ((idx.grnsByPo.get(f.poId) ?? []).length > 0) return "Goods have already been received against this PO.";
   return null;
 }

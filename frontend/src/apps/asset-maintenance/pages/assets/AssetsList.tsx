@@ -48,11 +48,12 @@ export default function AssetsList() {
     {
       key: "name",
       header: "Asset",
+      // One line (PF-20): the serial follows the name, cut with "…" and whole on hover.
       cell: (a) => (
-        <div className="min-w-0">
-          <div className="truncate text-navy">{a.name}</div>
-          {a.serialNo && <div className="truncate text-[12px] text-grey-2">{a.serialNo}</div>}
-        </div>
+        <span className="block truncate">
+          <span className="text-navy">{a.name}</span>
+          {a.serialNo && <span className="ml-1.5 text-[12px] text-grey-2">{a.serialNo}</span>}
+        </span>
       ),
       sortValue: (a) => a.name,
       filter: { kind: "text", get: (a) => `${a.name} ${a.serialNo ?? ""}` },
@@ -91,19 +92,21 @@ export default function AssetsList() {
           );
         }
         const overdue = (next.nextDueDate as string) < s.todayIso;
+        // One line (PF-20): the date, then what it is and how far off.
         return (
-          <div className="min-w-0">
-            <div className={`whitespace-nowrap ${overdue ? "font-semibold text-ryg-red" : "text-navy"}`}>
+          <span className="block truncate">
+            <span className={`whitespace-nowrap ${overdue ? "font-semibold text-ryg-red" : "text-navy"}`}>
               {dmy(next.nextDueDate)}
-            </div>
-            <div className="truncate text-[12px] text-grey-2">
+            </span>
+            <span className="ml-1.5 text-[12px] text-grey-2">
               {s.scheduleTypeName(next.scheduleTypeId)} · {duePhrase(next.nextDueDate, s.todayIso)}
-            </div>
-          </div>
+            </span>
+          </span>
         );
       },
       sortValue: (a) => soonestDue(a.schedules)?.nextDueDate ?? "9999-12-31",
       exportValue: (a) => dmy(soonestDue(a.schedules)?.nextDueDate ?? null),
+      filter: { kind: "date", get: (a) => soonestDue(a.schedules)?.nextDueDate ?? "" },
     },
     {
       key: "tracks",
@@ -111,6 +114,7 @@ export default function AssetsList() {
       align: "right",
       cell: (a) => <span className="text-grey">{liveTracks(a.schedules).length}</span>,
       sortValue: (a) => liveTracks(a.schedules).length,
+      filter: { kind: "number", get: (a) => liveTracks(a.schedules).length },
     },
     {
       key: "cost",
@@ -118,6 +122,7 @@ export default function AssetsList() {
       align: "right",
       cell: (a) => <span className="text-grey whitespace-nowrap">{inr(a.purchaseCost)}</span>,
       sortValue: (a) => a.purchaseCost ?? 0,
+      filter: { kind: "number", get: (a) => a.purchaseCost ?? 0 },
     },
   ];
 

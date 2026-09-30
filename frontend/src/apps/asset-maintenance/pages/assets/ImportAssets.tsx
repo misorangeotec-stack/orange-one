@@ -131,7 +131,19 @@ export default function ImportAssets() {
   };
 
   if (!s.canRaise) {
-    return <p className="text-[13.5px] text-grey-2">You do not have permission to add assets.</p>;
+    // Same shape as NewAsset's refusal — a bare sentence with no heading reads as
+    // a broken page rather than as an answer.
+    return (
+      <div className="rounded-xl border border-line bg-white p-6">
+        <h1 className="text-[18px] font-bold text-navy">Importing assets is restricted</h1>
+        {/* Same two causes as NewAsset — say which one applies. */}
+        <p className="mt-1 text-[13.5px] text-grey-2">
+          {!s.canEdit
+            ? "Your access to Asset Maintenance is view only, so you can read every screen here but not change anything. An admin can widen it under Admin → Users → Module access."
+            : "An owner has been set for the Service Due step, so only they, a coordinator or an admin can add to the register."}
+        </p>
+      </div>
+    );
   }
 
   return (

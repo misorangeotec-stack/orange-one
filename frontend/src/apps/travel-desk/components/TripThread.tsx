@@ -23,7 +23,7 @@ import type { Trip } from "../types";
  *
  * ⚠ ATTACHMENTS ARE NEW WORK — CandidateTimeline has none. A travel argument is
  *   almost always about a document: the hotel's "no rooms available" mail that
- *   justifies §7.3, the airline's cancellation notice, the corrected invoice. A
+ *   justifies Section 7.3, the airline's cancellation notice, the corrected invoice. A
  *   thread that cannot carry one sends the conversation to WhatsApp, where the
  *   evidence is lost by the time Finance asks for it.
  *
@@ -41,7 +41,7 @@ const EVENT_LABEL: Record<string, string> = {
   trip_approved: "Approved",
   trip_returned: "Sent back for changes",
   trip_rejected: "Turned down",
-  tc_downgraded: "Regularised late — repriced at TC-D (§3.5)",
+  tc_downgraded: "Regularised late — repriced at TC-D (Section 3.5)",
   advance_approved: "Advance approved",
   advance_paid: "Advance paid",
   advance_recovered: "Advance handed back",

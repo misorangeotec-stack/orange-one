@@ -9,13 +9,13 @@ import { travelDocUrl } from "../data/travelBookingWrites";
 import type { Trip, ClaimLine, DaDay } from "../types";
 
 /**
- * Finance verification — §11.1 step 8.
+ * Finance verification — Section 11.1 step 8.
  *
- * ⚠ FINANCE IS NOT A SECOND AUTHOR OF THE CAPS. Every cap in §7, §9, §10 and
- *   §15 was applied before the claim reached this screen, and `allowedAmount`
+ * ⚠ FINANCE IS NOT A SECOND AUTHOR OF THE CAPS. Every cap in Section 7, Section 9, Section 10 and
+ *   Section 15 was applied before the claim reached this screen, and `allowedAmount`
  *   is never editable. What Finance records is a DIFFERENT figure beside it,
  *   with a reason — lower for a judgement no rule can make ("that dinner was not
- *   business"), higher for a §7.3 exception once the evidence is in the file.
+ *   business"), higher for a Section 7.3 exception once the evidence is in the file.
  *   The two sit side by side on the row, and the gap between them IS the Policy
  *   Exceptions report.
  *
@@ -23,7 +23,7 @@ import type { Trip, ClaimLine, DaDay } from "../types";
  *   opposite things. Zero is a decision that needs a reason; clearing is undoing
  *   one and puts the engine's answer back.
  *
- * ⚠ THE ALLOWANCE IS EDITABLE PER DAY, NOT IN TOTAL. §8 computes a figure per
+ * ⚠ THE ALLOWANCE IS EDITABLE PER DAY, NOT IN TOTAL. Section 8 computes a figure per
  *   calendar day with a reason on each row, and a lump-sum override would throw
  *   that away — leaving a total nobody could reconcile against the days that
  *   produced it.
@@ -50,10 +50,10 @@ function LineRow({
   categoryName: string;
   cityName: string;
   /**
-   * The category refuses outright under §15.
+   * The category refuses outright under Section 15.
    *
-   * ⚠ THIS IS NOT A CAP AND HAS NO EXCEPTION PATH. §7.3 exists so a cap can be
-   *   exceeded on evidence; nothing lets a refused category be paid, and §15
+   * ⚠ THIS IS NOT A CAP AND HAS NO EXCEPTION PATH. Section 7.3 exists so a cap can be
+   *   exceeded on evidence; nothing lets a refused category be paid, and Section 15
    *   says so in as many words — "regardless of band or whether a client was
    *   present". So the control is not offered at all, and the RPC refuses it
    *   too: without that, the one rule the policy states absolutely would be the
@@ -147,7 +147,7 @@ function LineRow({
         )}
         {editable && refused && (
           <span className="ml-auto text-[11.5px] text-grey-2">
-            Nothing to decide — §15 refuses this outright
+            Nothing to decide — Section 15 refuses this outright
           </span>
         )}
       </div>
@@ -402,7 +402,7 @@ export default function FinanceReviewPanel({ trip }: { trip: Trip }) {
 
       {daDays.length > 0 && (
         <Card className="p-4">
-          <div className="text-[13px] font-semibold text-navy">Daily allowance (§8)</div>
+          <div className="text-[13px] font-semibold text-navy">Daily allowance (Section 8)</div>
           <p className="mt-0.5 text-[11.5px] text-grey-2">
             Overridable a day at a time, never in total — a lump sum would leave a figure nobody
             could reconcile against the days that produced it.
@@ -452,7 +452,7 @@ export default function FinanceReviewPanel({ trip }: { trip: Trip }) {
         {editable && (
           <>
             <div className="mt-3">
-              <FieldLabel label="Note" hint="Optional — it rides on the trip's history">
+              <FieldLabel label="Note" hint="Optional">
                 <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
               </FieldLabel>
             </div>

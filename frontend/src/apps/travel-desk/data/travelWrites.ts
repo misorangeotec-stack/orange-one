@@ -52,7 +52,7 @@ async function setConfig(key: string, value: unknown): Promise<void> {
  * The process coordinators — the Travel Desk itself.
  *
  * A coordinator books, uploads tickets, records refunds and may raise a request
- * on behalf of senior management (PRD §3). They can act on any step, so this is
+ * on behalf of senior management (PRD Section 3). They can act on any step, so this is
  * a short list of named people, not a department.
  */
 export const setCoordinators = (userIds: string[]): Promise<void> =>
@@ -108,7 +108,7 @@ export async function setStepSla(map: StepSlaMap): Promise<void> {
   await setConfig("step_sla", clean);
 }
 
-/** The policy numbers that are not rates (§3.3, §11, §12). */
+/** The policy numbers that are not rates (Section 3.3, Section 11, Section 12). */
 export async function setPolicy(policy: TravelPolicyConfig): Promise<void> {
   await setConfig("policy", {
     max_passengers: policy.maxPassengers,
@@ -127,7 +127,7 @@ export async function setPolicy(policy: TravelPolicyConfig): Promise<void> {
   });
 }
 
-/** The employer's identity for hotel folios and the ITC register (§7.1, §11.3). */
+/** The employer's identity for hotel folios and the ITC register (Section 7.1, Section 11.3). */
 export const setCompanyIdentity = (v: { legalName: string; gstin: string; address: string }): Promise<void> =>
   setConfig("company_identity", { legal_name: v.legalName, gstin: v.gstin, address: v.address });
 
@@ -135,7 +135,7 @@ export const setCompanyIdentity = (v: { legalName: string; gstin: string; addres
  * A person's own standing travel details.
  *
  * Their own row or an admin's, per the RLS policy — a coordinator books for
- * other people but does not get to rewrite where someone is posted. Policy §1.3
+ * other people but does not get to rewrite where someone is posted. Policy Section 1.3
  * ties the base city to the appointment letter, which is an HR fact.
  */
 export async function saveEmployeeSettings(

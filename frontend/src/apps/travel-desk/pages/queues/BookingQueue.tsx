@@ -82,6 +82,7 @@ export default function BookingQueue({ mode }: { mode: "book" | "cancel" }) {
         align: "right",
         cell: (t) => money(t.estimatedCost),
         sortValue: (t) => t.estimatedCost ?? 0,
+        filter: { kind: "number", get: (t) => t.estimatedCost ?? 0 },
         exportValue: (t) => t.estimatedCost ?? 0,
         tdClassName: "whitespace-nowrap",
       },
@@ -139,7 +140,7 @@ export default function BookingQueue({ mode }: { mode: "book" | "cancel" }) {
         </h1>
         <p className="max-w-3xl text-[13px] text-grey">
           {mode === "cancel"
-            ? "Trips the traveller has asked to call off. Unwind the bookings, record what was refunded against each one, then decide — §4.1 makes an unrefunded charge reimbursable only when the reason is business."
+            ? "Trips the traveller has asked to call off. Unwind the bookings, record what was refunded against each one, then decide — Section 4.1 makes an unrefunded charge reimbursable only when the reason is business."
             : "Approved trips waiting to be arranged. Open one to see the entitlement it was approved against before you book anything."}
         </p>
       </div>

@@ -1,0 +1,722 @@
+<title>HR Help Desk Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --sunk:     #F3F1ED;
+    --ink:      #16203A;
+    --ink-soft: #5D5A55;
+    --line:     #E2DED7;
+    --accent:   #D8500A;
+    --accent-w: #FDF1E8;
+    --danger:   #A5291F;  --danger-w: #FDF0EE;
+    --warn:     #9A5B06;  --warn-w:   #FCF4E4;
+    --ok:       #12664A;  --ok-w:     #EBF7F1;
+
+    --display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+    --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+  /* Dark, for viewers on the default "system" setting (nothing is stamped on
+     :root, so only prefers-color-scheme separates them). Guarded so an explicit
+     light choice still beats a dark OS. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14151C;
+      --surface:  #1C1E27;
+      --sunk:     #23262F;
+      --ink:      #EAE7E2;
+      --ink-soft: #A5A09A;
+      --line:     #33363F;
+      --accent:   #FF8B45;
+      --accent-w: #2C1D14;
+      --danger:   #F0867A;  --danger-w: #2E1A18;
+      --warn:     #E9AB55;  --warn-w:   #2B2114;
+      --ok:       #6BC9A2;  --ok-w:     #16271F;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:   #14151C;
+    --surface:  #1C1E27;
+    --sunk:     #23262F;
+    --ink:      #EAE7E2;
+    --ink-soft: #A5A09A;
+    --line:     #33363F;
+    --accent:   #FF8B45;
+    --accent-w: #2C1D14;
+    --danger:   #F0867A;  --danger-w: #2E1A18;
+    --warn:     #E9AB55;  --warn-w:   #2B2114;
+    --ok:       #6BC9A2;  --ok-w:     #16271F;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+
+  .shell { display: grid; grid-template-columns: 1fr; gap: 0; }
+  @media (min-width: 1020px) {
+    /* 236 rail + 860 page. Capped AND centred: left-aligned, the whole document
+       hugged the left edge of a wide monitor and left a dead band on the right. */
+    .shell { grid-template-columns: 236px minmax(0, 1fr); align-items: start;
+             max-width: 1096px; margin-inline: auto; }
+  }
+
+  /* ── contents rail ─────────────────────────────────────────── */
+  .rail { display: none; }
+  @media (min-width: 1020px) {
+    .rail {
+      display: block; position: sticky;
+      top: calc(env(safe-area-inset-top, 0px) + 24px);
+      padding: 24px 0 24px 24px; font-family: var(--display); font-size: 13px;
+    }
+    .rail p { margin: 0 0 10px; font-size: 10.5px; letter-spacing: .13em;
+              text-transform: uppercase; color: var(--ink-soft); font-weight: 700; }
+    .rail a { display: block; padding: 5px 0; color: var(--ink-soft);
+              text-decoration: none; border-left: 2px solid transparent; padding-left: 10px; }
+    .rail a:hover { color: var(--accent); border-left-color: var(--accent); }
+  }
+
+  .page { padding: 0 20px 72px; max-width: 860px; }
+  @media (min-width: 1020px) { .page { padding-right: 40px; } }
+
+  /* ── masthead ──────────────────────────────────────────────── */
+  header.top { padding-block: 44px 28px; border-bottom: 2px solid var(--ink); }
+  .eyebrow { font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em;
+             text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 6.5vw, 52px);
+       line-height: 1.02; letter-spacing: -.025em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 18.5px; color: var(--ink-soft); margin: 0; max-width: 60ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .chip { font-family: var(--mono); font-size: 11.5px; padding: 4px 10px; border-radius: 3px;
+          border: 1px solid var(--line); color: var(--ink-soft); background: var(--surface); }
+  .chip.on  { color: var(--ok);     border-color: var(--ok);     background: var(--ok-w); }
+  .chip.off { color: var(--warn);   border-color: var(--warn);   background: var(--warn-w); }
+  .chip.no  { color: var(--danger); border-color: var(--danger); background: var(--danger-w); }
+
+  h2 { font-family: var(--display); font-weight: 700; font-size: clamp(23px, 3.6vw, 30px);
+       letter-spacing: -.018em; margin: 56px 0 6px; text-wrap: balance; scroll-margin-top: 20px; }
+  h2 .num { font-family: var(--mono); font-size: 13px; color: var(--accent);
+            display: block; margin-bottom: 6px; letter-spacing: .08em; }
+  h3 { font-family: var(--display); font-weight: 700; font-size: 18.5px;
+       margin: 34px 0 8px; letter-spacing: -.01em; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); }
+  strong { font-weight: 600; }
+  code, .mono { font-family: var(--mono); font-size: .88em; }
+  .lede { font-size: 17.5px; color: var(--ink-soft); margin-bottom: 24px; }
+
+  /* ── flow diagram ──────────────────────────────────────────── */
+  .flow { margin: 26px 0 8px; display: grid; gap: 10px; }
+  .lane { display: grid; gap: 10px; grid-template-columns: 1fr; }
+  @media (min-width: 620px) { .lane.two { grid-template-columns: 1fr 1fr; } }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+          padding: 13px 15px; }
+  .step.actor-emp  { border-left: 4px solid var(--accent); }
+  .step.actor-hr   { border-left: 4px solid var(--ink); }
+  .step.terminal   { border-left: 4px solid var(--ok); }
+  .step .who { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+               text-transform: uppercase; color: var(--ink-soft); }
+  .step .what { font-family: var(--display); font-weight: 700; font-size: 16px; margin-top: 3px; }
+  .step .why { font-size: 14.5px; color: var(--ink-soft); margin-top: 4px; }
+  .arrow { font-family: var(--mono); color: var(--ink-soft); font-size: 13px;
+           text-align: center; padding: 1px 0; }
+  .arrow span { background: var(--sunk); padding: 3px 11px; border-radius: 99px; }
+
+  /* ── tables ────────────────────────────────────────────────── */
+  .tw { overflow-x: auto; margin: 18px 0 8px; border: 1px solid var(--line);
+        border-radius: 6px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 15.5px; min-width: 460px; }
+  th { font-family: var(--display); font-weight: 700; font-size: 11.5px; letter-spacing: .09em;
+       text-transform: uppercase; color: var(--ink-soft); text-align: left;
+       padding: 11px 15px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 12px 15px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+
+  /* ── callouts ──────────────────────────────────────────────── */
+  .note { border-radius: 6px; padding: 15px 17px; margin: 18px 0;
+          border: 1px solid var(--line); background: var(--surface); }
+  .note .hd { font-family: var(--display); font-weight: 700; font-size: 15.5px;
+              margin-bottom: 4px; display: flex; gap: 8px; align-items: baseline; }
+  .note p:last-child { margin-bottom: 0; }
+  .note.warn   { border-color: var(--warn);   background: var(--warn-w); }
+  .note.warn .hd   { color: var(--warn); }
+  .note.danger { border-color: var(--danger); background: var(--danger-w); }
+  .note.danger .hd { color: var(--danger); }
+  .note.key    { border-color: var(--accent); background: var(--accent-w); }
+  .note.key .hd    { color: var(--accent); }
+
+  /* ── checklist ─────────────────────────────────────────────── */
+  .part { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 26px; }
+  .part-hd { font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em;
+             text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .as { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); margin: 0 0 18px; }
+  ul.checks { list-style: none; padding: 0; margin: 14px 0 6px; display: grid; gap: 2px; }
+  ul.checks li { display: flex; gap: 11px; align-items: flex-start; padding: 7px 10px;
+                 border-radius: 5px; font-size: 15.5px; }
+  ul.checks li:hover { background: var(--sunk); }
+  ul.checks input { margin: 5px 0 0; width: 16px; height: 16px; flex: none;
+                    accent-color: var(--accent); cursor: pointer; }
+  ul.checks label { cursor: pointer; }
+  ul.checks li.done label { color: var(--ink-soft); text-decoration: line-through;
+                            text-decoration-color: var(--line); }
+
+  figure { margin: 22px 0; }
+  figure img { display: block; width: 100%; border: 1px solid var(--line);
+               border-radius: 6px; background: var(--sunk); }
+  figcaption { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft);
+               margin-top: 8px; }
+
+  /* ── progress ──────────────────────────────────────────────── */
+  .progress { position: sticky; bottom: 0; margin-top: 46px;
+              padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+              background: var(--surface); border-top: 1px solid var(--line);
+              display: flex; align-items: center; gap: 14px; font-family: var(--mono);
+              font-size: 12.5px; color: var(--ink-soft); }
+  .bar { flex: 1; height: 5px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--accent);
+           transition: width .25s ease; }
+  .progress button { font: inherit; font-family: var(--mono); color: var(--ink-soft);
+                     background: none; border: 1px solid var(--line); border-radius: 4px;
+                     padding: 4px 9px; cursor: pointer; }
+  .progress button:hover { color: var(--accent); border-color: var(--accent); }
+
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
+           font-size: 14.5px; color: var(--ink-soft); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="Contents">
+    <p>Contents</p>
+    <a href="#what">What it is</a>
+    <a href="#flow">The flow</a>
+    <a href="#parts">Every screen</a>
+    <a href="#know">Before you test</a>
+    <a href="#test">The checklist</a>
+    <a href="#off">Switched off</a>
+    <a href="#owed">Owed by HR</a>
+  </nav>
+
+  <div class="page">
+    <header class="top">
+      <p class="eyebrow">Orange One · HR · Module 15</p>
+      <h1>HR Help Desk</h1>
+      <p class="standfirst">One place for every employee to ask HR anything. One choice, the category, decides who answers it and by when.</p>
+      <div class="chips">
+        <span class="chip on">30 categories live</span>
+        <span class="chip on">Built &amp; walked 28-09-2026</span>
+        <span class="chip off">Email off</span>
+        <span class="chip off">Auto-close off</span>
+        <span class="chip no">Level-2 escalation unnamed</span>
+      </div>
+    </header>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="what"><span class="num">01</span>What it is</h2>
+    <p class="lede">Today HR answers the same questions all day, by WhatsApp, by someone
+      walking over, by mail. Nothing records who asked, when, who answered, or whether the
+      answer ever came.</p>
+    <p>So the turnarounds the HR appraisal sheets promise, <em>one working day</em> for an
+      attendance correction and <em>two</em> for a payroll query, have no clock anywhere and
+      cannot be measured. The Help Desk gives every employee one front door. They pick what
+      it is about; that single choice routes it, times it, and decides who gets told when it
+      goes wrong. Nobody has to know which of six modules their question belongs to.</p>
+
+    <div class="note key">
+      <div class="hd">The one idea behind everything else</div>
+      <p>The <strong>category is the router</strong>. All thirty carry who owns it, how long
+        they have, who a reopen escalates to, whether it is confidential, and whether the
+        real work belongs to another module. Change a category and every ticket raised under
+        it behaves differently from that moment on.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="flow"><span class="num">02</span>The flow, end to end</h2>
+    <p class="lede">Five steps. Only two of them belong to HR.</p>
+
+    <div class="flow">
+      <div class="step actor-emp">
+        <div class="who">Employee</div>
+        <div class="what">Raises a ticket, picks a category</div>
+        <div class="why">The form tells them who will answer and by when before they submit.</div>
+      </div>
+      <div class="arrow"><span>routed automatically ↓</span></div>
+
+      <div class="step actor-hr">
+        <div class="who">HR, the category's owner</div>
+        <div class="what">Picks it up &nbsp;·&nbsp; “I have this”</div>
+        <div class="why">Optional. Roughly half are answered in one go, and the system
+          back-fills the pick-up so the response time still counts.</div>
+      </div>
+      <div class="arrow"><span>↓ then one of two things</span></div>
+
+      <div class="lane two">
+        <div class="step actor-hr">
+          <div class="what">Asks for something</div>
+          <div class="why">Tags the employee, an HOD, anyone. The ticket <strong>moves to
+            them</strong> and stops counting against HR's turnaround.</div>
+        </div>
+        <div class="step actor-hr">
+          <div class="what">Answers it</div>
+          <div class="why">Writes what was done. A blank answer is refused. It is the only
+            record the employee gets.</div>
+        </div>
+      </div>
+      <div class="arrow"><span>↓ back to the employee</span></div>
+
+      <div class="lane two">
+        <div class="step terminal">
+          <div class="who">Employee</div>
+          <div class="what">“That sorted it”</div>
+          <div class="why">Closes it, with a satisfaction rating.</div>
+        </div>
+        <div class="step actor-emp">
+          <div class="who">Employee</div>
+          <div class="what">“It is still not right”</div>
+          <div class="why">Sends it back <strong>and escalates</strong>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <div class="hd">What a reopen does</div>
+      <p><strong>First reopen.</strong> The category's Escalation Level 1 is told, and joins
+        the ticket so they can actually work on it.<br>
+        <strong>Second reopen.</strong> Escalation Level 2 as well.</p>
+      <p>Note what does <em>not</em> escalate: a ticket simply running late. That turns red and
+        counts as a miss in the report, but pages nobody. Sending a ticket back is the act that
+        pulls somebody else in.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="parts"><span class="num">03</span>Every screen, and what it is for</h2>
+
+    <h3>What every employee sees</h3>
+    <div class="tw"><table>
+      <thead><tr><th>Screen</th><th>What it is for</th></tr></thead>
+      <tbody>
+        <tr><td>Dashboard</td><td>Your own open tickets, and anything sitting with <em>you</em></td></tr>
+        <tr><td>Raise a Ticket</td><td>Ask HR something. Picking a category names the person and the turnaround <strong>before</strong> you submit</td></tr>
+        <tr><td>My Tickets</td><td>Everything you have ever asked, and where each one got to</td></tr>
+        <tr><td>Ticket Categories</td><td>Ask for a new category when none of the thirty fits</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>What the HR desk sees as well</h3>
+    <div class="tw"><table>
+      <thead><tr><th>Screen</th><th>What it is for</th></tr></thead>
+      <tbody>
+        <tr><td>To pick up</td><td>Tickets that have come to you that nobody has claimed</td></tr>
+        <tr><td>To answer</td><td>Tickets you hold. The clock runs from when each was <em>raised</em>, not from when you picked it up</td></tr>
+        <tr><td>All Tickets</td><td>Everything you are allowed to see</td></tr>
+        <tr><td>Control Center</td><td>Where every open ticket is sitting, and how late</td></tr>
+        <tr><td>Reports</td><td>The monthly SLA, ageing, trend and satisfaction figures</td></tr>
+        <tr><td>Ticket Categories</td><td>Edit the thirty: owner, turnaround, escalation</td></tr>
+        <tr><td>Settings <span class="mono">(admin)</span></td><td>Coordinators, who may be handed a ticket, and the escalation fallback</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>What you can do to a ticket</h3>
+    <div class="tw"><table>
+      <thead><tr><th>Action</th><th>Who</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><td>I have this</td><td>The owner</td><td>Tells the employee somebody has picked it up. The turnaround does not change</td></tr>
+        <tr><td>Ask for something</td><td>The owner</td><td>Tag anyone. The ticket moves to them and stops counting against HR</td></tr>
+        <tr><td>Answer it</td><td>The owner</td><td>Write what you did. Goes to the employee to accept</td></tr>
+        <tr><td>Hand it on</td><td>The desk</td><td>Wrong person, right category. Turnaround unchanged</td></tr>
+        <tr><td>Wrong category</td><td>The desk</td><td>Re-files it. Owner, turnaround and escalation all move, and the dialog shows the new ones first</td></tr>
+        <tr><td>That sorted it</td><td><strong>Employee only</strong></td><td>Closes it, with a rating</td></tr>
+        <tr><td>It is still not right</td><td><strong>Employee only</strong></td><td>Sends it back and escalates</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">
+      <div class="hd">Why only the employee can close it</div>
+      <p>HR says “resolved”; the employee says “satisfied”. If one person could say both, the
+        satisfaction score would mean nothing.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="know"><span class="num">04</span>Five things to know before you test</h2>
+
+    <div class="note">
+      <div class="hd">1 · Not every category has a deadline</div>
+      <p>Five are governed by policy rather than a number of days: <span class="mono">As per
+        POSH Policy</span>, <span class="mono">As per Exit Policy</span>. Those tickets show
+        <strong>no due date</strong> and are never counted as late. That is correct, not a gap.</p>
+    </div>
+
+    <div class="note danger">
+      <div class="hd">2 · Three categories are confidential</div>
+      <p>Employee Grievance, Sexual Harassment / POSH, and Disciplinary Matters. Only the person
+        who raised it, the HR Head, and anyone formally escalated to can read them.
+        <strong>Not the rest of the HR team</strong>. They are also left out of every report
+        figure, and the report says how many it left out.</p>
+    </div>
+
+    <div class="note">
+      <div class="hd">3 · Eleven categories belong to another module</div>
+      <p>Travel, recruitment, stationery, training and full-and-final are really Travel Desk,
+        New Recruitment, General Purchase, L&amp;D and Employee Exit. Help Desk is the front
+        door: HR starts the real work there and records the reference back on the ticket.</p>
+    </div>
+
+    <div class="note">
+      <div class="hd">4 · Escalation fires on a reopen, not on a late ticket</div>
+      <p>A late ticket turns red and counts as a miss. Sending one back is what pulls somebody
+        else in.</p>
+    </div>
+
+    <div class="note danger">
+      <div class="hd">5 · Level-2 escalation currently reaches nobody</div>
+      <p>Every category's second level is a label (Management, Finance Head, Admin Vendor,
+        ICC Committee) and none of them is an Orange One account. Until HR names real people,
+        a second reopen is recorded and tells no one. The screens say so rather than pretending
+        otherwise.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="test"><span class="num">05</span>The test checklist</h2>
+    <p class="lede">Six parts. Tick as you go. Your ticks are remembered on this device.</p>
+
+    <div class="note warn">
+      <div class="hd">Sign in as three different people</div>
+      <p>An ordinary employee, an HR person who owns a category (Khushi), and the HR Head
+        (Riya). <strong>Do not test as an admin.</strong> Admins can see everything, so an
+        admin walkthrough proves nothing about who can see what.</p>
+    </div>
+
+    <!-- PART A -->
+    <section class="part">
+      <div class="part-hd">Part A</div>
+      <h3 style="margin-top:0">Raising a ticket</h3>
+      <p class="as">signed in as · an ordinary employee</p>
+
+      <p><strong>A1.</strong> Open Help Desk from the home screen. The menu should offer only
+        four things, with no queues and no reports. Those belong to HR.</p>
+      <figure>
+        <img src="01-employee-dashboard.png" alt="The Help Desk dashboard as an ordinary employee, showing only Dashboard, My Tickets, Raise a Ticket and Ticket Categories in the sidebar.">
+        <figcaption>A1 &middot; an employee's menu: four items, nothing of HR's</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="a1a"><label for="a1a">The menu shows no HR-only screens</label></li>
+        <li><input type="checkbox" id="a1b"><label for="a1b">“You have nothing open” appears when you have no tickets</label></li>
+      </ul>
+
+      <p><strong>A2.</strong> Click <em>Raise a Ticket</em>.</p>
+      <figure>
+        <img src="02-raise-blank.png" alt="The blank raise-a-ticket form with the submit button greyed out.">
+        <figcaption>A2 &middot; the blank form</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="a2a"><label for="a2a">“Raise the ticket” is greyed out until the required fields are filled</label></li>
+      </ul>
+
+      <p><strong>A3.</strong> Open the category list. All thirty, searchable, each showing its
+        turnaround underneath.</p>
+      <figure>
+        <img src="03-category-list.png" alt="The category picker open, listing ticket categories with their turnarounds.">
+        <figcaption>A3 &middot; thirty categories, each with its turnaround</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="a3a"><label for="a3a">Typing “pay” narrows the list</label></li>
+        <li><input type="checkbox" id="a3b"><label for="a3b">Each category shows its turnaround</label></li>
+      </ul>
+
+      <p><strong>A4.</strong> Pick <em>Payroll Queries</em>. This is the most important check on
+        the whole form.</p>
+      <figure>
+        <img src="04-category-readout.png" alt="The raise form after choosing Payroll Queries, showing KHUSHI SONI will answer this and a two working day turnaround.">
+        <figcaption>A4 &middot; the readout: who, and by when, before you submit</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="a4a"><label for="a4a">It names the person: <strong>“KHUSHI SONI will answer this”</strong></label></li>
+        <li><input type="checkbox" id="a4b"><label for="a4b">It states the turnaround: <strong>“2 working days from now”</strong></label></li>
+        <li><input type="checkbox" id="a4c"><label for="a4c"><em>Full &amp; Final Settlement</em> says “As per Exit Policy … it will not show a due date”</label></li>
+        <li><input type="checkbox" id="a4d"><label for="a4d"><em>Sexual Harassment / POSH</em> shows a red <strong>Confidential</strong> badge and warns the rest of HR cannot read it</label></li>
+        <li><input type="checkbox" id="a4e"><label for="a4e"><em>Travel Booking</em> says the work is handled in Travel Desk</label></li>
+        <li><input type="checkbox" id="a4f"><label for="a4f"><em>Others</em> makes an extra description box appear, and it is mandatory</label></li>
+      </ul>
+
+      <p><strong>A5.</strong> Fill it in and submit.</p>
+      <figure>
+        <img src="12-ticket-detail.png" alt="A ticket page showing the number, who it is with, the step, the due date and the history.">
+        <figcaption>A5 &middot; the ticket page the employee lands on</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="a5a"><label for="a5a">You land on a ticket numbered like <span class="mono">HD-2627-0001</span></label></li>
+        <li><input type="checkbox" id="a5b"><label for="a5b">It shows who it is with, the step, and the due date</label></li>
+        <li><input type="checkbox" id="a5c"><label for="a5c">The history shows “Raised”</label></li>
+        <li><input type="checkbox" id="a5d"><label for="a5d">There is a box at the foot to add a note, tag somebody or attach a file</label></li>
+        <li><input type="checkbox" id="a5e"><label for="a5e"><strong>Nobody is notified by a note unless you name them</strong>, and the box says so</label></li>
+      </ul>
+
+      <p><strong>A6.</strong> Check <em>My Tickets</em>.</p>
+      <figure>
+        <img src="05-my-tickets.png" alt="The My Tickets list showing the raised ticket with sortable, filterable columns.">
+        <figcaption>A6 &middot; My Tickets</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="a6a"><label for="a6a">Your ticket is listed</label></li>
+        <li><input type="checkbox" id="a6b"><label for="a6b">Every column sorts, and has a filter underneath</label></li>
+        <li><input type="checkbox" id="a6c"><label for="a6c">The Excel button downloads what you are looking at</label></li>
+      </ul>
+    </section>
+
+    <!-- PART B -->
+    <section class="part">
+      <div class="part-hd">Part B</div>
+      <h3 style="margin-top:0">Answering it</h3>
+      <p class="as">signed in as · Khushi, who owns that category</p>
+
+      <p><strong>B1.</strong> Open Help Desk. The menu is much longer now.</p>
+      <figure>
+        <img src="06-desk-dashboard.png" alt="The Help Desk dashboard as Khushi, showing the queues, Control Center, Reports and Ticket Categories in the sidebar.">
+        <figcaption>B1 &middot; the desk's own view, with queue counts</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="b1a"><label for="b1a">“Waiting on you” lists the ticket just raised</label></li>
+        <li><input type="checkbox" id="b1b"><label for="b1b">The queue in the sidebar carries a count badge</label></li>
+      </ul>
+
+      <p><strong>B2.</strong> Open <em>To answer</em>.</p>
+      <figure>
+        <img src="07-queue-to-answer.png" alt="The To answer queue with one ticket and two action buttons on the row.">
+        <figcaption>B2 &middot; the queue, with the two step actions on the row</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="b2a"><label for="b2a">The ticket is listed with its due date</label></li>
+        <li><input type="checkbox" id="b2b"><label for="b2b">Two buttons on the row: <em>Ask for something</em> and <em>Answer it</em></label></li>
+        <li><input type="checkbox" id="b2c"><label for="b2c">Clicking a button opens the dialog and <strong>stays on the queue</strong>. It must not navigate away</label></li>
+        <li><input type="checkbox" id="b2d"><label for="b2d">Clicking anywhere <em>else</em> on the row opens the ticket</label></li>
+      </ul>
+
+      <p><strong>B3.</strong> Try <em>Ask for something</em>.</p>
+      <ul class="checks">
+        <li><input type="checkbox" id="b3a"><label for="b3a">You must name a person and write a real question. “More information” is refused</label></li>
+        <li><input type="checkbox" id="b3b"><label for="b3b">After sending, the ticket <strong>leaves your queue</strong> and the employee sees “HR is waiting on you”</label></li>
+        <li><input type="checkbox" id="b3c"><label for="b3c">Sign in as the employee, reply, and it comes back to HR</label></li>
+      </ul>
+
+      <p><strong>B4.</strong> Try <em>Answer it</em>.</p>
+      <ul class="checks">
+        <li><input type="checkbox" id="b4a"><label for="b4a">A blank answer is refused</label></li>
+        <li><input type="checkbox" id="b4b"><label for="b4b">After sending, the ticket leaves your queue</label></li>
+        <li><input type="checkbox" id="b4c"><label for="b4c">The ticket now says <strong>“First answered in N minutes”</strong></label></li>
+      </ul>
+
+      <p><strong>B5.</strong> Check <em>All Tickets</em> and the <em>Control Center</em>.</p>
+      <figure>
+        <img src="08-all-tickets.png" alt="The All Tickets list.">
+        <figcaption>B5 &middot; All Tickets</figcaption>
+      </figure>
+      <figure>
+        <img src="09-control-center.png" alt="The Control Center showing open, late and no-fixed-deadline tiles and a breakdown by stage.">
+        <figcaption>B5 &middot; the Control Center</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="b5a"><label for="b5a">The Control Center says “open tickets <em>you can see</em>”, not a department total</label></li>
+        <li><input type="checkbox" id="b5b"><label for="b5b">“No fixed deadline” is its own tile, so untimed tickets are not counted as late</label></li>
+      </ul>
+    </section>
+
+    <!-- PART C -->
+    <section class="part">
+      <div class="part-hd">Part C</div>
+      <h3 style="margin-top:0">Closing it, or sending it back</h3>
+      <p class="as">signed in as · the employee again</p>
+
+      <ul class="checks">
+        <li><input type="checkbox" id="c1a"><label for="c1a">HR does <strong>not</strong> get these two buttons. Only you do</label></li>
+        <li><input type="checkbox" id="c1b"><label for="c1b">“That sorted it” asks how it was handled (Badly → Very well) and closes the ticket</label></li>
+        <li><input type="checkbox" id="c1c"><label for="c1c">“It is still not right” <strong>requires a reason</strong></label></li>
+        <li><input type="checkbox" id="c2a"><label for="c2a">Before you send it back, the dialog names who else it will reach, for example “This will also be raised with Riya Kumari”</label></li>
+        <li><input type="checkbox" id="c2b"><label for="c2b">Where the escalation is only a label, it says so honestly: “…nobody has been named for that yet, so HR will be told instead”</label></li>
+        <li><input type="checkbox" id="c2c"><label for="c2c">Afterwards the ticket says <strong>“Reopened 1 time. Escalated to HR Head”</strong>, and the HR Head appears under “With”</label></li>
+      </ul>
+    </section>
+
+    <!-- PART D -->
+    <section class="part">
+      <div class="part-hd">Part D</div>
+      <h3 style="margin-top:0">The confidential test</h3>
+      <p class="as">the most important part · all three people</p>
+
+      <div class="note danger">
+        <div class="hd">What this is proving</div>
+        <p>That a POSH complaint is invisible to the HR team, including the people who can
+          reassign and answer every other ticket. The complaint may be <em>about</em> one of
+          them.</p>
+      </div>
+
+      <p><strong>D1.</strong> As an ordinary employee, raise one under
+        <em>Sexual Harassment / POSH Complaint</em>.</p>
+      <ul class="checks">
+        <li><input type="checkbox" id="d1a"><label for="d1a">The form warns you before you submit that only the HR owner can read it</label></li>
+        <li><input type="checkbox" id="d1b"><label for="d1b">Note the ticket number and copy the page address</label></li>
+      </ul>
+
+      <p><strong>D2.</strong> Sign in as an HR person who does <em>not</em> own that category
+        (Khushi).</p>
+      <ul class="checks">
+        <li><input type="checkbox" id="d2a"><label for="d2a">Paste the address straight into the browser → <strong>“That page does not exist”</strong></label></li>
+        <li><input type="checkbox" id="d2b"><label for="d2b">It does not appear in All Tickets</label></li>
+        <li><input type="checkbox" id="d2c"><label for="d2c">Its subject appears nowhere on any screen</label></li>
+        <li><input type="checkbox" id="d2d"><label for="d2d">On Reports there is <strong>no Confidential register section</strong> for her</label></li>
+      </ul>
+
+      <p><strong>D3.</strong> Sign in as the HR Head (Riya).</p>
+      <ul class="checks">
+        <li><input type="checkbox" id="d3a"><label for="d3a">She can open the ticket and act on it</label></li>
+        <li><input type="checkbox" id="d3b"><label for="d3b">Reports shows the <strong>Confidential register</strong> at the foot, showing dates and status and <em>not</em> the complaint itself</label></li>
+      </ul>
+    </section>
+
+    <!-- PART E -->
+    <section class="part">
+      <div class="part-hd">Part E</div>
+      <h3 style="margin-top:0">The reports</h3>
+      <p class="as">signed in as · anyone who runs the desk</p>
+
+      <figure>
+        <img src="10-reports.png" alt="The Help Desk reports page with SLA, first reply, ageing, trend and closure figures.">
+        <figcaption>E &middot; the monthly MIS</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="e1"><label for="e1">The top line says how many confidential tickets were <strong>left out</strong></label></li>
+        <li><input type="checkbox" id="e2"><label for="e2">“Answered within turnaround” shows a <strong>dash</strong>, not 0%, when nothing had a deadline</label></li>
+        <li><input type="checkbox" id="e3"><label for="e3">A line underneath says how many tickets had no fixed turnaround</label></li>
+        <li><input type="checkbox" id="e4"><label for="e4">“Closed with no reply” is counted <strong>separately</strong> from “Closed by the employee”</label></li>
+        <li><input type="checkbox" id="e5"><label for="e5">Changing the date range at the top moves every figure</label></li>
+      </ul>
+    </section>
+
+    <!-- PART F -->
+    <section class="part">
+      <div class="part-hd">Part F</div>
+      <h3 style="margin-top:0">The categories</h3>
+      <p class="as">signed in as · HR</p>
+
+      <figure>
+        <img src="11-ticket-categories.png" alt="The Ticket Categories master listing all thirty categories with owners, turnarounds and escalation.">
+        <figcaption>F &middot; all thirty categories, with the level-2 warning banner</figcaption>
+      </figure>
+      <ul class="checks">
+        <li><input type="checkbox" id="f1"><label for="f1">A yellow banner warns that no level-2 escalation has a real person behind it</label></li>
+        <li><input type="checkbox" id="f2"><label for="f2">Every column sorts and filters</label></li>
+        <li><input type="checkbox" id="f3"><label for="f3">Editing lets you change the owner, turnaround and escalation</label></li>
+        <li><input type="checkbox" id="f4"><label for="f4">The <span class="mono">Code</span> column cannot be edited, because every report matches on it</label></li>
+        <li><input type="checkbox" id="f5"><label for="f5">The three confidential categories are marked, and their confidentiality <strong>cannot</strong> be changed</label></li>
+        <li><input type="checkbox" id="f6"><label for="f6">Clearing a turnaround makes it untimed, and the hint warns this moves the due date of every open ticket in that category</label></li>
+      </ul>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="off"><span class="num">06</span>What is deliberately switched off</h2>
+    <div class="tw"><table>
+      <thead><tr><th>Off</th><th>What that means today</th><th>To turn on</th></tr></thead>
+      <tbody>
+        <tr><td>Email</td><td>People are told in the hub (the bell), not by email</td><td>Settings, plus a technical deploy</td></tr>
+        <tr><td>Auto-close</td><td>A ticket the employee never confirms stays open</td><td>Ask the developer to apply one file</td></tr>
+        <tr><td>KPI scoring</td><td>Help Desk does not yet count towards anyone's score</td><td>One switch, but read below first</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note warn">
+      <div class="hd">Before switching KPI scoring on</div>
+      <p>The scorecard counts by <strong>volume</strong>, while Khushi's appraisal sheet puts
+        the Help Desk at <strong>5%</strong> of her job. Two hundred tickets a month would
+        dominate her score. It is off for that reason, and her sheet is written into the
+        KRA / KPI lab where it is weighted the way HR wrote it.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="owed"><span class="num">07</span>Still owed by HR</h2>
+    <p class="lede">Three answers, and two lists to fill in on Settings. The first is visible
+      in the product today.</p>
+    <div class="tw"><table>
+      <thead><tr><th>#</th><th>What is needed</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>Real people for every level-2 escalation.</strong> Management, Finance Head, Hiring Manager, Admin Vendor, Insurance Provider, Accounts, ICC Committee. None is an Orange One account</td></tr>
+        <tr><td>2</td><td><strong>Who at Premware</strong> the IT Support category escalates to</td></tr>
+        <tr><td>3</td><td><strong>One decision to confirm.</strong> The Help Desk sheet gives “Employee Engagement Activities” to Saloni, but Khushi's own appraisal claims that whole area at 25%. It is currently set to <strong>Khushi</strong></td></tr>
+        <tr><td>4</td><td><strong>Two lists on the Settings screen are still empty.</strong>
+          A request for a new category has no approver, and the fallback for an escalation that
+          names nobody reaches nobody. Naming people in <em>Settings</em> is the whole fix.
+          <em>The reassign pool is done: Riya, Khushi, Dharmistha, Saloni and Tanisha can all
+          move a ticket to the right person, and none of them gains sight of a confidential
+          one</em></td></tr>
+      </tbody>
+    </table></div>
+
+    <footer>
+      <p>Every screenshot on this page is the real screen, captured 28-09-2026 during an
+        end-to-end walk-through as three real people. The walk found three faults, all fixed
+        before this manual was written.</p>
+    </footer>
+
+    <div class="progress">
+      <span id="count">0 / 0 checked</span>
+      <span class="bar"><i id="fill"></i></span>
+      <button type="button" id="reset">Clear</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var KEY = 'helpdesk-manual-checks';
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('ul.checks input'));
+    var count = document.getElementById('count');
+    var fill = document.getElementById('fill');
+
+    function load() {
+      try {
+        var raw = localStorage.getItem(KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) { return {}; }
+    }
+    function save(state) {
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private window */ }
+    }
+    function paint() {
+      var done = 0;
+      boxes.forEach(function (b) {
+        b.closest('li').classList.toggle('done', b.checked);
+        if (b.checked) done++;
+      });
+      count.textContent = done + ' / ' + boxes.length + ' checked';
+      fill.style.width = boxes.length ? (done / boxes.length * 100) + '%' : '0%';
+    }
+
+    var state = load();
+    boxes.forEach(function (b) {
+      if (state[b.id]) b.checked = true;
+      b.addEventListener('change', function () {
+        state[b.id] = b.checked;
+        save(state);
+        paint();
+      });
+    });
+    document.getElementById('reset').addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = false; });
+      state = {};
+      save(state);
+      paint();
+    });
+    paint();
+  })();
+</script>

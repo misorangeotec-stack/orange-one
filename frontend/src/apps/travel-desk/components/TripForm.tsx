@@ -47,7 +47,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
   // number, an approver waiting, and a reason it came back.
   const isReturned = draft?.status === "returned";
 
-  // A coordinator raises on behalf of senior management (PRD §3); everybody else
+  // A coordinator raises on behalf of senior management (PRD Section 3); everybody else
   // is filing their own trip, so it defaults to them.
   const [travellerId, setTravellerId] = useState(draft?.travellerId ?? s.userId);
   const [purposeId, setPurposeId] = useState(draft?.purposeId ?? "");
@@ -162,7 +162,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
   if (!cityId) blockers.push("Choose a destination.");
   if (!departure) blockers.push("Give a departure date.");
   if (estimateNum === null || !Number.isFinite(estimateNum)) {
-    blockers.push("Give an estimated cost — §3.3 requires one, and the advance is capped against it.");
+    blockers.push("Give an estimated cost — Section 3.3 requires one, and the advance is capped against it.");
   }
   if (emergency && !emergencyReason.trim()) {
     blockers.push("An emergency trip needs its reason recorded.");
@@ -184,7 +184,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
       );
     } else if (departure < today) {
       warnings.push(
-        "The departure date has already passed. §3.1 forbids travel without prior written approval, so this will need a retrospective approval with a reason.",
+        "The departure date has already passed. Section 3.1 forbids travel without prior written approval, so this will need a retrospective approval with a reason.",
       );
     } else {
       const days = Math.round(
@@ -192,7 +192,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
       );
       if (days < s.config.policy.advanceBookingWarnDays) {
         warnings.push(
-          `Departure is in ${days} day${days === 1 ? "" : "s"}. §4.1 expects tickets to be booked at least ${s.config.policy.advanceBookingWarnDays} days ahead, so fares may be higher and a late booking needs a documented reason.`,
+          `Departure is in ${days} day${days === 1 ? "" : "s"}. Section 4.1 expects tickets to be booked at least ${s.config.policy.advanceBookingWarnDays} days ahead, so fares may be higher and a late booking needs a documented reason.`,
         );
       }
     }
@@ -200,12 +200,12 @@ export default function TripForm({ draft }: { draft?: Trip }) {
 
   if (bandNo !== null && needsDirectorApproval(bandNo)) {
     warnings.push(
-      `Band ${bandNo} needs a Director's approval as well as the reporting manager's (§3.2), so this will take a step longer.`,
+      `Band ${bandNo} needs a Director's approval as well as the reporting manager's (Section 3.2), so this will take a step longer.`,
     );
   }
 
   /*
-    ⚠ §11.2 — NO SECOND ADVANCE WHILE ONE IS UNRECONCILED. This is the policy's
+    ⚠ Section 11.2 — NO SECOND ADVANCE WHILE ONE IS UNRECONCILED. This is the policy's
       hardest rule and it is unenforceable without a system that can answer "what
       does this person still owe". Phase 5 makes the raise RPC refuse it; here it
       is a warning, because a traveller who learns at submit time that their
@@ -224,12 +224,12 @@ export default function TripForm({ draft }: { draft?: Trip }) {
 
   if (advance && outstanding > 0) {
     warnings.push(
-      `${money(outstanding)} of travel advance is still unsettled for this traveller. §11.2 does not allow a second advance until that is reconciled.`,
+      `${money(outstanding)} of travel advance is still unsettled for this traveller. Section 11.2 does not allow a second advance until that is reconciled.`,
     );
   }
   if (advance && maxAdvance !== null && advanceNum !== null && advanceNum > maxAdvance) {
     warnings.push(
-      `§11.1 caps the advance at ${s.config.policy.advanceMaxPct}% of the estimate — ${money(maxAdvance)} here.`,
+      `Section 11.1 caps the advance at ${s.config.policy.advanceMaxPct}% of the estimate — ${money(maxAdvance)} here.`,
     );
   }
 
@@ -391,7 +391,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
               <FieldLabel
                 label="Destination"
                 required
-                hint="the city's tier prices the hotel cap and the conveyance cap"
+                hint="Sets your hotel and conveyance caps"
               >
                 <Combobox
                   value={cityId}
@@ -443,7 +443,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
                 />
               </FieldLabel>
 
-              <FieldLabel label="Preferred time" hint="a preference for the booker, not a booking">
+              <FieldLabel label="Preferred time" hint="A preference, not a booking">
                 <Select value={slot} onChange={(e) => setSlot(e.target.value as TimeSlot | "")}>
                   <option value="">— No preference —</option>
                   {TIME_SLOTS.map((t) => (
@@ -457,7 +457,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
               <FieldLabel
                 label="Estimated cost"
                 required
-                hint={`§3.3. The advance is capped at ${s.config.policy.advanceMaxPct}% of this.`}
+                hint={`The advance is capped at ${s.config.policy.advanceMaxPct}% of this`}
               >
                 <TextInput
                   type="number"
@@ -491,14 +491,14 @@ export default function TripForm({ draft }: { draft?: Trip }) {
                 checked={emergency}
                 onChange={(e) => setEmergency(e.target.checked)}
               />
-              This is emergency travel (§3.5)
+              This is emergency travel (Section 3.5)
             </label>
 
             {emergency && (
               <FieldLabel
                 label="What made it an emergency"
                 required
-                hint="§3.5 gives a 24-hour window for approval; without one the trip is reimbursed at TC-D"
+                hint="24 hours to get approval, or it drops to TC-D"
               >
                 <TextArea
                   value={emergencyReason}
@@ -520,7 +520,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
                 label="Amount"
                 hint={
                   maxAdvance !== null
-                    ? `at most ${money(maxAdvance)} — ${s.config.policy.advanceMaxPct}% of the estimate (§11.1)`
+                    ? `at most ${money(maxAdvance)} — ${s.config.policy.advanceMaxPct}% of the estimate (Section 11.1)`
                     : "give an estimated cost first"
                 }
               >

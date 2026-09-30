@@ -99,6 +99,16 @@ export const APPS: Record<string, AppInfo> = {
     category: "sampling",
   },
   /**
+   * INK IMS — ink inventory planning. Its own module, filed under its own menu group.
+   * Deliberately NOT part of the Receivables Hub: different report, different owners.
+   */
+  "ink-mis": {
+    name: "Ink IMS",
+    basePath: "/ink-mis",
+    // Its own menu group, "IMS Sheet", next to Purchase — asked for by the planner.
+    category: "ims",
+  },
+  /**
    * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
    * in the browser (like Ink IMS); Central Masters itself is never written.
    */
@@ -226,6 +236,14 @@ export const APPS: Record<string, AppInfo> = {
   "travel-desk": {
     name: "Travel Desk",
     basePath: "/travel-desk",
+    category: "hr",
+  },
+  // The HR front door: one place to ask HR anything, routed by the category the
+  // employee picks. Filed under HR rather than Productivity even though everyone
+  // uses it — a reader looking for it is looking for HR.
+  "help-desk": {
+    name: "Help Desk",
+    basePath: "/help-desk",
     category: "hr",
   },
   "leads-dashboard": {

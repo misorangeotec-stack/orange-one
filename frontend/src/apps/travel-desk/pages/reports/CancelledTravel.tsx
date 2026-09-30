@@ -20,7 +20,7 @@ import type { Trip } from "../../types";
  *   falls out of the ordinary queues the moment the journey is off. This is the
  *   only screen that keeps them in view.
  *
- * ⚠ BUSINESS AND PERSONAL ARE SHOWN SEPARATELY BECAUSE §4.1 TREATS THEM
+ * ⚠ BUSINESS AND PERSONAL ARE SHOWN SEPARATELY BECAUSE Section 4.1 TREATS THEM
  *   DIFFERENTLY. A charge from a customer moving the meeting is reimbursable; a
  *   charge from the traveller changing their mind is theirs. Totalling the two
  *   together would produce a figure that answers nothing.
@@ -127,7 +127,7 @@ export default function CancelledTravel() {
       },
       {
         key: "kind",
-        header: "Reason (§4.1)",
+        header: "Reason (Section 4.1)",
         cell: (t) => {
           const k = kindOf(t);
           if (!k) return <span className="text-grey-2">—</span>;
@@ -195,7 +195,7 @@ export default function CancelledTravel() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Cancelled travel</h1>
         <p className="max-w-3xl text-[13px] text-grey">
-          Trips called off after they were booked, and what they cost anyway. §4.1 makes an
+          Trips called off after they were booked, and what they cost anyway. Section 4.1 makes an
           unrefunded charge reimbursable when the reason is business and not when it is personal.
         </p>
       </div>
@@ -227,7 +227,7 @@ export default function CancelledTravel() {
         exportName="Travel_Cancelled"
         exportNotes={[
           "“Unrefunded” is the sum of each leg's net cost — ticket plus fees, less whatever the airline or hotel gave back.",
-          "The §4.1 reason is recorded on the legs when the desk processes the cancellation. A business reason makes the charge reimbursable; a personal one does not.",
+          "The Section 4.1 reason is recorded on the legs when the desk processes the cancellation. A business reason makes the charge reimbursable; a personal one does not.",
           "“Advance out” is money paid to the traveller that has not been settled or recovered. It appears on Outstanding Advances too.",
         ]}
         columnPicker={{ storageKey: "travel-cancelled" }}

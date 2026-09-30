@@ -105,7 +105,7 @@ function StepQueuePage<E>({
   }, [completed?.entries, scope, user.id]);
 
   const vendorName = (p: PurchaseOrder) => s.vendorById(p.vendorId)?.name ?? "—";
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyName = (id: string) => s.companyLabel(id);
   // "In stage since" and the due date come from lib/queues.ts — the same functions
   // the FMS Control Center uses, so the two can never disagree. The due date is the
   // step's admin-configured anchor + working days (Setup → Due Dates); for follow_up

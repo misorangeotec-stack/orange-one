@@ -180,7 +180,7 @@ export default function EntitlementPanel({
       )}
 
       {/*
-        ⚠ THE §2 CONTRADICTION, SAID OUT LOUD RATHER THAN AVERAGED AWAY. Section
+        ⚠ THE Section 2 CONTRADICTION, SAID OUT LOUD RATHER THAN AVERAGED AWAY. Section
           2 of the policy holds two tables that disagree one row apart, and 23 of
           59 live employees sit in the two bands they disagree about. Showing a
           figure without this line would quote somebody a hotel cap that is wrong
@@ -203,34 +203,34 @@ export default function EntitlementPanel({
             pending={tier ? undefined : "Choose a destination"}
             hint={
               detail
-                ? "including GST (§7.2). Over-cap needs evidence plus HOD approval, and never above 1.5×."
+                ? "including GST (Section 7.2). Over-cap needs evidence plus HOD approval, and never above 1.5×."
                 : undefined
             }
           />
           <Row
             label="Daily allowance"
             rate={e.da}
-            hint={detail ? "per calendar day away, no receipts (§8)" : undefined}
+            hint={detail ? "Per day away, no receipts" : undefined}
           />
           <Row
             label="Local conveyance"
             rate={e.conveyanceCap}
             /* TC-A is uncapped on every tier, so it is answerable without one. */
             pending={tier || e.conveyanceCap?.amount === null ? undefined : "Choose a destination"}
-            hint={detail ? "per day at the destination (§10), separate from the daily allowance" : undefined}
+            hint={detail ? "Per day, separate from the allowance" : undefined}
           />
           {detail && e.conveyanceSelfDec && (
             <Row
               label="Conveyance without a receipt"
               rate={e.conveyanceSelfDec}
-              hint="per trip, self-declared (§10)"
+              hint="Per trip, self-declared"
             />
           )}
           {detail && (
             <Row
               label="Full-day vehicle hire"
               rate={e.rentalCap}
-              hint="including driver (§10.1), HOD pre-approved"
+              hint="Including driver, HOD pre-approved"
             />
           )}
         </div>
@@ -263,8 +263,8 @@ export default function EntitlementPanel({
               rate={e.mileage.fourWheeler ?? e.mileage.twoWheeler}
               hint={
                 e.mileage.twoWheeler?.amount
-                  ? `Two-wheeler ${money(e.mileage.twoWheeler.amount)}/km. HOD approval before travel (§6.3).`
-                  : "HOD approval before travel (§6.3)"
+                  ? `Two-wheeler ${money(e.mileage.twoWheeler.amount)}/km. HOD approval before travel (Section 6.3).`
+                  : "HOD approval before travel (Section 6.3)"
               }
             />
           )}
