@@ -41,8 +41,9 @@ export function officeSuppliesWorkItems(
    *   the queue entry for exactly this reason; see lib/queues.ts.
    */
   const mine = (stepKey: string, departmentId: string, holderId: string | null): boolean => {
-    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
+    // The entry carries the holder of ITS OWN step, so this covers both approvals.
     if (holderId) return holderId === uid;
+    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
     return myHodDepartmentIds.has(departmentId);
   };
 

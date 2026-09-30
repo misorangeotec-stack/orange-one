@@ -381,11 +381,19 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         const hod = departmentById(r.departmentId)?.hodUserId;
         return !!hod && hod === uid;
       }
+      // Same rule at Management: a handover REPLACES the step owners.
+      if (stepKey === "second_approval" && r.secondAssignedApproverId) return r.secondAssignedApproverId === uid;
       return isStepOwner(stepKey);
     };
 
-    /** Whoever this request's first approval has been handed to, or null. */
-    const holderOfRequest = (r: SupplyRequest): string | null => r.assignedApproverId;
+    /**
+     * Whoever the approval the request is AWAITING has been handed to, or null.
+     * Status-based, because the dialog and the detail page ask about the live step.
+     */
+    const holderOfRequest = (r: SupplyRequest): string | null =>
+      r.status === "pending_first_approval" ? r.assignedApproverId
+      : r.status === "pending_second_approval" ? r.secondAssignedApproverId
+      : null;
 
     /**
      * Has anything EVER been handed to me? The only reason somebody who heads no
@@ -395,6 +403,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      *   (open work only) threw the holder off the page the moment they finished.
      */
     const heldAnyReassigned = requests.some((r) => r.assignedApproverId === uid);
+    /** The same, for a Management approval handed to someone outside the step owners. */
+    const heldAnySecondReassigned = requests.some((r) => r.secondAssignedApproverId === uid);
 
     /**
      * May I hand this on, or pull it back? Broader than deciding it: the HOD keeps
@@ -408,10 +418,17 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      * isAdmin is the subtle version of the same bug.
      */
     const canReassignRequest = (r: SupplyRequest): boolean => {
-      if (r.status !== "pending_first_approval") return false;
+      if (r.status !== "pending_first_approval" && r.status !== "pending_second_approval") return false;
       const me = session.user?.id ?? "";
       if (!me || !canEdit) return false;
       if (session.isAdmin || processCoordinatorIds.includes(me)) return true;
+      if (r.status === "pending_second_approval") {
+        // The Management step owners keep this after handing over, the same way
+        // the HOD does at first approval — it is how the request comes back.
+        // `ownerIdsOf`, not `isStepOwner`: the latter answers true for any admin.
+        if (r.secondAssignedApproverId === me) return true;
+        return ownerIdsOf("second_approval").includes(me);
+      }
       if (r.assignedApproverId === me) return true;
       return departmentById(r.departmentId)?.hodUserId === me;
     };
@@ -436,8 +453,14 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      */
     const reassignCandidates = (r: SupplyRequest): { id: string; name: string }[] => {
       const ids = new Set<string>(reassignPoolUserIds);
-      const hod = departmentById(r.departmentId)?.hodUserId;
-      if (hod) ids.add(hod);
+      if (r.status === "pending_second_approval") {
+        // At Management the default owners are the second-approval step owners,
+        // so any one of them can be handed it directly.
+        for (const id of ownerIdsOf("second_approval")) ids.add(id);
+      } else {
+        const hod = departmentById(r.departmentId)?.hodUserId;
+        if (hod) ids.add(hod);
+      }
       ids.delete(session.user?.id ?? "");
       if (r.raisedBy) ids.delete(r.raisedBy);
       if (r.requestedForUserId) ids.delete(r.requestedForUserId);
@@ -475,6 +498,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       //   the holder to the request itself, so this only re-opens what they can
       //   already read.
       if (stepKey === "first_approval") return hodDepartmentIds.length > 0 || heldAnyReassigned;
+      // Same reasoning at Management: a holder is usually not a step owner.
+      if (stepKey === "second_approval") return isStepOwner(stepKey) || heldAnySecondReassigned;
       return isStepOwner(stepKey);
     };
 
@@ -561,6 +586,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      */
     const stepIsMine = (stepKey: StepKey, r: SupplyRequest): boolean => {
       if (stepKey === "first_approval" && r.assignedApproverId) return r.assignedApproverId === uid;
+      if (stepKey === "second_approval" && r.secondAssignedApproverId) return r.secondAssignedApproverId === uid;
       return canActOn(stepKey, r);
     };
 
@@ -571,9 +597,9 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         return r ? stepIsMine(stepKey, r) : false;
       });
 
-    // "Pending with" — for first_approval that is whoever it was HANDED to, and
-    // otherwise the department's HOD alone. Merging in the step-owner list here
-    // would name people who can no longer act.
+    // "Pending with" — for either approval that is whoever it was HANDED to;
+    // otherwise the department's HOD alone at first approval, and the step owners
+    // at second. Merging the two lists would name people who can no longer act.
     const queueOwnerIds = (e: QueueEntry): string[] => {
       if (e.stepKey === "first_approval") {
         if (e.assignedApproverId) return [e.assignedApproverId];
@@ -581,6 +607,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         const hod = r ? departmentById(r.departmentId)?.hodUserId : null;
         return hod ? [hod] : [];
       }
+      if (e.stepKey === "second_approval" && e.assignedApproverId) return [e.assignedApproverId];
       return ownerIdsOf(e.stepKey);
     };
 
@@ -796,24 +823,30 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         await invalidate();
       },
       reassignRequest: async ({ request, approverId, note }) => {
+        // Read BEFORE the write: the status decides which approval moved.
+        const step: StepKey = request.status === "pending_second_approval" ? "second_approval" : "first_approval";
         await reassignRequestWrite(request.id, approverId);
         const returned = approverId === null;
         const hod = departmentById(request.departmentId)?.hodUserId ?? null;
+        const backTo = step === "second_approval" ? "Management" : "the department head";
         await safeAnnounce({
           entityType: "request",
           entityId: request.id,
           type: "reassigned",
           text: returned
-            ? `An approval was returned to the department head${note ? " — " + note : ""}`
+            ? `An approval was returned to ${backTo}${note ? " — " + note : ""}`
             : `An approval was reassigned to ${personName(approverId)}${note ? " — " + note : ""}`,
-          // On a hand-back nobody in particular owns it, so tell the HOD it is
-          // theirs again.
-          recipients: returned ? (hod ? [hod] : []) : [approverId as string],
+          // On a hand-back nobody in particular owns it, so tell the default
+          // owners it is theirs again — the HOD, or the Management step owners.
+          recipients: returned
+            ? (step === "second_approval" ? ownerIdsOf("second_approval") : hod ? [hod] : [])
+            : [approverId as string],
           // ⚠ Unlike Import and Purchase, the CARD is built server-side by
           //   fms_supplies_email_payload — this meta only tells it which of the
           //   two directions to render, because by mail time the column is
           //   already null on a hand-back and the row cannot tell them apart.
-          meta: { returned, note: note ?? null },
+          // `step` picks the queue the card links to; absent means first approval.
+          meta: { returned, note: note ?? null, step },
         });
         await invalidate();
       },

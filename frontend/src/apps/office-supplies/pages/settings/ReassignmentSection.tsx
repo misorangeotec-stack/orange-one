@@ -24,8 +24,8 @@ export default function ReassignmentSection() {
       savedDepartmentIds={s.reassignPoolDepartmentIds}
       savedUserIds={s.reassignPoolUserIds}
       onSave={s.setReassignPool}
-      emptyPoolNote="Leave it empty and a request can only be passed back to its own department head."
-      peopleNote="a request can always be handed back to its department head."
+      emptyPoolNote="Leave it empty and a request can only be passed back to its own department head (first approval) or to a Management step owner (second approval)."
+      peopleNote="a request can always be handed back to its department head, or at second approval to a Management step owner."
     />
   );
 }

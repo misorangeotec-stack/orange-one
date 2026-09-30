@@ -31,8 +31,8 @@ export default function Setup() {
       {tab === "raising" && (
         <div className="space-y-5">
           <RaisingSection />
-          {/* Reassign only ever moves a request off its FIRST approval, which is
-              the routing this tab configures, so the two are read together. */}
+          {/* Reassign moves a request off its first OR second approval; the pool
+              sits beside the routing it overrides, so the two are read together. */}
           <ReassignmentSection />
         </div>
       )}
