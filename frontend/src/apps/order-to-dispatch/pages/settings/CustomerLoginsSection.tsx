@@ -12,6 +12,7 @@ import CustomerOrgItemsSection, {
   NO_ITEM_EDITS, type OrgItemEdits,
 } from "../../components/CustomerOrgItemsSection";
 import CustomerOrgFormsSection from "../../components/CustomerOrgFormsSection";
+import CustomerOrgLoginSection from "../../components/CustomerOrgLoginSection";
 import {
   CUSTOMER_ORGS_QK, MISSING_LABEL, addCustomer, fetchCustomerOrgs, orgItemsQueryKey,
   saveCustomerOrg, setCustomerOrgItems,
@@ -526,6 +527,7 @@ export default function CustomerLoginsSection() {
           />
           <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
           <CustomerOrgFormsSection partyIds={partyIds} />
+          <CustomerOrgLoginSection orgId={org.id} />
         </div>
       </Modal>
     );
