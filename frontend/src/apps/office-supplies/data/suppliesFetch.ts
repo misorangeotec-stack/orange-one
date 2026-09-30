@@ -184,6 +184,7 @@ const mapRequest = (r: any): SupplyRequest => ({
   firstApprovedAt: r.first_approved_at ?? null,
   firstApproverId: r.first_approver_id ?? null,
   assignedApproverId: r.assigned_approver_id ?? null,
+  secondAssignedApproverId: r.second_assigned_approver_id ?? null,
   firstRemarks: r.first_remarks ?? null,
   secondApprovedAt: r.second_approved_at ?? null,
   secondApproverId: r.second_approver_id ?? null,
