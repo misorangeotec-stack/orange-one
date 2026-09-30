@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput, TextArea } from "@/shared/components/ui/Form";
-import type { DeskCompany, DeskItem, DeskLineInput } from "../data/orderDesk";
+import { deskFormLabel, type DeskCompany, type DeskItem, type DeskLineInput } from "../data/orderDesk";
 import { customerItemType } from "../lib/customerLabels";
 
 /**
@@ -90,7 +90,13 @@ export default function OrderForm({
   companies?: DeskCompany[];
   companyId?: string;
   onCompanyChange?: (id: string) => void;
-  /** Shown instead of the picker when changing an existing order. */
+  /**
+   * Shown instead of the picker when changing an existing order.
+   *
+   * ⚠ ALREADY RESOLVED TO A FORM NAME by the caller (`deskFormLabel`). Do not
+   *   pass `order.companyLabel` raw — that is our company, which is the one thing
+   *   OD-16 says must not appear here.
+   */
   companyLabel?: string | null;
   initialLines?: DeskLineInput[];
   initialRemarks?: string;
@@ -203,23 +209,28 @@ export default function OrderForm({
   };
 
   /*
-    WHO THEY ARE BUYING FROM, ABOVE THE ITEMS AND NOT BESIDE THEM.
+    WHICH FORM THE ORDER GOES ON, ABOVE THE ITEMS AND NOT BESIDE THEM.
 
     It is not one field among several — it decides what the list underneath can
     contain, so it has to be answered first and has to look like it was. Placed
     beside the lines it reads as an afterthought, and a customer who changes it
     after typing six lines loses them.
 
-    ⚠ ONE PICKER, OR NONE AT ALL. Most customers buy from exactly one of our
-      companies, and a required dropdown with a single option is a question with
-      one answer — so it prints as a sentence instead. The picker appears only
-      where there is a real choice to make.
+    ⚠ ONE PICKER, OR NONE AT ALL. Most customers order on exactly one form, and a
+      required dropdown with a single option is a question with one answer — so it
+      prints as a sentence instead. The picker appears only where there is a real
+      choice to make.
+
+    ⚠ NOT ONE OF OUR COMPANY NAMES ANYWHERE IN HERE (OD-16). Every string the
+      customer reads comes through `deskFormLabel`, which falls back to the
+      company only for a ledger nobody has given a form name yet — and the fix for
+      seeing one of those is to fill it in under Setup → Forms, not to reword this.
   */
   const companyPicker = (() => {
     if (companyLabel) {
       return (
         <p className="text-[13.5px] text-grey">
-          Ordering from <span className="font-semibold text-ink">{companyLabel}</span>
+          Ordering on <span className="font-semibold text-ink">{companyLabel}</span>
         </p>
       );
     }
@@ -227,30 +238,30 @@ export default function OrderForm({
     if (companies.length === 1) {
       return (
         <p className="text-[13.5px] text-grey">
-          Ordering from <span className="font-semibold text-ink">{companies[0].label}</span>
+          Ordering on <span className="font-semibold text-ink">{deskFormLabel(companies[0].formName, companies[0].label)}</span>
         </p>
       );
     }
     return (
       <div className="space-y-2">
-        <label className="block text-[13px] font-semibold text-ink">Who are you buying from?</label>
+        <label className="block text-[13px] font-semibold text-ink">Which form is this order on?</label>
         <div className="max-w-md">
           <Combobox
             value={companyId ?? ""}
             onChange={(v) => onCompanyChange?.(v)}
             options={companies.map((c) => ({
               value: c.companyId,
-              label: c.label,
+              label: deskFormLabel(c.formName, c.label),
               sublabel: `${c.itemCount} ${c.itemCount === 1 ? "item" : "items"}`,
             }))}
-            placeholder="Choose one of ours"
+            placeholder="Choose a form"
           />
         </div>
         {/* Says the quiet part out loud, so "where is my usual ink?" has an
             answer on the screen rather than on the phone. */}
         <p className="text-[12.5px] text-grey-2">
-          One order goes to one of our companies, and each sells a different list.
-          If something you buy is not below, it may be sold by another of ours.
+          One order goes on one form, and each carries a different list. If something
+          you buy is not below, it may sit on another of your forms.
         </p>
       </div>
     );

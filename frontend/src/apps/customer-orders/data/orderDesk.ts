@@ -65,6 +65,18 @@ export interface DeskOrderLine {
   lineRemark: string | null;
 }
 
+/** One consignment's note to the customer, as the gate wrote it. */
+export interface DeskDispatchNote {
+  /**
+   * Which consignment. Shown only when there is more than one, because "Note 1 of
+   * 1" is noise — but carried always, so the screen can tell.
+   */
+  roundNo: number | null;
+  /** The date it actually went out. Null if the gate left the date blank. */
+  sentOn: string | null;
+  note: string;
+}
+
 export interface DeskOrder {
   id: string;
   orderNo: string;
@@ -82,7 +94,22 @@ export interface DeskOrder {
    *   filled one in.
    */
   companyId: string | null;
+  /** The fallback only — read it through `deskFormLabel`, never directly. */
   companyLabel: string | null;
+  /** The form this order was placed on. Null falls back to `companyLabel`. */
+  formName: string | null;
+  /**
+   * The notes written FOR this customer as each consignment left, oldest first.
+   *
+   * ⚠ THIS IS THE ONLY REMARK CHANNEL THAT REACHES THEM, and the server is what
+   *   makes that true — `go_remarks`, the internal note beside it, is not in the
+   *   RPC at all. Do not add a second source here: the guarantee is "nothing else
+   *   is sent", which a component cannot honour by choosing not to render.
+   *
+   * Empty until the gate stamps the order, and empty on an order whose round
+   * looped back — the note went to the archive with the consignment it described.
+   */
+  dispatchNotes: DeskDispatchNote[];
   /** Already collapsed by the server — see lib/customerLabels.ts. */
   statusKey: string;
   /**
@@ -90,8 +117,14 @@ export interface DeskOrder {
    *
    * ⚠ THE SERVER'S ANSWER, NOT OURS. This is `fms_dispatch_customer_window_open`,
    *   the very function both write RPCs enforce — so a hidden button and a refused
-   *   call can never disagree. Do not re-derive it from `statusKey`: two distinct
-   *   states both render as "Placed" and only one of them is open.
+   *   call can never disagree.
+   *
+   *   Since OD-16 it is also what `status_key` tests to decide "request_raised",
+   *   so the two now agree BY CONSTRUCTION rather than by coincidence. That is not
+   *   licence to re-derive one from the other here: the server sends both because
+   *   the server is where the rule lives, and a browser that computed
+   *   `canChange = statusKey === "request_raised"` would be a second copy of a rule
+   *   that is allowed to change without asking this file.
    */
   canChange: boolean;
   placedAt: string | null;
@@ -106,23 +139,63 @@ export const itemsQueryKey = (companyId: string | null) =>
 export const ORDERS_QK = ["order-desk", "orders"] as const;
 
 /**
- * One of ours the customer may buy from, named as they would recognise it.
+ * A FORM the customer may place an order on (OD-16).
  *
- * ⚠ THIS IS NOT THE LEDGER LIST, AND Q11 STILL STANDS. What comes back is our
- *   COMPANY — "O-tec - Surat" — which is on every invoice we send them. The ticked
- *   ledgers behind it never leave the server, exactly as before.
+ * ⚠ THIS IS NOT THE LEDGER LIST, AND Q11 STILL STANDS. The form name is ours to
+ *   choose and is agreed WITH this customer; it carries no ledger id, no ledger
+ *   name and no hint of how many ledgers they are ticked into. The app still
+ *   reads no table.
+ *
+ * ⚠ `companyId` IS STILL THE VALUE THAT TRAVELS, and that has not changed. The
+ *   form is what the customer READS; the book is what the order is placed
+ *   against, and `submitDeskOrder` posts the id. Renaming the label was never
+ *   meant to move the identity.
  */
 export interface DeskCompany {
   companyId: string;
+  /**
+   * Our company — "O-tec - Surat".
+   *
+   * ⚠ NOT FOR DISPLAY. It is the FALLBACK only, for a ledger nobody has given a
+   *   form name yet, and it is the one string on this screen the instruction says
+   *   a customer should not read. Go through `deskFormLabel` rather than reaching
+   *   for it: that is the single place the fallback is decided.
+   */
   label: string;
+  /** The agreed name, from the ledger → form master. Null until one is typed. */
+  formName: string | null;
   itemCount: number;
 }
+
+/**
+ * What the customer reads for a form. THE ONLY PLACE THE FALLBACK LIVES.
+ *
+ * An unmapped ledger has to render something, and a blank option is worse than
+ * our company name — so the company is what shows until Setup → Forms is filled
+ * in. Spreading that `??` across four components is how one of them ends up
+ * printing an empty string.
+ *
+ * ⚠ TWO ARGUMENTS, NOT A ROW, because the two callers spell the fallback
+ *   differently — `DeskCompany.label` and `DeskOrder.companyLabel` — and a single
+ *   object parameter would either miss one of them or have to accept both keys
+ *   optionally, which type-checks happily when a caller passes NEITHER.
+ */
+export const deskFormLabel = (
+  formName: string | null,
+  fallback: string | null,
+): string => formName?.trim() || fallback || "";
 
 export async function fetchDeskCompanies(): Promise<DeskCompany[]> {
   const { data, error } = await db.rpc("fms_dispatch_my_companies");
   if (error) throw new Error(error.message);
-  return ((data ?? []) as { company_id: string; label: string; item_count: number | null }[])
-    .map((r) => ({ companyId: r.company_id, label: r.label, itemCount: r.item_count ?? 0 }));
+  return ((data ?? []) as {
+    company_id: string; label: string; form_name: string | null; item_count: number | null;
+  }[]).map((r) => ({
+    companyId: r.company_id,
+    label: r.label,
+    formName: r.form_name ?? null,
+    itemCount: r.item_count ?? 0,
+  }));
 }
 
 /**
@@ -183,7 +256,10 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
   return ((data ?? []) as {
     id: string; order_no: string; order_date: string; order_remarks: string | null;
     status_key: string; can_change: boolean; placed_at: string | null;
-    company_id: string | null; company_label: string | null;
+    company_id: string | null; company_label: string | null; form_name: string | null;
+    dispatch_notes:
+      | { round_no: number | null; sent_on: string | null; note: string | null }[]
+      | null;
     lines:
       | {
           line_no: number; item_id: string; name: string; quantity: number | string;
@@ -200,6 +276,17 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
     placedAt: r.placed_at,
     companyId: r.company_id,
     companyLabel: r.company_label,
+    formName: r.form_name ?? null,
+    /* Server-side `jsonb_agg` already orders these; a note with no text cannot
+       reach the array, but the filter keeps a blank from rendering an empty box
+       if that ever changes. */
+    dispatchNotes: (r.dispatch_notes ?? [])
+      .filter((n) => (n.note ?? "").trim())
+      .map((n) => ({
+        roundNo: n.round_no ?? null,
+        sentOn: n.sent_on ?? null,
+        note: (n.note ?? "").trim(),
+      })),
     lines: (r.lines ?? []).map((l) => ({
       lineNo: l.line_no,
       itemId: l.item_id,
@@ -269,6 +356,18 @@ export async function updateDeskOrder(input: {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Cancel an order the customer has raised but we have not accepted.
+ *
+ * ⚠ BOUNDED BY THE SAME WINDOW AS `updateDeskOrder`, and the server is what
+ *   enforces it — `fms_dispatch_customer_window_open`, which is also what
+ *   `status_key` tests to decide whether the order reads "Request raised". So the
+ *   pill, the Cancel button and the server's answer are three views of one fact
+ *   and cannot drift apart.
+ *
+ *   Once we accept, this refuses. That refusal is the real rule; hiding the
+ *   button is only what stops us offering something we would turn down.
+ */
 export async function cancelDeskOrder(orderId: string, reason: string): Promise<void> {
   const { error } = await db.rpc("fms_dispatch_cancel_customer_order", {
     p: { order_id: orderId, reason: reason.trim() || null },

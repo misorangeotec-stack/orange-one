@@ -505,6 +505,7 @@ const mapRound = (r: any): DispatchRound => ({
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str(r.go_outward_no),
   goRemarks: str(r.go_remarks),
+  goCustomerRemark: str(r.go_customer_remark),
   goAt: r.go_at ?? null,
   goBy: r.go_by ?? null,
 
@@ -588,6 +589,7 @@ const mapOrder = (r: any): DispatchOrder => ({
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str(r.go_outward_no),
   goRemarks: str(r.go_remarks),
+  goCustomerRemark: str(r.go_customer_remark),
   goAt: r.go_at ?? null,
   goBy: r.go_by ?? null,
 

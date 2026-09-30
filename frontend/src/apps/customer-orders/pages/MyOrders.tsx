@@ -5,7 +5,7 @@ import { TextInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import OrderDeskShell from "../components/OrderDeskShell";
 import { useCustomer } from "../CustomerOrdersApp";
-import { customerStatus, callUs, type CustomerStatusKey } from "../lib/customerLabels";
+import { customerStatus, callUs, CUSTOMER_STATUS, type CustomerStatusKey } from "../lib/customerLabels";
 import { fetchDeskOrders, ORDERS_QK, type DeskOrder } from "../data/orderDesk";
 import { deskPaths } from "../lib/paths";
 
@@ -26,14 +26,23 @@ import { deskPaths } from "../lib/paths";
  *   items; a card shows all of them at once and a row does not.
  */
 
+/**
+ * ⚠ ONE TAB PER STATE, IN THE ORDER AN ORDER PASSES THROUGH THEM — not alphabetical
+ *   and not by how often each is used. The row doubles as the customer's picture of
+ *   the journey, so Cancelled goes last: it is where an order leaves the line, not
+ *   a stage on it.
+ *
+ *   Labels are NOT repeated from `CUSTOMER_STATUS` by hand. Drifting copy between
+ *   a filter tab and the pill it filters for is the exact bug this file caused when
+ *   the eight states became four — the tabs still read "Being prepared" for a key
+ *   the server had stopped sending, so the tab was permanently empty and nothing
+ *   said why.
+ */
 const FILTERS: { key: "all" | CustomerStatusKey; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "placed", label: "Placed" },
-  { key: "preparing", label: "Being prepared" },
-  { key: "part_dispatched", label: "Partly dispatched" },
-  { key: "dispatched", label: "Dispatched" },
-  { key: "delivered", label: "Delivered" },
-  { key: "cancelled", label: "Cancelled" },
+  ...(["request_raised", "accepted", "out_for_delivery", "delivered", "cancelled"] as const).map(
+    (key) => ({ key, label: CUSTOMER_STATUS[key].label }),
+  ),
 ];
 
 /** "12 Aug 2026" from an ISO date, with no timezone shifting it a day. */

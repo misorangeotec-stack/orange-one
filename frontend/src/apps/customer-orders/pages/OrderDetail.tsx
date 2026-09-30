@@ -9,7 +9,7 @@ import { useCustomer } from "../CustomerOrdersApp";
 import { StatusPill, orderDate } from "./MyOrders";
 import { customerStatus, callUs, WINDOW_SHUT } from "../lib/customerLabels";
 import {
-  fetchDeskOrders, fetchDeskItems, updateDeskOrder, cancelDeskOrder,
+  fetchDeskOrders, fetchDeskItems, updateDeskOrder, cancelDeskOrder, deskFormLabel,
   ORDERS_QK, itemsQueryKey, type DeskLineInput,
 } from "../data/orderDesk";
 import { deskPaths } from "../lib/paths";
@@ -17,16 +17,28 @@ import { deskPaths } from "../lib/paths";
 /**
  * One order.
  *
- * ⚠ CHANGE AND CANCEL ARE OFFERED OFF `canChange`, WHICH IS THE SERVER'S OWN
- *   WINDOW — never off the status word on the screen. Two different states both
- *   read "Placed" to the customer and only one of them is still open, so a screen
- *   that decided from its own label would offer a button the server then refuses.
+ * ⚠ BOTH BUTTONS ARE OFFERED OFF `canChange`, THE SERVER'S OWN WINDOW — never
+ *   off the status word on the screen. Since OD-16 the two agree by construction
+ *   (`status_key` tests the same function), but that is a fact about the server,
+ *   not licence to read the label: the day a state is added that reads
+ *   "Request raised" without being open, a screen deciding from the words would
+ *   offer buttons the server then refuses.
  *
  *   And hiding the buttons is not the enforcement. Both write RPCs re-ask the same
- *   question before they touch anything, so a stale tab, a second browser or a
+ *   question before it touches anything, so a stale tab, a second browser or a
  *   hand-made call all get the same answer. What this screen owes the customer is
  *   not a lock — it is the SENTENCE explaining why, which is the thing a hidden
  *   button never says.
+ *
+ * ⚠ CHANGE AND CANCEL SHUT TOGETHER, on the one window (OD-16). While the order
+ *   reads "Request raised" both are offered; the moment we accept it, both go and
+ *   `WINDOW_SHUT` says so in one sentence covering both verbs. There is no state
+ *   in which one is open and the other is not, which is why they share a branch.
+ *
+ * ⚠ AND THE ONLY REMARK THEY SEE IS `dispatchNotes`. `go_remarks` — the internal
+ *   note beside it — is not in the RPC, so there is nothing here to accidentally
+ *   render. If a future screen wants "what did the store say", the answer is that
+ *   it is not ours to show.
  */
 export default function OrderDetail() {
   const { id = "" } = useParams();
@@ -123,8 +135,8 @@ export default function OrderDetail() {
         {items ? (
           <OrderForm
             items={items}
-            /* Shown, not offered: the book is fixed once the order exists. */
-            companyLabel={order.companyLabel}
+            /* Shown, not offered: the form is fixed once the order exists. */
+            companyLabel={deskFormLabel(order.formName, order.companyLabel)}
             /*
               Anything on the order that is no longer offered. Computed here rather
               than inside the form because only this screen knows both halves — what
@@ -196,10 +208,53 @@ export default function OrderDetail() {
           ) : null}
         </div>
 
+        {/*
+          WHAT WE TOLD THEM WHEN IT WENT OUT.
+
+          ⚠ ABOVE the change controls and BELOW the items, on purpose. It is news
+            about the order, so it belongs with the order; putting it under the
+            buttons would file the newest thing on the page beneath the least
+            interesting thing on it.
+
+          One consignment prints as one note with no numbering — "Note 1 of 1" is
+          noise. Several are numbered, because on a part-dispatched order the
+          customer is holding one delivery and waiting for another, and which note
+          belongs to which is the only question they have.
+        */}
+        {order.dispatchNotes.length > 0 ? (
+          <div className="rounded-2xl border border-line bg-white overflow-hidden">
+            <div className="px-6 py-3.5 border-b border-line bg-[#FBFCFE] text-[12px] font-semibold text-grey uppercase tracking-wide">
+              {order.dispatchNotes.length === 1 ? "When we sent it" : "As we sent each part"}
+            </div>
+            <div className="divide-y divide-line">
+              {order.dispatchNotes.map((n, i) => (
+                <div key={`${n.roundNo ?? i}-${i}`} className="px-6 py-3.5">
+                  {order.dispatchNotes.length > 1 || n.sentOn ? (
+                    <div className="text-[12.5px] text-grey-2 mb-1">
+                      {order.dispatchNotes.length > 1 ? `Part ${i + 1}` : null}
+                      {order.dispatchNotes.length > 1 && n.sentOn ? " · " : null}
+                      {n.sentOn ? `Sent ${orderDate(n.sentOn)}` : null}
+                    </div>
+                  ) : null}
+                  <p className="text-[14px] leading-relaxed">{n.note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {order.canChange ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => setEditing(true)}>Change this order</Button>
-            <Button variant="ghost" onClick={() => setCancelling(true)}>Cancel this order</Button>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={() => setEditing(true)}>Change this order</Button>
+              <Button variant="ghost" onClick={() => setCancelling(true)}>Cancel this order</Button>
+            </div>
+            {/* Says the deadline out loud. The buttons vanish the moment we accept,
+                and a customer who did not know that is reading for is left
+                wondering what they did wrong. */}
+            <p className="text-[12.5px] text-grey-2">
+              You can do either until we accept this order.
+            </p>
           </div>
         ) : (
           <div className="rounded-2xl border border-line bg-[#FBFCFE] p-5 text-[14px] text-grey leading-relaxed">
