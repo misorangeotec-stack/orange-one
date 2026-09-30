@@ -16,7 +16,7 @@
  * Autosave is immediate rather than behind a Save button. The sheet being replaced saved on
  * every keystroke, and a half-entered consignment is worth more than a lost one.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -31,6 +31,8 @@ import {
 import { salesFyOptions } from "@hub/lib/salesReport";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
+import { ColumnHead } from "../components/HeaderFilter";
+import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   INK_COMPANIES, SHIPMENT_STATUSES, applyBackup, buildBackup, emptyShipment, fmtQty,
   loadGroupFields, loadInkPositions, loadLines, loadOrder, loadOverrides, loadShipments, newId,
@@ -58,6 +60,18 @@ interface PipeFilters {
 
 const NO_PIPE_FILTERS: PipeFilters = { reference: "", statuses: [], books: [], inks: [], from: "", to: "" };
 
+/** A book's printed name, for ordering the list by where a consignment lands. */
+const labelOfBook = (key: string) => INK_COMPANIES.find((c) => c.key === key)?.label ?? key;
+
+/** The consignment list can be put in any of these orders; see `shipmentValue`. */
+const PIPE_SORTS: { id: string; label: string }[] = [
+  { id: "date", label: "Date" },
+  { id: "reference", label: "Reference" },
+  { id: "status", label: "Status" },
+  { id: "book", label: "Landing book" },
+  { id: "qty", label: "Quantity" },
+];
+
 const DATE_LABEL: Record<ShipmentStatus, string> = {
   ETD: "Expected departure",
   ETA: "Expected arrival",
@@ -71,6 +85,8 @@ export default function InkShipments() {
   const [pf, setPf] = useState<PipeFilters>(NO_PIPE_FILTERS);
   const setPipe = <K extends keyof PipeFilters>(k: K, v: PipeFilters[K]) =>
     setPf((prev) => ({ ...prev, [k]: v }));
+  /** `null` is the order the consignments were entered in, which is how the list has always read. */
+  const [sort, setSort] = useState<SortState>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -189,25 +205,76 @@ export default function InkShipments() {
     { value: "none", label: "Combined only" },
     ...INK_COMPANIES.map((c) => ({ value: c.key, label: c.label })),
   ];
-  const inkOpts = items.map((it) => ({
-    value: it.itemCode,
-    label: `${it.description} (${it.itemCode})`,
-  }));
-
-  const visibleShipments = useMemo(() => {
+  /**
+   * ONE TEST PER FILTER, so the Ink list can be built from the consignments the OTHER filters
+   * still allow. See `lib/grid.ts` for the rule and why a filter is excluded from its own list.
+   */
+  const pipeTests = useMemo(() => {
     const ref = pf.reference.trim().toUpperCase();
-    return shipments.filter((s) => {
-      if (ref && !s.reference.toUpperCase().includes(ref) && !s.note.toUpperCase().includes(ref)) return false;
-      if (pf.statuses.length && !pf.statuses.includes(s.status)) return false;
-      if (pf.books.length && !pf.books.includes(s.company || "none")) return false;
-      if (pf.inks.length && !s.lines.some((l) => pf.inks.includes(l.itemCode))) return false;
-      // An undated consignment is kept out of a date filter rather than guessed into it.
-      if ((pf.from || pf.to) && !s.date) return false;
-      if (pf.from && s.date < pf.from) return false;
-      if (pf.to && s.date > pf.to) return false;
-      return true;
+    return {
+      reference: (s: Shipment) =>
+        !ref || s.reference.toUpperCase().includes(ref) || s.note.toUpperCase().includes(ref),
+      statuses: (s: Shipment) => !pf.statuses.length || pf.statuses.includes(s.status),
+      books: (s: Shipment) => !pf.books.length || pf.books.includes(s.company || "none"),
+      inks: (s: Shipment) => !pf.inks.length || s.lines.some((l) => pf.inks.includes(l.itemCode)),
+      date: (s: Shipment) => {
+        // An undated consignment is kept out of a date filter rather than guessed into it.
+        if ((pf.from || pf.to) && !s.date) return false;
+        if (pf.from && s.date < pf.from) return false;
+        if (pf.to && s.date > pf.to) return false;
+        return true;
+      },
+    } as Record<string, (s: Shipment) => boolean>;
+  }, [pf]);
+
+  const surviving = useCallback(
+    (except?: string) =>
+      shipments.filter((s) => Object.entries(pipeTests).every(([k, t]) => k === except || t(s))),
+    [shipments, pipeTests],
+  );
+
+  /**
+   * THE INKS ACTUALLY ON THE PIPELINE, not every ink in the master.
+   *
+   * It used to offer all of them, so the planner could pick an ink nobody has ordered and empty
+   * the list with no hint why. Narrowed to the consignments the other filters allow, plus
+   * whatever is already ticked here so a choice can always be undone.
+   *
+   * Status and Landing book are left alone: `SHIPMENT_STATUSES` and `INK_COMPANIES` are
+   * vocabularies the author declared, which say what a consignment CAN be rather than what these
+   * consignments happen to be.
+   */
+  const inkOpts = useMemo(() => {
+    const described = new Map(items.map((it) => [it.itemCode, it.description]));
+    const present = new Set<string>();
+    for (const s of surviving("inks")) for (const l of s.lines) if (l.itemCode) present.add(l.itemCode);
+    for (const picked of pf.inks) present.add(picked);
+    return [...present].sort().map((code) => {
+      const desc = described.get(code);
+      return { value: code, label: desc ? `${desc} (${code})` : code };
     });
-  }, [shipments, pf]);
+  }, [surviving, pf.inks, items]);
+
+  /**
+   * What one consignment holds for ordering. The pipeline is a list of cards rather than a grid,
+   * so the sort lives in a strip of its own above it — but it is the same control and the same
+   * arrows as the two tables, so "click the name to order by it" means one thing in this app.
+   */
+  const shipmentValue = useCallback((s: Shipment, id: string): CellValue => {
+    switch (id) {
+      case "date": return s.date || null;
+      case "reference": return s.reference;
+      case "status": return s.status;
+      case "book": return s.company ? labelOfBook(s.company) : "Combined";
+      case "qty": return s.lines.reduce((t, l) => t + (l.qty || 0), 0);
+      default: return null;
+    }
+  }, []);
+
+  const visibleShipments = useMemo(
+    () => applySort(surviving(), sort, shipmentValue),
+    [surviving, sort, shipmentValue],
+  );
 
   const labelOf = (v: string, opts: { value: string; label: string }[]) => opts.find((o) => o.value === v)?.label ?? v;
   const chips: ActiveFilter[] = [];
@@ -317,11 +384,11 @@ export default function InkShipments() {
             </label>
             <label className="space-y-1">
               <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <MultiSelect values={pf.statuses} onChange={(v) => setPipe("statuses", v)} options={statusOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+              <MultiSelect values={pf.statuses} onChange={(v) => setPipe("statuses", v)} options={statusOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
             </label>
             <label className="space-y-1">
               <span className="text-xs font-medium text-muted-foreground">Landing book</span>
-              <MultiSelect values={pf.books} onChange={(v) => setPipe("books", v)} options={bookOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+              <MultiSelect values={pf.books} onChange={(v) => setPipe("books", v)} options={bookOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
             </label>
             <label className="space-y-1">
               <span className="text-xs font-medium text-muted-foreground">Ink</span>
@@ -335,6 +402,23 @@ export default function InkShipments() {
               </div>
             </div>
           </div>
+          {/*
+            ORDERING THE PIPELINE. The consignments are cards rather than table rows, so there is
+            no heading to click; the same control sits in a strip of its own instead, with the
+            same arrows the two tables use. Untouched, the list stays in the order the planner
+            entered the consignments, which is how this screen has always read.
+          */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="font-medium">Order by</span>
+            {PIPE_SORTS.map((s) => (
+              <ColumnHead key={s.id} label={s.label} id={s.id} sort={sort} setSort={setSort} />
+            ))}
+            {sort && (
+              <Button size="sm" variant="ghost" onClick={() => setSort(null)}>
+                As entered
+              </Button>
+            )}
+          </div>
           <ActiveFilters filters={chips} onClearAll={() => setPf(NO_PIPE_FILTERS)} />
           {chips.length > 0 && (
             <p className="text-xs text-muted-foreground">
@@ -346,7 +430,12 @@ export default function InkShipments() {
 
       {shipments.length > 0 && visibleShipments.length === 0 && (
         <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          No consignment matches those filters.
+          <span className="inline-flex flex-wrap items-center justify-center gap-2">
+            No consignment matches those filters.
+            <Button size="sm" variant="outline" onClick={() => setPf(NO_PIPE_FILTERS)}>
+              Clear filters
+            </Button>
+          </span>
         </div>
       )}
 

@@ -23,7 +23,7 @@
  * Saved in this browser only, like the rest of the planner's data. The dashboard's export and
  * import carry this table with them.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -45,6 +45,8 @@ import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { useGodownChoice } from "../lib/godowns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
+import { ColumnHead } from "../components/HeaderFilter";
+import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
@@ -113,6 +115,11 @@ export default function InkItemMaster() {
   const [overrides, setOverrides] = useState<InkOverrides>(savedOverrides);
   const [scope, setScope] = useState<InkScope>("ink");
   const [f, setF] = useState<ColFilters>(NO_FILTERS);
+  /**
+   * WHICH COLUMN ORDERS THE LIST. `null` is this screen's own order: the planner's saved
+   * numbering first, then everything unnumbered by code. One click on Order returns to it.
+   */
+  const [sort, setSort] = useState<SortState>(null);
   const setCol = <K extends keyof ColFilters>(k: K, v: ColFilters[K]) =>
     setF((prev) => ({ ...prev, [k]: v }));
   const [savedOrder, setSavedOrder] = useState<InkOrder>(() => loadOrder());
@@ -298,53 +305,108 @@ export default function InkItemMaster() {
 
   const master = useMemo(() => data?.master ?? [], [data]);
 
-  const rows = useMemo(() => {
+  /**
+   * ONE TEST PER FILTER, rather than one long predicate.
+   *
+   * Split so the option lists can leave a column's OWN filter out and be built from the rows the
+   * other filters still allow: tick a category and the Group list drops to the groups that hold
+   * one, so no combination a planner can assemble from these dropdowns returns an empty table.
+   * A column has to be excluded from its own options or narrowing to one value would leave that
+   * lone value in the list with no way to widen again. See `lib/grid.ts`.
+   */
+  const tests = useMemo(() => {
     const itemQ = f.item.trim().toUpperCase();
     const descQ = f.description.trim().toUpperCase();
-    const filtered = master.filter((r) => {
-      if (f.books.length && !f.books.includes(r.companyKey)) return false;
-      if (f.order.length) {
+    return {
+      books: (r: InkMasterRow) => !f.books.length || f.books.includes(r.companyKey),
+      order: (r: InkMasterRow) => {
+        if (!f.order.length) return true;
         // SAVED, not the draft: a row must not disappear out of "No position yet" the instant a
         // number is typed into it, while the change is still unsaved.
         const placed = (savedOrder[r.mergeKey] ?? savedOrder[r.legacyKey]) !== undefined;
-        if (!f.order.includes(placed ? "placed" : "unplaced")) return false;
-      }
-      if (f.closing.length) {
-        const band = r.closingQty > 0 ? "positive" : r.closingQty < 0 ? "negative" : "zero";
-        if (!f.closing.includes(band)) return false;
-      }
-      if (f.code.length) {
+        return f.order.includes(placed ? "placed" : "unplaced");
+      },
+      closing: (r: InkMasterRow) =>
+        !f.closing.length ||
+        f.closing.includes(r.closingQty > 0 ? "positive" : r.closingQty < 0 ? "negative" : "zero"),
+      code: (r: InkMasterRow) =>
+        !f.code.length ||
         // Ticked states are alternatives: "Needs a code" OR "Edited by you", not both at once.
-        const hit =
-          (f.code.includes("has") && !r.needsCode) ||
-          (f.code.includes("none") && r.needsCode) ||
-          (f.code.includes("edited") && Boolean(overrides[r.key]));
-        if (!hit) return false;
-      }
+        (f.code.includes("has") && !r.needsCode) ||
+        (f.code.includes("none") && r.needsCode) ||
+        (f.code.includes("edited") && Boolean(overrides[r.key])),
       // STOCK OR NOTHING. An ink that has sold out is off the list until it is bought again —
       // no exemption for one already numbered or edited, which is what the planner asked for and
       // is also the only rule that keeps the list the length of the shelf.
       //
       // A NEGATIVE quantity stays: it is not "no stock", it is a book that needs fixing, and
       // hiding it would hide the error.
-      if (stockOnly && !r.closingQty) return false;
-      if (f.groups.length && !f.groups.includes(r.effectiveGroup)) return false;
+      stock: (r: InkMasterRow) => !stockOnly || Boolean(r.closingQty),
+      groups: (r: InkMasterRow) => !f.groups.length || f.groups.includes(r.effectiveGroup),
       // "(none)" is a real choice: finding what is not categorised yet is the point of the filter.
-      if (f.categories.length && !f.categories.includes(r.category || "(none)")) return false;
-      if (f.sources.length && !f.sources.includes(r.source || "(none)")) return false;
-      if (itemQ && !r.item.toUpperCase().includes(itemQ) && !r.effectiveCode.includes(itemQ)) return false;
-      if (descQ && !r.effectiveDescription.toUpperCase().includes(descQ)) return false;
-      return true;
-    });
+      categories: (r: InkMasterRow) =>
+        !f.categories.length || f.categories.includes(r.category || "(none)"),
+      sources: (r: InkMasterRow) => !f.sources.length || f.sources.includes(r.source || "(none)"),
+      item: (r: InkMasterRow) =>
+        !itemQ || r.item.toUpperCase().includes(itemQ) || r.effectiveCode.includes(itemQ),
+      description: (r: InkMasterRow) =>
+        !descQ || r.effectiveDescription.toUpperCase().includes(descQ),
+    } as Record<string, (r: InkMasterRow) => boolean>;
+  }, [f, overrides, savedOrder, stockOnly]);
+
+  /** The rows every filter allows, optionally ignoring one of them. */
+  const survivors = useCallback(
+    (except?: string) =>
+      master.filter((r) =>
+        Object.entries(tests).every(([key, test]) => key === except || test(r)),
+      ),
+    [master, tests],
+  );
+
+  /**
+   * What one column holds for one row, for sorting.
+   *
+   * ⚠ READS WHAT IS SAVED, never the draft, for the same reason the natural order below does:
+   *   sorting on a draft value would move the row out from under the cursor mid-edit, which is
+   *   the exact behaviour "rows hold still until Save" was written to stop.
+   */
+  const cellValue = useCallback(
+    (r: InkMasterRow, id: string): CellValue => {
+      switch (id) {
+        case "order": return savedOrder[r.mergeKey] ?? savedOrder[r.legacyKey] ?? null;
+        case "book": return r.company;
+        case "item": return r.item;
+        case "closing": return r.closingQty;
+        case "lead": return (savedPlans[r.mergeKey] ?? savedPlans[r.legacyKey])?.leadTime ?? null;
+        case "code": return r.effectiveCode;
+        case "group": return r.effectiveGroup;
+        case "description": return r.effectiveDescription;
+        case "category": return r.category;
+        // The LABEL, not the stored value: a column sorts by what its cell shows, or the reader
+        // is handed an order they cannot see the reason for.
+        case "source": return sourceLabel(r.source);
+        case "weeks": return (savedLines[r.mergeKey] ?? savedLines[r.legacyKey])?.weeks ?? null;
+        default: return null;
+      }
+    },
+    [savedOrder, savedPlans, savedLines],
+  );
+
+  const rows = useMemo(() => {
+    const filtered = survivors();
+    if (sort) return applySort(filtered, sort, cellValue);
     /*
-     * SORTED BY WHAT IS SAVED, never by the draft.
+     * THE NATURAL ORDER, SORTED BY WHAT IS SAVED, never by the draft.
      *
      * Typing a number used to move the row to its new place at once, so the planner lost sight of
      * what they had just changed and of where they were working — the list reshuffled under the
      * cursor while half the numbers were still unsaved. Numbers now change in place and the list
      * re-orders on Save, which is also when they reach the dashboard.
+     *
+     * A chosen column sort replaces this while it is on; one click on the Order heading brings
+     * the planner's own numbering back.
      */
-    return filtered.sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const pa = savedOrder[a.mergeKey] ?? savedOrder[a.legacyKey];
       const pb = savedOrder[b.mergeKey] ?? savedOrder[b.legacyKey];
       if (pa !== undefined && pb !== undefined && pa !== pb) return pa - pb;
@@ -355,11 +417,19 @@ export default function InkItemMaster() {
         a.company.localeCompare(b.company)
       );
     });
-  }, [master, f, overrides, savedOrder, stockOnly]);
+  }, [survivors, sort, cellValue, savedOrder]);
+
+  /**
+   * A heading that sorts. The filter for the column sits in the row below, as it always has, so
+   * every column on this screen carries both.
+   */
+  const head = (label: string, id: string) => (
+    <ColumnHead label={label} id={id} sort={sort} setSort={setSort} />
+  );
 
   // The hook resets to page 1 when resetKey changes, so a narrower filter never strands you on
   // a page that no longer exists.
-  const pg = usePagination(rows, { resetKey: `${JSON.stringify(f)}|${scope}` });
+  const pg = usePagination(rows, { resetKey: `${JSON.stringify(f)}|${scope}|${sort?.key}|${sort?.dir}` });
   const visible = pg.pageItems;
 
   const needsCode = master.filter((r) => r.needsCode).length;
@@ -461,15 +531,20 @@ export default function InkItemMaster() {
   }, [listed, order]);
   const edited = Object.keys(overrides).length;
 
-  // Group options come from the LOADED rows, not the filtered ones, so choices do not vanish
-  // from the list while you are still picking.
-  const groupOpts = useMemo(
-    () =>
-      [...new Set(master.map((r) => r.effectiveGroup).filter(Boolean))]
-        .sort()
-        .map((g) => ({ value: g, label: g })),
-    [master],
-  );
+  /**
+   * THE ONLY LIST ON THIS SCREEN READ FROM THE DATA, so the only one that cascades.
+   *
+   * Built from the rows every OTHER filter allows, plus whatever is already ticked here, so a
+   * choice can always be undone even once the other filters have narrowed past it. Book,
+   * Category, Import/Plant, Order, Closing and Item code are author-declared vocabularies
+   * (`INK_COMPANIES`, `INK_CATEGORIES`, `INK_SOURCES` and the three `*_OPTS`), and the portal's
+   * rule leaves those alone: they say what the screen can hold, not what it happens to hold.
+   */
+  const groupOpts = useMemo(() => {
+    const seen = new Set(survivors("groups").map((r) => r.effectiveGroup).filter(Boolean));
+    for (const picked of f.groups) seen.add(picked);
+    return [...seen].sort().map((g) => ({ value: g, label: g }));
+  }, [survivors, f.groups]);
   const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
   const categoryOpts = [
     { value: "(none)", label: "Not set" },
@@ -851,40 +926,40 @@ export default function InkItemMaster() {
         <Table>
           <TableHeader>
             <TableRow>
-              <ResizableHead id="order" cols={cols} className="w-[8.5rem]">Order</ResizableHead>
-              <ResizableHead id="book" cols={cols} className="min-w-[9rem]">Book</ResizableHead>
-              <ResizableHead id="item" cols={cols} className="min-w-[20rem]">Item in Tally</ResizableHead>
-              <ResizableHead id="closing" cols={cols} className="text-right">Closing</ResizableHead>
-              <ResizableHead id="lead" cols={cols} className="w-[7rem] text-right">Lead time</ResizableHead>
-              <ResizableHead id="code" cols={cols} className="min-w-[12rem]">Item code</ResizableHead>
-              <ResizableHead id="group" cols={cols} className="min-w-[12rem]">Group</ResizableHead>
-              <ResizableHead id="description" cols={cols} className="min-w-[18rem]">Description</ResizableHead>
+              <ResizableHead id="order" cols={cols} className="w-[8.5rem]">{head("Order", "order")}</ResizableHead>
+              <ResizableHead id="book" cols={cols} className="min-w-[9rem]">{head("Book", "book")}</ResizableHead>
+              <ResizableHead id="item" cols={cols} className="min-w-[20rem]">{head("Item in Tally", "item")}</ResizableHead>
+              <ResizableHead id="closing" cols={cols} className="text-right">{head("Closing", "closing")}</ResizableHead>
+              <ResizableHead id="lead" cols={cols} className="w-[7rem] text-right">{head("Lead time", "lead")}</ResizableHead>
+              <ResizableHead id="code" cols={cols} className="min-w-[12rem]">{head("Item code", "code")}</ResizableHead>
+              <ResizableHead id="group" cols={cols} className="min-w-[12rem]">{head("Group", "group")}</ResizableHead>
+              <ResizableHead id="description" cols={cols} className="min-w-[18rem]">{head("Description", "description")}</ResizableHead>
               <ResizableHead id="category" cols={cols} className="min-w-[11rem]">
-                Category
+                {head("Category", "category")}
               </ResizableHead>
               <ResizableHead id="source" cols={cols} className="min-w-[10rem]">
-                Import/Plant
+                {head("Import/Plant", "source")}
               </ResizableHead>
               <ResizableHead id="weeks" cols={cols} className="w-[7rem] text-right">
-                Plant weeks
+                {head("Plant weeks", "weeks")}
               </ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-2 font-normal">
-                <MultiSelect values={f.order} onChange={(v) => setCol("order", v)} options={ORDER_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
+                <MultiSelect values={f.order} onChange={(v) => setCol("order", v)} options={ORDER_OPTS} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal">
-                <MultiSelect values={f.books} onChange={(v) => setCol("books", v)} options={bookOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+                <MultiSelect values={f.books} onChange={(v) => setCol("books", v)} options={bookOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal">
                 <Input className="h-8" placeholder="Contains…" value={f.item} onChange={(e) => setCol("item", e.target.value)} />
               </TableHead>
               <TableHead className="py-2 font-normal">
-                <MultiSelect values={f.closing} onChange={(v) => setCol("closing", v)} options={CLOSING_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
+                <MultiSelect values={f.closing} onChange={(v) => setCol("closing", v)} options={CLOSING_OPTS} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal" />
               <TableHead className="py-2 font-normal">
-                <MultiSelect values={f.code} onChange={(v) => setCol("code", v)} options={CODE_OPTS} placeholder="All" className="w-full" triggerClassName={slim} />
+                <MultiSelect values={f.code} onChange={(v) => setCol("code", v)} options={CODE_OPTS} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal">
                 <MultiSelect values={f.groups} onChange={(v) => setCol("groups", v)} options={groupOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
@@ -896,7 +971,7 @@ export default function InkItemMaster() {
                 <MultiSelect values={f.categories} onChange={(v) => setCol("categories", v)} options={categoryOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal">
-                <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} />
+                <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal" />
             </TableRow>
@@ -909,10 +984,24 @@ export default function InkItemMaster() {
                 </TableCell>
               </TableRow>
             )}
+            {/*
+              AN EMPTY RESULT IS NOT AN EMPTY TABLE: the row goes in the tbody so the headings,
+              the sort toggles and the filter row all stay put. Replacing the table would take
+              away the only controls that could undo the filter.
+            */}
             {!isLoading && visible.length === 0 && (
               <TableRow>
                 <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
-                  Nothing matches those filters.
+                  {master.length === 0 ? (
+                    "No items in the four books yet."
+                  ) : (
+                    <span className="inline-flex flex-wrap items-center justify-center gap-2">
+                      Nothing matches those filters.
+                      <Button size="sm" variant="outline" onClick={() => setF(NO_FILTERS)}>
+                        Clear filters
+                      </Button>
+                    </span>
+                  )}
                 </TableCell>
               </TableRow>
             )}
