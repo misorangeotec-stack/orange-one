@@ -49,6 +49,7 @@
  */
 import { useEffect, useState } from "react";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
+import { pushDocument } from "./sheetStore";
 
 /** What a godown, or one group inside it, is holding: stock and how many items. */
 export interface GodownCell {
@@ -493,6 +494,8 @@ export const saveGodownChoice = (c: GodownChoice) => {
   } catch {
     /* private mode: the choice still applies for this visit */
   }
+  // Shared like the rest of the sheet, so every machine narrows the books the same way.
+  pushDocument(KEY, c);
   window.dispatchEvent(new Event(CHANGED));
 };
 
