@@ -226,9 +226,14 @@ async function parseDocx(file) {
   const bodyStart = docXml.indexOf("<w:body>");
   const body = docXml.slice(bodyStart + 8, docXml.lastIndexOf("</w:body>"));
 
+  // ⚠ FILES ONLY. v5 was saved with an explicit "word/media/" directory entry in the zip,
+  // which Word's own .doc -> .docx conversion never wrote. Counting it made the summary say
+  // "8 pictures" for 7, and at publish time the upload loop sorts it FIRST (no digits in the
+  // name, so it reads as 0), which would number every real picture one too high and then
+  // throw on zip.file("word/media/"), which is null for a directory.
   const media = [];
   for (const name of Object.keys(zip.files)) {
-    if (name.startsWith("word/media/")) media.push(name);
+    if (name.startsWith("word/media/") && !zip.files[name].dir) media.push(name);
   }
   media.sort((a, b) =>
     (Number(/(\d+)/.exec(a)?.[1] ?? 0) - Number(/(\d+)/.exec(b)?.[1] ?? 0)));
@@ -247,11 +252,25 @@ async function parseDocx(file) {
     const numbered = /<w:numPr>/.test(pPr);
     const text = textOf(child.xml).trim();
 
-    // A picture anywhere in this paragraph.
-    const embed = /r:embed="([^"]+)"|r:id="([^"]+)"/.exec(child.xml);
-    const target = embed ? rels.get(embed[1] ?? embed[2]) : null;
-    if (target && target.startsWith("media/")) {
-      blocks.push({ kind: "image", ordinal: ++imageOrdinal, zipPath: `word/${target}` });
+    // EVERY picture in this paragraph, in document order, one per drawing.
+    //
+    // ⚠ NOT just the first. v5's cover page and the Director's Desk page sit in ONE <w:p>,
+    //   and taking only the first embed dropped the Director's Desk outright and shifted
+    //   every later picture's ordinal down by one. handbook-image-text.json is keyed BY
+    //   ORDINAL, so the Designation Hierarchy transcript landed on the Org Chart, the
+    //   Preface landed on the back cover, and the address transcript was never used at all.
+    //   Nothing errors; the manual just quietly says the wrong things about itself.
+    //
+    // One reference per <w:drawing>/<w:pict> rather than one per r:embed, because a picture
+    // carrying a VML fallback names the same media twice and would otherwise count twice.
+    const pics = child.xml.match(/<w:(?:drawing|pict)[\s>][\s\S]*?<\/w:(?:drawing|pict)>/g);
+    const refs = pics ?? (/r:embed=|r:id=/.test(child.xml) ? [child.xml] : []);
+    for (const pic of refs) {
+      const embed = /r:embed="([^"]+)"|r:id="([^"]+)"/.exec(pic);
+      const target = embed ? rels.get(embed[1] ?? embed[2]) : null;
+      if (target && target.startsWith("media/")) {
+        blocks.push({ kind: "image", ordinal: ++imageOrdinal, zipPath: `word/${target}` });
+      }
     }
     if (text) blocks.push({ kind: "para", styleName, numbered, text });
   }
