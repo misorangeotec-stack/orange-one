@@ -22,6 +22,8 @@ import { GROUP_ICONS } from "./groupIcons";
 import {
   ANNOUNCEMENTS_LABEL,
   ANNOUNCEMENTS_PATH,
+  HANDBOOK_LABEL,
+  HANDBOOK_PATH,
   HOME_LABEL,
   HOME_PATH,
   type NavItem,
@@ -45,6 +47,12 @@ const ic: Record<string, ReactNode> = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
+    </svg>
+  ),
+  handbook: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 5.5h7a3 3 0 0 1 3 3V20a2.5 2.5 0 0 0-2.5-2.5H2Z" />
+      <path d="M22 5.5h-7a3 3 0 0 0-3 3V20a2.5 2.5 0 0 1 2.5-2.5H22Z" />
     </svg>
   ),
   announcements: (
@@ -102,6 +110,21 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
     // category that only some people would see.
     { label: ANNOUNCEMENTS_LABEL, to: ANNOUNCEMENTS_PATH, icon: ic.announcements },
   ];
+
+  // KB-1 · The HR handbook. Two decisions are layered here, both deliberate:
+  //   30-09-2026  it got a menu row at all, reversing KB-1 §0's "deliberately in no menu".
+  //               That rule was about not making ASKING a menu item (asking is still only
+  //               the floating bubble); being unable to BROWSE the manual was the first
+  //               thing raised once the module went in front of anyone.
+  //   01-10-2026  it was gated on the grant, reversing "reading needs no grant", so HR can
+  //               check it before the whole company sees it. Granting everyone 'view' puts
+  //               it back in front of all staff with no code change.
+  //
+  // Pushed here rather than declared in the seed array above so it lands under "Home" (it
+  // inherits that heading) while still being conditional.
+  if (opts.hasModule("knowledge-base")) {
+    nav.push({ label: HANDBOOK_LABEL, to: HANDBOOK_PATH, icon: ic.handbook });
+  }
 
   // Every category becomes a COLLAPSIBLE group (see Sidebar), which is why these
   // carry `group` rather than `section`. An empty category never reaches here, so

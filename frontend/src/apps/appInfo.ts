@@ -238,6 +238,14 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/travel-desk",
     category: "hr",
   },
+  // KB-1 · HR's side of the handbook Knowledge Base. ⚠ Holding this module is what lets
+  // somebody ASK and READ at all while HR trials the feature (01-10-2026); full access
+  // also opens the question log and the section notes.
+  "knowledge-base": {
+    name: "Knowledge Base",
+    basePath: "/knowledge-base",
+    category: "hr",
+  },
   // The HR front door: one place to ask HR anything, routed by the category the
   // employee picks. Filed under HR rather than Productivity even though everyone
   // uses it — a reader looking for it is looking for HR.

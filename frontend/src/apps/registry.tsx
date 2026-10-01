@@ -30,6 +30,7 @@ import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { dailyReportApp } from "./daily-report/meta";
 import { announcementsApp } from "./announcements/meta";
+import { knowledgeBaseApp } from "./knowledge-base/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -160,6 +161,11 @@ export const apps: AppManifest[] = [
   // see it; anyone else only once granted. Every member of staff READS them with
   // no grant, in the strip and on /announcements.
   announcementsApp,
+  // KB-1 · The Knowledge Base over the HR handbook. The grant gates the WHOLE feature
+  // while HR trials it: no grant means no Ask HR bubble and no handbook. View asks and
+  // reads; full access also opens the question log and the section notes. Opening it to
+  // the company later is granting 'view' to everyone, not a code change.
+  knowledgeBaseApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);

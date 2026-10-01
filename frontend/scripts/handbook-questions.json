@@ -1,0 +1,128 @@
+{
+  "_README": [
+    "KB-1 · The questions the Ask HR bubble must get right.",
+    "",
+    "This repo has no test runner, so nothing else would notice a prompt change quietly",
+    "breaking citations. Run it with:  npm run handbook-check",
+    "",
+    "Each case has:",
+    "  ask      - the question, in the words somebody would actually type",
+    "  anchors  - the answer must cite at least ONE of these kb_sections.anchor values",
+    "             (empty array = it must cite nothing, i.e. covered:false)",
+    "  must     - phrases the answer must contain, case-insensitive (optional)",
+    "  mustNot  - phrases that mean it got it wrong (optional)",
+    "  why      - what this case is actually protecting, for whoever reads a failure",
+    "",
+    "⚠ EVERY RUN COSTS REAL MONEY. Twenty-two questions is roughly two rupees at",
+    "  claude-sonnet-5 with a warm cache. Do not put it in a loop.",
+    "",
+    "⚠ THE DAILY CAP IS 50 QUESTIONS PER PERSON and this run spends 22 of them, against",
+    "  whoever the test credentials belong to. Two full runs plus a few manual questions",
+    "  will exhaust it and the rest return HTTP 429. That is the cap working, not a fault.",
+    "  It resets at midnight IST; to clear it sooner, delete that person's row for today",
+    "  from kb_rate_limit. The counter holds no question text, so nothing is lost."
+  ],
+
+  "cases": [
+    { "ask": "how many paid leaves do i get in a year?",
+      "anchors": ["types-of-leave"],
+      "must": ["18"],
+      "why": "The single most-asked question. The figure lives under TYPES OF LEAVE, not under PAID LEAVE, because Word styled it that way." },
+
+    { "ask": "how many sick leaves are there?",
+      "anchors": ["sick-leave"],
+      "must": ["4"],
+      "why": "Short section, easy to confuse with paid leave." },
+
+    { "ask": "what is the maternity leave policy?",
+      "anchors": ["maternity-leave-ml"],
+      "must": ["182"],
+      "why": "Sensitive topic; must come from the handbook and not from Indian law generally." },
+
+    { "ask": "how many days paternity leave can i take",
+      "anchors": ["paternity-leave"],
+      "must": ["3"],
+      "why": "Small number buried in a paragraph." },
+
+    { "ask": "i am getting married, how much leave do i get",
+      "anchors": ["marriage-leave"],
+      "must": ["5"],
+      "why": "Colloquial phrasing, no keyword overlap with the heading beyond 'marriage'." },
+
+    { "ask": "what is my notice period if i resign?",
+      "anchors": ["procedure-5", "2-1-notice-period-requirement", "chapter-28-employee-separation-notice-period-incentive-policy"],
+      "must": ["60"],
+      "why": "Resignation questions are the ones people most want to ask privately, which is why the log is anonymous. ⚠ THE EXPECTED ANCHOR HERE WAS WRONG AT FIRST and the model was right: the NUMBER (60 days, and two months where the appointment letter says one) is only in Chapter 18's PROCEDURE. Chapter 28 §2.1, which looks like the obvious home, says merely 'as per their appointment letter' and gives no figure. Notice period is a third topic this handbook splits across chapters." },
+
+    { "ask": "can i take leave during my notice period?",
+      "anchors": ["2-2-paid-leave-during-notice-period", "2-3-leave-taken-during-notice-period"],
+      "why": "Two adjacent sub-sections; either is a correct citation." },
+
+    { "ask": "am i eligible for a loan from the company?",
+      "anchors": ["eligibility-amount", "guidelines-for-loan", "chapter-14-loan-and-advance-policy",
+                  "applicability-12", "purpose-2", "procedure-3"],
+      "why": "Chapter 14 and Chapter 29 both cover loans, and within Chapter 14 the ELIGIBILITY answer ('two years of service') actually sits under APPLICABILITY, not under ELIGIBILITY AMOUNT, which is about the amount. Every Chapter 14 sub-section is accepted; a narrower list failed a correct answer." },
+
+    { "ask": "do i get my mobile bill reimbursed?",
+      "anchors": ["chapter-23-mobile-reimbursment", "clause-5", "procedure-10"],
+      "why": "The chapter heading is misspelt 'REIMBURSMENT' in the handbook. Must still be found." },
+
+    { "ask": "who do i talk to about a grievance?",
+      "anchors": ["chapter-16-grievance-policy", "raising-a-grievance-informally", "organization-chart-1-of-2"],
+      "why": "The Organization Chart is a PICTURE. This only works because it was transcribed." },
+
+    { "ask": "what is the office address?",
+      "anchors": ["company-address-and-contact"],
+      "must": ["Sachin"],
+      "why": "Exists ONLY inside the back-cover image. Proves the transcription pipeline end to end." },
+
+    { "ask": "who are the directors of the company?",
+      "anchors": ["designation-hierarchy", "from-the-director-s-desk"],
+      "why": "Also image-only. Names appear in no extractable text anywhere." },
+
+    { "ask": "what hotel rate can i claim when i travel to mumbai?",
+      "anchors": ["7-2-hotel-rate-caps-band-wise-city-wise-per-night-including-gst", "travel-allowance-matrix",
+                  "chapter-15-travel-and-accommodation-policy", "chapter-32-domestic-travel-policy"],
+      "must": ["confirm"],
+      "why": "🔴 THE BIG ONE. Two travel policies disagree and Chapter 32's rates are unapproved placeholders. The answer must not state a settled figure." },
+
+    { "ask": "which travel category is band 3?",
+      "anchors": ["2-band-structure-travel-category-matrix", "annexure-a-band-structure-travel-category-quick-reference"],
+      "why": "🔴 The handbook contradicts itself here and says nothing about it. The HR note must surface." },
+
+    { "ask": "what are the office working hours?",
+      "anchors": ["working-days", "days-timings-monday-saturday", "chapter-3-attendance-policy"],
+      "why": "Everyday question; the times sit in a heading-styled paragraph." },
+
+    { "ask": "what happens if i come late to office?",
+      "anchors": ["late-arrivals"],
+      "why": "Plain lookup." },
+
+    { "ask": "can i wear jeans to work?",
+      "anchors": ["company-dress-code", "dress-off-day", "chapter-5-dress-code-policy", "key-policy-clause-3"],
+      "why": "The word 'jeans' may not appear; requires reading the dress code rather than matching." },
+
+    { "ask": "do i get a diwali bonus?",
+      "anchors": ["5-1-eligibility", "5-diwali-bonus-eligibility", "5-2-employee-separation-before-disbursement"],
+      "why": "Festival bonus, asked every October." },
+
+    { "ask": "when am i eligible for gratuity?",
+      "anchors": ["gratuity-policy", "chapter-10-compensation-and-increment-policy"],
+      "must": ["5"],
+      "why": "The rule is inside a paragraph Word styled as a heading, which the ingest demotes." },
+
+    { "ask": "how many leaves do i have left right now?",
+      "anchors": ["types-of-leave"],
+      "must": ["HR One"],
+      "why": "The handbook holds RULES, never anyone's balance. Must point at HR One App and not invent a number." },
+
+    { "ask": "what is the wifi password in the office?",
+      "anchors": [],
+      "why": "Genuinely not in the handbook. Must admit it rather than reach for the nearest section." },
+
+    { "ask": "mujhe kitni chutti milti hai ek saal mein?",
+      "anchors": ["types-of-leave"],
+      "must": ["18"],
+      "why": "Hindi. Staff run from drivers to directors; an English-only answer bot excludes the people who most need it." }
+  ]
+}

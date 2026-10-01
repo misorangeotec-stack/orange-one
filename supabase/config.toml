@@ -86,6 +86,13 @@ verify_jwt = true
 [functions.fms-ranking]
 verify_jwt = false
 
+# KB-1 · Ask the HR handbook. verify_jwt = true, like parse-resume and
+# analyze-receivables: every caller is a signed-in member of staff clicking the Ask HR
+# bubble, and the function reads the handbook under that caller's own JWT so RLS decides
+# whether they may see it. Deploy WITHOUT --no-verify-jwt.
+[functions.ask-handbook]
+verify_jwt = true
+
 # The KRA / KPI scorecard's nightly facts (KPI-1). Called ONLY by the server, exactly like
 # fms-ranking above: pg_cron posts the `x-dispatch-secret` header with no JWT, and the
 # function calls itself once per module with the same header. People read their figures
