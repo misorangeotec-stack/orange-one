@@ -270,7 +270,7 @@ export default function ExpiryStatus() {
         </Card>
       ) : q.data && (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
             <Kpi size="lg" label="Ink lots in stock" value={count.all.toLocaleString("en-IN")} />
             <Kpi size="lg" label="Expiry updated" value={(count.updated + count.expired).toLocaleString("en-IN")}
               hint={count.all ? `${Math.round((100 * (count.updated + count.expired)) / count.all)}% of lots in stock` : undefined} />
@@ -281,7 +281,7 @@ export default function ExpiryStatus() {
               hint={`${count.nolot} items — needs a lot before an expiry can be entered`} />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {perCompany.map(([c, v]) => {
               const active = companies.length === 1 && companies[0] === c;
               return (

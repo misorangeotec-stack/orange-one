@@ -362,7 +362,7 @@ export default function Dashboard() {
           </div>
 
           {/* ── Charts: company · category · group, side by side ──── */}
-          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
             <ChartPanel title="Company-wise" subtitle={`${MEASURE_LABEL[measure]} · ${companyPts.length} companies`} sizeKey="ink-expiry-company" bodyHeight={fitHeight(companyPts.length)}>
               {(size) => <HBarChart points={companyPts} measure={measure} size={size} color="#1F4E8C" labelWidth={120}
                 selected={selectedFor("company")} onPick={onPick("company")} />}
@@ -383,7 +383,7 @@ export default function Dashboard() {
             <span className="text-[12.5px] text-grey">for everything in the current filters</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5" onClick={(e) => e.stopPropagation()}>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5" onClick={(e) => e.stopPropagation()}>
             <Tile label="Ink in stock" accent="#0B1F3A" icon={<span className="text-[15px]">◆</span>} value={fmtKg(total.qty)}
               sub={<>{fmtMoney(total.value)} · {total.lots.toLocaleString("en-IN")} lots</>}
               hint="Click to show all lots" onClick={() => { setStates([]); toLots(); }} />
