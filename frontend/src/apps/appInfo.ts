@@ -126,6 +126,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/ink-stabilisation",
     category: "quality",
   },
+  /**
+   * INK EXPIRY — every ink lot in stock, in every company, and whether Tally has its expiry
+   * date; the lots without one are the accountant's list. Read-only from ConnectWave.
+   */
+  "ink-expiry": {
+    name: "Ink Expiry Date",
+    basePath: "/ink-expiry",
+    category: "quality",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",

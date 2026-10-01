@@ -18,6 +18,7 @@ import { productionEntryApp } from "./production-entry/meta";
 import { inkMisApp } from "./ink-mis/meta";
 import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { inkStabilisationApp } from "./ink-stabilisation/meta";
+import { inkExpiryApp } from "./ink-expiry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -101,6 +102,8 @@ export const apps: AppManifest[] = [
   bushraCentralMasterApp,
   // Ink Stabilisation — Surat ink lots and their 3/6/9-month retests; read-only ConnectWave.
   inkStabilisationApp,
+  // Ink Expiry — in-stock ink lots and whether Tally has their expiry; read-only ConnectWave.
+  inkExpiryApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
