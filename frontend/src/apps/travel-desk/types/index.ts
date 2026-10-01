@@ -384,6 +384,12 @@ export interface TravelStepAssignee {
 export interface TravelConfig {
   stepSla: Record<string, unknown> | null;
   processCoordinators: string[];
+  /**
+   * People a coordinator may raise a trip for even when they sit outside her
+   * department (and so outside her RLS-scoped directory). Read through
+   * fms_travel_raise_for_people(). Grants the TRAVELLER nothing.
+   */
+  raiseFor: string[];
   approvalMatrix: ApprovalMatrix;
   policy: TravelPolicyConfig;
   companyIdentity: { legalName: string; gstin: string; address: string };

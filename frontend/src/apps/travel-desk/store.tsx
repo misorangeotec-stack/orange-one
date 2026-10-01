@@ -6,6 +6,7 @@ import { TRAVEL_QK, travelQueryKey, fetchTravelData } from "./data/travelFetch";
 import {
   markNotificationsRead as markNotificationsReadWrite,
   setCoordinators as setCoordinatorsWrite,
+  setRaiseFor as setRaiseForWrite,
   setStepSla as setStepSlaWrite,
   setStepOwners as setStepOwnersWrite,
   setPolicy as setPolicyWrite,
@@ -114,6 +115,7 @@ const EMPTY_CONFIG: TravelConfig = {
   reassignPoolUserIds: [],
   stepSla: null,
   processCoordinators: [],
+  raiseFor: [],
   approvalMatrix: { directorFromBand: 6, managerAlsoForDirectorBands: true },
   policy: {
     maxPassengers: 5,
@@ -243,6 +245,7 @@ interface TravelStoreValue {
     input: { departmentIds?: string[]; designationId?: string | null; employeeIds: string[] },
   ) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
+  setRaiseFor: (userIds: string[]) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setPolicy: (policy: TravelPolicyConfig) => Promise<void>;
   setCompanyIdentity: (v: { legalName: string; gstin: string; address: string }) => Promise<void>;
@@ -682,6 +685,12 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       },
       setCoordinators: async (userIds) => {
         await setCoordinatorsWrite(userIds);
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      // QK is a prefix of the raise-for people query too, so one invalidate
+      // refreshes the list AND the coordinator's picker.
+      setRaiseFor: async (userIds) => {
+        await setRaiseForWrite(userIds);
         await qc.invalidateQueries({ queryKey: QK });
       },
       setStepSla: async (map) => {

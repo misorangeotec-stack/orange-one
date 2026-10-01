@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput, Select } from "@/shared/components/ui/Form";
-import { useDirectory } from "@/core/platform/store";
+import { useTravellerProfiles } from "../data/travellerDirectory";
 import type { PassengerInput } from "../data/travelTripWrites";
 
 /**
@@ -36,7 +36,7 @@ export default function PassengerRows({
   max: number;
   disabled?: boolean;
 }) {
-  const { profiles } = useDirectory();
+  const profiles = useTravellerProfiles();
 
   const peopleOptions = useMemo(
     () => profiles.map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined })),
