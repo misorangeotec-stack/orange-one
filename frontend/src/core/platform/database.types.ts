@@ -7825,6 +7825,177 @@ export type Database = {
         }
         Relationships: []
       }
+      kb_documents: {
+        Row: {
+          id: string
+          is_current: boolean
+          published_at: string
+          published_by: string | null
+          slug: string
+          source_filename: string | null
+          title: string
+          version: number
+        }
+        Insert: {
+          id?: string
+          is_current?: boolean
+          published_at?: string
+          published_by?: string | null
+          slug: string
+          source_filename?: string | null
+          title: string
+          version?: number
+        }
+        Update: {
+          id?: string
+          is_current?: boolean
+          published_at?: string
+          published_by?: string | null
+          slug?: string
+          source_filename?: string | null
+          title?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      kb_images: {
+        Row: {
+          alt_text: string | null
+          document_id: string
+          id: string
+          ordinal: number
+          section_id: string | null
+          storage_path: string
+          transcript: string | null
+        }
+        Insert: {
+          alt_text?: string | null
+          document_id: string
+          id?: string
+          ordinal: number
+          section_id?: string | null
+          storage_path: string
+          transcript?: string | null
+        }
+        Update: {
+          alt_text?: string | null
+          document_id?: string
+          id?: string
+          ordinal?: number
+          section_id?: string | null
+          storage_path?: string
+          transcript?: string | null
+        }
+        Relationships: []
+      }
+      kb_questions: {
+        Row: {
+          answer: string | null
+          asked_at: string
+          asked_by: string | null
+          cited_section_ids: string[]
+          client_token: string
+          covered: boolean
+          document_id: string | null
+          hr_answer: string | null
+          hr_answered_at: string | null
+          hr_answered_by: string | null
+          id: string
+          model: string | null
+          rating: number | null
+          sent_to_hr: boolean
+          sent_to_hr_at: string | null
+          usage: Json | null
+        }
+        Insert: {
+          answer?: string | null
+          asked_at?: string
+          asked_by?: string | null
+          cited_section_ids?: string[]
+          client_token?: string
+          covered?: boolean
+          document_id?: string | null
+          hr_answer?: string | null
+          hr_answered_at?: string | null
+          hr_answered_by?: string | null
+          id?: string
+          model?: string | null
+          rating?: number | null
+          sent_to_hr?: boolean
+          sent_to_hr_at?: string | null
+          usage?: Json | null
+        }
+        Update: {
+          answer?: string | null
+          asked_at?: string
+          asked_by?: string | null
+          cited_section_ids?: string[]
+          client_token?: string
+          covered?: boolean
+          document_id?: string | null
+          hr_answer?: string | null
+          hr_answered_at?: string | null
+          hr_answered_by?: string | null
+          id?: string
+          model?: string | null
+          rating?: number | null
+          sent_to_hr?: boolean
+          sent_to_hr_at?: string | null
+          usage?: Json | null
+        }
+        Relationships: []
+      }
+      kb_rate_limit: {
+        Row: { on_date: string; used: number; user_id: string }
+        Insert: { on_date: string; used?: number; user_id: string }
+        Update: { on_date?: string; used?: number; user_id?: string }
+        Relationships: []
+      }
+      kb_sections: {
+        Row: {
+          anchor: string
+          body: Json
+          depth: number
+          document_id: string
+          heading: string
+          id: string
+          in_force_note: string | null
+          number: string | null
+          ordinal: number
+          path_text: string
+          plain_text: string
+          visibility: string
+        }
+        Insert: {
+          anchor: string
+          body?: Json
+          depth: number
+          document_id: string
+          heading: string
+          id?: string
+          in_force_note?: string | null
+          number?: string | null
+          ordinal: number
+          path_text: string
+          plain_text?: string
+          visibility?: string
+        }
+        Update: {
+          anchor?: string
+          body?: Json
+          depth?: number
+          document_id?: string
+          heading?: string
+          id?: string
+          in_force_note?: string | null
+          number?: string | null
+          ordinal?: number
+          path_text?: string
+          plain_text?: string
+          visibility?: string
+        }
+        Relationships: []
+      }
       locations: {
         Row: {
           active: boolean
@@ -10470,6 +10641,34 @@ export type Database = {
         Returns: string
       }
       email_module_enabled: { Args: { p_module: string }; Returns: boolean }
+      // Hand-added for migrations 20260928064759 / 20260928065443 (KB-1, Knowledge Base),
+      // both applied. Reading the handbook needs no function at all: kb_documents,
+      // kb_sections and kb_images are read straight through their RLS policies. These are
+      // the question log, which has no policies and is reachable only this way.
+      //
+      // kb_log_question and kb_rate_limit_take are called by the ask-handbook Edge Function
+      // rather than the browser; they are typed here so the surface is documented in one place.
+      kb_rate_limit_take: { Args: { p_cap?: number }; Returns: boolean }
+      kb_log_question: {
+        Args: {
+          p_answer: string | null
+          p_covered: boolean
+          p_document_id?: string | null
+          p_model: string | null
+          p_question: string
+          p_section_ids: string[]
+          p_usage: Json | null
+        }
+        Returns: string
+      }
+      // Ownership of a question is the client_token the log returned, NOT auth.uid() -
+      // otherwise anyone could rate, or put their name on, somebody else's anonymous question.
+      kb_rate_answer: { Args: { p_rating: number; p_token: string }; Returns: undefined }
+      // The ONE place a name is ever attached to a question: the asker choosing to be reachable.
+      kb_send_to_hr: { Args: { p_token: string }; Returns: undefined }
+      kb_manager_questions: { Args: { p_limit?: number }; Returns: Json }
+      kb_answer_question: { Args: { p_answer: string; p_id: string }; Returns: undefined }
+      kb_set_section_note: { Args: { p_note: string; p_section_id: string }; Returns: undefined }
       // Hand-added for migration 20261130120000 (PF-18, announcements), applied. The
       // readers return jsonb arrays; core/announcements/data.ts gives them their shape.
       announcements_active: { Args: Record<PropertyKey, never>; Returns: Json }
