@@ -67,8 +67,23 @@ export interface StockLot {
    *  the live book has no closing row; 0 when neither has one. */
   value: number;
   godown: string;
-  /** Oldest inward date among the quantity still on hand — yyyy-mm-dd. */
+  /**
+   * PURCHASE / PRODUCTION DATE — yyyy-mm-dd. The lot's first real receipt: the original purchase or
+   * production, in another company when this book only received it by job work / material in.
+   * Internal moves are NOT receipts: a voucher that takes the same lot out AND back in (stock
+   * journal, stock transfer, Hojiwala → Job) is skipped. Found on lot 26040800261 (01-10-2026):
+   * purchased 04-Jun-26, but a 28-Sep stock journal had been shown as its date.
+   */
   inward: string | null;
+  /** The voucher type of that receipt, e.g. 'GST PURCHASE-INK', 'STOCK JOURNAL-PRODUCTION'. */
+  inwardType: string | null;
+  /** Set when the date above is another company's — the lot came here later (job work, material in). */
+  inwardCompany: string | null;
+  /** When THIS company first received the lot, if that differs from the purchase / production date. */
+  receivedHere: string | null;
+  receivedHereType: string | null;
+  /** The latest sales return of this lot from a customer — yyyy-mm-dd — or null. */
+  returnDate: string | null;
   mfd: string | null;
   expiry: string | null;
   /** The expiry exactly as typed in Tally, for the rows that aren't a date ('1 Days'). */
@@ -93,7 +108,24 @@ export interface ExpiryStatus {
   lots: StockLot[];
   noLot: NoLotStock[];
   builtAt: string | null;
+  /** Stock left out because it sits in the Lab or LOOSE INK godown (see HELD_GODOWNS). */
+  heldOut?: { qty: number; value: number; lots: number };
 }
+
+/**
+ * Godowns whose stock is NOT counted — the user, 01-10-2026: "I don't want to consider Lab stock,
+ * Loose Ink stock". Only Enterprises Surat has them. Ink reaches them on STOCK TRANSFER-LAB
+ * vouchers, which ConnectWave stores as a matched pair for the same lot — OUT of Production, IN to
+ * Lab — so the lot's company-level balance is unchanged and, without this, lab ink stays counted.
+ *
+ * Per lot: held = Σ in − Σ out on lines whose godown is one of these, clipped to [0, lot qty].
+ * Measured 01-10-2026: Lab holds ~14,661 KGS over 853 lots with only 3 lots slightly negative (−3 KGS),
+ * so the figure is sound. LOOSE INK goes negative on many lots (loose ink is drawn into production
+ * without a matching receipt in that godown) — a negative is treated as nothing held, never added.
+ * The big godowns (Production, Hojiwala) are NOT done this way: their opening stock is not in the
+ * synced lines, so netting them gives nonsense (Production +5.37 lakh KGS).
+ */
+export const HELD_GODOWNS = /^(LAB|LOOSE INK)$/i;
 
 interface Line {
   company_guid: string;
@@ -305,18 +337,61 @@ export async function fetchExpiryStatus(
     return true;
   });
 
+  // 5a. Internal moves: a voucher that takes the same lot both OUT and IN (stock journal, transfer)
+  //     moves stock between godowns — it is not a receipt, so it never sets a purchase date.
+  const dir = new Map<string, number>();
+  for (const x of kept) {
+    const k = K(x.voucher_guid, x.stock_item, x.batch_name ?? "");
+    dir.set(k, (dir.get(k) ?? 0) | (x.movement === "in" ? 1 : 2));
+  }
+  const isInternal = (x: Line) => dir.get(K(x.voucher_guid, x.stock_item, x.batch_name ?? "")) === 3;
+  const RETURN = /RETURN|CREDIT NOTE/i;
+  // A real purchase or production — the lot's ORIGIN, wherever it later travels.
+  const ORIGIN = /PURCHASE|PRODUCTION|RECEIPT NOTE|OPENING/i;
+
   // 5. Net per lot, remembering each lot's inward slices and last godown.
-  interface Acc { guid: string; item: string; lot: string; bal: number; ins: { d: string; q: number }[]; godown: string; uom: string }
+  interface Acc {
+    guid: string; item: string; lot: string; bal: number; held: number; ins: { d: string; q: number }[]; godown: string; uom: string;
+    /** First receipt that is not an internal move or a return. */
+    first: { d: string; t: string } | null;
+    lastReturn: string | null;
+  }
+  /**
+   * Earliest purchase / production of a lot in ANY company. Two indexes:
+   *   - by ITEM + LOT — the normal match;
+   *   - by LOT alone (lot numbers of 6+ characters) — used ONLY when this company's own first receipt
+   *     is not itself a purchase or production (job work, material in), because the receiving book
+   *     sometimes names the item differently. Matching on the lot alone in every case could hand a
+   *     lot another item's earlier date. (Audit, 02-10-2026.)
+   */
+  type Origin = { d: string; t: string; guid: string };
+  const originByItem = new Map<string, Origin>();
+  const originByLot = new Map<string, Origin>();
+  const keep = (m: Map<string, Origin>, k: string, o: Origin) => { const c = m.get(k); if (!c || o.d < c.d) m.set(k, o); };
   const acc = new Map<string, Acc>();
   for (const x of kept) {
     const lot = x.batch_name ?? "";
     if (!x.is_real_lot || NON_LOT.has(lot.trim().toLowerCase())) continue;
     const k = K(x.company_guid, x.stock_item, lot);
     let a = acc.get(k);
-    if (!a) acc.set(k, (a = { guid: x.company_guid, item: x.stock_item, lot, bal: 0, ins: [], godown: "", uom: "" }));
+    if (!a) acc.set(k, (a = { guid: x.company_guid, item: x.stock_item, lot, bal: 0, held: 0, ins: [], godown: "", uom: "", first: null, lastReturn: null }));
     const q = Number(x.qty) || 0;
     a.bal += x.movement === "in" ? q : -q;
-    if (x.movement === "in") a.ins.push({ d: x.vch_date, q });
+    if (x.godown_name && HELD_GODOWNS.test(x.godown_name.trim())) a.held += x.movement === "in" ? q : -q;
+    if (x.movement === "in") {
+      a.ins.push({ d: x.vch_date, q });
+      const t = x.voucher_type ?? "";
+      if (RETURN.test(t)) {
+        if (!a.lastReturn || x.vch_date > a.lastReturn) a.lastReturn = x.vch_date;
+      } else if (!isInternal(x)) {
+        if (!a.first || x.vch_date < a.first.d) a.first = { d: x.vch_date, t };
+        if (ORIGIN.test(t)) {
+          const o = { d: x.vch_date, t, guid: x.company_guid };
+          keep(originByItem, K(x.stock_item, lot.trim()), o);
+          if (lot.trim().length >= 6) keep(originByLot, lot.trim(), o);
+        }
+      }
+    }
     if (x.godown_name) a.godown = x.godown_name;
     if (x.uom) a.uom = x.uom;
   }
@@ -340,6 +415,7 @@ export async function fetchExpiryStatus(
   }
   const lots: StockLot[] = [];
   const noLot: NoLotStock[] = [];
+  const heldOut = { qty: 0, value: 0, lots: 0 };
   for (const k of new Set([...closing.keys(), ...byItem.keys()])) {
     const meta = ink.get(k)!;
     const anchor = closing.get(k);
@@ -366,17 +442,24 @@ export async function fetchExpiryStatus(
       }
       have = keep;
     }
-    for (const { a, q } of have) {
-      // FIFO within the lot: what's on hand is the newest inward slices; its age is the oldest of those.
-      let left = q;
-      let inward: string | null = null;
-      for (const i of [...a.ins].sort((x, y) => y.d.localeCompare(x.d))) {
-        if (left <= 1e-9) break;
-        const take = Math.min(left, i.q);
-        if (take <= 1e-9) continue;
-        inward = fromYmd(i.d);
-        left -= take;
-      }
+    for (const { a, q: tied } of have) {
+      // Take out what sits in the Lab / LOOSE INK godown; a lot with nothing left drops out.
+      const held = Math.min(Math.max(a.held, 0), tied);
+      if (held > 0.001) { heldOut.qty += held; heldOut.value += held * rate; heldOut.lots += 1; }
+      const q = tied - held;
+      if (q <= 0.001) continue;
+      // Purchase / production date: the lot's origin (any company) if it is no later than this
+      // company's own first receipt; else that receipt; else, for a lot whose only "in" lines are
+      // internal moves (stock carried in from before the sync), the earliest of those.
+      const own = a.first;
+      const org = originByItem.get(K(a.item, a.lot.trim()))
+        ?? (!own || !ORIGIN.test(own.t) ? originByLot.get(a.lot.trim()) : undefined);
+      const useOrigin = !!org && (!own || org.d <= own.d);
+      const src = useOrigin ? org! : own;
+      const earliestIn = a.ins.reduce<string | null>((m, i) => (m === null || i.d < m ? i.d : m), null);
+      const inward = src ? fromYmd(src.d) : earliestIn ? fromYmd(earliestIn) : null;
+      const inwardCompany = useOrigin && org!.guid !== a.guid ? COMPANY_SHORT[org!.guid] ?? null : null;
+      const receivedHere = own && src && own.d !== src.d ? fromYmd(own.d) : null;
       const e = exp.get(K(a.guid, a.item, a.lot.trim()));
       const expiry = e ? tallyDate(e.raw) : null;
       const days = expiry ? daysBetween(today, expiry) : null;
@@ -384,7 +467,9 @@ export async function fetchExpiryStatus(
         company, item: a.item, category: meta.stock_group ?? "", inkCategory: cat.name, inkCategoryFromTally: cat.fromTally,
         mainGroup: meta.primary_group ?? "",
         path: meta.group_path ?? "", lot: a.lot, qty: Math.round(q * 1000) / 1000, uom: a.uom || unit, value: q * rate,
-        godown: a.godown, inward, mfd: e?.mfd ?? null, expiry, expiryRaw: e?.raw ?? null, days,
+        godown: a.godown, inward, inwardType: src?.t ?? null, inwardCompany,
+        receivedHere, receivedHereType: receivedHere ? own!.t : null,
+        returnDate: a.lastReturn ? fromYmd(a.lastReturn) : null, mfd: e?.mfd ?? null, expiry, expiryRaw: e?.raw ?? null, days,
         state: !e ? "missing" : !expiry ? "invalid" : days! < 0 ? "expired" : "updated",
       });
     }
@@ -398,5 +483,5 @@ export async function fetchExpiryStatus(
     a.company.localeCompare(b.company) || a.category.localeCompare(b.category) || a.item.localeCompare(b.item);
   lots.sort((a, b) => order(a, b) || (a.inward ?? "").localeCompare(b.inward ?? "") || a.lot.localeCompare(b.lot));
   noLot.sort(order);
-  return { lots, noLot, builtAt };
+  return { lots, noLot, builtAt, heldOut };
 }

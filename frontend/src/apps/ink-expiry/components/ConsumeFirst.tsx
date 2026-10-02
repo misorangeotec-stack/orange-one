@@ -17,7 +17,8 @@ import { usePagination } from "@/shared/lib/usePagination";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { daysBetween, fmtDate, type StockLot } from "../lib/expiry";
 import { fmtKg, fmtMoney } from "./StockCharts";
-import { ActiveFilters, QTY_BANDS, qtyBand, SortFilterBody, SortFilterHead, useSortFilter, type Col } from "./SortFilterHead";
+import { ActiveFilters, QTY_BANDS, qtyBand, SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col } from "./SortFilterHead";
+import { PurchaseDateCell, purchaseText, ReturnDateCell } from "./LotDates";
 
 export interface PlanRow {
   company: string;
@@ -66,7 +67,10 @@ export default function ConsumeFirst({ rows, today, notDated }: {
 
   const days = (r: PlanRow) => daysBetween(today, r.lot.expiry!);
   const cols: Col<PlanRow>[] = useMemo(() => [
-    { key: "inward", label: "Prod. / purchase date", text: (r) => fmtDate(r.lot.inward), sort: (r) => r.lot.inward, filter: false },
+    { key: "inward", label: "Purchase / prod. date", text: (r) => purchaseText(r.lot), sort: (r) => r.lot.inward, filter: false,
+      render: (r) => <PurchaseDateCell lot={r.lot} /> },
+    { key: "return", label: "Sales return", text: (r) => (r.lot.returnDate ? fmtDate(r.lot.returnDate) : "—"), sort: (r) => r.lot.returnDate, filter: false,
+      render: (r) => <ReturnDateCell lot={r.lot} /> },
     { key: "expiry", label: "Expiry date", text: (r) => fmtDate(r.lot.expiry), sort: (r) => r.lot.expiry,
       bucket: (r) => monthName(r.lot.expiry!.slice(0, 7)), render: (r) => <span className="font-semibold text-navy">{fmtDate(r.lot.expiry)}</span> },
     { key: "days", label: "Days left", align: "right", text: (r) => String(days(r)), sort: days, filter: false,
@@ -80,7 +84,7 @@ export default function ConsumeFirst({ rows, today, notDated }: {
     { key: "value", label: "Value", align: "right", text: (r) => fmtMoney(r.value), sort: (r) => r.value, filter: false },
     { key: "godown", label: "Godown", text: (r) => r.lot.godown || "—", sort: (r) => r.lot.godown || null },
   ], [today]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ctl = useSortFilter(shown, cols);
+  const ctl = useSortFilter(shown, cols, "consume-first");
   const pg = usePagination(ctl.view, { pageSize: 25, resetKey: `${month}|${shown.length}|${ctl.stamp}` });
 
   const exportIt = () => exportRowsToXlsx({
@@ -93,7 +97,9 @@ export default function ConsumeFirst({ rows, today, notDated }: {
       "Only lots with an expiry date entered in Tally can appear. Quantities are KGS; value = quantity × the item's Tally closing rate.",
     ],
     columns: [
-      { header: "Prod. / purchase date", width: 14, value: (r) => (r.lot.inward ? fmtDate(r.lot.inward) : "") },
+      { header: "Purchase / prod. date", width: 14, value: (r) => (r.lot.inward ? fmtDate(r.lot.inward) : "") },
+      { header: "Purchase / prod. (how, where)", width: 28, value: (r) => purchaseText(r.lot) },
+      { header: "Sales return date", width: 14, value: (r) => (r.lot.returnDate ? fmtDate(r.lot.returnDate) : "") },
       { header: "Expiry date", width: 13, value: (r) => fmtDate(r.lot.expiry) },
       { header: "Days left", width: 9, value: days },
       { header: "Company", width: 18, value: (r) => r.company },
@@ -133,6 +139,7 @@ export default function ConsumeFirst({ rows, today, notDated }: {
             {notDated > 0 && <> · <span className="text-[#8a5d00]">{notDated.toLocaleString("en-IN")} lots in view have no expiry in Tally and cannot show here</span></>}
           </div>
         </div>
+        <TableTools cols={cols} ctl={ctl} />
         <Button variant="outline" size="sm" onClick={exportIt}>Export plan (Excel)</Button>
       </div>
 
@@ -151,7 +158,7 @@ export default function ConsumeFirst({ rows, today, notDated }: {
           <div className="overflow-x-auto">
             <table className="w-full">
               <SortFilterHead cols={cols} ctl={ctl} />
-              <SortFilterBody cols={cols} rows={pg.pageItems} rowKey={(r) => `${r.company}|${r.item}|${r.lot.lot}`} empty="Nothing in this month." />
+              <SortFilterBody cols={cols} ctl={ctl} rows={pg.pageItems} rowKey={(r) => `${r.company}|${r.item}|${r.lot.lot}`} empty="Nothing in this month." />
             </table>
           </div>
           <Pagination state={pg} rowsLabel="lots" pageSizeOptions={[25, 50, 100]} />

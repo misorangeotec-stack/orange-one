@@ -54,9 +54,33 @@ def ink_items() -> set[tuple[str, str]]:
     return out - {co(r) for r in rows if expiry.is_excluded(r["group_path"], r["item"])}
 
 
+HELD_GODOWNS = {"LAB", "LOOSE INK"}
+
+
+def held_in_godowns(today: date) -> dict[tuple[str, str, str], float]:
+    """Qty per (company, item, lot) sitting in the Lab / LOOSE INK godown — left out of the stock,
+    as the user asked (01-10-2026). Same rule as the Hub page (expiry.ts, HELD_GODOWNS): Σ in − Σ out
+    on lines at those godowns; a negative counts as nothing held. Only Enterprises Surat has them."""
+    rows = expiry.get_all("rpt_batch_line", {
+        "or": "(godown_name.ilike.lab,godown_name.ilike.loose ink)",
+        "select": "company_guid,vch_date,voucher_type,movement,affects_stock,stock_item,batch_name,godown_name,qty",
+    }, "tenant_id,voucher_guid,line_no,batch_no")
+    held: dict[tuple[str, str, str], float] = {}
+    asof = today.strftime("%Y%m%d")
+    for r in rows:
+        if (r["godown_name"] or "").strip().upper() not in HELD_GODOWNS or not r["affects_stock"] or r["vch_date"] > asof:
+            continue
+        if r["movement"] not in ("in", "out") or ageing.ORDERISH.search(r["voucher_type"] or ""):
+            continue
+        k = (expiry.COMPANY.get(r["company_guid"], r["company_guid"]), r["stock_item"], r["batch_name"])
+        held[k] = held.get(k, 0.0) + (r["qty"] or 0) * (1 if r["movement"] == "in" else -1)
+    return held
+
+
 def build(today: date):
     short = company_names()
     ink = ink_items()
+    held = held_in_godowns(today)
     with tempfile.TemporaryDirectory() as tmp:
         stock, _ = ageing.build(today.strftime("%Y%m%d"), str(Path(tmp) / "ageing.xlsx"))
     lines, items, bal = expiry.fetch()
@@ -77,6 +101,11 @@ def build(today: date):
         }
         if s["Lot / Batch No"] == NO_LOT:
             no_lot.append(base)
+            continue
+        # Lab / LOOSE INK godown stock is not counted; a lot with nothing left drops out.
+        h = min(max(held.get((co, s["Item Name"], s["Lot / Batch No"]), 0.0), 0.0), base["qty"])
+        base["qty"] = round(base["qty"] - h, 3)
+        if base["qty"] <= 0.001:
             continue
         e = exp.get((co, s["Item Name"], s["Lot / Batch No"]))
         base.update({

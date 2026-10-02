@@ -12,8 +12,9 @@ import { useExpiryStatus } from "../lib/useExpiryStatus";
 import FreshnessBar from "../components/FreshnessBar";
 import {
   ActiveFilters, DAYS_LEFT_BANDS, daysLeftBand, QTY_BANDS, qtyBand,
-  SortFilterBody, SortFilterHead, useSortFilter, type Col,
+  SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col,
 } from "../components/SortFilterHead";
+import { PurchaseDateCell, purchaseText, ReturnDateCell } from "../components/LotDates";
 import {
   fmtKg, fmtMeasure, fmtMoney, MEASURE_LABEL, STATE_SERIES, Tile, zero, type Measure, type StateKey, type Totals,
 } from "../components/StockCharts";
@@ -108,8 +109,12 @@ function LotTable({ rows, today, scope }: { rows: Row[]; today: string; scope?: 
     { key: "value", label: "Value", align: "right", text: (r) => fmtMoney(r.value), sort: (r) => r.value, filter: false },
     // The date the stock now on hand came in — its production (or purchase) voucher. Shown beside the
     // expiry so a date that falls BEFORE it (a typing slip in Tally) is visible at a glance.
-    { key: "inward", label: "Prod. / purchase date", text: (r) => (r.lot?.inward ? fmtDate(r.lot.inward) : "—"), sort: (r) => r.lot?.inward ?? null,
-      bucket: (r) => (r.lot?.inward ? monthLabel(r.lot.inward.slice(0, 7)) : "Unknown") },
+    { key: "inward", label: "Purchase / prod. date", text: (r) => (r.lot ? purchaseText(r.lot) || "—" : "—"), sort: (r) => r.lot?.inward ?? null,
+      bucket: (r) => (r.lot?.inward ? monthLabel(r.lot.inward.slice(0, 7)) : "Unknown"),
+      render: (r) => (r.lot ? <PurchaseDateCell lot={r.lot} /> : <span className="text-grey-2">—</span>) },
+    { key: "return", label: "Sales return", text: (r) => (r.lot?.returnDate ? fmtDate(r.lot.returnDate) : "—"), sort: (r) => r.lot?.returnDate ?? null,
+      bucket: (r) => (r.lot?.returnDate ? monthLabel(r.lot.returnDate.slice(0, 7)) : "No return"),
+      render: (r) => (r.lot ? <ReturnDateCell lot={r.lot} /> : <span className="text-grey-2">—</span>) },
     { key: "expiry", label: "Expiry", text: (r) => (r.lot?.expiry ? fmtDate(r.lot.expiry) : "—"), sort: (r) => r.lot?.expiry ?? null,
       bucket: (r) => monthLabel(r.month),
       render: (r) => r.lot?.expiry ? fmtDate(r.lot.expiry) : <span className="text-grey-2">{r.lot?.expiryRaw ? `“${r.lot.expiryRaw}”` : "—"}</span> },
@@ -119,7 +124,7 @@ function LotTable({ rows, today, scope }: { rows: Row[]; today: string; scope?: 
     { key: "status", label: "Status", text: status, sort: status },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
   const base = useMemo(() => [...rows].sort((a, b) => b.qty - a.qty), [rows]);
-  const ctl = useSortFilter(base, cols);
+  const ctl = useSortFilter(base, cols, "dashboard-lots");
   const pg = usePagination(ctl.view, { pageSize: 25, resetKey: `${rows.length}|${ctl.stamp}` });
 
   const exportIt = () => exportRowsToXlsx({
@@ -137,7 +142,10 @@ function LotTable({ rows, today, scope }: { rows: Row[]; today: string; scope?: 
       { header: "Qty (KGS)", width: 12, value: (r) => r.qty },
       { header: "Value (₹)", width: 14, value: (r) => Math.round(r.value) },
       { header: "Godown", width: 18, value: (r) => r.lot?.godown ?? "" },
-      { header: "Prod. / purchase date", width: 14, value: (r) => (r.lot?.inward ? fmtDate(r.lot.inward) : "") },
+      { header: "Purchase / prod. date", width: 14, value: (r) => (r.lot?.inward ? fmtDate(r.lot.inward) : "") },
+      { header: "Purchase / prod. (how, where)", width: 28, value: (r) => (r.lot ? purchaseText(r.lot) : "") },
+      { header: "Received here", width: 14, value: (r) => (r.lot?.receivedHere ? fmtDate(r.lot.receivedHere) : "") },
+      { header: "Sales return date", width: 14, value: (r) => (r.lot?.returnDate ? fmtDate(r.lot.returnDate) : "") },
       { header: "Expiry date", width: 13, value: (r) => (r.lot?.expiry ? fmtDate(r.lot.expiry) : r.lot?.expiryRaw ?? "") },
       { header: "Days left", width: 9, value: (r) => r.lot?.days ?? "" },
       { header: "Status", width: 18, value: status },
@@ -151,15 +159,16 @@ function LotTable({ rows, today, scope }: { rows: Row[]; today: string; scope?: 
           <h3 className="text-[15px] font-bold text-navy">
             Lots in this view {scope && <span className="ml-1 rounded-full bg-orange/10 px-2.5 py-0.5 text-[12px] font-semibold text-orange">{scope}</span>}
           </h3>
-          <div className="text-[11.5px] text-grey">Click a heading to sort, pick under it to filter.</div>
+          <div className="text-[11.5px] text-grey">Click a heading to sort, pick under it to filter · drag a column edge, row edge or the heading's bottom edge to resize</div>
         </div>
+        <TableTools cols={cols} ctl={ctl} />
         <Button variant="outline" size="sm" onClick={exportIt}>Export Excel</Button>
       </div>
       <ActiveFilters ctl={ctl} shown={ctl.view.length} total={base.length} />
       <div className="overflow-x-auto">
         <table className="w-full">
           <SortFilterHead cols={cols} ctl={ctl} />
-          <SortFilterBody cols={cols} rows={pg.pageItems} rowKey={(r) => `${r.company}|${r.item}|${r.lot?.lot ?? "-"}`} empty="Nothing in this view." />
+          <SortFilterBody cols={cols} ctl={ctl} rows={pg.pageItems} rowKey={(r) => `${r.company}|${r.item}|${r.lot?.lot ?? "-"}`} empty="Nothing in this view." />
         </table>
       </div>
       <Pagination state={pg} rowsLabel="rows" pageSizeOptions={[25, 50, 100]} />
@@ -478,7 +487,8 @@ export default function Dashboard() {
 
           <p className="text-[11.5px] text-grey">
             KGS stock only — Tally's ink groups also hold ~1.2 lakh MTR of foil paper and a few PCS items, left out here. Provision ink,
-            dead stock, diff stock and loose ink are excluded everywhere in this app.
+            dead stock, diff stock and loose ink are excluded everywhere in this app, and so is stock sitting in the Lab and LOOSE INK
+            godowns{q.data?.heldOut?.qty ? ` (${fmtKg(q.data.heldOut.qty)} over ${q.data.heldOut.lots.toLocaleString("en-IN")} lots left out today)` : ""}.
             Value = quantity × each item's Tally closing rate. Category and Group come from Central Masters with your Bushra Central
             Master corrections{lookupQ.isLoading ? " (loading…)" : ""}{notInMaster ? ` — ${notInMaster.toLocaleString("en-IN")} items in view are not in Central Master` : ""}.
             Coverage = share of lot stock whose expiry is entered in Tally.

@@ -14,8 +14,8 @@ import { fetchExpiryStatus, type ExpiryStatus } from "./expiry";
  *   convenience only: if storage is blocked or full, the page simply waits for the live read.
  *   Bump CACHE_KEY's version whenever the shape of ExpiryStatus changes.
  */
-// v3: provision / dead / diff / loose stock excluded — an older copy still holds them.
-const CACHE_KEY = "ink-expiry:status:v3";
+// v5: purchase / production date skips internal moves; lots carry returnDate / inwardCompany.
+const CACHE_KEY = "ink-expiry:status:v5";
 const FRESH_MS = 15 * 60_000;
 
 interface Saved { savedAt: number; today: string; data: ExpiryStatus }
