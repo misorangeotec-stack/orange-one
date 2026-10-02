@@ -32,6 +32,11 @@ export interface NavItem {
    * mark, which is legible but tells the reader nothing.
    */
   groupIcon?: ReactNode;
+  /**
+   * Keep this item's group as a heading even when it is the group's only link,
+   * instead of the sidebar folding it into a plain row. Set on any item of the group.
+   */
+  keepGroup?: boolean;
 }
 
 /**

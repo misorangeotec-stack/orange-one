@@ -17,7 +17,7 @@
 import type { ReactNode } from "react";
 import type { AppManifest } from "@/apps/types";
 import type { Profile } from "@/core/platform/types";
-import { groupByCategory } from "@/apps/categories";
+import { CATEGORIES, groupByCategory } from "@/apps/categories";
 import { GROUP_ICONS } from "./groupIcons";
 import {
   ANNOUNCEMENTS_LABEL,
@@ -132,6 +132,7 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
   // sidebar, so "Sampling → Ink / RM Sampling" doesn't cost a click to say one
   // thing twice.
   for (const group of groupByCategory(visibleApps(apps, opts))) {
+    const keepGroup = CATEGORIES.some((c) => c.key === group.key && c.keepHeading);
     if (group.key === "hr" && showHandbook) {
       nav.push({
         label: HANDBOOK_LABEL,
@@ -158,6 +159,7 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
           group: group.label,
           groupIcon: GROUP_ICONS[group.key],
           ...(subGroup ? { subGroup } : {}),
+          ...(keepGroup ? { keepGroup } : {}),
         });
       }
     }

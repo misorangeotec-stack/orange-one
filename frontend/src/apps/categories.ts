@@ -51,7 +51,12 @@ export type AppCategory =
   | "control"
   | "mobile";
 
-export const CATEGORIES: { key: AppCategory; label: string }[] = [
+/**
+ * `keepHeading`: show the group's heading even while it holds a single app. Normally the
+ * sidebar folds a one-app group back into a plain link (see Sidebar's buildNodes). A
+ * group meant to fill up over time sets this, so it reads as a group from day one.
+ */
+export const CATEGORIES: { key: AppCategory; label: string; keepHeading?: boolean }[] = [
   { key: "productivity", label: "Productivity" },
   // Second, and belonging to no department on purpose. The report catalogue spent its life
   // as a menu inside the Outstanding Dashboard, where finance, inventory and Tally reports
@@ -74,7 +79,9 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   { key: "purchase", label: "Purchase" },
   // Inventory planning sheets — stock cover across the books and what to reorder. Placed
   // straight after Purchase because the decision these sheets serve is the next purchase.
-  { key: "ims", label: "IMS Sheet" },
+  // Ink IMS is the first of several IMS sheets. Every new one is tagged `ims` and lands here,
+  // so the heading is kept even while the group holds just one (02-10-2026).
+  { key: "ims", label: "IMS Sheet", keepHeading: true },
   // Everything customer-facing, from the lead through onboarding and dispatch to
   // collecting the money. Order to Dispatch and New Customer Onboarding live here
   // rather than in a process group of their own: both are steps in the sales book,
