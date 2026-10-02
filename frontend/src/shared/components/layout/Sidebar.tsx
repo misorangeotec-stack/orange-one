@@ -114,9 +114,12 @@ function buildNodes(items: NavItem[]): Node[] {
   }
 
   // Second pass, not inline above: a group is only known to be solo once every
-  // item has been placed.
+  // item has been placed. A group that asked to keep its heading (`keepGroup`) stays one.
   return nodes.map((node) =>
-    node.kind === "group" && node.group.subs.length === 0 && node.group.direct.length === 1
+    node.kind === "group" &&
+    node.group.subs.length === 0 &&
+    node.group.direct.length === 1 &&
+    !node.group.direct[0].keepGroup
       ? { kind: "item" as const, item: node.group.direct[0], spaced: true }
       : node
   );
