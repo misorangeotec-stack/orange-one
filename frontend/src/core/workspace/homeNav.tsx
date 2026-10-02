@@ -119,12 +119,11 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
   //   01-10-2026  it was gated on the grant, reversing "reading needs no grant", so HR can
   //               check it before the whole company sees it. Granting everyone 'view' puts
   //               it back in front of all staff with no code change.
-  //
-  // Pushed here rather than declared in the seed array above so it lands under "Home" (it
-  // inherits that heading) while still being conditional.
-  if (opts.hasModule("knowledge-base")) {
-    nav.push({ label: HANDBOOK_LABEL, to: HANDBOOK_PATH, icon: ic.handbook });
-  }
+  //   02-10-2026  it moved from under Home into the HR group, as that group's first row,
+  //               at the business's request. The grant rule is unchanged. Holding
+  //               'knowledge-base' always brings the HR group with it, because the
+  //               Knowledge Base app is itself filed under HR.
+  const showHandbook = opts.hasModule("knowledge-base");
 
   // Every category becomes a COLLAPSIBLE group (see Sidebar), which is why these
   // carry `group` rather than `section`. An empty category never reaches here, so
@@ -133,6 +132,15 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
   // sidebar, so "Sampling → Ink / RM Sampling" doesn't cost a click to say one
   // thing twice.
   for (const group of groupByCategory(visibleApps(apps, opts))) {
+    if (group.key === "hr" && showHandbook) {
+      nav.push({
+        label: HANDBOOK_LABEL,
+        to: HANDBOOK_PATH,
+        icon: ic.handbook,
+        group: group.label,
+        groupIcon: GROUP_ICONS[group.key],
+      });
+    }
     for (const app of group.rows) {
       // One row per app, unless the app says otherwise. Reports is the only one that does:
       // it is a catalogue, so its group lists the sections the reader holds rather than a

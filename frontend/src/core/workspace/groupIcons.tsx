@@ -83,12 +83,6 @@ export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
       <path d="M17 5.2a3.2 3.2 0 0 1 0 6M18.5 15.4c2 .7 3 2.2 3 4.6" />
     </svg>
   ),
-  // Spanner — plant and equipment kept running.
-  asset: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15.5 3.5a5.5 5.5 0 0 0-6.9 7L3 16.1V21h4.9l5.6-5.6a5.5 5.5 0 0 0 7-6.9L17.6 11 13 6.4z" />
-    </svg>
-  ),
   // Sliders — the levers over everything else.
   control: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

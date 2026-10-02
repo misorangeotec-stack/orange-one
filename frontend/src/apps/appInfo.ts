@@ -209,7 +209,8 @@ export const APPS: Record<string, AppInfo> = {
   "asset-maintenance": {
     name: "Asset Maintenance",
     basePath: "/asset-maintenance",
-    category: "asset",
+    // Filed under HR in the menu, at the business's request (its own "Asset" group before).
+    category: "hr",
   },
   /**
    * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
