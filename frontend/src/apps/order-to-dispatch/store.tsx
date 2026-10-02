@@ -5,6 +5,16 @@ import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { CUSTOMER_ACTORS_QK, fetchCustomerOrderActors } from "./data/customerOrgs";
+import {
+  ROUND_RETURNS_QK,
+  fetchRoundReturns,
+  recordRoundReturn as recordRoundReturnWrite,
+  requestRoundReturn as requestRoundReturnWrite,
+  updateRoundReturn as updateRoundReturnWrite,
+  withdrawRoundReturn as withdrawRoundReturnWrite,
+  type RoundReturnPayload,
+  type RoundReturnRequest,
+} from "./data/roundReturns";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import {
   DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
@@ -67,9 +77,17 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
+  CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, RoundReturn, StepDoc, StepOwner, } from "./types";
+
+/** A return against a finished invoice, with the order it belongs to. */
+export interface RoundReturnRow {
+  ret: RoundReturn;
+  order: DispatchOrder;
+}
 
 const QK = DISPATCH_QK;
+// Module-level so the memo below sees ONE empty array, not a new one per render.
+const EMPTY_RETURNS: RoundReturn[] = [];
 
 export interface DispatchStoreValue {
   isLoading: boolean;
@@ -360,6 +378,24 @@ export interface DispatchStoreValue {
   salesReturnCompleted: DispatchOrder[];
 
   /**
+   * Sales returns against a FINISHED invoice — usually on a closed order
+   * (`fms_dispatch_round_returns`). The second kind of work on the Sales Return
+   * page, beside the cancellations above. Paperwork only: none of it moves an
+   * order, so it stays out of every queue builder for the same reasons.
+   *
+   * `roundReturns` is everything this person can SEE (RLS: whoever can see the
+   * order); the two lists are scoped to what they may ACTION, like every queue.
+   */
+  roundReturns: RoundReturn[];
+  roundReturnsFor: (orderId: string) => RoundReturn[];
+  roundReturnsPending: RoundReturnRow[];
+  roundReturnsCompleted: RoundReturnRow[];
+  /** Mirrors fms_dispatch_request_round_return's authz (not its per-round refusals). */
+  canRequestRoundReturn: (o: DispatchOrder) => boolean;
+  /** Mirrors fms_dispatch_withdraw_round_return's authz, for a pending return. */
+  canWithdrawRoundReturn: (ret: RoundReturn, o: DispatchOrder) => boolean;
+
+  /**
    * NEW CUSTOMER ORDERS — placed by a customer, not yet written up (OD-14).
    *
    * ⚠ OFF THE CHAIN, for the same reasons as Sales Return above. These are not
@@ -421,6 +457,11 @@ export interface DispatchStoreValue {
   recordSalesReturn: (orderId: string, payload: SalesReturnPayload) => Promise<void>;
   updateSalesReturn: (orderId: string, payload: SalesReturnPayload) => Promise<void>;
   withdrawCancelRequest: (orderId: string, reason: string) => Promise<void>;
+  /** Raise a sales return against a finished round's invoice. */
+  requestRoundReturn: (orderId: string, roundNo: number, req: RoundReturnRequest) => Promise<void>;
+  recordRoundReturn: (returnId: string, payload: RoundReturnPayload) => Promise<void>;
+  updateRoundReturn: (returnId: string, payload: RoundReturnPayload) => Promise<void>;
+  withdrawRoundReturn: (returnId: string, reason: string) => Promise<void>;
   closeOrder: (orderId: string, reason: string) => Promise<void>;
   materialNothingAvailable: (orderId: string, remarks: string) => Promise<void>;
   /** `receiver` OMITTED keeps the round's stored paperwork — see amendRound. */
@@ -537,6 +578,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60_000,
   });
 
+  /**
+   * Sales returns against finished invoices — its own query, see
+   * data/roundReturns.ts for why. Keyed on the user because RLS scopes it.
+   */
+  const roundReturnsKey = [...ROUND_RETURNS_QK, userId] as const;
+  const { data: roundReturnsData } = useQuery({
+    queryKey: roundReturnsKey,
+    queryFn: fetchRoundReturns,
+    enabled: !!session.user,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const roundReturns = roundReturnsData ?? EMPTY_RETURNS;
+
   const stepOwners = data?.stepOwners ?? [];
   const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
@@ -613,6 +668,12 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      */
     const invalidate = () => {
       void refreshWorkingSet();
+      // ⚠ ON EVERY WRITE, NOT JUST THE RETURN ONES. A dispatch confirmation (or a
+      //   round correction) recorded as Returned opens a sales return server-side,
+      //   by trigger — so the write that creates the row is not one of ours. The
+      //   table is a few rows; re-reading it is cheaper than guessing which writes
+      //   could have touched it.
+      void queryClient.invalidateQueries({ queryKey: ROUND_RETURNS_QK }).catch(() => {});
     };
 
     /**
@@ -955,6 +1016,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       canEdit && (o.raisedBy === uid || isProcessCoordinator) && isSalesReturnPending(o);
 
     /**
+     * Who may raise a sales return against a finished invoice: whoever may cancel
+     * an order (its raiser, a coordinator, an admin) PLUS the Sales Return owners,
+     * because accounts is often first to hear that goods are coming back. The
+     * server re-checks, and also refuses per invoice — see invoiceReturnState.
+     */
+    const canRequestRoundReturn = (o: DispatchOrder): boolean =>
+      canEdit && (o.raisedBy === uid || isProcessCoordinator || canActOn("sales_return", o));
+
+    const canWithdrawRoundReturn = (ret: RoundReturn, o: DispatchOrder): boolean =>
+      canEdit &&
+      ret.status === "pending" &&
+      (ret.requestedBy === uid || o.raisedBy === uid || isProcessCoordinator || canActOn("sales_return", o));
+
+    /**
      * The people who own a step, named. With a location, the set that actually
      * covers it — its own if one exists, the fallback otherwise; a location
      * row REPLACES the fallback rather than adding to it, which is what makes
@@ -1156,6 +1231,16 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
     const orderIndex = new Map(orders.map((o) => [o.id, o]));
+
+    // Returns joined to their orders once. A return whose order is not in the
+    // snapshot (RLS admits the same set, so this is a refresh race at most) is
+    // dropped rather than rendered without a customer or an order number.
+    const roundReturnRows: RoundReturnRow[] = [];
+    for (const ret of roundReturns) {
+      const order = orderIndex.get(ret.orderId);
+      if (order) roundReturnRows.push({ ret, order });
+    }
+
     const snapshot = dispatchSnapshotFrom({ orders, stepSla });
     const queueEntries = buildQueueEntries(snapshot);
 
@@ -1359,6 +1444,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       salesReturnPending: orders.filter((o) => isSalesReturnPending(o) && canActOn("sales_return", o)),
       salesReturnCompleted: orders.filter((o) => isSalesReturnDone(o) && canActOn("sales_return", o)),
 
+      roundReturns,
+      roundReturnsFor: (orderId) => roundReturns.filter((x) => x.orderId === orderId),
+      roundReturnsPending: roundReturnRows.filter(
+        (r) => r.ret.status === "pending" && canActOn("sales_return", r.order),
+      ),
+      roundReturnsCompleted: roundReturnRows.filter(
+        (r) => r.ret.status === "recorded" && canActOn("sales_return", r.order),
+      ),
+      canRequestRoundReturn,
+      canWithdrawRoundReturn,
+
       // New Customer Orders. Same shape and the same reasoning as Sales Return
       // just above: plain filters over `orders`, never `buildQueueEntries`.
       customerOrdersPending: orders.filter(
@@ -1429,6 +1525,23 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       withdrawCancelRequest: async (orderId, reason) => {
         await withdrawCancelRequestWrite(orderId, reason);
+        invalidate();
+      },
+      // `invalidate` already re-reads the returns table; nothing here moves an order.
+      requestRoundReturn: async (orderId, roundNo, req) => {
+        await requestRoundReturnWrite(orderId, roundNo, req);
+        invalidate();
+      },
+      recordRoundReturn: async (returnId, payload) => {
+        await recordRoundReturnWrite(returnId, payload);
+        invalidate();
+      },
+      updateRoundReturn: async (returnId, payload) => {
+        await updateRoundReturnWrite(returnId, payload);
+        invalidate();
+      },
+      withdrawRoundReturn: async (returnId, reason) => {
+        await withdrawRoundReturnWrite(returnId, reason);
         invalidate();
       },
       closeOrder: async (orderId, reason) => {
@@ -1605,7 +1718,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
     customerCompanies,
     masterManagers, masterRequests, orders, notifications,
-    processCoordinatorIds, stepSla, orderNoPreview,
+    processCoordinatorIds, stepSla, orderNoPreview, roundReturns,
     // Load-bearing and invisible to tsc: without these the memo keeps the
     // assignees and the pool it was built with, so a reassignment would not move
     // anything on screen and Setup Save would never confirm.

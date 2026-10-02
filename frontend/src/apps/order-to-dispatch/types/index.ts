@@ -437,6 +437,70 @@ export type DispatchStatus =
 export type SalesReturnMode = "invoice_cancelled" | "sales_return";
 
 /**
+ * A sales return against ONE round's invoice, once it has left the gate — `fms_dispatch_round_returns`
+ * (migration 20261230120000).
+ *
+ * ⚠ NOT THE `sr` BLOCK ON `DispatchOrder`. That one is the cancellation kind: an
+ *   order cancelled while its billed goods were still in the plant. This is for
+ *   an invoice that has already gone out — typically on a CLOSED order — and it
+ *   is paperwork only: recording it never moves the order or its quantities.
+ *
+ * `origin` says how it opened: raised by hand (`requested`), or automatically
+ * because the round was recorded as Returned at Dispatch Confirmation
+ * (`returned_consignment`).
+ */
+export type RoundReturnOrigin = "requested" | "returned_consignment";
+export type RoundReturnScope = "full" | "partial";
+export type RoundReturnStatus = "pending" | "recorded" | "withdrawn";
+
+/** One line of what comes back on a return — a snapshot taken when it was raised. */
+export interface RoundReturnLine {
+  orderItemId: string | null;
+  itemId: string | null;
+  itemName: string;
+  unit: string | null;
+  lotNo: string | null;
+  /** What the invoice billed on this line. */
+  billedQty: number;
+  /** What is coming back. Equal to `billedQty` on every line of a full return. */
+  returnQty: number;
+}
+
+export interface RoundReturn {
+  id: string;
+  orderId: string;
+  /** With `orderId`, what identifies the invoice — it works for the round in progress too. */
+  roundNo: number;
+  /** The archived round. Null while the round is still in progress (out of the gate, not yet confirmed). */
+  roundId: string | null;
+  /** Snapshot of the invoice as it was when the return opened. */
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  ewayExpected: boolean;
+  origin: RoundReturnOrigin;
+  scope: RoundReturnScope;
+  /** What comes back, line by line. Empty only on rows opened before lines existed. */
+  lines: RoundReturnLine[];
+  reason: string;
+  requestedAt: string;
+  requestedBy: string | null;
+  status: RoundReturnStatus;
+  srMode: SalesReturnMode | null;
+  referenceNo: string | null;
+  actualDate: string | null;
+  remarks: string | null;
+  attachmentPath: string | null;
+  attachmentName: string | null;
+  recordedAt: string | null;
+  recordedBy: string | null;
+  editedAt: string | null;
+  editedBy: string | null;
+  withdrawnAt: string | null;
+  withdrawnBy: string | null;
+  withdrawReason: string | null;
+}
+
+/**
  * `credit_hold`, not `on_hold`: the ORDER-level status already owns that word,
  * and a credit hold is a different thing — the order stays in the credit queue
  * and its own owner releases it. Two holds sharing one token is how the wrong

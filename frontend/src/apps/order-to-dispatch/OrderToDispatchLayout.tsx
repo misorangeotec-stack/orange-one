@@ -54,7 +54,10 @@ export default function OrderToDispatchLayout() {
     record would give `undefined` and silently hide the link for its own owners.
   */
   const canSeeSalesReturn = s.canSeeQueue("sales_return");
-  const salesReturnPending = canSeeSalesReturn ? s.salesReturnPending.length : 0;
+  // Both kinds of Sales Return work: cancellations, and returns against a finished invoice.
+  const salesReturnPending = canSeeSalesReturn
+    ? s.salesReturnPending.length + s.roundReturnsPending.length
+    : 0;
 
   const canSeeCustomerOrders = s.canSeeCustomerOrders;
   const customerOrdersPending = canSeeCustomerOrders ? s.customerOrdersPending.length : 0;
