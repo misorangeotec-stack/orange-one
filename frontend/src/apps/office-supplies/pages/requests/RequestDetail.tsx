@@ -169,7 +169,7 @@ export default function RequestDetail() {
                 never cleared — deliberately, so the holder keeps their read — so an
                 unconditional line went on saying "Awaiting approval from X" on a
                 request that had been approved, handed over and DELIVERED. */}
-          {holder && r.status === "pending_first_approval" && (
+          {holder && (r.status === "pending_first_approval" || r.status === "pending_second_approval") && (
             <p className="text-[12.5px] text-navy mt-1">
               <span className="text-grey-2">Awaiting approval from</span>{" "}
               <span className="font-semibold">{s.personName(holder)}</span>

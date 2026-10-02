@@ -29,8 +29,9 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
   departmentId: string;
   requestId: string;
   /**
-   * Whoever this request's FIRST approval has been handed to, or null while it
-   * still sits with the department HOD.
+   * Whoever THIS STEP's approval has been handed to, or null while it still sits
+   * with its default owner (the department HOD for first approval, the step owners
+   * for second). Always null for handover, which cannot be reassigned.
    *
    * ⚠ IT HAS TO RIDE ON THE ENTRY. `core/workspace/mywork/items/officeSupplies.ts`
    *   decides ownership from the entry alone - it never sees the request row - so
@@ -49,6 +50,17 @@ export const isOpenRequest = (r: SupplyRequest): boolean =>
   r.status === "pending_handover";
 
 /** The single step a request currently owes, from its status. */
+/**
+ * Who holds this step's approval by handover, if anyone. Per STEP, not per status:
+ * the columns are never cleared at the decision, and the Completed tab asks about
+ * a step the request has already left.
+ */
+export function holderForStep(r: SupplyRequest, step: StepKey): string | null {
+  if (step === "first_approval") return r.assignedApproverId;
+  if (step === "second_approval") return r.secondAssignedApproverId;
+  return null;
+}
+
 export function openStep(r: SupplyRequest): StepKey | null {
   switch (r.status) {
     case "pending_first_approval":
@@ -274,7 +286,7 @@ export function buildHeldEntries(snap: SupplySnapshot): QueueEntry[] {
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
       requestId: r.id,
-      assignedApproverId: r.assignedApproverId,
+      assignedApproverId: holderForStep(r, step),
     });
   }
   return out;
@@ -294,7 +306,7 @@ export function buildQueueEntries(snap: SupplySnapshot): QueueEntry[] {
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
       requestId: r.id,
-      assignedApproverId: r.assignedApproverId,
+      assignedApproverId: holderForStep(r, step),
     });
   }
   return out;

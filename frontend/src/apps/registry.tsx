@@ -17,6 +17,8 @@ import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { inkMisApp } from "./ink-mis/meta";
 import { bushraCentralMasterApp } from "./bushra-central-master/meta";
+import { inkStabilisationApp } from "./ink-stabilisation/meta";
+import { inkExpiryApp } from "./ink-expiry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -29,6 +31,7 @@ import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { dailyReportApp } from "./daily-report/meta";
 import { announcementsApp } from "./announcements/meta";
+import { knowledgeBaseApp } from "./knowledge-base/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -97,6 +100,10 @@ export const apps: AppManifest[] = [
   // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
   // central master live and keeps every change in the browser; nothing is written back.
   bushraCentralMasterApp,
+  // Ink Stabilisation — Surat ink lots and their 3/6/9-month retests; read-only ConnectWave.
+  inkStabilisationApp,
+  // Ink Expiry — in-stock ink lots and whether Tally has their expiry; read-only ConnectWave.
+  inkExpiryApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
@@ -157,6 +164,11 @@ export const apps: AppManifest[] = [
   // see it; anyone else only once granted. Every member of staff READS them with
   // no grant, in the strip and on /announcements.
   announcementsApp,
+  // KB-1 · The Knowledge Base over the HR handbook. The grant gates the WHOLE feature
+  // while HR trials it: no grant means no Ask HR bubble and no handbook. View asks and
+  // reads; full access also opens the question log and the section notes. Opening it to
+  // the company later is granting 'view' to everyone, not a code change.
+  knowledgeBaseApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);

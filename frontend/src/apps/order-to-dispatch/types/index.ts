@@ -667,6 +667,14 @@ export interface DispatchRound {
   goActualDate: string | null;
   goOutwardNo: string | null;
   goRemarks: string | null;
+  /**
+   * The note written FOR THE CUSTOMER as this consignment left (OD-16).
+   *
+   * ⚠ NOT `goRemarks`, AND THE TWO MUST NOT BE MERGED. That one is ours —
+   *   written for the next person in the chain and never shown outside the
+   *   company. This one is published to the Order Desk the moment it is saved.
+   */
+  goCustomerRemark: string | null;
   goAt: string | null;
   goBy: string | null;
 
@@ -847,6 +855,14 @@ export interface DispatchOrder {
   /** Typed from the plant's paper register. Not generated, not unique. */
   goOutwardNo: string | null;
   goRemarks: string | null;
+  /**
+   * The note written FOR THE CUSTOMER as this consignment left (OD-16).
+   *
+   * ⚠ NOT `goRemarks`, AND THE TWO MUST NOT BE MERGED. That one is ours —
+   *   written for the next person in the chain and never shown outside the
+   *   company. This one is published to the Order Desk the moment it is saved.
+   */
+  goCustomerRemark: string | null;
   goAt: string | null;
   goBy: string | null;
 

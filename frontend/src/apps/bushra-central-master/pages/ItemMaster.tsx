@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { saveAs } from "file-saver";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -198,6 +199,24 @@ export default function ItemMaster() {
   const overrides = useMemo(() => overridesQ.data ?? {}, [overridesQ.data]);
   const seen = useSeen(user.id);
   const refreshOverrides = useCallback(() => qc.invalidateQueries({ queryKey: OVERRIDES_KEY }), [qc]);
+  /*
+    FOCUS MODE — another app hands over a short list of items to fix, as
+    ?focus=<name>\n<name>…&company=<tally guid>&from=<app> (Ink Stabilisation's
+    "Items with no category" does this). The grid then shows ONLY those items of that
+    company, highlighted, and INCLUDES them even when they hold no stock — the whole
+    point is to reach them. Names Central Masters does not have are listed in the
+    banner, because they cannot be shown or fixed here. "Show all items" leaves it.
+  */
+  const [params, setParams] = useSearchParams();
+  const focusNames = useMemo(
+    () => new Set((params.get("focus") ?? "").split("\n").map((s) => s.trim()).filter(Boolean)),
+    [params],
+  );
+  const focusCompany = params.get("company");
+  const focusFrom = params.get("from");
+  const focusOn = focusNames.size > 0;
+  const leaveFocus = () => setParams({}, { replace: true });
+
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [colFilters, setColFilters] = useState<Record<string, string[]>>({});
@@ -361,7 +380,9 @@ export default function ItemMaster() {
         filtered: a mirror of the whole master, with a warning saying so, beats an
         empty screen that looks like the item list itself has gone.
       */
-      if (stockMap && !held) continue;
+      const focused = focusOn && focusNames.has(item.name) && (!focusCompany || guid === focusCompany);
+      if (focusOn && !focused) continue;
+      if (stockMap && !held && !focused) continue;
 
       const o = overrides[item.id] ?? {};
       const centralGroupName = centralGroupOf(item);
@@ -397,7 +418,14 @@ export default function ItemMaster() {
       });
     }
     return out;
-  }, [items.data, overrides, seen, centralGroupOf, stockMap, guidOfCompany]);
+  }, [items.data, overrides, seen, centralGroupOf, stockMap, guidOfCompany, focusOn, focusNames, focusCompany]);
+
+  /** Focus names that matched no Central Masters item of that company — cannot be shown here. */
+  const focusMissing = useMemo(() => {
+    if (!focusOn || !items.data) return [];
+    const found = new Set(rows.map((r) => r.name));
+    return [...focusNames].filter((n) => !found.has(n)).sort();
+  }, [focusOn, focusNames, rows, items.data]);
 
   const byId = useMemo(() => new Map((items.data ?? []).map((i) => [i.id, i])), [items.data]);
 
@@ -411,7 +439,9 @@ export default function ItemMaster() {
    *   would be wrong for good — the ids are written once and kept.
    */
   const centralIds = useMemo(() => rows.map((r) => r.id), [rows]);
-  useEffect(() => { if (stockMap && centralIds.length) noteCentralIds(centralIds); }, [stockMap, centralIds]);
+  // Not in focus mode: its rows are a hand-picked list, not the in-stock list, so marking them
+  // "seen" would clear the New flag on items the reader has not actually looked at here.
+  useEffect(() => { if (stockMap && centralIds.length && !focusOn) noteCentralIds(centralIds); }, [stockMap, centralIds, focusOn]);
 
   /** What is stored for a cell, and what central holds for it. */
   const storedOf = (row: MirrorRow, key: EditableKey): string => row[key] ?? "";
@@ -864,6 +894,32 @@ export default function ItemMaster() {
         {sideError && <p className="mt-3 rounded bg-orange/10 px-3 py-2 text-[12.5px] text-orange">{sideError.message}</p>}
       </Card>
 
+      {focusOn && (
+        <div className="rounded-card border-2 border-orange/60 bg-orange/[0.06] px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="text-[13px] text-ink">
+              <div className="font-bold text-orange">
+                {focusFrom === "ink-stabilisation" ? "From Ink Stabilisation — items with no category" : "Items sent here to fix"}
+              </div>
+              <div className="mt-0.5">
+                Showing <b>{rows.length}</b> of {focusNames.size} item{focusNames.size === 1 ? "" : "s"}, highlighted below.
+                Set each one's <b>Ink type</b> (and Category), press <b>Save</b>, then Refresh the Ink Stabilisation page.
+              </div>
+              {focusMissing.length > 0 && (
+                <div className="mt-2 text-[12.5px]">
+                  <b className="text-ryg-red">{focusMissing.length} not in Central Masters</b>
+                  <span className="text-grey"> — they must come through from Tally before they can be set here:</span>
+                  <ul className="mt-1 list-disc pl-5 text-[12px] text-ink">
+                    {focusMissing.map((n) => <li key={n}>{n}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <Button size="sm" variant="outline" onClick={leaveFocus}>Show all items</Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <input
@@ -1009,7 +1065,7 @@ export default function ItemMaster() {
                   </tr>
                 )}
                 {pg.pageItems.map((row) => (
-                  <tr key={row.id} className={`border-b border-line/70 last:border-0 ${row.active ? "" : "bg-page/60"}`}>
+                  <tr key={row.id} className={`border-b border-line/70 last:border-0 ${focusOn ? "bg-yellow/20 shadow-[inset_4px_0_0_#FF6A1F]" : row.active ? "" : "bg-page/60"}`}>
                     <td className="px-3 py-1.5 align-middle">
                       <div className="truncate font-medium text-navy" title={row.name}>{row.name}</div>
                       {row.isNew && (

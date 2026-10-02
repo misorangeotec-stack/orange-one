@@ -117,6 +117,24 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/bushra-central-master",
     category: "control",
   },
+  /**
+   * INK STABILISATION — Enterprises Surat's manufactured ink lots and their 3 / 6 / 9-month
+   * retests. Read-only from ConnectWave.
+   */
+  "ink-stabilisation": {
+    name: "Ink Stabilisation",
+    basePath: "/ink-stabilisation",
+    category: "quality",
+  },
+  /**
+   * INK EXPIRY — every ink lot in stock, in every company, and whether Tally has its expiry
+   * date; the lots without one are the accountant's list. Read-only from ConnectWave.
+   */
+  "ink-expiry": {
+    name: "Ink Expiry Date",
+    basePath: "/ink-expiry",
+    category: "quality",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
@@ -227,6 +245,14 @@ export const APPS: Record<string, AppInfo> = {
   "travel-desk": {
     name: "Travel Desk",
     basePath: "/travel-desk",
+    category: "hr",
+  },
+  // KB-1 · HR's side of the handbook Knowledge Base. ⚠ Holding this module is what lets
+  // somebody ASK and READ at all while HR trials the feature (01-10-2026); full access
+  // also opens the question log and the section notes.
+  "knowledge-base": {
+    name: "Knowledge Base",
+    basePath: "/knowledge-base",
     category: "hr",
   },
   // The HR front door: one place to ask HR anything, routed by the category the

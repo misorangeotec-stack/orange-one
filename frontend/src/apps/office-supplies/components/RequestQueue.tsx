@@ -321,8 +321,8 @@ export default function RequestQueue({
               <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
                 {actionLabel}
               </Button>
-              {/* First approval only - the other two steps already have more than
-                  one owner, so neither is blocked on a single person. */}
+              {/* First and second approval - canReassignRequest is false at
+                  handover, which is delivery rather than a decision. */}
               {s.canReassignRequest(request) && (
                 <Button size="sm" variant="ghost" onClick={() => setReassigning(request)}>
                   Reassign

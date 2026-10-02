@@ -17,12 +17,25 @@
  *   ETD / ETA     the hand-entered consignments
  *
  * No notifications: nothing in this app raises one, and an empty bell is honest.
+ *
+ * THE SHEET IS SHARED, and this shell is what makes that safe. Every screen reads its documents
+ * synchronously from localStorage the moment it mounts, so the shared copy has to be in place
+ * BEFORE any of them render — otherwise the first paint shows this browser's stale sheet and
+ * the first keystroke saves it back over everyone else's. So the routes wait here, once, for
+ * `hydrateSharedSheet()`. See lib/sheetStore.ts.
  */
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NavItem } from "@/shared/components/layout/types";
 import { roleLabel, useSession } from "@/core/platform/session";
 import { appBasePath } from "../appInfo";
+import {
+  flushPendingDocuments, getSheetStatus, hydrateSharedSheet, setSheetCanEdit,
+  subscribeSheetStatus, type SheetStatus,
+} from "./lib/sheetStore";
 import InkMis from "./pages/InkMis";
 import InkItemMaster from "./pages/InkItemMaster";
 import InkShipments from "./pages/InkShipments";
@@ -45,29 +58,98 @@ const NAV: NavItem[] = [
   { label: "Godowns", to: `${B}/godowns`, icon: ic.godown },
 ];
 
+/** Live view of whether the sheet is shared, saving, or stuck on this browser. */
+export function useSheetStatus(): SheetStatus {
+  const [s, setS] = useState<SheetStatus>(() => getSheetStatus());
+  useEffect(() => subscribeSheetStatus(setS), []);
+  return s;
+}
+
 function InkMisLayout() {
   const { user, role } = useSession();
+  const status = useSheetStatus();
   return (
-    <AppShell
-      nav={NAV}
-      role={role}
-      user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
-      notifications={[]}
-    />
+    <>
+      {status.error && (
+        <div className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{status.error}</p>
+        </div>
+      )}
+      {/* Say it plainly rather than letting someone type into a sheet that will refuse the
+          save. The database is the real gate; this is so nobody wastes an afternoon on it. */}
+      {status.mode === "shared" && !status.canEdit && (
+        <div className="border-b bg-muted px-4 py-2 text-sm text-muted-foreground">
+          <strong>View only.</strong> You can read the sheet, but changes will not be saved. Ask an
+          admin for edit access to Ink IMS on the Users screen.
+        </div>
+      )}
+      <AppShell
+        nav={NAV}
+        role={role}
+        user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
+        notifications={[]}
+      />
+    </>
   );
+}
+
+/**
+ * Pull the shared sheet before the screens read it.
+ *
+ * The edit right is set FIRST, because `hydrateSharedSheet` consults it: a view-only user must
+ * not seed the shared sheet from their own browser, and must not push at all.
+ */
+function SheetGate({ children }: { children: React.ReactNode }) {
+  const { canEditModule } = useSession();
+  const canEdit = canEditModule("ink-mis");
+
+  const { isLoading, error } = useQuery({
+    queryKey: ["inkMis", "sheet", canEdit],
+    queryFn: async () => {
+      setSheetCanEdit(canEdit);
+      return await hydrateSharedSheet();
+    },
+    staleTime: Infinity,
+    retry: 1,
+  });
+
+  // Anything still settling when the tab closes goes now, rather than being lost to the timer.
+  useEffect(() => {
+    const go = () => void flushPendingDocuments();
+    window.addEventListener("pagehide", go);
+    return () => {
+      window.removeEventListener("pagehide", go);
+      void flushPendingDocuments();
+    };
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Loading the shared sheet…
+      </div>
+    );
+  }
+  // A failed pull is NOT a dead end: sheetStore has already fallen back to this browser's copy
+  // and set the banner, so the app opens and says so rather than refusing to start.
+  if (error) console.warn("Ink IMS: shared sheet unavailable, using this browser's copy", error);
+  return <>{children}</>;
 }
 
 export default function InkMisApp() {
   return (
-    <Routes>
-      <Route element={<InkMisLayout />}>
-        <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<InkMis />} />
-        <Route path="items" element={<InkItemMaster />} />
-        <Route path="pipeline" element={<InkShipments />} />
-        <Route path="godowns" element={<InkGodowns />} />
-        <Route path="*" element={<Navigate to="dashboard" replace />} />
-      </Route>
-    </Routes>
+    <SheetGate>
+      <Routes>
+        <Route element={<InkMisLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<InkMis />} />
+          <Route path="items" element={<InkItemMaster />} />
+          <Route path="pipeline" element={<InkShipments />} />
+          <Route path="godowns" element={<InkGodowns />} />
+          <Route path="*" element={<Navigate to="dashboard" replace />} />
+        </Route>
+      </Routes>
+    </SheetGate>
   );
 }

@@ -59,6 +59,7 @@
  * let the two drift apart silently, which is worse than a read-only import.
  */
 import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
+import { pushDocument } from "./sheetStore";
 import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit, type ItemFacts } from "./godowns";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 
@@ -1014,6 +1015,14 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
+/**
+ * Write locally, then share.
+ *
+ * Local first and always: typing must never wait on the network, and the local copy is what
+ * keeps the screen working if the shared sheet is unreachable. `pushDocument` is debounced and
+ * returns at once, ignores anything that is not a shared document, and declines for a
+ * view-only grant. See lib/sheetStore.ts.
+ */
 function writeJson(key: string, value: unknown): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
@@ -1021,6 +1030,7 @@ function writeJson(key: string, value: unknown): void {
     // Private browsing, or the quota is full. The screen keeps working on in-memory state;
     // warning on every keystroke would be worse than losing an unsaved edit.
   }
+  pushDocument(key, value);
 }
 
 export const loadPlans = (): Record<string, InkPlan> => readJson(KEY_PLANS, {});

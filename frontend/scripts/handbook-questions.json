@@ -1,0 +1,200 @@
+{
+  "_README": [
+    "KB-1 · The questions the Ask HR bubble must get right.",
+    "",
+    "This repo has no test runner, so nothing else would notice a prompt change quietly",
+    "breaking citations. Run it with:  npm run handbook-check",
+    "",
+    "Each case has:",
+    "  ask      - the question, in the words somebody would actually type",
+    "  anchors  - the answer must cite at least ONE of these kb_sections.anchor values",
+    "             (empty array = it must cite nothing, i.e. covered:false)",
+    "  must     - phrases the answer must contain, case-insensitive (optional)",
+    "  mustNot  - phrases that mean it got it wrong (optional)",
+    "  why      - what this case is actually protecting, for whoever reads a failure",
+    "",
+    "⚠ RE-DERIVED FOR MANUAL v5 ON 01-10-2026. v5 renumbered every chapter, so every anchor",
+    "  in this file was looked up again against the published v5 rows. Do NOT widen an anchor",
+    "  list to make a failure go away before reading what the model actually cited: that was",
+    "  wrong twice on v4 and both times the model was right, not the expectation.",
+    "",
+    "⚠ EVERY RUN COSTS REAL MONEY. Twenty-two questions is roughly two rupees at",
+    "  claude-sonnet-5 with a warm cache. Do not put it in a loop.",
+    "",
+    "⚠ THE DAILY CAP IS 50 QUESTIONS PER PERSON and this run spends 22 of them, against",
+    "  whoever the test credentials belong to. Two full runs plus a few manual questions",
+    "  will exhaust it and the rest return HTTP 429. That is the cap working, not a fault.",
+    "  It resets at midnight IST; to clear it sooner, delete that person's row for today",
+    "  from kb_rate_limit. The counter holds no question text, so nothing is lost."
+  ],
+  "cases": [
+    {
+      "ask": "how many paid leaves do i get in a year?",
+      "anchors": ["types-of-leave"],
+      "must": ["18"],
+      "why": "The single most-asked question. The figure lives under TYPES OF LEAVE, not under PAID LEAVE (PL), because Word styled it that way. Unchanged in v5."
+    },
+    {
+      "ask": "how many sick leaves are there?",
+      "anchors": ["sick-leave"],
+      "must": ["4"],
+      "why": "Short section, easy to confuse with paid leave."
+    },
+    {
+      "ask": "what is the maternity leave policy?",
+      "anchors": ["maternity-leave-ml"],
+      "must": ["182"],
+      "why": "Sensitive topic; must come from the handbook and not from Indian law generally."
+    },
+    {
+      "ask": "how many days paternity leave can i take",
+      "anchors": ["paternity-leave"],
+      "must": ["3"],
+      "why": "Small number buried in a paragraph."
+    },
+    {
+      "ask": "i am getting married, how much leave do i get",
+      "anchors": ["marriage-leave"],
+      "must": ["5"],
+      "why": "Colloquial phrasing, no keyword overlap with the heading beyond 'marriage'."
+    },
+    {
+      "ask": "what is my notice period if i resign?",
+      "anchors": [
+        "procedure-7",
+        "notice-period-requirement",
+        "notice-period-leave-final-settlement",
+        "chapter-20-exit-separation-policy"
+      ],
+      "must": ["60"],
+      "why": "Resignation questions are the ones people most want to ask privately, which is why the log is anonymous. ⚠ The NUMBER (60 days, and two months where the appointment letter says one) is only in the PROCEDURE section. 'Notice Period Requirement', which looks like the obvious home, says merely 'as per their appointment letter' and gives no figure. v5 merged the two old exit chapters into Chapter 20 but kept BOTH of these sections, so the split survives."
+    },
+    {
+      "ask": "can i take leave during my notice period?",
+      "anchors": [
+        "paid-leave-during-notice-period",
+        "leave-taken-during-notice-period",
+        "exceptional-cases"
+      ],
+      "why": "Three adjacent sub-sections; any is a correct citation."
+    },
+    {
+      "ask": "am i eligible for a loan from the company?",
+      "anchors": [
+        "applicability-12",
+        "eligibility-amount",
+        "guidelines-for-loan",
+        "chapter-15-loan-and-advance-policy",
+        "objective-12",
+        "purpose-3",
+        "procedure-3"
+      ],
+      "why": "The ELIGIBILITY answer ('two years of service') sits under APPLICABILITY, not under ELIGIBILITY AMOUNT, which is about the amount. Every Chapter 15 sub-section is accepted; a narrower list failed a correct answer on v4. v5 merged the old Chapter 29 loan-processing text into this one chapter, so the duplicate is gone."
+    },
+    {
+      "ask": "do i get my mobile bill reimbursed?",
+      "anchors": [
+        "mobile-reimbursement",
+        "clause-2",
+        "procedure-6",
+        "applicability-14",
+        "chapter-17-reimbursement-policy"
+      ],
+      "why": "v4 spelt the heading 'REIMBURSMENT' and this case existed to prove the misspelling was still found. v5 FIXED the spelling and folded mobile into the single Chapter 17 Reimbursement, so the case now guards the merge instead: the limits are in CLAUSE, not in the heading."
+    },
+    {
+      "ask": "who do i talk to about a grievance?",
+      "anchors": [
+        "chapter-18-grievance-policy",
+        "raising-a-grievance-informally",
+        "the-formal-grievance-procedure",
+        "the-hr-is-required-to",
+        "organization-chart-1-of-2"
+      ],
+      "why": "The Organization Chart is a PICTURE. This only works because it was transcribed."
+    },
+    {
+      "ask": "what is the office address?",
+      "anchors": ["company-address-and-contact"],
+      "must": ["Sachin"],
+      "why": "Exists ONLY inside the back-cover image. Proves the transcription pipeline end to end. ⚠ On v5 this is also the case that proves the two-pictures-in-one-paragraph fix: before it, the back cover was never given a section and this question had no answer at all."
+    },
+    {
+      "ask": "who are the directors of the company?",
+      "anchors": ["designation-hierarchy", "from-the-director-s-desk"],
+      "why": "Also image-only. Names appear in no extractable text anywhere. FROM THE DIRECTOR'S DESK is the picture the v5 ingest bug dropped."
+    },
+    {
+      "ask": "what hotel rate can i claim when i travel to mumbai?",
+      "anchors": [
+        "7-2-hotel-rate-caps-band-wise-city-wise-per-night-including-gst",
+        "7-1-general-rules-for-accommodation",
+        "7-3-exception-to-hotel-cap",
+        "chapter-16-domestic-travel-policy"
+      ],
+      "must": ["confirm"],
+      "why": "🔴 THE BIG ONE. v5 removed the second travel policy, so the two-policies clash is gone, but every hotel cap is still an unapproved [⚠ CONFIRM] placeholder and Annexure C is still unsigned. The answer must not state a settled figure."
+    },
+    {
+      "ask": "which travel category is band 3?",
+      "anchors": [
+        "2-band-structure-travel-category-matrix",
+        "annexure-a-band-structure-travel-category-quick-reference"
+      ],
+      "why": "🔴 The manual still contradicts itself here and says nothing about it: section 2's first table puts Band 3 in TC-D, the table immediately below groups TC-C as Bands 3, 4 and 5, and Annexure A sides with the first. The HR note must surface. Survives v5; needs a Director decision."
+    },
+    {
+      "ask": "what are the office working hours?",
+      "anchors": ["working-days", "days-timings-monday-saturday", "chapter-3-attendance-policy"],
+      "why": "Everyday question; the times sit in a heading-styled paragraph."
+    },
+    {
+      "ask": "what happens if i come late to office?",
+      "anchors": ["late-arrivals"],
+      "why": "Plain lookup."
+    },
+    {
+      "ask": "can i wear jeans to work?",
+      "anchors": [
+        "company-dress-code",
+        "dress-off-day",
+        "key-policy-clause-5",
+        "chapter-5-dress-code-uniform-diary-policy"
+      ],
+      "why": "The word 'jeans' may not appear; requires reading the dress code rather than matching. v5 merged the old Uniform & Diary chapter into Chapter 5, so the chapter anchor changed."
+    },
+    {
+      "ask": "do i get a diwali bonus?",
+      "anchors": [
+        "diwali-bonus-eligibility",
+        "eligibility",
+        "employee-separation-before-disbursement",
+        "employees-on-notice-period"
+      ],
+      "why": "Festival bonus, asked every October."
+    },
+    {
+      "ask": "when am i eligible for gratuity?",
+      "anchors": ["gratuity-policy", "chapter-11-compensation-and-increment-policy"],
+      "must": ["5"],
+      "why": "The rule is inside a paragraph Word styled as a heading, which the ingest demotes. Still demoted in v5."
+    },
+    {
+      "ask": "how many leaves do i have left right now?",
+      "anchors": ["types-of-leave"],
+      "must": ["HR One"],
+      "why": "The handbook holds RULES, never anyone's balance. Must point at HR One App and not invent a number."
+    },
+    {
+      "ask": "what is the wifi password in the office?",
+      "anchors": [],
+      "why": "Genuinely not in the handbook. Must admit it rather than reach for the nearest section."
+    },
+    {
+      "ask": "mujhe kitni chutti milti hai ek saal mein?",
+      "anchors": ["types-of-leave"],
+      "must": ["18"],
+      "why": "Hindi. Staff run from drivers to directors; an English-only answer bot excludes the people who most need it."
+    }
+  ]
+}

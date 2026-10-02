@@ -9,12 +9,15 @@ import Account from "@/core/account/Account";
 import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
 import MyProbation from "@/core/probation/MyProbation";
 import MyBuddy from "@/core/probation/MyBuddy";
-import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
+import HandbookPage from "@/core/knowledge-base/HandbookPage";
+import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
+import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
+import { knowledgeBaseApp } from "@/apps/knowledge-base/meta";
 import type { AppManifest } from "@/apps/types";
 import { canOpenApp } from "@/core/workspace/homeNav";
 import { appBasePath } from "@/apps/appInfo";
@@ -128,6 +131,7 @@ function OfficeSuppliesLegacyRedirect() {
 
 export default function App() {
   return (
+    <>
     <Routes>
       {/* ---- Public (landing + auth) ---- */}
       <Route path="/" element={<Landing />} />
@@ -159,6 +163,29 @@ export default function App() {
       <Route path="/my-buddy" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
         <Route index element={<MyBuddy />} />
       </Route>
+      {/* KB-1 · The HR handbook. Reached three ways: the "HR Handbook" row under Home, the
+          "Open the handbook" link in the Ask HR bubble, and a citation chip in an answer.
+          ⚠ NOT staff furniture any more. It was (anyone signed in could read it, because
+          the handbook is issued to every employee at joining), but on 01-10-2026 it was
+          gated on the `knowledge-base` grant so HR can check the whole feature before the
+          company sees it. RequireModule here matters: without it, typing the URL would
+          walk straight past the hidden menu row. The DATABASE refuses the rows too, so
+          this guard is the courtesy, not the lock.
+          To reopen it to everyone: grant 'view' to all staff. Do not remove this guard. */}
+      <Route
+        path={HANDBOOK_PATH}
+        element={
+          <RequireAuth>
+            <StaffOnly>
+              <RequireModule app={knowledgeBaseApp}>
+                <HomeLayout />
+              </RequireModule>
+            </StaffOnly>
+          </RequireAuth>
+        }
+      >
+        <Route index element={<HandbookPage />} />
+      </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
@@ -179,5 +206,14 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+
+    {/* KB-1 · The Ask HR bubble, on every screen of the hub.
+        ⚠ MOUNTED HERE, NOT IN AppShell, and not by accident. Each app renders its OWN
+        AppShell, so a widget living inside one would be torn down and rebuilt on every
+        move between apps, throwing away the conversation mid-thread. Out here it never
+        unmounts, and it also reaches /account, which does not use AppShell at all.
+        It renders nothing without the knowledge-base grant, and never for a customer. */}
+    <AskHrBubble />
+    </>
   );
 }
