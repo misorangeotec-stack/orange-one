@@ -29,8 +29,7 @@
  * around it (buy it, then sell it and collect for it), and finally the functions
  * that support all of the above.
  *
- * Note this is NOT strict process order: Asset sits with the plant rather than
- * with the other support functions, and Purchase follows production rather than
+ * Note this is NOT strict process order: Purchase follows production rather than
  * leading it. That is deliberate and was asked for — order these by how often
  * people open them, not by where they fall in the workflow.
  *
@@ -45,7 +44,6 @@ export type AppCategory =
   | "productivity"
   | "reports"
   | "plant"
-  | "asset"
   | "purchase"
   | "ims"
   | "sales"
@@ -72,7 +70,6 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   // Complaint stays here rather than under Sales because the investigation and the
   // corrective action are plant work, whichever side the complaint arrived from.
   { key: "plant", label: "Plant Operations" },
-  { key: "asset", label: "Asset" },
   // ── the commercial chain wrapped around it ─────────────────────────────────
   { key: "purchase", label: "Purchase" },
   // Inventory planning sheets — stock cover across the books and what to reorder. Placed
@@ -84,6 +81,8 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   // and a reader looking for "where did that order go?" starts from sales.
   { key: "sales", label: "Sales & Receivables" },
   // ── the functions that support all of it ───────────────────────────────────
+  // HR also carries Asset Maintenance (its own "Asset" group until 02-10-2026, moved here
+  // at the business's request) and the HR Handbook row (core/workspace/homeNav.tsx).
   { key: "hr", label: "HR" },
   { key: "control", label: "Control" },
   // Not a web app — the mobile grant gates login to the Orange One mobile Leads
