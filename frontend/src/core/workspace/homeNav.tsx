@@ -43,6 +43,12 @@ const ic: Record<string, ReactNode> = {
       <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 13.4H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 5 6.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10.6 3H11a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8Z" />
     </svg>
   ),
+  masters: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7h18M3 12h18M3 17h10" />
+      <circle cx="18" cy="17" r="3" />
+    </svg>
+  ),
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
@@ -101,7 +107,10 @@ export interface AppAccess {
   user: Profile;
 }
 
-export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
+export function buildHomeNav(
+  apps: AppManifest[],
+  opts: AppAccess & { canEditCentralMasters?: boolean },
+): NavItem[] {
   // Same label the other apps use to get here, so the place you clicked and the
   // place you land on are recognisably one destination.
   const nav: NavItem[] = [
@@ -160,6 +169,10 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
   // duplicate-heading case to guard against.
   if (opts.isAdmin) {
     nav.push({ label: "Admin", to: "/admin", icon: ic.admin, group: "Control", groupIcon: GROUP_ICONS.control });
+  } else if (opts.canEditCentralMasters) {
+    // A non-admin given rights on Admin → Central Masters Rights. Admins already
+    // reach the same screen inside Admin, so they do not get a second row.
+    nav.push({ label: "Central Masters", to: "/central-masters", icon: ic.masters, group: "Control", groupIcon: GROUP_ICONS.control });
   }
 
   nav.push({ label: "My Account", to: "/account", icon: ic.account, section: "Account" });

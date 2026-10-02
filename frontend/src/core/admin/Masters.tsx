@@ -739,12 +739,25 @@ export default function Masters() {
           </div>
           <div className="text-right">
             <div className="flex gap-2">
-              <Link
-                to="/admin/masters/reconcile"
-                className="inline-flex items-center rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-medium text-navy transition hover:border-orange hover:text-orange"
-              >
-                Reconcile with Tally
-              </Link>
+              {/* Admin-only, like the /admin area they live in. A master manager
+                  reaches this screen through /central-masters and has no route
+                  to either, so the links would only lead back home. */}
+              {isAdmin && (
+                <>
+                  <Link
+                    to="/admin/masters-rights"
+                    className="inline-flex items-center rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-medium text-navy transition hover:border-orange hover:text-orange"
+                  >
+                    Who can edit
+                  </Link>
+                  <Link
+                    to="/admin/masters/reconcile"
+                    className="inline-flex items-center rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-medium text-navy transition hover:border-orange hover:text-orange"
+                  >
+                    Reconcile with Tally
+                  </Link>
+                </>
+              )}
               <Button size="sm" variant="ghost" onClick={() => doSync(false)} disabled={syncing || !isAdmin}>
                 {syncing ? "Syncing…" : "Sync now"}
               </Button>
