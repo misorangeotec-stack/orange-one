@@ -96,7 +96,7 @@ export const APPS: Record<string, AppInfo> = {
   sampling: {
     name: "Ink / RM Sampling",
     basePath: "/sampling",
-    category: "sampling",
+    category: "plant",
   },
   /**
    * INK IMS — ink inventory planning. Its own module, filed under its own menu group.
@@ -124,7 +124,7 @@ export const APPS: Record<string, AppInfo> = {
   "ink-stabilisation": {
     name: "Ink Stabilisation",
     basePath: "/ink-stabilisation",
-    category: "quality",
+    category: "plant",
   },
   /**
    * INK EXPIRY — every ink lot in stock, in every company, and whether Tally has its expiry
@@ -133,15 +133,15 @@ export const APPS: Record<string, AppInfo> = {
   "ink-expiry": {
     name: "Ink Expiry Date",
     basePath: "/ink-expiry",
-    category: "quality",
+    category: "plant",
   },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
-    category: "production",
+    category: "plant",
   },
   /**
-   * The post-sale (and post-purchase) grievance, filed under QUALITY rather than
+   * The post-sale (and post-purchase) grievance, filed under PLANT OPERATIONS rather than
    * under Sales or Production because it is genuinely both: a FINISHED GOOD
    * complaint arrives from a customer against a sales invoice, and a RAW
    * MATERIAL one goes out to a vendor against a purchase invoice. Filing it
@@ -150,7 +150,7 @@ export const APPS: Record<string, AppInfo> = {
   complaint: {
     name: "Complaint (RM/FG)",
     basePath: "/complaint",
-    category: "quality",
+    category: "plant",
   },
   // Picks up where Production Entry ends: that module closes at "FG Transfer to
   // Godown", this one takes the goods from the godown to the customer.

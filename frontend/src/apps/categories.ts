@@ -44,9 +44,7 @@
 export type AppCategory =
   | "productivity"
   | "reports"
-  | "sampling"
-  | "production"
-  | "quality"
+  | "plant"
   | "asset"
   | "purchase"
   | "ims"
@@ -67,13 +65,13 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   // The group carries ONE app (apps/reports/) but many rows: it is a catalogue, so the
   // sidebar lists its sections rather than a single link — see `menuEntries` in apps/types.
   { key: "reports", label: "Reports" },
-  // ── the plant floor: sample it, make it, and the machines that do the making ─
-  { key: "sampling", label: "Sampling" },
-  { key: "production", label: "Production" },
-  // Judging what came off the line — and what came in from a supplier. Sits with
-  // the plant rather than with Sales because the investigation and the corrective
-  // action are plant work, whichever side the complaint arrived from.
-  { key: "quality", label: "Quality" },
+  // ── the plant floor: sample it, make it, judge it, and the machines that do the making ─
+  // One group for the whole plant, asked for by the business: Sampling, Production Entry
+  // and the quality apps (Complaint, Ink Stabilisation, Ink Expiry) used to sit in three
+  // separate groups — "Sampling", "Production" and "Quality" — each one or two rows deep.
+  // Complaint stays here rather than under Sales because the investigation and the
+  // corrective action are plant work, whichever side the complaint arrived from.
+  { key: "plant", label: "Plant Operations" },
   { key: "asset", label: "Asset" },
   // ── the commercial chain wrapped around it ─────────────────────────────────
   { key: "purchase", label: "Purchase" },
