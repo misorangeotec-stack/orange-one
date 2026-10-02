@@ -15,8 +15,9 @@ import { useExpiryStatus } from "../lib/useExpiryStatus";
 import FreshnessBar from "../components/FreshnessBar";
 import {
   ActiveFilters, AGE_BANDS, ageBand, DAYS_LEFT_BANDS, daysLeftBand, monthOf, QTY_BANDS, qtyBand,
-  SortFilterBody, SortFilterHead, useSortFilter, type Col,
+  SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col,
 } from "../components/SortFilterHead";
+import { PurchaseDateCell, purchaseText, ReturnDateCell } from "../components/LotDates";
 
 /**
  * INK EXPIRY — which in-stock ink lots have their expiry date in Tally, and which don't.
@@ -120,8 +121,10 @@ export default function ExpiryStatus() {
       bucket: (l) => qtyBand(l.qty), bucketOrder: QTY_BANDS,
       render: (l) => <>{fmtQty(l.qty)} <span className="text-grey">{l.uom}</span></> },
     { key: "godown", label: "Godown", text: (l) => l.godown || "—", sort: (l) => l.godown || null },
-    { key: "inward", label: "First inward", text: (l) => fmtDate(l.inward), sort: (l) => l.inward,
-      bucket: (l) => monthOf(l.inward, "Unknown") },
+    { key: "inward", label: "Purchase / prod. date", text: (l) => purchaseText(l) || "—", sort: (l) => l.inward,
+      bucket: (l) => monthOf(l.inward, "Unknown"), render: (l) => <PurchaseDateCell lot={l} /> },
+    { key: "return", label: "Sales return", text: (l) => (l.returnDate ? fmtDate(l.returnDate) : "—"), sort: (l) => l.returnDate,
+      bucket: (l) => (l.returnDate ? monthOf(l.returnDate) : "No return"), render: (l) => <ReturnDateCell lot={l} /> },
     { key: "age", label: "Age (d)", align: "right", text: (l) => String(age(l, today) ?? "—"), sort: (l) => age(l, today),
       bucket: (l) => ageBand(age(l, today)), bucketOrder: AGE_BANDS },
     { key: "expiry", label: "Expiry (Tally)", text: (l) => (l.expiry ? fmtDate(l.expiry) : l.expiryRaw ?? "not in Tally"),
@@ -147,8 +150,8 @@ export default function ExpiryStatus() {
       render: (r) => <>{fmtQty(r.qty)} <span className="text-grey">{r.uom}</span></> },
     { key: "uom", label: "Unit", text: (r) => r.uom, sort: (r) => r.uom },
   ], []);
-  const ctl = useSortFilter(rows, lotCols);
-  const ctlNoLot = useSortFilter(baseNoLot, noLotCols);
+  const ctl = useSortFilter(rows, lotCols, "status-lots");
+  const ctlNoLot = useSortFilter(baseNoLot, noLotCols, "status-nolot");
 
   const resetKey = `${tab}|${search}|${companies.join()}|${categories.join()}`;
   const pg = usePagination(ctl.view, { pageSize: 50, resetKey: `${resetKey}|${ctl.stamp}` });
@@ -164,7 +167,9 @@ export default function ExpiryStatus() {
     { header: "Unit", width: 6, value: (l) => l.uom },
     { header: "Value (₹, Tally closing rate)", width: 14, value: (l) => Math.round(l.value) },
     { header: "Godown", width: 18, value: (l) => l.godown },
-    { header: "First inward date", width: 14, value: (l) => (l.inward ? fmtDate(l.inward) : "") },
+    { header: "Purchase / prod. date", width: 14, value: (l) => (l.inward ? fmtDate(l.inward) : "") },
+    { header: "Purchase / prod. (how, where)", width: 28, value: (l) => purchaseText(l) },
+    { header: "Sales return date", width: 14, value: (l) => (l.returnDate ? fmtDate(l.returnDate) : "") },
     { header: "Age (days)", width: 9, value: (l) => age(l, today) ?? "" },
     ...(forAccountant
       ? [
@@ -320,7 +325,8 @@ export default function ExpiryStatus() {
               <MultiSelect values={companies} onChange={setCompanies} options={companyOptions} placeholder="All companies" className="w-52" />
               <MultiSelect values={categories} onChange={setCategories} options={categoryOptions} placeholder="All groups"
                 searchable className="w-64" />
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                {tab === "nolot" ? <TableTools cols={noLotCols} ctl={ctlNoLot} /> : <TableTools cols={lotCols} ctl={ctl} />}
                 <Button variant="outline" size="sm" onClick={exportTab}>
                   {tab === "todo" ? "Export for accountant" : "Export Excel"}
                 </Button>
@@ -333,7 +339,7 @@ export default function ExpiryStatus() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <SortFilterHead cols={noLotCols} ctl={ctlNoLot} />
-                    <SortFilterBody cols={noLotCols} rows={pgNoLot.pageItems} rowKey={(r) => `${r.company}|${r.item}`} empty="Nothing matches." />
+                    <SortFilterBody cols={noLotCols} ctl={ctlNoLot} rows={pgNoLot.pageItems} rowKey={(r) => `${r.company}|${r.item}`} empty="Nothing matches." />
                   </table>
                 </div>
                 <Pagination state={pgNoLot} rowsLabel="items" pageSizeOptions={[50, 100, 250]} />
@@ -344,7 +350,7 @@ export default function ExpiryStatus() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <SortFilterHead cols={lotCols} ctl={ctl} />
-                    <SortFilterBody cols={lotCols} rows={pg.pageItems} rowKey={(l) => `${l.company}|${l.item}|${l.lot}`} empty="No lots match." />
+                    <SortFilterBody cols={lotCols} ctl={ctl} rows={pg.pageItems} rowKey={(l) => `${l.company}|${l.item}|${l.lot}`} empty="No lots match." />
                   </table>
                 </div>
                 <Pagination state={pg} rowsLabel="lots" pageSizeOptions={[50, 100, 250]} />
