@@ -6,7 +6,6 @@ import { apps } from "@/apps/registry";
 import { appBasePath } from "@/apps/appInfo";
 import { buildHomeNav } from "./homeNav";
 import { useTaskNotifications } from "./useTaskNotifications";
-import { useCentralMastersAccess } from "@/core/admin/centralMastersAccess";
 
 /**
  * The portal shell for `/home`.
@@ -25,12 +24,11 @@ import { useCentralMastersAccess } from "@/core/admin/centralMastersAccess";
 export default function HomeLayout() {
   const { user, role, isAdmin, isExternal, hasModule } = useSession();
   const { items: notifications, onMarkRead } = useTaskNotifications();
-  const { allowed: canEditCentralMasters } = useCentralMastersAccess();
 
   // Rebuilt only when the user's access changes, not on every render.
   const nav = useMemo(
-    () => buildHomeNav(apps, { hasModule, isAdmin, user, canEditCentralMasters }),
-    [hasModule, isAdmin, user, canEditCentralMasters],
+    () => buildHomeNav(apps, { hasModule, isAdmin, user }),
+    [hasModule, isAdmin, user],
   );
 
   /**

@@ -13,8 +13,6 @@ import HandbookPage from "@/core/knowledge-base/HandbookPage";
 import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
 import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
-import Masters from "@/core/admin/Masters";
-import { useCentralMastersAccess } from "@/core/admin/centralMastersAccess";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
@@ -100,17 +98,6 @@ function StaffOnly({ children }: { children: ReactNode }) {
   if (isExternal && !isAdmin) {
     return <Navigate to={`${appBasePath("customer-orders")}/password`} replace />;
   }
-  return <>{children}</>;
-}
-
-/**
- * Lets through an admin or anyone holding a Central Masters right. Waits for the
- * rights to load rather than bouncing a real editor home on the first frame.
- */
-function RequireCentralMasters({ children }: { children: ReactNode }) {
-  const { loading, allowed } = useCentralMastersAccess();
-  if (loading) return null;
-  if (!allowed) return <Navigate to="/home" replace />;
   return <>{children}</>;
 }
 
@@ -200,18 +187,6 @@ export default function App() {
         <Route index element={<HandbookPage />} />
       </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
-      {/* Central Masters for a NON-admin given rights in Admin → Central Masters
-          Rights. The same screen as /admin/masters, but in the home shell: the
-          /admin area stays admin-only, so handing someone one master does not
-          hand them Users, Module Access and the rest. The DATABASE is the lock
-          (every mst_* write is is_admin OR mst_is_master_manager); this guard
-          only keeps people without any right off a page they could not use. */}
-      <Route
-        path="/central-masters"
-        element={<RequireAuth><StaffOnly><RequireCentralMasters><HomeLayout /></RequireCentralMasters></StaffOnly></RequireAuth>}
-      >
-        <Route index element={<Masters />} />
-      </Route>
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
       {liveApps.map((app) => {

@@ -50,63 +50,6 @@ export async function fetchMyMasterManagerTypes(userId: string | null): Promise<
   return ((data ?? []) as { master_type: CentralMasterType }[]).map((r) => r.master_type);
 }
 
-/** One grant: this user may edit this master type. */
-export interface MasterManagerGrant {
-  masterType: CentralMasterType;
-  userId: string;
-}
-
-/** Every grant in mst_master_managers — the Central Masters Rights screen's list. */
-export async function fetchMasterManagers(): Promise<MasterManagerGrant[]> {
-  const { data, error } = await db.from("mst_master_managers").select("master_type, user_id");
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as { master_type: CentralMasterType; user_id: string }[]).map((r) => ({
-    masterType: r.master_type,
-    userId: r.user_id,
-  }));
-}
-
-/**
- * Sets exactly who may edit a group of master types: everyone in `userIds` gets
- * every type in `types`, and nobody else keeps any of them.
- *
- * A DIFF, not delete-all-then-insert. The table is what RLS reads on every
- * mst_* write, so a failed insert after a blanket delete would strip rights
- * from people who were never meant to lose them. Here an untouched grant is
- * never removed, and the inserts run before the deletes.
- *
- * Admin-only: mst_master_managers_write is `is_admin(uid)`, so a non-admin call
- * is refused by the database.
- */
-export async function setMasterManagersForTypes(
-  types: readonly CentralMasterType[],
-  userIds: readonly string[],
-  current: readonly MasterManagerGrant[],
-): Promise<void> {
-  const want = new Set(userIds);
-  const toAdd: { master_type: CentralMasterType; user_id: string }[] = [];
-  const toRemove: MasterManagerGrant[] = [];
-  for (const t of types) {
-    const have = new Set(current.filter((g) => g.masterType === t).map((g) => g.userId));
-    want.forEach((u) => { if (!have.has(u)) toAdd.push({ master_type: t, user_id: u }); });
-    have.forEach((u) => { if (!want.has(u)) toRemove.push({ masterType: t, userId: u }); });
-  }
-  if (toAdd.length) {
-    const { error } = await db
-      .from("mst_master_managers")
-      .upsert(toAdd, { onConflict: "master_type,user_id", ignoreDuplicates: true });
-    if (error) throw new Error(error.message);
-  }
-  for (const g of toRemove) {
-    const { error } = await db
-      .from("mst_master_managers")
-      .delete()
-      .eq("master_type", g.masterType)
-      .eq("user_id", g.userId);
-    if (error) throw new Error(error.message);
-  }
-}
-
 export const MASTER_TABLE: Record<CentralMasterType, string> = {
   company: "mst_companies",
   party: "mst_parties",
