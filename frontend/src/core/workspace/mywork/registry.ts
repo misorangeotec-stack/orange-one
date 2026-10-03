@@ -33,6 +33,10 @@ import { assetMaintenanceProvider } from "./providers/asset-maintenance";
 import { travelDeskProvider } from "./providers/travel-desk";
 import { learningDevelopmentProvider } from "./providers/learning-development";
 import { helpDeskProvider } from "./providers/help-desk";
+import { customerOnboardingProvider } from "./providers/customer-onboarding";
+import { complaintProvider } from "./providers/complaint";
+import { ocpiProvider } from "./providers/ocpi";
+import { inkStabilisationProvider } from "./providers/ink-stabilisation";
 
 export const myWorkProviders: MyWorkProvider[] = [
   tasksProvider,
@@ -45,6 +49,10 @@ export const myWorkProviders: MyWorkProvider[] = [
   samplingProvider,
   productionEntryProvider,
   orderToDispatchProvider,
+  customerOnboardingProvider,
+  ocpiProvider,
+  complaintProvider,
+  inkStabilisationProvider,
   assetMaintenanceProvider,
   travelDeskProvider,
   /*

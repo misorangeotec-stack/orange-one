@@ -70,6 +70,9 @@ import { fetchAssetData, type AssetData } from "@/apps/asset-maintenance/data/as
 import { fetchTravelData, type TravelData } from "@/apps/travel-desk/data/travelFetch";
 import { fetchLdData, type LdData } from "@/apps/learning-development/data/ldFetch";
 import { fetchHelpData, type HelpData } from "@/apps/help-desk/data/helpFetch";
+import { fetchCustomerData, type CustomerSnapshot } from "@hub/data/customerOnboarding/customerFetch";
+import { fetchComplaintData, type ComplaintData } from "@/apps/complaint/data/complaintFetch";
+import { fetchOcpiData, type OcpiData } from "@/apps/ocpi/data/ocpiFetch";
 
 // THE RULES THEMSELVES — the same files My Work Today renders from. Not copies.
 import { taskWorkItems } from "@/core/workspace/mywork/items/tasks";
@@ -85,6 +88,9 @@ import { assetWorkItems } from "@/core/workspace/mywork/items/assetMaintenance";
 import { travelDeskWorkItems } from "@/core/workspace/mywork/items/travel-desk";
 import { learningDevelopmentWorkItems } from "@/core/workspace/mywork/items/learning-development";
 import { helpDeskWorkItems } from "@/core/workspace/mywork/items/help-desk";
+import { customerOnboardingWorkItems } from "@/core/workspace/mywork/items/customerOnboarding";
+import { complaintWorkItems } from "@/core/workspace/mywork/items/complaint";
+import { ocpiWorkItems } from "@/core/workspace/mywork/items/ocpi";
 
 // ── What a caller gets back ───────────────────────────────────────────────────
 
@@ -152,6 +158,9 @@ export interface Datasets {
   travel?: TravelData;
   ld?: LdData;
   help?: HelpData;
+  cust?: CustomerSnapshot;
+  complaint?: ComplaintData;
+  ocpi?: OcpiData;
 }
 
 /**
@@ -187,6 +196,9 @@ export const COVERED_APP_IDS = [
   "asset-maintenance",
   "learning-development",
   "help-desk",
+  "customer-onboarding",
+  "complaint",
+  "ocpi",
 ] as const;
 export type CoveredAppId = (typeof COVERED_APP_IDS)[number];
 
@@ -202,6 +214,10 @@ export const DELIBERATELY_UNCOVERED: Record<string, string> = {
   // wiring below (fetch, items, SOURCE_APP) is left in place — to mail it, move
   // "travel-desk" back into COVERED_APP_IDS, rebuild, and redeploy work-snapshot.
   "travel-desk": "built, not live — excluded from the mail until Travel Desk goes live",
+  // Its untested retests come from ConnectWave lots, which this server bundle has no
+  // client for (the browser's reads import.meta.env). Screen only until a ConnectWave
+  // server shim exists.
+  "ink-stabilisation": "untested retests need ConnectWave lots — no server reader for them yet",
 };
 
 // ── Clock ─────────────────────────────────────────────────────────────────────
@@ -290,6 +306,9 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     want.has("travel-desk") ? fetchTravelData().then((d) => void (out.travel = d)) : null,
     want.has("learning-development") ? fetchLdData().then((d) => void (out.ld = d)) : null,
     want.has("help-desk") ? fetchHelpData().then((d) => void (out.help = d)) : null,
+    want.has("customer-onboarding") ? fetchCustomerData().then((d) => void (out.cust = d)) : null,
+    want.has("complaint") ? fetchComplaintData().then((d) => void (out.complaint = d)) : null,
+    want.has("ocpi") ? fetchOcpiData().then((d) => void (out.ocpi = d)) : null,
   ]);
   assertCutoffHandled([
     out.hr?.config?.stepSla as never,
@@ -301,6 +320,9 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     out.asset?.config?.stepSla as never,
     out.ld?.config?.step_sla as never,
     out.help?.config?.step_sla as never,
+    out.cust?.stepSla as never,
+    out.complaint?.config?.stepSla as never,
+    out.ocpi?.stepSla as never,
   ]);
   return out;
 }
@@ -321,6 +343,10 @@ const SOURCE_APP: Record<string, string> = {
   "asset-maintenance": "asset-maintenance",
   "travel-desk": "travel-desk",
   "learning-development": "learning-development",
+  "help-desk": "help-desk",
+  "customer-onboarding": "customer-onboarding",
+  complaint: "complaint",
+  ocpi: "ocpi",
 };
 
 /** Provider display order, matching core/workspace/mywork/registry.ts:34-46. */
@@ -337,6 +363,10 @@ const SOURCE_ORDER = [
   "asset-maintenance",
   "travel-desk",
   "learning-development",
+  "help-desk",
+  "customer-onboarding",
+  "ocpi",
+  "complaint",
 ];
 
 /**
@@ -375,6 +405,12 @@ export function computeSnapshot(
   //   or by a category's owners. Passing one would have to mean something,
   //   and the only thing it could mean is "give the admin every ticket".
   if (data.help && has.has("help-desk")) all = all.concat(helpDeskWorkItems(data.help, userId));
+  // These three gate on the EDIT grant on screen; the mail does not know grants,
+  // so it uses the default (true) — the same over-inclusion the other modules
+  // above already accept for view-only holders.
+  if (data.cust && has.has("customer-onboarding")) all = all.concat(customerOnboardingWorkItems(data.cust, userId, isAdmin));
+  if (data.complaint && has.has("complaint")) all = all.concat(complaintWorkItems(data.complaint, userId, isAdmin));
+  if (data.ocpi && has.has("ocpi")) all = all.concat(ocpiWorkItems(data.ocpi, userId, isAdmin));
 
   const scoped = isAdmin ? all.filter((i) => i.assignment === "direct") : all;
 
