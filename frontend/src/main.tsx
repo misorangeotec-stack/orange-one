@@ -2,14 +2,13 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { getPersister, PERSIST_BUSTER, PERSIST_MAX_AGE } from "./queryPersister";
 import ErrorBoundary from "@/core/platform/ErrorBoundary";
 import { AuthProvider } from "@/core/platform/auth";
 import { PlatformDirectoryProvider } from "@/core/platform/store";
 import { SessionProvider } from "@/core/platform/session";
-import { isEmbedded, publishQueryClient, seedFromParent } from "@/shared/lib/embedded";
 import "./index.css";
 import "./styles/landing.css";
 
@@ -62,31 +61,9 @@ function isEmptyDirectory(query: { queryKey: readonly unknown[]; state: { data?:
   return !data?.profiles?.length;
 }
 
-// My Control Center's work panel: the page publishes its client; the panel frame
-// starts its own from a copy of it. See shared/lib/embedded.ts.
-if (isEmbedded) seedFromParent(queryClient);
-else publishQueryClient(queryClient);
-
-const portal = (
-  <ErrorBoundary>
-    <AuthProvider>
-      <PlatformDirectoryProvider>
-        <SessionProvider>
-          <App />
-        </SessionProvider>
-      </PlatformDirectoryProvider>
-    </AuthProvider>
-  </ErrorBoundary>
-);
-
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
-      {isEmbedded ? (
-        // Inside the work panel: no persister — the page around it owns the
-        // IndexedDB copy, and two writers to one store would race.
-        <QueryClientProvider client={queryClient}>{portal}</QueryClientProvider>
-      ) : (
       <PersistQueryClientProvider
         client={queryClient}
         persistOptions={{
@@ -108,9 +85,16 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           page chrome's tokens available — and so no screen can ever again
           unmount the whole tree into a blank white page.
         */}
-        {portal}
+        <ErrorBoundary>
+          <AuthProvider>
+            <PlatformDirectoryProvider>
+              <SessionProvider>
+                <App />
+              </SessionProvider>
+            </PlatformDirectoryProvider>
+          </AuthProvider>
+        </ErrorBoundary>
       </PersistQueryClientProvider>
-      )}
     </BrowserRouter>
   </React.StrictMode>
 );

@@ -11,8 +11,7 @@ import MyProbation from "@/core/probation/MyProbation";
 import MyBuddy from "@/core/probation/MyBuddy";
 import HandbookPage from "@/core/knowledge-base/HandbookPage";
 import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
-import { WorkPanelHost, WorkPanelFrameBridge } from "@/core/workspace/WorkPanel";
-import { isEmbedded, MCC_IDLE_PATH } from "@/shared/lib/embedded";
+import { WorkPanel, useWorkPanelState } from "@/core/workspace/WorkPanel";
 import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
@@ -132,9 +131,31 @@ function OfficeSuppliesLegacyRedirect() {
 }
 
 export default function App() {
+  const location = useLocation();
+  /*
+   * My Control Center's work panel (core/workspace/WorkPanel.tsx). While it is
+   * open the URL is the item's, but the main routes keep rendering WHERE THE PANEL
+   * WAS OPENED FROM, so the home screen stays put underneath; the item's own route
+   * renders a second time, inside the panel.
+   */
+  const { background } = useWorkPanelState();
+
+  // Each registered app owns everything under its basePath, gated by auth + access.
+  // A list, not inline, because the work panel renders the same routes.
+  const appRoutes = liveApps.map((app) => {
+    const Component = app.Component!;
+    return (
+      <Route
+        key={app.id}
+        path={`${app.basePath}/*`}
+        element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
+      />
+    );
+  });
+
   return (
     <>
-    <Routes>
+    <Routes location={background ?? location}>
       {/* ---- Public (landing + auth) ---- */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
@@ -191,32 +212,20 @@ export default function App() {
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
-      {liveApps.map((app) => {
-        const Component = app.Component!;
-        return (
-          <Route
-            key={app.id}
-            path={`${app.basePath}/*`}
-            element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
-          />
-        );
-      })}
+      {appRoutes}
 
       {/* ---- Moved on 29-07-2026: General Purchase left /office-supplies ---- */}
       <Route path={LEGACY_SUPPLIES_BASE} element={<OfficeSuppliesLegacyRedirect />} />
       <Route path={`${LEGACY_SUPPLIES_BASE}/*`} element={<OfficeSuppliesLegacyRedirect />} />
 
-      {/* The work panel frame's resting page — blank, so nothing runs behind a closed panel. */}
-      <Route path={MCC_IDLE_PATH} element={<RequireAuth><></></RequireAuth>} />
-
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
 
-    {/* My Control Center's work panel. At the ROOT, never inside a page: its frame
-        shares this window's query cache and must live as long as that cache does —
-        see shared/lib/embedded.ts. The bridge does anything only inside the frame. */}
-    <WorkPanelHost />
-    <WorkPanelFrameBridge />
+    {background && (
+      <WorkPanel>
+        <Routes>{appRoutes}</Routes>
+      </WorkPanel>
+    )}
 
     {/* KB-1 · The Ask HR bubble, on every screen of the hub.
         ⚠ MOUNTED HERE, NOT IN AppShell, and not by accident. Each app renders its OWN
@@ -224,7 +233,7 @@ export default function App() {
         move between apps, throwing away the conversation mid-thread. Out here it never
         unmounts, and it also reaches /account, which does not use AppShell at all.
         It renders nothing without the knowledge-base grant, and never for a customer. */}
-    {!isEmbedded && <AskHrBubble />}
+    <AskHrBubble />
     </>
   );
 }

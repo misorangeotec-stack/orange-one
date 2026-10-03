@@ -50,7 +50,7 @@ import { FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/Colu
 import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import { useMyWork, type AggregateState } from "./mywork/MyWorkAggregator";
 import type { WorkItem } from "./mywork/types";
-import { openWorkItem, warmWorkPanel } from "./WorkPanel";
+import { useOpenWorkItem } from "./WorkPanel";
 import BucketBoard from "./BucketBoard";
 
 /** Sort weight per bucket: most urgent first, undated last, parked last of all. */
@@ -183,12 +183,8 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [stages, setStages] = useState<string[]>([]);
   const [assignment, setAssignment] = useState<string[]>([]);
   const [q, setQ] = useState("");
-  // Rows open in the side panel (WorkPanel). Its frame boots in the background the
-  // first time the pointer reaches the buckets or the list — the moment someone is
-  // about to click — so the click itself rarely waits for it. Not on page load: the
-  // frame is a second copy of the app, and most visits never open a row. A click
-  // before then simply starts it (openWorkItem).
-  const setOpenItem = openWorkItem;
+  // Rows open in the side panel (WorkPanel) — the FMS's own page, beside this one.
+  const setOpenItem = useOpenWorkItem();
 
   // Admins receive the whole book (they own no workflow steps, so a strict
   // personal filter would otherwise leave them empty). This tab lets them widen
@@ -478,7 +474,6 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         ))}
       </div>
 
-      <div onPointerEnter={warmWorkPanel} onFocus={warmWorkPanel}>
       <BucketBoard
         items={boardItems}
         today={today}
@@ -500,13 +495,12 @@ export function MyWorkView({ state }: { state: AggregateState }) {
           requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
         }}
       />
-      </div>
 
       {/* Only an admin in All-work mode sees approvals that are not their own —
           non-admins are scoped to themselves by every provider. */}
       {approvals.length > 0 && <ApprovalStrip items={approvals} mine={!isAdmin || scope === "mine"} onOpen={setOpenItem} />}
 
-      <div ref={listRef} className="scroll-mt-4" onPointerEnter={warmWorkPanel} onFocus={warmWorkPanel}>
+      <div ref={listRef} className="scroll-mt-4">
       <Card className="overflow-hidden">
         <div className="px-4 pt-4 pb-3 border-b border-line space-y-3">
           <div className="flex flex-wrap items-center gap-2">

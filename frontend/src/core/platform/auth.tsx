@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { isEmbedded } from "@/shared/lib/embedded";
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
@@ -61,8 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           A macrotask is enough: the lock is released before the timer fires.
           Telemetry hanging off auth must never be able to affect auth.
       */
-      // Not from the work panel frame — the page around it already stamped this visit.
-      if (!isEmbedded) timers.push(setTimeout(() => supabase.rpc("touch_last_active").then(() => {}, () => {}), 0));
+      timers.push(setTimeout(() => supabase.rpc("touch_last_active").then(() => {}, () => {}), 0));
     };
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
