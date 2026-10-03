@@ -21,8 +21,10 @@
  * Chemical's 210 to a hairline, and the comparison that matters inside a panel is between that
  * category's own groups; the panel heading carries the category total for comparing across.
  *
- * Five bars a panel, the rest folded into one "Other groups" bar that still opens, so a
- * category with twenty groups cannot stretch the strip.
+ * EVERY GROUP GETS ITS OWN BAR — no "Other groups" fold. Instead each panel is a window the
+ * planner sizes: the list scrolls inside it, and a drag strip on its bottom edge makes it taller
+ * or shorter (double-click resets), the same as the Ink Expiry charts. Heights are per panel and
+ * remembered per browser.
  *
  * Clicking a bar opens that group's inks in a full-width table BELOW the strip — the room for
  * six columns is there and not inside a 260px panel.
@@ -33,11 +35,15 @@
  * It follows the table: whatever is filtered, or whichever company tab is open, is what is
  * counted. Two different answers on one screen would be worse than none.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { INK_CATEGORIES, fmtDays, fmtQty, type InkRow } from "../lib/inkMis";
+import HeightGrip from "./HeightGrip";
 
-/** Bars per panel before the tail is folded away. */
-const BARS = 5;
+/** Each panel's bar window, in px, keyed by category. About six bars before the reader drags. */
+const HEIGHT_KEY = "ink-mis:chart-panel-height";
+const HEIGHT_DEFAULT = 150;
+const HEIGHT_MIN = 40;
+const HEIGHT_MAX = 1200;
 
 /**
  * Width of the name column beside the bars — PER PANEL.
@@ -106,6 +112,25 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
 
   const widthOf = (category: string) => labelWidths[category] ?? LABEL_DEFAULT;
 
+  const [heights, setHeights] = useState<Record<string, number>>(() => {
+    try {
+      const raw = window.localStorage.getItem(HEIGHT_KEY);
+      const v = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      return v && typeof v === "object" ? v : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HEIGHT_KEY, JSON.stringify(heights));
+    } catch {
+      /* private mode: the heights still apply for this visit */
+    }
+  }, [heights]);
+  const heightOf = (category: string) => heights[category] ?? HEIGHT_DEFAULT;
+  const dragFrom = useRef(HEIGHT_DEFAULT);
+
   /** Drag one panel's divider; double-click puts that panel back. Panels are independent. */
   const startLabelDrag = (category: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -171,16 +196,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
         .map((g) => ({ ...g, items: [...g.items].sort((a, b) => b.qty - a.qty) }))
         .sort((a, b) => b.qty - a.qty);
       const qty = all.reduce((t, g) => t + g.qty, 0);
-      if (all.length <= BARS) return { name, qty, groups: all };
-      // The tail becomes one bar rather than a run of hairlines, and still opens to its inks.
-      const head = all.slice(0, BARS);
-      const tail = all.slice(BARS);
-      head.push({
-        name: `Other groups (${tail.length})`,
-        qty: tail.reduce((t, g) => t + g.qty, 0),
-        items: tail.flatMap((g) => g.items).sort((a, b) => b.qty - a.qty),
-      });
-      return { name, qty, groups: head };
+      return { name, qty, groups: all };
     });
     // The planner's own category order, so panels do not reshuffle as quantities move.
     out.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
@@ -213,16 +229,20 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
         </span>
       </div>
 
-      <div className="grid gap-3 px-3 pb-3 [grid-template-columns:repeat(auto-fit,minmax(22rem,1fr))]">
+      {/* items-start: a panel dragged taller must not stretch its neighbours with it. */}
+      <div className="grid items-start gap-3 px-3 pb-3 [grid-template-columns:repeat(auto-fit,minmax(22rem,1fr))]">
         {panels.map((p) => {
           const max = p.groups[0]?.qty ?? 0;
           return (
-            <div key={p.name} className="rounded-md border p-2">
+            <div key={p.name} className="rounded-md border px-2 pt-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate text-xs font-semibold">{p.name}</span>
                 <span className="text-xs tabular-nums text-muted-foreground">{fmtQty(p.qty)}</span>
               </div>
-              <div className="mt-1.5 space-y-[2px]">
+              <div
+                className="mt-1.5 space-y-[2px] overflow-y-auto pr-1"
+                style={{ height: heightOf(p.name) }}
+              >
                 {p.groups.map((g) => {
                   const isOpen = open?.category === p.name && open?.group === g.name;
                   return (
@@ -280,6 +300,24 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
                   );
                 })}
               </div>
+              <HeightGrip
+                onStart={() => {
+                  dragFrom.current = heightOf(p.name);
+                }}
+                onMove={(dy) =>
+                  setHeights((prev) => ({
+                    ...prev,
+                    [p.name]: Math.min(HEIGHT_MAX, Math.max(HEIGHT_MIN, dragFrom.current + dy)),
+                  }))
+                }
+                onReset={() =>
+                  setHeights((prev) => {
+                    const next = { ...prev };
+                    delete next[p.name];
+                    return next;
+                  })
+                }
+              />
             </div>
           );
         })}
