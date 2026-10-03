@@ -6,6 +6,8 @@ import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import FileCapture from "@/shared/components/ui/FileCapture";
+import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
+import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import { useHelpStore } from "../../store";
 import { raiseTicketWithFiles } from "../../data/helpWrites";
 import { ConfidentialPill } from "../../components/StatusPill";
@@ -23,6 +25,9 @@ import { appName } from "@/apps/appInfo";
  *   this within 1 working day" has had their expectation set; one who is told
  *   nothing comes back tomorrow to ask where it got to, which is the phone call
  *   this module exists to stop.
+ *
+ * Save as draft: the person's saved drafts sit above the form. Continue loads
+ * one back, attachment included; raising it deletes the draft.
  */
 export default function NewTicket() {
   const s = useHelpStore();
@@ -36,6 +41,8 @@ export default function NewTicket() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const drafts = useSavedDrafts<TicketDraft>("help-desk:ticket");
 
   const subjectRef = useRef<HTMLInputElement>(null);
   const categoryRef = useRef<ComboboxHandle>(null);
@@ -64,6 +71,27 @@ export default function NewTicket() {
   const canSubmit =
     !!categoryId && subject.trim().length > 0 && (!needsNote || otherNote.trim().length > 0);
 
+  const saveDraft = () => {
+    if (!categoryId && !subject.trim() && !body.trim() && !otherNote.trim() && mentions.length === 0 && !file) {
+      return Promise.reject(new Error("Nothing to save yet."));
+    }
+    return drafts.save({
+      title: subject.trim() || cat?.name || "Untitled ticket",
+      payload: { categoryId, subject, body, otherNote, mentions },
+      files: file ? [file] : [],
+    });
+  };
+
+  const continueDraft = (v: TicketDraft, files: File[]) => {
+    setErr(null);
+    setCategoryId(v.categoryId ?? "");
+    setSubject(v.subject ?? "");
+    setBody(v.body ?? "");
+    setOtherNote(v.otherNote ?? "");
+    setMentions(v.mentions ?? []);
+    setFile(files[0] ?? null);
+  };
+
   const submit = async () => {
     setBusy(true);
     setErr(null);
@@ -79,6 +107,7 @@ export default function NewTicket() {
         file ? [file] : [],
       );
       await s.refresh();
+      await drafts.finish();
       // ⚠ A FAILED UPLOAD DOES NOT LOSE THE TICKET — it is already raised and
       //   somebody already owes an answer. The employee is told which files to
       //   add again, on the ticket itself, rather than being sent back to a form
@@ -99,6 +128,10 @@ export default function NewTicket() {
         Pick what it is about and we will route it to the right person with a turnaround they are
         held to.
       </p>
+
+      <div className="mt-4 empty:hidden">
+        <SavedDraftsPanel api={drafts} onContinue={continueDraft} noun="ticket" />
+      </div>
 
       <Card className="mt-4 p-5">
         <FieldLabel label="What is this about?" required>
@@ -178,10 +211,11 @@ export default function NewTicket() {
           </p>
         )}
 
-        <div className="mt-5 flex items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <Button onClick={submit} disabled={!canSubmit || busy}>
             {busy ? "Sending…" : "Raise the ticket"}
           </Button>
+          <SaveDraftButton api={drafts} onSave={saveDraft} disabled={busy} />
           <button
             type="button"
             className="text-[13px] font-semibold text-grey-2 hover:text-navy"
@@ -193,6 +227,15 @@ export default function NewTicket() {
       </Card>
     </div>
   );
+}
+
+/** What "Save as draft" stores. JSON-safe; the attachment travels separately. */
+export interface TicketDraft {
+  categoryId: string;
+  subject: string;
+  body: string;
+  otherNote: string;
+  mentions: string[];
 }
 
 const tatLabel = (c: TicketCategory): string => {

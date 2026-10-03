@@ -75,7 +75,7 @@ export interface RequestFormInit {
 }
 
 /** Exactly what an unsaved requisition is worth keeping. Must stay JSON-safe. */
-interface RequestDraft {
+export interface RequestDraft {
   companyId: string;
   note: string;
   lines: RequestLine[];
@@ -126,10 +126,13 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
    * into a useEffect would race the restore.
    */
   const { user } = useEffectiveIdentity();
+  // NEW no longer autosaves to the browser: it has explicit server drafts
+  // ("Save as draft" + the drafts list on New Request), and two draft systems
+  // on one form would restore over each other.
   const key = !user?.id
     ? null
     : mode === "new"
-      ? draftKey(user.id, "procurement:request:new")
+      ? null
       : init
         ? draftKey(user.id, `procurement:request:${init.requestId}`)
         : null;
@@ -250,6 +253,14 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     itemById: s.itemById,
     filled, validate,
     draft,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): RequestDraft => ({ companyId, note, lines }),
+    /** Put a saved snapshot back into the form. */
+    restore: (v: RequestDraft) => {
+      setCompanyId(v.companyId ?? "");
+      setNote(v.note ?? "");
+      setLines(v.lines?.length ? v.lines.map((l) => ({ ...l, uid: newUid() })) : [makeEmptyLine()]);
+    },
   };
 }
 
