@@ -77,9 +77,10 @@ export const UNIVERSAL_APP_IDS: readonly string[] = [
    */
   "help-desk",
   /*
-   * Training Videos. Every member of staff WATCHES them with no grant, the way everyone reads
+   * Training Videos. Every member of staff OPENS it with no grant, the way everyone reads
    * Announcements — a training video nobody can open without an admin ticking a box first is
-   * not training (asked for 03-10-2026).
+   * not training (asked for 03-10-2026). Inside, each person sees only the videos of the
+   * modules they already hold: granted Order to Dispatch, they see its videos and no others.
    *
    * ⚠ BUT ONLY ADMINS CHANGE THEM, and that is why this app does NOT ask
    *   `canEditModule`: a universal app reads 'edit' there for everyone. The page asks

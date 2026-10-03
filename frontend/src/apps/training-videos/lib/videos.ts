@@ -1,9 +1,25 @@
 /**
  * Training video links — read and written straight against `public.training_videos`.
- * RLS is the gate (20270104120000): any grant reads, an 'edit' grant writes.
+ * RLS is the gate (20270104120000): staff read the videos of the modules they hold, admins
+ * read everything and are the only ones who write.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/core/platform/supabase";
+import { APPS } from "../../appInfo";
+
+/**
+ * The module grant a video's module is opened under, when that is not its own id. Reports
+ * rides the Outstanding Dashboard grant (reports/meta.tsx `accessAppId`), so a Reports video
+ * belongs to whoever holds that. The SQL policy carries the same mapping.
+ */
+const ACCESS_ALIAS: Record<string, string> = { reports: "outstanding-dashboard" };
+export const accessAppIdFor = (appId: string) => ACCESS_ALIAS[appId] ?? appId;
+
+/** The module's display name, the same one the left menu shows. */
+export const moduleName = (appId: string) => APPS[appId]?.name ?? appId;
+
+/** Old local-test rows stored the module's NAME; map it back to the id on read. */
+const idForName = (name: string) => Object.entries(APPS).find(([, a]) => a.name === name)?.[0] ?? name;
 
 /**
  * The generated `Database` type knows nothing about `training_videos` until types are
@@ -22,7 +38,10 @@ const LOCAL_KEY = "training-videos:local-test:v1";
 const readLocal = (): Row[] => {
   try {
     const v = JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "[]");
-    return Array.isArray(v) ? (v as Row[]) : [];
+    if (!Array.isArray(v)) return [];
+    return (v as (Row & { module?: string })[]).map((r) =>
+      r.app_id ? r : { ...r, app_id: idForName(r.module ?? "") },
+    );
   } catch {
     return [];
   }
@@ -31,7 +50,8 @@ const writeLocal = (rows: Row[]) => localStorage.setItem(LOCAL_KEY, JSON.stringi
 
 export interface TrainingVideo {
   id: string;
-  module: string;
+  /** The portal module (app id) this video teaches — decides who sees it. */
+  appId: string;
   title: string;
   url: string;
   description: string | null;
@@ -40,7 +60,7 @@ export interface TrainingVideo {
 }
 
 export interface VideoDraft {
-  module: string;
+  appId: string;
   title: string;
   url: string;
   description: string;
@@ -49,7 +69,7 @@ export interface VideoDraft {
 
 interface Row {
   id: string;
-  module: string;
+  app_id: string;
   title: string;
   url: string;
   description: string | null;
@@ -59,7 +79,7 @@ interface Row {
 
 const fromRow = (r: Row): TrainingVideo => ({
   id: r.id,
-  module: r.module,
+  appId: r.app_id,
   title: r.title,
   url: r.url,
   description: r.description,
@@ -71,8 +91,8 @@ export async function fetchVideos(): Promise<TrainingVideo[]> {
   if (LOCAL_TEST) return readLocal().map(fromRow);
   const { data, error } = await db
     .from("training_videos")
-    .select("id,module,title,url,description,sort_order,updated_at")
-    .order("module")
+    .select("id,app_id,title,url,description,sort_order,updated_at")
+    .order("app_id")
     .order("sort_order")
     .order("title");
   if (error) throw new Error(error.message);
@@ -120,7 +140,7 @@ export const isMicrosoftLink = (url: string) => {
 };
 
 const toRow = (d: VideoDraft) => ({
-  module: d.module.trim(),
+  app_id: d.appId,
   title: d.title.trim(),
   url: d.url.trim(),
   description: d.description.trim() || null,
