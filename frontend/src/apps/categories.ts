@@ -48,6 +48,7 @@ export type AppCategory =
   | "ims"
   | "sales"
   | "hr"
+  | "training"
   | "control"
   | "mobile";
 
@@ -91,6 +92,9 @@ export const CATEGORIES: { key: AppCategory; label: string; keepHeading?: boolea
   // HR also carries Asset Maintenance (its own "Asset" group until 02-10-2026, moved here
   // at the business's request) and the HR Handbook row (core/workspace/homeNav.tsx).
   { key: "hr", label: "HR" },
+  // The training recordings, one group of their own (asked for 02-10-2026). Each video is a
+  // OneDrive / SharePoint link — the portal keeps the link, never the file (apps/training-videos/).
+  { key: "training", label: "Training Videos" },
   { key: "control", label: "Control" },
   // Not a web app — the mobile grant gates login to the Orange One mobile Leads
   // app. It appears in the permission screens only, never in the left menu.

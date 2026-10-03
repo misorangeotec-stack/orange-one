@@ -76,6 +76,19 @@ export const UNIVERSAL_APP_IDS: readonly string[] = [
    *   `fms_ld_is_step_owner`. Read this before making a fifth app universal.
    */
   "help-desk",
+  /*
+   * Training Videos. Every member of staff OPENS it with no grant, the way everyone reads
+   * Announcements — a training video nobody can open without an admin ticking a box first is
+   * not training (asked for 03-10-2026). Inside, each person sees only the videos of the
+   * modules they already hold: granted Order to Dispatch, they see its videos and no others.
+   *
+   * ⚠ BUT ONLY ADMINS CHANGE THEM, and that is why this app does NOT ask
+   *   `canEditModule`: a universal app reads 'edit' there for everyone. The page asks
+   *   `isAdmin` instead, and RLS on `training_videos` gates writes on `is_admin()` and reads on
+   *   `is_staff()` — never on `module_level()`, which knows nothing about this file (see the
+   *   Help Desk note above).
+   */
+  "training-videos",
 ];
 
 export const isUniversalApp = (appId: string): boolean => UNIVERSAL_APP_IDS.includes(appId);

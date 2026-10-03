@@ -145,6 +145,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/ink-expiry",
     category: "plant",
   },
+  /**
+   * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
+   * tab. Open to all staff; each sees the videos of the modules they hold. Only admins edit.
+   */
+  "training-videos": {
+    name: "Training Videos",
+    basePath: "/training-videos",
+    category: "training",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
