@@ -174,7 +174,7 @@ export const apps: AppManifest[] = [
   // the company later is granting 'view' to everyone, not a code change.
   knowledgeBaseApp,
   // Training Videos — the training recordings as OneDrive / SharePoint links, in their own menu
-  // group. Granted per user: 'view' watches, 'edit' maintains the links.
+  // group. Open to all staff with no grant (universal); only admins maintain the links.
   trainingVideosApp,
 ];
 

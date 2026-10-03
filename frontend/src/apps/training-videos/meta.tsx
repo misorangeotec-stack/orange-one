@@ -6,8 +6,8 @@ import TrainingVideosApp from "./TrainingVideosApp";
  * Manifest for TRAINING VIDEOS — the training recordings, each one a OneDrive / SharePoint
  * link that opens in a new tab. The portal stores the link only; the video stays on OneDrive.
  *
- * Per-user granted like every other module; admins see it without a grant. 'view' watches,
- * 'edit' adds, changes and removes the links (enforced again by RLS on training_videos).
+ * Open to every member of staff with no grant (apps/universal.ts), like Announcements. Only
+ * admins add, change and remove the links — enforced again by RLS on training_videos.
  */
 export const trainingVideosApp: AppManifest = {
   id: "training-videos",

@@ -11,14 +11,18 @@
 --   Drive links on the way in; this table only insists on an http(s) URL, so the rule can be
 --   changed later without a migration.
 --
--- ACCESS — the portal's own module grant, nothing invented.
---   Read:  any grant on 'training-videos' ('view' or 'edit'), and every admin.
---   Write: 'edit' only — that grant IS the right to add, change or remove a link.
---   `module_level` (20260906120000) is the one place that answers this, and admins always
---   read 'edit' there, so they are covered without being named.
+-- ACCESS -- like Announcements: everyone watches, admins maintain (asked for 03-10-2026).
+--   Read:  every member of staff, via is_staff(), so a customer login (is_external) reads
+--          nothing. No grant is needed: the app is universal (apps/universal.ts).
+--   Write: admins only, via is_admin().
+--   NOT module_level(): it knows nothing about universal apps and would answer 'none' for
+--   every non-admin, hiding the videos from the very people they are for.
 --
--- Purely ADDITIVE: one new table, nothing existing altered. Reuses public.set_updated_at()
--- and public.module_level(uuid, text). Apply in the Orange One *identity* project.
+--   Every policy is DROP-then-CREATE, so re-running this file over an earlier copy of it
+--   (one that gated on module_level) simply replaces those policies.
+--
+-- Purely ADDITIVE: one new table, nothing existing altered. Reuses public.set_updated_at(),
+-- public.is_staff(uuid) and public.is_admin(uuid). Apply in the Orange One *identity* project.
 
 create table if not exists public.training_videos (
   id          uuid primary key default gen_random_uuid(),
@@ -36,7 +40,7 @@ create table if not exists public.training_videos (
 );
 
 comment on table public.training_videos is
-  'Training Videos: one row per training video LINK (OneDrive / SharePoint). The video itself lives on OneDrive, never here. Read with any training-videos grant; written with an edit grant. See 20270104120000.';
+  'Training Videos: one row per training video LINK (OneDrive / SharePoint). The video itself lives on OneDrive, never here. Read by all staff; written by admins only. See 20270104120000.';
 
 drop trigger if exists trg_training_videos_updated on public.training_videos;
 create trigger trg_training_videos_updated
@@ -49,26 +53,26 @@ drop policy if exists training_videos_select on public.training_videos;
 create policy training_videos_select
   on public.training_videos for select
   to authenticated
-  using (public.module_level(auth.uid(), 'training-videos') <> 'none');
+  using ((select public.is_staff((select auth.uid()))));
 
 drop policy if exists training_videos_insert on public.training_videos;
 create policy training_videos_insert
   on public.training_videos for insert
   to authenticated
-  with check (public.module_level(auth.uid(), 'training-videos') = 'edit');
+  with check ((select public.is_admin((select auth.uid()))));
 
 drop policy if exists training_videos_update on public.training_videos;
 create policy training_videos_update
   on public.training_videos for update
   to authenticated
-  using (public.module_level(auth.uid(), 'training-videos') = 'edit')
-  with check (public.module_level(auth.uid(), 'training-videos') = 'edit');
+  using ((select public.is_admin((select auth.uid()))))
+  with check ((select public.is_admin((select auth.uid()))));
 
 drop policy if exists training_videos_delete on public.training_videos;
 create policy training_videos_delete
   on public.training_videos for delete
   to authenticated
-  using (public.module_level(auth.uid(), 'training-videos') = 'edit');
+  using ((select public.is_admin((select auth.uid()))));
 
 -- ---------------------------------------------------------------- verify --
 --

@@ -147,7 +147,7 @@ export const APPS: Record<string, AppInfo> = {
   },
   /**
    * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
-   * tab. A 'view' grant watches; an 'edit' grant (and every admin) adds and changes the links.
+   * tab. Every member of staff watches with no grant; only admins add and change the links.
    */
   "training-videos": {
     name: "Training Videos",

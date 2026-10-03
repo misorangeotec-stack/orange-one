@@ -14,7 +14,8 @@ import {
 
 /**
  * TRAINING VIDEOS — the library. Videos grouped by module; "Watch" opens the OneDrive /
- * SharePoint link in a new tab. Editors ('edit' grant, or admin) get Add / Edit link / Remove.
+ * SharePoint link in a new tab. Every member of staff watches; only ADMINS get Add / Edit link /
+ * Remove (and on localhost, anyone, so it can be tried — see LOCAL_TEST).
  */
 
 const APP = appName("training-videos");
@@ -39,8 +40,10 @@ const PlayIcon = () => (
 );
 
 export default function VideoLibrary() {
-  const { user, canEditModule } = useSession();
-  const canEdit = canEditModule("training-videos");
+  const { user, isAdmin } = useSession();
+  // NOT canEditModule: the app is universal, so that reads 'edit' for everyone. RLS agrees —
+  // writes on training_videos need is_admin().
+  const canEdit = isAdmin || LOCAL_TEST;
   const qc = useQueryClient();
   const q = useQuery({ queryKey: KEY, queryFn: fetchVideos });
 
