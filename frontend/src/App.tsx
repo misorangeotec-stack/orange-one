@@ -11,6 +11,8 @@ import MyProbation from "@/core/probation/MyProbation";
 import MyBuddy from "@/core/probation/MyBuddy";
 import HandbookPage from "@/core/knowledge-base/HandbookPage";
 import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
+import { WorkPanelHost, WorkPanelFrameBridge } from "@/core/workspace/WorkPanel";
+import { isEmbedded, MCC_IDLE_PATH } from "@/shared/lib/embedded";
 import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
@@ -204,8 +206,17 @@ export default function App() {
       <Route path={LEGACY_SUPPLIES_BASE} element={<OfficeSuppliesLegacyRedirect />} />
       <Route path={`${LEGACY_SUPPLIES_BASE}/*`} element={<OfficeSuppliesLegacyRedirect />} />
 
+      {/* The work panel frame's resting page — blank, so nothing runs behind a closed panel. */}
+      <Route path={MCC_IDLE_PATH} element={<RequireAuth><></></RequireAuth>} />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+
+    {/* My Control Center's work panel. At the ROOT, never inside a page: its frame
+        shares this window's query cache and must live as long as that cache does —
+        see shared/lib/embedded.ts. The bridge does anything only inside the frame. */}
+    <WorkPanelHost />
+    <WorkPanelFrameBridge />
 
     {/* KB-1 · The Ask HR bubble, on every screen of the hub.
         ⚠ MOUNTED HERE, NOT IN AppShell, and not by accident. Each app renders its OWN
@@ -213,7 +224,7 @@ export default function App() {
         move between apps, throwing away the conversation mid-thread. Out here it never
         unmounts, and it also reaches /account, which does not use AppShell at all.
         It renders nothing without the knowledge-base grant, and never for a customer. */}
-    <AskHrBubble />
+    {!isEmbedded && <AskHrBubble />}
     </>
   );
 }

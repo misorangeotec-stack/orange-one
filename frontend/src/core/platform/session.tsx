@@ -4,6 +4,7 @@ import type { AppRole, ModuleLevel, Profile } from "./types";
 import { useAuth } from "./auth";
 import { useDirectory } from "./store";
 import { useCatalogueVersion } from "./useCatalogueVersion";
+import { isEmbedded } from "@/shared/lib/embedded";
 import { isUniversalApp } from "@/apps/universal";
 
 /**
@@ -78,7 +79,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
    *   one subscription covers the launcher, every module and the admin screens,
    *   and it unmounts on sign-out.
    */
-  useCatalogueVersion(authId);
+  //
+  // Not inside My Control Center's work panel frame: the page around it already
+  // holds this subscription, and a second Realtime socket per tab would double
+  // the connections for nothing.
+  useCatalogueVersion(isEmbedded ? null : authId);
 
   const value = useMemo<SessionValue>(() => {
     const user = profiles.find((p) => p.id === authId) ?? null;

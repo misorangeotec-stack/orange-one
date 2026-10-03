@@ -28,7 +28,7 @@
  * reflect every filter EXCEPT the bucket selection itself — otherwise clicking
  * "Overdue" would zero the other three tiles and you could never get back.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MyProbationCard from "@/core/probation/MyProbationCard";
@@ -50,6 +50,8 @@ import { FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/Colu
 import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import { useMyWork, type AggregateState } from "./mywork/MyWorkAggregator";
 import type { WorkItem } from "./mywork/types";
+import { openWorkItem, warmWorkPanel } from "./WorkPanel";
+import BucketBoard from "./BucketBoard";
 
 /** Sort weight per bucket: most urgent first, undated last, parked last of all. */
 const BUCKET_RANK: Record<WorkBucket, number> = { delayed: 0, today: 1, tomorrow: 2, dayAfter: 3, noDate: 4, hold: 5 };
@@ -59,7 +61,6 @@ type SortKey = "urgency" | "ref" | "source" | "stage" | "due";
 type SortDir = "asc" | "desc";
 
 const GROUP_KEY = "orangeone.home.groupBySource";
-const EXPANDED_KEY = "orangeone.home.expandedSources";
 
 function readPref<T>(key: string, fallback: T): T {
   try {
@@ -182,6 +183,12 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [stages, setStages] = useState<string[]>([]);
   const [assignment, setAssignment] = useState<string[]>([]);
   const [q, setQ] = useState("");
+  // Rows open in the side panel (WorkPanel). Its frame boots in the background the
+  // first time the pointer reaches the buckets or the list — the moment someone is
+  // about to click — so the click itself rarely waits for it. Not on page load: the
+  // frame is a second copy of the app, and most visits never open a row. A click
+  // before then simply starts it (openWorkItem).
+  const setOpenItem = openWorkItem;
 
   // Admins receive the whole book (they own no workflow steps, so a strict
   // personal filter would otherwise leave them empty). This tab lets them widen
@@ -210,21 +217,33 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [sort, setSort] = useState<SortKey>("urgency");
   const [dir, setDir] = useState<SortDir>("asc");
 
-  // Grouping is a persisted preference: which sources you care to see open is a
-  // stable habit, not a per-visit decision.
-  const [groupBySource, setGroupBySource] = useState<boolean>(() => readPref(GROUP_KEY, true));
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(readPref<string[]>(EXPANDED_KEY, [])));
+  // Grouping on/off is a persisted preference — a stable habit, not a per-visit
+  // decision. Which groups are OPEN is not (see `expanded` below).
+  const [groupPref, setGroupBySource] = useState<boolean>(() => readPref(GROUP_KEY, true));
+  // Every FMS group starts CLOSED on each visit (asked 03-10-2026): the screen opens
+  // as a list of FMS headers, and a group opens only when its header is clicked or
+  // its FMS is picked on the bucket board. Which groups are open is therefore not
+  // remembered between visits — it used to be, and a group left open last time
+  // greeted the reader already expanded.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const setGrouping = (on: boolean) => {
     setGroupBySource(on);
     writePref(GROUP_KEY, on);
   };
+  // Narrowed to ONE FMS (a bucket on the board, or the Source filter), grouping has
+  // nothing to group: it would only wrap the rows in one collapsed header the reader
+  // then has to open. The rows show directly instead. The saved preference is kept
+  // and comes back the moment the filter widens again.
+  const groupBySource = groupPref && sources.length !== 1;
+  // Where a bucket pick scrolls to, so its rows come into view under the board.
+  const listRef = useRef<HTMLDivElement>(null);
+
   const toggleSource = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      writePref(EXPANDED_KEY, [...next]);
       return next;
     });
 
@@ -248,6 +267,14 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         return true;
       }),
     [tagged, scope, sources, stages, assignment, q]
+  );
+
+  // What the bucket board counts: everything in scope, whatever the filters say —
+  // it is the map of the reader's FMS buckets, and narrowing it would hide the
+  // very buckets it exists to show.
+  const boardItems = useMemo(
+    () => (scope === "mine" ? state.items.filter((i) => i.assignment === "direct") : state.items),
+    [state.items, scope]
   );
 
   const counts = useMemo(() => {
@@ -451,10 +478,35 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         ))}
       </div>
 
+      <div onPointerEnter={warmWorkPanel} onFocus={warmWorkPanel}>
+      <BucketBoard
+        items={boardItems}
+        today={today}
+        settling={state.isSettling}
+        selectedSource={sources.length === 1 ? sources[0] : null}
+        selectedStage={stages.length === 1 ? stages[0] : null}
+        onPick={(source, stage, held) => {
+          const same = sources.length === 1 && sources[0] === source && (stage == null ? stages.length === 0 : stages.length === 1 && stages[0] === stage);
+          if (same) {
+            setSources([]);
+            setStages([]);
+            setBucketFilter(null);
+            return;
+          }
+          setSources([source]);
+          setStages(stage == null ? [] : [stage]);
+          // A bucket whose every row is parked would otherwise open on an empty list.
+          setBucketFilter(held ? "hold" : null);
+          requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      />
+      </div>
+
       {/* Only an admin in All-work mode sees approvals that are not their own —
           non-admins are scoped to themselves by every provider. */}
-      {approvals.length > 0 && <ApprovalStrip items={approvals} mine={!isAdmin || scope === "mine"} />}
+      {approvals.length > 0 && <ApprovalStrip items={approvals} mine={!isAdmin || scope === "mine"} onOpen={setOpenItem} />}
 
+      <div ref={listRef} className="scroll-mt-4" onPointerEnter={warmWorkPanel} onFocus={warmWorkPanel}>
       <Card className="overflow-hidden">
         <div className="px-4 pt-4 pb-3 border-b border-line space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -467,7 +519,7 @@ export function MyWorkView({ state }: { state: AggregateState }) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <GroupToggle on={groupBySource} onChange={setGrouping} />
+              <GroupToggle on={groupPref} onChange={setGrouping} />
               <SortControl sort={sort} dir={dir} onSort={setSort} onDir={setDir} />
             </div>
           </div>
@@ -543,10 +595,11 @@ export function MyWorkView({ state }: { state: AggregateState }) {
                       onToggle={() => toggleSource(g.key)}
                       pageIds={pageIds}
                       today={today}
+                      onOpen={setOpenItem}
                     />
                   ))
                 ) : (
-                  pg.pageItems.map((item) => <WorkRow key={item.id} item={item} today={today} />)
+                  pg.pageItems.map((item) => <WorkRow key={item.id} item={item} today={today} onOpen={setOpenItem} />)
                 )
               ) : (
                 // Kept inside the table so the filter row stays on screen — an
@@ -588,14 +641,28 @@ export function MyWorkView({ state }: { state: AggregateState }) {
           </div>
         )}
       </Card>
+      </div>
 
       {/* An all-work readout — its raw per-source counts are unscoped, so hide it
           in Mine mode to keep the screen self-consistent. */}
       {scope === "all" && <SourceStrip sources={state.sources} hasStepUnits={state.hasStepUnits} />}
       </>
       )}
+
     </div>
   );
+}
+
+/**
+ * A row's link opens the side panel; a modified click (Ctrl/⌘/Shift, middle
+ * button) still goes to the FMS page as an ordinary link would.
+ */
+function panelClick(item: WorkItem, onOpen: (i: WorkItem) => void) {
+  return (e: React.MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    onOpen(item);
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -771,7 +838,7 @@ function KpiTile({
  * were never assigned. In that mode the title drops the possessive and each row
  * that genuinely is theirs is tagged instead.
  */
-function ApprovalStrip({ items, mine }: { items: WorkItem[]; mine: boolean }) {
+function ApprovalStrip({ items, mine, onOpen }: { items: WorkItem[]; mine: boolean; onOpen: (i: WorkItem) => void }) {
   return (
     <Card className="p-4 border-orange/30 bg-orange-soft/25">
       <div className="flex items-center gap-2 mb-2.5">
@@ -790,6 +857,7 @@ function ApprovalStrip({ items, mine }: { items: WorkItem[]; mine: boolean }) {
           <Link
             key={item.id}
             to={item.to}
+            onClick={panelClick(item, onOpen)}
             className="group inline-flex items-center gap-2 bg-white border border-line rounded-xl px-3 py-2 hover:border-orange hover:shadow-soft transition"
           >
             <span className="text-[13px] font-semibold text-navy group-hover:text-orange transition-colors">
@@ -830,12 +898,14 @@ function SourceGroup({
   onToggle,
   pageIds,
   today,
+  onOpen,
 }: {
   group: { key: string; label: string; items: WorkItem[]; overdue: number };
   open: boolean;
   onToggle: () => void;
   pageIds: Set<string>;
   today: string;
+  onOpen: (i: WorkItem) => void;
 }) {
   // Only the slice of this group that landed on the current page renders.
   const visible = open ? group.items.filter((i) => pageIds.has(i.id)) : [];
@@ -870,7 +940,7 @@ function SourceGroup({
         </td>
       </tr>
       {visible.map((item) => (
-        <WorkRow key={item.id} item={item} today={today} grouped />
+        <WorkRow key={item.id} item={item} today={today} grouped onOpen={onOpen} />
       ))}
       {open && visible.length === 0 && (
         <tr className="border-b border-line">
@@ -883,7 +953,7 @@ function SourceGroup({
   );
 }
 
-function WorkRow({ item, today, grouped }: { item: WorkItem; today: string; grouped?: boolean }) {
+function WorkRow({ item, today, grouped, onOpen }: { item: WorkItem; today: string; grouped?: boolean; onOpen: (i: WorkItem) => void }) {
   /*
    * A HELD ROW IS NEVER RED. Its due date has usually long gone — that is normally
    * what puts a row on hold — so bucketing it by date alone would paint the red
@@ -901,8 +971,14 @@ function WorkRow({ item, today, grouped }: { item: WorkItem; today: string; grou
           : "before:bg-transparent";
   return (
     <tr
+      // The whole row opens the panel, not just the reference — it is the thing
+      // people click. The link inside still handles modified clicks itself.
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a,button")) return;
+        onOpen(item);
+      }}
       className={cn(
-        "group border-b border-line last:border-0 transition-colors hover:bg-orange-soft/20",
+        "group cursor-pointer border-b border-line last:border-0 transition-colors hover:bg-orange-soft/20",
         bucket === "delayed" && "bg-[#FDECEC]/35",
         bucket === "hold" && "bg-page/60"
       )}
@@ -918,7 +994,7 @@ function WorkRow({ item, today, grouped }: { item: WorkItem; today: string; grou
         {grouped ? <span className="pl-4 text-grey-2/70">↳</span> : item.sourceLabel}
       </td>
       <td className="px-4 py-3">
-        <Link to={item.to} className="text-[13.5px] font-medium text-navy group-hover:text-orange transition-colors">
+        <Link to={item.to} onClick={panelClick(item, onOpen)} className="text-[13.5px] font-medium text-navy group-hover:text-orange transition-colors">
           {item.ref}
         </Link>
         {item.detail && <div className="text-[11.5px] text-grey-2 truncate max-w-[340px]">{item.detail}</div>}
