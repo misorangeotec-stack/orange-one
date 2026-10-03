@@ -48,6 +48,13 @@ export interface ComplaintForm {
   otherRemarks: string;
 }
 
+/** What "Save as draft" stores. JSON-safe; the evidence files travel separately. */
+export interface ComplaintDraft {
+  form: ComplaintForm;
+  lotSource: LotSource;
+  lotNote: string;
+}
+
 const EMPTY: ComplaintForm = {
   complaintType: "finished_good",
   rmOrigin: "",
@@ -465,6 +472,19 @@ export function useComplaintForm() {
     submitting,
     submitError,
     submit,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): ComplaintDraft => ({ form, lotSource, lotNote }),
+    /** Put a saved snapshot back. Raw setForm, so no type switch clears the party. */
+    restore: (v: ComplaintDraft) => {
+      setForm({ ...EMPTY, ...(v.form ?? {}), issueIdentifiedAt: v.form?.issueIdentifiedAt || nowLocalInput() });
+      setLotSource(v.lotSource ?? "manual");
+      setLotNote(v.lotNote ?? "");
+      setLotMatches([]);
+      setLotMiss("");
+      setTouched(false);
+      setSubmitError("");
+      tried.current = new Set();
+    },
   };
 }
 

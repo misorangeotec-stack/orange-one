@@ -118,6 +118,16 @@ export const APPS: Record<string, AppInfo> = {
     category: "control",
   },
   /**
+   * ALL DRAFTS — every saved draft of every FMS raise form, on one page. Admins
+   * see it without a grant; anyone else needs it granted in Admin -> Module
+   * Access, and the grant is read-only (RLS on public.fms_drafts).
+   */
+  "all-drafts": {
+    name: "All Drafts",
+    basePath: "/all-drafts",
+    category: "control",
+  },
+  /**
    * INK STABILISATION — Enterprises Surat's manufactured ink lots and their 3 / 6 / 9-month
    * retests. Read-only from ConnectWave.
    */

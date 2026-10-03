@@ -89,6 +89,16 @@ export interface RequestFormInit {
   lines: RequestLine[];
 }
 
+/** What "Save as draft" keeps of a new request. Must stay JSON-safe. */
+export interface RequestDraft {
+  companyId: string;
+  vendorId: string;
+  shipmentType: string;
+  currency: string;
+  note: string;
+  lines: RequestLine[];
+}
+
 export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormInit | null }) {
   const { mode, init } = opts;
   const s = useImportStore();
@@ -240,6 +250,17 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     // behaviour
     itemOptionsFor, onPickVendor, onPickItem, raiseItem,
     filled, validate,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): RequestDraft => ({ companyId, vendorId, shipmentType, currency, note, lines }),
+    /** Put a saved snapshot back. Raw setters: onPickVendor would wipe the lines. */
+    restore: (v: RequestDraft) => {
+      setCompanyId(v.companyId ?? "");
+      setVendorId(v.vendorId ?? "");
+      setShipmentType(v.shipmentType ?? "");
+      setCurrency(v.currency ?? "");
+      setNote(v.note ?? "");
+      setLines(v.lines?.length ? v.lines.map((l) => ({ ...l, uid: newUid(), dbId: null })) : [makeEmptyLine()]);
+    },
   };
 }
 

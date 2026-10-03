@@ -4,6 +4,8 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
+import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import { useLdStore } from "../../store";
 import { B } from "../../nav";
 
@@ -15,7 +17,23 @@ import { B } from "../../nav";
  *   target group and required-by date." A draft may be as empty as its author
  *   likes, which is what makes a half-remembered need worth writing down at all.
  *   The RPC enforces the same split, so this is guidance, not the gate.
+ *
+ * Save as draft is the shared FMS draft list above the form (Continue / Discard),
+ * not a status='draft' request row — nothing reaches the request tables until
+ * Submit.
  */
+
+/** What "Save as draft" stores. */
+export interface LdRequestDraft {
+  title: string;
+  needSourceId: string;
+  departmentId: string;
+  skillGap: string;
+  objective: string;
+  targetGroup: string;
+  requiredBy: string;
+}
+
 export default function NewRequest() {
   const s = useLdStore();
   const nav = useNavigate();
@@ -29,16 +47,38 @@ export default function NewRequest() {
   const [requiredBy, setRequiredBy] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const drafts = useSavedDrafts<LdRequestDraft>("learning-development:request");
 
   const needSources = (s.data?.needSources ?? []).filter((n) => n.active);
 
-  const save = async (submit: boolean) => {
+  const snapshot = (): LdRequestDraft => ({
+    title, needSourceId, departmentId, skillGap, objective, targetGroup, requiredBy,
+  });
+
+  const saveDraft = () => {
+    const v = snapshot();
+    if (Object.values(v).every((x) => !x.trim())) return Promise.reject(new Error("Nothing to save yet."));
+    return drafts.save({ title: title.trim() || "Untitled training need", payload: v });
+  };
+
+  const continueDraft = (v: LdRequestDraft) => {
+    setErr(null);
+    setTitle(v.title ?? "");
+    setNeedSourceId(v.needSourceId ?? "");
+    setDepartmentId(v.departmentId ?? "");
+    setSkillGap(v.skillGap ?? "");
+    setObjective(v.objective ?? "");
+    setTargetGroup(v.targetGroup ?? "");
+    setRequiredBy(v.requiredBy ?? "");
+  };
+
+  const submit = async () => {
     setErr(null);
     if (!title.trim()) {
       setErr("A title is required.");
       return;
     }
-    if (submit && (!objective.trim() || !targetGroup.trim() || !requiredBy)) {
+    if (!objective.trim() || !targetGroup.trim() || !requiredBy) {
       setErr("Objective, who it is for, and the required-by date are all needed before submitting.");
       return;
     }
@@ -52,8 +92,9 @@ export default function NewRequest() {
         objective: objective.trim() || null,
         targetGroup: targetGroup.trim() || null,
         requiredBy: requiredBy || null,
-        submit,
+        submit: true,
       });
+      await drafts.finish();
       await s.refresh();
       nav(`${B}/requests/${id}`);
     } catch (e) {
@@ -72,6 +113,13 @@ export default function NewRequest() {
           approval — you'll be told at each step.
         </p>
       </div>
+
+      {/* Wrapped only to match the form's width; the panel hides itself when empty. */}
+      {(drafts.drafts.length > 0 || drafts.loadError) && (
+        <div className="max-w-3xl">
+          <SavedDraftsPanel api={drafts} onContinue={continueDraft} noun="training need" />
+        </div>
+      )}
 
       <Card className="p-6 space-y-5 max-w-3xl">
         <FieldLabel label="What training is needed?" required>
@@ -138,19 +186,18 @@ export default function NewRequest() {
           <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#B42318]">{err}</p>
         )}
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Button onClick={() => void save(true)} disabled={busy}>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button onClick={() => void submit()} disabled={busy}>
             {busy ? "Submitting…" : "Submit to HR"}
           </Button>
-          <Button variant="ghost" onClick={() => void save(false)} disabled={busy}>
-            Save as draft
-          </Button>
+          <SaveDraftButton api={drafts} onSave={saveDraft} disabled={busy} />
           <Button variant="ghost" onClick={() => nav(`${B}/my-requests`)} disabled={busy}>
             Cancel
           </Button>
         </div>
         <p className="text-[12px] text-grey-2">
-          A draft keeps no Training Request ID and nobody is told about it until you submit.
+          A draft keeps no Training Request ID and nobody is told about it until you submit. Only you, admins
+          and people given All Drafts access can see your drafts.
         </p>
       </Card>
     </div>
