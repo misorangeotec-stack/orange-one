@@ -4,7 +4,16 @@ import type { AppRole, ModuleLevel, Profile } from "./types";
 import { useAuth } from "./auth";
 import { useDirectory } from "./store";
 import { useCatalogueVersion } from "./useCatalogueVersion";
-import { isUniversalApp } from "@/apps/universal";
+import { isUniversalApp as isUniversalEverywhere } from "@/apps/universal";
+
+/**
+ * Apps opened with full edit rights ON LOCALHOST ONLY (`npm run dev`), so a new module can be
+ * tried before anyone is granted it. `import.meta.env.DEV` is false in every deployed build,
+ * so on the live site this changes nothing. Kept here, not in apps/universal.ts, because the
+ * work-snapshot Edge Function bundles that file and has no `import.meta.env`.
+ */
+const LOCAL_TEST_APPS: readonly string[] = import.meta.env.DEV ? ["training-videos"] : [];
+const isUniversalApp = (appId: string) => isUniversalEverywhere(appId) || LOCAL_TEST_APPS.includes(appId);
 
 /**
  * Portal session (Stage B). The current user is the signed-in Supabase user,

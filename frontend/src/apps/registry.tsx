@@ -33,6 +33,7 @@ import { masterReportApp } from "./master-report/meta";
 import { dailyReportApp } from "./daily-report/meta";
 import { announcementsApp } from "./announcements/meta";
 import { knowledgeBaseApp } from "./knowledge-base/meta";
+import { trainingVideosApp } from "./training-videos/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -172,6 +173,9 @@ export const apps: AppManifest[] = [
   // reads; full access also opens the question log and the section notes. Opening it to
   // the company later is granting 'view' to everyone, not a code change.
   knowledgeBaseApp,
+  // Training Videos — the training recordings as OneDrive / SharePoint links, in their own menu
+  // group. Granted per user: 'view' watches, 'edit' maintains the links.
+  trainingVideosApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
