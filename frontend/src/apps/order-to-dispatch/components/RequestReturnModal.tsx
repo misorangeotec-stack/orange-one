@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import PillToggle from "@/shared/components/ui/PillToggle";
-import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import { FieldHeading, FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import { useDispatchStore } from "../store";
 import { dmy, DELIVERY_STATUS_LABEL } from "../lib/format";
@@ -267,7 +267,10 @@ export default function RequestReturnModal({
               )}
 
               {customerId && (
-                <FieldLabel label="Invoice" required>
+                <div>
+                  {/* A heading DIV, not FieldLabel: a <label> forwards a click on its text to its first
+                      control, so clicking "Invoice" or the caption picked the newest invoice. */}
+                  <FieldHeading label="Invoice" required />
                   {forCustomer.length > SEARCH_FROM && (
                     <TextInput
                       value={search}
@@ -322,7 +325,7 @@ export default function RequestReturnModal({
                     invoice that already has a sales return is not listed again — find it on the Sales
                     Return page.
                   </p>
-                </FieldLabel>
+                </div>
               )}
             </>
           )
@@ -345,7 +348,8 @@ export default function RequestReturnModal({
           </div>
         )}
 
-        <FieldLabel label="What is coming back" required>
+        <div>
+          <FieldHeading label="What is coming back" required />
           <PillToggle<RoundReturnScope>
             value={scope}
             onChange={setScope}
@@ -354,7 +358,7 @@ export default function RequestReturnModal({
               { value: "partial", label: "Part of it" },
             ]}
           />
-        </FieldLabel>
+        </div>
 
         {/*
           PARTIAL: which items, and how much of each. Every billed line is listed
@@ -362,7 +366,8 @@ export default function RequestReturnModal({
           back. Capped at the billed figure — the server refuses more.
         */}
         {scope === "partial" && chosen && (
-          <FieldLabel label="Items coming back" required>
+          <div>
+            <FieldHeading label="Items coming back" required />
             <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-[13px]">
                 <thead>
@@ -425,7 +430,7 @@ export default function RequestReturnModal({
             <p className="mt-1 text-[12px] text-grey-2">
               Leave an item blank if none of it is coming back.
             </p>
-          </FieldLabel>
+          </div>
         )}
 
         <FieldLabel label="Reason" required>

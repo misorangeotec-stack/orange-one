@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import PillToggle from "@/shared/components/ui/PillToggle";
-import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import { FieldHeading, FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import { dmy, ROUND_RETURN_ORIGIN_LABEL, SALES_RETURN_MODE_LABEL } from "../lib/format";
@@ -237,7 +237,10 @@ export default function SalesReturnModal({
           </>
         )}
 
-        <FieldLabel label="What was done in Tally" required>
+        {/* A heading DIV, not FieldLabel: a <label> forwards a click on its text to the first
+            pill, so clicking the question silently recorded "Invoice cancelled". */}
+        <div>
+          <FieldHeading label="What was done in Tally" required />
           <PillToggle<SalesReturnMode>
             value={mode}
             onChange={setMode}
@@ -246,7 +249,7 @@ export default function SalesReturnModal({
               { value: "sales_return", label: SALES_RETURN_MODE_LABEL.sales_return },
             ]}
           />
-        </FieldLabel>
+        </div>
         <p className="text-[12.5px] text-grey-2">
           {needsReturnDetails
             ? "The invoice stays on record and a sales return is booked against it. Enter its number and attach the document."

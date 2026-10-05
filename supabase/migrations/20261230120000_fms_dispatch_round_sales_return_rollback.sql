@@ -20,7 +20,9 @@ drop table if exists public.fms_dispatch_round_returns;
 do $mail$
 declare
   src   text := pg_get_functiondef('public.fms_dispatch_email_payload(text,uuid,text,text,jsonb)'::regprocedure);
-  start int  := position('  -- ---- Sales return against a finished round''s invoice (20261230120000).' in src);
+  -- From the NEWLINE before the arm's first comment: the arm went in as $arm$<newline>…,
+  -- so cutting from the comment alone leaves one stray blank line behind.
+  start int  := position(E'\n  -- ---- Sales return against a finished round''s invoice (20261230120000).' in src);
   stop  int  := position('  -- ⚠ The announcing RPC captures round_no' in src);
 begin
   if start = 0 then return; end if;
