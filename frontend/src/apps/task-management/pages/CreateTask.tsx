@@ -26,12 +26,14 @@ export default function CreateTask() {
   const reportsToSuffix = useReportsToSuffix();
 
   // TM-1: a HOD or Sub-HOD may also hand a one-off task sideways, to a peer.
-  // One pool for both roles — every other HOD and Sub-HOD — so the right is
-  // symmetric: a Sub-HOD can hand work to a HOD and a HOD back to a Sub-HOD.
+  // One pool for both roles — every other HOD and Sub-HOD, plus every Admin —
+  // so the right is symmetric: a Sub-HOD can hand work to a HOD and a HOD back
+  // to a Sub-HOD, and either can hand work up to an Admin.
   //
-  // ⚠ HOD/SUB-HOD ONLY — an ADMIN never gets this group. That is not an
-  //   oversight: the client settled (07-09-2026) that an admin assigning to a
-  //   HOD is ordinary downward work and must keep being scored the normal way.
+  // ⚠ HOD/SUB-HOD ONLY — an ADMIN never gets this picker (though they can be
+  //   picked from it). That is not an oversight: the client settled
+  //   (07-09-2026) that an admin assigning to a HOD is ordinary downward work
+  //   and must keep being scored the normal way.
   //   Because the flag is stamped only from this list, an admin assignment
   //   cannot become peer work by construction — and the 183 such tasks already
   //   in the database are untouched.
@@ -150,7 +152,7 @@ export default function CreateTask() {
         <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
         <p className="text-grey text-[13px] mt-1">
           {peers.length > 0
-            ? "Assign a task to a member of your team, or to a HOD or Sub-HOD."
+            ? "Assign a task to a member of your team, or to a HOD, Sub-HOD or Admin."
             : "Assign a task to a member of your team."}
         </p>
       </div>
@@ -201,7 +203,7 @@ export default function CreateTask() {
                       label: p.name,
                       sublabel: sub || undefined,
                       icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-                      group: "HODs & Sub-HODs",
+                      group: "HODs, Sub-HODs & Admins",
                     };
                   }),
                 ]}

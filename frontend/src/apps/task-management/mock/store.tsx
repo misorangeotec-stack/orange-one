@@ -498,8 +498,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     // every HOD and Sub-HOD, minus me, whichever of the two the viewer is. No
     // data migration needed — is_peer_assignment is stamped per task and says
     // nothing about roles, so this stays a filter change.
+    // Widened again (05-10-2026) to Admins as RECEIVERS: a HOD/Sub-HOD can hand
+    // a one-off task up to an admin. Admins still never get the peer picker
+    // themselves (CreateTask gates on the viewer's role), so admin → HOD work
+    // stays ordinary downward work.
     const peerAssignableUsers = (userId: string): OrgPerson[] =>
-      (orgPeople ?? []).filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== userId);
+      (orgPeople ?? []).filter((p) => (p.role === "hod" || p.role === "sub_hod" || p.role === "admin") && p.id !== userId);
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
