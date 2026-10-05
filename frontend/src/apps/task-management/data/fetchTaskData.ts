@@ -1,4 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
+import { kraFieldsFromRow } from "../lib/kraTasks";
 import type {
   ActivityType,
   Location,
@@ -68,6 +69,7 @@ const mapTask = (r: any): Task => ({
   notApplicableAt: r.not_applicable_at ?? null,
   isPersonal: r.is_personal ?? false,
   isPeerAssignment: r.is_peer_assignment ?? false,
+  ...kraFieldsFromRow(r),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   lastRemarkAt: r.last_remark_at,
