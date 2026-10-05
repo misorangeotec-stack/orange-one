@@ -150,6 +150,16 @@ export interface Task {
   // ordinary downward work. Peer work is scored in the peer block ONLY — see
   // countsTowardMetrics / countsTowardPeerMetrics (selectors).
   isPeerAssignment: boolean;
+  // KRA task (Task Category ≠ Others) — see lib/kraTasks.ts. kraWeight is the KRA's Wt%
+  // and kraCompletionWeight the part of it earned on completion, both snapshotted when
+  // the task was given; reviewRating is the direct HOD's 1-10, null while awaiting
+  // review. All null on an ordinary task.
+  kraId: string | null;
+  kraWeight: number | null;
+  kraCompletionWeight: number | null;
+  reviewRating: number | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;

@@ -20,6 +20,7 @@ import CompleteModal from "../components/CompleteModal";
 import PersonalTaskModal from "../components/PersonalTaskModal";
 import EditTaskModal from "../components/EditTaskModal";
 import { useTaskDetailEmbed } from "../components/TaskDetailEmbed";
+import KraTaskCard, { KraBadge, useKraTaskAccess } from "../components/KraTaskCard";
 
 type ModalKind = "revise" | "complete" | null;
 
@@ -83,6 +84,8 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   }, [id]);
 
   const task = getTask(id);
+  // A hook, so above the early return for the same reason as the effect above.
+  const kraAccess = useKraTaskAccess(task);
   if (!task) {
     return (
       <EmptyState
@@ -119,7 +122,9 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   // in the CURRENT week — reopening a past week would retroactively change an already
   // reported scorecard. Gate on `completed` specifically (a `shifted` task isn't reopenable).
   const isCurrentWeek = task.weekStart === weekStartOf(todayIso());
-  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions;
+  // Once the HOD has rated a KRA task only that HOD may reopen it — reopening wipes the
+  // rating (guard_task_kra enforces the same on the server).
+  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions && (task.reviewRating == null || kraAccess.isReviewer);
 
   // "When" instances can be parked as Not Applicable for the day (reversible).
   // While N/A the normal status actions are hidden and the task is excluded from reports.
@@ -194,6 +199,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
                 Peer
               </span>
             )}
+            <KraBadge task={task} />
             {task.recurringTaskId && (
               <span
                 title={recurrence ? `Recurring task · ${RECURRENCE_LABEL[recurrence]}` : "Generated from a recurring task"}
@@ -575,6 +581,8 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
               </div>
             )}
           </Card>
+
+          <KraTaskCard task={task} />
 
           {closed && (
             <Card className="p-4 text-center">

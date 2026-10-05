@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
@@ -10,6 +11,11 @@ import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
 import MentionTextArea from "../components/MentionTextArea";
 import { useReportsToSuffix } from "../components/ReportsToTag";
+import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
+import { pctLabel } from "../lib/kraTasks";
+
+/** Task Category value for the ordinary task — no KRA, no review, scored as today. */
+const OTHERS = "others";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
 export default function CreateTask() {
@@ -42,7 +48,13 @@ export default function CreateTask() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [assignedTo, setAssignedTo] = useState("");
+  const [assignedTo, setAssignedToRaw] = useState("");
+  const [category, setCategory] = useState(OTHERS);
+  // A KRA belongs to one person, so a new assignee always starts back on Others.
+  const setAssignedTo = (id: string) => {
+    setAssignedToRaw(id);
+    setCategory(OTHERS);
+  };
   const [dueDate, setDueDate] = useState("");
   const [locationIds, setLocationIds] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -63,6 +75,17 @@ export default function CreateTask() {
   const departmentName = departmentById(departmentId)?.name;
   /** Stamped only when the pick came from the peer group — never inferred later. */
   const isPeerAssignment = !!assignedTo && peers.some((p) => p.id === assignedTo);
+
+  // KRA categories: ONLY when this user is the assignee's DIRECT HOD (a user_hods row).
+  // Anyone higher up, a peer, or an admin who is not their HOD gets Others alone — the
+  // guard_task_kra trigger refuses the rest, and org_kras RLS hides the list anyway.
+  const isDirectHod = !!assignedTo && !isPeerAssignment && !!canAssign.find((p) => p.id === assignedTo)?.hodIds.includes(user.id);
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: isDirectHod });
+  const assigneeKras = useMemo(
+    () => (isDirectHod ? (krasQ.data ?? []).filter((k) => k.profileId === assignedTo && k.active).sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [isDirectHod, krasQ.data, assignedTo],
+  );
+  const pickedKra = assigneeKras.find((k) => k.id === category) ?? null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,6 +108,9 @@ export default function CreateTask() {
         dueDate: dueDate || null,
         locationIds,
         isPeerAssignment,
+        kraId: pickedKra?.id ?? null,
+        kraWeight: pickedKra?.weight ?? null,
+        kraCompletionWeight: pickedKra?.completionWeight ?? null,
       });
       navigate(`/task-management/tasks/${id}`);
     } catch (err) {
@@ -186,6 +212,29 @@ export default function CreateTask() {
               <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </FieldLabel>
           </div>
+
+          {isDirectHod && (
+            <FieldLabel
+              label="Task category"
+              hint={assigneeKras.length === 0 && !krasQ.isLoading ? "No KRAs set for this person yet" : undefined}
+            >
+              <Combobox
+                value={category}
+                onChange={(v) => setCategory(v || OTHERS)}
+                options={[
+                  { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
+                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}`, group: "KRAs" })),
+                ]}
+              />
+              {pickedKra && (
+                <p className="mt-1.5 text-[12px] text-grey">
+                  Worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
+                  {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}
+                  {pctLabel(reviewWeightOf(pickedKra))} more from your 1–10 review.
+                </p>
+              )}
+            </FieldLabel>
+          )}
 
           <LocationPicker value={locationIds} onChange={setLocationIds} />
 

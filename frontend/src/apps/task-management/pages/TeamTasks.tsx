@@ -6,6 +6,7 @@ import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
 import ReportsToTag from "../components/ReportsToTag";
+import { KraReviewQueue } from "../components/KraTaskCard";
 import TaskBrowser from "../components/TaskBrowser";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 import EmptyState from "@/shared/components/ui/EmptyState";
@@ -60,6 +61,8 @@ export default function TeamTasks() {
           Assign Task
         </Link>
       </div>
+
+      <KraReviewQueue />
 
       {/* scope toggle: this week vs all time — same placement as the dashboard */}
       <div className="flex items-center justify-between gap-3">

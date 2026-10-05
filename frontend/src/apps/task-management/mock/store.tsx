@@ -10,6 +10,7 @@ import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
 import { fetchTaskData, fetchTaskActivity, fetchTasksByIds, fetchActivityByTaskIds, type TaskData, type TaskActivityData } from "../data/fetchTaskData";
 import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
+import { saveKraReview } from "../lib/kraTasks";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -78,7 +79,9 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
+  /** The assignee's direct HOD rates a completed KRA task 1-10 (lib/kraTasks.ts). */
+  reviewKraTask: (id: string, rating: number, note?: string) => Promise<void>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
   createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
   /** Edit a personal task's title/description/due date. */
@@ -608,6 +611,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // status → in_progress, completed_at cleared, and a 'reopened' activity logged.
       reopenTask: async (id) => {
         await reopenTaskWrite(id, user.id);
+        await refreshTasks(id);
+      },
+      reviewKraTask: async (id, rating, note) => {
+        await saveKraReview(id, rating, user.id, note);
         await refreshTasks(id);
       },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the

@@ -2,6 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 import type { TaskLocation, WorkspaceSettings } from "../types";
 import type { Database } from "@/core/platform/database.types";
 import { mapTaskLocation } from "./fetchTaskData";
+import { clearReviewLocally, kraInsertColumns, rememberKraLocally } from "../lib/kraTasks";
 
 type WorkspaceSettingsUpdate = Database["public"]["Tables"]["workspace_settings"]["Update"];
 
@@ -48,6 +49,11 @@ export async function insertTask(input: {
   isPersonal?: boolean;
   /** Stamped true only when a HOD picked the assignee from the peer (other HODs) group. */
   isPeerAssignment?: boolean;
+  /** Task Category: one of the assignee's KRAs, or null/undefined for "Others". */
+  kraId?: string | null;
+  /** Only used in local test mode, where no trigger snapshots them. */
+  kraWeight?: number | null;
+  kraCompletionWeight?: number | null;
 }): Promise<string> {
   const weekStart = mondayOf(input.dueDate ?? new Date().toISOString());
   const { data, error } = await supabase
@@ -63,11 +69,13 @@ export async function insertTask(input: {
       status: "pending",
       is_personal: input.isPersonal ?? false,
       is_peer_assignment: input.isPeerAssignment ?? false,
+      ...kraInsertColumns(input.kraId),
     })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
   const taskId = data.id as string;
+  rememberKraLocally(taskId, input.kraId, input.kraWeight, input.kraCompletionWeight);
 
   // Attach the per-location checklist (optional). Done as a second insert under
   // RLS (the task_locations policy allows the task's creator).
@@ -316,6 +324,7 @@ export async function reopenTask(taskId: string, actorId: string): Promise<void>
     .update({ status: "in_progress", completed_at: null })
     .eq("id", taskId);
   if (error) throw new Error(error.message);
+  clearReviewLocally(taskId); // on live the guard_task_kra trigger does this
   const { error: actErr } = await supabase
     .from("task_activity")
     .insert({ task_id: taskId, type: "reopened", actor_id: actorId });
