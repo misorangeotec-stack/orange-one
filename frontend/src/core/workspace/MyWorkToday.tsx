@@ -35,6 +35,7 @@ import MyProbationCard from "@/core/probation/MyProbationCard";
 import Tabs from "@/shared/components/ui/Tabs";
 import RankingPanel from "@/apps/fms-control-center/components/ranking/RankingPanel";
 import HomeRankChip from "@/apps/fms-control-center/components/ranking/HomeRankChip";
+import { canSeeRanking } from "@/apps/fms-control-center/ranking/visibility";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import DueCell from "@/shared/components/ui/DueCell";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
@@ -163,10 +164,11 @@ export function MyWorkView({ state }: { state: AggregateState }) {
    * My work | Ranking (CC-1). The monthly FMS ranking lives here, on the one screen
    * every employee already has, rather than behind the Control Center grant. The tab
    * is in the URL (?view=ranking) so the banner's rank chip — and a link in a message —
-   * can open it directly.
+   * can open it directly. Temporarily limited to one viewer — see ranking/visibility.ts.
    */
+  const showRanking = canSeeRanking(user);
   const [params, setParams] = useSearchParams();
-  const view: "work" | "ranking" = params.get("view") === "ranking" ? "ranking" : "work";
+  const view: "work" | "ranking" = showRanking && params.get("view") === "ranking" ? "ranking" : "work";
   const setView = (v: string) =>
     setParams(
       (p) => {
@@ -439,13 +441,13 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         isAdmin={isAdmin}
         scope={scope}
         onScopeChange={setScopePref}
-        rank={<HomeRankChip onOpen={() => setView("ranking")} />}
+        rank={showRanking ? <HomeRankChip onOpen={() => setView("ranking")} /> : undefined}
       />
 
       <Tabs
         tabs={[
           { key: "work", label: "My work", count: state.isSettling ? undefined : pending },
-          { key: "ranking", label: "Ranking" },
+          ...(showRanking ? [{ key: "ranking", label: "Ranking" }] : []),
         ]}
         active={view}
         onChange={setView}
