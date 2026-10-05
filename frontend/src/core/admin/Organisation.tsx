@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
 import MasterCrud, { type MasterColumn } from "@/shared/components/ui/MasterCrud";
@@ -6,6 +7,8 @@ import { useDirectory } from "@/core/platform/store";
 import { useSession } from "@/core/platform/session";
 import { DEPARTMENT_SOURCE_LABEL } from "@/core/platform/types";
 import type { Band, Department, Designation, SubDepartment } from "@/core/platform/types";
+import { TextInput } from "@/shared/components/ui/Form";
+import { fetchKras, KRAS_QUERY_KEY, LOCAL_TEST, parseWeight, saveKra, weightProblem, type Kra } from "./kras";
 
 /**
  * ORGANISATION MASTERS — where a person sits in the company.
@@ -33,21 +36,31 @@ import type { Band, Department, Designation, SubDepartment } from "@/core/platfo
  *   putting 9 after 12 — and offer a filter listing every distinct count. The
  *   numbers sort numerically and the filter is suppressed where it would only
  *   restate the table.
+ *
+ * ⚠ KRA DETAILS IS ONE ROW PER KRA, KEYED TO A PERSON — not a list of names like the
+ *   other four. Designation and Department are the employee's PROFILE values, shown
+ *   and exported but never stored on the KRA (see kras.ts), so a promotion can't leave
+ *   a stale copy. An employee's active weights should total 100; that is shown, not
+ *   enforced, because a sheet is keyed in one line at a time.
  */
 
-type TabKey = "department" | "sub_department" | "designation" | "band";
+type TabKey = "department" | "sub_department" | "designation" | "band" | "kra";
 
 const TABS: { value: TabKey; label: string }[] = [
   { value: "department", label: "Departments" },
   { value: "sub_department", label: "Sub-departments" },
   { value: "designation", label: "Designations" },
   { value: "band", label: "Bands" },
+  { value: "kra", label: "KRA Details" },
 ];
 
 /** Departments predate the `active` column, so the type has it optional. */
 type DeptRow = Department & { active: boolean };
 
 const dash = <span className="text-grey-2">—</span>;
+
+/** "45%", "2.5%" — no trailing ".00" from the numeric column. */
+const pct = (n: number) => `${Math.round(n * 100) / 100}%`;
 
 const sourceLabel = (d: Department) => DEPARTMENT_SOURCE_LABEL[d.source ?? "existing"];
 
@@ -69,8 +82,13 @@ export default function Organisation() {
     addDesignation, updateDesignation,
     addBand, updateBand,
   } = useDirectory();
-  const { isAdmin } = useSession();
+  const { isAdmin, user } = useSession();
   const [tab, setTab] = useState<TabKey>("department");
+  const qc = useQueryClient();
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: tab === "kra" });
+  const kras = useMemo(() => krasQ.data ?? [], [krasQ.data]);
+  // On localhost the rows live in this browser, so anyone testing may edit them.
+  const canManageKras = isAdmin || LOCAL_TEST;
 
   const deptRows: DeptRow[] = useMemo(
     () => departments.map((d) => ({ ...d, active: d.active ?? true })),
@@ -88,6 +106,59 @@ export default function Organisation() {
   const usersWithDesignation = (id: string) => profiles.filter((p) => p.designationId === id).length;
   const usersInBand = (id: string) => profiles.filter((p) => p.bandId === id).length;
   const subDeptsOf = (id: string) => subDepartments.filter((s) => s.departmentId === id).length;
+
+  /* ------------------------------------------------------------ KRA helpers -- */
+  const profileById = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
+  const empName = (id: string) => profileById.get(id)?.name ?? "(unknown user)";
+  const empDesignation = (id: string) => {
+    const p = profileById.get(id);
+    return (p?.designationId && designations.find((d) => d.id === p.designationId)?.name) || p?.designation || "";
+  };
+  const empDepartment = (id: string) => departmentById(profileById.get(id)?.departmentId ?? null)?.name ?? "";
+
+  /** Staff only — a customer login has no KRAs. Same-name staff get their email to tell them apart. */
+  const employeeOptions = useMemo(() => {
+    const staff = profiles.filter((p) => !p.isExternal);
+    const count = new Map<string, number>();
+    for (const p of staff) count.set(p.name.toLowerCase(), (count.get(p.name.toLowerCase()) ?? 0) + 1);
+    return staff
+      .map((p) => ({
+        value: p.id,
+        label: (count.get(p.name.toLowerCase()) ?? 0) > 1 ? `${p.name} (${p.email ?? p.id.slice(0, 8)})` : p.name,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [profiles]);
+
+  /** Each employee's ACTIVE weight total — the number that should read 100. */
+  const kraTotals = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const k of kras) if (k.active) m.set(k.profileId, (m.get(k.profileId) ?? 0) + k.weight);
+    for (const [id, t] of m) m.set(id, Math.round(t * 100) / 100);
+    return m;
+  }, [kras]);
+  const kraTotalOf = (profileId: string) => kraTotals.get(profileId) ?? 0;
+  const kraOff100 = [...kraTotals.keys()].filter((id) => kraTotalOf(id) !== 100);
+
+  /** Employee A→Z, then the order their sheet was written in. */
+  const kraOrder = useMemo(() => {
+    const nameOf = (id: string) => profileById.get(id)?.name ?? "";
+    const sorted = [...kras].sort(
+      (a, b) => nameOf(a.profileId).localeCompare(nameOf(b.profileId)) || a.sortOrder - b.sortOrder,
+    );
+    return new Map(sorted.map((k, i) => [k.id, i]));
+  }, [kras, profileById]);
+
+  /** Designation / Department on the form: read off whoever is picked as Emp Name, never typed. */
+  const fromEmployee =
+    (get: (id: string) => string) =>
+    (_value: string, _onChange: (next: string) => void, values: Record<string, string>) => (
+      <TextInput
+        value={values.profile_id ? get(values.profile_id) || "—" : ""}
+        placeholder="Filled from Emp Name"
+        readOnly
+        disabled
+      />
+    );
 
   return (
     <div className="space-y-4">
@@ -287,6 +358,100 @@ export default function Organisation() {
           }}
           onToggleActive={async (r, active) => updateBand(r.id, { active })}
         />
+      )}
+
+      {/* ---------------------------------------------------- KRA details --- */}
+      {tab === "kra" && (
+        <>
+          {LOCAL_TEST && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+              <strong>Local test mode</strong> — KRAs entered here are kept in this browser only, not
+              in the database. The live hub saves them to the database for everyone.
+            </p>
+          )}
+          {krasQ.error ? (
+            <Card>
+              <p className="text-[13px] text-red-600">Could not load KRAs: {(krasQ.error as Error).message}</p>
+            </Card>
+          ) : (
+            <MasterCrud<Kra>
+              singular="KRA"
+              rows={kras}
+              canManage={canManageKras}
+              defaultOrder={(r) => kraOrder.get(r.id) ?? 0}
+              searchText={(r) =>
+                `${empName(r.profileId)} ${empDesignation(r.profileId)} ${empDepartment(r.profileId)} ${r.name}`
+              }
+              statusNote={
+                kraTotals.size === 0 ? (
+                  "Each employee's KRA weights (Wt%) should add up to 100%."
+                ) : kraOff100.length === 0 ? (
+                  `All ${kraTotals.size} employees' KRA weights add up to 100%.`
+                ) : (
+                  <span className="text-amber-700">
+                    {kraOff100.length} of {kraTotals.size} employees' KRA weights do not add up to 100%:{" "}
+                    {kraOff100.map((id) => `${empName(id)} (${pct(kraTotalOf(id))})`).join(", ")}.
+                  </span>
+                )
+              }
+              columns={[
+                { header: "Designation", render: (r) => empDesignation(r.profileId) || dash },
+                { header: "Department", render: (r) => empDepartment(r.profileId) || dash },
+                { header: "Emp Name", render: (r) => <span className="font-medium text-navy">{empName(r.profileId)}</span> },
+                // Free prose, distinct on every row — a dropdown of it would just repeat the column.
+                { header: "KRA", render: (r) => r.name, filter: false },
+                {
+                  header: "Wt%",
+                  render: (r) => <span className="text-navy">{pct(r.weight)}</span>,
+                  sortValue: (r) => r.weight,
+                  filter: false,
+                  className: "w-20",
+                },
+                {
+                  header: "Emp total",
+                  render: (r) => {
+                    const t = kraTotalOf(r.profileId);
+                    return <span className={t === 100 ? "text-grey" : "font-medium text-amber-700"}>{pct(t)}</span>;
+                  },
+                  sortValue: (r) => kraTotalOf(r.profileId),
+                  filter: { get: (r) => (kraTotalOf(r.profileId) === 100 ? "100%" : "Not 100%"), placeholder: "Any total" },
+                  className: "w-28",
+                },
+              ]}
+              fields={[
+                { key: "designation", label: "Designation", type: "custom", render: fromEmployee(empDesignation) },
+                { key: "department", label: "Department", type: "custom", render: fromEmployee(empDepartment) },
+                {
+                  key: "profile_id", label: "Emp Name", type: "select", required: true,
+                  options: employeeOptions, placeholder: "Select employee",
+                  hint: "Designation and Department come from this person's user record — change them under Users.",
+                },
+                { key: "name", label: "KRA", type: "textarea", required: true, placeholder: "e.g. Talent Acquisition, Buddy Program & Probation" },
+                { key: "weight", label: "Wt%", type: "text", required: true, placeholder: "e.g. 45", hint: "This KRA's share of the employee's 100%." },
+              ]}
+              // Key order IS the Excel column order: Designation | Department | Emp Name | KRA | Wt%.
+              emptyValues={{ designation: "", department: "", profile_id: "", name: "", weight: "" }}
+              toValues={(r) => ({
+                designation: empDesignation(r.profileId),
+                department: empDepartment(r.profileId),
+                profile_id: r.profileId,
+                name: r.name,
+                weight: String(r.weight),
+              })}
+              onSubmit={async (id, v, active) => {
+                // designation / department are ignored on purpose: they belong to the profile.
+                const problem = weightProblem(v.weight);
+                if (problem) throw new Error(problem);
+                await saveKra(id, { profileId: v.profile_id, name: v.name, weight: parseWeight(v.weight), active }, user.id);
+                await qc.invalidateQueries({ queryKey: KRAS_QUERY_KEY });
+              }}
+              onToggleActive={async (r, active) => {
+                await saveKra(r.id, { profileId: r.profileId, name: r.name, weight: r.weight, active }, user.id);
+                await qc.invalidateQueries({ queryKey: KRAS_QUERY_KEY });
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );
