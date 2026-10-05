@@ -8,6 +8,7 @@ import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { cn } from "@/shared/lib/cn";
 import { addWeeks, formatDate, isoWeekOf, weekEndOf, weekStartOf } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
@@ -590,6 +591,13 @@ function PendingBucketBlock({ tasks, name }: { tasks: Task[]; name: string }) {
   );
 }
 
+/** Labels for the statuses a pending-bucket row can have (the Status column's sort + filter). */
+const OPEN_STATUS_LABEL: Partial<Record<Task["status"], string>> = {
+  pending: "Pending",
+  in_progress: "In Progress",
+  revised: "Revised",
+};
+
 /** Right-hand slide-over listing the open tasks behind whichever number was clicked. */
 function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
   tasks: Task[]; name: string; filter: BucketFilter; onFilter: (f: BucketFilter) => void; onClose: () => void;
@@ -608,14 +616,19 @@ function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
     const onKey = (e: KeyboardEvent) => {
       // With a task open, its own popups (revise / complete) also use Esc — so
       // Esc is left to them there, and only the list view closes on it.
-      if (e.key === "Escape" && !detailId) onClose();
+      if (e.key !== "Escape" || detailId) return;
+      // A column-filter menu is open — Esc belongs to it (as in Modal). This runs in
+      // the CAPTURE phase so the menu is still in the DOM: by the window's bubble
+      // phase the menu has already closed itself and the check would always miss.
+      if (document.querySelector("[data-portal-menu]")) return;
+      onClose();
     };
-    window.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       cancelAnimationFrame(id);
-      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = prev;
     };
   }, [onClose, detailId]);
@@ -630,6 +643,62 @@ function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
   }, [tasks, filter, q]);
 
   const kindOf = (t: Task) => (isPeerTask(t) ? "Peer" : isRecurringTask(t) ? "Recurring" : "HOD-assigned");
+  const byOf = (t: Task) => profileById(t.createdBy)?.name ?? "—";
+  const statusOf = (t: Task) => OPEN_STATUS_LABEL[t.status] ?? t.status;
+
+  const columns: QueueColumn<Task>[] = [
+    {
+      key: "task",
+      header: "Task",
+      cell: (t) => (
+        // Opens in this panel. Ctrl / Cmd / middle-click still gets a real new tab.
+        <a
+          href={taskDetailPath(t.id)}
+          onClick={(e) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            setDetailId(t.id);
+          }}
+          title="Open task"
+          className="text-left font-medium text-navy hover:text-orange hover:underline"
+        >
+          {t.title}
+        </a>
+      ),
+      sortValue: (t) => t.title.toLowerCase(),
+      filter: { kind: "select", get: (t) => t.title },
+    },
+    { key: "type", header: "Type", cell: kindOf, sortValue: kindOf, filter: { kind: "select", get: kindOf } },
+    { key: "by", header: "Assigned by", cell: byOf, sortValue: byOf, filter: { kind: "select", get: byOf } },
+    {
+      key: "due",
+      header: "Due",
+      cell: (t) => (
+        <span className={cn("tabular-nums whitespace-nowrap", isOverdueTask(t) ? "text-[#c0392b] font-semibold" : "text-grey")}>
+          {formatDate(t.dueDate)}
+        </span>
+      ),
+      // Undated tasks sort last, as before.
+      sortValue: (t) => t.dueDate ?? "9999",
+      filter: { kind: "date", get: (t) => t.dueDate ?? "" },
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (t) => (
+        <div className="flex flex-wrap items-center gap-1">
+          <StatusChip status={t.status} />
+          {isPushedAhead(t) && (
+            <span className="inline-flex items-center rounded-pill px-2 py-1 text-[10.5px] font-semibold whitespace-nowrap bg-orange-soft text-orange" title="Shifted by the assignee into a later week">
+              Pushed ahead
+            </span>
+          )}
+        </div>
+      ),
+      sortValue: statusOf,
+      filter: { kind: "select", get: statusOf },
+    },
+  ];
 
   return createPortal(
     <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label={`Open tasks for ${name}`}>
@@ -709,58 +778,19 @@ function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
           />
         </header>
 
-        <div className="flex-1 overflow-auto">
-          {rows.length === 0 ? (
-            <p className="p-5 text-[13px] text-grey-2 italic">No tasks here.</p>
-          ) : (
-            <table className="w-full text-[12.5px] border-collapse">
-              <thead className="sticky top-0 bg-page text-grey-2 text-[10.5px] uppercase tracking-wide">
-                <tr>
-                  <th className="text-left font-semibold px-5 py-2">Task</th>
-                  <th className="text-left font-semibold px-3 py-2">Type</th>
-                  <th className="text-left font-semibold px-3 py-2">Assigned by</th>
-                  <th className="text-left font-semibold px-3 py-2">Due</th>
-                  <th className="text-left font-semibold px-5 py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((t) => (
-                  <tr key={t.id} className="border-t border-line hover:bg-page/60">
-                    <td className="px-5 py-2.5 align-top">
-                      {/* Opens in this panel. Ctrl / Cmd / middle-click still gets a real new tab. */}
-                      <a
-                        href={taskDetailPath(t.id)}
-                        onClick={(e) => {
-                          if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
-                          e.preventDefault();
-                          setDetailId(t.id);
-                        }}
-                        title="Open task"
-                        className="text-left font-medium text-navy hover:text-orange hover:underline"
-                      >
-                        {t.title}
-                      </a>
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-grey whitespace-nowrap">{kindOf(t)}</td>
-                    <td className="px-3 py-2.5 align-top text-grey whitespace-nowrap">{profileById(t.createdBy)?.name ?? "—"}</td>
-                    <td className={cn("px-3 py-2.5 align-top tabular-nums whitespace-nowrap", isOverdueTask(t) ? "text-[#c0392b] font-semibold" : "text-grey")}>
-                      {formatDate(t.dueDate)}
-                    </td>
-                    <td className="px-5 py-2.5 align-top">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <StatusChip status={t.status} />
-                        {isPushedAhead(t) && (
-                          <span className="inline-flex items-center rounded-pill px-2 py-1 text-[10.5px] font-semibold whitespace-nowrap bg-orange-soft text-orange" title="Shifted by the assignee into a later week">
-                            Pushed ahead
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        {/* QueueTable, not a hand-built table: every column sorts and filters, and it pages
+            at 25 — a backlog runs to dozens of tasks. Its dropdowns portal at z-70, above
+            this z-60 panel. */}
+        <div className="flex-1 overflow-auto p-4">
+          <QueueTable<Task>
+            rows={rows}
+            rowKey={(t) => t.id}
+            columns={columns}
+            initialSort={{ key: "due", dir: "asc" }}
+            rowsLabel="tasks"
+            emptyTitle="No tasks here"
+            emptyMessage="Nothing open matches this chip or search."
+          />
         </div>
         </>
         )}
