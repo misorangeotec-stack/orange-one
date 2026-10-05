@@ -4,7 +4,8 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import EmptyState from "@/shared/components/ui/EmptyState";
-import { FieldLabel, Select, TextArea, TextInput } from "@/shared/components/ui/Form";
+import Combobox from "@/shared/components/ui/Combobox";
+import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { APPS, appName } from "../../appInfo";
 import {
@@ -258,19 +259,23 @@ export default function VideoLibrary() {
         {draft && (
           <div className="space-y-4">
             <FieldLabel label="Module" required hint="Only people with access to this module see the video">
-              <Select value={draft.appId} onChange={(e) => setDraft({ appId: e.target.value })}>
-                <option value="">Select a module…</option>
-                {/* A saved module that is no longer in the portal still shows, so editing an
-                    old video never silently moves it. */}
-                {draft.appId && !PORTAL_MODULES.some((m) => m.id === draft.appId) && (
-                  <option value={draft.appId}>{moduleName(draft.appId)}</option>
-                )}
-                {PORTAL_MODULES.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </Select>
+              {/* Searchable, not a native <select>: the portal has ~40 modules. A saved module
+                  that is no longer in the portal still shows, so editing an old video never
+                  silently moves it. */}
+              <Combobox
+                value={draft.appId}
+                onChange={(appId) => setDraft({ appId })}
+                options={[
+                  ...(draft.appId && !PORTAL_MODULES.some((m) => m.id === draft.appId)
+                    ? [{ value: draft.appId, label: moduleName(draft.appId) }]
+                    : []),
+                  ...PORTAL_MODULES.map((m) => ({ value: m.id, label: m.name })),
+                ]}
+                placeholder="Select a module…"
+                searchable
+                autoAdvance
+              />
+
             </FieldLabel>
             <FieldLabel label="Video title" required>
               <TextInput
