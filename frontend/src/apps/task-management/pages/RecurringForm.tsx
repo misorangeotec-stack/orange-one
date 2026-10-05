@@ -4,7 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import Combobox from "@/shared/components/ui/Combobox";
-import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { FieldHeading, FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -281,7 +281,11 @@ export default function RecurringForm() {
           <LocationPicker value={locationIds} onChange={setLocationIds} />
 
           {canNotify && (
-            <FieldLabel label="Notification required">
+            // A heading DIV, not FieldLabel: a <label> forwards a click on its text to its
+            // first button, so clicking "Notification required" (or "Notify", "days before",
+            // the hint) silently switched the reminder ON.
+            <div>
+              <FieldHeading label="Notification required" />
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="inline-flex rounded-xl border border-line p-1 bg-page">
                   {([[true, "Yes"], [false, "No"]] as [boolean, string][]).map(([v, l]) => (
@@ -319,7 +323,7 @@ export default function RecurringForm() {
                   {" "}{Number(notifyDays) === 1 ? "1 day" : `${notifyDays || "N"} days`} before each date this task falls on.
                 </p>
               )}
-            </FieldLabel>
+            </div>
           )}
 
           <label className="flex items-center gap-3 pt-1 cursor-pointer select-none">
