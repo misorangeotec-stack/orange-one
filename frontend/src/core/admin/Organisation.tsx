@@ -412,11 +412,12 @@ export default function Organisation() {
                 { header: "Emp Name", render: (r) => <span className="font-medium text-navy">{empName(r.profileId)}</span> },
                 // Free prose, distinct on every row — a dropdown of it would just repeat the column.
                 { header: "KRA", render: (r) => r.name, filter: false },
+                // Wt% and its split DO filter: 10% / 20% repeat across employees, so "show me every
+                // 20% KRA" is a real question. Only the KRA text is unique per row.
                 {
                   header: "Wt%",
                   render: (r) => <span className="font-medium text-navy">{pct(r.weight)}</span>,
                   sortValue: (r) => r.weight,
-                  filter: false,
                   className: "w-20",
                 },
                 // Grey while the split is the default half-and-half; navy once management has moved it.
@@ -428,7 +429,6 @@ export default function Organisation() {
                     </span>
                   ),
                   sortValue: (r) => r.completionWeight,
-                  filter: false,
                   className: "w-28",
                 },
                 {
@@ -439,7 +439,6 @@ export default function Organisation() {
                     </span>
                   ),
                   sortValue: (r) => reviewWeightOf(r),
-                  filter: false,
                   className: "w-28",
                 },
                 {
