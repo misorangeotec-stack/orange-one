@@ -48,6 +48,11 @@ export default function RecurringForm() {
   const [monthlyWeekday, setMonthlyWeekday] = useState<number>(editing?.monthlyWeekday ?? 6); // 6 = Saturday
   const [active, setActive] = useState(editing?.active ?? true);
   const [locationIds, setLocationIds] = useState<string[]>(editing?.locationIds ?? []);
+  // "Notification required" — remind the assignee N days before each date the task fires.
+  const [notifyRequired, setNotifyRequired] = useState(editing?.notifyRequired ?? false);
+  const [notifyDays, setNotifyDays] = useState<string>(String(editing?.notifyDaysBefore ?? 3));
+  // Daily / As and When fire every working day, so an advance reminder makes no sense there.
+  const canNotify = recurrenceType === "weekly" || recurrenceType === "monthly" || recurrenceType === "quarterly";
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -67,6 +72,10 @@ export default function RecurringForm() {
     // Monthly: "dates" sub-mode needs at least one day; "nth" mode (the default) never needs a pick.
     if (recurrenceType === "monthly" && monthlyMode === "dates" && monthlyDays.length === 0)
       return setError("Pick at least one day of the month.");
+    const notifyOn = canNotify && notifyRequired;
+    const days = Number(notifyDays);
+    if (notifyOn && !(Number.isInteger(days) && days >= 1 && days <= 30))
+      return setError("Notify before: enter a number of days from 1 to 30.");
     const useNth = recurrenceType === "monthly" && monthlyMode === "nth";
     const payload = {
       title: title.trim(),
@@ -81,6 +90,8 @@ export default function RecurringForm() {
       departmentId: profileById(assignedTo)?.departmentId ?? null,
       active,
       locationIds,
+      notifyRequired: notifyOn,
+      notifyDaysBefore: notifyOn ? days : null,
     };
     setBusy(true);
     setError("");
@@ -268,6 +279,48 @@ export default function RecurringForm() {
           )}
 
           <LocationPicker value={locationIds} onChange={setLocationIds} />
+
+          {canNotify && (
+            <FieldLabel label="Notification required">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="inline-flex rounded-xl border border-line p-1 bg-page">
+                  {([[true, "Yes"], [false, "No"]] as [boolean, string][]).map(([v, l]) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => { setNotifyRequired(v); setError(""); }}
+                      className={cn(
+                        "px-5 py-1.5 rounded-lg text-[13px] font-semibold transition",
+                        notifyRequired === v ? "bg-white text-orange shadow-soft" : "text-grey hover:text-navy"
+                      )}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {notifyRequired && (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-[13px] text-grey">Notify</span>
+                    <TextInput
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={notifyDays}
+                      onChange={(e) => { setNotifyDays(e.target.value); setError(""); }}
+                      className="w-20"
+                    />
+                    <span className="text-[13px] text-grey">days before</span>
+                  </span>
+                )}
+              </div>
+              {notifyRequired && (
+                <p className="text-[11.5px] text-grey-2 mt-1.5">
+                  The assignee gets a bell notification (and an email, when Task Management emails are on)
+                  {" "}{Number(notifyDays) === 1 ? "1 day" : `${notifyDays || "N"} days`} before each date this task falls on.
+                </p>
+              )}
+            </FieldLabel>
+          )}
 
           <label className="flex items-center gap-3 pt-1 cursor-pointer select-none">
             <button

@@ -8039,6 +8039,8 @@ export type Database = {
           created_at: string
           id: string
           read_at: string | null
+          recurring_task_id: string | null
+          reminder_date: string | null
           task_id: string | null
           type: Database["public"]["Enums"]["notification_type"]
           user_id: string
@@ -8049,6 +8051,8 @@ export type Database = {
           created_at?: string
           id?: string
           read_at?: string | null
+          recurring_task_id?: string | null
+          reminder_date?: string | null
           task_id?: string | null
           type?: Database["public"]["Enums"]["notification_type"]
           user_id: string
@@ -8059,6 +8063,8 @@ export type Database = {
           created_at?: string
           id?: string
           read_at?: string | null
+          recurring_task_id?: string | null
+          reminder_date?: string | null
           task_id?: string | null
           type?: Database["public"]["Enums"]["notification_type"]
           user_id?: string
@@ -8369,6 +8375,8 @@ export type Database = {
           monthly_days: number[]
           monthly_nth: number | null
           monthly_weekday: number | null
+          notify_days_before: number | null
+          notify_required: boolean
           prepone_off_holidays: boolean
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
@@ -8386,6 +8394,8 @@ export type Database = {
           monthly_days?: number[]
           monthly_nth?: number | null
           monthly_weekday?: number | null
+          notify_days_before?: number | null
+          notify_required?: boolean
           prepone_off_holidays?: boolean
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
@@ -8403,6 +8413,8 @@ export type Database = {
           monthly_days?: number[]
           monthly_nth?: number | null
           monthly_weekday?: number | null
+          notify_days_before?: number | null
+          notify_required?: boolean
           prepone_off_holidays?: boolean
           recurrence_type?: Database["public"]["Enums"]["recurrence_type"]
           title?: string

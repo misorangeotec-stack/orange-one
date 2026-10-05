@@ -171,6 +171,8 @@ export interface RecurringTask {
   active: boolean;
   createdAt: string; // when this recurring template was set up (recurring_tasks.created_at)
   locationIds: string[]; // locations each generated task is tagged with
+  notifyRequired: boolean; // remind the assignee before each fire date (weekly/monthly/quarterly only)
+  notifyDaysBefore: number | null; // how many days before (1..30); null when no reminder
 }
 
 export interface WeeklyPlan {
@@ -198,8 +200,11 @@ export interface TaskActivity {
  * `mention` = someone @mentioned you in a remark (written by the add_task_remark
  * RPC). `assigned` = someone assigned you a task (written by the
  * trg_tasks_notify_assignee trigger; see supabase/migrations/20260721120100).
+ * `task_recurring_reminder` = a recurring task with "Notification required" is due
+ * in N days (send_recurring_reminders, 20270106120100). There is no task yet, so
+ * taskId is null and recurringTaskId / reminderDate say which template and date.
  */
-export type NotificationType = "mention" | "assigned";
+export type NotificationType = "mention" | "assigned" | "task_recurring_reminder";
 
 export interface Notification {
   id: string;
@@ -221,6 +226,9 @@ export interface Notification {
    * message builder renders as a generic fallback.
    */
   taskTitle: string | null;
+  /** Reminder rows only: the recurring template, and the date its task will appear. */
+  recurringTaskId: string | null;
+  reminderDate: string | null;
   readAt: string | null;
   createdAt: string;
 }

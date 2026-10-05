@@ -721,6 +721,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           departmentId: input.departmentId,
           active: input.active,
           locationIds: input.locationIds ?? [],
+          notify: input.notifyRequired ? { required: true, daysBefore: input.notifyDaysBefore } : undefined,
           createdBy: user.id,
         });
         // Materialise today's instance immediately if the template is active and
@@ -752,6 +753,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           departmentId: m.departmentId,
           active: m.active,
           locationIds: m.locationIds ?? [],
+          // Named only when the reminder is on now or was on before (so turning it off is saved).
+          notify: m.notifyRequired || cur.notifyRequired
+            ? { required: m.notifyRequired, daysBefore: m.notifyDaysBefore }
+            : undefined,
         });
         // If the edit leaves the template active, ensure today's instance exists
         // (e.g. activating via the edit form). Idempotent, so no duplicate if it
