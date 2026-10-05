@@ -1,4 +1,4 @@
--- Rollback for 20270106130000_kra_tasks.sql
+-- Rollback for 20270107130000_kra_tasks.sql
 --
 -- ⚠ THIS DROPS EVERY KRA TASK'S LINK AND EVERY HOD RATING. The tasks themselves
 --   stay, as ordinary tasks. Take the ratings out first if they are wanted:

@@ -1,4 +1,4 @@
--- Rollback for 20270106120000_org_kras.sql
+-- Rollback for 20270107120000_org_kras.sql
 --
 -- ⚠ THIS DELETES EVERY KRA HR HAS ENTERED. Export first (Admin → Organisation →
 --   KRA Details → Export) if there is any chance it is wanted, or:

@@ -1,6 +1,6 @@
 /**
  * KRA Details — each employee's KRAs and their weight, read and written straight against
- * `public.org_kras` (20270106120000). RLS is the gate: everyone reads, admins write.
+ * `public.org_kras` (20270107120000). RLS is the gate: everyone reads, admins write.
  *
  * Designation and department are NOT here — they are the employee's profile values, looked
  * up on screen, so a promotion or a team move never leaves a stale copy behind.

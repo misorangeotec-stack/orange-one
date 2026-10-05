@@ -24,7 +24,7 @@
 --   are assigned against a KRA, deleting it would strand them.
 --
 -- Additive: one new table. Nothing existing is touched.
--- Reversal: 20270106120000_org_kras_rollback.sql
+-- Reversal: 20270107120000_org_kras_rollback.sql
 -- ===========================================================================
 
 create table if not exists public.org_kras (

@@ -1,6 +1,6 @@
 /**
  * KRA tasks — a task given against one of the assignee's KRAs (Admin → Organisation →
- * KRA Details), and the HOD's 1-10 review of it once it is done (20270106130000).
+ * KRA Details), and the HOD's 1-10 review of it once it is done (20270107130000).
  *
  * THE SCORE (client, 05-10-2026). The task is worth the KRA's Wt% (W), split on KRA
  * Details into C "on completion" + (W − C) "on HOD review" — half and half by default,

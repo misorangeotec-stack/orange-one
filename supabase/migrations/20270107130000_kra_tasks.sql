@@ -44,13 +44,13 @@
 --
 -- Additive: six nullable columns, one trigger, one policy replaced, one
 -- function body patched. No existing row changes.
--- Reversal: 20270106130000_kra_tasks_rollback.sql
+-- Reversal: 20270107130000_kra_tasks_rollback.sql
 -- ===========================================================================
 
 do $assert$
 begin
   if to_regclass('public.org_kras') is null then
-    raise exception 'KRA tasks pre 1: org_kras is missing -- run 20270106120000_org_kras.sql first';
+    raise exception 'KRA tasks pre 1: org_kras is missing -- run 20270107120000_org_kras.sql first';
   end if;
   if not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
