@@ -62,7 +62,7 @@ import { useGodownChoice } from "../lib/godowns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, describeGodownChoice,
-  fmtDays, fmtPct, fmtQty,
+  fmtDays, fmtQty,
   INK_CATEGORIES, INK_SOURCES, SHIPMENT_STATUSES, emptyShipment, loadGroupFields, loadHolidays,
   loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
   loadShipments, loadThresholds, newId, saveHolidays, savePlans, saveShipments, saveThresholds,
@@ -90,6 +90,10 @@ const BAND_LABEL: Record<InkBand, string> = {
   excess: "Excess",
   none: "Not planned",
 };
+
+/** Toolbar sizing: one line of small controls above the sheet. */
+const BAR_BTN = "h-7 px-2 text-[11px]";
+const BAR_ICON = "mr-1 h-3 w-3";
 
 export default function InkMis() {
   const fyOptions = useMemo(() => salesFyOptions(), []);
@@ -152,6 +156,23 @@ export default function InkMis() {
       /* private mode: the toggle still works for this visit */
     }
   }, [companiesOpen]);
+  // Lines the viewer has hidden from the dashboard, by line key. Remembered per browser, like the
+  // Columns picker: it narrows this person's view and never touches the planner's numbering.
+  const [hiddenLines, setHiddenLines] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(window.localStorage.getItem("ink-mis:hidden-lines") ?? "[]");
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:hidden-lines", JSON.stringify(hiddenLines));
+    } catch {
+      /* private mode: the choice still holds for this visit */
+    }
+  }, [hiddenLines]);
   const [holidays, setHolidays] = useState<string[]>(() => loadHolidays());
 
   /**
@@ -198,6 +219,22 @@ export default function InkMis() {
     [allPositions, order],
   );
   const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
+
+  /** The Lines picker: every numbered line, in sheet order; ticked = shown. */
+  const hiddenSet = useMemo(() => new Set(hiddenLines), [hiddenLines]);
+  const isHidden = useCallback(
+    (p: { key: string; legacyKey: string }) => hiddenSet.has(p.key) || hiddenSet.has(p.legacyKey),
+    [hiddenSet],
+  );
+  const lineOptions = useMemo(
+    () =>
+      positions.map((p) => {
+        const n = order[p.key] ?? order[p.legacyKey];
+        return { value: p.key, label: `${n}. ${p.description || p.itemCode || p.key}` };
+      }),
+    [positions, order],
+  );
+  const shownLineKeys = positions.filter((p) => !isHidden(p)).map((p) => p.key);
 
   /* ------------------------------------------------- averages from the Sales Register */
 
@@ -322,14 +359,15 @@ export default function InkMis() {
     // EVERY NUMBERED LINE SHOWS, stock or not. The number is the planner's decision that a line
     // belongs on the sheet — an ink at zero stock that they numbered is exactly the one they want
     // to watch — so no stock filter second-guesses it. `positions` is already numbered-only.
-    const scoped = built;
+    // Lines unticked in the Lines picker leave the sheet, its totals and the filter lists alike.
+    const scoped = built.filter((r) => !isHidden(r));
     const q = search.trim().toUpperCase();
     return q
       ? scoped.filter((r) => r.itemCode.includes(q) || r.description.toUpperCase().includes(q))
       : scoped;
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away. A sort the planner ASKS for is applied below.
-  }, [positions, plans, consumption, shipments, thresholds, companyKey, search]);
+  }, [positions, plans, consumption, shipments, thresholds, companyKey, search, isHidden]);
 
   /**
    * What is on screen: the filters, then the planner's chosen order.
@@ -409,7 +447,7 @@ export default function InkMis() {
    * here, so a column cannot be added with one and not the other.
    */
   const colHead = (label: ReactNode, id: string) => (
-    <ColumnHead label={label} id={id} sort={sort} setSort={setSort}>
+    <ColumnHead label={label} id={id} sort={sort} setSort={setSort} wrap>
       {colFilter(id)}
     </ColumnHead>
   );
@@ -1083,18 +1121,20 @@ export default function InkMis() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      {/* ONE LINE, small type: the toolbar used to wrap onto two rows and push the sheet down.
+          Scrolls sideways on a narrow screen rather than wrapping. */}
+      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 text-[11px]">
+        <div className="relative shrink-0">
+          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className="w-64 pl-8"
+            className="h-7 w-44 pl-6 text-[11px]"
             placeholder="Search code or description"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="h-9 rounded-md border bg-background px-2 text-sm"
+          className="h-7 rounded-md border bg-background px-1.5 text-[11px]"
           value={scope}
           onChange={(e) => setScope(e.target.value as InkScope)}
           title="Which items this report lists"
@@ -1105,15 +1145,16 @@ export default function InkMis() {
         <Button
           variant={editing ? "default" : "outline"}
           size="sm"
+          className={BAR_BTN}
           onClick={() => setEditing((v) => !v)}
         >
-          <Pencil className="mr-2 h-4 w-4" /> {editing ? "Done editing" : "Edit values"}
+          <Pencil className={BAR_ICON} /> {editing ? "Done editing" : "Edit values"}
         </Button>
         {editing && (
           <>
             {(["ETD", "ETA", "AT PORT", "PLANT"] as ShipmentStatus[]).map((st) => (
-              <Button key={st} variant="outline" size="sm" onClick={() => addColumn(st)}>
-                <Plus className="mr-1 h-4 w-4" /> {st}
+              <Button key={st} variant="outline" size="sm" className={BAR_BTN} onClick={() => addColumn(st)}>
+                <Plus className={BAR_ICON} /> {st}
               </Button>
             ))}
           </>
@@ -1121,14 +1162,15 @@ export default function InkMis() {
         <Button
           variant="outline"
           size="sm"
+          className={BAR_BTN}
           onClick={() => void consumptionQuery.refetch()}
           disabled={consumptionQuery.isFetching || !nameToCode}
         >
-          <Wand2 className="mr-2 h-4 w-4" />
+          <Wand2 className={BAR_ICON} />
           {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
         {filtersOn && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
+          <Button variant="ghost" size="sm" className={BAR_BTN} onClick={clearFilters}>
             Clear filters
           </Button>
         )}
@@ -1137,14 +1179,30 @@ export default function InkMis() {
           onChange={(v) => cols.setHidden(columnOptions.map((o) => o.value).filter((id) => !v.includes(id)))}
           options={columnOptions}
           triggerLabel="Columns"
-          triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+          triggerClassName="py-1 px-2 text-[11px]"
         />
-        <span className="inline-flex items-center gap-1 text-sm" title="Row height">
+        <MultiSelect
+          values={shownLineKeys}
+          // Store what is HIDDEN, so a line numbered later shows up rather than staying hidden.
+          onChange={(v) => {
+            const shown = new Set(v);
+            setHiddenLines(positions.filter((p) => !shown.has(p.key)).map((p) => p.key));
+          }}
+          options={lineOptions}
+          triggerLabel={
+            hiddenLines.length && shownLineKeys.length < positions.length
+              ? `Lines (${positions.length - shownLineKeys.length} hidden)`
+              : "Lines"
+          }
+          triggerClassName="py-1 px-2 text-[11px]"
+          searchable
+        />
+        <span className="inline-flex shrink-0 items-center gap-1" title="Row height">
           <span className="text-muted-foreground">Rows</span>
           <Button
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0"
+            className="h-6 w-6 p-0 text-[11px]"
             aria-label="Shorter rows"
             onClick={() => setRowPad((v) => Math.max(2, v - 3))}
           >
@@ -1153,19 +1211,19 @@ export default function InkMis() {
           <Button
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0"
+            className="h-6 w-6 p-0 text-[11px]"
             aria-label="Taller rows"
             onClick={() => setRowPad((v) => Math.min(28, v + 3))}
           >
             +
           </Button>
         </span>
-        <span className="inline-flex items-center gap-1 text-sm" title="Heading height">
+        <span className="inline-flex shrink-0 items-center gap-1" title="Heading height">
           <span className="text-muted-foreground">Heading</span>
           <Button
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0"
+            className="h-6 w-6 p-0 text-[11px]"
             aria-label="Shorter heading"
             onClick={() => setHeadPad((v) => Math.max(2, v - 3))}
           >
@@ -1174,24 +1232,24 @@ export default function InkMis() {
           <Button
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0"
+            className="h-6 w-6 p-0 text-[11px]"
             aria-label="Taller heading"
             onClick={() => setHeadPad((v) => Math.min(28, v + 3))}
           >
             +
           </Button>
         </span>
-        <label className="inline-flex items-center gap-2 text-sm" title="Keep number, group, code and description on screen while you scroll right">
+        <label className="inline-flex shrink-0 items-center gap-1" title="Keep number, group, code and description on screen while you scroll right">
           <input type="checkbox" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} />
           Freeze name columns
         </label>
         {cols.customised && (
-          <Button variant="ghost" size="sm" onClick={cols.reset} title="Show every column at its automatic width">
+          <Button variant="ghost" size="sm" className={BAR_BTN} onClick={cols.reset} title="Show every column at its automatic width">
             Reset columns
           </Button>
         )}
         {(["low", "mid", "normal", "excess"] as InkBand[]).map((b) => (
-          <span key={b} className={`rounded px-2 py-1 text-xs ${BAND_CLASS[b]}`}>
+          <span key={b} className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${BAND_CLASS[b]}`}>
             {BAND_LABEL[b]}
           </span>
         ))}
@@ -1260,10 +1318,12 @@ export default function InkMis() {
           // height the planner set is the height every row keeps.
           "[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] " +
           "[&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)] " +
-          "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap"
+          "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap " +
+          // Every figure at 9.5px, including the cells and badges that set their own size.
+          "[&_tbody_td]:text-[9.5px] [&_tbody_td_*]:text-[9.5px]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]">
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideControls>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
@@ -1290,7 +1350,7 @@ export default function InkMis() {
                   <button
                     type="button"
                     onClick={() => setCompaniesOpen((v) => !v)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-foreground hover:underline"
+                    className="inline-flex items-center gap-1 text-[9px] font-semibold text-foreground hover:underline"
                     title={showCompanyCols ? "Collapse the four companies into one column" : "Show each company's stock"}
                   >
                     {showCompanyCols ? "− All four companies" : "+ All four companies"}
@@ -1360,10 +1420,7 @@ export default function InkMis() {
               )}
               {on("withEta") && (
                 <ResizableHead id="withEta" cols={cols} className="text-right">
-                  {colHead(
-                    <span className="text-[10px] font-normal">Days cover with ETA</span>,
-                    "withEta",
-                  )}
+                  {colHead("Days cover with ETA", "withEta")}
                 </ResizableHead>
               )}
               {on("monthMax") && (
@@ -1625,9 +1682,6 @@ export default function InkMis() {
 
                 <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.stockBand]}`}>
                   {fmtQty(r.stock)}
-                  {r.stockPct !== null && (
-                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.stockPct)}</div>
-                  )}
                 </TableCell>
 
                 {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
@@ -1643,10 +1697,8 @@ export default function InkMis() {
                   <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
                 )}
                 <TableCell className={`text-right font-semibold tabular-nums ${BAND_CLASS[r.band]}`}>
+                  {/* No % line under the figure: the band colour already says how covered it is. */}
                   {fmtQty(r.total)}
-                  {r.coverPct !== null && (
-                    <div className="text-[10px] font-normal opacity-70">{fmtPct(r.coverPct)}</div>
-                  )}
                 </TableCell>
                 {cols.isVisible("category") && (
                   <TableCell className="text-xs">{r.category}</TableCell>

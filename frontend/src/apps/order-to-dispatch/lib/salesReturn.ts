@@ -13,8 +13,8 @@
  *   "help" by deriving the mode from `srInvoiceAt`, that is the thing this
  *   comment exists to argue against.
  */
-import { roundViewNo, type RoundView } from "./rounds";
-import type { DispatchOrder } from "../types";
+import { allRoundViews, roundViewNo, type RoundView } from "./rounds";
+import type { DispatchOrder, RoundReturn } from "../types";
 
 /** Cancelled after a bill was raised, and the invoice has not been unwound yet. */
 export const isSalesReturnPending = (o: DispatchOrder): boolean =>
@@ -43,3 +43,43 @@ export const hasSalesReturn = (o: DispatchOrder): boolean =>
  */
 export const salesReturnRound = (o: DispatchOrder): RoundView | null =>
   o.srRoundNo == null ? null : roundViewNo(o, o.srRoundNo);
+
+/* -------------------------------------------------------------------------- */
+/*  Returns against an invoice that has LEFT THE GATE (migration 20261230120000) */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where one round's invoice stands for a new sales return:
+ *   · "ok"       — it has left the gate: the round in progress awaiting delivery
+ *                  confirmation, or any finished round, on an open or closed order;
+ *   · "in_plant" — billed but not yet out of the gate. Listed, but refused: the
+ *                  route there is Cancel order, which reaches Sales Return itself;
+ *   · null       — not an invoice this flow can touch (no bill yet, or one a
+ *                  cancellation is already unwinding).
+ *
+ * Mirrors the refusals in `fms_dispatch_request_round_return` one for one.
+ */
+export type InvoiceReturnState = "ok" | "in_plant";
+
+export function invoiceReturnState(o: DispatchOrder, v: RoundView): InvoiceReturnState | null {
+  if (!v.sbInvoiceNo) return null;
+  // An archived round with no delivery outcome was archived by a cancellation.
+  if (v.isArchived) return v.dcStatus ? "ok" : null;
+  if (o.status === "cancelled" || o.status === "awaiting_sales_return") return null;
+  return v.goAt ? "ok" : "in_plant";
+}
+
+/** The return still in force on an invoice — pending or recorded — if any. */
+export const liveReturnFor = (
+  orderId: string, roundNo: number, returns: RoundReturn[],
+): RoundReturn | undefined =>
+  returns.find((x) => x.orderId === orderId && x.roundNo === roundNo && x.status !== "withdrawn");
+
+/** Every invoice on this order with no return in force yet, and where it stands. */
+export const returnCandidates = (
+  o: DispatchOrder, returns: RoundReturn[],
+): { view: RoundView; state: InvoiceReturnState }[] =>
+  allRoundViews(o).flatMap((view) => {
+    const state = invoiceReturnState(o, view);
+    return state && !liveReturnFor(o.id, view.roundNo, returns) ? [{ view, state }] : [];
+  });

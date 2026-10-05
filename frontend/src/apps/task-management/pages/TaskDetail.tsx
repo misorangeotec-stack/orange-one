@@ -19,12 +19,22 @@ import ReviseModal from "../components/ReviseModal";
 import CompleteModal from "../components/CompleteModal";
 import PersonalTaskModal from "../components/PersonalTaskModal";
 import EditTaskModal from "../components/EditTaskModal";
+import { useTaskDetailEmbed } from "../components/TaskDetailEmbed";
 
 type ModalKind = "revise" | "complete" | null;
 
-export default function TaskDetail() {
-  const { id = "" } = useParams();
+/**
+ * `taskId` is only passed when embedded (see TaskDetailEmbed); as a route it comes
+ * from the URL. Embedded, every "go to another task" / "leave" goes through the
+ * embed instead of the router, so the host page is never left.
+ */
+export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
+  const params = useParams();
+  const id = taskId ?? params.id ?? "";
   const navigate = useNavigate();
+  const embed = useTaskDetailEmbed();
+  const goToTask = (to: string) => (embed ? embed.openTask(to) : navigate(`/task-management/tasks/${to}`));
+  const leave = () => (embed ? embed.close() : navigate("/task-management/tasks"));
   const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
   const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
@@ -87,7 +97,7 @@ export default function TaskDetail() {
   const onReschedule = async (date: string) => {
     if (!date) return;
     const newId = await rescheduleTask(task.id, date);
-    if (newId) navigate(`/task-management/tasks/${newId}`); // shifted to a future week
+    if (newId) goToTask(newId); // shifted to a future week
   };
 
   // actorById, not profileById: since TM-1 the ASSIGNEE can be a HOD in another
@@ -152,10 +162,13 @@ export default function TaskDetail() {
           pre-shift task. Resolved through returnToFor so it returns to the list's LAST VIEWED
           URL — that keeps the deep-link signature matched, so the sticky filters restore rather
           than being discarded (see shared/lib/returnTo). Falls back to the bare route. */}
-      <Link to={returnToFor(taskListRouteForRole(role))} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-        Back to {taskListLabelForRole(role)}
-      </Link>
+      {/* Embedded, the host panel draws its own Back. */}
+      {!embed && (
+        <Link to={returnToFor(taskListRouteForRole(role))} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          Back to {taskListLabelForRole(role)}
+        </Link>
+      )}
 
       {/* header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -575,7 +588,7 @@ export default function TaskDetail() {
 
       {/* modals */}
       <ReviseModal task={task} open={modal === "revise"} onClose={() => setModal(null)} />
-      <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} onCompleted={() => navigate("/task-management/tasks")} />
+      <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} onCompleted={leave} />
       <PersonalTaskModal task={task} open={editOpen} onClose={() => setEditOpen(false)} />
       <EditTaskModal task={task} open={editTaskOpen} onClose={() => setEditTaskOpen(false)} />
       <Modal
@@ -592,7 +605,7 @@ export default function TaskDetail() {
                 try {
                   if (personal) await deletePersonalTask(task.id);
                   else await deleteTask(task.id);
-                  navigate("/task-management/tasks");
+                  leave();
                 } finally {
                   setDeleting(false);
                 }
@@ -660,15 +673,29 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function LinkedTask({ label, id }: { label: string; id: string }) {
   const { getTask } = useTaskStore();
+  const embed = useTaskDetailEmbed();
   const t = getTask(id);
   if (!t) return null;
-  return (
-    <Link to={`/task-management/tasks/${id}`} className="flex items-center justify-between gap-2 text-[12.5px] hover:bg-page rounded-lg px-2 py-1.5 -mx-2 transition">
+  const cls = "flex w-full items-center justify-between gap-2 text-[12.5px] hover:bg-page rounded-lg px-2 py-1.5 -mx-2 transition";
+  const inner = (
+    <>
       <span className="text-grey-2">{label}</span>
       <span className="text-orange font-medium truncate inline-flex items-center gap-1">
         {t.title}
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
       </span>
+    </>
+  );
+  if (embed) {
+    return (
+      <button type="button" onClick={() => embed.openTask(id)} className={cls}>
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <Link to={`/task-management/tasks/${id}`} className={cls}>
+      {inner}
     </Link>
   );
 }

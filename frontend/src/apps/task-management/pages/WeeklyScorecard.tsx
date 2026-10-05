@@ -2,21 +2,26 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { cn } from "@/shared/lib/cn";
 import { addWeeks, formatDate, isoWeekOf, weekEndOf, weekStartOf } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { actualRygFor, computeStats, countsTowardMetrics, countsTowardPeerMetrics, downlineIds, isPeerTask, isRecurringTask, reportFor, type TaskCounts } from "../mock/selectors";
+import { actualRygFor, computeStats, countsTowardMetrics, countsTowardPeerMetrics, countsTowardWorkload, downlineIds, isPeerTask, isRecurringTask, reportFor, type TaskCounts } from "../mock/selectors";
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import { useReportsToSuffix } from "../components/ReportsToTag";
-import { taskListLink, type RygColour, type TaskKind } from "../lib/taskLink";
+import { taskDetailPath, taskListLink, type RygColour, type TaskKind } from "../lib/taskLink";
+import StatusChip from "../components/StatusChip";
+import { TaskDetailEmbedContext } from "../components/TaskDetailEmbed";
+import TaskDetail from "./TaskDetail";
 import {
   buildScorecardRow,
   buildTeamRow,
@@ -24,7 +29,7 @@ import {
   groupTasksByAssignee,
 } from "../lib/exportWeeklyScorecard";
 import ScorecardExportModal, { type ExportScope } from "../components/ScorecardExportModal";
-import type { AppRole, Profile, Task, WeeklyPlan } from "../types";
+import { isOverdueTask, type AppRole, type Profile, type Task, type WeeklyPlan } from "../types";
 
 const GREEN = "text-[#1f8a4d]";
 const YELLOW = "text-[#B7820E]";
@@ -131,6 +136,29 @@ export default function WeeklyScorecard() {
     }
     return s;
   }, [tasks, selectedId]);
+
+  // Pending bucket (admin, or a HOD / Sub-HOD for their team): everything the
+  // selected person still OWES, whatever week it was planned in — the week cards
+  // above only see the selected week, so an older open task is invisible there.
+  //
+  // Open = pending / in progress / revised ('revised' is an in-week due-date move;
+  // the work is still to do). NOT 'shifted': that original is closed and its
+  // continuation is the open one, so counting both would count it twice.
+  //
+  // Future weeks are left out — that is planning, not backlog — EXCEPT a
+  // continuation (shiftedFromTaskId set): the person already had that task and
+  // pushed it forward, so it is still pending against them.
+  const openTasks = useMemo(
+    () =>
+      tasks.filter(
+        (t) =>
+          t.assignedTo === selectedId &&
+          countsTowardWorkload(t) &&
+          (t.status === "pending" || t.status === "in_progress" || t.status === "revised") &&
+          (!t.weekStart || t.weekStart <= WEEK_START || t.shiftedFromTaskId !== null)
+      ),
+    [tasks, selectedId]
+  );
 
   const { isoYear, isoWeek } = isoWeekOf(weekStart);
 
@@ -275,6 +303,9 @@ export default function WeeklyScorecard() {
           </div>
         </Card>
       </div>
+
+      {/* `pool` already limits a HOD / Sub-HOD to self + their downline. */}
+      {(isAdmin || isHod) && <PendingBucketBlock tasks={openTasks} name={selected.name} />}
 
       {/* split analysis: recurring vs one-off vs peer, each scored independently */}
       <div>
@@ -455,6 +486,320 @@ function ActualScoreBlock({
   );
 }
 
+/* ---------- pending bucket (admin; all weeks) ---------- */
+
+/** Which slice of the open backlog the slide-over is showing. */
+type BucketFilter = "all" | "recurring" | "oneoff" | "peer" | "pending" | "in_progress" | "revised" | "pushed" | "overdue";
+
+const BUCKET_FILTERS: { key: BucketFilter; label: string }[] = [
+  { key: "all", label: "All open" },
+  { key: "recurring", label: "Recurring" },
+  { key: "oneoff", label: "HOD-assigned" },
+  { key: "peer", label: "Peer" },
+  { key: "pending", label: "Pending" },
+  { key: "in_progress", label: "In progress" },
+  { key: "revised", label: "Revised" },
+  { key: "pushed", label: "Pushed ahead" },
+  { key: "overdue", label: "Overdue" },
+];
+
+/** Shifted by the person into a later week than this one — the only future-week tasks in the bucket. */
+const isPushedAhead = (t: Task) => t.shiftedFromTaskId !== null && !!t.weekStart && t.weekStart > WEEK_START;
+
+const matchesBucket = (t: Task, f: BucketFilter): boolean => {
+  switch (f) {
+    case "all": return true;
+    case "recurring": return !isPeerTask(t) && isRecurringTask(t);
+    case "oneoff": return !isPeerTask(t) && !isRecurringTask(t);
+    case "peer": return isPeerTask(t);
+    case "pending": return t.status === "pending";
+    case "in_progress": return t.status === "in_progress";
+    case "revised": return t.status === "revised";
+    case "pushed": return isPushedAhead(t);
+    case "overdue": return isOverdueTask(t);
+  }
+};
+
+/**
+ * The selected person's open backlog across EVERY week — recurring + HOD-assigned
+ * (one-off) + peer. Unlike the score cards it ignores the week picker, so it shows
+ * the same numbers whichever week is on screen.
+ *
+ * Every number opens a slide-over on THIS page listing exactly the tasks counted —
+ * the same `tasks` array through the same `matchesBucket` — so the list can never
+ * disagree with the number. A deep-link to the task-list pages could not promise
+ * that: they have no "every week + open + no personal" filter and no overdue param.
+ */
+function PendingBucketBlock({ tasks, name }: { tasks: Task[]; name: string }) {
+  const [open, setOpen] = useState<BucketFilter | null>(null);
+  const count = (f: BucketFilter) => tasks.filter((t) => matchesBucket(t, f)).length;
+  const overdue = count("overdue");
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Pending bucket — all weeks</h3>
+          <button
+            type="button"
+            onClick={() => setOpen("all")}
+            title="View all open tasks"
+            className="mt-1 text-[26px] font-bold text-navy leading-none tabular-nums hover:text-orange transition"
+          >
+            {tasks.length} task{tasks.length === 1 ? "" : "s"} open
+          </button>
+          <p className="mt-1 text-[11px] text-grey-2">
+            Everything still open for {name} up to this week, plus tasks they pushed ahead — not affected by the week picker
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {overdue > 0 && (
+            <button
+              type="button"
+              onClick={() => setOpen("overdue")}
+              title="View overdue tasks"
+              className="inline-flex items-center rounded-full bg-[#fdeceb] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#c0392b] tabular-nums whitespace-nowrap hover:ring-2 hover:ring-orange/30 transition"
+            >
+              {overdue} overdue
+            </button>
+          )}
+          <KindBadge label="All open" />
+        </div>
+      </div>
+
+      {tasks.length === 0 ? (
+        <p className="mt-3 text-[13px] text-grey-2 italic">Nothing pending.</p>
+      ) : (
+        <>
+          <div className="mt-4 grid max-w-xl grid-cols-3 text-center">
+            <BigNum tone="text-navy" value={count("recurring")} label="Recurring" onClick={() => setOpen("recurring")} />
+            <BigNum tone="text-navy" value={count("oneoff")} label="HOD-assigned" onClick={() => setOpen("oneoff")} />
+            <BigNum tone="text-navy" value={count("peer")} label="Peer" onClick={() => setOpen("peer")} />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            <Pill label="Pending" count={count("pending")} tone="red" onClick={() => setOpen("pending")} />
+            <Pill label="In progress" count={count("in_progress")} tone="yellow" onClick={() => setOpen("in_progress")} />
+            <Pill label="Revised" count={count("revised")} tone="yellow" onClick={() => setOpen("revised")} />
+            <Pill label="Pushed ahead" count={count("pushed")} tone="yellow" onClick={() => setOpen("pushed")} />
+            <Pill label="Overdue" count={overdue} tone="red" onClick={() => setOpen("overdue")} />
+          </div>
+        </>
+      )}
+
+      {open && <PendingBucketDrawer tasks={tasks} name={name} filter={open} onFilter={setOpen} onClose={() => setOpen(null)} />}
+    </Card>
+  );
+}
+
+/** Labels for the statuses a pending-bucket row can have (the Status column's sort + filter). */
+const OPEN_STATUS_LABEL: Partial<Record<Task["status"], string>> = {
+  pending: "Pending",
+  in_progress: "In Progress",
+  revised: "Revised",
+};
+
+/** Right-hand slide-over listing the open tasks behind whichever number was clicked. */
+function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
+  tasks: Task[]; name: string; filter: BucketFilter; onFilter: (f: BucketFilter) => void; onClose: () => void;
+}) {
+  const { profileById } = useTaskStore();
+  const [q, setQ] = useState("");
+  const [shown, setShown] = useState(false);
+  // A task opened INSIDE the panel (the full TaskDetail, from the already-loaded
+  // store — no new tab, no app reload). null = the list.
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const embed = useMemo(() => ({ openTask: setDetailId, close: () => setDetailId(null) }), []);
+
+  // Slide in on the next frame; Esc closes; the page behind doesn't scroll.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    const onKey = (e: KeyboardEvent) => {
+      // With a task open, its own popups (revise / complete) also use Esc — so
+      // Esc is left to them there, and only the list view closes on it.
+      if (e.key !== "Escape" || detailId) return;
+      // A column-filter menu is open — Esc belongs to it (as in Modal). This runs in
+      // the CAPTURE phase so the menu is still in the DOM: by the window's bubble
+      // phase the menu has already closed itself and the check would always miss.
+      if (document.querySelector("[data-portal-menu]")) return;
+      onClose();
+    };
+    document.addEventListener("keydown", onKey, true);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener("keydown", onKey, true);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose, detailId]);
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return tasks
+      .filter((t) => matchesBucket(t, filter))
+      .filter((t) => !needle || t.title.toLowerCase().includes(needle))
+      // Oldest due first, so the most overdue work leads; undated tasks go last.
+      .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
+  }, [tasks, filter, q]);
+
+  const kindOf = (t: Task) => (isPeerTask(t) ? "Peer" : isRecurringTask(t) ? "Recurring" : "HOD-assigned");
+  const byOf = (t: Task) => profileById(t.createdBy)?.name ?? "—";
+  const statusOf = (t: Task) => OPEN_STATUS_LABEL[t.status] ?? t.status;
+
+  const columns: QueueColumn<Task>[] = [
+    {
+      key: "task",
+      header: "Task",
+      cell: (t) => (
+        // Opens in this panel. Ctrl / Cmd / middle-click still gets a real new tab.
+        <a
+          href={taskDetailPath(t.id)}
+          onClick={(e) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            setDetailId(t.id);
+          }}
+          title="Open task"
+          className="text-left font-medium text-navy hover:text-orange hover:underline"
+        >
+          {t.title}
+        </a>
+      ),
+      sortValue: (t) => t.title.toLowerCase(),
+      filter: { kind: "select", get: (t) => t.title },
+    },
+    { key: "type", header: "Type", cell: kindOf, sortValue: kindOf, filter: { kind: "select", get: kindOf } },
+    { key: "by", header: "Assigned by", cell: byOf, sortValue: byOf, filter: { kind: "select", get: byOf } },
+    {
+      key: "due",
+      header: "Due",
+      cell: (t) => (
+        <span className={cn("tabular-nums whitespace-nowrap", isOverdueTask(t) ? "text-[#c0392b] font-semibold" : "text-grey")}>
+          {formatDate(t.dueDate)}
+        </span>
+      ),
+      // Undated tasks sort last, as before.
+      sortValue: (t) => t.dueDate ?? "9999",
+      filter: { kind: "date", get: (t) => t.dueDate ?? "" },
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (t) => (
+        <div className="flex flex-wrap items-center gap-1">
+          <StatusChip status={t.status} />
+          {isPushedAhead(t) && (
+            <span className="inline-flex items-center rounded-pill px-2 py-1 text-[10.5px] font-semibold whitespace-nowrap bg-orange-soft text-orange" title="Shifted by the assignee into a later week">
+              Pushed ahead
+            </span>
+          )}
+        </div>
+      ),
+      sortValue: statusOf,
+      filter: { kind: "select", get: statusOf },
+    },
+  ];
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label={`Open tasks for ${name}`}>
+      <div className={cn("absolute inset-0 bg-navy/30 transition-opacity duration-200", shown ? "opacity-100" : "opacity-0")} onClick={onClose} />
+      <aside
+        className={cn(
+          "absolute right-0 top-0 h-full w-full bg-white shadow-2xl flex flex-col transition-[transform,max-width] duration-200 ease-out",
+          detailId ? "max-w-[1100px]" : "max-w-[760px]",
+          shown ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        {detailId ? (
+          <>
+            <header className="px-5 py-3 border-b border-line flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setDetailId(null)}
+                className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Back to {name}'s pending list
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="w-8 h-8 grid place-items-center rounded-lg border border-line text-grey hover:text-orange hover:border-orange/40 transition"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </header>
+            <div className="flex-1 overflow-auto p-5 bg-page/40">
+              <TaskDetailEmbedContext.Provider value={embed}>
+                <TaskDetail key={detailId} taskId={detailId} />
+              </TaskDetailEmbedContext.Provider>
+            </div>
+          </>
+        ) : (
+        <>
+        <header className="px-5 pt-4 pb-3 border-b border-line">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Pending bucket — {name}</h3>
+              <p className="mt-0.5 text-[20px] font-bold text-navy leading-tight tabular-nums">
+                {rows.length} task{rows.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="w-8 h-8 grid place-items-center rounded-lg border border-line text-grey hover:text-orange hover:border-orange/40 transition"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {BUCKET_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => onFilter(f.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
+                  filter === f.key ? "bg-orange text-white" : "bg-page text-grey-2 hover:text-orange"
+                )}
+              >
+                {f.label} <span className="tabular-nums">{tasks.filter((t) => matchesBucket(t, f.key)).length}</span>
+              </button>
+            ))}
+          </div>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search task…"
+            className="mt-3 w-full rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] text-ink outline-none focus:border-orange"
+          />
+        </header>
+
+        {/* QueueTable, not a hand-built table: every column sorts and filters, and it pages
+            at 25 — a backlog runs to dozens of tasks. Its dropdowns portal at z-70, above
+            this z-60 panel. */}
+        <div className="flex-1 overflow-auto p-4">
+          <QueueTable<Task>
+            rows={rows}
+            rowKey={(t) => t.id}
+            columns={columns}
+            initialSort={{ key: "due", dir: "asc" }}
+            rowsLabel="tasks"
+            emptyTitle="No tasks here"
+            emptyMessage="Nothing open matches this chip or search."
+          />
+        </div>
+        </>
+        )}
+      </aside>
+    </div>,
+    document.body
+  );
+}
+
 function KindBadge({ label }: { label: string }) {
   return (
     <span className="inline-flex items-center rounded-full bg-page px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-grey-2 whitespace-nowrap">
@@ -569,13 +914,20 @@ function PctRow({ label, dot, value, onChange }: { label: string; dot: string; v
 
 /* ---------- small presentational helpers ---------- */
 
-function BigNum({ tone, value, label, to }: { tone: string; value: number; label: string; to?: string }) {
+function BigNum({ tone, value, label, to, onClick }: { tone: string; value: number; label: string; to?: string; onClick?: () => void }) {
   const inner = (
     <>
       <div className={cn("text-[24px] font-bold leading-none tabular-nums", tone)}>{value}</div>
       <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-grey-2">{label}</div>
     </>
   );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={`View ${label.toLowerCase()} tasks`} className="block w-full rounded-lg py-1 transition hover:bg-page">
+        {inner}
+      </button>
+    );
+  }
   if (!to) return <div>{inner}</div>;
   return (
     <Link to={to} title={`View ${label.toLowerCase()} tasks`} className="block rounded-lg py-1 transition hover:bg-page">
@@ -584,16 +936,23 @@ function BigNum({ tone, value, label, to }: { tone: string; value: number; label
   );
 }
 
-function Pill({ label, count, tone, to }: { label: string; count: number; tone: "red" | "yellow"; to?: string }) {
+function Pill({ label, count, tone, to, onClick }: { label: string; count: number; tone: "red" | "yellow"; to?: string; onClick?: () => void }) {
   const on = count > 0;
   const onCls = tone === "red" ? "bg-[#fdeceb] text-[#c0392b]" : "bg-[#fcf3df] text-[#B7820E]";
   const cls = cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
-    on ? onCls : "bg-page text-grey-2/70", to && "hover:ring-2 hover:ring-orange/30");
+    on ? onCls : "bg-page text-grey-2/70", (to || onClick) && "hover:ring-2 hover:ring-orange/30");
   const inner = (
     <>
       {label} <span className="tabular-nums">{count}</span>
     </>
   );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={`View ${label.toLowerCase()} tasks`} className={cls}>
+        {inner}
+      </button>
+    );
+  }
   if (!to) return <span className={cls}>{inner}</span>;
   return (
     <Link to={to} title={`View ${label.toLowerCase()} tasks`} className={cls}>
