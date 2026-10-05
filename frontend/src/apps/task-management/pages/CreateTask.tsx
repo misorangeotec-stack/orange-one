@@ -11,7 +11,7 @@ import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
 import MentionTextArea from "../components/MentionTextArea";
 import { useReportsToSuffix } from "../components/ReportsToTag";
-import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
+import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
 import { pctLabel } from "../lib/kraTasks";
 
 /** Task Category value for the ordinary task — no KRA, no review, scored as today. */
@@ -110,6 +110,7 @@ export default function CreateTask() {
         isPeerAssignment,
         kraId: pickedKra?.id ?? null,
         kraWeight: pickedKra?.weight ?? null,
+        kraCompletionWeight: pickedKra?.completionWeight ?? null,
       });
       navigate(`/task-management/tasks/${id}`);
     } catch (err) {
@@ -228,8 +229,8 @@ export default function CreateTask() {
               {pickedKra && (
                 <p className="mt-1.5 text-[12px] text-grey">
                   Worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
-                  {pctLabel(pickedKra.weight / 2)} when it is completed, and up to {pctLabel(pickedKra.weight / 2)} more
-                  from your 1–10 review.
+                  {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}
+                  {pctLabel(reviewWeightOf(pickedKra))} more from your 1–10 review.
                 </p>
               )}
             </FieldLabel>

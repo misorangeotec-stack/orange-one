@@ -2,7 +2,7 @@
 --
 -- ⚠ THIS DROPS EVERY KRA TASK'S LINK AND EVERY HOD RATING. The tasks themselves
 --   stay, as ordinary tasks. Take the ratings out first if they are wanted:
---     \copy (select id, assigned_to, kra_id, kra_weight, review_rating, reviewed_by, reviewed_at
+--     \copy (select id, assigned_to, kra_id, kra_weight, kra_completion_weight, review_rating, reviewed_by, reviewed_at
 --              from public.tasks where kra_id is not null) to 'kra_tasks.csv' with (format csv, header);
 --
 -- The function is restored FIRST, then the columns go (the reverse order would
@@ -40,6 +40,7 @@ alter table public.tasks
   drop column if exists reviewed_at,
   drop column if exists reviewed_by,
   drop column if exists review_rating,
+  drop column if exists kra_completion_weight,
   drop column if exists kra_weight,
   drop column if exists kra_id;
 

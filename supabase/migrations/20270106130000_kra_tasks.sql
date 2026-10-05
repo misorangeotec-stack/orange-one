@@ -5,12 +5,15 @@
 -- THE RULE (client, 05-10-2026)
 --   * Create Task has a "Task Category": Others (the ordinary task, unchanged)
 --     or one of the assignee's KRAs from Admin → Organisation → KRA Details.
---   * The task is worth the KRA's Wt%. Completing it earns the FIRST half.
---   * It then waits for the HOD, who rates it 1-10. The rating earns that share
---     of the SECOND half:  score = W/2 + (rating/10) × W/2.
---       Learning & Development (40%), rating 3  →  20 + 6  = 26%.
---       A 10% KRA, rating 3                     →   5 + 1.5 = 6.5%.
---   * Late completion still earns the full first half; lateness is the HOD's
+--   * The task is worth the KRA's Wt% (W), split per KRA on KRA Details into
+--     C "on completion" + (W - C) "on HOD review" — half and half unless
+--     management moved it (e.g. 20% = 15 + 5).
+--   * Completing it earns C. It then waits for the HOD, who rates it 1-10; the
+--     rating earns that share of the rest:  score = C + (rating/10) × (W - C).
+--       Learning & Development 40% (20+20), rating 3  →  20 + 6   = 26%.
+--       A 10% KRA (5+5), rating 3                    →   5 + 1.5 = 6.5%.
+--       A 20% KRA (15+5), rating 3                   →  15 + 1.5 = 16.5%.
+--   * Late completion still earns the full completion share; lateness is the HOD's
 --     call at review, through the rating.
 --   * ONLY THE EMPLOYEE'S OWN HOD — a direct row in user_hods, NOT anyone
 --     further up the chain and NOT an admin as such — may give a KRA task or
@@ -23,8 +26,9 @@
 --   red. Kept as columns, every existing scorecard reads a KRA task exactly as
 --   it reads any other completed task.
 --
--- ⚠ kra_weight IS A SNAPSHOT. HR may change a KRA's Wt% next quarter; a task
---   reviewed last month must keep the weight it was given under.
+-- ⚠ kra_weight AND kra_completion_weight ARE SNAPSHOTS. HR may change a KRA's
+--   Wt% or its split next quarter; a task reviewed last month must keep the
+--   weights it was given under.
 --
 -- ⚠ THE GUARD IS A TRIGGER, NOT A POLICY. tasks_update lets the assignee,
 --   the creator and every upline HOD write ANY column. Without the trigger an
@@ -38,7 +42,7 @@
 -- ⚠ org_kras SELECT IS NARROWED from everyone to: admin (the Organisation
 --   screen), the employee themself, and their direct HOD(s).
 --
--- Additive: five nullable columns, one trigger, one policy replaced, one
+-- Additive: six nullable columns, one trigger, one policy replaced, one
 -- function body patched. No existing row changes.
 -- Reversal: 20270106130000_kra_tasks_rollback.sql
 -- ===========================================================================
@@ -65,6 +69,7 @@ begin;
 alter table public.tasks
   add column if not exists kra_id        uuid references public.org_kras on delete restrict,
   add column if not exists kra_weight    numeric(5,2),
+  add column if not exists kra_completion_weight numeric(5,2),
   add column if not exists review_rating smallint check (review_rating between 1 and 10),
   add column if not exists reviewed_by   uuid references auth.users on delete set null,
   add column if not exists reviewed_at   timestamptz;
@@ -72,7 +77,9 @@ alter table public.tasks
 comment on column public.tasks.kra_id is
   'The assignee''s KRA this task was given against (Task Category). Null = "Others", the ordinary task. Only the assignee''s direct HOD may set it, at creation; never changed afterwards.';
 comment on column public.tasks.kra_weight is
-  'Snapshot of org_kras.weight when the task was given. The task is worth this much: half on completion, the other half scaled by review_rating/10.';
+  'Snapshot of org_kras.weight when the task was given. The task is worth this much: kra_completion_weight on completion, the rest scaled by review_rating/10.';
+comment on column public.tasks.kra_completion_weight is
+  'Snapshot of org_kras.completion_weight when the task was given: the part of kra_weight earned by completing it.';
 comment on column public.tasks.review_rating is
   'HOD''s 1-10 rating of a completed KRA task. Null while awaiting review. Cleared whenever the task leaves completed.';
 
@@ -118,6 +125,7 @@ begin
 
     if new.kra_id is null then
       new.kra_weight := null;
+      new.kra_completion_weight := null;
       return new;
     end if;
 
@@ -131,6 +139,7 @@ begin
       select * into v_src from public.tasks where id = new.shifted_from_task_id;
       if found and v_src.kra_id = new.kra_id then
         new.kra_weight := v_src.kra_weight;
+        new.kra_completion_weight := v_src.kra_completion_weight;
         return new;
       end if;
     end if;
@@ -150,6 +159,7 @@ begin
     end if;
 
     new.kra_weight := v_kra.weight;
+    new.kra_completion_weight := v_kra.completion_weight;
     return new;
   end if;
 
@@ -157,6 +167,7 @@ begin
   if v_uid is not null and (
        new.kra_id is distinct from old.kra_id
     or new.kra_weight is distinct from old.kra_weight
+    or new.kra_completion_weight is distinct from old.kra_completion_weight
     or (old.kra_id is not null and new.assigned_to is distinct from old.assigned_to)
   ) then
     raise exception 'The KRA on a task is fixed when it is given and cannot be changed.';

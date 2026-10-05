@@ -36,13 +36,22 @@ create table if not exists public.org_kras (
   name        text not null,
   -- Wt% — this KRA's share of the employee's 100.
   weight      numeric(5,2) not null check (weight >= 0 and weight <= 100),
+  -- How much of `weight` a KRA task earns just by being COMPLETED. The rest
+  -- (weight - completion_weight) is earned through the HOD's 1-10 review.
+  -- Half by default — the screen fills it in — and management may move it per
+  -- KRA (e.g. 20% = 15 on completion + 5 on review).
+  completion_weight numeric(5,2) not null,
   active      boolean not null default true,
   sort_order  integer not null default 0,
   created_by  uuid references auth.users on delete set null,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
-  unique (profile_id, name)
+  unique (profile_id, name),
+  check (completion_weight >= 0 and completion_weight <= weight)
 );
+
+comment on column public.org_kras.completion_weight is
+  'Share of weight earned on completing a KRA task; weight - completion_weight is earned via the HOD''s 1-10 review. Defaults to half on screen; admin may change it.';
 
 comment on table public.org_kras is
   'Per-employee KRAs with weight (Wt%). Designation / department are read from profiles, never stored here. Switched off, never deleted.';

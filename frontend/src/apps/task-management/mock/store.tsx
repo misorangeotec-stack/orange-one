@@ -79,7 +79,7 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraWeight?: number | null }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
   /** The assignee's direct HOD rates a completed KRA task 1-10 (lib/kraTasks.ts). */
   reviewKraTask: (id: string, rating: number, note?: string) => Promise<void>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */

@@ -8,7 +8,9 @@ import { useSession } from "@/core/platform/session";
 import { DEPARTMENT_SOURCE_LABEL } from "@/core/platform/types";
 import type { Band, Department, Designation, SubDepartment } from "@/core/platform/types";
 import { TextInput } from "@/shared/components/ui/Form";
-import { fetchKras, KRAS_QUERY_KEY, LOCAL_TEST, parseWeight, saveKra, weightProblem, type Kra } from "./kras";
+import {
+  completionProblem, fetchKras, halfOf, KRAS_QUERY_KEY, LOCAL_TEST, parseWeight, reviewWeightOf, saveKra, weightProblem, type Kra,
+} from "./kras";
 
 /**
  * ORGANISATION MASTERS — where a person sits in the company.
@@ -42,6 +44,12 @@ import { fetchKras, KRAS_QUERY_KEY, LOCAL_TEST, parseWeight, saveKra, weightProb
  *   and exported but never stored on the KRA (see kras.ts), so a promotion can't leave
  *   a stale copy. An employee's active weights should total 100; that is shown, not
  *   enforced, because a sheet is keyed in one line at a time.
+ *
+ * ⚠ EACH KRA's Wt% IS SPLIT: "On completion" + "On HOD review" (Task Management's KRA
+ *   tasks earn the first by being done, the second through the HOD's 1-10 rating). Half
+ *   and half unless management moves it — 20% may be 15 + 5. Review is DERIVED (Wt% −
+ *   completion), never stored, so the two parts can't stop adding up. While the split
+ *   is still exactly half, changing the Wt% keeps it half.
  */
 
 type TabKey = "department" | "sub_department" | "designation" | "band" | "kra";
@@ -147,6 +155,10 @@ export default function Organisation() {
     );
     return new Map(sorted.map((k, i) => [k.id, i]));
   }, [kras, profileById]);
+
+  /** The form's completion share as a number: blank means half. */
+  const completionFrom = (v: Record<string, string>, weight: number) =>
+    v.completion.trim() ? parseWeight(v.completion) : halfOf(weight);
 
   /** Designation / Department on the form: read off whoever is picked as Emp Name, never typed. */
   const fromEmployee =
@@ -402,10 +414,33 @@ export default function Organisation() {
                 { header: "KRA", render: (r) => r.name, filter: false },
                 {
                   header: "Wt%",
-                  render: (r) => <span className="text-navy">{pct(r.weight)}</span>,
+                  render: (r) => <span className="font-medium text-navy">{pct(r.weight)}</span>,
                   sortValue: (r) => r.weight,
                   filter: false,
                   className: "w-20",
+                },
+                // Grey while the split is the default half-and-half; navy once management has moved it.
+                {
+                  header: "On completion",
+                  render: (r) => (
+                    <span className={r.completionWeight === halfOf(r.weight) ? "text-grey" : "font-medium text-navy"}>
+                      {pct(r.completionWeight)}
+                    </span>
+                  ),
+                  sortValue: (r) => r.completionWeight,
+                  filter: false,
+                  className: "w-28",
+                },
+                {
+                  header: "On HOD review",
+                  render: (r) => (
+                    <span className={r.completionWeight === halfOf(r.weight) ? "text-grey" : "font-medium text-navy"}>
+                      {pct(reviewWeightOf(r))}
+                    </span>
+                  ),
+                  sortValue: (r) => reviewWeightOf(r),
+                  filter: false,
+                  className: "w-28",
                 },
                 {
                   header: "Emp total",
@@ -427,26 +462,83 @@ export default function Organisation() {
                   hint: "Designation and Department come from this person's user record — change them under Users.",
                 },
                 { key: "name", label: "KRA", type: "textarea", required: true, placeholder: "e.g. Talent Acquisition, Buddy Program & Probation" },
-                { key: "weight", label: "Wt%", type: "text", required: true, placeholder: "e.g. 45", hint: "This KRA's share of the employee's 100%." },
+                {
+                  key: "weight", label: "Wt%", type: "custom", required: true,
+                  hint: "This KRA's share of the employee's 100%.",
+                  // While the split is still half (or blank), a new Wt% keeps it half.
+                  render: (value, onChange, values, setField) => (
+                    <TextInput
+                      value={value}
+                      placeholder="e.g. 20"
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        const old = Number(value.trim().replace(/%$/, ""));
+                        const c = values.completion.trim();
+                        if (!c || (Number.isFinite(old) && Number(c.replace(/%$/, "")) === halfOf(old))) {
+                          const n = Number(next.trim().replace(/%$/, ""));
+                          setField("completion", next.trim() && Number.isFinite(n) ? String(halfOf(n)) : "");
+                        }
+                        onChange(next);
+                      }}
+                    />
+                  ),
+                },
+                {
+                  key: "completion", label: "On completion %", type: "text",
+                  placeholder: "Half of Wt%",
+                  hint: "Earned when the KRA task is completed. Half of Wt% unless management decides otherwise — e.g. 20% = 15 here + 5 on review.",
+                },
+                {
+                  key: "review", label: "On HOD review %", type: "custom",
+                  hint: "Earned through the HOD's 1–10 review: rating/10 of this.",
+                  // Derived, never typed: Wt% − On completion.
+                  render: (_value, _onChange, values) => {
+                    const w = Number(values.weight.trim().replace(/%$/, ""));
+                    const c = values.completion.trim() ? Number(values.completion.trim().replace(/%$/, "")) : w / 2;
+                    const ok = !!values.weight.trim() && Number.isFinite(w) && Number.isFinite(c) && c >= 0 && c <= w;
+                    return (
+                      <TextInput
+                        value={ok ? String(Math.round((w - c) * 100) / 100) : ""}
+                        placeholder="Wt% − On completion"
+                        readOnly
+                        disabled
+                      />
+                    );
+                  },
+                },
               ]}
-              // Key order IS the Excel column order: Designation | Department | Emp Name | KRA | Wt%.
-              emptyValues={{ designation: "", department: "", profile_id: "", name: "", weight: "" }}
+              // Key order IS the Excel column order: Designation | Department | Emp Name | KRA | Wt% |
+              // On completion % | On HOD review %. The last is exported for reading and ignored on import.
+              emptyValues={{ designation: "", department: "", profile_id: "", name: "", weight: "", completion: "", review: "" }}
               toValues={(r) => ({
                 designation: empDesignation(r.profileId),
                 department: empDepartment(r.profileId),
                 profile_id: r.profileId,
                 name: r.name,
                 weight: String(r.weight),
+                completion: String(r.completionWeight),
+                review: String(reviewWeightOf(r)),
               })}
               onSubmit={async (id, v, active) => {
-                // designation / department are ignored on purpose: they belong to the profile.
+                // designation / department / review are ignored on purpose: the first two belong
+                // to the profile, review is Wt% − completion.
                 const problem = weightProblem(v.weight);
                 if (problem) throw new Error(problem);
-                await saveKra(id, { profileId: v.profile_id, name: v.name, weight: parseWeight(v.weight), active }, user.id);
+                const weight = parseWeight(v.weight);
+                const cProblem = completionProblem(v.completion, weight);
+                if (cProblem) throw new Error(cProblem);
+                let completionWeight = completionFrom(v, weight);
+                // An import that changes only the Wt% of a row still split half-and-half
+                // keeps it half, rather than carrying the old half across.
+                const was = id ? kras.find((k) => k.id === id) : undefined;
+                if (was && weight !== was.weight && was.completionWeight === halfOf(was.weight) && completionWeight === was.completionWeight) {
+                  completionWeight = halfOf(weight);
+                }
+                await saveKra(id, { profileId: v.profile_id, name: v.name, weight, completionWeight, active }, user.id);
                 await qc.invalidateQueries({ queryKey: KRAS_QUERY_KEY });
               }}
               onToggleActive={async (r, active) => {
-                await saveKra(r.id, { profileId: r.profileId, name: r.name, weight: r.weight, active }, user.id);
+                await saveKra(r.id, { profileId: r.profileId, name: r.name, weight: r.weight, completionWeight: r.completionWeight, active }, user.id);
                 await qc.invalidateQueries({ queryKey: KRAS_QUERY_KEY });
               }}
             />

@@ -51,8 +51,9 @@ export async function insertTask(input: {
   isPeerAssignment?: boolean;
   /** Task Category: one of the assignee's KRAs, or null/undefined for "Others". */
   kraId?: string | null;
-  /** Only used in local test mode, where no trigger snapshots it. */
+  /** Only used in local test mode, where no trigger snapshots them. */
   kraWeight?: number | null;
+  kraCompletionWeight?: number | null;
 }): Promise<string> {
   const weekStart = mondayOf(input.dueDate ?? new Date().toISOString());
   const { data, error } = await supabase
@@ -74,7 +75,7 @@ export async function insertTask(input: {
     .single();
   if (error) throw new Error(error.message);
   const taskId = data.id as string;
-  rememberKraLocally(taskId, input.kraId, input.kraWeight);
+  rememberKraLocally(taskId, input.kraId, input.kraWeight, input.kraCompletionWeight);
 
   // Attach the per-location checklist (optional). Done as a second insert under
   // RLS (the task_locations policy allows the task's creator).

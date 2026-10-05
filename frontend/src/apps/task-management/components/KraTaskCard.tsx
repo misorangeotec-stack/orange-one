@@ -32,7 +32,7 @@ export function KraBadge({ task }: { task: Task }) {
   if (!visible) return null;
   return (
     <span
-      title="KRA task — worth the KRA's weight: half on completion, half from the HOD's 1-10 review."
+      title="KRA task — worth the KRA's weight: part on completion, the rest from the HOD's 1-10 review."
       className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-[#0f7b6c] bg-[#E3F5F1] rounded-pill px-2 py-1"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></svg>
@@ -59,9 +59,8 @@ export default function KraTaskCard({ task }: { task: Task }) {
   if (!visible || !score) return null;
 
   const kra = krasQ.data?.find((k) => k.id === task.kraId);
-  const half = score.max / 2;
   const showReviewForm = isReviewer && task.status === "completed" && (score.stage === "awaiting-review" || editing);
-  const preview = rating == null ? null : half + (rating / 10) * half;
+  const preview = rating == null ? null : score.completionMax + (rating / 10) * score.reviewMax;
   const reviewer = actorById(task.reviewedBy);
 
   const save = async () => {
@@ -90,10 +89,13 @@ export default function KraTaskCard({ task }: { task: Task }) {
       <p className="text-[12px] text-grey mt-0.5">Worth {pctLabel(score.max)} of the employee's KRA score</p>
 
       <dl className="mt-3.5 space-y-2 text-[12.5px]">
-        <ScoreRow label="Completion (50%)" value={score.stage === "open" ? `— of ${pctLabel(half)}` : `${pctLabel(score.completionPart)} of ${pctLabel(half)}`} />
         <ScoreRow
-          label="HOD review (50%)"
-          value={score.stage === "reviewed" ? `${task.reviewRating}/10 → ${pctLabel(score.reviewPart)} of ${pctLabel(half)}` : `— of ${pctLabel(half)}`}
+          label="On completion"
+          value={score.stage === "open" ? `— of ${pctLabel(score.completionMax)}` : `${pctLabel(score.completionPart)} of ${pctLabel(score.completionMax)}`}
+        />
+        <ScoreRow
+          label="On HOD review"
+          value={score.stage === "reviewed" ? `${task.reviewRating}/10 → ${pctLabel(score.reviewPart)} of ${pctLabel(score.reviewMax)}` : `— of ${pctLabel(score.reviewMax)}`}
         />
         <div className="flex items-center justify-between border-t border-line pt-2">
           <dt className="font-semibold text-navy">Achieved</dt>
@@ -124,7 +126,7 @@ export default function KraTaskCard({ task }: { task: Task }) {
       {showReviewForm && (
         <div className="mt-4 border-t border-line pt-4">
           <p className="text-[12.5px] font-semibold text-navy">Your review</p>
-          <p className="text-[11.5px] text-grey mb-2">How much of the second {pctLabel(half)} has this earned?</p>
+          <p className="text-[11.5px] text-grey mb-2">How much of the review's {pctLabel(score.reviewMax)} has this earned?</p>
           <div className="grid grid-cols-5 gap-1.5">
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
               <button
@@ -142,7 +144,7 @@ export default function KraTaskCard({ task }: { task: Task }) {
           </div>
           {preview != null && (
             <p className="mt-2 text-[12px] text-grey">
-              {pctLabel(half)} + {rating}/10 × {pctLabel(half)} = <b className="text-navy">{pctLabel(preview)}</b> of {pctLabel(score.max)}
+              {pctLabel(score.completionMax)} + {rating}/10 × {pctLabel(score.reviewMax)} = <b className="text-navy">{pctLabel(preview)}</b> of {pctLabel(score.max)}
             </p>
           )}
           <TextArea className="mt-2" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the employee (optional)" />

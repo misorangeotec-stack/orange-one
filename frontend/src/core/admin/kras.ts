@@ -32,14 +32,27 @@ export interface Kra {
   name: string;
   /** Wt% — this KRA's share of the employee's 100. */
   weight: number;
+  /**
+   * The part of `weight` a KRA task earns on COMPLETION; the rest (`reviewWeightOf`) is
+   * earned through the HOD's 1-10 review. Half by default, admin may move it.
+   */
+  completionWeight: number;
   active: boolean;
   sortOrder: number;
 }
+
+/** What the HOD's review can add: Wt% minus the completion share. */
+export const reviewWeightOf = (k: { weight: number; completionWeight: number }) =>
+  Math.round((k.weight - k.completionWeight) * 100) / 100;
+
+/** The default split: half on completion. */
+export const halfOf = (weight: number) => Math.round((weight / 2) * 100) / 100;
 
 export interface KraInput {
   profileId: string;
   name: string;
   weight: number;
+  completionWeight: number;
   active: boolean;
 }
 
@@ -48,6 +61,7 @@ interface Row {
   profile_id: string;
   name: string;
   weight: number | string;
+  completion_weight: number | string | null;
   active: boolean;
   sort_order: number;
 }
@@ -58,6 +72,7 @@ const fromRow = (r: Row): Kra => ({
   name: r.name,
   // numeric comes back from PostgREST as a string.
   weight: Number(r.weight) || 0,
+  completionWeight: r.completion_weight == null ? halfOf(Number(r.weight) || 0) : Number(r.completion_weight),
   active: r.active,
   sortOrder: r.sort_order,
 });
@@ -76,7 +91,7 @@ export async function fetchKras(): Promise<Kra[]> {
   if (LOCAL_TEST) return readLocal().map(fromRow);
   const { data, error } = await db
     .from("org_kras")
-    .select("id,profile_id,name,weight,active,sort_order")
+    .select("id,profile_id,name,weight,completion_weight,active,sort_order")
     .order("profile_id")
     .order("sort_order");
   if (error) throw new Error(error.message);
@@ -96,6 +111,15 @@ export function weightProblem(raw: string): string | null {
 /** "45", "45%", " 2.5 " → number. Call after `weightProblem` has passed. */
 export const parseWeight = (raw: string) => Math.round(Number(raw.trim().replace(/%$/, "")) * 100) / 100;
 
+/** Whether an "On completion" share is usable against its Wt%, or why not. Blank = half. */
+export function completionProblem(raw: string, weight: number): string | null {
+  if (!raw.trim()) return null;
+  const n = Number(raw.trim().replace(/%$/, ""));
+  if (!Number.isFinite(n)) return `On completion "${raw}" is not a number.`;
+  if (n < 0 || n > weight) return `On completion must be between 0 and the Wt% (${weight}).`;
+  return null;
+}
+
 /**
  * Insert (null id) or update one KRA. A new row goes to the end of that employee's list,
  * so an imported sheet keeps the order it was written in.
@@ -108,15 +132,15 @@ export async function saveKra(id: string | null, input: KraInput, userId: string
       throw new Error(`"${name}" is already a KRA for this employee.`);
     }
     if (id) {
-      writeLocal(rows.map((r) => (r.id === id ? { ...r, profile_id: input.profileId, name, weight: input.weight, active: input.active } : r)));
+      writeLocal(rows.map((r) => (r.id === id ? { ...r, profile_id: input.profileId, name, weight: input.weight, completion_weight: input.completionWeight, active: input.active } : r)));
     } else {
       const sort = Math.max(0, ...rows.filter((r) => r.profile_id === input.profileId).map((r) => r.sort_order)) + 10;
-      writeLocal([...rows, { id: crypto.randomUUID(), profile_id: input.profileId, name, weight: input.weight, active: input.active, sort_order: sort }]);
+      writeLocal([...rows, { id: crypto.randomUUID(), profile_id: input.profileId, name, weight: input.weight, completion_weight: input.completionWeight, active: input.active, sort_order: sort }]);
     }
     return;
   }
 
-  const row = { profile_id: input.profileId, name, weight: input.weight, active: input.active };
+  const row = { profile_id: input.profileId, name, weight: input.weight, completion_weight: input.completionWeight, active: input.active };
   if (id) {
     const { error } = await db.from("org_kras").update(row).eq("id", id);
     if (error) throw new Error(friendly(error.message, name));
