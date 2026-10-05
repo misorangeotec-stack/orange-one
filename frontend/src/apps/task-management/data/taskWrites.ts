@@ -477,7 +477,23 @@ export type RecurringWriteInput = {
   departmentId: string | null;
   active: boolean;
   locationIds: string[];
+  /**
+   * "Notification required" + days before. Left undefined when the reminder is off and
+   * was never on, so the write never names the columns: a template save keeps working
+   * even before migration 20270106120100 has run.
+   */
+  notify?: { required: boolean; daysBefore: number | null };
 };
+
+/** The reminder columns, only when the caller set them (see RecurringWriteInput.notify). */
+function notifyColumns(input: RecurringWriteInput) {
+  if (!input.notify) return {};
+  const on = input.notify.required && ["weekly", "monthly", "quarterly"].includes(input.recurrenceType);
+  return {
+    notify_required: on,
+    notify_days_before: on ? input.notify.daysBefore : null,
+  };
+}
 
 /** Replace a template's location set: delete the old rows, insert the new set. */
 async function syncRecurringLocations(recurringTaskId: string, locationIds: string[]): Promise<void> {
@@ -510,6 +526,7 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       department_id: input.departmentId,
       created_by: input.createdBy,
       active: input.active,
+      ...notifyColumns(input),
     })
     .select("id")
     .single();
@@ -534,6 +551,7 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       active: input.active,
+      ...notifyColumns(input),
     })
     .eq("id", id);
   if (error) throw new Error(error.message);

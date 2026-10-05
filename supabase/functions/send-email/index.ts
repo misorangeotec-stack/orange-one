@@ -525,6 +525,24 @@ async function compose(row: Row): Promise<Composed | null> {
       replyTo,
     };
   }
+  // Advance reminder for a recurring template ("Notification required", N days before).
+  // Written by send_recurring_reminders — entity_id is the TEMPLATE, so there is no task row.
+  if (row.kind === "task_recurring_reminder") {
+    const rTitle = String(row.payload?.title ?? "a recurring task");
+    const fireDate = String(row.payload?.fire_date ?? "");
+    const days = Number(row.payload?.days_before ?? 0);
+    const when = days === 1 ? "tomorrow" : `in ${days} days`;
+    const listLink = APP_BASE_URL ? `${APP_BASE_URL}/task-management/tasks` : "";
+    const inner = actorRow(actorName, `set this reminder: your task is due ${when}`)
+      + taskCard(rTitle, "&#128276;", fireDate ? `Due on ${fireDate}` : "Coming up")
+      + cta(listLink, "View my tasks");
+    return {
+      subject: `Reminder: ${rTitle} is due ${when}${fireDate ? ` (${fireDate})` : ""}`,
+      html: emailShell({ eyebrow: "Reminder", headline: `A recurring task is due ${when}`, inner }),
+      text: `Reminder: ${rTitle} is due ${when}${fireDate ? ` on ${fireDate}` : ""}.\n\nOpen: ${listLink}`,
+      replyTo,
+    };
+  }
   // ---- the CUSTOMER-FACING mail ------------------------------------------
   // The one message this portal sends outside the company: the customer being
   // told their planned dispatch date. It must come BEFORE the shared FMS
