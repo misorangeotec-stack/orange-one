@@ -83,17 +83,22 @@ export function WorkPanel({ children }: { children: ReactNode }) {
     }
   }, [location, background]);
 
-  // Esc closes — unless a dialog inside the page is open, whose own Esc it is.
+  // Esc closes — unless a dialog or a dropdown menu inside the page is open, whose
+  // own Esc it is. CAPTURE phase, so that check runs while the menu is still in the
+  // DOM: a Combobox / MultiSelect closes itself on Esc, and by the window's bubble
+  // phase it is gone, so a filter dropdown's Esc used to close the whole panel.
   // The page behind does not scroll while the panel is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector('[role="dialog"][aria-modal="true"]')) close();
+      if (e.key !== "Escape") return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"], [data-portal-menu]')) return;
+      close();
     };
-    window.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = prev;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
