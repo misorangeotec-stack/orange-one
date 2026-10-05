@@ -5,6 +5,7 @@ import { fmsAdapters } from "../adapters/registry";
 import { addDaysIso, todayLocalIso } from "../lib/buckets";
 import FmsRow from "../components/FmsRow";
 import RankingPanel from "../components/ranking/RankingPanel";
+import { canSeeRanking } from "../ranking/visibility";
 
 const TH = "px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-grey-2 whitespace-nowrap";
 
@@ -18,7 +19,7 @@ const TH = "px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gre
  */
 export default function MasterControlCenter() {
   const today = todayLocalIso();
-  const { hasModule } = useSession();
+  const { user, hasModule } = useSession();
 
   // Only score the FMS this viewer is actually granted (admins keep all, since
   // hasModule returns true for them). Without this a coordinator with the
@@ -30,7 +31,7 @@ export default function MasterControlCenter() {
     <div className="space-y-6">
       <h1 className="text-[22px] font-bold text-navy">FMS Control Center</h1>
 
-      <RankingPanel />
+      {canSeeRanking(user) && <RankingPanel />}
 
       <div>
         <h2 className="text-[20px] font-bold text-navy">Processes</h2>
