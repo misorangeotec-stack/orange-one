@@ -154,10 +154,10 @@ function addDaysIso(n: number) {
 
 // ---- recurring tasks ----
 export const recurringTasks: RecurringTask[] = [
-  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], monthlyDays: [], monthlyNth: null, monthlyWeekday: null, assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true, createdAt: dt(-45, 9), locationIds: [] },
-  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], monthlyDays: [], monthlyNth: null, monthlyWeekday: null, assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true, createdAt: dt(-30, 9), locationIds: [] },
-  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], monthlyDays: [], monthlyNth: null, monthlyWeekday: null, assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false, createdAt: dt(-60, 9), locationIds: [] },
-  { id: "r4", title: "Monthly expense report", description: "Due on the 1st of each month.", recurrenceType: "monthly", weeklyDays: [], monthlyDays: [1], monthlyNth: null, monthlyWeekday: null, assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: true, createdAt: dt(-20, 9), locationIds: [] },
+  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], monthlyDays: [], monthlyNth: null, monthlyWeekday: null, assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true, createdAt: dt(-45, 9), locationIds: [], notifyRequired: false, notifyDaysBefore: null },
+  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], monthlyDays: [], monthlyNth: null, monthlyWeekday: null, assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true, createdAt: dt(-30, 9), locationIds: [], notifyRequired: false, notifyDaysBefore: null },
+  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], monthlyDays: [], monthlyNth: null, monthlyWeekday: null, assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false, createdAt: dt(-60, 9), locationIds: [], notifyRequired: false, notifyDaysBefore: null },
+  { id: "r4", title: "Monthly expense report", description: "Due on the 1st of each month.", recurrenceType: "monthly", weeklyDays: [], monthlyDays: [1], monthlyNth: null, monthlyWeekday: null, assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: true, createdAt: dt(-20, 9), locationIds: [], notifyRequired: false, notifyDaysBefore: null },
 ];
 
 // ---- weekly plans (Red/Yellow/Green target per doer per ISO week) ----
@@ -195,10 +195,10 @@ export const activity: TaskActivity[] = [
 // read; the live fetch fills it from an embedded join.
 export const notifications: Notification[] = [
   // activityId set = mentioned in a REMARK; null = tagged in the task DESCRIPTION.
-  { id: "n1", userId: "u6", type: "mention", taskId: "t6", activityId: "a1", actorId: "u3", taskTitle: null, readAt: null, createdAt: dt(0, 8) },
-  { id: "n2", userId: "u6", type: "mention", taskId: "t4", activityId: null, actorId: "u4", taskTitle: null, readAt: null, createdAt: dt(-1, 15) },
-  { id: "n3", userId: "u6", type: "mention", taskId: "t1", activityId: "a3", actorId: "u3", taskTitle: null, readAt: dt(-1, 9), createdAt: dt(-1, 9) },
-  { id: "n4", userId: "u6", type: "assigned", taskId: "t2", activityId: null, actorId: "u3", taskTitle: null, readAt: null, createdAt: dt(0, 9) },
+  { id: "n1", userId: "u6", type: "mention", taskId: "t6", activityId: "a1", actorId: "u3", taskTitle: null, recurringTaskId: null, reminderDate: null, readAt: null, createdAt: dt(0, 8) },
+  { id: "n2", userId: "u6", type: "mention", taskId: "t4", activityId: null, actorId: "u4", taskTitle: null, recurringTaskId: null, reminderDate: null, readAt: null, createdAt: dt(-1, 15) },
+  { id: "n3", userId: "u6", type: "mention", taskId: "t1", activityId: "a3", actorId: "u3", taskTitle: null, recurringTaskId: null, reminderDate: null, readAt: dt(-1, 9), createdAt: dt(-1, 9) },
+  { id: "n4", userId: "u6", type: "assigned", taskId: "t2", activityId: null, actorId: "u3", taskTitle: null, recurringTaskId: null, reminderDate: null, readAt: null, createdAt: dt(0, 9) },
 ];
 
 // ---- workspace settings (singleton) ----

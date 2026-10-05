@@ -34,6 +34,8 @@ export function notificationMessage(
   switch (n.type) {
     case "assigned":
       return <span>assigned you {title}</span>;
+    case "task_recurring_reminder":
+      return <span>reminder: {title} is due on {formatReminderDate(n.reminderDate)}</span>;
     case "mention":
       // Same notification type, two sources: a mention inside a remark carries the
       // activity row it came from; a tag in the task DESCRIPTION has none.
@@ -58,7 +60,18 @@ export function notificationText(
   );
 }
 
+/** "2026-11-10" → "10-11-2026"; the reminder's fire date, as the rest of the hub writes dates. */
+function formatReminderDate(iso: string | null): string {
+  if (!iso) return "its next date";
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y}`;
+}
+
 /** Where a notification takes you. Null task = nowhere (the row stays inert). */
 export function notificationLink(n: Notification): string | undefined {
-  return n.taskId ? `/task-management/tasks/${n.taskId}` : undefined;
+  if (n.taskId) return `/task-management/tasks/${n.taskId}`;
+  // A reminder comes before its task exists, and the recurring pages are managers-only,
+  // so it opens the assignee's task list (the task appears there on the day).
+  if (n.recurringTaskId) return "/task-management/tasks";
+  return undefined;
 }

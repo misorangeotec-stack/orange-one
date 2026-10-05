@@ -114,7 +114,10 @@ const mapNotification = (r: any): Notification => ({
   // PostgREST returns the embedded row as an object (or null when the task is no
   // longer readable under RLS). Older callers that didn't request the join get
   // undefined, which normalises to null too.
-  taskTitle: r.tasks?.title ?? null,
+  // A recurring reminder has no task yet, so its title comes from the template.
+  taskTitle: r.tasks?.title ?? r.recurring_tasks?.title ?? null,
+  recurringTaskId: r.recurring_task_id ?? null,
+  reminderDate: r.reminder_date ?? null,
   readAt: r.read_at,
   createdAt: r.created_at,
 });
@@ -134,6 +137,8 @@ const mapRecurring = (r: any): RecurringTask => ({
   active: r.active,
   createdAt: r.created_at,
   locationIds: [], // attached after the fetch from recurring_task_locations
+  notifyRequired: r.notify_required ?? false,
+  notifyDaysBefore: r.notify_days_before ?? null,
 });
 
 const mapPlan = (r: any): WeeklyPlan => ({
@@ -338,13 +343,23 @@ export async function fetchTaskActivity(): Promise<TaskActivityData> {
  */
 export async function fetchMyNotifications(userId: string): Promise<Notification[]> {
   const out: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const BASE = "id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)";
+  // The reminder columns arrive with migration 20270106120100. Until it has run the
+  // wider select errors, so fall back to the old one and the bell never breaks.
+  let select = `${BASE},recurring_task_id,reminder_date,recurring_tasks(title)`;
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)")
-      .eq("user_id", userId)
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+    const page = () =>
+      supabase
+        .from("notifications")
+        .select(select)
+        .eq("user_id", userId)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+    let { data, error } = await page();
+    if (error && select !== BASE) {
+      select = BASE;
+      ({ data, error } = await page());
+    }
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);

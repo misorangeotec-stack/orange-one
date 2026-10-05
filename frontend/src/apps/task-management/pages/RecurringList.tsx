@@ -255,6 +255,14 @@ export default function RecurringList() {
                       <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-[#EAF1FE] text-blue">
                         {RECURRENCE_LABEL[r.recurrenceType]}
                       </span>
+                      {r.notifyRequired && r.notifyDaysBefore != null && (
+                        <span
+                          className="shrink-0 text-[10px] font-semibold rounded-pill px-1.5 py-0.5 bg-orange-soft text-orange"
+                          title="Notification required: the assignee is reminded before each date"
+                        >
+                          🔔 {r.notifyDaysBefore} {r.notifyDaysBefore === 1 ? "day" : "days"} before
+                        </span>
+                      )}
                     </div>
                     {r.description?.trim() && (
                       <div className="text-[12px] text-grey mt-0.5 truncate">{r.description}</div>
