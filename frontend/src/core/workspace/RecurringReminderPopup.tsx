@@ -80,9 +80,8 @@ export default function RecurringReminderPopup() {
   const { user } = useSession();
   const navigate = useNavigate();
   // Same query key as the bell, so this shares its cache and fetch. NOT useMyNotifications:
-  // that also opens the realtime channel, and a second subscribe on the same channel name
-  // throws ("cannot add postgres_changes callbacks after subscribe()") and blanks /home.
-  // The bell's subscription already refreshes this shared cache.
+  // that would open a third realtime channel for nothing — the bell's subscription already
+  // refreshes this shared cache.
   const { data: notifications = [] } = useQuery({
     queryKey: [TASK_NOTIF_KEY, user?.id ?? null],
     queryFn: () => fetchMyNotifications(user!.id),

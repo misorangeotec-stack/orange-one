@@ -982,8 +982,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
   // The realtime notification subscription used to live here. It now belongs to
   // useMyNotifications (called above) so the portal home screen gets the same
-  // live bell without mounting this provider — and so there is only ever one
-  // subscription to the `notifications:<uid>` channel.
+  // live bell without mounting this provider. Each caller gets its own uniquely
+  // named channel — see `channelSeq` there for why a shared topic crashed.
 
   if (isLoading) {
     return (
