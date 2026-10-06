@@ -8,7 +8,7 @@ import { SectionHeading } from "@/shared/components/ui/Readout";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import {
-  STEP_CONFIG, isRequiredNow, missingRequired, visibleFields, type StepField,
+  isRequiredNow, missingRequired, stepConfigFor, visibleFields, type StepField,
 } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
 import { isBillHeld } from "../lib/format";
@@ -80,7 +80,8 @@ export default function StepModal({
   readOnly?: boolean;
 }) {
   const s = useDispatchStore();
-  const cfg = STEP_CONFIG[stepKey];
+  // DC-1 · relabelled for a delivery challan at the billing step; otherwise STEP_CONFIG as-is.
+  const cfg = useMemo(() => stepConfigFor(stepKey, order), [stepKey, order?.docType]);
 
   const view = useMemo<RoundView | null>(
     () => round ?? (order ? currentRoundView(order) : null),

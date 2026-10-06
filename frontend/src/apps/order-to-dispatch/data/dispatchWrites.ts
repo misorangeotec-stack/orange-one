@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_dispatch_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { DispatchMasterType, DispatchType, SalesReturnMode, StepDoc } from "../types";
+import type { DispatchMasterType, DispatchType, DocType, SalesReturnMode, StepDoc } from "../types";
 import { isNameless } from "../lib/masterFields";
 import type { QueueStep } from "../lib/queues";
 
@@ -19,6 +19,8 @@ export interface OrderLineInput {
   itemId: string;
   quantity: string;
   lineRemark: string | null;
+  /** DC-1 · "0" (FOC) or "1" on a delivery challan line; null on an invoice. */
+  challanRate: string | null;
 }
 
 /**
@@ -38,6 +40,8 @@ export interface OrderLineInput {
  * `customerPoNo` is the customer's own reference and is optional.
  */
 export interface OrderInput {
+  /** DC-1. Sent only on a raise — the server fixes it at intake. */
+  docType: DocType;
   dispatchType: DispatchType;
   companyId: string;
   locationId: string | null;
@@ -51,6 +55,7 @@ export interface OrderInput {
 }
 
 const orderPayload = (input: OrderInput) => ({
+  doc_type: input.docType,
   dispatch_type: input.dispatchType,
   company_id: input.companyId,
   location_id: input.locationId ?? "",
@@ -66,11 +71,31 @@ const orderPayload = (input: OrderInput) => ({
     item_id: l.itemId ?? "",
     quantity: l.quantity ?? "",
     line_remark: l.lineRemark ?? "",
+    // DC-1 · only a challan's lines carry a rate: an invoice's price lives in Tally.
+    ...(input.docType === "delivery_challan" ? { challan_rate: l.challanRate ?? "" } : {}),
   })),
 });
 
+/**
+ * DC-1 · Is the database ready for delivery challans?
+ *
+ * ⚠ THIS GUARD IS NOT OPTIONAL. Until migration 20270108120000 is applied, the
+ *   live `fms_dispatch_submit_order` ignores `doc_type` and would raise the
+ *   challan as an ordinary sales order — sent to the credit team, the exact
+ *   thing a challan exists to avoid. Refusing here is the honest answer.
+ */
+async function assertChallanReady(): Promise<void> {
+  const { error } = await db.from("fms_dispatch_orders").select("doc_type").limit(1);
+  if (error) {
+    throw new Error(
+      "Delivery Challan is not switched on in the database yet (migration 20270108120000). Nothing was raised.",
+    );
+  }
+}
+
 /** Raise a sales order. The order number is auto-generated server-side. */
 export async function submitOrder(input: OrderInput): Promise<string> {
+  if (input.docType === "delivery_challan") await assertChallanReady();
   const { data, error } = await db.rpc("fms_dispatch_submit_order", { p: orderPayload(input) });
   if (error) throw new Error(error.message);
   return data as string;

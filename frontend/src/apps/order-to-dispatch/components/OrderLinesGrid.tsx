@@ -36,6 +36,12 @@ export interface OrderLineRow extends LineGridRow {
   itemId: string;
   quantity: string;
   lineRemark: string;
+  /**
+   * DC-1 · "0" (FOC) or "1" — ₹ per unit on a delivery challan line. "" until an
+   * item is picked; ignored on an invoice. NOT part of `isLineBlank`: a rate on
+   * its own does not make a line, or the grid would append for ever.
+   */
+  challanRate: "" | "0" | "1";
 }
 
 export const makeEmptyLine = (): OrderLineRow => ({
@@ -43,6 +49,7 @@ export const makeEmptyLine = (): OrderLineRow => ({
   itemId: "",
   quantity: "",
   lineRemark: "",
+  challanRate: "",
 });
 
 export const isLineBlank = (r: OrderLineRow): boolean =>
@@ -56,6 +63,7 @@ export default function OrderLinesGrid({
   disabled,
   onMapItem,
   requested,
+  challan = false,
 }: {
   rows: OrderLineRow[];
   /** Forwarded straight to LineGrid, so it must keep the updater form. */
@@ -91,6 +99,8 @@ export default function OrderLinesGrid({
   onMapItem?: (typed: string) => void;
   /** "Mapped …", once something has been mapped from this grid. */
   requested?: string | null;
+  /** DC-1 · a delivery challan: every line gets a Rate (FOC ₹0 / ₹1). */
+  challan?: boolean;
 }) {
   const s = useDispatchStore();
 
@@ -147,7 +157,8 @@ export default function OrderLinesGrid({
             ref={api.focusRef as (el: ComboboxHandle | null) => void}
             value={row.itemId}
             onChange={(v) => {
-              api.patch({ itemId: v });
+              // DC-1 · a challan line starts FOC; the person flips it to ₹1 if needed.
+              api.patch(challan && !row.challanRate ? { itemId: v, challanRate: "0" } : { itemId: v });
               api.advance();
             }}
             options={options}
@@ -218,6 +229,37 @@ export default function OrderLinesGrid({
         );
       },
     },
+    ...(challan
+      ? [{
+          /*
+            DC-1 · PER LINE. One challan can carry a free sample and a ₹1 line
+            side by side, so the rate is asked on every row, never once for the
+            order. Two buttons rather than a dropdown: there are only ever two
+            answers, and both stay visible.
+          */
+          key: "rate",
+          header: "Rate",
+          className: "w-[150px] min-w-[150px]",
+          skipFocus: true,
+          cell: (row: OrderLineRow, api: { patch: (p: Partial<OrderLineRow>) => void }) => (
+            <div className="inline-flex rounded-lg border border-line overflow-hidden text-[12.5px] font-semibold">
+              {(["0", "1"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  disabled={disabled || !row.itemId}
+                  onClick={() => api.patch({ challanRate: v })}
+                  className={`px-2.5 py-1.5 transition disabled:opacity-40 ${
+                    row.challanRate === v ? "bg-orange text-white" : "bg-white text-grey hover:text-orange"
+                  }`}
+                >
+                  {v === "0" ? "FOC ₹0" : "₹1"}
+                </button>
+              ))}
+            </div>
+          ),
+        } satisfies LineGridColumn<OrderLineRow>]
+      : []),
     {
       key: "remark",
       header: "Remark",
@@ -242,6 +284,11 @@ export default function OrderLinesGrid({
     rows.map((r) => allowedItems.find((i) => i.id === r.itemId)?.unit ?? "").filter(Boolean),
   );
   const totalUnit = units.size === 1 ? ([...units][0] ?? "") : "";
+  // DC-1 · what the challan is worth: Σ quantity × line rate.
+  const challanValue = rows.reduce(
+    (a, r) => a + (r.itemId ? (Number(r.quantity) || 0) * (r.challanRate === "1" ? 1 : 0) : 0),
+    0,
+  );
 
   return (
     <div className="space-y-2">
@@ -264,6 +311,11 @@ export default function OrderLinesGrid({
               </td>
               <td className="px-2.5 py-2 text-right tabular-nums font-bold">{total || "—"}</td>
               <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{totalUnit || "—"}</td>
+              {challan && (
+                <td className="px-2.5 py-2 text-[12.5px] font-semibold text-navy tabular-nums whitespace-nowrap">
+                  Value ₹{challanValue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                </td>
+              )}
               <td />
               <td />
             </tr>

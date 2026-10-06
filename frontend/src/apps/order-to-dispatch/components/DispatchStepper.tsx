@@ -26,11 +26,23 @@ const STAGES: { key: string; label: string; step: StepKey | null }[] = [
 ];
 
 /**
+ * DC-1 · A delivery challan never passes the credit check, so its rail has no
+ * Credit node at all — showing one, forever pending, would read as a step the
+ * order is stuck on. The numbering on a challan's rail is therefore one shorter.
+ */
+const stagesFor = (o: DispatchOrder) =>
+  o.docType === "delivery_challan"
+    ? STAGES.filter((st) => st.key !== "credit_check")
+        .map((st) => (st.key === "sales_bill" ? { ...st, label: "Challan" } : st))
+    : STAGES;
+
+/**
  * Which node the order is sitting on. A closed order sits on (and finishes) the
  * final node; every other status sits on its current step. Received (index 0) is
  * always complete for a live order, so the floor is 1.
  */
 function activeIndex(o: DispatchOrder): number {
+  const STAGES = stagesFor(o);
   if (o.status === "closed") return STAGES.length - 1;
   /*
     A cancellation waiting on its sales return has `current_step = 'sales_return'`,
@@ -69,7 +81,7 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const deptName = (id: string) => s.orgDepartments.find((d) => d.id === id)?.name;
-    return STAGES.map((st) => {
+    return stagesFor(order).map((st) => {
       // Received has no step owner — caption it with whoever raised the order.
       if (st.key === "received") {
         return {
@@ -139,7 +151,7 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
         note: ownSite ? siteName : !people.length && siteName ? `No owner for ${siteName}` : undefined,
       };
     });
-  }, [s, order.requesterName, order.locationId, siteName]);
+  }, [s, order.requesterName, order.locationId, order.docType, siteName]);
 
   /*
     ⚠ ONLY A ROUND THAT WAS GATED OUT HAS "GONE OUT". `order.rounds` is every

@@ -30,6 +30,8 @@ export interface GatePassData {
   /** Where the CUSTOMER takes delivery — free text on the order. */
   customerLocation: string | null;
   invoiceNo: string | null;
+  /** DC-1 · the number above is a delivery challan's, not an invoice's. */
+  isChallan: boolean;
   /** The invoice date, ISO. Printed dd-mm-yyyy. */
   invoiceDateIso: string | null;
   orderNo: string;
@@ -54,6 +56,7 @@ export function gatePassFromRound(
     customerName: string;
     customerLocation: string | null;
     itemName: (id: string | null) => string;
+    isChallan?: boolean;
   },
 ): GatePassData {
   return {
@@ -63,6 +66,7 @@ export function gatePassFromRound(
     customerName: meta.customerName,
     customerLocation: meta.customerLocation,
     invoiceNo: view.sbInvoiceNo,
+    isChallan: !!meta.isChallan,
     invoiceDateIso: view.sbActualDate,
     orderNo: meta.orderNo,
     /*

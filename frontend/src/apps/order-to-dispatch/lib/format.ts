@@ -9,6 +9,7 @@ import type {
   DispatchOrder,
   DispatchStatus,
   DispatchType,
+  DocType,
   RoundReturnOrigin,
   SalesReturnMode,
 } from "../types";
@@ -61,6 +62,30 @@ export const ROUND_RETURN_ORIGIN_LABEL: Record<RoundReturnOrigin, string> = {
   returned_consignment: "Consignment came back",
 };
 export const CANCELLED_BEFORE_DISPATCH = "Cancelled before dispatch";
+
+/** DC-1 · which document the order goes out on. */
+export const DOC_TYPE_LABEL: Record<DocType, string> = {
+  invoice: "Sales Invoice",
+  delivery_challan: "Delivery Challan",
+};
+
+export const isChallan = (o: { docType: DocType } | null | undefined): boolean =>
+  o?.docType === "delivery_challan";
+
+/** "FOC (₹0)" / "₹1 per unit" — how a challan line's rate reads everywhere. */
+export const challanRateText = (rate: number | null): string =>
+  rate == null ? "—" : rate === 0 ? "FOC (₹0)" : `₹${rate} per unit`;
+
+/** A challan's rates across its lines: "all FOC", "all ₹1", or "FOC + ₹1". */
+export const challanRatesSummary = (o: { lines: { challanRate: number | null }[] }): string => {
+  const rates = new Set(o.lines.map((l) => l.challanRate ?? 0));
+  if (rates.size > 1) return "FOC + ₹1 lines";
+  return rates.has(1) ? "all lines ₹1" : "all lines FOC";
+};
+
+/** What the billing step's number is called on this order. */
+export const billNoLabel = (o: { docType: DocType } | null | undefined): string =>
+  isChallan(o) ? "Delivery challan no." : "Tally invoice no.";
 
 export const DISPATCH_TYPE_LABEL: Record<DispatchType, string> = {
   local: "Local",

@@ -51,6 +51,7 @@ export default function GatePassButton({
         customerName: s.customerName(order.customerId),
         customerLocation: order.customerLocation,
         itemName: s.itemName,
+        isChallan: order.docType === "delivery_challan",
       }),
     );
   };

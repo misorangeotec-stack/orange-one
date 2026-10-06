@@ -28,7 +28,9 @@ import { monthEndOf, monthStartOf, todayIso, weekEndOf, weekStartOf } from "@/sh
 import { DISPATCH_QK } from "../data/dispatchFetch";
 import { useDispatchStore } from "../store";
 import { STEPS } from "../lib/steps";
-import { dmy, isBillHeld, isCreditHeld, stepHoldLabel, stepHoldReason } from "../lib/format";
+import {
+  DOC_TYPE_LABEL, challanRatesSummary, dmy, isBillHeld, isChallan, isCreditHeld, stepHoldLabel, stepHoldReason,
+} from "../lib/format";
 import type { DispatchOrder, OrderLine } from "../types";
 import CompanyBreakdown from "../components/CompanyBreakdown";
 import DispatchTrend from "../components/DispatchTrend";
@@ -61,7 +63,7 @@ const PRESETS: { value: Preset; label: string }[] = [
  *
  * "all" is the resting state: the board as it reads before anything is picked.
  */
-type Focus = "all" | "punched" | "billed" | "awaiting" | "dispatched" | "onHold" | "billHold";
+type Focus = "all" | "punched" | "challan" | "billed" | "awaiting" | "dispatched" | "onHold" | "billHold";
 
 /**
  * Three of the tiles count ORDERS, not consignments, and no filter can bridge
@@ -70,7 +72,7 @@ type Focus = "all" | "punched" | "billed" | "awaiting" | "dispatched" | "onHold"
  * for them. The table therefore swaps its row model with the tile, rather than
  * pretending one shape fits both.
  */
-const ORDER_FOCUS: Focus[] = ["punched", "onHold", "billHold"];
+const ORDER_FOCUS: Focus[] = ["punched", "challan", "onHold", "billHold"];
 
 /*
   One name for one condition. "Billed but not yet through the gate" is the KPI
@@ -184,6 +186,23 @@ const pendingByUnit = (o: DispatchOrder): Record<string, number> =>
 const qtyAcross = (q: Record<string, number>): number =>
   Object.values(q).reduce((a, n) => a + n, 0);
 
+/** Ordered quantity on one order, split by unit. */
+const orderedByUnit = (o: DispatchOrder): Record<string, number> =>
+  lineQty([o], (l) => Number(l.quantity) || 0);
+
+/**
+ * DC-1 · What a delivery challan is worth: Σ ordered quantity × LINE rate (₹0
+ * FOC or ₹1 a unit). The rate is per unit whatever the unit, so here — and only
+ * here — KGS and PCS DO add: ₹1 a KG and ₹1 a PC are both ₹1.
+ */
+const challanValue = (o: DispatchOrder): number =>
+  isChallan(o)
+    ? o.lines.reduce((a, l) => a + (Number(l.quantity) || 0) * (l.challanRate ?? 0), 0)
+    : 0;
+
+const rupees = (n: number): string =>
+  `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
 export default function Dashboard() {
   const s = useDispatchStore();
   const qc = useQueryClient();
@@ -266,19 +285,46 @@ export default function Dashboard() {
    * ⚠ Range-scoped like Dispatched and Sales bills beside it, so the date picker
    *   governs all three. The picker opens on Today, which is the asked-for view.
    */
-  const punched = useMemo(() => {
+  const punchedAll = useMemo(() => {
     if (!range.from || !range.to) return [];
     return s.orders.filter((o) => {
       const d = (o.submittedAt ?? "").slice(0, 10);
       return !!d && d >= range.from! && d <= range.to!;
     });
   }, [s.orders, range]);
+  /*
+    DC-1 · TWO TILES, NEVER OVERLAPPING. "New sales orders" is the invoiced
+    business; delivery challans (FOC / ₹1) have their own tile beside it, so the
+    sales figure is not inflated by material that was given away.
+  */
+  const punched = useMemo(() => punchedAll.filter((o) => !isChallan(o)), [punchedAll]);
+  const challans = useMemo(() => punchedAll.filter(isChallan), [punchedAll]);
   const punchedQty = useMemo(() => lineQty(punched, (l) => Number(l.quantity) || 0), [punched]);
+  const challanQty = useMemo(() => lineQty(challans, (l) => Number(l.quantity) || 0), [challans]);
+  const challanFocQty = useMemo(
+    () => lineQty(challans, (l) => ((l.challanRate ?? 0) === 0 ? Number(l.quantity) || 0 : 0)),
+    [challans],
+  );
+  const challanPaidQty = useMemo(
+    () => lineQty(challans, (l) => ((l.challanRate ?? 0) > 0 ? Number(l.quantity) || 0 : 0)),
+    [challans],
+  );
+  const challanTotal = useMemo(() => challans.reduce((a, o) => a + challanValue(o), 0), [challans]);
 
   const all = useMemo(() => consignmentsOf(s.orders), [s.orders]);
 
   const dispatched = useMemo(() => inRange(all, range, "dispatched"), [all, range]);
-  const billed = useMemo(() => inRange(all, range, "billed"), [all, range]);
+  /*
+    DC-1 · A DELIVERY CHALLAN IS NOT A SALES BILL. Its round records a DC number
+    in the invoice column, so without this filter every challan would be counted
+    as an invoice raised. It still counts under Awaiting dispatch / Dispatched —
+    the material physically moves either way.
+  */
+  const challanIds = useMemo(() => new Set(s.orders.filter(isChallan).map((o) => o.id)), [s.orders]);
+  const billed = useMemo(
+    () => inRange(all, range, "billed").filter((c) => !challanIds.has(c.orderId)),
+    [all, range, challanIds],
+  );
   /** Of what was billed IN THIS RANGE, what has still not left. */
   /** Everything still sitting in the plant, whenever it was billed. */
   const backlog = useMemo(() => notGone(all), [all]);
@@ -357,9 +403,31 @@ export default function Dashboard() {
       key: "punched",
       label: "New sales orders",
       value: <QtyValue q={punchedQty} />,
-      hint: qtyHint(punchedQty, `${plural(punched.length, "order")} punched`),
+      hint: qtyHint(punchedQty, `${plural(punched.length, "order")} punched · sales invoice`),
       onSelect: () => pick("punched"),
       selected: focus === "punched",
+    },
+    {
+      /*
+        DC-1 · QUANTITY AND VALUE. Quantity leads like every tile; the value sits
+        under it because it is the second thing asked — at ₹0/₹1 it is small, but
+        it is what the challans are booked at. The hint splits FOC from ₹1.
+      */
+      key: "challan",
+      label: "Delivery Challan qty",
+      value: (
+        <span className="block">
+          <QtyValue q={challanQty} />
+          <span className="block mt-1 text-[0.45em] font-semibold text-grey tabular-nums">
+            Value {rupees(challanTotal)}
+          </span>
+        </span>
+      ),
+      hint: challans.length
+        ? `${plural(challans.length, "challan")} punched · FOC ${qtyLabel(challanFocQty, 3).replace(/^—$/, "0")} · ₹1 ${qtyLabel(challanPaidQty, 3).replace(/^—$/, "0")}`
+        : "no challans punched",
+      onSelect: () => pick("challan"),
+      selected: focus === "challan",
     },
     {
       key: "billed",
@@ -522,8 +590,9 @@ export default function Dashboard() {
       focus === "onHold" ? held
       : focus === "billHold" ? billHeld
       : focus === "punched" ? punched
+      : focus === "challan" ? challans
       : [],
-    [focus, held, billHeld, punched],
+    [focus, held, billHeld, punched, challans],
   );
 
   /*
@@ -586,7 +655,12 @@ export default function Dashboard() {
     {
       key: "invoice",
       header: "Invoice no.",
-      cell: (c) => <span className="text-grey">{c.invoiceNo ?? "—"}</span>,
+      // DC-1 · a challan's number sits in the same column, so say which it is.
+      cell: (c) => (
+        <span className="text-grey">
+          {c.invoiceNo ? (challanIds.has(c.orderId) ? `DC ${c.invoiceNo}` : c.invoiceNo) : "—"}
+        </span>
+      ),
       sortValue: (c) => c.invoiceNo ?? "",
       filter: { kind: "text", get: (c) => c.invoiceNo ?? "" },
     },
@@ -729,6 +803,42 @@ export default function Dashboard() {
       defaultHidden: true,
     },
     {
+      key: "doc",
+      header: "Document",
+      cell: (o) => (
+        <span className="text-grey whitespace-nowrap">
+          {isChallan(o) ? `DC · ${challanRatesSummary(o)}` : DOC_TYPE_LABEL.invoice}
+        </span>
+      ),
+      sortValue: (o) => o.docType,
+      filter: { kind: "multiselect", get: (o) => DOC_TYPE_LABEL[o.docType] },
+    },
+    {
+      key: "ordered",
+      header: "Ordered",
+      cell: (o) => (
+        <span className="text-grey tabular-nums whitespace-nowrap">{qtyLabel(orderedByUnit(o), 3)}</span>
+      ),
+      align: "right",
+      sortValue: (o) => qtyAcross(orderedByUnit(o)),
+      filter: { kind: "number", get: (o) => qtyAcross(orderedByUnit(o)) },
+      exportValue: (o) => qtyLabel(orderedByUnit(o), 3),
+    },
+    {
+      // DC-1 · ordered × challan rate. Blank on an invoice — its price is in Tally.
+      key: "challanValue",
+      header: "Challan value",
+      cell: (o) => (
+        <span className="text-grey tabular-nums whitespace-nowrap">
+          {isChallan(o) ? rupees(challanValue(o)) : "—"}
+        </span>
+      ),
+      align: "right",
+      sortValue: (o) => challanValue(o),
+      filter: { kind: "number", get: (o) => challanValue(o) },
+      exportValue: (o) => (isChallan(o) ? challanValue(o) : ""),
+    },
+    {
       key: "qty",
       header: "Pending",
       /*
@@ -791,6 +901,7 @@ export default function Dashboard() {
      wrong list once a tile has narrowed it. */
   const tableTitle =
     focus === "punched" ? "New sales orders"
+    : focus === "challan" ? "Delivery challans"
     : focus === "onHold" ? "Credit on hold"
     : focus === "billHold" ? "Bill on hold"
     : focus === "billed" ? "Sales bills raised"
@@ -885,16 +996,19 @@ export default function Dashboard() {
             emptyTitle={
               focus === "onHold" ? "Nothing on credit hold"
               : focus === "billHold" ? "No bills on hold"
+              : focus === "challan" ? "No delivery challans in this range"
               : "Nothing punched in this range"
             }
             emptyMessage={
               focus === "onHold" ? "Orders credit is holding will appear here."
               : focus === "billHold" ? "Orders whose invoice is being held back will appear here."
+              : focus === "challan" ? "Delivery challans raised in the selected dates will appear here."
               : "Orders raised in the selected dates will appear here."
             }
             exportName={
               focus === "onHold" ? "Order_To_Dispatch_On_Hold"
               : focus === "billHold" ? "Order_To_Dispatch_Bill_On_Hold"
+              : focus === "challan" ? "Order_To_Dispatch_Delivery_Challans"
               : "Order_To_Dispatch_New_Orders"
             }
           />
