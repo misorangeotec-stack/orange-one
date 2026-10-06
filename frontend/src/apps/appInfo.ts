@@ -109,6 +109,15 @@ export const APPS: Record<string, AppInfo> = {
     category: "ims",
   },
   /**
+   * RM IMS — a mirror of Ink IMS for raw material: Enterprises Surat, Warehouse godown,
+   * Manufacturing Stock. A SEPARATE module from Ink IMS, with its own grant; same menu group.
+   */
+  "rm-mis": {
+    name: "RM IMS",
+    basePath: "/rm-mis",
+    category: "ims",
+  },
+  /**
    * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
    * in the browser (like Ink IMS); Central Masters itself is never written.
    */
