@@ -69,6 +69,9 @@ export default function OrderToDispatchLayout() {
     canSeeQueue — because a side effect is not a reason, and the next person to
     touch canSeeQueue would silently take these two links away again.
   */
+  // Who may raise a sales return at all — the request modal then narrows it per invoice.
+  const canRaiseReturn = s.canEdit && s.orders.some((o) => s.canRequestRoundReturn(o));
+
   const hasOrders = s.isModuleViewer || s.orders.length > 0 || s.isProcessCoordinator || anyQueue;
 
   /*
@@ -97,6 +100,7 @@ export default function OrderToDispatchLayout() {
         canMonitor: s.canMonitor,
         hasOrders,
         canRaise: s.canRaise,
+        canRaiseReturn,
         pendingReviews: s.resolvableRequests.length,
         heldByStep,
         queues,
@@ -105,7 +109,7 @@ export default function OrderToDispatchLayout() {
         customerOrdersPending,
         salesReturnPending,
       }),
-    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending, canSeeCustomerOrders, customerOrdersPending],
+    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, canRaiseReturn, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending, canSeeCustomerOrders, customerOrdersPending],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

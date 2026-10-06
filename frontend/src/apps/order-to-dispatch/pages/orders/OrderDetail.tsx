@@ -334,8 +334,10 @@ export default function OrderDetail() {
                 <p className="text-[13px] text-navy">
                   <span className="font-semibold">
                     {waiting
-                      ? `Sales bill ${x.invoiceNo ?? ""} is waiting on a sales return.`
-                      : `Sales bill ${x.invoiceNo ?? ""} was unwound.`}
+                      ? `Sales bill ${x.invoiceNo ?? ""} is waiting for its sales return to be generated.`
+                      : x.srMode === "sales_return"
+                        ? `Sales return ${x.referenceNo ?? ""} generated against sales bill ${x.invoiceNo ?? ""}.`
+                        : `Sales bill ${x.invoiceNo ?? ""} was unwound.`}
                   </span>{" "}
                   {ROUND_RETURN_ORIGIN_LABEL[x.origin]}
                   {x.scope === "partial" ? " (part of the invoice)" : ""} — {x.reason}
@@ -347,8 +349,8 @@ export default function OrderDetail() {
                 </p>
                 {waiting ? (
                   <p className="text-[12.5px] text-grey-2">
-                    Waiting on {s.ownerNamesFor("sales_return", order.locationId).join(", ") || "the Sales Return owners"}.
-                    The order itself is not affected.
+                    Waiting on {s.ownerNamesFor("sales_return", order.locationId).join(", ") || "the Generate Sales Return owners"}{" "}
+                    to make it in Tally. The order itself is not affected.
                   </p>
                 ) : (
                   <p className="text-[12.5px] text-grey-2">
@@ -365,7 +367,7 @@ export default function OrderDetail() {
                 )}
                 {waiting && mayAct && (
                   <Button size="sm" onClick={() => setActReturn({ ret: x, editing: false })}>
-                    Record sales return
+                    Generate sales return
                   </Button>
                 )}
                 {!waiting && mayAct && (
