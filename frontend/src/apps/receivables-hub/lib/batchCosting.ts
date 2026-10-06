@@ -80,6 +80,8 @@ export interface BatchCostingRow {
   amount: number;
   /** Every lot this line drew from / produced, in Tally's order. */
   batches: string[];
+  /** Unsigned quantity per lot in `batches` — a line can draw several lots at one rate. */
+  lot_qty?: Record<string, number>;
   type: LineType;
   category: LineCategory;
   /** Voucher-level (filled down from the finished good). "" when the FG name has no colour word. */
@@ -117,7 +119,7 @@ const RAW_COLS =
   "movement,batch_name,qty,uom,rate,amount";
 
 /** Tally's placeholder allocations — not a lot anybody can trace. */
-const NON_LOT = new Set(["", "any", "not applicable", "primary batch", "none"]);
+const NON_LOT = new Set(["", "any", "not applicable", "primary batch", "primary", "none"]);
 
 /* ------------------------------------------------------------------ reads */
 
@@ -224,6 +226,7 @@ export function shapeBook(
       cur.qty += num(r.qty);
       cur.amount += num(r.amount);
       if (isLot && !cur.batches.includes(lot)) cur.batches.push(lot);
+      if (isLot) cur.lot_qty = { ...cur.lot_qty, [lot]: (cur.lot_qty?.[lot] ?? 0) + num(r.qty) };
       continue;
     }
     const type = lineType(r.movement);
@@ -243,6 +246,7 @@ export function shapeBook(
       rate: r.rate,
       amount: num(r.amount),
       batches: isLot ? [lot] : [],
+      lot_qty: isLot ? { [lot]: num(r.qty) } : undefined,
       type,
       category: lineCategory(type, r.stock_item),
       colour: "",
