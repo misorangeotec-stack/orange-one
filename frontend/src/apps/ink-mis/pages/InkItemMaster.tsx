@@ -26,7 +26,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/core/platform/session";
+import {
+  adoptionEdits, editsFromDraft, keepLocal, saveImsEdits, shownLinkedValue, type ImsLink,
+} from "../../bushra-central-master/lib/imsLink";
 import {
   AlertTriangle, ArrowDown, ArrowUp, Download, LayoutDashboard, ListOrdered, Save, Search, Upload,
   Warehouse,
@@ -111,6 +115,9 @@ export default function InkItemMaster() {
    * of several hundred items. Now typing touches nothing but the draft, and Save commits the lot
    * in one go, which reloads once.
    */
+  const { user, canEditModule } = useSession();
+  const qc = useQueryClient();
+  const [savingCentral, setSavingCentral] = useState(false);
   const [savedOverrides, setSavedOverrides] = useState<InkOverrides>(() => loadOverrides());
   const [overrides, setOverrides] = useState<InkOverrides>(savedOverrides);
   const [scope, setScope] = useState<InkScope>("ink");
@@ -179,8 +186,49 @@ export default function InkItemMaster() {
     JSON.stringify(lines) !== JSON.stringify(savedLines) ||
     JSON.stringify(groupFields) !== JSON.stringify(savedGroupFields);
 
-  const save = () => {
-    setSavedOverrides(overrides);
+  /** After a write to Central: re-read this sheet and Bushra Central Master's own grid. */
+  const refreshCentral = () => {
+    void qc.invalidateQueries({ queryKey: ["inkMis"] });
+    void qc.invalidateQueries({ queryKey: ["bushra-central-master", "overrides"] });
+  };
+
+  /**
+   * SAVE. Code, group and description of an item in Central Masters are BUSHRA CENTRAL MASTER'S
+   * (bushra-central-master/lib/imsLink.ts): the boxes changed since the last save are written
+   * there first, and only if that succeeds does the rest of the sheet save. A refusal leaves the
+   * draft exactly as typed.
+   */
+  const save = async () => {
+    const edits = editsFromDraft(linkedByKey, overrides, savedOverrides);
+    if (edits.length) {
+      if (!canEditCentral) {
+        setIoNotice({
+          kind: "bad",
+          text: "Item code, Group and Description are saved in Bushra Central Master, and you do not have edit access to it. Ask an admin, or discard those changes.",
+        });
+        return;
+      }
+      setSavingCentral(true);
+      try {
+        await saveImsEdits(edits, user.id);
+      } catch (e) {
+        setIoNotice({
+          kind: "bad",
+          text: `Not saved: Bushra Central Master refused the change (${e instanceof Error ? e.message : "unknown error"})`,
+        });
+        return;
+      } finally {
+        setSavingCentral(false);
+      }
+      refreshCentral();
+      setIoNotice({
+        kind: "ok",
+        text: `${edits.length} item${edits.length === 1 ? "" : "s"} updated in Bushra Central Master.`,
+      });
+    }
+    const local = keepLocal(linkedByKey, overrides, edits) as InkOverrides;
+    setOverrides(local);
+    setSavedOverrides(local);
     /*
      * Drop numbers whose line no longer exists, but ONLY with every stock group loaded.
      * Re-keying a line (typing a description) leaves its old number behind, and a stale number
@@ -304,6 +352,40 @@ export default function InkItemMaster() {
   });
 
   const master = useMemo(() => data?.master ?? [], [data]);
+  const linkedByKey = useMemo(
+    () => new Map<string, ImsLink>(master.filter((r) => r.link).map((r) => [r.key, r.link!])),
+    [master],
+  );
+  /** Central's own grant decides, and only once its saved changes have been read. */
+  const canEditCentral = canEditModule("bushra-central-master") && (data?.central.canSave ?? false);
+  /** Values typed here earlier that Bushra Central Master has not received yet. */
+  const pendingCentral = useMemo(
+    () => adoptionEdits(linkedByKey, savedOverrides),
+    [linkedByKey, savedOverrides],
+  );
+  const copyToCentral = async () => {
+    if (!pendingCentral.length || !canEditCentral) return;
+    const n = pendingCentral.length;
+    if (
+      !window.confirm(
+        `Copy code / group / description for ${n} item${n === 1 ? "" : "s"} from this sheet into Bushra Central Master? Only fields Central has not set are copied; nothing the team set there is overwritten.`,
+      )
+    )
+      return;
+    setSavingCentral(true);
+    try {
+      await saveImsEdits(pendingCentral, user.id);
+      const local = keepLocal(linkedByKey, savedOverrides, pendingCentral) as InkOverrides;
+      setSavedOverrides(local);
+      setOverrides(local);
+      refreshCentral();
+      setIoNotice({ kind: "ok", text: `${n} item${n === 1 ? "" : "s"} copied into Bushra Central Master.` });
+    } catch (e) {
+      setIoNotice({ kind: "bad", text: `Not copied: Bushra Central Master refused (${e instanceof Error ? e.message : "unknown error"})` });
+    } finally {
+      setSavingCentral(false);
+    }
+  };
 
   /**
    * ONE TEST PER FILTER, rather than one long predicate.
@@ -690,14 +772,30 @@ export default function InkItemMaster() {
     });
 
   /** `width` is now a hint only: every editor fills its column so resizing actually resizes. */
-  const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
-    <Input
-      className={`h-8 w-full min-w-0 ${width}`}
-      value={overrides[r.key]?.[field] ?? ""}
-      placeholder={fallback || "—"}
-      onChange={(e) => patch(r.key, field, e.target.value)}
-    />
-  );
+  const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) =>
+    r.link ? (
+      // LINKED: the box holds Bushra Central Master's value, and Save writes back into it.
+      <Input
+        className={`h-8 w-full min-w-0 border-sky-300 ${width}`}
+        value={shownLinkedValue(r.link, field, overrides[r.key], savedOverrides[r.key])}
+        placeholder={fallback || "—"}
+        disabled={!canEditCentral}
+        title={
+          canEditCentral
+            ? "Linked to Bushra Central Master: Save updates it there too"
+            : "Linked to Bushra Central Master: you need edit access to it to change this"
+        }
+        onChange={(e) => patch(r.key, field, e.target.value)}
+      />
+    ) : (
+      <Input
+        className={`h-8 w-full min-w-0 ${width}`}
+        value={overrides[r.key]?.[field] ?? ""}
+        placeholder={fallback || "—"}
+        title="Not in Central Masters: saved on this sheet only"
+        onChange={(e) => patch(r.key, field, e.target.value)}
+      />
+    );
 
   return (
     <div className="space-y-5">
@@ -710,6 +808,21 @@ export default function InkItemMaster() {
             <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
           </Link>
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-950">
+        <p className="flex-1">
+          <strong>Item code, Group and Description are linked to Bushra Central Master</strong>{" "}
+          (blue boxes). They show its values, and Save updates it there too, so every report sees the
+          same thing. Changing them needs edit access to Bushra Central Master. Items not in Central
+          Masters keep their values on this sheet.
+          {data?.central.note && <> {data.central.note}</>}
+        </p>
+        {pendingCentral.length > 0 && (
+          <Button size="sm" variant="outline" disabled={!canEditCentral || savingCentral} onClick={() => void copyToCentral()}>
+            Copy {pendingCentral.length} to Central
+          </Button>
+        )}
       </div>
 
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -853,8 +966,8 @@ export default function InkItemMaster() {
               <Button size="sm" variant="ghost" onClick={discard}>
                 Discard
               </Button>
-              <Button size="sm" onClick={save}>
-                <Save className="mr-2 h-4 w-4" /> Save changes
+              <Button size="sm" onClick={() => void save()} disabled={savingCentral}>
+                <Save className="mr-2 h-4 w-4" /> {savingCentral ? "Saving to Central…" : "Save changes"}
               </Button>
             </div>
           </>

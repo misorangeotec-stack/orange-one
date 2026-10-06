@@ -62,6 +62,9 @@ import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
 import { pushDocument } from "./sheetStore";
 import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit, type ItemFacts } from "./godowns";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
+import {
+  linkKey, linkedValue, loadImsLinks, pendingAdoption, type ImsField, type ImsLink, type ImsLinks,
+} from "../../bushra-central-master/lib/imsLink";
 
 /* ------------------------------------------------------------------- the books */
 
@@ -306,6 +309,8 @@ export interface InkMasterRow {
    * back to this key when the new one holds nothing.
    */
   legacyKey: string;
+  /** The Bushra Central Master row this item saves into; absent when it is not in Central. */
+  link?: ImsLink;
 }
 
 export interface InkPositionsResult {
@@ -320,6 +325,8 @@ export interface InkPositionsResult {
    *  so this is the bridge `loadInkConsumption` joins on. Per book, because the same name
    *  can be a different code in a different company. */
   nameToCode: Map<string, string>;
+  /** Whether edits may be saved into Bushra Central Master, and why not when they may not. */
+  central: Pick<ImsLinks, "canSave" | "note">;
 }
 
 const norm = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
@@ -397,7 +404,10 @@ export async function loadInkPositions(
   groups: InkGroupFields = {},
   godownChoice: GodownChoice = {},
 ): Promise<InkPositionsResult> {
-  const raw = await loadStockSummary(INK_COMPANY_GUIDS, fy, from, to);
+  const [raw, links] = await Promise.all([
+    loadStockSummary(INK_COMPANY_GUIDS, fy, from, to),
+    loadImsLinks(INK_COMPANY_GUIDS),
+  ]);
 
   /*
    * GODOWN FILTER, where the planner has set one.
@@ -461,13 +471,31 @@ export async function loadInkPositions(
     const tallyGroup = row.stock_group || row.primary_group || "";
     const tallyName = row.item_name || row.item || "";
 
-    const effectiveCode = norm(ov.code) || tallyCode;
-    const effectiveGroup = (ov.group ?? "").trim() || tallyGroup;
-    const effectiveDescription = (ov.description ?? "").trim() || tallyName;
+    /*
+     * LINKED TO BUSHRA CENTRAL MASTER (bushra-central-master/lib/imsLink.ts). For an item in
+     * Central, code, group and description are Central's — except where this sheet holds a value
+     * Central has not received yet (Central still on its default), which keeps showing until it is
+     * copied up. A value the team SET in Central always wins. Items not in Central: this sheet's own.
+     */
+    const link = links.byKey.get(linkKey(company.guid, row.item));
+    const pick = (f: ImsField, local: string | undefined, fallback: string) =>
+      (link ? linkedValue(link, f, local) : (local ?? "")).trim() || fallback;
+    const effectiveCode = norm(pick("code", ov.code, "")) || tallyCode;
+    const effectiveGroup = pick("groupName", ov.group, tallyGroup);
+    const effectiveDescription = pick("description", ov.description, tallyName);
 
-    // "D:" cannot collide with a code, which may be any word.
-    const typedDescription = norm(ov.description);
+    // "D:" cannot collide with a code, which may be any word. A description re-keys the line only
+    // when someone CHOSE it — typed here, or set in Central — never Central's default (the name).
+    const descriptionChosen = link
+      ? link.own.description || Boolean(pendingAdoption(link, { description: ov.description }).description)
+      : Boolean(norm(ov.description));
+    const typedDescription = descriptionChosen ? norm(effectiveDescription) : "";
     const codeKey = effectiveCode || soloKey(company.key, row.item);
+    // The key this line had before the link, so numbering, lead times and line settings typed
+    // against it are still found where Central changed the code or description.
+    const preLinkKey = norm(ov.description)
+      ? `D:${norm(ov.description)}`
+      : norm(ov.code) || tallyCode || soloKey(company.key, row.item);
     const mergeKeyForRow = typedDescription ? `D:${typedDescription}` : codeKey;
     const lineOv = lines[mergeKeyForRow] ?? {};
     const groupOv = groups[norm(effectiveGroup)] ?? {};
@@ -485,7 +513,7 @@ export async function loadInkPositions(
     master.push({
       key,
       mergeKey: mergeKeyForRow,
-      legacyKey: codeKey,
+      legacyKey: preLinkKey !== mergeKeyForRow ? preLinkKey : codeKey,
       companyKey: company.key,
       company: company.label,
       item: row.item,
@@ -503,6 +531,7 @@ export async function loadInkPositions(
       source: effectiveSource,
       effectiveDescription,
       needsCode: !effectiveCode,
+      link,
     });
 
     // THE ONE KEY, computed once above. This used to be recomputed here from the code alone,
@@ -517,12 +546,12 @@ export async function loadInkPositions(
     if (!pos) {
       pos = {
         key: mergeKey,
-        legacyKey: codeKey,
+        legacyKey: preLinkKey !== mergeKeyForRow ? preLinkKey : codeKey,
         itemCode: effectiveCode,
         coded: Boolean(effectiveCode),
         sources: [],
         description: effectiveDescription || row.item,
-        customDescription: (ov.description ?? "").trim(),
+        customDescription: typedDescription ? effectiveDescription : "",
         group: effectiveGroup,
         category: effectiveCategory,
         source: effectiveSource,
@@ -539,9 +568,9 @@ export async function loadInkPositions(
 
     // Books disagree on how fully an item is named; keep the most descriptive one. A description
     // the planner typed always wins, whatever its length.
-    if (ov.description?.trim()) pos.description = ov.description.trim();
+    if (typedDescription) pos.description = effectiveDescription;
     else if (effectiveDescription.length > pos.description.length) pos.description = effectiveDescription;
-    if (!pos.customDescription && ov.description?.trim()) pos.customDescription = ov.description.trim();
+    if (!pos.customDescription && typedDescription) pos.customDescription = effectiveDescription;
     if (!pos.group && effectiveGroup) pos.group = effectiveGroup;
     // A line merged by DESCRIPTION can be fed by books that disagree about the code, and the
     // first row to arrive may be the one Tally has no code for — which left the Item code column
@@ -585,7 +614,7 @@ export async function loadInkPositions(
   master.sort(
     (a, b) => a.company.localeCompare(b.company) || a.item.localeCompare(b.item),
   );
-  return { rows, master, builtAt, nameToCode, unsplitItems };
+  return { rows, master, builtAt, nameToCode, unsplitItems, central: { canSave: links.canSave, note: links.note } };
 }
 
 /* ---------------------------------------------------------------- consumption */
