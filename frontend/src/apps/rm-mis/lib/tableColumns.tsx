@@ -1,0 +1,168 @@
+/**
+ * Excel-style column adjustment for the RM IMS tables: drag a column's right edge to resize it,
+ * double-click the edge to hand it back to automatic width, and hide or show columns.
+ *
+ * Remembered per browser, per table, under `rm-mis:cols:<table>`. A stored width for a column
+ * that no longer exists (a deleted consignment, say) is harmless — nothing reads it.
+ *
+ * Widths are applied as width + min-width + max-width on the header cell. The table keeps its
+ * automatic layout, so a narrowed text column WRAPS instead of clipping, and a numeric column
+ * cannot be dragged narrower than its widest number. Both are deliberate: a report column that
+ * silently cuts a figure off is worse than one that refuses to shrink past it.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { TableHead } from "@hub/components/ui/table";
+
+const MIN_WIDTH = 48;
+
+interface Stored {
+  widths: Record<string, number>;
+  hidden: string[];
+}
+
+function read(key: string): Stored {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const v = raw ? (JSON.parse(raw) as Partial<Stored>) : {};
+    return {
+      widths: v.widths && typeof v.widths === "object" ? v.widths : {},
+      hidden: Array.isArray(v.hidden) ? v.hidden : [],
+    };
+  } catch {
+    return { widths: {}, hidden: [] };
+  }
+}
+
+export interface TableColumns {
+  widthOf: (id: string) => number | undefined;
+  setWidth: (id: string, px: number | undefined) => void;
+  isVisible: (id: string) => boolean;
+  hidden: string[];
+  setHidden: (ids: string[]) => void;
+  reset: () => void;
+  customised: boolean;
+}
+
+export function useTableColumns(table: string): TableColumns {
+  const key = `rm-mis:cols:${table}`;
+  const [state, setState] = useState<Stored>(() => read(key));
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      /* private mode: adjustments still apply for this visit */
+    }
+  }, [key, state]);
+
+  const setWidth = useCallback((id: string, px: number | undefined) => {
+    setState((prev) => {
+      const widths = { ...prev.widths };
+      if (px === undefined) delete widths[id];
+      else widths[id] = Math.max(MIN_WIDTH, Math.round(px));
+      return { ...prev, widths };
+    });
+  }, []);
+
+  return {
+    widthOf: (id) => state.widths[id],
+    setWidth,
+    isVisible: (id) => !state.hidden.includes(id),
+    hidden: state.hidden,
+    setHidden: (ids) => setState((prev) => ({ ...prev, hidden: ids })),
+    reset: () => setState({ widths: {}, hidden: [] }),
+    customised: Object.keys(state.widths).length > 0 || state.hidden.length > 0,
+  };
+}
+
+/**
+ * A header cell with a drag handle on its right edge. Drop-in for TableHead; give it the column
+ * id and the table's `useTableColumns` result.
+ */
+export function ResizableHead({
+  id,
+  cols,
+  className,
+  colSpan,
+  stickyLeft,
+  fallbackWidth,
+  measureRef,
+  children,
+}: {
+  id: string;
+  cols: TableColumns;
+  className?: string;
+  colSpan?: number;
+  /** Pixels from the left edge to pin this heading at — see the freeze notes in InkMis.tsx. */
+  stickyLeft?: number;
+  /** Width to use when the planner has not resized this column. A pinned column needs a KNOWN
+   *  width, or the offsets of the ones after it are guesses. */
+  fallbackWidth?: number;
+  /** Handed the cell so the page can MEASURE it — a frozen column's offset has to be the
+   *  width the browser actually gave the one before it, not the width we asked for. */
+  measureRef?: (el: HTMLTableCellElement | null) => void;
+  children?: ReactNode;
+}) {
+  // Not useRef<T>(null), whose `current` React types as read-only: this ref is assigned by hand
+  // in the callback below so the cell can be both measured and dragged.
+  const ref = useRef<HTMLTableCellElement | null>(null);
+  const width = cols.widthOf(id) ?? fallbackWidth;
+  const style: CSSProperties | undefined =
+    width !== undefined
+      ? {
+          width,
+          minWidth: width,
+          maxWidth: width,
+          // 6 beats the 4 that plain headings carry, so a pinned heading stays on top where the
+          // two cross — the corner where the frozen block meets the frozen header row.
+          ...(stickyLeft !== undefined ? { position: "sticky", left: stickyLeft, zIndex: 6 } : {}),
+        }
+      : undefined;
+
+  const onMouseDown = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = ref.current?.getBoundingClientRect().width ?? width ?? 120;
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const move = (ev: MouseEvent) => cols.setWidth(id, startW + (ev.clientX - startX));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  return (
+    <TableHead
+      ref={(el) => {
+        ref.current = el;
+        measureRef?.(el);
+      }}
+      style={style}
+      colSpan={colSpan}
+      // Stamped so a BODY cell can find its column: the page matches cell index to this heading
+      // and reads the id off it, rather than keeping a second copy of the column order.
+      data-col-id={id}
+      className={`relative ${className ?? ""}`}
+    >
+      {children}
+      <span
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize. Double-click to reset."
+        onMouseDown={onMouseDown}
+        onDoubleClick={() => cols.setWidth(id, undefined)}
+        className="absolute right-0 top-0 z-10 h-full w-2 cursor-col-resize select-none border-r border-transparent hover:border-primary hover:bg-primary/10"
+      />
+    </TableHead>
+  );
+}

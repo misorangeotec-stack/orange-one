@@ -16,6 +16,7 @@ import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { inkMisApp } from "./ink-mis/meta";
+import { rmMisApp } from "./rm-mis/meta";
 import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { allDraftsApp } from "./all-drafts/meta";
 import { inkStabilisationApp } from "./ink-stabilisation/meta";
@@ -99,6 +100,7 @@ export const apps: AppManifest[] = [
   // INK IMS — ink inventory planning across the four ink books. Its own module on purpose:
   // it is not part of the Receivables Hub and must not be folded back into it.
   inkMisApp,
+  rmMisApp,
   // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
   // central master live and keeps every change in the browser; nothing is written back.
   bushraCentralMasterApp,
@@ -255,6 +257,8 @@ export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
   // have let its holder change every one of those values while the admin form said
   // otherwise. Only Full access is offered, and it is honest.
   "ink-mis",
+  // RM IMS: the same, and more so — its sheet lives only in the browser for now.
+  "rm-mis",
 ]);
 
 /** The access levels a module offers, in display order. */
