@@ -9,6 +9,7 @@ import type {
   DispatchOrder,
   DispatchStatus,
   DispatchType,
+  RoundReturnOrigin,
   SalesReturnMode,
 } from "../types";
 import type { QueueStep } from "./queues";
@@ -50,6 +51,16 @@ export const SALES_RETURN_MODE_LABEL: Record<SalesReturnMode, string> = {
   invoice_cancelled: "Invoice cancelled",
   sales_return: "Sales return raised",
 };
+
+/**
+ * Why a return against a finished invoice exists. Shown as the row's "Type" on
+ * the Sales Return page, beside the cancellation kind (CANCELLED_BEFORE_DISPATCH).
+ */
+export const ROUND_RETURN_ORIGIN_LABEL: Record<RoundReturnOrigin, string> = {
+  requested: "Return after dispatch",
+  returned_consignment: "Consignment came back",
+};
+export const CANCELLED_BEFORE_DISPATCH = "Cancelled before dispatch";
 
 export const DISPATCH_TYPE_LABEL: Record<DispatchType, string> = {
   local: "Local",

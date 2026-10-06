@@ -193,8 +193,9 @@ async function fetchCategorisedLots(): Promise<InkLot[]> {
   return lots;
 }
 
-export function useInkLots() {
-  return useQuery({ queryKey: LOTS_QUERY, queryFn: fetchCategorisedLots, staleTime: 10 * 60_000 });
+/** `enabled` lets My Control Center skip the slow ConnectWave read for people with no plant work. */
+export function useInkLots(enabled = true) {
+  return useQuery({ queryKey: LOTS_QUERY, queryFn: fetchCategorisedLots, staleTime: 10 * 60_000, enabled });
 }
 
 export function useFlow() {

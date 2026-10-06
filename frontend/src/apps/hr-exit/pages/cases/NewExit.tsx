@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ExitCaseForm from "../../components/ExitCaseForm";
+import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
+import ExitCaseForm, { type ExitDraft } from "../../components/ExitCaseForm";
 import { useExitStore } from "../../store";
 import type { CaseInput } from "../../data/exitWrites";
 
@@ -15,18 +16,23 @@ import type { CaseInput } from "../../data/exitWrites";
  *
  * Who may raise it FOR WHOM is enforced in one place, `fms_exit_raise_case`. The form
  * mirrors that rule so it never offers a button the database will reject.
+ *
+ * Saved drafts (resignation letter included) sit above the form; submitting a
+ * continued draft deletes it.
  */
 export default function NewExit() {
   const s = useExitStore();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const drafts = useSavedDrafts<ExitDraft>("hr-exit:case");
 
   const submit = async (input: CaseInput, letter: File | null) => {
     setBusy(true);
     setErr(null);
     try {
       const id = await s.raiseCase(input, letter);
+      await drafts.finish();
       navigate(`/hr-exit/exits/${id}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -50,6 +56,7 @@ export default function NewExit() {
         submitLabel="Raise the exit"
         onSubmit={submit}
         onCancel={() => navigate("/hr-exit")}
+        drafts={drafts}
       />
     </div>
   );

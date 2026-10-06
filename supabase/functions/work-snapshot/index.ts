@@ -58,6 +58,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const DISPATCH_SECRET = Deno.env.get("EMAIL_DISPATCH_SECRET") ?? "";
+/** People whose snapshots are built at the same time — see enqueue(). */
+const SNAPSHOT_CONCURRENCY = 6;
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
@@ -335,42 +337,71 @@ async function enqueue(forDate: string | null, dryRun: boolean) {
 
   let queued = 0;
   let skipped = 0;
-  const would: { name: string; email: string | null; subject: string; items: number }[] = [];
+  const would: { i: number; name: string; email: string | null; subject: string; items: number }[] = [];
 
-  for (const person of people) {
-    const snapshot = await snapshotFor(person, data);
-    if (skipWhenEmpty && snapshot.total_items === 0) {
-      skipped++;
-      continue;
+  /*
+   * ⚠ SEVERAL PEOPLE AT ONCE, NOT ONE AFTER ANOTHER. Each person waits on
+   *   public.user_snapshot, whose user_module_usage() walks every module's tables
+   *   for that person: ~2.5 s each, up to 5 s (measured 05-10-2026). One at a
+   *   time, ~65 people came to ~150 s — the request limit — and from 04-10-2026
+   *   the run was cut off there: the last row landed at 09:02:28 and the people
+   *   still in the loop got no mail at all (52 and 55 queued, against 63-70).
+   *   That wait is the database's, not this function's CPU, so overlapping it is
+   *   free here; SNAPSHOT_CONCURRENCY of them keeps the database's share modest.
+   *   Each person is still queued independently and idempotently (the `sent`
+   *   check above), so a retry picks up exactly whoever is missing.
+   */
+  let next = 0;
+  let failure: Error | null = null;
+  const worker = async () => {
+    while (!failure && next < people.length) {
+      const i = next++;
+      const person = people[i];
+      try {
+        const snapshot = await snapshotFor(person, data);
+        if (skipWhenEmpty && snapshot.total_items === 0) {
+          skipped++;
+          continue;
+        }
+        const subject = subjectFor(snapshot);
+
+        if (dryRun) {
+          would.push({ i, name: person.name, email: person.email, subject, items: snapshot.total_items });
+          continue;
+        }
+
+
+        const { error } = await admin.from("email_outbox").insert({
+          kind: "user_snapshot_daily",
+          to_user_id: person.id,
+          to_email: person.email,
+          to_name: person.name,
+          // ⚠ Same function the test send uses. Two subject lines built two ways is
+          // how a preview stops previewing.
+          subject,
+          // ⚠ AND IN THE PAYLOAD, WHICH IS THE ONE THAT REACHES THE READER.
+          //   send-email NEVER reads `email_outbox.subject` — it renders from the
+          //   payload and falls back to a generic line when `payload.subject` is
+          //   missing. Setting the column alone looked completely correct in the
+          //   database and shipped five people a mail headed "Your Orange One
+          //   snapshot" instead of "23 overdue, 14 due today". The test send always
+          //   set payload.subject, so the two paths disagreed exactly where nothing
+          //   was checking. Set both, always.
+          payload: { snapshot, for_date: date, subject },
+        });
+        if (error) throw new Error(`queue ${person.id}: ${error.message}`);
+        queued++;
+      } catch (e) {
+        // First failure stops new people being started, as the one-at-a-time loop
+        // did; whoever is already in flight finishes.
+        failure ??= e instanceof Error ? e : new Error(String(e));
+      }
     }
-    const subject = subjectFor(snapshot);
-
-    if (dryRun) {
-      would.push({ name: person.name, email: person.email, subject, items: snapshot.total_items });
-      continue;
-    }
-
-    const { error } = await admin.from("email_outbox").insert({
-      kind: "user_snapshot_daily",
-      to_user_id: person.id,
-      to_email: person.email,
-      to_name: person.name,
-      // ⚠ Same function the test send uses. Two subject lines built two ways is
-      // how a preview stops previewing.
-      subject,
-      // ⚠ AND IN THE PAYLOAD, WHICH IS THE ONE THAT REACHES THE READER.
-      //   send-email NEVER reads `email_outbox.subject` — it renders from the
-      //   payload and falls back to a generic line when `payload.subject` is
-      //   missing. Setting the column alone looked completely correct in the
-      //   database and shipped five people a mail headed "Your Orange One
-      //   snapshot" instead of "23 overdue, 14 due today". The test send always
-      //   set payload.subject, so the two paths disagreed exactly where nothing
-      //   was checking. Set both, always.
-      payload: { snapshot, for_date: date, subject },
-    });
-    if (error) throw new Error(`queue ${person.id}: ${error.message}`);
-    queued++;
-  }
+  };
+  const t0 = Date.now();
+  await Promise.all(Array.from({ length: Math.min(SNAPSHOT_CONCURRENCY, people.length) }, worker));
+  if (failure) throw failure;
+  would.sort((a, b) => a.i - b.i);
 
   return json(200, {
     dryRun,
@@ -378,11 +409,13 @@ async function enqueue(forDate: string | null, dryRun: boolean) {
     skipped,
     for_date: date,
     modules: needed,
+    // How long the per-person pass took — the figure that ran into the 150 s wall.
+    people_seconds: Math.round((Date.now() - t0) / 100) / 10,
     ...(dryRun
       ? {
           wouldSend: would.length,
           gates: { enabled: settings?.enabled === true, emailModule: gate === true },
-          recipients: would,
+          recipients: would.map(({ i: _i, ...r }) => r),
         }
       : {}),
   });

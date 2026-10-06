@@ -70,6 +70,7 @@ export function ColumnHead({
   sort,
   setSort,
   children,
+  wrap = false,
 }: {
   label: ReactNode;
   id: string;
@@ -77,6 +78,8 @@ export function ColumnHead({
   setSort: (next: SortState) => void;
   /** The funnel for this column, if it has one. */
   children?: ReactNode;
+  /** Tiny type that wraps onto more lines instead of clipping with "…". */
+  wrap?: boolean;
 }) {
   const mine = sort?.key === id;
   return (
@@ -89,7 +92,13 @@ export function ColumnHead({
           mine ? "text-foreground" : ""
         }`}
       >
-        <span className="truncate">{label}</span>
+        <span
+          className={
+            wrap ? "whitespace-normal break-words text-[8px] leading-tight" : "truncate"
+          }
+        >
+          {label}
+        </span>
         <span className="shrink-0 text-[9px] leading-none">
           {mine ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
         </span>
