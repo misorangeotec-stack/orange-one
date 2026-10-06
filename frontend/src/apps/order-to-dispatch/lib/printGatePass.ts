@@ -41,7 +41,7 @@ export function renderGatePassHtml(d: GatePassData): string {
     // Labelled for the buyer explicitly: our own site prints in the masthead, and
     // a bare "LOCATION" would be two different facts under one word.
     ["CUSTOMER LOCATION:", d.customerLocation || "—"],
-    ["INV. NO:", d.invoiceNo || "—"],
+    [d.isChallan ? "DC NO:" : "INV. NO:", d.invoiceNo || "—"],
     ["ORDER NO:", d.orderNo],
   ]
     .map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value || "—")}</td></tr>`)

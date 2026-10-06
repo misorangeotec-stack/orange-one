@@ -394,6 +394,19 @@ export interface DispatchNotification {
 export type DispatchType = "local" | "transport";
 
 /**
+ * WHICH DOCUMENT THE ORDER GOES OUT ON (DC-1), chosen first on New Sales Order.
+ *
+ *   invoice            the ordinary sales order — credit-checked, billed in Tally.
+ *   delivery_challan   goods sent FOC at ₹0 or ₹1 a unit. Skips the credit check
+ *                      ENTIRELY: the order is born at Check Material Status, and
+ *                      the billing step records the DC number in place of an
+ *                      invoice number.
+ *
+ * Fixed once raised — it decided which steps the order runs.
+ */
+export type DocType = "invoice" | "delivery_challan";
+
+/**
  * STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled live only here.
  *
  * `awaiting_sales_return` is the one status that maps to a step, and even then
@@ -551,6 +564,8 @@ export interface OrderLine {
    *  later edit to the item master does not rewrite an old order's line. */
   unit: string | null;
   lineRemark: string | null;
+  /** DC-1 · ₹ per unit this line goes out at on a delivery challan — 0 (FOC) or 1. Null on an invoice. */
+  challanRate: number | null;
 
   /**
    * Delivered so far, across every round. RECALCULATED server-side from the
@@ -745,6 +760,8 @@ export interface DispatchOrder {
   intakeSource: "customer" | null;
   /** When credit check filled in the company, site and dispatch type. */
   intakeCompletedAt: string | null;
+  /** DC-1. `invoice` on every order raised before the column existed. */
+  docType: DocType;
   customerId: string;
   /** Where this consignment goes. Seeded from the customer master, overridable. */
   customerLocation: string | null;

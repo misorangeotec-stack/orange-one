@@ -26,7 +26,7 @@
 import type { DispatchMasterType, DispatchOrder, StepDoc } from "../types";
 import type { RoundView } from "./rounds";
 import type { QueueStep } from "./queues";
-import { CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dmy, numOrDash } from "./format";
+import { CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dmy, isChallan, numOrDash } from "./format";
 
 export type StepFieldKind = "date" | "text" | "number" | "textarea" | "select";
 
@@ -385,8 +385,10 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
         row would bury the exception in noise.
       */
       get: (_o, v) => {
-        const no = s(v.sbInvoiceNo);
-        if (!no) return "—";
+        const raw = s(v.sbInvoiceNo);
+        if (!raw) return "—";
+        // DC-1 · one column holds both kinds of number; say which this is.
+        const no = isChallan(_o) ? `DC ${raw}` : raw;
         const ship = v.items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
         const billed = v.items.reduce((a, i) => a + (Number(i.billQty ?? i.shipQty) || 0), 0);
         return billed < ship ? `${no} · ${billed} of ${ship} billed` : no;
@@ -531,3 +533,27 @@ export const stepActualDate = (step: QueueStep, _o: DispatchOrder, v: RoundView)
 };
 
 export { numOrDash };
+
+/**
+ * DC-1 · The step's config AS THIS ORDER SEES IT.
+ *
+ * Only the billing step differs, and only in words: on a delivery challan the
+ * biller records the DC number in the same `sb_invoice_no` column and attaches
+ * the challan in the same slot. Nothing about what is saved changes, so this
+ * relabels rather than defining a second step.
+ */
+export function stepConfigFor(step: QueueStep, order: DispatchOrder | null): StepConfig {
+  const cfg = STEP_CONFIG[step];
+  if (step !== "sales_bill" || !isChallan(order)) return cfg;
+  return {
+    ...cfg,
+    title: "Record Delivery Challan",
+    actionLabel: "Record delivery challan",
+    fields: cfg.fields.map((f) =>
+      f.key === "sb_invoice_no"
+        ? { ...f, label: "Delivery challan no.", placeholder: "the DC number as generated" }
+        : f),
+    attachments: cfg.attachments?.map((a) =>
+      a.folder === "invoice" ? { ...a, label: "Delivery challan" } : a),
+  };
+}

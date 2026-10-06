@@ -12,7 +12,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import { STEP_CONFIG } from "../lib/stepConfig";
-import { dispatchTypeText, dmy, isoFromDmy, qtyTotals, STEP_HOLD, STEP_STATUS } from "../lib/format";
+import { DOC_TYPE_LABEL, dispatchTypeText, dmy, isChallan, isoFromDmy, qtyTotals, STEP_HOLD, STEP_STATUS } from "../lib/format";
 import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
@@ -184,6 +184,15 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       filter: { kind: "text", get: (r) => r.order.customerPoNo ?? "" },
     },
     {
+      // DC-1 · which document this order goes out on — the store and billing
+      // desks need to know a challan when they see one.
+      key: "doc",
+      header: "Document",
+      cell: (r) => docCell(r.order),
+      sortValue: (r) => DOC_TYPE_LABEL[r.order.docType],
+      filter: { kind: "select", get: (r) => DOC_TYPE_LABEL[r.order.docType] },
+    },
+    {
       key: "type",
       header: "Type",
       cell: (r) => <span className="text-grey">{dispatchTypeText(r.order)}</span>,
@@ -282,6 +291,13 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       cell: (e) => <span className="text-grey">{e.row.customerPoNo ?? "—"}</span>,
       sortValue: (e) => e.row.customerPoNo ?? "",
       filter: { kind: "text", get: (e) => e.row.customerPoNo ?? "" },
+    },
+    {
+      key: "doc",
+      header: "Document",
+      cell: (e) => docCell(e.row),
+      sortValue: (e) => DOC_TYPE_LABEL[e.row.docType],
+      filter: { kind: "select", get: (e) => DOC_TYPE_LABEL[e.row.docType] },
     },
     {
       key: cfg.captured.key,
@@ -474,4 +490,11 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       />
     </div>
   );
+}
+
+/** DC-1 · a challan stands out as a pill; an invoice, the ordinary case, stays plain. */
+function docCell(o: DispatchOrder) {
+  return isChallan(o)
+    ? <OutcomePill label={DOC_TYPE_LABEL.delivery_challan} tone="blue" />
+    : <span className="text-grey whitespace-nowrap">{DOC_TYPE_LABEL.invoice}</span>;
 }

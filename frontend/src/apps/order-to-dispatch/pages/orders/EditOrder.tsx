@@ -77,7 +77,9 @@ function EditOrderForm({ order }: { order: DispatchOrder }) {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Edit {order.orderNo}</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Editable until the collection team records the credit confirmation.
+          {order.docType === "delivery_challan"
+            ? "Delivery challan · editable until the store records the material status."
+            : "Editable until the collection team records the credit confirmation."}
         </p>
       </div>
 
@@ -94,6 +96,7 @@ function EditOrderForm({ order }: { order: DispatchOrder }) {
           itemType={f.itemType}
           onMapItem={(typed) => f.setMapping({ search: typed })}
           requested={f.requested?.from === "lines" ? f.requested.text : null}
+          challan={f.form.docType === "delivery_challan"}
         />
       </Card>
 

@@ -5,7 +5,7 @@ import { newUid } from "@/shared/components/ui/LineGrid";
 import { isLineBlank, makeEmptyLine, type OrderLineRow } from "../../components/OrderLinesGrid";
 import type { MasterValues } from "../../lib/masterFields";
 import type { OrderInput } from "../../data/dispatchWrites";
-import type { DispatchMasterType, DispatchOrder, DispatchType } from "../../types";
+import type { DispatchMasterType, DispatchOrder, DispatchType, DocType } from "../../types";
 
 /**
  * Shared form state for New Order and Edit Order.
@@ -16,6 +16,11 @@ import type { DispatchMasterType, DispatchOrder, DispatchType } from "../../type
  * round let a single order bill two different entities.
  */
 export interface SalesOrderFormState {
+  /**
+   * DC-1 · Sales Invoice or Delivery Challan — picked on the first screen of New
+   * Sales Order, before any of the fields below. Fixed once the order is raised.
+   */
+  docType: DocType;
   /**
    * `""` means NOTHING CHOSEN YET — reachable only by opening a CUSTOMER-raised
    * order, where the field is legitimately empty until credit check fills it in
@@ -69,6 +74,7 @@ export interface MasterRaise {
 }
 
 const emptyState = (): SalesOrderFormState => ({
+  docType: "invoice",
   dispatchType: "local",
   companyId: "",
   locationId: "",
@@ -91,8 +97,8 @@ const emptyState = (): SalesOrderFormState => ({
  *   after `store.isLoading` clears (see NewOrder / EditOrder); mounting it any
  *   earlier reads empty master lists and seeds nothing, for ever.
  */
-const seededState = (s: DispatchStoreValue): SalesOrderFormState => {
-  const base = emptyState();
+const seededState = (s: DispatchStoreValue, docType: DocType): SalesOrderFormState => {
+  const base = { ...emptyState(), docType };
   const companies = s.assignedCompanies();
   if (companies.length !== 1) return base;
   const companyId = companies[0]!.id;
@@ -101,6 +107,7 @@ const seededState = (s: DispatchStoreValue): SalesOrderFormState => {
 };
 
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
+  docType: o.docType,
   dispatchType: o.dispatchType ?? "",
   companyId: o.companyId ?? "",
   locationId: o.locationId ?? "",
@@ -117,6 +124,7 @@ const linesFromOrder = (o: DispatchOrder): OrderLineRow[] =>
     itemId: l.itemId,
     quantity: String(l.quantity ?? ""),
     lineRemark: l.lineRemark ?? "",
+    challanRate: l.challanRate === 1 ? "1" : l.challanRate === 0 ? "0" : "",
   }));
 
 /**
@@ -140,6 +148,8 @@ export interface SalesOrderFormOptions {
    *   are allowed.
    */
   companyChoices?: { id: string; name: string }[];
+  /** New mode only: the document chosen on New Sales Order's first screen (DC-1). */
+  docType?: DocType;
 }
 
 export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderFormOptions = {}) {
@@ -147,7 +157,7 @@ export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderForm
   const completing = mode === "complete";
   const s = useDispatchStore();
   const [form, setForm] = useState<SalesOrderFormState>(() =>
-    existing ? stateFromOrder(existing) : seededState(s),
+    existing ? stateFromOrder(existing) : seededState(s, opts.docType ?? "invoice"),
   );
   const [lines, setLines] = useState<OrderLineRow[]>(() =>
     existing ? [...linesFromOrder(existing), makeEmptyLine()] : [makeEmptyLine()],
@@ -323,6 +333,9 @@ export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderForm
       if (!l.itemId) return "Every line needs an item.";
       const q = Number(l.quantity);
       if (!Number.isFinite(q) || q <= 0) return "Every line needs a quantity greater than zero.";
+      if (form.docType === "delivery_challan" && l.challanRate !== "0" && l.challanRate !== "1") {
+        return "Every delivery challan line needs a rate — FOC (₹0) or ₹1.";
+      }
     }
     return null;
   };
@@ -334,6 +347,7 @@ export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderForm
     // with no dispatch type, which the RPC would then refuse with its own wording.
     if (!form.dispatchType) throw new Error("Choose how this order travels — Local or Transport.");
     return {
+    docType: form.docType,
     dispatchType: form.dispatchType,
     companyId: form.companyId,
     locationId: form.locationId || null,
@@ -350,6 +364,7 @@ export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderForm
       itemId: l.itemId,
       quantity: l.quantity,
       lineRemark: l.lineRemark.trim() || null,
+      challanRate: form.docType === "delivery_challan" ? l.challanRate || null : null,
     })),
     };
   };
@@ -386,8 +401,9 @@ export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderForm
      * setCompany would wipe the lines and location being restored.
      */
     restore: (v: SalesOrderDraft) => {
-      setForm({ ...emptyState(), ...(v.form ?? {}) });
-      setLines([...(v.lines ?? []).map((l) => ({ ...l, uid: newUid() })), makeEmptyLine()]);
+      // A draft saved before DC-1 carries no docType — it keeps the one on screen.
+      setForm((cur) => ({ ...emptyState(), ...(v.form ?? {}), docType: v.form?.docType ?? cur.docType }));
+      setLines([...(v.lines ?? []).map((l) => ({ ...l, challanRate: l.challanRate ?? "", uid: newUid() })), makeEmptyLine()]);
       setItemType(v.itemType ?? "");
       setRaise(null);
       setRequested(null);

@@ -445,6 +445,7 @@ const mapLine = (r: any): OrderLine => ({
   quantity: Number(r.quantity ?? 0),
   unit: str(r.unit),
   lineRemark: str(r.line_remark),
+  challanRate: r.challan_rate == null ? null : Number(r.challan_rate),
   dispatchedQty: Number(r.dispatched_qty ?? 0),
   shipQty: num(r.ship_qty),
   billQty: num(r.bill_qty),
@@ -538,6 +539,8 @@ const mapOrder = (r: any): DispatchOrder => ({
   locationId: r.location_id ?? null,
   intakeSource: r.intake_source ?? null,
   intakeCompletedAt: r.intake_completed_at ?? null,
+  // Absent until migration 20270108120000 is applied — every order is then an invoice.
+  docType: r.doc_type === "delivery_challan" ? "delivery_challan" : "invoice",
   customerId: r.customer_id,
   customerLocation: str(r.customer_location),
   customerPoNo: str(r.customer_po_no),

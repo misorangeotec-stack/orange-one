@@ -1,6 +1,7 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
+import Tabs from "@/shared/components/ui/Tabs";
 import { SectionHeading } from "@/shared/components/ui/Readout";
 import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
 import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
@@ -10,6 +11,12 @@ import SalesOrderFields from "../../components/SalesOrderFields";
 import OrderLinesGrid from "../../components/OrderLinesGrid";
 import { useSalesOrderForm, type SalesOrderDraft } from "./useSalesOrderForm";
 import AccessDenied from "../system/AccessDenied";
+import { DOC_TYPE_LABEL } from "../../lib/format";
+import type { DocType } from "../../types";
+
+/** `?type=` in the URL, so a refresh or a shared link lands on the same form. */
+const TYPE_PARAM: Record<string, DocType> = { invoice: "invoice", dc: "delivery_challan" };
+const PARAM_OF: Record<DocType, string> = { invoice: "invoice", delivery_challan: "dc" };
 
 export default function NewOrder() {
   const s = useDispatchStore();
@@ -23,14 +30,56 @@ export default function NewOrder() {
   */
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!s.canRaise) return <AccessDenied />;
-  return <NewOrderForm />;
+  return <NewOrderSteps />;
 }
 
-function NewOrderForm() {
+/**
+ * DC-1 · TWO TABS, the same pattern as Production's Generate Issue Slip:
+ * Sales Invoice | Delivery Challan. The tab decides what happens after Raise — a
+ * delivery challan skips the credit check entirely — so it sits above the form.
+ */
+const TAB_DEFS: { key: DocType; label: string }[] = [
+  { key: "invoice", label: DOC_TYPE_LABEL.invoice },
+  { key: "delivery_challan", label: DOC_TYPE_LABEL.delivery_challan },
+];
+
+function NewOrderSteps() {
+  const s = useDispatchStore();
+  const [params, setParams] = useSearchParams();
+  const docType: DocType = TYPE_PARAM[params.get("type") ?? ""] ?? "invoice";
+  const challan = docType === "delivery_challan";
+
+  return (
+    <div className="space-y-5 max-w-6xl">
+      <div>
+        <h1 className="text-[22px] font-bold text-navy">New Sales Order</h1>
+        <p className="text-[13.5px] text-grey-2 mt-1">
+          {challan
+            ? "A delivery challan (FOC, ₹0 or ₹1 per line) skips the credit check and goes straight to the store for the material-status check."
+            : "Raising an order sends it to the collection team for credit confirmation."}
+          {s.orderNoPreview && <> It will be numbered <span className="font-semibold text-navy">{s.orderNoPreview}</span>.</>}
+        </p>
+      </div>
+
+      <Tabs
+        tabs={TAB_DEFS}
+        active={docType}
+        onChange={(k) => setParams({ type: PARAM_OF[k as DocType] }, { replace: true })}
+      />
+
+      {/* Keyed on the tab: switching rebuilds the form rather than carrying an
+          invoice's half-typed state into a challan. */}
+      <NewOrderForm key={docType} docType={docType} />
+    </div>
+  );
+}
+
+function NewOrderForm({ docType }: { docType: DocType }) {
   const s = useDispatchStore();
   const { user } = useSession();
   const nav = useNavigate();
-  const f = useSalesOrderForm();
+  const f = useSalesOrderForm(undefined, { docType });
+  const challan = f.form.docType === "delivery_challan";
   // Saved drafts sit above the form; Continue loads one into it.
   const drafts = useSavedDrafts<SalesOrderDraft>("order-to-dispatch:order");
 
@@ -43,8 +92,9 @@ function NewOrderForm() {
     }
     const customer = s.customers.find((c) => c.id === v.customerId)?.name;
     return drafts.save({
-      title: `${customer ?? "No customer yet"} · ${n} item${n === 1 ? "" : "s"}`,
+      title: `${challan ? "DC · " : ""}${customer ?? "No customer yet"} · ${n} item${n === 1 ? "" : "s"}`,
       summary: [
+        `Document: ${DOC_TYPE_LABEL[f.form.docType]}`,
         `Customer: ${customer ?? "—"}${v.customerLocation.trim() ? ` · ${v.customerLocation.trim()}` : ""}`,
         ...(v.customerPoNo.trim() ? [`Customer PO: ${v.customerPoNo.trim()}`] : []),
         ...f.filledLines.map((l) => {
@@ -78,15 +128,7 @@ function NewOrderForm() {
   };
 
   return (
-    <div className="space-y-5 max-w-6xl">
-      <div>
-        <h1 className="text-[22px] font-bold text-navy">New Sales Order</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">
-          Raising an order sends it to the collection team for credit confirmation.
-          {s.orderNoPreview && <> It will be numbered <span className="font-semibold text-navy">{s.orderNoPreview}</span>.</>}
-        </p>
-      </div>
-
+    <div className="space-y-5">
       <SavedDraftsPanel api={drafts} onContinue={continueDraft} noun="order" />
 
       <Card className="p-5">
@@ -102,13 +144,14 @@ function NewOrderForm() {
           itemType={f.itemType}
           onMapItem={(typed) => f.setMapping({ search: typed })}
           requested={f.requested?.from === "lines" ? f.requested.text : null}
+          challan={challan}
         />
       </Card>
 
       {f.error && <p className="text-[13px] font-medium text-ryg-red">{f.error}</p>}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={submit} disabled={f.busy}>{f.busy ? "Raising…" : "Raise order"}</Button>
+        <Button onClick={submit} disabled={f.busy}>{f.busy ? "Raising…" : challan ? "Raise delivery challan" : "Raise order"}</Button>
         <SaveDraftButton api={drafts} onSave={saveDraft} disabled={f.busy} />
         <Button variant="ghost" onClick={() => nav(-1)} disabled={f.busy}>Cancel</Button>
       </div>

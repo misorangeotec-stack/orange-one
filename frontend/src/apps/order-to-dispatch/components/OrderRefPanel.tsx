@@ -4,7 +4,9 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
 import StepDocLink from "./StepDocLink";
 import { billedQtyOf, isBilled, roundBillTotal, type RoundView } from "../lib/rounds";
-import { CREDIT_STATUS_LABEL, dispatchTypeText, dmy, qtyTotals, sharedUnit } from "../lib/format";
+import {
+  CREDIT_STATUS_LABEL, DOC_TYPE_LABEL, billNoLabel, challanRatesSummary, dispatchTypeText, dmy, isChallan, qtyTotals, sharedUnit,
+} from "../lib/format";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -67,6 +69,14 @@ export default function OrderRefPanel({
       */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Order no." value={order.orderNo} />
+        {/* DC-1 · the document decides what the billing step records, so every
+            step after intake can see which one this is. */}
+        <Field
+          label="Document"
+          value={isChallan(order)
+            ? `${DOC_TYPE_LABEL.delivery_challan} · ${challanRatesSummary(order)}`
+            : DOC_TYPE_LABEL.invoice}
+        />
         <Field label="Round" value={`#${round.roundNo}`} />
         <Field label="Customer" value={s.customerName(order.customerId)} />
         <Field label="Customer location" value={order.customerLocation ?? "—"} />
@@ -108,7 +118,8 @@ export default function OrderRefPanel({
             under an earlier approval — and showing that here would print a dash
             on every looped consignment that is perfectly well authorised.
         */}
-        {showCredit && (
+        {/* DC-1 · a challan never passes credit — no cell, not a dash. */}
+        {showCredit && !isChallan(order) && (
           <Field
             label="Credit"
             value={
@@ -126,7 +137,7 @@ export default function OrderRefPanel({
         {round.msTempoNo && <Field label="Tempo no." value={round.msTempoNo} />}
         {round.msPorter !== null && <Field label="Porter" value={round.msPorter ? "Yes" : "No"} />}
 
-        {showInvoice && <Field label="Tally invoice no." value={round.sbInvoiceNo ?? "—"} />}
+        {showInvoice && <Field label={billNoLabel(order)} value={round.sbInvoiceNo ?? "—"} />}
         {/* Rides with the invoice, because it was issued for it. Shown wherever
             the invoice is, so the number on the printed slip can be checked
             against the screen without leaving the step. */}
@@ -159,7 +170,7 @@ export default function OrderRefPanel({
       {showInvoice && !readOnly && (round.sbAttachmentPath || round.sbEwayPath) && (
         <div className="flex flex-wrap items-center gap-3">
           {round.sbAttachmentPath && (
-            <StepDocLink path={round.sbAttachmentPath} name={round.sbAttachmentName ?? "Sales invoice"} />
+            <StepDocLink path={round.sbAttachmentPath} name={round.sbAttachmentName ?? (isChallan(order) ? "Delivery challan" : "Sales invoice")} />
           )}
           {round.sbEwayPath && (
             <StepDocLink path={round.sbEwayPath} name={round.sbEwayName ?? "E-way bill"} />
@@ -203,7 +214,8 @@ function RemarksTrail({ order, round }: { order: DispatchOrder; round: RoundView
     { step: "Order", text: order.orderRemarks, who: order.requesterName, at: order.orderDate },
     {
       step: "Credit",
-      text: round.isArchived ? round.ccRemarks : (round.ccRemarks ?? order.ccRemarks),
+      // DC-1 · never present on a challan; nulled so the trail skips it.
+      text: isChallan(order) ? null : round.isArchived ? round.ccRemarks : (round.ccRemarks ?? order.ccRemarks),
       who: s.personName(round.ccBy ?? order.ccBy),
       at: round.ccAt ?? order.ccAt,
     },
@@ -217,7 +229,7 @@ function RemarksTrail({ order, round }: { order: DispatchOrder; round: RoundView
       who: s.personName(round.sbHoldBy),
       at: round.sbHoldAt,
     },
-    { step: "Sales bill", text: round.sbRemarks, who: s.personName(round.sbBy), at: round.sbAt },
+    { step: isChallan(order) ? "Delivery challan" : "Sales bill", text: round.sbRemarks, who: s.personName(round.sbBy), at: round.sbAt },
     { step: "Gate outward", text: round.goRemarks, who: s.personName(round.goBy), at: round.goAt },
     {
       // ⚠ THE ONE ENTRY IN THIS LIST THE CUSTOMER HAS ALREADY READ (OD-16). It is

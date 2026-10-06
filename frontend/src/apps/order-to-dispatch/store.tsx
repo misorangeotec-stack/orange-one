@@ -955,8 +955,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const canEditOrder = (o: DispatchOrder): boolean =>
       canEdit &&
       (o.raisedBy === uid || isAdmin || isProcessCoordinator) &&
-      o.status === "awaiting_credit_check" &&
-      o.ccAt == null &&
+      // DC-1 · a delivery challan never waits on credit, so its window is the
+      // store's: until the stock check is recorded. Mirrors fms_dispatch_update_order.
+      (o.docType === "delivery_challan"
+        ? o.status === "awaiting_material_status" && o.msAt == null
+        : o.status === "awaiting_credit_check" && o.ccAt == null) &&
       o.rounds.length === 0;
 
     /**

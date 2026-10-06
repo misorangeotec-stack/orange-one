@@ -31,7 +31,7 @@ import RequestReturnModal from "../../components/RequestReturnModal";
 import ReturnLines from "../../components/ReturnLines";
 import type { RoundReturn } from "../../types";
 import {
-  CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dispatchTypeText,
+  CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, DOC_TYPE_LABEL, challanRatesSummary, dispatchTypeText, isChallan,
   dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, ROUND_RETURN_ORIGIN_LABEL, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
 
@@ -151,6 +151,7 @@ export default function OrderDetail() {
           <div className="flex items-center gap-2.5">
             <h1 className="text-[22px] font-bold text-navy">{order.orderNo}</h1>
             <StatusPill status={order.status} />
+            {isChallan(order) && <OutcomePill label={DOC_TYPE_LABEL.delivery_challan} tone="blue" />}
             {held && <OutcomePill label="Credit on hold" tone="yellow" />}
             {billHeld && <OutcomePill label="Bill on hold" tone="yellow" />}
             {order.rounds.some((r) => r.dcStatus === "returned") && (
@@ -421,6 +422,12 @@ export default function OrderDetail() {
                       <td className="py-2 pr-3 text-grey text-right tabular-nums whitespace-nowrap">
                         <FitCell fit={itemsFit} col="ordered" cap={null}>
                           {l.quantity} {l.unit ?? ""}
+                          {/* DC-1 · each challan line carries its own rate. */}
+                          {isChallan(order) && (
+                            <span className="ml-1.5 text-[11.5px] font-semibold text-orange">
+                              {(l.challanRate ?? 0) === 0 ? "FOC" : "₹1"}
+                            </span>
+                          )}
                         </FitCell>
                       </td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums">
@@ -485,9 +492,16 @@ export default function OrderDetail() {
             <Field label="Dispatch type" value={dispatchTypeText(order)} />
             <Field label="Order date" value={dmy(order.orderDate)} />
             <Field label="Round" value={`#${order.roundNo}`} />
-            {/* The decision GOVERNING the order — the header, not the round. A
-                partial is meaningless without its figure, so it carries one. */}
             <Field
+              label="Document"
+              value={isChallan(order)
+                ? `${DOC_TYPE_LABEL.delivery_challan} · ${challanRatesSummary(order)}`
+                : DOC_TYPE_LABEL.invoice}
+            />
+            {/* The decision GOVERNING the order — the header, not the round. A
+                partial is meaningless without its figure, so it carries one.
+                DC-1 · a delivery challan never passes credit, so no row at all. */}
+            {!isChallan(order) && <Field
               label="Credit"
               value={
                 order.ccStatus
@@ -496,9 +510,9 @@ export default function OrderDetail() {
                     : CREDIT_STATUS_LABEL[order.ccStatus]
                   : "—"
               }
-            />
+            />}
             {order.orderRemarks && <Field label="Remarks" value={order.orderRemarks} />}
-            {order.sbInvoiceNo && <Field label="Invoice (this round)" value={order.sbInvoiceNo} />}
+            {order.sbInvoiceNo && <Field label={isChallan(order) ? "Delivery challan (this round)" : "Invoice (this round)"} value={order.sbInvoiceNo} />}
             {order.goOutwardNo && <Field label="Gate outward (this round)" value={order.goOutwardNo} />}
           </div>
         </Card>
@@ -519,7 +533,7 @@ export default function OrderDetail() {
                   <th className="py-2 pr-3 font-semibold min-w-[200px]">Shipped</th>
                   <th className="py-2 pr-3 font-semibold">Tempo no.</th>
                   <th className="py-2 pr-3 font-semibold">Porter</th>
-                  <th className="py-2 pr-3 font-semibold">Tally invoice</th>
+                  <th className="py-2 pr-3 font-semibold">{isChallan(order) ? "Delivery challan" : "Tally invoice"}</th>
                   <th className="py-2 pr-3 font-semibold">Gate outward</th>
                   <th className="py-2 pr-3 font-semibold">Outcome</th>
                   <th className="py-2 pr-3 font-semibold">Confirmed</th>
