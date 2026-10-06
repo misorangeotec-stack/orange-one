@@ -584,12 +584,3 @@ export async function announce(input: {
   if (error) throw new Error(error.message);
 }
 
-export async function markNotificationsRead(ids: string[]): Promise<void> {
-  if (!ids.length) return;
-  const { error } = await db
-    .from("fms_production_notifications")
-    .update({ read_at: new Date().toISOString() })
-    .in("id", ids)
-    .is("read_at", null);
-  if (error) throw new Error(error.message);
-}

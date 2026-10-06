@@ -73,6 +73,9 @@ export default function ProductionEntryLayout() {
       onMarkRead={(ids) => {
         void s.markNotificationsRead(ids);
       }}
+      onMarkAllRead={() => {
+        void s.markAllNotificationsRead();
+      }}
     />
   );
 }

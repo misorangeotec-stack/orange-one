@@ -1271,14 +1271,6 @@ export async function announce(input: {
 }
 
 /** Mark the given notifications read (RLS limits the update to the caller's rows). */
-export async function markNotificationsRead(ids: string[]): Promise<void> {
-  if (!ids.length) return;
-  const { error } = await supabase
-    .from("fms_purchase_notifications")
-    .update({ read_at: new Date().toISOString() })
-    .in("id", ids);
-  if (error) throw new Error(error.message);
-}
 
 /* --------------------------- sourcing attachments -------------------------- */
 

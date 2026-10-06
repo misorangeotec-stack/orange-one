@@ -113,7 +113,10 @@ export interface ProductionData {
   masterRequests: ProductionMasterRequest[];
   requests: ProductionRequest[];
   activity: ProductionActivity[];
-  notifications: ProductionNotification[];
+  // ⚠ NO `notifications` (PERF-1, 06-10-2026): the bell is its own small query
+  //   (shared/lib/fmsBell.ts, wired in store.tsx). Here it cost every notification
+  //   ever sent on every load, everyone's for an admin, and all of them again for the
+  //   nightly ranking / KPI / morning-mail jobs, which reuse this download.
   coas: Coa[];
   /** The next Lot/Batch (Issue Slip) number that will be issued (preview, no consume). */
   batchNoPreview: string;
@@ -436,7 +439,7 @@ const mapActivity = (r: any): ProductionActivity => ({
   createdAt: r.created_at,
 });
 
-const mapNotification = (r: any): ProductionNotification => ({
+export const mapNotification = (r: any): ProductionNotification => ({
   id: r.id,
   userId: r.user_id,
   type: r.type,
@@ -466,7 +469,6 @@ const mapNotification = (r: any): ProductionNotification => ({
 export interface ProductionWorkflowSlice {
   requests: ProductionRequest[];
   activity: ProductionActivity[];
-  notifications: ProductionNotification[];
   /** COAs ride the FAST path, not the full read: a certificate is written per
    *  job card, so saving one changes nothing in the twelve master tables. */
   coas: Coa[];
@@ -474,17 +476,15 @@ export interface ProductionWorkflowSlice {
 }
 
 export async function fetchProductionWorkflow(): Promise<ProductionWorkflowSlice> {
-  const [requests, activity, notifications, coas, batchPeek] = await Promise.all([
+  const [requests, activity, coas, batchPeek] = await Promise.all([
     fetchAll("fms_production_requests", "submitted_at"),
     fetchAll("fms_production_activity"),
-    fetchAll("fms_production_notifications"),
     fetchAll("fms_production_coas"),
     db.rpc("fms_production_peek_batch_no"),
   ]);
   return {
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),
-    notifications: notifications.map(mapNotification),
     coas: coas.map(mapCoa),
     batchNoPreview: (batchPeek.data as string) ?? "",
   };
@@ -495,7 +495,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     stepOwners, configRows, designations, categories, rawMaterials, packagingItems, fgItems, units,
     testEquipments, coaParameters, coas,
     boms, bomComponents,
-    masterManagers, masterRequests, requests, activity, notifications,
+    masterManagers, masterRequests, requests, activity,
     // The next Lot/Batch number to be issued (preview — does not consume the
     // counter). In the same Promise.all, not after it: as a sequential call it
     // added a whole round trip to the critical path of every load.
@@ -518,7 +518,6 @@ export async function fetchProductionData(): Promise<ProductionData> {
     fetchAll("fms_production_master_requests"),
     fetchAll("fms_production_requests", "submitted_at"),
     fetchAll("fms_production_activity"),
-    fetchAll("fms_production_notifications"),
     db.rpc("fms_production_peek_batch_no"),
   ]);
 
@@ -548,7 +547,6 @@ export async function fetchProductionData(): Promise<ProductionData> {
     masterRequests: masterRequests.map(mapMasterRequest),
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),
-    notifications: notifications.map(mapNotification),
     batchNoPreview: (batchPeek.data as string) ?? "",
   };
 }

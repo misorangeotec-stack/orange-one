@@ -14,7 +14,9 @@ import {
   PROCUREMENT_MASTERS_QK,
   PROCUREMENT_QK,
   procurementQueryKey,
+  mapNotification,
 } from "./data/procFetch";
+import { refreshFmsBells, useFmsBell } from "@/shared/lib/fmsBell";
 import type {
   Company,
   Category,
@@ -172,7 +174,6 @@ import {
   qcDocumentUrl as qcDocumentUrlWrite,
   type QcLineInput,
   announce as announceWrite,
-  markNotificationsRead as markNotificationsReadWrite,
   type ProcEntity,
   type CategoryInput,
   type ItemGroupInput,
@@ -670,6 +671,8 @@ interface ProcurementStoreValue {
   /** Activity rows for one entity, newest first. */
   activityFor: (entityType: ProcEntityType, entityId: string) => Activity[];
   markNotificationsRead: (ids: string[]) => Promise<void>;
+  /** Every unread notification of this person, not only the 100 the bell holds. */
+  markAllNotificationsRead: () => Promise<void>;
   /** Send a reminder to the given recipients about a waiting entity. */
   nudge: (input: { entityType: ProcEntity; entityId: string; recipients: string[]; label: string }) => Promise<void>;
   /** Escalate a stuck entity to the process coordinators. */
@@ -831,10 +834,18 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const followups = data?.followups ?? [];
   const followupItems = data?.followupItems ?? [];
   const activity = data?.activity ?? [];
-  const notifications = data?.notifications ?? [];
+  // PERF-1: the bell's own small query (newest 100 unread), no longer part of `data`.
+  // Keyed on the EFFECTIVE user, so in Sandbox the bell is the persona's, as before
+  // (an admin's RLS reads any user's rows).
+  const bell = useFmsBell("fms_purchase_notifications", user?.id ?? null, mapNotification, !!session.user);
+  const notifications = bell.notifications;
 
   const value = useMemo<ProcurementStoreValue>(() => {
-    const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
+    const invalidate = () => {
+      // A save can notify someone, the saver included; the bell is its own query now.
+      void refreshFmsBells(queryClient, "fms_purchase_notifications");
+      return queryClient.invalidateQueries({ queryKey: QK });
+    };
 
     // Queue membership + due dates live in lib/queues.ts so the per-step queue
     // pages and the FMS Control Center count the identical work-items.
@@ -2009,10 +2020,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           .filter((a) => a.entityType === entityType && a.entityId === entityId)
           .slice()
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      markNotificationsRead: async (ids) => {
-        await markNotificationsReadWrite(ids);
-        await invalidate();
-      },
+      // Only the bell refreshes: marking a notification read changes nothing else, so
+      // it no longer pulls the module's whole download back down (PERF-1).
+      markNotificationsRead: (ids) => bell.markRead(ids),
+      markAllNotificationsRead: () => bell.markAllRead(),
       nudge: async ({ entityType, entityId, recipients, label }) => {
         await safeAnnounce({
           entityType,

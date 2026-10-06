@@ -360,7 +360,10 @@ export interface DispatchData {
   masterRequests: DispatchMasterRequest[];
   orders: DispatchOrder[];
 
-  notifications: DispatchNotification[];
+  // ⚠ NO `notifications` HERE (PERF-1, 06-10-2026). The bell has its own small query
+  //   (shared/lib/fmsBell.ts, wired in store.tsx). Carried in this download it cost
+  //   every notification ever sent on every load, and the nightly ranking / KPI /
+  //   morning-mail jobs, which reuse this function, pulled all ~30,000 of them too.
   /** The next order number that will be issued (preview — does not consume it). */
   orderNoPreview: string;
 }
@@ -671,7 +674,7 @@ const mapActivity = (r: any): DispatchActivity => ({
   createdAt: r.created_at,
 });
 
-const mapNotification = (r: any): DispatchNotification => ({
+export const mapNotification = (r: any): DispatchNotification => ({
   id: r.id,
   userId: r.user_id,
   type: r.type,
@@ -685,9 +688,8 @@ const mapNotification = (r: any): DispatchNotification => ({
 
 /**
  * ⚠ THE ARGUMENT IS REACT-QUERY'S OWN CONTEXT, so all three call sites can keep
- *   passing `queryFn: fetchDispatchData` untouched. The only thing read from it
- *   is the user id, which `dispatchQueryKey` already puts in the key — see the
- *   notifications read below for why it is worth having.
+ *   passing `queryFn: fetchDispatchData` untouched. It used to supply the user id
+ *   for the bell's rows; the bell now has its own query (PERF-1), so nothing reads it.
  */
 /** The catalogue the order form picks from. Split out of the working set so a
  *  save stops re-downloading it — see fetchDispatchMasters below. */
@@ -925,7 +927,9 @@ export async function fetchCompanyItems(companyId: string): Promise<CompanyItem[
 export async function fetchDispatchData(
   ctx?: { queryKey?: readonly unknown[] },
 ): Promise<DispatchData> {
-  const forUser = typeof ctx?.queryKey?.[1] === "string" ? (ctx.queryKey[1] as string) : null;
+  // `ctx` is React Query's (the user id sits in the key). Nothing here needs it since
+  // the bell left this download, but the signature stays so every caller is unchanged.
+  void ctx;
 
   // 10 names, 10 calls. Keep them in step.
   //
@@ -936,7 +940,6 @@ export async function fetchDispatchData(
     stepOwners, stepAssignees, configRows, designations,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
-    notifications,
   ] = await Promise.all([
     fetchAll("fms_dispatch_step_owners"),
     fetchAll("fms_dispatch_step_assignees", "order_id"),
@@ -948,14 +951,6 @@ export async function fetchDispatchData(
     fetchAll("fms_dispatch_order_items", "created_at", LINE_COLS),
     fetchAll("fms_dispatch_rounds", "archived_at"),
     fetchAll("fms_dispatch_round_items", "created_at", RITEM_COLS),
-    // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
-    //   user_id is not the signed-in user (`mineNotifications`), so fetching the
-    //   whole table only ever cost bandwidth — and it cost the most for an admin,
-    //   whose RLS lets all 5,296 rows through where a normal user sees ~400. Same
-    //   rows reach the UI either way; four fifths of the payload does not.
-    forUser
-      ? fetchWhere("fms_dispatch_notifications", (q: any) => q.eq("user_id", forUser))
-      : fetchAll("fms_dispatch_notifications"),
   ]);
 
 
@@ -1017,7 +1012,6 @@ export async function fetchDispatchData(
     masterRequests: masterRequests.map(mapMasterRequest),
     orders: mappedOrders,
 
-    notifications: notifications.map(mapNotification),
     orderNoPreview: (orderPeek as string) ?? "",
   };
 }
@@ -1072,19 +1066,16 @@ async function fetchOrderChildren(orderIds: string[]) {
   return { orderItems, rounds, roundItems };
 }
 
-export async function fetchDispatchDelta(
-  prev: DispatchData,
-  forUser: string | null,
-): Promise<DispatchData> {
+export async function fetchDispatchDelta(prev: DispatchData): Promise<DispatchData> {
   /*
     ⚠ ONLY THE ORDERS ARE INCREMENTAL. Everything else here is re-read whole, on
       purpose: orders and their children were 2,857 kB of the 2,928 kB a refresh
       cost, and the rest is small enough that delta-ing it would buy noise and
-      cost correctness. Setup rows, master requests and the bell all change on
-      writes of their own, and each of those writes goes through this same path —
+      cost correctness. Setup rows and master requests change on
+      writes of their own (the bell is its own query since PERF-1), and each of those writes goes through this same path —
       so they must come back fresh or a Setup save would appear not to save.
   */
-  const [stepOwners, stepAssignees, configRows, designations, masterManagers, masterRequests, notifications, stamps] =
+  const [stepOwners, stepAssignees, configRows, designations, masterManagers, masterRequests, stamps] =
     await Promise.all([
       fetchAll("fms_dispatch_step_owners"),
       fetchAll("fms_dispatch_step_assignees", "order_id"),
@@ -1092,9 +1083,6 @@ export async function fetchDispatchDelta(
       fetchAll("designations"),
       fetchAll("fms_dispatch_master_managers"),
       fetchAll("fms_dispatch_master_requests"),
-      forUser
-        ? fetchWhere("fms_dispatch_notifications", (q: any) => q.eq("user_id", forUser))
-        : fetchAll("fms_dispatch_notifications"),
       // Every order id this user may see, with its stamp. The cheap part.
       pagedWalk((withCount) =>
         db.from("fms_dispatch_orders")
@@ -1115,7 +1103,6 @@ export async function fetchDispatchDelta(
     },
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),
-    notifications: notifications.map(mapNotification),
   };
 
   const visible = new Map<string, string>();
