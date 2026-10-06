@@ -50,11 +50,26 @@ export function markReadOptimistic(queryClient: QueryClient, ids: string[]): voi
 }
 
 /**
+ * ⚠ A UNIQUE TOPIC PER EFFECT RUN — same reason as useCatalogueVersion.
+ *
+ *   `supabase.channel(topic)` DE-DUPLICATES BY TOPIC and hands back the existing
+ *   instance. Two callers mount this hook (the /home bell via useTaskNotifications
+ *   and TaskStoreProvider), and opening a task from My Control Center mounts the
+ *   store while the home instance's channel is still joined (or still `leaving`,
+ *   awaiting the server ack). The second caller then got that already-subscribed
+ *   channel back and `.on("postgres_changes")` threw "cannot add
+ *   `postgres_changes` callbacks … after `subscribe()`" — crashing the screen
+ *   until a reload. A fresh topic makes the lookup miss, so each mount builds its
+ *   own channel.
+ */
+let channelSeq = 0;
+
+/**
  * Loads my notifications and keeps them live.
  *
  * Shared by the task app's store and the portal home screen — same key, so the
- * two share one cache entry, one fetch and one realtime subscription rather than
- * racing each other. Store-free on purpose: `/home` must be able to call this
+ * two share one cache entry and one fetch rather than racing each other (each caller
+ * holds its own realtime channel — see `channelSeq`). Store-free on purpose: `/home` must be able to call this
  * without mounting TaskStoreProvider.
  */
 export function useMyNotifications(userId: string | null | undefined): MyNotifications {
@@ -74,7 +89,7 @@ export function useMyNotifications(userId: string | null | undefined): MyNotific
   useEffect(() => {
     if (!userId) return;
     const channel = supabase
-      .channel(`notifications:${userId}`)
+      .channel(`notifications:${userId}:${++channelSeq}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
