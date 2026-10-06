@@ -22,8 +22,16 @@ import type { DispatchOrder, RoundReturn, SalesReturnMode } from "../types";
  *   · with `roundReturn` — a return against a FINISHED round's invoice, usually
  *     on a closed order (migration 20261230120000). Paperwork only: saving it
  *     leaves the order exactly as it is.
- * The Tally side is the same job either way, so the same two outcomes and the
- * same rules apply, and the form is shared rather than copied.
+ * The Tally side is the same job either way, so the form is shared rather than
+ * copied.
+ *
+ * ⚠ A RAISED RETURN IS THE "GENERATE SALES RETURN" STEP. The goods have left the
+ *   gate, so the invoice cannot be cancelled outright — the owner makes a sales
+ *   return in Tally, enters its number and attaches it, exactly as Generate Sales
+ *   Bill asks for the invoice, and submitting closes it. So the cancel-or-return
+ *   choice is offered on the cancellation kind only. (A raised return recorded
+ *   before this as "Invoice cancelled" keeps that outcome when corrected — the
+ *   server never changes `sr_mode` on an edit.)
  *
  * ⚠ THE TWO OUTCOMES ARE A HUMAN'S CHOICE, NOT A CALCULATION. There is no
  *   24-hour timer here, no deadline and no suggested answer: whether the bill
@@ -91,22 +99,25 @@ export default function SalesReturnModal({
   const storedDoc = rr ? rr.attachmentPath : order.srAttachmentPath;
   const storedDocName = rr ? rr.attachmentName : order.srAttachmentName;
   const view = rr ? roundViewNo(order, rr.roundNo) : salesReturnRound(order);
-  const needsReturnDetails = mode === "sales_return";
+  // The Generate Sales Return form: no choice, the outcome is always a sales return.
+  const generate = !!rr && !(editing && rr.srMode === "invoice_cancelled");
+  const effectiveMode: SalesReturnMode = generate ? "sales_return" : mode;
+  const needsReturnDetails = effectiveMode === "sales_return";
 
   const save = async () => {
     if (needsReturnDetails && !reference.trim()) {
-      setError("Enter the sales return / credit note number.");
+      setError(generate ? "Enter the Tally sales return no." : "Enter the sales return / credit note number.");
       return;
     }
     if (needsReturnDetails && !file && !storedDoc) {
-      setError("Attach the sales return / credit note.");
+      setError(generate ? "Attach the sales return." : "Attach the sales return / credit note.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
       const payload: Record<string, unknown> = {
-        sr_mode: mode,
+        sr_mode: effectiveMode,
         sr_reference_no: reference.trim(),
         sr_actual_date: actualDate,
         sr_remarks: remarks.trim(),
@@ -202,7 +213,11 @@ export default function SalesReturnModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? "Correct the sales return" : "Record the sales return"}
+      title={
+        generate
+          ? editing ? "Correct the sales return" : "Generate Sales Return"
+          : editing ? "Correct the sales return" : "Record the sales return"
+      }
       subtitle={`${order.orderNo} · invoice ${invoiceNo ?? "—"}`}
       size="lg"
       readOnly={readOnly}
@@ -222,9 +237,11 @@ export default function SalesReturnModal({
               ? "Saving…"
               : editing
                 ? "Save changes"
-                : rr
-                  ? "Record sales return"
-                  : "Record and cancel the order"}
+                : generate
+                  ? "Submit"
+                  : rr
+                    ? "Record sales return"
+                    : "Record and cancel the order"}
           </Button>
         </>
       }
@@ -237,40 +254,52 @@ export default function SalesReturnModal({
           </>
         )}
 
-        {/* A heading DIV, not FieldLabel: a <label> forwards a click on its text to the first
-            pill, so clicking the question silently recorded "Invoice cancelled". */}
-        <div>
-          <FieldHeading label="What was done in Tally" required />
-          <PillToggle<SalesReturnMode>
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "invoice_cancelled", label: SALES_RETURN_MODE_LABEL.invoice_cancelled },
-              { value: "sales_return", label: SALES_RETURN_MODE_LABEL.sales_return },
-            ]}
-          />
-        </div>
-        <p className="text-[12.5px] text-grey-2">
-          {needsReturnDetails
-            ? "The invoice stays on record and a sales return is booked against it. Enter its number and attach the document."
-            : "The invoice itself was cancelled in Tally, so nothing is booked against it."}
-        </p>
+        {generate ? (
+          <p className="text-[12.5px] text-grey-2">
+            Make the sales return against invoice {invoiceNo ?? "—"} in Tally, then enter its number and
+            attach it.
+          </p>
+        ) : (
+          <>
+            {/* A heading DIV, not FieldLabel: a <label> forwards a click on its text to the first
+                pill, so clicking the question silently recorded "Invoice cancelled". */}
+            <div>
+              <FieldHeading label="What was done in Tally" required />
+              <PillToggle<SalesReturnMode>
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: "invoice_cancelled", label: SALES_RETURN_MODE_LABEL.invoice_cancelled },
+                  { value: "sales_return", label: SALES_RETURN_MODE_LABEL.sales_return },
+                ]}
+              />
+            </div>
+            <p className="text-[12.5px] text-grey-2">
+              {needsReturnDetails
+                ? "The invoice stays on record and a sales return is booked against it. Enter its number and attach the document."
+                : "The invoice itself was cancelled in Tally, so nothing is booked against it."}
+            </p>
+          </>
+        )}
 
         <div className="grid gap-3.5 sm:grid-cols-2">
-          <FieldLabel label="Sales return / credit note no." required={needsReturnDetails}>
+          <FieldLabel
+            label={generate ? "Tally sales return no." : "Sales return / credit note no."}
+            required={needsReturnDetails}
+          >
             <TextInput
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               placeholder={needsReturnDetails ? "as generated in Tally" : "optional"}
             />
           </FieldLabel>
-          <FieldLabel label="Date">
+          <FieldLabel label={generate ? "Sales return date" : "Date"}>
             <TextInput type="date" value={actualDate} onChange={(e) => setActualDate(e.target.value)} />
           </FieldLabel>
         </div>
 
         <FieldLabel
-          label="Sales return document"
+          label={generate ? "Sales return" : "Sales return document"}
           required={needsReturnDetails}
           hint={storedDoc ? "A file is already attached — pick another only to replace it." : undefined}
         >
@@ -291,7 +320,7 @@ export default function SalesReturnModal({
         {!editing && (
           <p className="text-[12.5px] text-grey-2">
             {rr
-              ? `This records the Tally entry only — order ${order.orderNo} stays as it is. Whoever raised the return will be told how the invoice was dealt with.`
+              ? `Submitting closes this sales return — order ${order.orderNo} stays as it is. Whoever raised it will be told the sales return number.`
               : `Saving this cancels order ${order.orderNo}. The person who raised it will be told how the invoice was dealt with.`}
           </p>
         )}

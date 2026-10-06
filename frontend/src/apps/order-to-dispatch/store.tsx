@@ -1022,7 +1022,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * server re-checks, and also refuses per invoice — see invoiceReturnState.
      */
     const canRequestRoundReturn = (o: DispatchOrder): boolean =>
-      canEdit && (o.raisedBy === uid || isProcessCoordinator || canActOn("sales_return", o));
+      canEdit &&
+      (o.raisedBy === uid ||
+        isProcessCoordinator ||
+        canActOn("sales_return_request", o) ||
+        canActOn("sales_return", o));
 
     const canWithdrawRoundReturn = (ret: RoundReturn, o: DispatchOrder): boolean =>
       canEdit &&
@@ -1071,7 +1075,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      */
     const myLocationIds: string[] | null = (() => {
       if (isAdmin || isProcessCoordinator) return null;
-      const mine = stepOwners.filter((o) => o.employeeIds.includes(uid));
+      // Raise Sales Return grants raising a return, not a dispatch site: being named
+      // on it for one site must not shrink that person's New Sales Order picker.
+      const mine = stepOwners.filter(
+        (o) => o.employeeIds.includes(uid) && o.stepKey !== "sales_return_request",
+      );
       if (mine.some((o) => o.locationId === null)) return null;
       const ids = [...new Set(mine.map((o) => o.locationId).filter((id): id is string => !!id))];
       return ids.length ? ids : null;

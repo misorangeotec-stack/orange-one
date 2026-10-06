@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
@@ -12,7 +11,6 @@ import {
   CANCELLED_BEFORE_DISPATCH, dmy, ROUND_RETURN_ORIGIN_LABEL, SALES_RETURN_MODE_LABEL,
 } from "../../lib/format";
 import SalesReturnModal from "../../components/SalesReturnModal";
-import RequestReturnModal from "../../components/RequestReturnModal";
 import { returnLinesText } from "../../components/ReturnLines";
 import type { DispatchOrder, RoundReturn, SalesReturnMode } from "../../types";
 
@@ -108,7 +106,6 @@ const fromRoundReturn = (ret: RoundReturn, o: DispatchOrder): Row => ({
 export default function SalesReturnQueue() {
   const s = useDispatchStore();
   const B = "/order-to-dispatch";
-  const [raiseOpen, setRaiseOpen] = useState(false);
 
   const pending: Row[] = [
     ...s.salesReturnPending.map(fromCancellation),
@@ -121,10 +118,6 @@ export default function SalesReturnQueue() {
 
   const stage = useStageMode<Row>(completed, s.userId);
   const acting = useEntryModal<{ row: Row }>();
-
-  // Anyone who could raise one against at least one order sees the button; the
-  // modal then offers only the invoices they may actually use.
-  const canRaise = s.canEdit && s.orders.some((o) => s.canRequestRoundReturn(o));
 
   // Plain inline, not inline-flex (PF-20): a column dragged narrow cuts the round chip first.
   // An inline-flex box that overflows is swallowed whole by the "…".
@@ -257,14 +250,14 @@ export default function SalesReturnQueue() {
     },
     {
       key: "reference",
-      header: "Reference",
+      header: "Sales return no.",
       cell: (r) => <span className="text-grey">{r.referenceNo ?? "—"}</span>,
       sortValue: (r) => r.referenceNo ?? "",
       filter: { kind: "text", get: (r) => r.referenceNo ?? "" },
     },
     {
       key: "at",
-      header: "Recorded",
+      header: "Generated",
       cell: (r) => <span className="text-grey whitespace-nowrap">{formatDateTime(r.atIso)}</span>,
       sortValue: (r) => r.atIso,
     },
@@ -294,16 +287,13 @@ export default function SalesReturnQueue() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-bold text-navy">Sales Return</h1>
+          <h1 className="text-[22px] font-bold text-navy">Generate Sales Return (Tally)</h1>
           <p className="text-[13.5px] text-grey-2 mt-1 max-w-[760px]">
             {stage.showingCompleted
-              ? "Invoices you have already unwound. The entry stays correctable afterwards."
-              : "Sales bills that have to be unwound in Tally: orders cancelled after billing, and invoices that already went out and are coming back. Cancel the bill in Tally, or punch a sales return against it, then record which you did."}
+              ? "Sales returns already generated in Tally. The entry stays correctable afterwards."
+              : "Sales returns raised on the Sales Return page, waiting to be made in Tally. Generate the sales return in Tally, then enter its number and attach it — that closes it. Orders cancelled after billing also land here."}
           </p>
         </div>
-        {canRaise && (
-          <Button onClick={() => setRaiseOpen(true)}>Raise sales return</Button>
-        )}
       </div>
 
       <StageTabs
@@ -345,7 +335,7 @@ export default function SalesReturnQueue() {
           actions={(r) =>
             s.canEdit && s.canActOn("sales_return", r.order) ? (
               <Button size="sm" onClick={() => acting.openEdit({ row: r })}>
-                Record sales return
+                {r.ret ? "Generate sales return" : "Record sales return"}
               </Button>
             ) : (
               <Link
@@ -377,8 +367,6 @@ export default function SalesReturnQueue() {
         editing={!!acting.row && stage.showingCompleted && !acting.isView}
         readOnly={acting.isView}
       />
-
-      <RequestReturnModal open={raiseOpen} onClose={() => setRaiseOpen(false)} />
     </div>
   );
 }

@@ -45,6 +45,12 @@ export const SALES_RETURN_PATH = "sales-return";
  */
 export const NEW_CUSTOMER_ORDERS_PATH = "new-customer-orders";
 
+/** Where a sales return is raised, and its raiser follows it (Actions). */
+export const SALES_RETURN_REQUESTS_PATH = "sales-return";
+
+/** Every sales return, whatever its state — the register beside All Orders. */
+export const ALL_SALES_RETURNS_PATH = "sales-returns";
+
 /**
  * ⚠ MASTER REQUESTS IS TWO DIFFERENT THINGS, and where it sits says which.
  *
@@ -63,6 +69,8 @@ export function buildDispatchNav(opts: {
   canMonitor: boolean;
   hasOrders: boolean;
   canRaise: boolean;
+  /** May raise a sales return against at least one invoice. */
+  canRaiseReturn: boolean;
   /** Requests this person can actually resolve. 0 shows no badge. */
   pendingReviews: number;
   /**
@@ -88,7 +96,12 @@ export function buildDispatchNav(opts: {
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
-    ...(opts.hasOrders ? [{ label: "All Orders", to: `${B}/orders`, icon: ic.list }] : []),
+    ...(opts.hasOrders
+      ? [
+          { label: "All Orders", to: `${B}/orders`, icon: ic.list },
+          { label: "All Sales Returns", to: `${B}/${ALL_SALES_RETURNS_PATH}`, icon: ic.list },
+        ]
+      : []),
     // Raising is shown only to users who may raise (Sales Order step owners, or
     // everyone when no owners are configured).
     ...(opts.canRaise
@@ -97,6 +110,10 @@ export function buildDispatchNav(opts: {
           { label: "My Orders", to: `${B}/my-orders`, icon: ic.mine },
         ]
       : [{ label: "My Orders", to: `${B}/my-orders`, icon: ic.mine, section: "Actions" }]),
+    // Step 1 of the sales-return cycle; step 2 is the Tally queue under Queues.
+    ...(opts.canRaiseReturn
+      ? [{ label: "Sales Return", to: `${B}/${SALES_RETURN_REQUESTS_PATH}`, icon: ic.raise }]
+      : []),
     // A reviewer's copy of this lives under Administration instead — see above.
     ...(opts.canManageMasters
       ? []
@@ -147,7 +164,7 @@ export function buildDispatchNav(opts: {
   // is an invoice that is still live in Tally for an order that no longer exists.
   if (opts.canSeeSalesReturn) {
     nav.push({
-      label: "Sales Return",
+      label: "Generate Sales Return (Tally)",
       to: `${B}/queues/${SALES_RETURN_PATH}`,
       icon: ic.step,
       badge: opts.salesReturnPending || undefined,

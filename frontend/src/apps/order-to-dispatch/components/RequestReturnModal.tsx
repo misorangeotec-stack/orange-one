@@ -233,7 +233,7 @@ export default function RequestReturnModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={busy || !chosen}>
-            {busy ? "Sending…" : "Send to Sales Return"}
+            {busy ? "Sending…" : "Send to Generate Sales Return (Tally)"}
           </Button>
         </>
       }
@@ -447,9 +447,9 @@ export default function RequestReturnModal({
         </FieldLabel>
 
         <p className="text-[12.5px] text-grey-2">
-          The Sales Return owners
+          The Generate Sales Return owners
           {chosen ? ` (${s.ownerNamesFor("sales_return", chosen.order.locationId).join(", ") || "none set — coordinators"})` : ""}{" "}
-          are told to cancel the bill in Tally or punch a sales return against it. The order itself is not
+          are told to make the sales return in Tally, enter its number and attach it. The order itself is not
           changed — a consignment still awaiting confirmation still needs its delivery recorded, and if the
           goods have to go out again, record or correct the round as Returned.
         </p>

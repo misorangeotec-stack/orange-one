@@ -144,7 +144,11 @@ export default function StepOwnersSection() {
     if (names.length) return <span className="text-navy">{names.join(", ")}</span>;
     return (
       <span className="text-grey-2">
-        {step === "sales_order" && locationId === null ? "Anyone with access may raise" : "Unassigned"}
+        {step === "sales_order" && locationId === null
+          ? "Anyone with access may raise"
+          : step === "sales_return_request" && locationId === null
+            ? "Order raiser, coordinators & Tally owners may raise"
+            : "Unassigned"}
       </span>
     );
   };
@@ -270,9 +274,19 @@ export default function StepOwnersSection() {
               driver-confirms-their-own-delivery path went with the Drivers master.
             </p>
           )}
+          {editing?.step === "sales_return_request" && (
+            <p className="text-[12.5px] text-grey-2">
+              Who may raise a sales return against an invoice that has gone out. The request goes
+              straight to Generate Sales Return (Tally). The person who raised the order,
+              coordinators, admins and the Tally owners can always raise one — naming people here
+              adds to them, it does not restrict anyone.
+            </p>
+          )}
           {editing?.step === "sales_return" && (
             <p className="text-[12.5px] text-grey-2">
-              Name someone here. When an order is cancelled after its sales bill has been raised,
+              Name someone here. Every sales return raised in step 7 comes to them: they make it
+              in Tally, enter its number and attach it, and that closes it. Also, when an order is
+              cancelled after its sales bill has been raised,
               this is who is told to cancel the bill in Tally — or punch a sales return against it —
               and the order stays uncancelled until they record which they did. Usually the people
               who generate the sales bill; name accounts instead if they own the reversal. Leave it
