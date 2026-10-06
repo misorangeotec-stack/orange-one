@@ -20,7 +20,10 @@ const db = supabase as unknown as SupabaseClient;
  * until the migration is run, and test rows must not land there anyway. Every deployed
  * build has `DEV` false and reads/writes `org_kras` as normal.
  */
-export const LOCAL_TEST = import.meta.env.DEV;
+// RETIRED 06-10-2026: org_kras is live (20270107120000), and task KRA fields now go to
+// live too (kraTasks.ts), so a browser-only KRA on localhost would fail the tasks.kra_id
+// foreign key. Localhost reads and writes org_kras like every other master.
+export const LOCAL_TEST = false as boolean;
 const LOCAL_KEY = "org-kras:local-test:v1";
 
 export const KRAS_QUERY_KEY = ["org-kras"] as const;
