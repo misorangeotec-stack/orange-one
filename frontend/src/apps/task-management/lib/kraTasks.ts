@@ -21,22 +21,16 @@ import { supabase } from "@/core/platform/supabase";
 import type { Task } from "../types";
 
 /**
- * LOCAL TEST MODE — on localhost (`npm run dev`) the KRA link and the rating are kept in
- * this browser, keyed by task id. The local app talks to the LIVE database, where the
- * tasks table has no KRA columns until the migration runs. The task itself is still a real
- * task on live; only its KRA fields stay local. Mirrors kras.ts (the KRAs themselves).
+ * LOCAL TEST MODE: RETIRED 06-10-2026. It kept a task's KRA fields in the browser while
+ * the live tasks table had no KRA columns. 20270107130000 is applied to live now, so on
+ * localhost too the columns are the truth; a local copy would only disagree with them.
+ * The helpers below stay as no-ops so their callers need no edit.
  */
-export const KRA_TASKS_LOCAL = import.meta.env.DEV;
+export const KRA_TASKS_LOCAL = false as boolean;
 const LOCAL_KEY = "kra-tasks:local-test:v1";
 
-export interface KraTaskFields {
-  kraId: string | null;
-  kraWeight: number | null;
-  kraCompletionWeight: number | null;
-  reviewRating: number | null;
-  reviewedBy: string | null;
-  reviewedAt: string | null;
-}
+import { kraFieldsFromRow as kraFieldsFromColumns, type KraTaskFields } from "./kraColumns";
+export type { KraTaskFields };
 
 const NONE: KraTaskFields = { kraId: null, kraWeight: null, kraCompletionWeight: null, reviewRating: null, reviewedBy: null, reviewedAt: null };
 
@@ -50,19 +44,8 @@ const readLocal = (): Record<string, KraTaskFields> => {
 };
 const writeLocal = (m: Record<string, KraTaskFields>) => localStorage.setItem(LOCAL_KEY, JSON.stringify(m));
 
-/** The KRA fields of a raw `tasks` row — from its columns, or the local store in test mode. */
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export function kraFieldsFromRow(r: any): KraTaskFields {
-  if (KRA_TASKS_LOCAL) return { ...NONE, ...readLocal()[r.id] };
-  return {
-    kraId: r.kra_id ?? null,
-    kraWeight: r.kra_weight == null ? null : Number(r.kra_weight),
-    kraCompletionWeight: r.kra_completion_weight == null ? null : Number(r.kra_completion_weight),
-    reviewRating: r.review_rating ?? null,
-    reviewedBy: r.reviewed_by ?? null,
-    reviewedAt: r.reviewed_at ?? null,
-  };
-}
+/** The KRA fields of a raw `tasks` row (kraColumns.ts; kept here for existing callers). */
+export const kraFieldsFromRow = kraFieldsFromColumns;
 
 /** Columns to add to the task insert. The trigger snapshots both weights itself. */
 export const kraInsertColumns = (kraId: string | null | undefined): Record<string, unknown> =>

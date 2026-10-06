@@ -1,5 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
-import { kraFieldsFromRow } from "../lib/kraTasks";
+import { kraFieldsFromRow } from "../lib/kraColumns";
 import type {
   ActivityType,
   Location,
