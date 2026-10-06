@@ -10,9 +10,11 @@ import {
   fetchProductionData,
   fetchProductionWorkflow,
   productionQueryKey,
+  mapNotification,
   type CoaOutputFormat,
   type ProductionData,
 } from "./data/productionFetch";
+import { refreshFmsBells, useFmsBell } from "@/shared/lib/fmsBell";
 import {
   announce as announceWrite,
   cancelRequest as cancelRequestWrite,
@@ -20,7 +22,6 @@ import {
   holdRequest as holdRequestWrite,
   importBoms as importBomsWrite,
   insertMaster as insertMasterWrite,
-  markNotificationsRead as markNotificationsReadWrite,
   markReadyToDispatch as markReadyToDispatchWrite,
   qualityDocumentUrl as qualityDocumentUrlWrite,
   recordFgTransferBulk as recordFgTransferBulkWrite,
@@ -242,6 +243,8 @@ interface ProductionStoreValue {
   notifications: ProductionNotification[];
   unreadCount: number;
   markNotificationsRead: (ids: string[]) => Promise<void>;
+  /** Every unread notification of this person, not only the 100 the bell holds. */
+  markAllNotificationsRead: () => Promise<void>;
 
   // workflow writes
   submitRequest: (input: RequestInput) => Promise<string>;
@@ -317,7 +320,9 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const requests = allRows.filter((r) => r.status !== "draft");
   const drafts = allRows.filter((r) => r.status === "draft");
   const activity = data?.activity ?? [];
-  const notifications = data?.notifications ?? [];
+  // PERF-1: the bell's own small query (newest 100 unread), no longer part of `data`.
+  const bell = useFmsBell("fms_production_notifications", userId, mapNotification);
+  const notifications = bell.notifications;
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const batchSeqStart = data?.config.batchSeqStart ?? 1;
@@ -328,11 +333,15 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     const uid = userId ?? "";
     /** Full re-read — for anything that can move a MASTER (items, BOMs, owners,
      *  config, master requests). Fifteen tables plus the lot-number peek. */
-    const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
+    const invalidate = () => {
+      // A save can notify someone, the saver included; the bell is its own query now.
+      void refreshFmsBells(queryClient, "fms_production_notifications");
+      return queryClient.invalidateQueries({ queryKey: QK });
+    };
 
     /**
      * Re-read ONLY what a workflow write can have changed — the cards, the
-     * activity trail, the notifications, the next lot number.
+     * activity trail, the next lot number (and the bell, which is its own query).
      *
      * Every save awaits its refresh before the modal closes, which is right: the
      * queue behind it must already show the new state, or the person clicks the
@@ -353,6 +362,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       }
       const slice = await fetchProductionWorkflow();
       queryClient.setQueryData<ProductionData>(key, { ...prev, ...slice });
+      void refreshFmsBells(queryClient, "fms_production_notifications");
     };
 
     const stepOwnerFor = (stepKey: StepKey) => stepOwners.find((o) => o.stepKey === stepKey);
@@ -679,10 +689,10 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       activityFor: (entityType, entityId) => activityByEntity.get(`${entityType}:${entityId}`) ?? [],
       notifications: mine,
       unreadCount: mine.filter((n) => !n.readAt).length,
-      markNotificationsRead: async (ids) => {
-        await markNotificationsReadWrite(ids);
-        await refreshWorkflow();
-      },
+      // Only the bell refreshes: marking a notification read changes no card, so it
+      // no longer re-reads the workflow slice (PERF-1).
+      markNotificationsRead: (ids) => bell.markRead(ids),
+      markAllNotificationsRead: () => bell.markAllRead(),
 
       /* ------------------------------ workflow ------------------------------ */
       // These write CARDS, never masters — so they refresh the workflow slice

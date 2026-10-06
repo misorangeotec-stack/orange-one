@@ -131,6 +131,9 @@ export default function OrderToDispatchLayout() {
       role={role}
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
+      onMarkAllRead={() => {
+        void s.markAllNotificationsRead();
+      }}
       onMarkRead={(ids) => {
         void s.markNotificationsRead(ids);
       }}

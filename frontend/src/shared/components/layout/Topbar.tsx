@@ -11,6 +11,7 @@ export default function Topbar({
   user,
   notifications,
   onMarkRead,
+  onMarkAllRead,
   roleSwitcher,
   onMenu,
 }: {
@@ -23,6 +24,7 @@ export default function Topbar({
   user: ShellUser;
   notifications: NotificationItem[];
   onMarkRead?: (ids: string[]) => void;
+  onMarkAllRead?: () => void;
   roleSwitcher?: ReactNode;
   onMenu: () => void;
 }) {
@@ -47,7 +49,7 @@ export default function Topbar({
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <ViewOnlyBadge />
           {roleSwitcher}
-          <NotificationsBell items={notifications} onMarkRead={onMarkRead} />
+          <NotificationsBell items={notifications} onMarkRead={onMarkRead} onMarkAllRead={onMarkAllRead} />
           <UserMenu user={user} />
         </div>
       </div>

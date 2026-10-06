@@ -18,8 +18,9 @@ import {
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import {
   DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
-  fetchOrderActivity, orderActivityQueryKey, fetchDispatchDelta, type DispatchData,
+  fetchOrderActivity, orderActivityQueryKey, fetchDispatchDelta, mapNotification, type DispatchData,
 } from "./data/dispatchFetch";
+import { refreshFmsBells, useFmsBell } from "@/shared/lib/fmsBell";
 import {
   announce as announceWrite,
   amendRound as amendRoundWrite,
@@ -31,7 +32,6 @@ import {
   insertMasters as insertMastersWrite,
   mapCustomerItems as mapCustomerItemsWrite,
   mapPartyCompanies as mapPartyCompaniesWrite,
-  markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
   recordStep as recordStepWrite,
@@ -512,6 +512,8 @@ export interface DispatchStoreValue {
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
   markNotificationsRead: (ids: string[]) => Promise<void>;
+  /** Every unread notification of this person, not only the 100 the bell holds. */
+  markAllNotificationsRead: () => Promise<void>;
 }
 
 const Ctx = createContext<DispatchStoreValue | null>(null);
@@ -605,7 +607,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
-  const notifications = data?.notifications ?? [];
+  // PERF-1: the bell's own small query (newest 100 unread), no longer part of `data`.
+  const bell = useFmsBell("fms_dispatch_notifications", userId, mapNotification);
+  const notifications = bell.notifications;
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
@@ -674,6 +678,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       //   table is a few rows; re-reading it is cheaper than guessing which writes
       //   could have touched it.
       void queryClient.invalidateQueries({ queryKey: ROUND_RETURNS_QK }).catch(() => {});
+      // A save can notify someone, the saver included; the bell is its own query now.
+      void refreshFmsBells(queryClient, "fms_dispatch_notifications");
     };
 
     /**
@@ -701,7 +707,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        const next = await fetchDispatchDelta(prev, userId);
+        const next = await fetchDispatchDelta(prev);
         if (next !== prev) queryClient.setQueryData(key, next);
       } catch {
         await queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
@@ -1716,10 +1722,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         // until the 30-minute timer came round.
         invalidateAll();
       },
-      markNotificationsRead: async (ids) => {
-        await markNotificationsReadWrite(ids);
-        invalidate();
-      },
+      // Only the bell refreshes: marking a notification read changes nothing else, so
+      // it no longer pulls the module's working set back down (PERF-1).
+      markNotificationsRead: (ids) => bell.markRead(ids),
+      markAllNotificationsRead: () => bell.markAllRead(),
     };
   }, [
     userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,

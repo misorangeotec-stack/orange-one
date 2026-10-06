@@ -422,7 +422,10 @@ export interface ProcurementData {
   /** Per-line quantities of each partial-dispatch lot. */
   followupItems: FollowupItem[];
   activity: Activity[];
-  notifications: ProcNotification[];
+  // ⚠ NO `notifications` (PERF-1, 06-10-2026): the bell is its own small query
+  //   (shared/lib/fmsBell.ts, wired in store.tsx). Here it cost every notification
+  //   ever sent on every load, everyone's for an admin, and all of them again for the
+  //   nightly ranking / KPI / morning-mail jobs, which reuse this download.
 }
 
 const mapCategory = (r: any): Category => ({
@@ -793,7 +796,7 @@ const mapActivity = (r: any): Activity => ({
   createdAt: r.created_at,
 });
 
-const mapNotification = (r: any): ProcNotification => ({
+export const mapNotification = (r: any): ProcNotification => ({
   id: r.id,
   userId: r.user_id,
   type: r.type,
@@ -837,7 +840,6 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     payments,
     followups,
     activity,
-    notifications,
     sourcingDocs,
     requestDocs,
     followupItems,
@@ -869,7 +871,6 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     fetchAll("fms_purchase_payments"),
     fetchAll("fms_purchase_followups"),
     fetchAll("fms_purchase_activity"),
-    fetchAll("fms_purchase_notifications"),
     fetchAllOptional("fms_purchase_sourcing_docs"),
     // Optional for the same reason: migration 20261217140000 may not be applied yet.
     fetchAllOptional("fms_purchase_request_docs"),
@@ -960,6 +961,5 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
       qty: Number(r.qty),
     })),
     activity: activity.map(mapActivity),
-    notifications: notifications.map(mapNotification),
   };
 }

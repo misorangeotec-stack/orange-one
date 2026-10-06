@@ -36,6 +36,7 @@ export default function ProcurementLayout() {
     myNotifications,
     profileById,
     markNotificationsRead,
+    markAllNotificationsRead,
   } = store;
   const orgPersonById = useOrgPersonById();
 
@@ -121,6 +122,7 @@ export default function ProcurementLayout() {
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
       onMarkRead={(ids) => { void markNotificationsRead(ids); }}
+      onMarkAllRead={() => { void markAllNotificationsRead(); }}
       roleSwitcher={demoActive ? <PersonaSwitcher personas={personas} /> : undefined}
       banner={demoActive ? <DemoBanner /> : undefined}
     />
