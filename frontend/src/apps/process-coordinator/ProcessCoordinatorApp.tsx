@@ -6,6 +6,7 @@ import { processCoordinatorNav } from "./nav";
 import { fetchPcMasterRequests } from "./data/pcApprovals";
 import Approvals, { PC_REQUESTS_QK } from "./pages/Approvals";
 import Processes from "./pages/Processes";
+import CallList from "./pages/CallList";
 
 /**
  * Wires the portal session into the shared AppShell, as every app does.
@@ -44,17 +45,19 @@ function ProcessCoordinatorLayout() {
  * `profiles`, so they cannot afford to trust the route that called them. Same
  * reasoning as master_report_snapshot().
  *
- * Lands on Approvals, because "what is waiting on me" is why the coordinator
- * opened the module.
+ * Lands on the Call List, because ringing the people in the due buckets is the
+ * coordinator's daily job; Approvals keeps its badge in the menu, so a waiting
+ * master request is still one glance away.
  */
 export default function ProcessCoordinatorApp() {
   return (
     <Routes>
       <Route element={<ProcessCoordinatorLayout />}>
-        <Route index element={<Navigate to="/process-coordinator/approvals" replace />} />
+        <Route index element={<Navigate to="/process-coordinator/people" replace />} />
+        <Route path="people" element={<CallList />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="processes" element={<Processes />} />
-        <Route path="*" element={<Navigate to="/process-coordinator/approvals" replace />} />
+        <Route path="*" element={<Navigate to="/process-coordinator/people" replace />} />
       </Route>
     </Routes>
   );

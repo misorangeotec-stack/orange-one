@@ -3,6 +3,11 @@ import type { NavItem } from "@/shared/components/layout/types";
 const B = "/process-coordinator";
 
 const ic = {
+  callList: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />
+    </svg>
+  ),
   approvals: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
@@ -26,18 +31,19 @@ const ic = {
 };
 
 /**
- * Two items, and that is the whole module.
+ * Three items, and that is the whole module. Call List comes first: ringing the
+ * people sitting in the due buckets is the coordinator's daily job.
  *
  * `pendingApprovals` drives the badge — the count of master requests still
  * waiting, across every module. It is the one number the coordinator needs
  * before choosing which screen to open, which is exactly what a badge is for.
  */
 export const processCoordinatorNav = (opts: { pendingApprovals: number }): NavItem[] => [
+  { label: "Pending & Due", to: `${B}/people`, icon: ic.callList, section: "Process Coordinator" },
   {
     label: "Approvals",
     to: `${B}/approvals`,
     icon: ic.approvals,
-    section: "Process Coordinator",
     badge: opts.pendingApprovals || undefined,
   },
   { label: "Processes", to: `${B}/processes`, icon: ic.processes },
