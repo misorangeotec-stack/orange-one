@@ -221,10 +221,13 @@ export function inPlantScope(t: FlowTest, month: string, carry: boolean): boolea
 export function joinTests(lots: InkLot[], flow: FlowData | undefined): FlowTest[] {
   const out: FlowTest[] = [];
   for (const lot of lots) {
+    // The flow is Enterprises Surat's: another company's lot never borrows its records, even with
+    // the same item and lot name, and keeps a key of its own (Closing stock page).
+    const other = !!lot.companyGuid && lot.companyGuid !== SURAT_GUID;
     lot.tests.forEach((due, i) => {
       const no = (i + 1) as 1 | 2 | 3;
-      const key = testKey(lot.item, lot.lot, no);
-      const record = flow?.tests.get(key) ?? null;
+      const key = other ? `${lot.companyGuid} ${testKey(lot.item, lot.lot, no)}` : testKey(lot.item, lot.lot, no);
+      const record = other ? null : flow?.tests.get(key) ?? null;
       out.push({ key, lot, no, due, month: due.slice(0, 7), record, status: record?.status ?? "pending" });
     });
   }

@@ -16,6 +16,7 @@ import {
 } from "../lib/schedule";
 import { inPlantScope, joinTests, useFlow, useInkLots } from "../lib/flow";
 import { SURAT_GUID } from "../lib/constants";
+import { STOCK_COMPANIES, useClosingStock } from "../lib/closingStock";
 import PendingByCategory, { categoriesIn, categoryLabel } from "../components/PendingByCategory";
 import UncategorisedTable, { useUncategorised } from "../components/UncategorisedItems";
 import LabTestView, { LAB_NAME } from "../components/LabTestView";
@@ -33,6 +34,11 @@ import { colourFromDescription } from "../../bushra-central-master/lib/itemColou
  *
  * A and B always describe ALL lots; the search and category filters belong to C only,
  * so the numbers at the top never shift under the reader while they filter the list.
+ *
+ * mode="stock" is the CLOSING STOCK page (07-10-2026): the same page, but its lots are the ink
+ * Enterprises Surat AND Otec Surat hold in Tally today (lib/closingStock.ts), tests counted from
+ * each lot's production or purchase date, plus a Company filter. Otec Surat lots are not in the
+ * retest flow, so their tests always read Pending.
  */
 
 const APP = appName("ink-stabilisation");
@@ -78,10 +84,15 @@ function TestCell({ date, isNext, today }: { date: string; isNext: boolean; toda
   );
 }
 
-export default function RetestSchedule() {
+export default function RetestSchedule({ mode = "production" }: { mode?: "production" | "stock" }) {
+  const stock = mode === "stock";
   const today = todayLocalIso();
   const thisMonth = today.slice(0, 7);
-  const q = useInkLots();
+  const prodQ = useInkLots(!stock);
+  const cs = useClosingStock(stock);
+  const q = stock ? cs.q : prodQ;
+  const rawLots = stock ? cs.q.data?.lots : prodQ.data;
+  const [done, totalReq] = cs.progress;
   const flow = useFlow().data;
   const navigate = useNavigate();
   const registerRef = useRef<HTMLDivElement>(null);
@@ -100,8 +111,10 @@ export default function RetestSchedule() {
   const [fCats, setFCats] = useState<string[]>([]);
   const [fGroups, setFGroups] = useState<string[]>([]);
   const [fColours, setFColours] = useState<string[]>([]);
-  const anyFilter = !!fMonth || fCats.length > 0 || fGroups.length > 0 || fColours.length > 0;
-  const clearAll = () => { setFMonth(null); setFCats([]); setFGroups([]); setFColours([]); };
+  /** Company guids — Closing stock page only. */
+  const [fCos, setFCos] = useState<string[]>([]);
+  const anyFilter = !!fMonth || fCats.length > 0 || fGroups.length > 0 || fColours.length > 0 || fCos.length > 0;
+  const clearAll = () => { setFMonth(null); setFCats([]); setFGroups([]); setFColours([]); setFCos([]); };
   const [showUncat, setShowUncat] = useState(false);
 
   const openRegister = (v: View, m?: string) => {
@@ -112,12 +125,12 @@ export default function RetestSchedule() {
   const openPlant = (cat: string, test: 1 | 2 | 3 | "all") =>
     navigate(`${B}/plant?cat=${encodeURIComponent(cat)}&test=${test}`);
 
-  const lots: LotRow[] = useMemo(() => (q.data ?? []).map((L) => {
+  const lots: LotRow[] = useMemo(() => (rawLots ?? []).map((L) => {
     const next = nextTest(L, today);
     return { ...L, next, days: next ? daysBetween(today, next.date) : null };
   }).sort((a, b) =>
     (a.next?.date ?? "9999").localeCompare(b.next?.date ?? "9999") || a.prod.localeCompare(b.prod) ||
-    a.item.localeCompare(b.item) || a.lot.localeCompare(b.lot)), [q.data, today]);
+    a.item.localeCompare(b.item) || a.lot.localeCompare(b.lot)), [rawLots, today]);
 
   /* ---------------- the page-wide filters ---------------- */
   const colourOf = useMemo(() => {
@@ -128,9 +141,10 @@ export default function RetestSchedule() {
   const groupOf = (l: InkLot) => l.categoryGroup ?? "(Not set)";
 
   const lotsF = useMemo(() => lots.filter((l) =>
+    (!fCos.length || fCos.includes(l.companyGuid ?? SURAT_GUID)) &&
     (!fCats.length || fCats.includes(l.category)) &&
     (!fGroups.length || fGroups.includes(groupOf(l))) &&
-    (!fColours.length || fColours.includes(colourOf.get(l.item)!))), [lots, fCats, fGroups, fColours, colourOf]);
+    (!fColours.length || fColours.includes(colourOf.get(l.item)!))), [lots, fCos, fCats, fGroups, fColours, colourOf]);
 
   const filterOpts = useMemo(() => {
     const uniq = (xs: string[]) => [...new Set(xs)].sort((a, b) => a.localeCompare(b));
@@ -138,6 +152,7 @@ export default function RetestSchedule() {
       cats: categoriesIn(joinTests(lots, undefined)).map((c) => ({ value: c, label: categoryLabel(c) })),
       groups: uniq(lots.map(groupOf)).map((g) => ({ value: g, label: categoryLabel(g) })),
       colours: uniq([...colourOf.values()]).map((c) => ({ value: c, label: c, icon: <ColourDot colour={c} className="h-3 w-3" /> })),
+      companies: STOCK_COMPANIES.map((c) => ({ value: c.guid, label: `${c.name} (${lots.filter((l) => l.companyGuid === c.guid).length})` })),
     };
   }, [lots, colourOf]);
 
@@ -168,12 +183,17 @@ export default function RetestSchedule() {
   const uncategorised = useUncategorised(lotsF);
   const uncatLots = uncategorised.reduce((s, i) => s + i.lots, 0);
   const withExpiry = lotsF.filter((l) => l.expiry).length;
+  const coOk = (guid: string | undefined) => !fCos.length || fCos.includes(guid ?? "");
+  const undated = (cs.q.data?.undated ?? []).filter((l) => coOk(l.companyGuid));
+  const nameToGuid = Object.fromEntries(STOCK_COMPANIES.map((c) => [c.name, c.guid]));
+  const noLot = (cs.q.data?.noLot ?? []).filter((n) => coOk(nameToGuid[n.company]));
+  const stockQty = lotsF.reduce((s, l) => s + l.qty, 0);
   const allPassed = lotsF.filter((l) => !l.next).length;
 
   /* ---------------- C: the register, filtered ---------------- */
   const base = useMemo(() => lotsF.filter((l) =>
     (!fMonth || l.tests.some((d) => d.slice(0, 7) === fMonth)) &&
-    matchesSearch(search, `${l.item} ${l.lot} ${l.family} ${l.category} ${l.vouchers.join(" ")}`)), [lotsF, fMonth, search]);
+    matchesSearch(search, `${l.item} ${l.lot} ${l.family} ${l.category} ${l.company ?? ""} ${l.godown ?? ""} ${l.vouchers.join(" ")}`)), [lotsF, fMonth, search]);
 
   const stageOf = (l: LotRow): Exclude<Stage, "all" | "soon"> =>
     l.next ? (`t${l.next.no}` as "t1" | "t2" | "t3") : "complete";
@@ -198,15 +218,16 @@ export default function RetestSchedule() {
 
   const calMonths = useMemo(() => [...new Set([...perMonth.keys(), ...months])].sort(), [perMonth, months]);
 
-  const lotPg = usePagination(lotRows, { pageSize: 25, resetKey: `${stage}|${search}|${`${fCats.join()}|${fGroups.join()}|${fColours.join()}|${fMonth}`}` });
-  const calPg = usePagination(calRows, { pageSize: 25, resetKey: `${month}|${search}|${`${fCats.join()}|${fGroups.join()}|${fColours.join()}|${fMonth}`}` });
+  const lotPg = usePagination(lotRows, { pageSize: 25, resetKey: `${stage}|${search}|${`${fCos.join()}|${fCats.join()}|${fGroups.join()}|${fColours.join()}|${fMonth}`}` });
+  const calPg = usePagination(calRows, { pageSize: 25, resetKey: `${month}|${search}|${`${fCos.join()}|${fCats.join()}|${fGroups.join()}|${fColours.join()}|${fMonth}`}` });
 
   const exportLots = () => exportRowsToXlsx({
-    fileName: "Ink_Stabilisation_Surat",
-    sheetName: "Retest schedule",
-    title: `${APP} — Enterprises Surat retest schedule`,
+    fileName: stock ? "Ink_Stabilisation_Closing_Stock" : "Ink_Stabilisation_Surat",
+    sheetName: stock ? "Closing stock" : "Retest schedule",
+    title: stock ? `${APP} — closing stock retest schedule (Enterprises Surat + Otec Surat), ${fmtDate(today)}` : `${APP} — Enterprises Surat retest schedule`,
     rows: lotRows,
     filters: [
+      fCos.length ? `Company: ${STOCK_COMPANIES.filter((c) => fCos.includes(c.guid)).map((c) => c.name).join(", ")}` : "",
       stage !== "all" ? `Stage: ${stage}` : "",
       fMonth ? `Month: ${fmtMonth(fMonth)}` : "",
       fCats.length ? `Category: ${fCats.map(categoryLabel).join(", ")}` : "",
@@ -214,30 +235,37 @@ export default function RetestSchedule() {
       fColours.length ? `Colour: ${fColours.join(", ")}` : "",
       search ? `Search: ${search}` : "",
     ].filter(Boolean),
-    notes: [
+    notes: stock ? [
+      "Source: ConnectWave (Tally sync) — ink lots in stock today at Enterprises Surat and Otec Surat, tied to Tally's closing qty per item (Lab godown included).",
+      "Tests fall at + 3, + 6 and + 9 months from the lot's production date (in either company), else its purchase date. Category = Ink type from Bushra Central Master. Expiry blank = not entered in Tally.",
+    ] : [
       "Source: ConnectWave (Tally sync) — Enterprises Surat, STOCK JOURNAL-PRODUCTION inward finished-ink lines.",
       "Category = Ink type from Bushra Central Master. Tests fall at production + 3, + 6 and + 9 months. Expiry blank = not entered in Tally.",
     ],
     columns: [
+      ...(stock ? [{ header: "Company", width: 18, value: (l: LotRow) => l.company ?? "" }] : []),
       { header: "Category", width: 22, value: (l) => categoryLabel(l.category) },
       { header: "Stock item", width: 38, value: (l) => l.item },
       { header: "Lot no.", width: 18, value: (l) => l.lot },
-      { header: "Production date", width: 14, value: (l) => fmtDate(l.prod) },
+      { header: stock ? "Prod. / purchase date" : "Production date", width: 14, value: (l) => fmtDate(l.prod) },
+      ...(stock ? [{ header: "Dated by", width: 24, value: (l: LotRow) => l.dateFrom ?? "" }] : []),
       { header: "Mfg date (Tally)", width: 14, value: (l) => (l.mfd ? fmtDate(l.mfd) : "") },
       { header: "Expiry date (Tally)", width: 14, value: (l) => (l.expiry ? fmtDate(l.expiry) : "") },
-      { header: "Qty produced", width: 12, value: (l) => l.qty },
+      { header: stock ? "Qty in stock" : "Qty produced", width: 12, value: (l) => l.qty },
       { header: "Unit", width: 6, value: (l) => l.uom ?? "" },
       ...[0, 1, 2].map((i) => ({ header: `Test ${i + 1} (+${TEST_MONTHS[i]} m)`, width: 14, value: (l: LotRow) => fmtDate(l.tests[i]) })),
       { header: "Next test", width: 9, value: (l) => (l.next ? `Test ${l.next.no}` : "All passed") },
       { header: "Next test date", width: 14, value: (l) => (l.next ? fmtDate(l.next.date) : "") },
       { header: "Days to next test", width: 10, value: (l) => l.days ?? "" },
       { header: "Tally stock group", width: 26, value: (l) => l.family },
-      { header: "Production voucher(s)", width: 20, value: (l) => l.vouchers.join(", ") },
+      ...(stock
+        ? [{ header: "Last godown", width: 18, value: (l: LotRow) => l.godown ?? "" }]
+        : [{ header: "Production voucher(s)", width: 20, value: (l: LotRow) => l.vouchers.join(", ") }]),
     ],
   });
 
   const exportCalendar = () => exportRowsToXlsx({
-    fileName: `Ink_Stabilisation_Tests_${month}`,
+    fileName: `Ink_Stabilisation_${stock ? "Closing_Stock_" : ""}Tests_${month}`,
     sheetName: fmtMonth(month),
     title: `${APP} — tests due in ${fmtMonth(month)}`,
     rows: calRows,
@@ -245,12 +273,13 @@ export default function RetestSchedule() {
     columns: [
       { header: "Test date", width: 13, value: (t) => fmtDate(t.date) },
       { header: "Test", width: 8, value: (t) => `Test ${t.no}` },
+      ...(stock ? [{ header: "Company", width: 18, value: (t: TestRow) => t.lot.company ?? "" }] : []),
       { header: "Category", width: 22, value: (t) => categoryLabel(t.lot.category) },
       { header: "Stock item", width: 38, value: (t) => t.lot.item },
       { header: "Lot no.", width: 18, value: (t) => t.lot.lot },
-      { header: "Production date", width: 14, value: (t) => fmtDate(t.lot.prod) },
+      { header: stock ? "Prod. / purchase date" : "Production date", width: 14, value: (t) => fmtDate(t.lot.prod) },
       { header: "Expiry date (Tally)", width: 14, value: (t) => (t.lot.expiry ? fmtDate(t.lot.expiry) : "") },
-      { header: "Qty produced", width: 12, value: (t) => t.lot.qty },
+      { header: stock ? "Qty in stock" : "Qty produced", width: 12, value: (t) => t.lot.qty },
     ],
   });
 
@@ -268,19 +297,30 @@ export default function RetestSchedule() {
       {/* ------------------------------------------------------------ header */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-[11.5px] font-bold uppercase tracking-[0.12em] text-orange">Step 1 · Main data</div>
-          <h1 className="mt-0.5 text-[26px] font-bold leading-tight text-navy">{APP}</h1>
+          <div className="text-[11.5px] font-bold uppercase tracking-[0.12em] text-orange">{stock ? "Step 1 · Main data · Closing stock" : "Step 1 · Main data"}</div>
+          <h1 className="mt-0.5 text-[26px] font-bold leading-tight text-navy">{stock ? `${APP} — Closing stock` : APP}</h1>
           <p className="mt-1 text-[13px] text-grey">
-            Enterprises Surat · <b className="text-ink">{lots.length.toLocaleString("en-IN")}</b> manufactured ink lots, each retested at 3, 6 and 9 months
+            {stock ? (
+              <>
+                Enterprises Surat + Otec Surat · <b className="text-ink">{lotsF.length.toLocaleString("en-IN")}</b> ink lots in stock today
+                · <b className="text-ink">{stockQty.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</b> KGS{anyFilter ? " (filtered)" : ""},
+                each retested 3, 6 and 9 months after production / purchase
+              </>
+            ) : (
+              <>Enterprises Surat · <b className="text-ink">{lots.length.toLocaleString("en-IN")}</b> manufactured ink lots, each retested at 3, 6 and 9 months</>
+            )}
             <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-ryg-green/10 px-2 py-0.5 text-[11px] font-semibold text-ryg-green">
-              <i className="h-1.5 w-1.5 rounded-full bg-ryg-green" /> Live from Tally
+              <i className="h-1.5 w-1.5 rounded-full bg-ryg-green" />
+              {stock && cs.asOf
+                ? `Tally closing stock · read ${cs.asOf.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
+                : "Live from Tally"}
             </span>
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => q.refetch()} disabled={q.isFetching}>
             <RefreshCw className={cn("mr-1.5 h-4 w-4", q.isFetching && "animate-spin")} />
-            {q.isFetching ? "Loading…" : "Refresh"}
+            {q.isFetching ? (stock && totalReq ? `Reading ${done}/${totalReq}…` : "Loading…") : "Refresh"}
           </Button>
           <Button size="sm" onClick={() => navigate(`${B}/plant`)}>
             Go to Plant testing <ArrowRight className="ml-1.5 h-4 w-4" />
@@ -291,6 +331,9 @@ export default function RetestSchedule() {
       <Card className="sticky top-2 z-20 px-4 py-3" data-keep-filter>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-[11.5px] font-bold uppercase tracking-wide text-grey">Filter</span>
+          {stock && (
+            <MultiSelect values={fCos} onChange={setFCos} options={filterOpts.companies} placeholder="Both companies" className="w-56" />
+          )}
           <select value={fMonth ?? ""} onChange={(e) => setFMonth(e.target.value || null)}
             className={cn("h-9 rounded-lg border bg-white px-3 text-[13px] font-semibold",
               fMonth ? "border-orange text-orange" : "border-line text-navy")}>
@@ -315,15 +358,18 @@ export default function RetestSchedule() {
 
       {q.isError && (
         <Card className="border-ryg-red/40 p-4 text-[13px] text-ryg-red">
-          Could not read production lots: {(q.error as Error).message}
+          Could not read {stock ? "closing stock" : "production lots"}: {(q.error as Error).message}
         </Card>
       )}
 
       {q.isLoading ? (
         <Card className="flex items-center justify-center gap-3 p-14 text-[13px] text-grey">
-          <RefreshCw className="h-4 w-4 animate-spin" /> Reading production lots from ConnectWave…
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          {stock
+            ? `Reading today's closing stock from ConnectWave${totalReq ? ` — ${done} of ${totalReq} requests` : ""}… (about a minute the first time)`
+            : "Reading production lots from ConnectWave…"}
         </Card>
-      ) : q.data && (
+      ) : rawLots && (
         <>
           {/* ------------------------------------------------ A · this month */}
           <Card className="p-5">
@@ -370,7 +416,7 @@ export default function RetestSchedule() {
                         <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg text-[13px] font-bold text-white", TEST_COLOR[n - 1])}>{n}</span>
                         <div>
                           <div className="text-[13.5px] font-bold text-navy">{LAB_NAME[n - 1]}</div>
-                          <div className="text-[11px] text-grey">{TEST_MONTHS[n - 1]} months after production</div>
+                          <div className="text-[11px] text-grey">{TEST_MONTHS[n - 1]} months after production{stock ? " / purchase" : ""}</div>
                         </div>
                       </div>
                       <div className="mt-4 flex items-baseline justify-between">
@@ -441,9 +487,33 @@ export default function RetestSchedule() {
                     <PackageSearch className="h-5 w-5 shrink-0 text-yellow" />
                     <div className="flex-1">
                       <div className="text-[13px] font-semibold text-ink">Lots with no expiry in Tally</div>
-                      <div className="text-[11.5px] text-grey">{(lots.length - withExpiry).toLocaleString("en-IN")} of {lots.length.toLocaleString("en-IN")} — shown blank, never estimated</div>
+                      <div className="text-[11.5px] text-grey">{(lotsF.length - withExpiry).toLocaleString("en-IN")} of {lotsF.length.toLocaleString("en-IN")} — shown blank, never estimated</div>
                     </div>
                   </div>
+                  {stock && (
+                    <>
+                      <div className="flex items-center gap-3 py-2.5">
+                        <CalendarClock className={cn("h-5 w-5 shrink-0", undated.length ? "text-yellow" : "text-ryg-green")} />
+                        <div className="flex-1">
+                          <div className="text-[13px] font-semibold text-ink">Lots with no production / purchase date</div>
+                          <div className="text-[11.5px] text-grey" title={undated.slice(0, 30).map((l) => `${l.company} · ${l.item} · ${l.lot}`).join("\n")}>
+                            {undated.length.toLocaleString("en-IN")} lots · {undated.reduce((s, l) => s + l.qty, 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })} KGS in stock with no test dates
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 py-2.5">
+                        <PackageSearch className={cn("h-5 w-5 shrink-0", noLot.length ? "text-yellow" : "text-ryg-green")} />
+                        <div className="flex-1">
+                          <div className="text-[13px] font-semibold text-ink">Stock with no lot number</div>
+                          <div className="text-[11.5px] text-grey" title={noLot.slice(0, 30).map((x) => `${x.company} · ${x.item} · ${x.qty} ${x.uom}`).join("\n")}>
+                            {noLot.length.toLocaleString("en-IN")} items · {/* KGS only — Otec Surat's ink group also holds foil paper in MTR. */}
+                            {noLot.filter((x) => /KG/i.test(x.uom)).reduce((s, x) => s + x.qty, 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })} KGS
+                            {noLot.some((x) => !/KG/i.test(x.uom)) ? " (+ other units)" : ""} in Tally that no lot accounts for
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <div className="flex items-center gap-3 py-2.5">
                     <FlaskConical className="h-5 w-5 shrink-0 text-grey" />
                     <div className="flex-1">
@@ -464,7 +534,7 @@ export default function RetestSchedule() {
                 <Button variant="outline" size="sm" onClick={() => navigate(
                   `${appBasePath("bushra-central-master")}/items?` + new URLSearchParams({
                     focus: uncategorised.map((i) => i.item).join("\n"),
-                    company: SURAT_GUID,
+                    company: fCos.length === 1 ? fCos[0] : SURAT_GUID,
                     from: "ink-stabilisation",
                   }).toString())}>
                   Fix these in Bushra Central Master →
@@ -516,7 +586,7 @@ export default function RetestSchedule() {
               </div>
 
               {view.startsWith("lab") ? (
-                <LabTestView lots={base} no={Number(view.slice(3)) as 1 | 2 | 3} today={today} flow={flow} />
+                <LabTestView lots={base} no={Number(view.slice(3)) as 1 | 2 | 3} today={today} flow={flow} stock={stock} />
               ) : view === "lots" ? (
                 <>
                   <div className="px-5 pt-3">
@@ -538,21 +608,23 @@ export default function RetestSchedule() {
                     <table className="w-full">
                       <thead className="border-y border-line bg-page">
                         <tr>
-                          <th className={th}>Stock item</th><th className={th}>Lot no.</th><th className={th}>Produced</th>
-                          <th className={`${th} text-right`}>Qty</th><th className={th}>Expiry</th>
+                          {stock && <th className={th}>Company</th>}
+                          <th className={th}>Stock item</th><th className={th}>Lot no.</th><th className={th}>{stock ? "Prod. / purchase" : "Produced"}</th>
+                          <th className={`${th} text-right`}>{stock ? "In stock" : "Qty"}</th><th className={th}>Expiry</th>
                           <th className={th}>{TEST_LABEL(1)}</th><th className={th}>{TEST_LABEL(2)}</th><th className={th}>{TEST_LABEL(3)}</th>
                           <th className={`${th} text-right`}>Next test in</th>
                         </tr>
                       </thead>
                       <tbody>
                         {lotPg.pageItems.map((l) => (
-                          <tr key={`${l.item}|${l.lot}`} className={cn("border-b border-line transition hover:bg-page/70", tone(l.days))}>
+                          <tr key={`${l.companyGuid ?? ""}|${l.item}|${l.lot}`} className={cn("border-b border-line transition hover:bg-page/70", tone(l.days))}>
+                            {stock && <td className={`${td} text-grey`}>{l.company}</td>}
                             <td className={td}>
                               <div className="font-semibold text-ink">{l.item}</div>
                               <div className="text-[11px] text-grey">{categoryLabel(l.category)}</div>
                             </td>
                             <td className={`${td} font-mono text-[12px]`}>{l.lot}</td>
-                            <td className={td}>{fmtDate(l.prod)}</td>
+                            <td className={td} title={l.dateFrom ?? undefined}>{fmtDate(l.prod)}</td>
                             <td className={`${td} text-right tabular-nums`}>{l.qty.toLocaleString("en-IN")} <span className="text-grey">{l.uom}</span></td>
                             <td className={td}>{l.expiry ? fmtDate(l.expiry) : <span className="text-grey-2">—</span>}</td>
                             {l.tests.map((t, i) => (
@@ -562,7 +634,7 @@ export default function RetestSchedule() {
                           </tr>
                         ))}
                         {lotPg.pageItems.length === 0 && (
-                          <tr><td colSpan={9} className="px-4 py-12 text-center text-[13px] text-grey">No lots match these filters.</td></tr>
+                          <tr><td colSpan={stock ? 10 : 9} className="px-4 py-12 text-center text-[13px] text-grey">No lots match these filters.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -575,8 +647,8 @@ export default function RetestSchedule() {
                     <table className="w-full">
                       <thead className="border-b border-line bg-page">
                         <tr>
-                          <th className={th}>Test date</th><th className={th}>Test</th><th className={th}>Stock item</th>
-                          <th className={th}>Lot no.</th><th className={th}>Produced</th><th className={th}>Expiry</th>
+                          <th className={th}>Test date</th><th className={th}>Test</th>{stock && <th className={th}>Company</th>}<th className={th}>Stock item</th>
+                          <th className={th}>Lot no.</th><th className={th}>{stock ? "Prod. / purchase" : "Produced"}</th><th className={th}>Expiry</th>
                           <th className={`${th} text-right`}>Qty</th><th className={`${th} text-right`}>When</th>
                         </tr>
                       </thead>
@@ -584,11 +656,12 @@ export default function RetestSchedule() {
                         {calPg.pageItems.map((t) => {
                           const d = daysBetween(today, t.date);
                           return (
-                            <tr key={`${t.lot.item}|${t.lot.lot}|${t.no}`} className={cn("border-b border-line transition hover:bg-page/70", d >= 0 && tone(d))}>
+                            <tr key={`${t.lot.companyGuid ?? ""}|${t.lot.item}|${t.lot.lot}|${t.no}`} className={cn("border-b border-line transition hover:bg-page/70", d >= 0 && tone(d))}>
                               <td className={`${td} font-semibold`}>{fmtDate(t.date)}</td>
                               <td className={td}>
                                 <span className="inline-flex items-center gap-1.5"><i className={cn("h-2 w-2 rounded-full", TEST_COLOR[t.no - 1])} />Test {t.no}</span>
                               </td>
+                              {stock && <td className={`${td} text-grey`}>{t.lot.company}</td>}
                               <td className={td}>
                                 <div className="font-semibold text-ink">{t.lot.item}</div>
                                 <div className="text-[11px] text-grey">{categoryLabel(t.lot.category)}</div>
@@ -604,7 +677,7 @@ export default function RetestSchedule() {
                           );
                         })}
                         {calPg.pageItems.length === 0 && (
-                          <tr><td colSpan={8} className="px-4 py-12 text-center text-[13px] text-grey">No tests fall in {fmtMonth(month)}.</td></tr>
+                          <tr><td colSpan={stock ? 9 : 8} className="px-4 py-12 text-center text-[13px] text-grey">No tests fall in {fmtMonth(month)}.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -616,6 +689,9 @@ export default function RetestSchedule() {
           </div>
 
           <p className="text-[11.5px] leading-relaxed text-grey">
+            {stock && <>Closing stock is Tally's closing qty per item today, split into lots from the voucher lines — the same figures as Ink Expiry Date,
+              with the Lab godown included. A lot's date is its production (in either company), else its purchase. Otec Surat lots are not in the
+              Plant / Management flow, so their tests read Pending.{" "}</>}
             Production date is the production voucher's date. Expiry comes from the Tally batch where one was entered and is never
             estimated. Category is the Ink type in Bushra Central Master (Central Masters where you have not changed it).
           </p>

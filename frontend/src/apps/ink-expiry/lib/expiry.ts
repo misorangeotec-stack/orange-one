@@ -244,10 +244,19 @@ const isExcluded = (path: string | null, item: string) => EXCLUDED_GROUPS.test(p
 
 const K = (...parts: string[]) => parts.join("\u0000");
 
+/**
+ * Options for other apps that reuse this stock read. Ink Expiry itself passes none.
+ *   companies — read only these company guids (fewer requests, faster).
+ *   keepHeld  — keep Lab / LOOSE INK godown stock, so lots tie to Tally's closing exactly
+ *               (Ink Stabilisation's Closing stock page, 07-10-2026).
+ */
+export interface StockReadOptions { companies?: string[]; keepHeld?: boolean }
+
 export async function fetchExpiryStatus(
   cw: SupabaseClient,
   today: string,
   onProgress: (done: number, total: number) => void = () => {},
+  opts: StockReadOptions = {},
 ): Promise<ExpiryStatus> {
   const asOf = today.replace(/-/g, "");
 
@@ -265,6 +274,7 @@ export async function fetchExpiryStatus(
   }
   // Provision / dead / diff / loose stock: out, if any book files the item under such a group.
   for (const r of items) if (isExcluded(r.group_path, r.item)) ink.delete(K(r.company_guid, r.item));
+  if (opts.companies) for (const [k, r] of ink) if (!opts.companies.includes(r.company_guid)) ink.delete(k);
   const guids = [...new Set([...ink.values()].map((r) => r.company_guid))].sort();
   const leaves = [...new Set([...ink.values()].map((r) => r.stock_group).filter(Boolean) as string[])].sort();
 
@@ -299,11 +309,14 @@ export async function fetchExpiryStatus(
     .eq("company_guid", g)
     .order("tenant_id").order("item")
     .range(a, b)));
-  const datedJob = () => readAll<DatedRow>((a, b) => cw.from("rpt_batch_line")
-    .select("company_guid,vch_date,voucher_no,stock_item,batch_name,batch_mfd,batch_expiry_raw,built_at")
-    .not("batch_expiry_raw", "is", null)
-    .order("tenant_id").order("voucher_guid").order("line_no").order("batch_no")
-    .range(a, b));
+  const datedJob = () => readAll<DatedRow>((a, b) => {
+    const base = cw.from("rpt_batch_line")
+      .select("company_guid,vch_date,voucher_no,stock_item,batch_name,batch_mfd,batch_expiry_raw,built_at")
+      .not("batch_expiry_raw", "is", null);
+    return (opts.companies ? base.in("company_guid", opts.companies) : base)
+      .order("tenant_id").order("voucher_guid").order("line_no").order("batch_no")
+      .range(a, b);
+  });
 
   const results = await pool<unknown[]>([datedJob, ...anchorJobs, ...lineJobs], PARALLEL, tick);
   const dated = results[0] as DatedRow[];
@@ -444,7 +457,7 @@ export async function fetchExpiryStatus(
     }
     for (const { a, q: tied } of have) {
       // Take out what sits in the Lab / LOOSE INK godown; a lot with nothing left drops out.
-      const held = Math.min(Math.max(a.held, 0), tied);
+      const held = opts.keepHeld ? 0 : Math.min(Math.max(a.held, 0), tied);
       if (held > 0.001) { heldOut.qty += held; heldOut.value += held * rate; heldOut.lots += 1; }
       const q = tied - held;
       if (q <= 0.001) continue;

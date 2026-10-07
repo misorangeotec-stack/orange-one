@@ -56,6 +56,15 @@ export interface InkLot {
   /** Test 1, 2, 3 due dates — yyyy-mm-dd. */
   tests: [string, string, string];
   vouchers: string[];
+  /**
+   * Closing stock page only (07-10-2026). Unset on production lots, which are all Enterprises
+   * Surat's. `prod` there is the lot's production OR purchase date, and `qty` is stock today.
+   */
+  companyGuid?: string;
+  company?: string;
+  godown?: string;
+  /** The voucher type that dated the lot: 'STOCK JOURNAL-PRODUCTION', 'GST PURCHASE-INK'… */
+  dateFrom?: string | null;
 }
 
 interface ProdRow { vch_date: string; voucher_no: string | null; stock_item: string; batch_name: string | null; qty: number | null; uom: string | null }

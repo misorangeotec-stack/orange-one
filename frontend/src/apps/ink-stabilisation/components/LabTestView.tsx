@@ -5,6 +5,7 @@ import { usePagination } from "@/shared/lib/usePagination";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { daysBetween, fmtDate, TEST_MONTHS, type InkLot } from "../lib/schedule";
 import { RESULT_LABEL, STATUS_LABEL, testKey, type FlowData, type FlowStatus, type LabResult } from "../lib/flow";
+import { SURAT_GUID } from "../lib/constants";
 import { ResultPill, StatusPill } from "./FlowParts";
 
 /**
@@ -25,19 +26,24 @@ interface Row {
 }
 
 export default function LabTestView({
-  lots, no, today, flow,
+  lots, no, today, flow, stock = false,
 }: {
   lots: InkLot[];
   no: 1 | 2 | 3;
   today: string;
   flow: FlowData | undefined;
+  /** Closing stock page: qty is stock today, the date is production OR purchase, lots carry a company. */
+  stock?: boolean;
 }) {
+  const QTY = stock ? "Qty in stock" : "Qty produced";
+  const DATE = stock ? "Prod. / purchase" : "Production";
   const [scope, setScope] = useState<Scope>("upcoming");
   const month = today.slice(0, 7);
 
   const all: Row[] = useMemo(() => lots.map((lot) => {
     const date = lot.tests[no - 1];
-    const rec = flow?.tests.get(testKey(lot.item, lot.lot, no));
+    // Another company's lot (Closing stock page) never borrows Enterprises Surat's flow records.
+    const rec = lot.companyGuid && lot.companyGuid !== SURAT_GUID ? undefined : flow?.tests.get(testKey(lot.item, lot.lot, no));
     return { lot, date, days: daysBetween(today, date), status: rec?.status ?? "pending", result: rec?.result ?? null };
   }), [lots, no, today, flow]);
 
@@ -69,12 +75,13 @@ export default function LabTestView({
       { header: "Stock item", width: 38, value: (r) => r.lot.item },
       { header: "Ink family", width: 26, value: (r) => r.lot.family },
       { header: "Lot no.", width: 18, value: (r) => r.lot.lot },
-      { header: "Qty produced", width: 12, value: (r) => r.lot.qty },
+      ...(stock ? [{ header: "Company", width: 18, value: (r: Row) => r.lot.company ?? "" }] : []),
+      { header: QTY, width: 12, value: (r) => r.lot.qty },
       { header: "Unit", width: 6, value: (r) => r.lot.uom ?? "" },
-      { header: "Production date", width: 14, value: (r) => fmtDate(r.lot.prod) },
+      { header: `${DATE} date`, width: 14, value: (r) => fmtDate(r.lot.prod) },
       { header: "Mfg date (Tally)", width: 14, value: (r) => (r.lot.mfd ? fmtDate(r.lot.mfd) : "") },
       { header: "Expiry date (Tally)", width: 14, value: (r) => (r.lot.expiry ? fmtDate(r.lot.expiry) : "") },
-      { header: "Production voucher(s)", width: 20, value: (r) => r.lot.vouchers.join(", ") },
+      { header: stock ? "Dated by" : "Production voucher(s)", width: 20, value: (r) => r.lot.vouchers.join(", ") },
       { header: "Lab result", width: 11, value: (r) => (r.result ? RESULT_LABEL[r.result] : "") },
       { header: "Flow status", width: 16, value: (r) => STATUS_LABEL[r.status] },
     ],
@@ -94,7 +101,7 @@ export default function LabTestView({
           </button>
         ))}
         <span className="ml-auto text-[12px] text-grey">
-          {rows.length.toLocaleString("en-IN")} lots · {qty.toLocaleString("en-IN")} {rows[0]?.lot.uom ?? ""} produced
+          {rows.length.toLocaleString("en-IN")} lots · {qty.toLocaleString("en-IN")} {rows[0]?.lot.uom ?? ""} {stock ? "in stock" : "produced"}
         </span>
         <Button variant="outline" size="sm" onClick={exportRows}>Export Excel</Button>
       </div>
@@ -103,13 +110,13 @@ export default function LabTestView({
           <thead className="border-y border-line bg-page">
             <tr>
               <th className={th}>Test date</th><th className={`${th} text-right`}>Days</th><th className={th}>Stock item</th>
-              <th className={th}>Lot no.</th><th className={`${th} text-right`}>Qty produced</th><th className={th}>Production</th>
-              <th className={th}>Mfg (Tally)</th><th className={th}>Expiry (Tally)</th><th className={th}>Voucher</th><th className={th}>Lab result</th><th className={th}>Status</th>
+              <th className={th}>Lot no.</th><th className={`${th} text-right`}>{QTY}</th><th className={th}>{DATE}</th>
+              <th className={th}>Mfg (Tally)</th><th className={th}>Expiry (Tally)</th><th className={th}>{stock ? "Dated by" : "Voucher"}</th><th className={th}>Lab result</th><th className={th}>Status</th>
             </tr>
           </thead>
           <tbody>
             {pg.pageItems.map((r) => (
-              <tr key={`${r.lot.item}|${r.lot.lot}`} className={`border-b border-line ${
+              <tr key={`${r.lot.companyGuid ?? ""}|${r.lot.item}|${r.lot.lot}`} className={`border-b border-line ${
                 r.days < 0 ? "" : r.days <= 7 ? "bg-ryg-red/10" : r.days <= 30 ? "bg-orange/10" : r.days <= 60 ? "bg-yellow/15" : ""}`}>
                 <td className={`${td} font-semibold ${r.days < 0 ? "text-grey-2" : "text-ink"}`}>{fmtDate(r.date)}</td>
                 <td className={`${td} text-right ${r.days < 0 ? "text-grey-2" : "font-semibold"}`}>
@@ -117,7 +124,7 @@ export default function LabTestView({
                 </td>
                 <td className={td}>
                   <div className="font-medium text-ink">{r.lot.item}</div>
-                  <div className="text-[11px] text-grey">{r.lot.family}</div>
+                  <div className="text-[11px] text-grey">{stock ? `${r.lot.company} · ${r.lot.family}` : r.lot.family}</div>
                 </td>
                 <td className={`${td} font-mono`}>{r.lot.lot}</td>
                 <td className={`${td} text-right`}>{r.lot.qty.toLocaleString("en-IN")} <span className="text-grey">{r.lot.uom}</span></td>
