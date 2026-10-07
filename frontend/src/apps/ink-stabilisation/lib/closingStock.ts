@@ -5,7 +5,7 @@ import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { fetchExpiryStatus, type NoLotStock } from "../../ink-expiry/lib/expiry";
 import { categoryFor, fetchItemCategories, NOT_CATEGORISED } from "./categories";
 import { OTEC_SURAT_GUID, SURAT_GUID } from "./constants";
-import { addMonths, TEST_MONTHS, type InkLot } from "./schedule";
+import { addMonths, fetchInkLots, fmtDate, TEST_MONTHS, type InkLot } from "./schedule";
 
 /**
  * CLOSING STOCK — the ink lots Enterprises Surat AND Otec Surat hold in Tally today, each with
@@ -40,7 +40,8 @@ export interface ClosingStock {
   builtAt: string | null;
 }
 
-const CACHE_KEY = "ink-stabilisation:closing-stock:v1";
+// v2: Otec lots made at Enterprises Surat take the production date even when names differ.
+const CACHE_KEY = "ink-stabilisation:closing-stock:v2";
 const FRESH_MS = 15 * 60_000;
 
 interface Saved { savedAt: number; today: string; data: ClosingStock }
@@ -67,11 +68,26 @@ function writeSaved(today: string, data: ClosingStock) {
 async function fetchClosingStock(today: string, onProgress: (d: number, n: number) => void): Promise<ClosingStock> {
   if (!hasConnectwave()) throw new Error("The live Tally mirror (ConnectWave) is not configured for this site.");
   const guidOf = Object.fromEntries(STOCK_COMPANIES.map((c) => [c.name, c.guid]));
-  const [stock, ent, otec] = await Promise.all([
+  const [stock, ent, otec, made] = await Promise.all([
     fetchExpiryStatus(getConnectwave(), today, onProgress, { companies: STOCK_COMPANIES.map((c) => c.guid), keepHeld: true }),
     fetchItemCategories(SURAT_GUID),
     fetchItemCategories(OTEC_SURAT_GUID),
+    fetchInkLots(),
   ]);
+
+  /*
+    Enterprises Surat's production date per LOT NUMBER (6+ characters), for Otec lots the stock
+    reader dated by their purchase. It matches origins on item + lot, and Otec often names the same
+    ink differently ('SUBLIMATION INKS BLACK-F SERIES (FLOTEC)' vs 'KY SUBLIMATION INK BLACK',
+    lot 26081312: made 08-Aug-26, bought by Otec 27-Aug-26). Measured 07-10-2026: 14 Otec lots
+    were made at Enterprises Surat; 9 matched by name, 4 only by lot number. A production AFTER
+    Otec's receipt is a different lot that reuses the number (202505110001), so it is not used.
+  */
+  const madeOn = new Map<string, string>();
+  for (const m of made) {
+    const k = m.lot.trim();
+    if (k.length >= 6 && (!madeOn.has(k) || m.prod < madeOn.get(k)!)) madeOn.set(k, m.prod);
+  }
 
   const lots: InkLot[] = [];
   const undated: InkLot[] = [];
@@ -92,7 +108,16 @@ async function fetchClosingStock(today: string, onProgress: (d: number, n: numbe
       tests: ["", "", ""], vouchers: s.inwardType ? [s.inwardType] : [],
       companyGuid: guid, company: s.company, godown: s.godown, dateFrom: s.inwardType,
     };
-    if (!s.inward) { undated.push(L); continue; }
+    if (s.inwardCompany) {
+      L.dateFrom = `Made at ${s.inwardCompany}${s.receivedHere ? ` · reached ${s.company} ${fmtDate(s.receivedHere)}` : ""}`;
+    } else if (guid === OTEC_SURAT_GUID && s.inward) {
+      const p = madeOn.get(s.lot.trim());
+      if (p && p <= s.inward && !/PRODUCTION/i.test(s.inwardType ?? "")) {
+        L.prod = p;
+        L.dateFrom = `Made at Enterprises Surat · reached Otec Surat ${fmtDate(s.inward)}`;
+      }
+    }
+    if (!L.prod) { undated.push(L); continue; }
     L.tests = TEST_MONTHS.map((m) => addMonths(L.prod, m)) as InkLot["tests"];
     lots.push(L);
   }

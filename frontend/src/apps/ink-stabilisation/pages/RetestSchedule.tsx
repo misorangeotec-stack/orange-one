@@ -624,7 +624,10 @@ export default function RetestSchedule({ mode = "production" }: { mode?: "produc
                               <div className="text-[11px] text-grey">{categoryLabel(l.category)}</div>
                             </td>
                             <td className={`${td} font-mono text-[12px]`}>{l.lot}</td>
-                            <td className={td} title={l.dateFrom ?? undefined}>{fmtDate(l.prod)}</td>
+                            <td className={td} title={l.dateFrom ?? undefined}>
+                              {fmtDate(l.prod)}
+                              {stock && l.dateFrom && <div className="max-w-[220px] truncate text-[11px] text-grey">{l.dateFrom}</div>}
+                            </td>
                             <td className={`${td} text-right tabular-nums`}>{l.qty.toLocaleString("en-IN")} <span className="text-grey">{l.uom}</span></td>
                             <td className={td}>{l.expiry ? fmtDate(l.expiry) : <span className="text-grey-2">—</span>}</td>
                             {l.tests.map((t, i) => (
