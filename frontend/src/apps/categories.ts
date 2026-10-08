@@ -43,6 +43,7 @@
 export type AppCategory =
   | "productivity"
   | "reports"
+  | "report-dashboard"
   | "plant"
   | "purchase"
   | "ims"
@@ -69,6 +70,11 @@ export const CATEGORIES: { key: AppCategory; label: string; keepHeading?: boolea
   // The group carries ONE app (apps/reports/) but many rows: it is a catalogue, so the
   // sidebar lists its sections rather than a single link — see `menuEntries` in apps/types.
   { key: "reports", label: "Reports" },
+  // The dashboards (Sales, Purchase, …), lifted out of the Reports group onto a heading of
+  // their own straight under it (08-10-2026) — they were a dropdown inside Reports, which
+  // cost two clicks to reach screens opened every day. No app is tagged here: the Reports
+  // app sends its dashboard rows to this group (`category` on AppManifest.menuEntries).
+  { key: "report-dashboard", label: "Report Dashboard", keepHeading: true },
   // ── the plant floor: sample it, make it, judge it, and the machines that do the making ─
   // One group for the whole plant, asked for by the business: Sampling, Production Entry
   // and the quality apps (Complaint, Ink Stabilisation, Ink Expiry) used to sit in three

@@ -66,6 +66,13 @@ export interface AppManifest {
      * report sections themselves.
      */
     subGroup?: string;
+    /**
+     * Put this row in a different top-level GROUP of the home menu than the app's own
+     * `category`. Report Dashboard uses it: the dashboards are served by the Reports app,
+     * but people open them daily and asked for them on their own heading rather than
+     * folded away inside Reports (08-10-2026).
+     */
+    category?: AppCategory;
   }[];
   /** Display name shown on the launcher card. */
   name: string;

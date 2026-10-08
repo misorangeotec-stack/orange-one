@@ -24,6 +24,7 @@ import { fetchComplaintData, complaintQueryKey } from "@/apps/complaint/data/com
 import { fetchOcpiData, ocpiQueryKey } from "@/apps/ocpi/data/ocpiFetch";
 import { FLOW_QUERY, fetchFlow, useInkLots, type FlowData } from "@/apps/ink-stabilisation/lib/flow";
 import type { InkLot } from "@/apps/ink-stabilisation/lib/schedule";
+import { entityIdOf, refIndexOf } from "./hubRefs";
 
 import { purchaseWorkItems } from "@/core/workspace/mywork/items/purchase";
 import { importWorkItems } from "@/core/workspace/mywork/items/import";
@@ -202,6 +203,14 @@ export const callBucketOf = (b: WorkBucket | null): CallBucket | null =>
 export interface PersonItem extends WorkItem {
   appId: string;
   bucket: CallBucket;
+  /** Every other hub number of the same record (data/hubRefs.ts) — what the search box matches besides `ref`. */
+  searchRefs: string[];
+}
+
+/** A number some FMS holds, open or not — lets the search tell "closed" from "unknown". */
+export interface KnownRef {
+  appId: string;
+  ref: string;
 }
 
 export interface PersonWork {
@@ -227,6 +236,7 @@ export interface ModuleStatus {
 export interface PeopleWorkResult {
   rows: PersonWork[];
   modules: ModuleStatus[];
+  knownRefs: KnownRef[];
   peopleLoading: boolean;
   contactsMissing: boolean;
   todayIso: string;
@@ -277,9 +287,10 @@ export function usePeopleWork(): PeopleWorkResult {
       MODULES.forEach((m, i) => {
         const data = results[i]?.data as object | undefined;
         if (!data) return;
+        const refs = refIndexOf(m.appId, data);
         for (const it of itemsFor(data, m.appId, person.id, () => m.rule(data as never, person.id))) {
           const bucket = callBucketOf(holdAwareBucketOf(it, todayIso));
-          if (bucket) items.push({ ...it, appId: m.appId, bucket });
+          if (bucket) items.push({ ...it, appId: m.appId, bucket, searchRefs: refs?.byEntity.get(entityIdOf(it.id)) ?? [] });
         }
       });
       if (flow.data) {
@@ -289,7 +300,7 @@ export function usePeopleWork(): PeopleWorkResult {
         const key = ld ? `${INK}+lots` : INK;
         for (const it of itemsFor(fd, key, person.id, () => inkStabilisationWorkItems(fd, ld, person.id, false))) {
           const bucket = callBucketOf(holdAwareBucketOf(it, todayIso));
-          if (bucket) items.push({ ...it, appId: INK, bucket });
+          if (bucket) items.push({ ...it, appId: INK, bucket, searchRefs: [] });
         }
       }
       if (items.length === 0) continue;
@@ -317,6 +328,16 @@ export function usePeopleWork(): PeopleWorkResult {
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [people.data, contacts.data, dataKey, flow.data, lots.data, todayIso]);
+
+  const knownRefs = useMemo(() => {
+    const out: KnownRef[] = [];
+    MODULES.forEach((m, i) => {
+      const data = results[i]?.data as object | undefined;
+      if (data) for (const ref of refIndexOf(m.appId, data)?.all ?? []) out.push({ appId: m.appId, ref });
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey]);
 
   const modules: ModuleStatus[] = [
     ...MODULES.map((m, i): ModuleStatus => {
@@ -347,6 +368,7 @@ export function usePeopleWork(): PeopleWorkResult {
   return {
     rows: computed,
     modules,
+    knownRefs,
     peopleLoading: people.isLoading,
     contactsMissing: !!contacts.error,
     todayIso,

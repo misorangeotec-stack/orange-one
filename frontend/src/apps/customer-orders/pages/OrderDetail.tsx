@@ -9,7 +9,7 @@ import { useCustomer } from "../CustomerOrdersApp";
 import { StatusPill, orderDate } from "./MyOrders";
 import { customerStatus, callUs, WINDOW_SHUT } from "../lib/customerLabels";
 import {
-  fetchDeskOrders, fetchDeskItems, updateDeskOrder, cancelDeskOrder, deskFormLabel,
+  fetchDeskOrders, fetchDeskItems, updateDeskOrder, cancelDeskOrder,
   ORDERS_QK, itemsQueryKey, type DeskLineInput,
 } from "../data/orderDesk";
 import { deskPaths } from "../lib/paths";
@@ -60,18 +60,13 @@ export default function OrderDetail() {
   /**
    * Only needed once they press Change; the picker cannot open before that.
    *
-   * ⚠ SCOPED TO THE ORDER'S OWN BOOK (OD-14). An order is committed to one of our
-   *   companies the moment it is placed, and only that book can supply it — so the
-   *   picker on a change has to be that book's list, not the union across all of
-   *   them. Passing null here would quietly let a customer add a line the billing
-   *   company cannot fulfil, which is the whole failure OD-14 removed.
-   *
-   *   An order placed before OD-14 has no company yet; those fall back to the union,
-   *   which is exactly the behaviour they were placed under.
+   * ⚠ SCOPED TO THE ORDER'S OWN FIRM (OD-17), and to its book once we have
+   *   chosen one. Passing nulls here would let a customer add a line from
+   *   another of their firms, or one the billing company cannot supply.
    */
   const { data: items } = useQuery({
-    queryKey: itemsQueryKey(order?.companyId ?? null),
-    queryFn: () => fetchDeskItems(order?.companyId ?? null),
+    queryKey: itemsQueryKey(order?.companyId ?? null, order?.ledgerId ?? null),
+    queryFn: () => fetchDeskItems(order?.companyId ?? null, order?.ledgerId ?? null),
     staleTime: 10 * 60_000,
     enabled: editing && !!order,
   });
@@ -135,8 +130,8 @@ export default function OrderDetail() {
         {items ? (
           <OrderForm
             items={items}
-            /* Shown, not offered: the form is fixed once the order exists. */
-            companyLabel={deskFormLabel(order.formName, order.companyLabel)}
+            /* Shown, not offered: the firm is fixed once the order exists. */
+            ledgerLabel={order.ledgerName}
             /*
               Anything on the order that is no longer offered. Computed here rather
               than inside the form because only this screen knows both halves — what

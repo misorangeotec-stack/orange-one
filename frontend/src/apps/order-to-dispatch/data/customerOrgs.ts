@@ -1,5 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import { createUserViaFunction } from "@/core/platform/adminUserApi";
+import { getConnectwaveSupabase } from "@/apps/receivables-hub/lib/connectwaveSupabase";
 
 // fms_dispatch_* tables and RPCs are not in the generated Database types; route
 // table/rpc calls through an untyped alias. This is the standing FMS convention —
@@ -24,7 +25,11 @@ const db = supabase as any;
 export interface CustomerOrg {
   id: string;
   displayName: string;
-  /** The ticked Tally ledgers. At most one per billing company — the server refuses more. */
+  /**
+   * The ticked Tally ledgers — since OD-17 ticked a CUSTOMER GROUP at a time.
+   * At most one per billing company PER NAME, and never a machine ledger; the
+   * server refuses both.
+   */
   partyIds: string[];
   partyNames: string[];
   customerLocation: string | null;
@@ -34,8 +39,16 @@ export interface CustomerOrg {
   defaultDispatchType: "local" | "transport" | null;
   active: boolean;
   loginCount: number;
-  /** Distinct item names the union of the ticked ledgers offers. Zero means an empty picker. */
+  /** Distinct item names on their Order Desk list. Zero means an empty picker. */
   itemCount: number;
+  /**
+   * The Order Desk's OWN item list (OD-17) — what Setup chose, nothing else.
+   *
+   * ⚠ NOT `mst_party_items`. That shared mapping is filled by the Sales Register
+   *   sync with everything the customer ever bought, and our staff's sales-order
+   *   picker depends on it; editing it here would hide items from them too.
+   */
+  portalItemIds: string[];
   /**
    * What is still missing before this customer can be switched on, from the server's
    * own readiness check — the same one `fms_dispatch_save_customer_org` runs while
@@ -55,7 +68,7 @@ export type OrgMissing = "ledgers" | "recipients" | "items";
 export const MISSING_LABEL: Record<OrgMissing, string> = {
   ledgers: "No ledgers ticked",
   recipients: "Nobody is told about their orders",
-  items: "No items mapped — their order screen would be empty",
+  items: "No items chosen — their order screen would be empty",
 };
 
 export interface CustomerLogin {
@@ -68,6 +81,8 @@ export interface SaveCustomerOrgInput {
   id?: string | null;
   displayName: string;
   partyIds: string[];
+  /** The whole Order Desk list. Omitted = keep what is stored. */
+  itemIds?: string[];
   customerLocation: string | null;
   notifyUserIds: string[];
   defaultLocationId: string | null;
@@ -207,6 +222,7 @@ type OrgRow = {
   login_count: number | null;
   item_count: number | null;
   missing: string[] | null;
+  portal_item_ids: string[] | null;
 };
 
 export async function fetchCustomerOrgs(): Promise<CustomerOrg[]> {
@@ -229,6 +245,7 @@ export async function fetchCustomerOrgs(): Promise<CustomerOrg[]> {
     loginCount: r.login_count ?? 0,
     itemCount: r.item_count ?? 0,
     missing: (r.missing ?? []) as OrgMissing[],
+    portalItemIds: r.portal_item_ids ?? [],
   }));
 }
 
@@ -255,6 +272,7 @@ export async function saveCustomerOrg(input: SaveCustomerOrgInput): Promise<stri
       default_location_id: input.defaultLocationId,
       default_dispatch_type: input.defaultDispatchType,
       active: input.active,
+      ...(input.itemIds ? { item_ids: input.itemIds } : {}),
     },
   });
   if (error) throw new Error(error.message);
@@ -276,9 +294,21 @@ export interface AddCustomerInput extends SaveCustomerOrgInput {
   loginName: string;
   loginEmail: string;
   loginPassword: string;
-  /** Item ids to map before the org is saved. See the ordering note below. */
-  addItems?: readonly string[];
-  removeItems?: readonly string[];
+}
+
+/**
+ * How far an "Add a customer" attempt got. The dialog keeps one across retries
+ * and `addCustomer` fills it in as each step lands.
+ *
+ * ⚠ THIS IS WHAT STOPS THE DUPLICATE CUSTOMERS. Without it, a failure AFTER the
+ *   org saved (the login step) left the org behind, and pressing Create again
+ *   made a second one — which is exactly how Setup came to list Bishen and
+ *   Ganga twice each. With it, a retry updates the org it already made and
+ *   reuses the login it already created.
+ */
+export interface AddCustomerProgress {
+  orgId?: string;
+  profileId?: string;
 }
 
 /**
@@ -296,42 +326,153 @@ export interface AddCustomerInput extends SaveCustomerOrgInput {
  *   customer with no auth account is a row an admin can simply finish or bin,
  *   whereas an orphaned auth account is invisible from this screen entirely.
  *
- * ⚠ AND THE ITEMS ARE FIRST, WHICH LOOKS BACKWARDS AND IS NOT (OD-14).
- *   `fms_dispatch_save_customer_org` runs the readiness check whenever `active`
- *   is true, and one of its arms is "no items mapped". Mapping after the org save
- *   would therefore make the very first save of a switched-on customer fail on a
- *   condition the same dialog had just satisfied.
- *
- *   Mapping first is safe because a mapping does not belong to the org: it is a
- *   row in a central master, keyed on the LEDGER, standing on its own whether or
- *   not this customer is ever created. If the org save then fails, the admin
- *   fixes the org and presses Create again; the pairs are already there and come
- *   back `skipped`, not duplicated.
+ * ⚠ THE ITEMS TRAVEL WITH THE ORG (OD-17). They are the org's own list now,
+ *   saved by the same call that runs the readiness check, so there is no
+ *   ordering trap left between them.
  *
  * ⚠ `moduleLevels` IS EXACTLY ONE APP. Not a default, not a merge — a customer must
  *   hold `customer-orders` and nothing else. The ordinary user form seeds every new
  *   user with `{ "task-management": "edit" }`, which on a customer account would be
  *   a hidden grant nobody can see and everybody forgets.
  */
-export async function addCustomer(input: AddCustomerInput): Promise<{ orgId: string; profileId: string }> {
-  if ((input.addItems?.length ?? 0) > 0 || (input.removeItems?.length ?? 0) > 0) {
-    await setCustomerOrgItems(input.partyIds, input.addItems ?? [], input.removeItems ?? []);
+export async function addCustomer(
+  input: AddCustomerInput,
+  progress: AddCustomerProgress = {},
+): Promise<{ orgId: string; profileId: string }> {
+  const orgId = await saveCustomerOrg({ ...input, id: progress.orgId ?? null });
+  progress.orgId = orgId;
+
+  if (!progress.profileId) {
+    progress.profileId = await createUserViaFunction({
+      name: input.loginName,
+      email: input.loginEmail,
+      phone: "",
+      isExternal: true,
+      password: input.loginPassword,
+      role: "employee",
+      moduleLevels: { "customer-orders": "edit" },
+    });
   }
 
-  const orgId = await saveCustomerOrg(input);
+  await linkCustomerLogin(progress.profileId, orgId, true);
+  return { orgId, profileId: progress.profileId };
+}
 
-  const profileId = await createUserViaFunction({
-    name: input.loginName,
-    email: input.loginEmail,
-    phone: "",
-    isExternal: true,
-    password: input.loginPassword,
-    role: "employee",
-    moduleLevels: { "customer-orders": "edit" },
-  });
+/* -------------------------------------------------------------------------- */
+/*  The Order Desk item list, resolved for Setup (OD-17)                       */
+/* -------------------------------------------------------------------------- */
 
-  await linkCustomerLogin(profileId, orgId, true);
-  return { orgId, profileId };
+export interface PortalItem {
+  id: string;
+  name: string;
+  code: string | null;
+  itemType: string | null;
+  companyId: string | null;
+}
+
+export const portalItemsQueryKey = (ids: readonly string[]) =>
+  ["dispatch", "portal-items", [...ids].sort().join(",")] as const;
+
+/** Names, codes and books for a saved list of item ids. Inactive ones drop out. */
+export async function fetchPortalItems(ids: readonly string[]): Promise<PortalItem[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await db
+    .from("mst_items")
+    .select("id,name,code,item_type,company_id,active")
+    .in("id", ids as string[]);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as any[])
+    .filter((r) => r.active)
+    .map((r) => ({
+      id: r.id,
+      name: r.name ?? "",
+      code: r.code ?? null,
+      itemType: r.item_type ?? null,
+      companyId: r.company_id ?? null,
+    }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Customer groups for the Setup picker (OD-17)                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One customer ledger, tagged with its CUSTOMER GROUP.
+ *
+ * The group comes from the receivables-hub muster (`ext_ledger_group` in
+ * ConnectWave), keyed on the Tally ledger GUID — the same muster the
+ * Outstanding dashboard groups by. A ledger the muster does not know is its own
+ * group, named after itself, exactly as `groupNameOf` treats it there.
+ *
+ * ⚠ BY GUID, NEVER BY NAME. 387 ledger names repeat across companies; matching
+ *   by name could hand one company's ledger another's group.
+ *
+ * ⚠ MACHINE LEDGERS ARE LEFT OUT HERE (Tally group MACHINE DEBTORS, or a name
+ *   saying MACHINE). A group brings its machine ledger with it — "GANGA FASHION
+ *   PVT LTD(MACHINE)" sits in the GANGA FASHION PVT LTD group — and the server
+ *   refuses machine ledgers on save.
+ */
+export interface GroupLedger {
+  partyId: string;
+  name: string;
+  companyId: string | null;
+  groupName: string;
+}
+
+export const CUSTOMER_GROUP_LEDGERS_QK = ["dispatch", "customer-group-ledgers"] as const;
+
+const isMachine = (name: string, chain: string[] | null) =>
+  (chain ?? []).includes("MACHINE DEBTORS") || /\bMACHINES?\b/.test(name.toUpperCase());
+
+/** Page through a PostgREST query. Ordered on a unique key, or pages overlap. */
+async function pageAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await page(from, from + 999);
+    if (error) throw new Error(error.message ?? String(error));
+    out.push(...(data ?? []));
+    if (!data || data.length < 1000) return out;
+  }
+}
+
+export async function fetchCustomerGroupLedgers(): Promise<GroupLedger[]> {
+  const [parties, muster] = await Promise.all([
+    pageAll<{ id: string; name: string; company_id: string | null; tally_guid: string | null; group_chain: string[] | null }>(
+      (from, to) =>
+        db.from("mst_parties")
+          .select("id,name,company_id,tally_guid,group_chain")
+          .eq("is_customer", true)
+          .eq("active", true)
+          .order("id")
+          .range(from, to),
+    ),
+    /*
+      ⚠ A MUSTER FAILURE IS NOT A DEAD SCREEN. Without it every ledger is simply
+        its own group — the picker still works, it just groups less — so the
+        error is swallowed here rather than blocking customer setup on a second
+        project being reachable.
+    */
+    pageAll<{ ledger_id: string; group_name: string | null }>(
+      (from, to) =>
+        getConnectwaveSupabase()
+          .from("ext_ledger_group")
+          .select("ledger_id,group_name")
+          .order("ledger_id")
+          .range(from, to),
+    ).catch(() => [] as { ledger_id: string; group_name: string | null }[]),
+  ]);
+
+  const groupOf = new Map(
+    muster.filter((m) => m.group_name?.trim()).map((m) => [m.ledger_id, m.group_name!.trim()]),
+  );
+  return parties
+    .filter((p) => !isMachine(p.name, p.group_chain))
+    .map((p) => ({
+      partyId: p.id,
+      name: p.name.trim(),
+      companyId: p.company_id,
+      groupName: (p.tally_guid && groupOf.get(p.tally_guid)) || p.name.trim(),
+    }));
 }
 
 /* -------------------------------------------------------------------------- */

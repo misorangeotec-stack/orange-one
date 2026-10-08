@@ -123,6 +123,17 @@ export const BUSHRA_DASHBOARDS: BushraDashboardGroup[] = [
   },
 ];
 
+/** The dashboards' landing page — and the root of every dashboard URL. */
+export const DASHBOARDS_HOME = `${BASE}/bushra-dashboard`;
+
+/**
+ * Is this URL a Report Dashboard screen (the landing page or any dashboard)? The Reports app
+ * shows these in DASHBOARD MODE: its sidebar and breadcrumb name the dashboards only, never
+ * the report catalogue — a dashboard reader must not be walked into the reports (08-10-2026).
+ */
+export const isDashboardPath = (pathname: string) =>
+  pathname === DASHBOARDS_HOME || pathname.startsWith(`${DASHBOARDS_HOME}/`);
+
 /** Absolute URL of a group's landing page — a filter on the landing page, not a route of its own. */
 export const dashboardGroupHref = (id: string) => `${BASE}/bushra-dashboard?group=${id}`;
 

@@ -7,6 +7,7 @@ import { useFY } from "@hub/lib/fyContext";
 import { useLiveMode } from "@hub/lib/liveMode";
 import { formatAsOfDateTime } from "@hub/lib/asOfFormat";
 import { reportCrumbs } from "@hub/lib/reportCatalog";
+import { dashboardGroupById, dashboardGroupHref, groupOfPath, isDashboardPath, pageOfPath } from "@hub/lib/bushraDashboards";
 import UserMenu from "@/shared/components/layout/UserMenu";
 import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
@@ -105,6 +106,16 @@ const FY_PINNED_ROUTES = [
   "/reports/bushra-dashboard",
 ];
 
+/** "Sales → Ink" for a dashboard, "Sales" for a group's landing page, null for the bare landing. */
+function dashboardCrumbs(pathname: string, search: string) {
+  const page = pageOfPath(pathname);
+  const group = page ? groupOfPath(pathname) : dashboardGroupById(new URLSearchParams(search).get("group"));
+  if (!group) return null;
+  return page
+    ? [{ label: group.title, to: dashboardGroupHref(group.id), collapsible: true }, { label: page.title }]
+    : [{ label: group.title }];
+}
+
 export default function ReportsLayout() {
   const { dashboard } = useAppData({});
   const { label: fyLabel } = useFY();
@@ -120,7 +131,10 @@ export default function ReportsLayout() {
   // Null off the catalogue (the landing page with no `?cat=`), and the trail then stops at
   // the module rather than inventing a page name. Unlike the hub's strip there is no
   // menu-label fallback to fall back TO: every page in this app is a catalogue entry.
-  const pageLabel = reportCrumbs(pathname, search);
+  //
+  // A Report Dashboard screen is the exception: its trail is "Report Dashboard → Sales →
+  // Ink", never routed through the report catalogue (see isDashboardPath).
+  const pageLabel = isDashboardPath(pathname) ? dashboardCrumbs(pathname, search) : reportCrumbs(pathname, search);
 
   return (
     <SidebarProvider>
