@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { TextInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
@@ -71,6 +71,7 @@ export function itemSummary(o: DeskOrder): string {
 
 export default function MyOrders() {
   const customer = useCustomer();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<"all" | CustomerStatusKey>("all");
   const [q, setQ] = useState("");
 
@@ -181,7 +182,20 @@ export default function MyOrders() {
                         <span className="text-[15px] font-bold tracking-tight">{o.orderNo}</span>
                         <StatusPill statusKey={o.statusKey} />
                         {o.canChange ? (
-                          <span className="text-[12px] font-semibold text-orange">Still changeable</span>
+                          /* A button, not a word: "Still changeable" read as a link and
+                             only opened the order. This opens it straight into editing.
+                             Inside the card's link, so it stops the card's own click. */
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigate(`${deskPaths.order(o.id)}?edit=1`);
+                            }}
+                            className="rounded-lg border border-orange px-2.5 py-1 text-[12px] font-semibold text-orange hover:bg-orange hover:text-white transition"
+                          >
+                            Edit order
+                          </button>
                         ) : null}
                       </div>
                       <p className="text-[13.5px] text-grey mt-1.5 truncate">{itemSummary(o)}</p>
