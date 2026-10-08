@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/core/platform/auth";
 import Logo from "@/shared/components/ui/Logo";
 import { cn } from "@/shared/lib/cn";
+import { callUs } from "../lib/customerLabels";
 
 /**
  * The Order Desk's own frame. NOT `AppShell`, and that is the whole point.
@@ -46,6 +47,69 @@ const TABS = [
   { to: deskPaths.password, label: "Password", end: false },
 ];
 
+/*
+  THE INK PALETTE (OD-19). Brand orange and the two blues come from
+  orangeotec.com (#F6891F / #E07A18, #1976D2 / #1565C0); the rest is the process
+  ink set a textile printer runs — cyan, magenta, yellow, black — which is what
+  this customer is buying from us. Kept here, in the Order Desk's own frame, so
+  the staff portal's theme is untouched.
+*/
+const INK = {
+  navy: "#0B1A36",
+  blue: "#1565C0",
+  blueLight: "#1976D2",
+  orange: "#F6891F",
+  cyan: "#00AEEF",
+  magenta: "#EC008C",
+  yellow: "#FFD400",
+  black: "#1D1D1B",
+};
+
+/** Soft ink blooms behind the header — decoration only, hidden from readers. */
+function InkSplash() {
+  const bloom = (color: string, cls: string, opacity: number) => (
+    <span
+      className={cn("absolute rounded-full blur-3xl", cls)}
+      style={{ background: color, opacity }}
+    />
+  );
+  const drop = (color: string, cls: string) => (
+    <span className={cn("absolute rounded-full", cls)} style={{ background: color, opacity: 0.85 }} />
+  );
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* a faint dot screen, like a print raster */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: "radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1.2px)",
+          backgroundSize: "18px 18px",
+        }}
+      />
+      {bloom(INK.cyan, "w-[420px] h-[420px] -top-40 right-[-80px]", 0.45)}
+      {bloom(INK.magenta, "w-[300px] h-[300px] top-16 right-[22%]", 0.32)}
+      {bloom(INK.yellow, "w-[220px] h-[220px] -bottom-24 right-[8%]", 0.3)}
+      {bloom(INK.orange, "w-[340px] h-[340px] -bottom-48 -left-24", 0.38)}
+      {/* a few crisp droplets */}
+      {drop(INK.cyan, "w-3 h-3 top-[38%] right-[12%]")}
+      {drop(INK.magenta, "w-2 h-2 top-[22%] right-[30%]")}
+      {drop(INK.yellow, "w-2.5 h-2.5 bottom-[30%] right-[20%]")}
+      {drop(INK.orange, "w-2 h-2 top-[60%] left-[40%]")}
+    </div>
+  );
+}
+
+/** The four process inks and our orange, as the band under the header. */
+function InkStripe() {
+  return (
+    <div aria-hidden className="relative flex h-1.5">
+      {[INK.cyan, INK.magenta, INK.yellow, INK.black, INK.orange].map((c) => (
+        <span key={c} className="flex-1" style={{ background: c }} />
+      ))}
+    </div>
+  );
+}
+
 export default function OrderDeskShell({
   title,
   subtitle,
@@ -64,50 +128,85 @@ export default function OrderDeskShell({
   };
 
   return (
-    <div className="min-h-screen bg-page font-sans text-ink">
-      <header className="border-b border-line bg-white">
-        <div className="max-w-5xl mx-auto px-5 sm:px-8 h-[64px] flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Logo variant="light" height={28} withLink={false} />
-            <span className="hidden sm:block h-6 w-px bg-line" />
-            <span className="hidden sm:block text-[13px] font-semibold text-grey truncate">
-              Orange Order Desk
-            </span>
+    <div
+      className="min-h-screen font-sans text-ink flex flex-col"
+      style={{ background: "linear-gradient(180deg, #EEF3FB 0%, #F6F8FC 40%, #FBF7F2 100%)" }}
+    >
+      <header
+        className="relative text-white"
+        style={{ background: `linear-gradient(125deg, ${INK.navy} 0%, #10295A 50%, ${INK.blue} 100%)` }}
+      >
+        <InkSplash />
+
+        <div className="relative max-w-5xl mx-auto px-5 sm:px-8">
+          <div className="h-[68px] flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <Logo variant="dark" height={28} withLink={false} />
+              <span className="hidden sm:block h-6 w-px bg-white/25" />
+              <span className="hidden sm:inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-[12.5px] font-semibold text-white/90 ring-1 ring-white/15 backdrop-blur">
+                Order Desk
+              </span>
+            </div>
+            <button
+              onClick={leave}
+              className="rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-white/85 ring-1 ring-white/20 hover:bg-white/10 hover:text-white transition shrink-0"
+            >
+              Sign out
+            </button>
           </div>
-          <button
-            onClick={leave}
-            className="text-[13px] font-semibold text-grey hover:text-orange transition shrink-0"
-          >
-            Sign out
-          </button>
+
+          <nav className="flex gap-1.5 overflow-x-auto pb-1">
+            {TABS.map((t) => (
+              <NavLink
+                key={t.label}
+                to={t.to}
+                end={t.end}
+                className={({ isActive }) =>
+                  cn(
+                    "rounded-full px-4 py-2 text-[13.5px] font-semibold whitespace-nowrap transition",
+                    isActive
+                      ? "bg-white text-navy shadow-[0_6px_20px_-6px_rgba(0,0,0,0.45)]"
+                      : "text-white/75 hover:text-white hover:bg-white/10",
+                  )
+                }
+              >
+                {t.label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="pt-7 pb-16 sm:pb-20">
+            <h1 className="text-[28px] sm:text-[34px] font-bold tracking-tight leading-tight">{title}</h1>
+            {subtitle ? (
+              /* Pages pass grey text and links meant for a white page; lift them for the dark band. */
+              <div className="text-[14.5px] text-white/80 mt-1.5 [&_*]:!text-white/80 [&_a:hover]:!text-white">
+                {subtitle}
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <nav className="max-w-5xl mx-auto px-5 sm:px-8 flex gap-1 -mb-px">
-          {TABS.map((t) => (
-            <NavLink
-              key={t.label}
-              to={t.to}
-              end={t.end}
-              className={({ isActive }) =>
-                cn(
-                  "px-3 sm:px-4 py-2.5 text-[13.5px] font-semibold border-b-2 transition",
-                  isActive
-                    ? "border-orange text-orange"
-                    : "border-transparent text-grey hover:text-ink"
-                )
-              }
-            >
-              {t.label}
-            </NavLink>
-          ))}
-        </nav>
+        <InkStripe />
       </header>
 
-      <main className="max-w-5xl mx-auto px-5 sm:px-8 py-8">
-        <h1 className="text-[24px] sm:text-[26px] font-bold tracking-tight">{title}</h1>
-        {subtitle ? <div className="text-[14px] text-grey mt-1">{subtitle}</div> : null}
-        <div className="mt-6">{children}</div>
+      {/* The cards rise over the band — the page reads as one piece, not a strip and a sheet. */}
+      <main className="relative flex-1 w-full max-w-5xl mx-auto px-5 sm:px-8 -mt-10 sm:-mt-12 pb-14">
+        {children}
       </main>
+
+      <footer className="border-t border-line/70 bg-white/60 backdrop-blur">
+        <div className="max-w-5xl mx-auto px-5 sm:px-8 py-5 flex flex-wrap items-center justify-between gap-3 text-[12.5px] text-grey">
+          <span className="flex items-center gap-2">
+            <span aria-hidden className="flex gap-1">
+              {[INK.cyan, INK.magenta, INK.yellow, INK.orange].map((c) => (
+                <span key={c} className="w-2 h-2 rounded-full" style={{ background: c }} />
+              ))}
+            </span>
+            Orange O Tec · Inks and machines for digital textile printing
+          </span>
+          <span>{callUs("Need help? Call us")}</span>
+        </div>
+      </footer>
     </div>
   );
 }
