@@ -881,6 +881,11 @@ export default function CustomerDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoices, asOfDate, billPeriodFrom, billPeriodTo]);
   // With nothing overdue only the Bill Date lens has anything to show.
+  // On Account (receipts tagged to no bill — the same ₹ the Overdue tab and the callout above
+  // deduct) comes off the Bill Date Total too, so the card ties to Position & Terms → Outstanding.
+  // Found on APOLLO DIGITEX (3 of 5 customers): bills ₹2.02 Cr − On Account ₹18.91 L = ₹1.83 Cr.
+  // Bars stay gross: an untagged receipt cannot be placed in one age bracket.
+  const billDateNet = billDateAging.total - onAccount;
   const agingByBillDate = agingBasis === "billDate" || !((customer?.overdue ?? 0) > 0);
 
   // ── Bill-reference universe (for the "Applied To" classification) ───────────
@@ -1704,9 +1709,10 @@ export default function CustomerDetail() {
       // Mirror the on-screen strip: gross buckets, then the deduction, then the net Total —
       // otherwise the sheet's rows would sum to a different figure than the KPI above.
       if (byBillDate) {
+        if (onAccount > 0) aging.push({ bucket: "Less: On Account", amount: -Math.round(onAccount) });
         aging.push({
           bucket: `Total Pending (invoices ${billPeriodFrom ? formatDateDMY(billPeriodFrom) : "all"} to ${formatDateDMY(billPeriodTo)})`,
-          amount: Math.round(billDateAging.total),
+          amount: Math.round(billDateNet),
         });
       } else if (onAccount > 0) {
         aging.push({ bucket: "Less: On Account", amount: -Math.round(onAccount) });
@@ -2158,7 +2164,7 @@ export default function CustomerDetail() {
                       {byBillDate ? "Bill Date Aging Breakdown" : "Overdue Aging Breakdown"}
                       <span className="text-xs font-normal text-muted-foreground ml-1">
                         {byBillDate
-                          ? <>— all pending bills invoiced {billPeriodFrom ? `${formatDateDMY(billPeriodFrom)} to ${formatDateDMY(billPeriodTo)}` : `up to ${formatDateDMY(billPeriodTo)}`}, aged from the invoice date (as Tally's Pending Bills)</>
+                          ? <>— all pending bills invoiced {billPeriodFrom ? `${formatDateDMY(billPeriodFrom)} to ${formatDateDMY(billPeriodTo)}` : `up to ${formatDateDMY(billPeriodTo)}`}, aged from the invoice date (as Tally's Pending Bills){onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}</>
                           : <>— invoice-level only; opening balance excluded{onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}</>}
                       </span>
                     </CardTitle>
@@ -2257,13 +2263,15 @@ export default function CustomerDetail() {
                       age bracket, so the buckets stay gross rather than guessing which slice the
                       money was meant to pay. The strip therefore reads
                       bars + opening balance − On Account = Total. */}
-                  {!byBillDate && onAccount > 0 && (
+                  {onAccount > 0 && (
                     <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-emerald-50/60 dark:bg-emerald-950/20 border border-dashed border-emerald-600/30">
                       <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
                       <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(onAccount)}</span>
                       <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
                         {/* against GROSS, so this share can never print above 100% */}
-                        {overdueGross > 0 ? `${((onAccount / overdueGross) * 100).toFixed(1)}%` : "—"}
+                        {byBillDate
+                          ? (totalAgingAmt > 0 ? `${((onAccount / totalAgingAmt) * 100).toFixed(1)}%` : "—")
+                          : (overdueGross > 0 ? `${((onAccount / overdueGross) * 100).toFixed(1)}%` : "—")}
                       </span>
                     </div>
                   )}
@@ -2273,7 +2281,12 @@ export default function CustomerDetail() {
                   <div className="flex items-center justify-center bg-primary/10 border border-primary/20 rounded-input px-6 py-3 shrink-0">
                     <div className="text-center">
                       <p className="text-[10px] text-primary font-medium uppercase tracking-wide">Total Pending</p>
-                      <p className="text-xl font-bold font-mono text-primary mt-1">{fmt(billDateAging.total)}</p>
+                      <p className="text-xl font-bold font-mono text-primary mt-1">{fmt(billDateNet)}</p>
+                      {onAccount > 0 && (
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          bills {fmt(billDateAging.total)} less On Account
+                        </p>
+                      )}
                       <p className="text-[10px] text-muted-foreground mt-1">
                         {billDateAging.count} bill{billDateAging.count === 1 ? "" : "s"} invoiced {billPeriodFrom ? `${formatDateDMY(billPeriodFrom)} to ${formatDateDMY(billPeriodTo)}` : `up to ${formatDateDMY(billPeriodTo)}`}
                       </p>
