@@ -80,6 +80,7 @@ export default function OrderForm({
   onSubmit,
   onCancel,
   cancelLabel,
+  onSaveDraft,
 }: {
   items: DeskItem[];
   retired?: RetiredItem[];
@@ -99,6 +100,11 @@ export default function OrderForm({
   onSubmit: (lines: DeskLineInput[], remarks: string) => Promise<void>;
   onCancel?: () => void;
   cancelLabel?: string;
+  /**
+   * Keep what is typed so far without placing it (Place an order only). The
+   * caller stores it; nothing is checked until the order is actually placed.
+   */
+  onSaveDraft?: (lines: DeskLineInput[], remarks: string) => Promise<void>;
 }) {
   const [lines, setLines] = useState<DeskLineInput[]>(
     initialLines?.length ? initialLines : [blankLine()]
@@ -107,6 +113,25 @@ export default function OrderForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [touched, setTouched] = useState(false);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+
+  const saveDraft = async () => {
+    if (!onSaveDraft) return;
+    setErr("");
+    if (!lines.some((l) => l.itemId) && !remarks.trim()) {
+      return setErr("Add an item or a note before saving a draft.");
+    }
+    setDraftBusy(true);
+    try {
+      await onSaveDraft(lines.filter((l) => l.itemId), remarks);
+      setDraftSavedAt(new Date());
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setDraftBusy(false);
+    }
+  };
 
   const options = useMemo(
     () => [
@@ -387,14 +412,26 @@ export default function OrderForm({
         </div>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button onClick={submit} disabled={!canSubmit}>
           {busy ? busyLabel : submitLabel}
         </Button>
+        {onSaveDraft ? (
+          <Button variant="ghost" onClick={() => void saveDraft()} disabled={busy || draftBusy}>
+            {draftBusy ? "Saving…" : draftSavedAt ? "Update draft" : "Save as draft"}
+          </Button>
+        ) : null}
         {onCancel ? (
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
             {cancelLabel ?? "Cancel"}
           </Button>
+        ) : null}
+        {draftSavedAt ? (
+          <span className="text-[12.5px] text-grey-2">
+            Saved to your drafts at{" "}
+            {draftSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase()} —
+            find it under My orders → Drafts.
+          </span>
         ) : null}
       </div>
     </div>
