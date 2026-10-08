@@ -184,15 +184,15 @@ export default function MyOrders() {
           </Link>
         </div>
       ) : (
-        <div className="grid gap-5 md:grid-cols-[230px_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-[230px_minmax(0,1fr)]">
           {/* ---- the panel ---- */}
-          <aside className="space-y-3">
-            <div className="rounded-2xl border border-line bg-white p-4 grid grid-cols-3 md:grid-cols-1 gap-3">
-              <Stat label="Orders placed" value={String(stats.placed)} />
-              <Stat label="This month" value={String(stats.thisMonth)} />
-              <Stat label="Last order" value={stats.last ? orderDate(stats.last) : "—"} />
+          <aside className="min-w-0 space-y-3">
+            <div className="rounded-2xl border border-line bg-white p-4 grid grid-cols-3 md:grid-cols-1 gap-3 shadow-soft">
+              <Stat label="Orders placed" value={String(stats.placed)} accent="#00AEEF" />
+              <Stat label="This month" value={String(stats.thisMonth)} accent="#EC008C" />
+              <Stat label="Last order" value={stats.last ? orderDate(stats.last) : "—"} accent="#F6891F" />
             </div>
-            <nav className="rounded-2xl border border-line bg-white p-2 flex md:flex-col gap-1 overflow-x-auto">
+            <nav className="rounded-2xl border border-line bg-white p-2 flex md:flex-col gap-1 overflow-x-auto shadow-soft">
               {folders.map((f) => (
                 <button
                   key={f.key}
@@ -228,7 +228,9 @@ export default function MyOrders() {
 
             {folder === "drafts" ? (
               <>
-                {draftErr ? <p className="text-[13.5px] text-[#B3282C]">{draftErr}</p> : null}
+                {draftErr ? (
+                  <p className="rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">{draftErr}</p>
+                ) : null}
                 {drafts.loading ? (
                   <div className="rounded-2xl border border-line bg-white p-8 text-[14px] text-grey">Loading…</div>
                 ) : shownDrafts.length === 0 ? (
@@ -337,9 +339,9 @@ export default function MyOrders() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
-    <div>
+    <div className="border-l-[3px] pl-3" style={{ borderColor: accent }}>
       <div className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">{label}</div>
       <div className="text-[18px] font-bold text-navy mt-0.5 truncate">{value}</div>
     </div>

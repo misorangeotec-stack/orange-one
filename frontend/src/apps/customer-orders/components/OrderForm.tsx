@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
+import { Package, ShoppingCart } from "lucide-react";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput, TextArea } from "@/shared/components/ui/Form";
 import type { DeskItem, DeskLedger, DeskLineInput } from "../data/orderDesk";
@@ -244,25 +245,19 @@ export default function OrderForm({
       own ledgers; which of our books bills the order is chosen at our end.
   */
   const ledgerPicker = (() => {
-    if (ledgerLabel) {
+    const fixed = ledgerLabel ?? (ledgers?.length === 1 ? ledgers[0].name : null);
+    if (fixed) {
       return (
-        <p className="text-[13.5px] text-grey">
-          Ordering for <span className="font-semibold text-ink">{ledgerLabel}</span>
+        <p className="text-[14px] text-grey">
+          Ordering for <span className="font-bold text-navy">{fixed}</span>
         </p>
       );
     }
     if (!ledgers || ledgers.length === 0) return null;
-    if (ledgers.length === 1) {
-      return (
-        <p className="text-[13.5px] text-grey">
-          Ordering for <span className="font-semibold text-ink">{ledgers[0].name}</span>
-        </p>
-      );
-    }
     return (
-      <div className="space-y-2">
-        <label className="block text-[13px] font-semibold text-ink">Which of your companies is this order for?</label>
-        <div className="max-w-md">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label className="text-[14px] font-semibold text-ink">Which of your companies is this order for?</label>
+        <div className="w-full sm:w-80">
           <Combobox
             value={ledgerId ?? ""}
             onChange={(v) => onLedgerChange?.(v)}
@@ -274,12 +269,22 @@ export default function OrderForm({
     );
   })();
 
+  /*
+    ONE CARD, TOP TO BOTTOM (OD-19): who it is for, the lines, the note and the
+    buttons all sit in the same white sheet, so the order reads as one document
+    rather than four boxes stacked on the page.
+  */
   return (
-    <div className="space-y-5">
+    <div className="rounded-2xl border border-line bg-white shadow-[0_18px_50px_-24px_rgba(11,26,54,0.35)]">
       {ledgerPicker && (
-        <div className="rounded-2xl border border-line bg-white px-5 py-4">{ledgerPicker}</div>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-line">
+          <span aria-hidden className="grid place-items-center w-9 h-9 shrink-0 rounded-xl bg-[#FFF1E4] text-orange">
+            <Package size={18} strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0 flex-1">{ledgerPicker}</div>
+        </div>
       )}
-      <div className="rounded-2xl border border-line bg-white overflow-hidden">
+      <div>
         <div className="hidden sm:grid grid-cols-[1fr_130px_90px_1fr_40px] gap-3 px-5 py-3 border-b border-line bg-[#FBFCFE] text-[12px] font-semibold text-grey uppercase tracking-wide">
           <span>Item</span>
           <span>Quantity</span>
@@ -396,7 +401,7 @@ export default function OrderForm({
         </div>
       </div>
 
-      <div>
+      <div className="px-5 py-4 border-t border-line">
         <label className="block text-[13px] font-semibold mb-1.5">Anything we should know?</label>
         <TextArea
           value={remarks}
@@ -407,13 +412,14 @@ export default function OrderForm({
       </div>
 
       {err ? (
-        <div className="rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">
+        <div className="mx-5 mb-1 rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">
           {err}
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 px-5 pt-2 pb-5">
         <Button onClick={submit} disabled={!canSubmit}>
+          <ShoppingCart size={16} strokeWidth={2.4} />
           {busy ? busyLabel : submitLabel}
         </Button>
         {onSaveDraft ? (
@@ -427,7 +433,7 @@ export default function OrderForm({
           </Button>
         ) : null}
         {draftSavedAt ? (
-          <span className="text-[12.5px] text-grey-2">
+          <span className="text-[12.5px] text-grey">
             Saved to your drafts at{" "}
             {draftSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase()} —
             find it under My orders → Drafts.
