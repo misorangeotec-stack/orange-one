@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import { Badge } from "@hub/components/ui/badge";
 import { Button } from "@hub/components/ui/button";
@@ -852,27 +852,37 @@ export default function CustomerDetail() {
     if (age <= 180) return "121_180";
     return "180_plus";
   };
+  //
+  // ⚠ CREDIT bills (negative pending — advances keyed with a ref such as "31.07.2026") sit in the
+  //   bucket of THEIR OWN bill date and net it down, exactly as Tally's bill-wise ageing prints
+  //   them. Lumping them into the On Account line instead (the first cut) left every bar gross and
+  //   disagreed with Tally — checked against ConnectWave on COLORIX DIGITAL PRINTING SOLUTIONS LLP
+  //   08-10-2026: ₹3.97 Cr of dated advances spread over 31–120 days, only the ₹2.39 Cr untagged
+  //   receipts + the undated "Adv" ref (₹0.27 Cr) are true On Account.
   const billDateAging = useMemo(() => {
     const buckets: Record<string, number> = {};
     let bills = 0;
     for (const inv of invoices) {
-      if (inv.pending < 0.5) continue;   // settled, or a credit balance (falls into the bridge)
+      if (Math.abs(inv.pending) < 0.5) continue;   // settled
       const k = billAgeKey(inv.date);
-      if (!k) continue;
+      if (!k) continue;                            // undated → nothing to age it by; rides the bridge
       buckets[k] = (buckets[k] ?? 0) + inv.pending;
       bills += inv.pending;
     }
     return { buckets, bills };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoices, asOfDate]);
-  // Bills − ledger. Positive = credit settling no open bill (On Account, advances); negative =
-  // ledger balance no bill carries (opening-balance residue, untagged debits). Shown as one line so
-  // the card's Total ties to the Outstanding KPI. Meaningless under a sale-type filter (the ledger
-  // has no per-type split — same rule as agingReport.creditsOfLedger), so it is skipped there.
+  // Dated bills (net) − ledger. Positive = credit settling no dated bill (untagged On Account
+  // receipts, undated advance refs); negative = ledger balance no dated bill carries (opening-balance
+  // residue, untagged debits). Shown as one line so the card's Total ties to the Outstanding KPI.
+  // Meaningless under a sale-type filter (the ledger has no per-type split — same rule as
+  // agingReport.creditsOfLedger), so it is skipped there.
   const billDateBridge = effectiveSaleType === "all" && customer
     ? billDateAging.bills - customer.outstanding
     : 0;
   const billDateTotal = billDateAging.bills - billDateBridge;
+  // Debit side of the dated bills alone — the base for the bridge line's share.
+  const billDateGrossPositive = Object.values(billDateAging.buckets).reduce((t, v) => t + Math.max(0, v), 0);
   // The lens actually in force: with nothing overdue only the Bill Date lens has anything to show.
   const agingByBillDate = agingBasis === "billDate" || !((customer?.overdue ?? 0) > 0);
 
@@ -1319,7 +1329,7 @@ export default function CustomerDetail() {
       if (agingBucketFilter.size > 0) {
         if (t.kind !== "sales") return false;
         const key = agingByBillDate
-          ? ((t.pending ?? 0) >= 0.5 ? billAgeKey(t.date) : null)
+          ? (Math.abs(t.pending ?? 0) >= 0.5 ? billAgeKey(t.date) : null)
           : invoiceAgingKey(t.overdueDays ?? 0);
         if (!agingBucketFilter.has(key ?? "")) return false;
       }
@@ -2301,7 +2311,7 @@ export default function CustomerDetail() {
       </Collapsible>
 
       {/* Aging Breakdown — one card, two lenses: Overdue Aging (days past due date) | Bill Date Aging (days since bill date) */}
-      {(customer.overdue > 0 || billDateAging.bills > 0) && (() => {
+      {(customer.overdue > 0 || Object.keys(billDateAging.buckets).length > 0) && (() => {
         const AGING_BUCKETS = [
           { label: "0–30 days",    key: "0_30",     color: "hsl(142, 71%, 45%)" },
           { label: "31–60 days",   key: "31_60",    color: "hsl(82, 70%, 42%)"  },
@@ -2341,13 +2351,17 @@ export default function CustomerDetail() {
         const bucketSource = byBillDate
           ? billDateAging.buckets
           : (customer.agingBuckets as unknown as Record<string, number>);
-        const agingData = AGING_BUCKETS.map(({ label, key, color }) => ({
-          label,
-          color,
-          amount: bucketSource?.[key] ?? 0,
-        })).filter((d) => d.amount > 0);
+        // A Bill Date bucket can net NEGATIVE when its advances outweigh its bills (as in Tally);
+        // those keep their row and bar, coloured as credit.
+        const CREDIT_COLOR = "hsl(152, 60%, 36%)";
+        const agingData = AGING_BUCKETS.map(({ label, key, color }) => {
+          const amount = bucketSource?.[key] ?? 0;
+          return { label, color: amount < 0 ? CREDIT_COLOR : color, amount };
+        }).filter((d) => (byBillDate ? Math.abs(d.amount) >= 0.5 : d.amount > 0));
 
-        const totalAgingAmt = agingData.reduce((s, d) => s + d.amount, 0);
+        // Shares are of the positive (debit) buckets, so a credit bucket cannot push a debit one past 100%.
+        const totalAgingAmt = agingData.reduce((s, d) => s + Math.max(0, d.amount), 0);
+        const hasCreditBucket = agingData.some((d) => d.amount < 0);
 
         return (
           <Collapsible open={agingOpen} onOpenChange={setAgingOpen}>
@@ -2361,7 +2375,7 @@ export default function CustomerDetail() {
                       {byBillDate ? "Bill Date Aging Breakdown" : "Overdue Aging Breakdown"}
                       <span className="text-xs font-normal text-muted-foreground ml-1">
                         {byBillDate
-                          ? <>— every unpaid bill, aged from its bill date{asOfDate ? ` to ${formatDateDMY(asOfDate)}` : ""}{Math.abs(billDateBridge) >= 0.5 ? "; bars are gross, the Total ties to Outstanding" : ""}</>
+                          ? <>— every open bill aged from its bill date{asOfDate ? ` to ${formatDateDMY(asOfDate)}` : ""}, advances netted in their own date's bucket (as in Tally){Math.abs(billDateBridge) >= 0.5 ? "; untagged On Account is deducted from the Total" : ""}</>
                           : <>— invoice-level only; opening balance excluded{onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}</>}
                       </span>
                     </CardTitle>
@@ -2400,6 +2414,7 @@ export default function CustomerDetail() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={agingData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    {hasCreditBucket && <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />}
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
                     <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={fmtL} width={72} />
                     <Tooltip
@@ -2438,7 +2453,7 @@ export default function CustomerDetail() {
                         <span className="text-xs text-muted-foreground w-24 shrink-0">{d.label}</span>
                         <span className="text-xs font-bold font-mono" style={{ color: d.color }}>{fmt(d.amount)}</span>
                         <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
-                          {totalAgingAmt > 0 ? `${((d.amount / totalAgingAmt) * 100).toFixed(1)}%` : "—"}
+                          {totalAgingAmt > 0 && d.amount > 0 ? `${((d.amount / totalAgingAmt) * 100).toFixed(1)}%` : "—"}
                         </span>
                       </div>
                     );
@@ -2478,7 +2493,7 @@ export default function CustomerDetail() {
                       <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
                       <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(billDateBridge)}</span>
                       <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
-                        {billDateAging.bills > 0 ? `${((billDateBridge / billDateAging.bills) * 100).toFixed(1)}%` : "—"}
+                        {billDateGrossPositive > 0 ? `${((billDateBridge / billDateGrossPositive) * 100).toFixed(1)}%` : "—"}
                       </span>
                     </div>
                   )}
