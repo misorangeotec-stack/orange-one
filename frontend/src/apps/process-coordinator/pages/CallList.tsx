@@ -582,7 +582,7 @@ function SearchVerdict({
     const sample = [...new Set(known.map((k) => k.ref))].slice(0, 3).join(", ");
     return (
       <div className="mt-1.5 rounded-lg bg-[#E9F8EF] px-2.5 py-1.5 text-[11.5px] leading-snug text-[#15803D]">
-        <span className="font-semibold">Not pending</span> — {sample} is in {names} with no open step (done, closed or cancelled).
+        <span className="font-semibold">Not pending</span> — {sample} is in {names} with no open step owned by anyone (done, closed, cancelled — or its step has no owner set).
       </div>
     );
   }
