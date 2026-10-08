@@ -228,7 +228,9 @@ export default function MyOrders() {
 
             {folder === "drafts" ? (
               <>
-                {draftErr ? <p className="text-[13.5px] text-[#B3282C]">{draftErr}</p> : null}
+                {draftErr ? (
+                  <p className="rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">{draftErr}</p>
+                ) : null}
                 {drafts.loading ? (
                   <div className="rounded-2xl border border-line bg-white p-8 text-[14px] text-grey">Loading…</div>
                 ) : shownDrafts.length === 0 ? (
