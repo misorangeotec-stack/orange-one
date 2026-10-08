@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput, TextArea } from "@/shared/components/ui/Form";
-import { deskFormLabel, type DeskCompany, type DeskItem, type DeskLineInput } from "../data/orderDesk";
+import type { DeskItem, DeskLedger, DeskLineInput } from "../data/orderDesk";
 import { customerItemType } from "../lib/customerLabels";
 
 /**
@@ -69,10 +69,10 @@ const RETIRED_GROUP = "No longer on your list";
 export default function OrderForm({
   items,
   retired,
-  companies,
-  companyId,
-  onCompanyChange,
-  companyLabel,
+  ledgers,
+  ledgerId,
+  onLedgerChange,
+  ledgerLabel,
   initialLines,
   initialRemarks,
   submitLabel,
@@ -84,20 +84,14 @@ export default function OrderForm({
   items: DeskItem[];
   retired?: RetiredItem[];
   /**
-   * Which of ours they may buy from. Passed only when placing — an order that
-   * already exists is committed to a book and cannot move to another.
+   * Which of their firms is ordering (OD-17). Passed only when placing — an
+   * order that already exists stays with the firm it was placed for.
    */
-  companies?: DeskCompany[];
-  companyId?: string;
-  onCompanyChange?: (id: string) => void;
-  /**
-   * Shown instead of the picker when changing an existing order.
-   *
-   * ⚠ ALREADY RESOLVED TO A FORM NAME by the caller (`deskFormLabel`). Do not
-   *   pass `order.companyLabel` raw — that is our company, which is the one thing
-   *   OD-16 says must not appear here.
-   */
-  companyLabel?: string | null;
+  ledgers?: DeskLedger[];
+  ledgerId?: string;
+  onLedgerChange?: (id: string) => void;
+  /** Shown instead of the picker when changing an existing order. */
+  ledgerLabel?: string | null;
   initialLines?: DeskLineInput[];
   initialRemarks?: string;
   submitLabel: string;
@@ -209,68 +203,56 @@ export default function OrderForm({
   };
 
   /*
-    WHICH FORM THE ORDER GOES ON, ABOVE THE ITEMS AND NOT BESIDE THEM.
+    WHICH OF THEIR FIRMS IS ORDERING, ABOVE THE ITEMS AND NOT BESIDE THEM.
 
     It is not one field among several — it decides what the list underneath can
     contain, so it has to be answered first and has to look like it was. Placed
     beside the lines it reads as an afterthought, and a customer who changes it
     after typing six lines loses them.
 
-    ⚠ ONE PICKER, OR NONE AT ALL. Most customers order on exactly one form, and a
+    ⚠ ONE PICKER, OR NONE AT ALL. Most customers are exactly one firm, and a
       required dropdown with a single option is a question with one answer — so it
       prints as a sentence instead. The picker appears only where there is a real
       choice to make.
 
-    ⚠ NOT ONE OF OUR COMPANY NAMES ANYWHERE IN HERE (OD-16). Every string the
-      customer reads comes through `deskFormLabel`, which falls back to the
-      company only for a ledger nobody has given a form name yet — and the fix for
-      seeing one of those is to fill it in under Setup → Forms, not to reword this.
+    ⚠ NOT ONE OF OUR COMPANY NAMES ANYWHERE IN HERE (OD-17). The options are their
+      own ledgers; which of our books bills the order is chosen at our end.
   */
-  const companyPicker = (() => {
-    if (companyLabel) {
+  const ledgerPicker = (() => {
+    if (ledgerLabel) {
       return (
         <p className="text-[13.5px] text-grey">
-          Ordering on <span className="font-semibold text-ink">{companyLabel}</span>
+          Ordering for <span className="font-semibold text-ink">{ledgerLabel}</span>
         </p>
       );
     }
-    if (!companies || companies.length === 0) return null;
-    if (companies.length === 1) {
+    if (!ledgers || ledgers.length === 0) return null;
+    if (ledgers.length === 1) {
       return (
         <p className="text-[13.5px] text-grey">
-          Ordering on <span className="font-semibold text-ink">{deskFormLabel(companies[0].formName, companies[0].label)}</span>
+          Ordering for <span className="font-semibold text-ink">{ledgers[0].name}</span>
         </p>
       );
     }
     return (
       <div className="space-y-2">
-        <label className="block text-[13px] font-semibold text-ink">Which form is this order on?</label>
+        <label className="block text-[13px] font-semibold text-ink">Which of your companies is this order for?</label>
         <div className="max-w-md">
           <Combobox
-            value={companyId ?? ""}
-            onChange={(v) => onCompanyChange?.(v)}
-            options={companies.map((c) => ({
-              value: c.companyId,
-              label: deskFormLabel(c.formName, c.label),
-              sublabel: `${c.itemCount} ${c.itemCount === 1 ? "item" : "items"}`,
-            }))}
-            placeholder="Choose a form"
+            value={ledgerId ?? ""}
+            onChange={(v) => onLedgerChange?.(v)}
+            options={ledgers.map((l) => ({ value: l.ledgerId, label: l.name }))}
+            placeholder="Choose your company"
           />
         </div>
-        {/* Says the quiet part out loud, so "where is my usual ink?" has an
-            answer on the screen rather than on the phone. */}
-        <p className="text-[12.5px] text-grey-2">
-          One order goes on one form, and each carries a different list. If something
-          you buy is not below, it may sit on another of your forms.
-        </p>
       </div>
     );
   })();
 
   return (
     <div className="space-y-5">
-      {companyPicker && (
-        <div className="rounded-2xl border border-line bg-white px-5 py-4">{companyPicker}</div>
+      {ledgerPicker && (
+        <div className="rounded-2xl border border-line bg-white px-5 py-4">{ledgerPicker}</div>
       )}
       <div className="rounded-2xl border border-line bg-white overflow-hidden">
         <div className="hidden sm:grid grid-cols-[1fr_130px_90px_1fr_40px] gap-3 px-5 py-3 border-b border-line bg-[#FBFCFE] text-[12px] font-semibold text-grey uppercase tracking-wide">

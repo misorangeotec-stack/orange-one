@@ -6,7 +6,7 @@ import OrderForm from "../components/OrderForm";
 import { useCustomer } from "../CustomerOrdersApp";
 import { callUs } from "../lib/customerLabels";
 import {
-  COMPANIES_QK, fetchDeskCompanies, fetchDeskItems, itemsQueryKey, submitDeskOrder,
+  LEDGERS_QK, fetchDeskLedgers, fetchDeskItems, itemsQueryKey, submitDeskOrder,
   ORDERS_QK, type DeskLineInput,
 } from "../data/orderDesk";
 import { deskPaths } from "../lib/paths";
@@ -18,54 +18,44 @@ import { deskPaths } from "../lib/paths";
  * fields (Q2). The site the goods leave from and how they travel are ours to
  * decide and are filled in at our end; neither appears here.
  *
- * ⚠ WHICH FORM THEY ARE ORDERING ON IS THEIRS TO ANSWER (OD-14, renamed OD-16).
- *   Decision Q1 sent that question to credit check on the grounds that guessing it
- *   would be wrong half the time — both named customers split roughly 50/50 across
- *   two books. Asking the customer is not a guess: they know which form they order
- *   on, and the answer decides which items can be billed to them at all.
- *
- * ⚠ THE COMPANY PICKER IS STILL THE SAME PICKER, RENAMED (OD-16). What travels is
- *   unchanged — `companyId`, our book — and only the words changed: the customer
- *   reads the FORM name agreed with them, never "O-tec - Surat". One form is
- *   printed as a sentence, several become a choice; that shape predates OD-16 and
- *   is why this needed no new branch.
- *
- * ⚠ Q11 STILL STANDS. The form name is ours to choose and agreed with this
- *   customer; it carries no ledger id and no ledger name. The ticked LEDGER list
- *   never leaves the server, and this app still reads no table.
+ * ⚠ WHICH OF THEIR FIRMS IS ORDERING IS THEIRS TO ANSWER; WHICH OF OUR BOOKS
+ *   BILLS IT IS NOT (OD-17). OD-14 asked them to pick one of our companies, and
+ *   OD-16 only renamed it. Now the picker lists their own ledgers as ticked in
+ *   Setup → Customer Logins, the item list follows that firm, and the company
+ *   is chosen by our team on Complete Customer Order.
  */
 export default function PlaceOrder() {
   const customer = useCustomer();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [placed, setPlaced] = useState<string | null>(null);
-  const [companyId, setCompanyId] = useState<string>("");
+  const [ledgerId, setLedgerId] = useState<string>("");
 
-  const companies = useQuery({
-    queryKey: COMPANIES_QK,
-    queryFn: fetchDeskCompanies,
+  const ledgers = useQuery({
+    queryKey: LEDGERS_QK,
+    queryFn: fetchDeskLedgers,
     staleTime: 10 * 60_000,
   });
 
   /*
-    The richest book leads (the server orders them that way) and is chosen for
-    them, because for most customers it is the only one they ever use and a
-    required field they never change is a required field that should not be asked.
+    The first firm is chosen for them, because most customers are one firm and
+    a required field they never change is a required field that should not be
+    asked. They can still change it.
     They can still change it; it is a default, not a decision made for them.
   */
   useEffect(() => {
-    if (!companyId && companies.data?.length) setCompanyId(companies.data[0].companyId);
-  }, [companies.data, companyId]);
+    if (!ledgerId && ledgers.data?.length) setLedgerId(ledgers.data[0].ledgerId);
+  }, [ledgers.data, ledgerId]);
 
   const { data: items, isLoading, error } = useQuery({
-    queryKey: itemsQueryKey(companyId || null),
-    queryFn: () => fetchDeskItems(companyId || null),
-    enabled: !!companyId,
+    queryKey: itemsQueryKey(null, ledgerId || null),
+    queryFn: () => fetchDeskItems(null, ledgerId || null),
+    enabled: !!ledgerId,
     staleTime: 10 * 60_000,
   });
 
   const place = async (lines: DeskLineInput[], remarks: string) => {
-    await submitDeskOrder({ companyId, orderRemarks: remarks, lines });
+    await submitDeskOrder({ ledgerId, orderRemarks: remarks, lines });
     // Await both: the next screen this customer opens is "My orders", and it must
     // not open on a list that predates the order they just placed.
     await qc.invalidateQueries({ queryKey: ORDERS_QK });
@@ -120,9 +110,12 @@ export default function PlaceOrder() {
     );
   }
 
-  const loadingAnything = companies.isLoading || (!!companyId && isLoading);
-  const failed = companies.error || error;
-  const noCompanies = !companies.isLoading && !companies.error && (companies.data?.length ?? 0) === 0;
+  const loadingAnything = ledgers.isLoading || (!!ledgerId && isLoading);
+  const failed = ledgers.error || error;
+  // No firm, or no item chosen for them in Setup — either way nothing to order.
+  const noLedgers =
+    (!ledgers.isLoading && !ledgers.error && (ledgers.data?.length ?? 0) === 0) ||
+    (!!ledgerId && !isLoading && !error && (items?.length ?? 0) === 0);
 
   return (
     <OrderDeskShell title="Place an order" subtitle={subtitle}>
@@ -131,7 +124,7 @@ export default function PlaceOrder() {
           We could not load your items just now. Please refresh the page, and {callUs("call us")} if
           it keeps happening.
         </div>
-      ) : noCompanies ? (
+      ) : noLedgers ? (
         /*
           Nothing to order from at all. Setup refuses to switch a customer on
           without a mapped item, so reaching here means something changed
@@ -149,9 +142,9 @@ export default function PlaceOrder() {
       ) : (
         <OrderForm
           items={items ?? []}
-          companies={companies.data ?? []}
-          companyId={companyId}
-          onCompanyChange={setCompanyId}
+          ledgers={ledgers.data ?? []}
+          ledgerId={ledgerId}
+          onLedgerChange={setLedgerId}
           submitLabel="Place this order"
           busyLabel="Placing…"
           onSubmit={place}

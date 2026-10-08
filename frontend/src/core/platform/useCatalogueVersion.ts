@@ -4,7 +4,7 @@ import { REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { DISPATCH_MASTERS_QK } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { OCPI_MASTERS_QK } from "@/apps/ocpi/data/ocpiMasters";
-import { COMPANIES_QK } from "@/apps/customer-orders/data/orderDesk";
+import { LEDGERS_QK } from "@/apps/customer-orders/data/orderDesk";
 
 /**
  * PF-17 — ONE realtime subscription that tells every module its copy of the
@@ -79,8 +79,8 @@ export const CATALOGUE_QUERY_KEYS: readonly (readonly unknown[])[] = [
   DISPATCH_MASTERS_QK, // ["dispatchMasters"]        - the ~2 MB catalogue
   DISPATCH_COMPANY_ITEMS_PREFIX, // ["dispatchCompanyItems"]   - prefix, every book
   OCPI_MASTERS_QK, // ["ocpiMasters"]            - 7,960 parties
-  COMPANIES_QK, // ["order-desk","companies"]
-  ORDER_DESK_ITEMS_PREFIX, // ["order-desk","items"]     - prefix, every book
+  LEDGERS_QK, // ["order-desk","ledgers"]
+  ORDER_DESK_ITEMS_PREFIX, // ["order-desk","items"]     - prefix, every firm/book
   ADMIN_MASTERS_QK, // ["masters"]                - the admin screen
 ];
 
