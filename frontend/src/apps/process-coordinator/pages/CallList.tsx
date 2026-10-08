@@ -9,8 +9,9 @@ import { formatDate } from "@/shared/lib/time";
 import { appName } from "@/apps/appInfo";
 import { useOpenWorkItem } from "@/core/workspace/WorkPanel";
 import PersonDrawer from "../components/PersonDrawer";
-import { CALL_LIST_APP_IDS, usePeopleWork, type ModuleStatus, type PersonItem, type PersonWork } from "../data/peopleWork";
+import { CALL_LIST_APP_IDS, usePeopleWork, type KnownRef, type ModuleStatus, type PersonItem, type PersonWork } from "../data/peopleWork";
 import { daysLate } from "../lib/callText";
+import { matchedRef, normRef } from "../lib/hubSearch";
 
 /**
  * PENDING & DUE ACTIVITY — the coordinator's one screen for every FMS due.
@@ -29,6 +30,12 @@ import { daysLate } from "../lib/callText";
  *
  * Filters apply as you pick (no Apply button): the counts move with them, which
  * is what tells you a filter did something.
+ *
+ * The "Hub ID / PO no." search at the top answers "is this one still pending?":
+ * it matches a row's own number and every linked number of the same record (see
+ * lib/hubSearch.ts), and says plainly when the number exists but has no open step.
+ * A search also shows on-hold rows — held work is still pending, and hiding it
+ * would answer "not pending" for a PO that is only parked.
  *
  * ⚠ ONE TASK, SEVERAL OWNERS. A shared step (e.g. a Dispatch step owned by three
  *   people) is ONE pending task in the tiles, the FMS summary and the task list,
@@ -89,9 +96,11 @@ function matchesQuick(q: Quick, item: PersonItem, late: number | null): boolean 
 }
 
 export default function CallList() {
-  const { rows, modules, peopleLoading, contactsMissing, todayIso, updatedAt, refreshing, refresh } = usePeopleWork();
+  const { rows, modules, knownRefs, peopleLoading, contactsMissing, todayIso, updatedAt, refreshing, refresh } = usePeopleWork();
   const openItem = useOpenWorkItem();
 
+  const [search, setSearch] = useState("");
+  const q = normRef(search);
   const [persons, setPersons] = useState<string[]>([]);
   const [parties, setParties] = useState<string[]>([]);
   const [fms, setFms] = useState<string[]>([]);
@@ -111,14 +120,15 @@ export default function CallList() {
   /* ---- filter options, each from the pairs the OTHER filters still allow ------- */
   const pass = useCallback(
     (p: Pair, skip?: "person" | "party" | "fms" | "dept" | "stage") =>
-      (withHold || p.item.bucket !== "hold") &&
+      (withHold || !!q || p.item.bucket !== "hold") &&
+      (!q || matchedRef(p.item, q) != null) &&
       (skip === "person" || !persons.length || persons.includes(p.row.person.id)) &&
       (skip === "party" || !parties.length || parties.includes(p.item.detail ?? "—")) &&
       (skip === "fms" || !fms.length || fms.includes(p.item.appId)) &&
       (skip === "dept" || !departments.length || departments.includes(p.row.person.department ?? "—")) &&
       (skip === "stage" || !stages.length || stages.includes(p.item.stage ?? "—")) &&
       (!isRangeActive(range) || (!!p.item.dueIso && dateInRange(p.item.dueIso, range))),
-    [withHold, persons, parties, fms, departments, stages, range],
+    [q, withHold, persons, parties, fms, departments, stages, range],
   );
 
   const options = useMemo(() => {
@@ -150,6 +160,8 @@ export default function CallList() {
     return [...by.values()];
   };
   const baseTasks = useMemo(() => toTasks(base), [base]);
+  /** Every pending row the search hits, ignoring the other filters — the verdict must not say "not pending" because a Person filter hid the row. */
+  const searchHits = useMemo(() => (q ? toTasks(allPairs.filter((p) => matchedRef(p.item, q) != null)) : []), [allPairs, q]);
   const tasks = useMemo(() => toTasks(pairs), [pairs]);
 
   /** The tiles read the book BEFORE the quick filter, so clicking one never zeroes the others. */
@@ -186,11 +198,13 @@ export default function CallList() {
   }, [pairs]);
 
   const anyFilter =
+    !!q ||
     persons.length + parties.length + fms.length + departments.length + stages.length > 0 ||
     isRangeActive(range) ||
     withHold ||
     quick !== "all";
   const clearAll = () => {
+    setSearch("");
     setPersons([]);
     setParties([]);
     setFms([]);
@@ -212,9 +226,18 @@ export default function CallList() {
       key: "ref",
       header: "Hub ID",
       alwaysVisible: true,
-      cell: (t) => <span className="font-semibold text-navy">{t.item.ref}</span>,
+      cell: (t) => {
+        const hit = matchedRef(t.item, q);
+        return (
+          <div>
+            <span className="font-semibold text-navy">{t.item.ref}</span>
+            {hit && hit !== t.item.ref ? <div className="whitespace-nowrap text-[11px] text-grey">via {hit}</div> : null}
+          </div>
+        );
+      },
       sortValue: (t) => t.item.ref,
-      filter: { kind: "text", get: (t) => t.item.ref },
+      exportValue: (t) => t.item.ref,
+      filter: { kind: "text", get: (t) => [t.item.ref, ...t.item.searchRefs].join(" ") },
     },
     {
       key: "fms",
@@ -351,6 +374,10 @@ export default function CallList() {
             </svg>
             Filters
           </div>
+          <Filter label="Hub ID / PO / document no.">
+            <SearchBox value={search} onChange={setSearch} />
+            {q ? <SearchVerdict q={q} raw={search.trim()} found={searchHits} knownRefs={knownRefs} loading={loading} /> : null}
+          </Filter>
           <Filter label="Person">
             <MultiSelect values={persons} onChange={setPersons} options={options.person} placeholder="Select person" />
           </Filter>
@@ -491,6 +518,77 @@ function Filter({ label, children }: { label: string; children: ReactNode }) {
     <div>
       <div className="mb-1 text-[12px] font-semibold text-navy">{label}</div>
       {children}
+    </div>
+  );
+}
+
+function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="relative">
+      <svg
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-grey-2"
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g. PR-1043, PO-0231"
+        className="w-full rounded-xl border border-line bg-white py-2.5 pl-9 pr-3 text-[14px] text-ink outline-none transition placeholder:text-grey-2 hover:border-[#d9e2f0] focus:border-orange focus:ring-4 focus:ring-orange/10"
+      />
+    </div>
+  );
+}
+
+/**
+ * The plain answer to "is it pending?". Reads every pending row, not the filtered
+ * book, so a lit tile or a Person filter never makes a pending PO look closed.
+ */
+function SearchVerdict({
+  q,
+  raw,
+  found,
+  knownRefs,
+  loading,
+}: {
+  q: string;
+  raw: string;
+  found: Task[];
+  knownRefs: KnownRef[];
+  loading: boolean;
+}) {
+  if (found.length) {
+    const fmsNames = [...new Set(found.map((t) => appName(t.item.appId)))].join(", ");
+    return (
+      <div className="mt-1.5 rounded-lg bg-[#FFF3DC] px-2.5 py-1.5 text-[11.5px] leading-snug text-[#92400E]">
+        <span className="font-semibold">Pending</span> — {found.length} open step{found.length === 1 ? "" : "s"} in {fmsNames}
+      </div>
+    );
+  }
+  if (loading) return <div className="mt-1.5 text-[11.5px] text-grey">Still loading — checking every FMS…</div>;
+  const known = knownRefs.filter((k) => normRef(k.ref).includes(q));
+  if (known.length) {
+    const names = [...new Set(known.map((k) => appName(k.appId)))].join(", ");
+    const sample = [...new Set(known.map((k) => k.ref))].slice(0, 3).join(", ");
+    return (
+      <div className="mt-1.5 rounded-lg bg-[#E9F8EF] px-2.5 py-1.5 text-[11.5px] leading-snug text-[#15803D]">
+        <span className="font-semibold">Not pending</span> — {sample} is in {names} with no open step (done, closed or cancelled).
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 rounded-lg bg-page px-2.5 py-1.5 text-[11.5px] leading-snug text-grey">
+      No record "{raw}" in the FMS you can see.
     </div>
   );
 }
