@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import OrderDeskShell from "../components/OrderDeskShell";
 import OrderForm from "../components/OrderForm";
@@ -10,6 +10,7 @@ import {
   ORDERS_QK, type DeskLineInput,
 } from "../data/orderDesk";
 import { deskPaths } from "../lib/paths";
+import { useDeskDrafts } from "../lib/deskDrafts";
 
 /**
  * Place an order — the screen the whole module exists for.
@@ -31,6 +32,29 @@ export default function PlaceOrder() {
   const [placed, setPlaced] = useState<string | null>(null);
   const [ledgerId, setLedgerId] = useState<string>("");
 
+  /*
+    DRAFTS. "Continue" on My orders → Drafts lands here as ?draft=<id>; the draft
+    is opened once the list has loaded, its company chosen, and the form remounted
+    on its lines (the `key`). Placing the order deletes the draft.
+  */
+  const drafts = useDeskDrafts();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wantDraft = searchParams.get("draft");
+  const [loaded, setLoaded] = useState<{ key: string; lines: DeskLineInput[]; remarks: string } | null>(null);
+  const [draftErr, setDraftErr] = useState("");
+
+  useEffect(() => {
+    if (!wantDraft || drafts.loading || !ledgers.data) return;
+    const d = drafts.mine.find((x) => x.id === wantDraft);
+    setSearchParams({}, { replace: true });
+    if (!d) { setDraftErr("That draft is no longer saved — it may have been placed or discarded."); return; }
+    void drafts.open(d).then(({ payload }) => {
+      if (ledgers.data!.some((l) => l.ledgerId === payload.ledgerId)) setLedgerId(payload.ledgerId);
+      setLoaded({ key: d.id, lines: payload.lines ?? [], remarks: payload.remarks ?? "" });
+    }).catch((e) => setDraftErr((e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantDraft, drafts.loading, ledgers.data]);
+
   const ledgers = useQuery({
     queryKey: LEDGERS_QK,
     queryFn: fetchDeskLedgers,
@@ -40,8 +64,7 @@ export default function PlaceOrder() {
   /*
     The first firm is chosen for them, because most customers are one firm and
     a required field they never change is a required field that should not be
-    asked. They can still change it.
-    They can still change it; it is a default, not a decision made for them.
+    asked. They can still change it; it is a default, not a decision made for them.
   */
   useEffect(() => {
     if (!ledgerId && ledgers.data?.length) setLedgerId(ledgers.data[0].ledgerId);
@@ -54,8 +77,24 @@ export default function PlaceOrder() {
     staleTime: 10 * 60_000,
   });
 
+  const itemName = useMemo(() => new Map((items ?? []).map((i) => [i.itemId, i.name])), [items]);
+
+  const saveDraft = async (lines: DeskLineInput[], remarks: string) => {
+    const names = lines.map((l) => itemName.get(l.itemId)).filter(Boolean) as string[];
+    await drafts.save({
+      title: names.length
+        ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2} more` : "")
+        : "Note only",
+      summary: lines.map((l) => `${itemName.get(l.itemId) ?? "Item"} — ${l.quantity || "?"}`),
+      payload: { ledgerId, lines, remarks },
+    });
+  };
+
   const place = async (lines: DeskLineInput[], remarks: string) => {
     await submitDeskOrder({ ledgerId, orderRemarks: remarks, lines });
+    // The draft it came from has done its job.
+    await drafts.finish();
+    setLoaded(null);
     // Await both: the next screen this customer opens is "My orders", and it must
     // not open on a list that predates the order they just placed.
     await qc.invalidateQueries({ queryKey: ORDERS_QK });
@@ -140,15 +179,44 @@ export default function PlaceOrder() {
       ) : loadingAnything ? (
         <div className="rounded-2xl border border-line bg-white p-8 text-[14px] text-grey">Loading your items…</div>
       ) : (
-        <OrderForm
-          items={items ?? []}
-          ledgers={ledgers.data ?? []}
-          ledgerId={ledgerId}
-          onLedgerChange={setLedgerId}
-          submitLabel="Place this order"
-          busyLabel="Placing…"
-          onSubmit={place}
-        />
+        <div className="space-y-4">
+          {draftErr ? (
+            <div className="rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">{draftErr}</div>
+          ) : null}
+          {loaded ? (
+            <div className="rounded-xl border border-line bg-[#FBFCFE] px-4 py-3 text-[13.5px] text-grey flex flex-wrap items-center gap-3">
+              <span>You are continuing a saved draft.</span>
+              <button
+                type="button"
+                onClick={() => { drafts.detach(); setLoaded(null); }}
+                className="font-semibold text-orange hover:text-orange-2"
+              >
+                Start a new order instead
+              </button>
+            </div>
+          ) : drafts.mine.length > 0 ? (
+            <div className="rounded-xl border border-line bg-[#FBFCFE] px-4 py-3 text-[13.5px] text-grey">
+              You have {drafts.mine.length} saved draft{drafts.mine.length === 1 ? "" : "s"}.{" "}
+              <Link to={`${deskPaths.orders}?folder=drafts`} className="font-semibold text-orange hover:text-orange-2">
+                Open my drafts
+              </Link>
+            </div>
+          ) : null}
+          <OrderForm
+            key={loaded?.key ?? "new"}
+            items={items ?? []}
+            ledgers={ledgers.data ?? []}
+            ledgerId={ledgerId}
+            onLedgerChange={setLedgerId}
+            // A draft line whose item is no longer on their list is dropped, not shown blank.
+            initialLines={loaded?.lines.filter((l) => itemName.has(l.itemId))}
+            initialRemarks={loaded?.remarks}
+            submitLabel="Place this order"
+            busyLabel="Placing…"
+            onSubmit={place}
+            onSaveDraft={saveDraft}
+          />
+        </div>
       )}
     </OrderDeskShell>
   );
