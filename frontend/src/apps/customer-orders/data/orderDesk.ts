@@ -12,8 +12,9 @@ import { supabase } from "@/core/platform/supabase";
  *   1. The security sweep could be a clean "staff only" rule with NO exceptions
  *      to reason about. There is no table needing an external read arm, so there
  *      is no table where somebody must remember one.
- *   2. Q11 — "the customer never sees the ticked ledger list" — is honoured by
- *      never sending it. Not by hiding it in the UI, which is not honouring it.
+ *   2. What reaches them is decided by the server. Since OD-17 that includes
+ *      their own firm NAMES (Q11 relaxed for exactly that) — but never which of
+ *      our books each one sits in, nor how many.
  *   3. Our books, sites and companies (`mst_companies`, `mst_locations`,
  *      `mst_company_locations`) stay entirely out of reach, so the customer never
  *      learns which of our ledgers they are about to be billed from.
@@ -83,21 +84,17 @@ export interface DeskOrder {
   orderDate: string;
   orderRemarks: string | null;
   /**
-   * Which of ours it was ordered from.
+   * Which of OUR books bills it — never shown, only used to scope the picker.
    *
-   * ⚠ NEEDED TO CHANGE THE ORDER, not only to display it. The item picker is
-   *   scoped to a book since OD-14, so re-rendering it for an edit without this
-   *   would fall back to every book and let a line onto the order that the
-   *   billing company cannot supply.
-   *
-   *   Null on orders placed before OD-14, which had no company until credit check
-   *   filled one in.
+   * ⚠ NULL UNTIL WE COMPLETE THE ORDER (OD-17). The customer no longer chooses
+   *   it; our team does, on Complete Customer Order. Once set, a change has to
+   *   offer that book's copies of the items, or a line could go onto the order
+   *   that the billing company cannot supply.
    */
   companyId: string | null;
-  /** The fallback only — read it through `deskFormLabel`, never directly. */
-  companyLabel: string | null;
-  /** The form this order was placed on. Null falls back to `companyLabel`. */
-  formName: string | null;
+  /** Which of THEIR firms it was placed for — the ledger they picked (OD-17). */
+  ledgerId: string;
+  ledgerName: string;
   /**
    * The notes written FOR this customer as each consignment left, oldest first.
    *
@@ -132,70 +129,34 @@ export interface DeskOrder {
 }
 
 export const PROFILE_QK = ["order-desk", "profile"] as const;
-export const COMPANIES_QK = ["order-desk", "companies"] as const;
-/** Keyed on the book, because the list IS the book's. */
-export const itemsQueryKey = (companyId: string | null) =>
-  ["order-desk", "items", companyId ?? "all"] as const;
+export const LEDGERS_QK = ["order-desk", "ledgers"] as const;
+/** Keyed on both, because the list is the firm's — and, once we bill it, the book's. */
+export const itemsQueryKey = (companyId: string | null, ledgerId: string | null) =>
+  ["order-desk", "items", companyId ?? "all", ledgerId ?? "all"] as const;
 export const ORDERS_QK = ["order-desk", "orders"] as const;
 
 /**
- * A FORM the customer may place an order on (OD-16).
+ * One of THEIR firms — a ledger ticked for them in Setup → Customer Logins (OD-17).
  *
- * ⚠ THIS IS NOT THE LEDGER LIST, AND Q11 STILL STANDS. The form name is ours to
- *   choose and is agreed WITH this customer; it carries no ledger id, no ledger
- *   name and no hint of how many ledgers they are ticked into. The app still
- *   reads no table.
+ * ⚠ THE CUSTOMER NO LONGER CHOOSES ONE OF OUR COMPANIES. Which book bills the
+ *   order is decided at our end, on Complete Customer Order. What they choose is
+ *   which of their own firms is ordering, and the item list follows it.
  *
- * ⚠ `companyId` IS STILL THE VALUE THAT TRAVELS, and that has not changed. The
- *   form is what the customer READS; the book is what the order is placed
- *   against, and `submitDeskOrder` posts the id. Renaming the label was never
- *   meant to move the identity.
+ * ⚠ ONE ROW PER FIRM NAME, NOT PER LEDGER. The same firm is a separate ledger in
+ *   every book that bills it; the server folds them into one row and hands out a
+ *   single representative id, which every write expands back on its side.
  */
-export interface DeskCompany {
-  companyId: string;
-  /**
-   * Our company — "O-tec - Surat".
-   *
-   * ⚠ NOT FOR DISPLAY. It is the FALLBACK only, for a ledger nobody has given a
-   *   form name yet, and it is the one string on this screen the instruction says
-   *   a customer should not read. Go through `deskFormLabel` rather than reaching
-   *   for it: that is the single place the fallback is decided.
-   */
-  label: string;
-  /** The agreed name, from the ledger → form master. Null until one is typed. */
-  formName: string | null;
+export interface DeskLedger {
+  ledgerId: string;
+  name: string;
   itemCount: number;
 }
 
-/**
- * What the customer reads for a form. THE ONLY PLACE THE FALLBACK LIVES.
- *
- * An unmapped ledger has to render something, and a blank option is worse than
- * our company name — so the company is what shows until Setup → Forms is filled
- * in. Spreading that `??` across four components is how one of them ends up
- * printing an empty string.
- *
- * ⚠ TWO ARGUMENTS, NOT A ROW, because the two callers spell the fallback
- *   differently — `DeskCompany.label` and `DeskOrder.companyLabel` — and a single
- *   object parameter would either miss one of them or have to accept both keys
- *   optionally, which type-checks happily when a caller passes NEITHER.
- */
-export const deskFormLabel = (
-  formName: string | null,
-  fallback: string | null,
-): string => formName?.trim() || fallback || "";
-
-export async function fetchDeskCompanies(): Promise<DeskCompany[]> {
-  const { data, error } = await db.rpc("fms_dispatch_my_companies");
+export async function fetchDeskLedgers(): Promise<DeskLedger[]> {
+  const { data, error } = await db.rpc("fms_dispatch_my_ledgers");
   if (error) throw new Error(error.message);
-  return ((data ?? []) as {
-    company_id: string; label: string; form_name: string | null; item_count: number | null;
-  }[]).map((r) => ({
-    companyId: r.company_id,
-    label: r.label,
-    formName: r.form_name ?? null,
-    itemCount: r.item_count ?? 0,
-  }));
+  return ((data ?? []) as { ledger_id: string; ledger_name: string; item_count: number | null }[])
+    .map((r) => ({ ledgerId: r.ledger_id, name: r.ledger_name, itemCount: r.item_count ?? 0 }));
 }
 
 /**
@@ -228,16 +189,22 @@ export async function fetchCustomerProfile(): Promise<CustomerProfile | null> {
  *   raw, the customer sees the same ink three times with nothing on screen to tell
  *   them apart.
  *
- * ⚠ AND SCOPED TO THE BOOK THEY CHOSE (OD-14). Given a company, the server returns
- *   THAT BOOK'S OWN copy of everything mapped to their ledger there, matched by
- *   name. So the id on the line is already one the billing book can supply, and
- *   the old best-effort re-point at credit check has nothing left to move.
+ * ⚠ AND SCOPED TO THE FIRM THEY PICKED (OD-17) — only what Setup mapped to that
+ *   firm's ledgers. Given a company as well (an order we have already written
+ *   up), the server returns THAT BOOK'S own copy of each, matched by name, so a
+ *   change cannot add a line the billing book cannot supply.
  *
- *   Called with null only by the order-history screen, which needs every book's
- *   items to name lines already placed.
+ *   Both null is the whole account — the order-history screen, which needs every
+ *   item to name lines already placed.
  */
-export async function fetchDeskItems(companyId: string | null): Promise<DeskItem[]> {
-  const { data, error } = await db.rpc("fms_dispatch_my_items", { p_company: companyId });
+export async function fetchDeskItems(
+  companyId: string | null,
+  ledgerId: string | null,
+): Promise<DeskItem[]> {
+  const { data, error } = await db.rpc("fms_dispatch_my_items", {
+    p_company: companyId,
+    p_ledger: ledgerId,
+  });
   if (error) throw new Error(error.message);
   return ((data ?? []) as { item_id: string; name: string; unit: string | null; item_type: string | null }[])
     .map((r) => ({ itemId: r.item_id, name: r.name, unit: r.unit, itemType: r.item_type }));
@@ -256,7 +223,7 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
   return ((data ?? []) as {
     id: string; order_no: string; order_date: string; order_remarks: string | null;
     status_key: string; can_change: boolean; placed_at: string | null;
-    company_id: string | null; company_label: string | null; form_name: string | null;
+    company_id: string | null; ledger_id: string; ledger_name: string | null;
     dispatch_notes:
       | { round_no: number | null; sent_on: string | null; note: string | null }[]
       | null;
@@ -275,8 +242,8 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
     canChange: r.can_change,
     placedAt: r.placed_at,
     companyId: r.company_id,
-    companyLabel: r.company_label,
-    formName: r.form_name ?? null,
+    ledgerId: r.ledger_id,
+    ledgerName: r.ledger_name ?? "",
     /* Server-side `jsonb_agg` already orders these; a note with no text cannot
        reach the array, but the filter keeps a blank from rendering an empty box
        if that ever changes. */
@@ -326,13 +293,14 @@ const linePayload = (lines: DeskLineInput[]) =>
     }));
 
 export async function submitDeskOrder(input: {
-  companyId: string;
+  /** Which of their firms — `DeskLedger.ledgerId`. The company is ours to choose. */
+  ledgerId: string;
   orderRemarks: string;
   lines: DeskLineInput[];
 }): Promise<string> {
   const { data, error } = await db.rpc("fms_dispatch_submit_customer_order", {
     p: {
-      company_id: input.companyId,
+      ledger_id: input.ledgerId,
       order_remarks: input.orderRemarks.trim() || null,
       lines: linePayload(input.lines),
     },

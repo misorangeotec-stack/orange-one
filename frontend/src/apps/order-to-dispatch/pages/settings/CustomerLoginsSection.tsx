@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -9,30 +9,14 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import { FieldLabel, TextInput, PasswordInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../../store";
 import CustomerOrgItemsSection, {
-  NO_ITEM_EDITS, type OrgItemEdits,
+  NO_ITEM_EDITS, applyItemEdits, type OrgItemEdits,
 } from "../../components/CustomerOrgItemsSection";
-import CustomerOrgFormsSection from "../../components/CustomerOrgFormsSection";
 import CustomerOrgLoginSection from "../../components/CustomerOrgLoginSection";
 import {
-  CUSTOMER_ORGS_QK, MISSING_LABEL, addCustomer, fetchCustomerOrgs, orgItemsQueryKey,
-  saveCustomerOrg, setCustomerOrgItems,
-  type CustomerOrg,
+  CUSTOMER_GROUP_LEDGERS_QK, CUSTOMER_ORGS_QK, MISSING_LABEL, addCustomer, fetchCustomerGroupLedgers,
+  fetchCustomerOrgs, saveCustomerOrg,
+  type AddCustomerProgress, type CustomerOrg,
 } from "../../data/customerOrgs";
-
-/**
- * A Tally ledger that exists to hold MACHINE sales, not consumable ones.
- *
- * ⚠ A WORD MATCH, NOT A SUBSTRING ONE, and the difference is a real customer.
- *   `includes("MACHINE")` also catches "MACHINEWALA TEXTILES" and would quietly
- *   make that customer unaddable with nothing on screen to say why. The boundary
- *   keeps it to the naming convention actually in use — "A.N.CREATION - MACHINE",
- *   "… OLD MACHINE".
- *
- * ⚠ IF A LEDGER IS WRONGLY EXCLUDED, THIS IS WHERE TO LOOK. The symptom is a
- *   customer who cannot be found in the ledger picker at all, which looks like
- *   missing master data rather than a filter.
- */
-const isMachineLedger = (name: string) => /\bMACHINES?\b/.test(name.toUpperCase());
 
 /**
  * Setup → Customer Logins. Who may place their own orders through the Orange
@@ -80,16 +64,6 @@ export default function CustomerLoginsSection() {
    * nothing and removes the question.)
    */
   const reload = () => qc.invalidateQueries({ queryKey: CUSTOMER_ORGS_QK });
-
-  /**
-   * The item list is cached per ticked-ledger set, so a save has to drop the
-   * entry for the set it just changed as well as the org list. Without it,
-   * reopening the same customer shows the list as it was before the edit — and
-   * the grid's "Items they can order" column, which comes from the server, would
-   * disagree with it on screen.
-   */
-  const reloadItems = (partyIds: string[]) =>
-    qc.invalidateQueries({ queryKey: orgItemsQueryKey(partyIds) });
 
   const columns: QueueColumn<CustomerOrg>[] = useMemo(
     () => [
@@ -173,9 +147,9 @@ export default function CustomerLoginsSection() {
     <div className="space-y-4">
       <Card className="p-5 space-y-2">
         <p className="text-[12.5px] text-grey">
-          Customers on this list place their own orders on a screen of their own — which of our companies
-          they are buying from, then item, quantity and a remark. They never see a Tally ledger, a dispatch
-          site, a dispatch type or any of our internal step names; we fill those in at our end.
+          Customers on this list place their own orders on a screen of their own — which of their companies
+          is ordering, then item, quantity and a remark, from only the items chosen for them here. Which of
+          our companies bills it, the dispatch site and the dispatch type are filled in at our end.
         </p>
         <div className="pt-1">
           <Button size="sm" onClick={() => setAdding(true)}>Add a customer</Button>
@@ -216,79 +190,67 @@ export default function CustomerLoginsSection() {
 
   function useOrgFormOptions() {
     /**
-     * ⚠ ONE ROW PER CUSTOMER, NOT PER TALLY BOOK (OD-16). It used to be one row per
-     *   book, because a ledger name alone is five identical strings and the label
-     *   had to disambiguate them. That was true and was solving the wrong problem:
-     *   the person adding a customer does not think "Ganga in O-tec AND Ganga in
-     *   Enterprise", they think "Ganga", and ticking the same name three times is
-     *   three chances to miss one — after which that book silently cannot supply
-     *   them.
+     * ⚠ ONE ROW PER CUSTOMER GROUP (OD-17), from the same muster the Outstanding
+     *   dashboard groups by. Ticking a group ticks every one of its ledgers in
+     *   every book — "Ganga Fashion" and "Ganga Fashion Pvt Ltd" together — and
+     *   those ledger names are what the customer then chooses between on their own
+     *   screen. A ledger the muster does not know is its own group.
      *
-     *   So the picker collapses by NAME and the tick expands back to every ledger
-     *   carrying it. The books are shown in the label, as information rather than
-     *   as something to choose between.
+     * ⚠ MACHINE LEDGERS ARE NOT OFFERED AT ALL — `fetchCustomerGroupLedgers`
+     *   drops them, and the server refuses them on save.
      *
-     * ⚠ MACHINE LEDGERS ARE NOT OFFERED AT ALL. The field hint used to ask people
-     *   to leave them out by hand, which is a rule enforced by remembering. The
-     *   Order Desk sells ink, heads and spares; a machine ledger on a customer's
-     *   ordering access is always a mistake, so it is not in the list to be made.
-     *
-     * ⚠ AND AT MOST ONE LEDGER PER BOOK SURVIVES THE EXPANSION, because
-     *   `fms_dispatch_save_customer_org` refuses a second and would reject the save
-     *   with an error naming a ledger the admin never picked. Where a name really
-     *   does carry two in one book, the first by id wins and `multiPerBook` flags
-     *   it so the dialog can say so rather than choosing in silence.
+     * ⚠ AT MOST ONE LEDGER PER BOOK PER NAME survives the expansion, because the
+     *   server refuses two same-named ledgers in one book (an order for that book
+     *   could not tell them apart). The first by id wins.
      */
+    const groupLedgers = useQuery({
+      queryKey: CUSTOMER_GROUP_LEDGERS_QK,
+      queryFn: fetchCustomerGroupLedgers,
+      staleTime: 30 * 60_000,
+    });
+
     const { partyOptions, partyIdsForNames, namesForPartyIds } = useMemo(() => {
       const companyName = new Map(s.companies.map((c) => [c.id, c.name]));
-      const nameKey = (n: string) => n.trim().toUpperCase();
+      const key = (n: string) => n.trim().toUpperCase();
 
-      const rows = [...s.customers]
-        .filter((c) => c.active)
-        .filter((c) => !isMachineLedger(c.name));
-
-      /** name key → its ledgers, at most one per book. */
-      const byName = new Map<string, { ids: string[]; label: string; books: string[] }>();
-      const perBook = new Map<string, Set<string>>();
-
-      for (const c of [...rows].sort((a, b) => a.id.localeCompare(b.id))) {
-        const key = nameKey(c.name);
-        const book = c.companyId ?? "";
-        const seen = perBook.get(key) ?? new Set<string>();
-        if (seen.has(book)) continue; // second ledger in the same book — see above
-        seen.add(book);
-        perBook.set(key, seen);
-
-        const entry = byName.get(key) ?? { ids: [], label: c.name, books: [] };
-        entry.ids.push(c.id);
-        const bookName = companyName.get(book) ?? "no company";
-        if (!entry.books.includes(bookName)) entry.books.push(bookName);
-        byName.set(key, entry);
+      /** group key → its ledgers, at most one per (book, name). */
+      const byGroup = new Map<string, { ids: string[]; label: string; names: string[]; books: string[] }>();
+      const seen = new Set<string>();
+      for (const l of [...(groupLedgers.data ?? [])].sort((a, b) => a.partyId.localeCompare(b.partyId))) {
+        const one = `${l.companyId ?? ""}|${key(l.name)}`;
+        if (seen.has(one)) continue;
+        seen.add(one);
+        const g = key(l.groupName);
+        const entry = byGroup.get(g) ?? { ids: [], label: l.groupName, names: [], books: [] };
+        entry.ids.push(l.partyId);
+        if (!entry.names.includes(l.name)) entry.names.push(l.name);
+        const book = companyName.get(l.companyId ?? "") ?? "no company";
+        if (!entry.books.includes(book)) entry.books.push(book);
+        byGroup.set(g, entry);
       }
 
-      const options: MultiOption[] = [...byName.entries()]
+      const options: MultiOption[] = [...byGroup.entries()]
         .sort((a, b) => a[1].label.localeCompare(b[1].label))
-        .map(([key, e]) => ({
-          value: key,
+        .map(([k, e]) => ({
+          value: k,
           label: e.label,
-          /* The books are the answer to "did this pick up both?", which is the one
-             thing the old per-book rows did well and must not be lost. */
-          sublabel: [...e.books].sort().join(" · "),
+          /* The ledger names are what the customer will choose between; the book
+             count answers "did this pick up all of them?". */
+          sublabel: `${[...e.names].sort().join(" · ")} — ${e.books.length} ${e.books.length === 1 ? "book" : "books"}`,
         }));
 
       return {
         partyOptions: options,
-        partyIdsForNames: (keys: readonly string[]) =>
-          keys.flatMap((k) => byName.get(k)?.ids ?? []),
-        /** Which names a saved `partyIds` list represents. */
+        partyIdsForNames: (keys: readonly string[]) => keys.flatMap((k) => byGroup.get(k)?.ids ?? []),
+        /** Which groups a saved `partyIds` list represents. */
         namesForPartyIds: (ids: readonly string[]) => {
           const idSet = new Set(ids);
-          return [...byName.entries()]
+          return [...byGroup.entries()]
             .filter(([, e]) => e.ids.some((id) => idSet.has(id)))
             .map(([k]) => k);
         },
       };
-    }, []);
+    }, [groupLedgers.data]);
 
     /**
      * Only people who can actually ACT on the order. Naming somebody without edit
@@ -306,7 +268,7 @@ export default function CustomerLoginsSection() {
       [],
     );
 
-    return { partyOptions, partyIdsForNames, namesForPartyIds, notifyOptions };
+    return { partyOptions, partyIdsForNames, namesForPartyIds, notifyOptions, groupsLoading: groupLedgers.isLoading };
   }
 
   function OrgFields({
@@ -318,7 +280,7 @@ export default function CustomerLoginsSection() {
     defaultDispatchType, setDefaultDispatchType,
     active, setActive,
   }: OrgFieldProps) {
-    const { partyOptions, partyIdsForNames, namesForPartyIds, notifyOptions } = useOrgFormOptions();
+    const { partyOptions, partyIdsForNames, namesForPartyIds, notifyOptions, groupsLoading } = useOrgFormOptions();
 
     /**
      * The picker works in NAME space; `partyIds` stays in ID space.
@@ -397,15 +359,16 @@ export default function CustomerLoginsSection() {
         </div>
 
         <FieldLabel
-          label="The customer"
+          label="Customer group"
           required
-          hint="Tick them once. Every book they exist in comes with it — O-tec, Enterprise or both — and those are the forms they may order on. Machine ledgers are not offered."
+          hint="Tick the group. Every ledger in it comes along, in every book; machine ledgers are left out. The customer chooses between those ledger names when ordering."
         >
           <MultiSelect
             values={selectedNames}
             onChange={onNamesChange}
             options={partyOptions}
-            placeholder="Search the customer"
+            placeholder={groupsLoading ? "Loading customer groups…" : "Search the customer group"}
+            disabled={groupsLoading}
             searchable
           />
         </FieldLabel>
@@ -476,20 +439,10 @@ export default function CustomerLoginsSection() {
     const save = async () => {
       setBusy(true); setErr(null);
       try {
-        /*
-          ⚠ ITEMS BEFORE THE ORG, and it is not a matter of taste.
-            `fms_dispatch_save_customer_org` runs the readiness check whenever
-            `active` is true, and one of its arms is "no items mapped". An admin
-            who ticks the first item and switches the customer on in the same save
-            would otherwise be refused on a condition this dialog had just met.
-        */
-        if (itemEdits.add.length || itemEdits.remove.length) {
-          await setCustomerOrgItems(partyIds, itemEdits.add, itemEdits.remove);
-          setItemEdits(NO_ITEM_EDITS);
-          await reloadItems(partyIds);
-        }
+        // The item list travels in the same save that checks it (OD-17).
         await saveCustomerOrg({
           id: org.id, displayName, partyIds,
+          itemIds: applyItemEdits(org.portalItemIds, itemEdits),
           customerLocation: customerLocation.trim() || null,
           notifyUserIds, defaultLocationId, defaultDispatchType, active,
         });
@@ -523,8 +476,12 @@ export default function CustomerLoginsSection() {
                   defaultLocationId, setDefaultLocationId, defaultDispatchType, setDefaultDispatchType,
                   active, setActive }}
           />
-          <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
-          <CustomerOrgFormsSection partyIds={partyIds} />
+          <CustomerOrgItemsSection
+            partyIds={partyIds}
+            baseItemIds={org.portalItemIds}
+            edits={itemEdits}
+            onChange={setItemEdits}
+          />
           <CustomerOrgLoginSection orgId={org.id} />
         </div>
       </Modal>
@@ -545,13 +502,12 @@ export default function CustomerLoginsSection() {
     const [itemEdits, setItemEdits] = useState<OrgItemEdits>(NO_ITEM_EDITS);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
+    /** Survives a failed Create, so pressing it again finishes this customer instead of adding a second. */
+    const progress = useRef<AddCustomerProgress>({});
 
     const save = async () => {
       setBusy(true); setErr(null);
       try {
-        // `addCustomer` maps the items FIRST — see the ordering note there. It is
-        // the same readiness trap the edit path has, and worse here: the very
-        // first save of a new customer is always a switch-on.
         await addCustomer({
           displayName, partyIds,
           customerLocation: customerLocation.trim() || null,
@@ -559,11 +515,8 @@ export default function CustomerLoginsSection() {
           loginName: loginName.trim() || displayName.trim(),
           loginEmail: loginEmail.trim(),
           loginPassword,
-          addItems: itemEdits.add,
-          removeItems: itemEdits.remove,
-        });
-        setItemEdits(NO_ITEM_EDITS);
-        await reloadItems(partyIds);
+          itemIds: applyItemEdits([], itemEdits),
+        }, progress.current);
         await onSaved();
       } catch (e) {
         setErr((e as Error).message);
@@ -594,8 +547,7 @@ export default function CustomerLoginsSection() {
                   defaultLocationId, setDefaultLocationId, defaultDispatchType, setDefaultDispatchType,
                   active, setActive }}
           />
-          <CustomerOrgItemsSection partyIds={partyIds} edits={itemEdits} onChange={setItemEdits} />
-          <CustomerOrgFormsSection partyIds={partyIds} />
+          <CustomerOrgItemsSection partyIds={partyIds} baseItemIds={[]} edits={itemEdits} onChange={setItemEdits} />
           <div className="border-t border-line pt-4 space-y-4">
             <div className="text-[13px] font-semibold text-navy">Their login</div>
             <p className="text-[12px] text-grey-2">
