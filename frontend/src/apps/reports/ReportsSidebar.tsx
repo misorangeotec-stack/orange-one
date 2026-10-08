@@ -168,7 +168,7 @@ export function ReportsSidebar() {
         {dashboardGroups.length > 0 && !collapsed && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-[11px] tracking-wider font-semibold">
-              Bushra-Dashboard
+              Report Dashboard
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
