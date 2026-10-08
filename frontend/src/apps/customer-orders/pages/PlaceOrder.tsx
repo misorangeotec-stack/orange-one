@@ -32,6 +32,12 @@ export default function PlaceOrder() {
   const [placed, setPlaced] = useState<string | null>(null);
   const [ledgerId, setLedgerId] = useState<string>("");
 
+  const ledgers = useQuery({
+    queryKey: LEDGERS_QK,
+    queryFn: fetchDeskLedgers,
+    staleTime: 10 * 60_000,
+  });
+
   /*
     DRAFTS. "Continue" on My orders → Drafts lands here as ?draft=<id>; the draft
     is opened once the list has loaded, its company chosen, and the form remounted
@@ -54,12 +60,6 @@ export default function PlaceOrder() {
     }).catch((e) => setDraftErr((e as Error).message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantDraft, drafts.loading, ledgers.data]);
-
-  const ledgers = useQuery({
-    queryKey: LEDGERS_QK,
-    queryFn: fetchDeskLedgers,
-    staleTime: 10 * 60_000,
-  });
 
   /*
     The first firm is chosen for them, because most customers are one firm and
