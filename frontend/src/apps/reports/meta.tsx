@@ -1,4 +1,5 @@
 import type { AppManifest } from "../types";
+import type { AppCategory } from "../categories";
 import type { ReactNode } from "react";
 import type { Profile } from "@/core/platform/types";
 import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
@@ -126,7 +127,7 @@ export const reportsApp: AppManifest = {
    */
   menuEntries: ({ isAdmin, user }) => {
     const { held, reports, dashboards } = halves(isAdmin, user);
-    const rows: { label: string; to: string; icon: ReactNode; subGroup?: string }[] = [];
+    const rows: { label: string; to: string; icon: ReactNode; category?: AppCategory }[] = [];
 
     if (reports) {
       // The unfiltered catalogue. It needs its own row because a group HEADING in the portal
@@ -146,19 +147,16 @@ export const reportsApp: AppManifest = {
       }
     }
 
-    // A DROPDOWN, not a row. It was one row to the landing page, which meant a click, a page
-    // load, and only then the three subjects — while the report sections above open what they
-    // name in one click. `subGroup` folds them behind an expander instead, so the subjects are
-    // visible in the menu and one click opens one.
-    //
-    // The label also has to stay: "Sales" and "Purchase" loose among the report sections would
-    // read as report sections and send people to the wrong screen.
+    // Their OWN GROUP, "Report Dashboard", straight under Reports (08-10-2026). They were a
+    // dropdown inside Reports — open Reports, then open the dropdown, then the subject — for
+    // screens people open every day. Same module, same grants; only the menu heading moved.
+    // The heading also keeps "Sales" and "Purchase" from reading as report sections.
     for (const g of dashboards) {
       rows.push({
         label: g.title,
         to: dashboardGroupHref(g.id),
         icon: <g.icon />,
-        subGroup: "Bushra-Dashboard",
+        category: "report-dashboard",
       });
     }
 

@@ -131,7 +131,26 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
   // a category left holding ONE app is collapsed back to a plain link by the
   // sidebar, so "Sampling → Ink / RM Sampling" doesn't cost a click to say one
   // thing twice.
-  for (const group of groupByCategory(visibleApps(apps, opts))) {
+  //
+  // One row per app, unless the app says otherwise. Reports is the only one that does: it is
+  // a catalogue, so it lists the sections the reader holds rather than a single link they
+  // would have to open to find out what is inside (see AppManifest.menuEntries). Rows are
+  // expanded BEFORE grouping because a row may name a group of its own — Reports sends its
+  // dashboards to "Report Dashboard" — and otherwise inherits its app's.
+  const rows = visibleApps(apps, opts).flatMap((app) => {
+    const own: NonNullable<ReturnType<NonNullable<AppManifest["menuEntries"]>>> = app.menuEntries?.(opts) ?? [
+      { label: app.name, to: app.basePath, icon: app.icon },
+    ];
+    return own.map(({ category, subGroup, ...row }) => ({
+      ...row,
+      category: category ?? app.category,
+      // Second level inside a category, rendered as a dropdown. A row may claim its own, and
+      // otherwise it inherits the app's, which nothing sets today (see apps/appInfo.ts).
+      subGroup: subGroup ?? app.subGroup,
+    }));
+  });
+
+  for (const group of groupByCategory(rows)) {
     const keepGroup = CATEGORIES.some((c) => c.key === group.key && c.keepHeading);
     if (group.key === "hr" && showHandbook) {
       nav.push({
@@ -142,26 +161,16 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
         groupIcon: GROUP_ICONS[group.key],
       });
     }
-    for (const app of group.rows) {
-      // One row per app, unless the app says otherwise. Reports is the only one that does:
-      // it is a catalogue, so its group lists the sections the reader holds rather than a
-      // single link they would have to open to find out what is inside (see
-      // AppManifest.menuEntries). A group of several rows is not collapsed back to a plain
-      // link by the sidebar, which is what makes the heading appear at all.
-      const rows = app.menuEntries?.(opts) ?? [{ label: app.name, to: app.basePath, icon: app.icon }];
-      for (const row of rows) {
-        // Second level inside a category, rendered as a dropdown. A row may claim its own —
-        // that is how Reports folds its Bushra-Dashboard subjects behind one label — and
-        // otherwise it inherits the app's, which nothing sets today (see apps/appInfo.ts).
-        const subGroup = row.subGroup ?? app.subGroup;
-        nav.push({
-          ...row,
-          group: group.label,
-          groupIcon: GROUP_ICONS[group.key],
-          ...(subGroup ? { subGroup } : {}),
-          ...(keepGroup ? { keepGroup } : {}),
-        });
-      }
+    // A group of several rows is not collapsed back to a plain link by the sidebar, which is
+    // what makes the heading appear at all.
+    for (const { category: _category, subGroup, ...row } of group.rows) {
+      nav.push({
+        ...row,
+        group: group.label,
+        groupIcon: GROUP_ICONS[group.key],
+        ...(subGroup ? { subGroup } : {}),
+        ...(keepGroup ? { keepGroup } : {}),
+      });
     }
   }
 

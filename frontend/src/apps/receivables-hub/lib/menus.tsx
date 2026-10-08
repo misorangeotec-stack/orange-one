@@ -152,7 +152,7 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   // lib/bushraDashboards.ts, which is where they always came from.
   {
     key: "bushra-dashboard",
-    title: "Bushra-Dashboard",
+    title: "Report Dashboard",
     url: `${appBasePath("reports")}/bushra-dashboard`,
     icon: LayoutDashboard,
     externalApp: true,

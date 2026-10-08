@@ -13,7 +13,9 @@ import {
 } from "@hub/lib/reportCatalog";
 import {
   BUSHRA_DASHBOARDS,
+  DASHBOARDS_HOME,
   dashboardGroupHref,
+  isDashboardPath,
   groupPageIds,
   groupPaths,
   type BushraDashboardGroup,
@@ -38,7 +40,6 @@ const ACTIVE_CLASS = "!bg-primary/15 !text-primary font-semibold";
 const ACTIVE_ROW_CLASS = "bg-primary/15 text-primary font-semibold";
 
 const BASE = appBasePath("reports");
-const DASHBOARDS_HOME = `${BASE}/bushra-dashboard`;
 
 /**
  * Left nav for the standalone Reports app.
@@ -65,6 +66,10 @@ export function ReportsSidebar() {
   const [params] = useSearchParams();
   const { isAdmin, user } = useSession();
   const { allowedIds } = useReportAccess();
+  // DASHBOARD MODE: on a Report Dashboard screen the panel lists the dashboards and nothing
+  // else. They are reached from their own "Report Dashboard" menu group, and someone opening
+  // a dashboard must not land on a panel full of reports (08-10-2026).
+  const dashboardMode = isDashboardPath(pathname);
 
   // ── Reports: the catalogue's sections ──────────────────────────────────────────────────
   // A section the viewer holds no report in is dropped, exactly as the sub-nav dropped it —
@@ -95,10 +100,12 @@ export function ReportsSidebar() {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-button bg-gradient-to-br from-primary to-primary-hover flex items-center justify-center shrink-0">
-            <span className="text-primary-foreground font-bold text-sm">RP</span>
+            <span className="text-primary-foreground font-bold text-sm">{dashboardMode ? "RD" : "RP"}</span>
           </div>
           {!collapsed && (
-            <span className="text-sidebar-foreground font-bold text-base tracking-tight">Reports</span>
+            <span className="text-sidebar-foreground font-bold text-base tracking-tight">
+              {dashboardMode ? "Report Dashboard" : "Reports"}
+            </span>
           )}
         </div>
       </SidebarHeader>
@@ -125,7 +132,7 @@ export function ReportsSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {categories.length > 0 && (
+        {!dashboardMode && categories.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-[11px] tracking-wider font-semibold">
               Reports
@@ -168,7 +175,7 @@ export function ReportsSidebar() {
         {dashboardGroups.length > 0 && !collapsed && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-[11px] tracking-wider font-semibold">
-              Bushra-Dashboard
+              Report Dashboard
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
