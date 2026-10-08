@@ -518,7 +518,8 @@ export default function CustomerDetail() {
   const [activeTrendKeys, setActiveTrendKeys] = useState<Set<string>>(new Set());
   const [ledgerMonth, setLedgerMonth] = useState<string | null>(null);
   const [trendOpen, setTrendOpen] = useState(true);
-  const [followupsOpen, setFollowupsOpen] = useState(true);
+  // Collapsed by default — opened when needed, so the page reads header → KPIs → aging in one screen.
+  const [followupsOpen, setFollowupsOpen] = useState(false);
   const [followupModalOpen, setFollowupModalOpen] = useState(false);
   const [agingOpen, setAgingOpen] = useState(true);
   const [obOpen, setObOpen] = useState(false);
@@ -2094,215 +2095,6 @@ export default function CustomerDetail() {
       )}
 
 
-      {/* Follow-ups — the case file. Placed directly under the KPI cards because it's what you
-          read (and add to) while you're actually on the phone with the client. Hidden in Live
-          (Tally) mode: follow-ups are a normal-dashboard feature. */}
-      {followupsEnabled && (
-        <Collapsible open={followupsOpen} onOpenChange={setFollowupsOpen}>
-          <Card className="rounded-card border-border bg-surface">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-2">
-                <CollapsibleTrigger asChild>
-                  <button className="flex flex-1 items-center gap-2 text-left">
-                    <CardTitle className="text-sm font-semibold">Follow-ups</CardTitle>
-                    {openFollowup?.nextFollowupDate && (
-                      <span
-                        className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                          dueBucketFor(openFollowup.nextFollowupDate) === "overdue"
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : dueBucketFor(openFollowup.nextFollowupDate) === "today"
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : "border-border bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        Next {formatDateDMY(openFollowup.nextFollowupDate)}
-                      </span>
-                    )}
-                    <ChevronDown className={`ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200 ${followupsOpen ? "rotate-180" : ""}`} />
-                  </button>
-                </CollapsibleTrigger>
-                <Button size="sm" className="h-7 shrink-0 text-[11px]" onClick={() => setFollowupModalOpen(true)}>
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add Follow-up
-                </Button>
-              </div>
-            </CardHeader>
-            <CollapsibleContent>
-              <CardContent>
-                <FollowupTimeline
-                  entityType={followupEntityType}
-                  entityName={followupEntityName}
-                  childNames={isGroupRoute ? groupChildNames : []}
-                />
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-      )}
-
-      {followupModalOpen && (
-        <FollowupModal
-          open={followupModalOpen}
-          onOpenChange={setFollowupModalOpen}
-          entityType={followupEntityType}
-          entityName={followupEntityName}
-        />
-      )}
-
-      {/* Trend Chart */}
-      <Collapsible open={trendOpen} onOpenChange={setTrendOpen}>
-      <Card className="rounded-card border-border bg-surface">
-        <CardHeader className="pb-2">
-          <CollapsibleTrigger asChild>
-            <button className="flex items-center justify-between w-full text-left">
-              <CardTitle className="text-sm font-semibold">Trends</CardTitle>
-              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${trendOpen ? "rotate-180" : ""}`} />
-            </button>
-          </CollapsibleTrigger>
-        </CardHeader>
-        <CollapsibleContent>
-        <CardContent>
-          <div className="flex flex-wrap gap-1 mb-4">
-            {/* All — clears selection */}
-            <Button
-              key="all"
-              variant={activeTrendKeys.size === 0 ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveTrendKeys(new Set())}
-              className="rounded-button text-xs h-7"
-            >
-              All
-            </Button>
-            {/* Individual toggles — multi-select */}
-            {availableTrendLines.map((t) => {
-              const active = activeTrendKeys.has(t.key);
-              return (
-                <Button
-                  key={t.key}
-                  variant={active ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setActiveTrendKeys((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(t.key)) next.delete(t.key);
-                      else next.add(t.key);
-                      return next;
-                    });
-                  }}
-                  className="rounded-button text-xs h-7"
-                >
-                  {t.label}
-                </Button>
-              );
-            })}
-          </div>
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={fmtL} width={72} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--surface))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "var(--radius)",
-                    fontSize: 12,
-                  }}
-                  formatter={(v: number) => fmtL(v)}
-                />
-                <>
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  {activeLines.map((t) => (
-                    <Line
-                      key={t.key}
-                      type="monotone"
-                      dataKey={t.key}
-                      name={t.label}
-                      stroke={t.color}
-                      strokeWidth={2}
-                      dot={{ r: activeLines.length === 1 ? 4 : 3, fill: t.color }}
-                      activeDot={{ r: activeLines.length === 1 ? 6 : 5 }}
-                    />
-                  ))}
-                </>
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Summary strip below chart — each tile filters the Transactions table */}
-          {trendData.length > 0 && (() => {
-            const handleTileClick = (vType: string, status: string = "all") =>
-              applyKpiFilter(vType, status);
-
-            const tiles: Array<{
-              label: string;
-              value: string;
-              color: string;
-              filter: { voucherType: string; status: string };
-              /** Monthly-trend key this tile totals, when it has one. Tiles whose key the current
-               *  source can't supply per month are dropped rather than shown summing zeros. */
-              monthlyKey?: string;
-            }> = [
-              { label: "Total Sales",       value: fmtL(trendData.reduce((s, r) => s + r.sales, 0)),                              color: "text-primary",                 filter: { voucherType: "sales",        status: "all" }     },
-              { label: "Total Receipts",    value: fmtL(trendData.reduce((s, r) => s + r.receipts, 0)),                           color: "text-[hsl(142,71%,45%)]",      filter: { voucherType: "receipt",      status: "all" }     },
-              { label: "Total Cr. Notes",   value: fmtL(trendData.reduce((s, r) => s + r.creditNotes, 0)),                        color: "text-[hsl(271,75%,58%)]",      filter: { voucherType: "credit_note",  status: "all" }, monthlyKey: "creditNotes"        },
-              { label: "Total Dr. Notes",   value: fmtL(trendData.reduce((s, r) => s + (r.debitNotes ?? 0), 0)),                  color: "text-[hsl(28,80%,55%)]",       filter: { voucherType: "debit_note",   status: "all" }, monthlyKey: "debitNotes"         },
-              { label: "Journal Adj (Net)", value: fmtLDrCr(trendData.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0)),      color: "text-[hsl(231,65%,55%)]",      filter: { voucherType: "journal",      status: "all" }, monthlyKey: "journalAdjustments" },
-              { label: "Total Chq Returns", value: fmtL(trendData.reduce((s, r) => s + r.checkReturns, 0)),                       color: "text-[hsl(213,94%,52%)]",      filter: { voucherType: "check_return", status: "all" }, monthlyKey: "checkReturns"       },
-              { label: "Outstanding",       value: fmtL(Math.abs(trendData[trendData.length - 1]?.outstanding ?? 0)),                       color: "text-secondary",               filter: { voucherType: "sales",        status: "all" }     },
-            ].filter((t) => !t.monthlyKey || !(source === "connectwave" && LIVE_UNAVAILABLE_MONTHLY.has(t.monthlyKey)));
-
-            const overdueFilter = { voucherType: "sales", status: "overdue" };
-            const isOverdueActive = isKpiActive(overdueFilter.voucherType, overdueFilter.status);
-
-            return (
-              <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-                {tiles.map((item) => {
-                  const isActive = isKpiActive(item.filter.voucherType, item.filter.status);
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => handleTileClick(item.filter.voucherType, item.filter.status)}
-                      className={`text-left bg-muted/40 rounded-input px-3 py-2 transition-all hover:bg-muted/70 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                        isActive ? "ring-2 ring-primary bg-primary/5" : ""
-                      }`}
-                    >
-                      <span className="block text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{item.label}</span>
-                      <span className={`block text-sm font-bold font-mono mt-0.5 ${item.color}`}>{item.value}</span>
-                    </button>
-                  );
-                })}
-                {/* Overdue tile — shows total overdue (invoice + opening balance) */}
-                <button
-                  type="button"
-                  onClick={() => handleTileClick(overdueFilter.voucherType, overdueFilter.status)}
-                  className={`text-left bg-muted/40 rounded-input px-3 py-2 transition-all hover:bg-muted/70 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    isOverdueActive ? "ring-2 ring-primary bg-primary/5" : ""
-                  }`}
-                >
-                  <span className="block text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Overdue</span>
-                  <span className="block text-sm font-bold font-mono mt-0.5 text-destructive">{fmt(overdueNet)}</span>
-                  {onAccount > 0 && (
-                    <span className="block text-[10px] text-muted-foreground mt-0.5">
-                      less {fmt(onAccount)} On Account
-                    </span>
-                  )}
-                  {(customer as any).remainingOpeningBalance > 0 && (
-                    <span className="block text-[10px] text-muted-foreground mt-0.5">
-                      incl. {fmt((customer as any).remainingOpeningBalance)} OB
-                    </span>
-                  )}
-                </button>
-              </div>
-            );
-          })()}
-        </CardContent>
-        </CollapsibleContent>
-      </Card>
-      </Collapsible>
-
       {/* Aging Breakdown — one card, two lenses: Overdue Aging (days past due date) | Bill Date Aging (days since bill date) */}
       {(customer.overdue > 0 || billDateAging.count > 0) && (() => {
         const AGING_BUCKETS = [
@@ -2512,6 +2304,216 @@ export default function CustomerDetail() {
           </Collapsible>
         );
       })()}
+
+      {/* Follow-ups — the case file. Placed directly under the KPI cards because it's what you
+          read (and add to) while you're actually on the phone with the client. Hidden in Live
+          (Tally) mode: follow-ups are a normal-dashboard feature. */}
+      {followupsEnabled && (
+        <Collapsible open={followupsOpen} onOpenChange={setFollowupsOpen}>
+          <Card className="rounded-card border-border bg-surface">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <CollapsibleTrigger asChild>
+                  <button className="flex flex-1 items-center gap-2 text-left">
+                    <CardTitle className="text-sm font-semibold">Follow-ups</CardTitle>
+                    {openFollowup?.nextFollowupDate && (
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                          dueBucketFor(openFollowup.nextFollowupDate) === "overdue"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : dueBucketFor(openFollowup.nextFollowupDate) === "today"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-border bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        Next {formatDateDMY(openFollowup.nextFollowupDate)}
+                      </span>
+                    )}
+                    <ChevronDown className={`ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200 ${followupsOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </CollapsibleTrigger>
+                <Button size="sm" className="h-7 shrink-0 text-[11px]" onClick={() => setFollowupModalOpen(true)}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add Follow-up
+                </Button>
+              </div>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent>
+                <FollowupTimeline
+                  entityType={followupEntityType}
+                  entityName={followupEntityName}
+                  childNames={isGroupRoute ? groupChildNames : []}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
+
+      {followupModalOpen && (
+        <FollowupModal
+          open={followupModalOpen}
+          onOpenChange={setFollowupModalOpen}
+          entityType={followupEntityType}
+          entityName={followupEntityName}
+        />
+      )}
+
+      {/* Trend Chart */}
+      <Collapsible open={trendOpen} onOpenChange={setTrendOpen}>
+      <Card className="rounded-card border-border bg-surface">
+        <CardHeader className="pb-2">
+          <CollapsibleTrigger asChild>
+            <button className="flex items-center justify-between w-full text-left">
+              <CardTitle className="text-sm font-semibold">Trends</CardTitle>
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${trendOpen ? "rotate-180" : ""}`} />
+            </button>
+          </CollapsibleTrigger>
+        </CardHeader>
+        <CollapsibleContent>
+        <CardContent>
+          <div className="flex flex-wrap gap-1 mb-4">
+            {/* All — clears selection */}
+            <Button
+              key="all"
+              variant={activeTrendKeys.size === 0 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTrendKeys(new Set())}
+              className="rounded-button text-xs h-7"
+            >
+              All
+            </Button>
+            {/* Individual toggles — multi-select */}
+            {availableTrendLines.map((t) => {
+              const active = activeTrendKeys.has(t.key);
+              return (
+                <Button
+                  key={t.key}
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setActiveTrendKeys((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(t.key)) next.delete(t.key);
+                      else next.add(t.key);
+                      return next;
+                    });
+                  }}
+                  className="rounded-button text-xs h-7"
+                >
+                  {t.label}
+                </Button>
+              );
+            })}
+          </div>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={fmtL} width={72} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--surface))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "var(--radius)",
+                    fontSize: 12,
+                  }}
+                  formatter={(v: number) => fmtL(v)}
+                />
+                <>
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  {activeLines.map((t) => (
+                    <Line
+                      key={t.key}
+                      type="monotone"
+                      dataKey={t.key}
+                      name={t.label}
+                      stroke={t.color}
+                      strokeWidth={2}
+                      dot={{ r: activeLines.length === 1 ? 4 : 3, fill: t.color }}
+                      activeDot={{ r: activeLines.length === 1 ? 6 : 5 }}
+                    />
+                  ))}
+                </>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Summary strip below chart — each tile filters the Transactions table */}
+          {trendData.length > 0 && (() => {
+            const handleTileClick = (vType: string, status: string = "all") =>
+              applyKpiFilter(vType, status);
+
+            const tiles: Array<{
+              label: string;
+              value: string;
+              color: string;
+              filter: { voucherType: string; status: string };
+              /** Monthly-trend key this tile totals, when it has one. Tiles whose key the current
+               *  source can't supply per month are dropped rather than shown summing zeros. */
+              monthlyKey?: string;
+            }> = [
+              { label: "Total Sales",       value: fmtL(trendData.reduce((s, r) => s + r.sales, 0)),                              color: "text-primary",                 filter: { voucherType: "sales",        status: "all" }     },
+              { label: "Total Receipts",    value: fmtL(trendData.reduce((s, r) => s + r.receipts, 0)),                           color: "text-[hsl(142,71%,45%)]",      filter: { voucherType: "receipt",      status: "all" }     },
+              { label: "Total Cr. Notes",   value: fmtL(trendData.reduce((s, r) => s + r.creditNotes, 0)),                        color: "text-[hsl(271,75%,58%)]",      filter: { voucherType: "credit_note",  status: "all" }, monthlyKey: "creditNotes"        },
+              { label: "Total Dr. Notes",   value: fmtL(trendData.reduce((s, r) => s + (r.debitNotes ?? 0), 0)),                  color: "text-[hsl(28,80%,55%)]",       filter: { voucherType: "debit_note",   status: "all" }, monthlyKey: "debitNotes"         },
+              { label: "Journal Adj (Net)", value: fmtLDrCr(trendData.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0)),      color: "text-[hsl(231,65%,55%)]",      filter: { voucherType: "journal",      status: "all" }, monthlyKey: "journalAdjustments" },
+              { label: "Total Chq Returns", value: fmtL(trendData.reduce((s, r) => s + r.checkReturns, 0)),                       color: "text-[hsl(213,94%,52%)]",      filter: { voucherType: "check_return", status: "all" }, monthlyKey: "checkReturns"       },
+              { label: "Outstanding",       value: fmtL(Math.abs(trendData[trendData.length - 1]?.outstanding ?? 0)),                       color: "text-secondary",               filter: { voucherType: "sales",        status: "all" }     },
+            ].filter((t) => !t.monthlyKey || !(source === "connectwave" && LIVE_UNAVAILABLE_MONTHLY.has(t.monthlyKey)));
+
+            const overdueFilter = { voucherType: "sales", status: "overdue" };
+            const isOverdueActive = isKpiActive(overdueFilter.voucherType, overdueFilter.status);
+
+            return (
+              <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                {tiles.map((item) => {
+                  const isActive = isKpiActive(item.filter.voucherType, item.filter.status);
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => handleTileClick(item.filter.voucherType, item.filter.status)}
+                      className={`text-left bg-muted/40 rounded-input px-3 py-2 transition-all hover:bg-muted/70 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                        isActive ? "ring-2 ring-primary bg-primary/5" : ""
+                      }`}
+                    >
+                      <span className="block text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{item.label}</span>
+                      <span className={`block text-sm font-bold font-mono mt-0.5 ${item.color}`}>{item.value}</span>
+                    </button>
+                  );
+                })}
+                {/* Overdue tile — shows total overdue (invoice + opening balance) */}
+                <button
+                  type="button"
+                  onClick={() => handleTileClick(overdueFilter.voucherType, overdueFilter.status)}
+                  className={`text-left bg-muted/40 rounded-input px-3 py-2 transition-all hover:bg-muted/70 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    isOverdueActive ? "ring-2 ring-primary bg-primary/5" : ""
+                  }`}
+                >
+                  <span className="block text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Overdue</span>
+                  <span className="block text-sm font-bold font-mono mt-0.5 text-destructive">{fmt(overdueNet)}</span>
+                  {onAccount > 0 && (
+                    <span className="block text-[10px] text-muted-foreground mt-0.5">
+                      less {fmt(onAccount)} On Account
+                    </span>
+                  )}
+                  {(customer as any).remainingOpeningBalance > 0 && (
+                    <span className="block text-[10px] text-muted-foreground mt-0.5">
+                      incl. {fmt((customer as any).remainingOpeningBalance)} OB
+                    </span>
+                  )}
+                </button>
+              </div>
+            );
+          })()}
+        </CardContent>
+        </CollapsibleContent>
+      </Card>
+      </Collapsible>
+
       </div>
       {/* End export region 1 */}
 
