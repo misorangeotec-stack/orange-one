@@ -1698,7 +1698,7 @@ export default function CustomerDetail() {
               bucket: byBillDate ? `Bill age ${label}` : label,
               amount: Math.round(buckets[k] ?? 0),
             }))
-            .filter((a) => a.amount !== 0)
+            .filter((a) => byBillDate || a.amount !== 0)
         : [];
       // Mirror the on-screen strip: gross buckets, then the deduction, then the net Total —
       // otherwise the sheet's rows would sum to a different figure than the KPI above.
@@ -2344,12 +2344,13 @@ export default function CustomerDetail() {
           ? billDateAging.buckets
           : (customer.agingBuckets as unknown as Record<string, number>);
         // A Bill Date bucket can net NEGATIVE when its advances outweigh its bills; it keeps its
-        // row and bar, coloured as credit.
+        // row and bar, coloured as credit. The Bill Date lens keeps EVERY bucket, ₹0 included, so the
+        // strip lines up column-for-column with Tally's ageing (0–30 … 180+) whatever the selected FY.
         const CREDIT_COLOR = "hsl(152, 60%, 36%)";
         const agingData = AGING_BUCKETS.map(({ label, key, color }) => {
           const amount = bucketSource?.[key] ?? 0;
           return { label, color: amount < 0 ? CREDIT_COLOR : color, amount };
-        }).filter((d) => (byBillDate ? Math.abs(d.amount) >= 0.5 : d.amount > 0));
+        }).filter((d) => byBillDate || d.amount > 0);
 
         // Shares are of the debit buckets, so a credit bucket cannot push one past 100%.
         const totalAgingAmt = agingData.reduce((s, d) => s + Math.max(0, d.amount), 0);
