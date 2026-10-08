@@ -11,9 +11,10 @@ import { cn } from "@/shared/lib/cn";
 import { addMonths, fmtDate, fmtMonth } from "../lib/schedule";
 import { NOT_CATEGORISED } from "../lib/categories";
 import {
-  canAct, FLOW_START, inPlantScope, joinTests, RESULT_LABEL, STATUS_LABEL, useFlow, useInkLots,
-  type FlowStatus, type FlowTest,
+  canAct, FLOW_START, inPlantScope, joinTests, RESULT_LABEL, STATUS_LABEL, useFlow, useStabLots,
+  type FlowStatus, type FlowTest, type StabMode,
 } from "../lib/flow";
+import { STOCK_COMPANIES } from "../lib/closingStock";
 import { FlowUnavailable } from "../components/FlowParts";
 import PlantTestModal from "../components/PlantTestModal";
 import TestTable from "../components/TestTable";
@@ -32,6 +33,10 @@ import { Segmented, StackBar, statusCounts, statusParts, TEST_COLOR } from "../c
  * earlier month (since the flow went live) not yet submitted or sent back by Management,
  * so nothing falls off the list when the month turns. Main data's pending table links
  * here with ?cat=&test= already chosen.
+ *
+ * APPROVED closes the test at submit; REJECTED goes to Management (20270113120000).
+ * mode="stock" is the Closing stock group's copy: lots with stock today at Enterprises Surat
+ * or Otec Surat (a lot whose stock reaches zero drops off), plus a Company filter.
  */
 
 type Tab = "todo" | FlowStatus | "all";
@@ -42,10 +47,12 @@ function match(t: FlowTest, tab: Tab): boolean {
   return t.status === tab;
 }
 
-export default function PlantTesting() {
+export default function PlantTesting({ mode = "production" }: { mode?: StabMode }) {
+  const stock = mode === "stock";
   const today = todayLocalIso();
   const { user, isAdmin, canEditModule } = useSession();
-  const lotsQ = useInkLots();
+  const lotsQ = useStabLots(mode);
+  const [company, setCompany] = useState<string>("all");
   const flowQ = useFlow();
   const flow = flowQ.data;
   const mayAct = canAct("plant", user.id, isAdmin, canEditModule("ink-stabilisation"), flow);
@@ -60,7 +67,8 @@ export default function PlantTesting() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<FlowTest | null>(null);
 
-  const all = useMemo(() => joinTests(lotsQ.data ?? [], flow), [lotsQ.data, flow]);
+  const all = useMemo(() => joinTests((lotsQ.lots ?? [])
+    .filter((l) => company === "all" || (l.companyGuid ?? STOCK_COMPANIES[0].guid) === company), flow), [lotsQ.lots, flow, company]);
 
   // Month scope → category → lab test → status, each narrowing the one before.
   const scope = useMemo(() => all.filter((t) => inPlantScope(t, month, carry))
@@ -88,18 +96,20 @@ export default function PlantTesting() {
   const current = open ? all.find((t) => t.key === open.key) ?? open : null;
 
   const exportList = () => exportRowsToXlsx({
-    fileName: `Ink_Retest_Plant_${month}`,
+    fileName: `Ink_Retest_Plant_${stock ? "Closing_Stock_" : ""}${month}`,
     sheetName: fmtMonth(month),
-    title: `Ink Stabilisation — Plant testing list, ${fmtMonth(month)}`,
+    title: `Ink Stabilisation — ${stock ? "closing stock " : ""}Plant testing list, ${fmtMonth(month)}`,
     rows,
     filters: [cat !== "all" ? `Category: ${categoryLabel(cat)}` : "", testNo !== "all" ? `Lab test: ${testNo}` : "", `Status: ${tab}`].filter(Boolean),
     columns: [
       { header: "Due date", width: 13, value: (t) => fmtDate(t.due) },
       { header: "Test", width: 8, value: (t) => `Test ${t.no}` },
+      ...(stock ? [{ header: "Company", width: 18, value: (t: FlowTest) => t.lot.company ?? "" }] : []),
       { header: "Category", width: 22, value: (t) => categoryLabel(t.lot.category) },
       { header: "Stock item", width: 38, value: (t) => t.lot.item },
       { header: "Lot no.", width: 18, value: (t) => t.lot.lot },
-      { header: "Production date", width: 14, value: (t) => fmtDate(t.lot.prod) },
+      { header: stock ? "Prod. / purchase date" : "Production date", width: 14, value: (t) => fmtDate(t.lot.prod) },
+      ...(stock ? [{ header: "Qty in stock", width: 12, value: (t: FlowTest) => t.lot.qty }] : []),
       { header: "Status", width: 16, value: (t) => STATUS_LABEL[t.status] },
       { header: "Lab result", width: 11, value: (t) => (t.record?.result ? RESULT_LABEL[t.record.result] : "") },
       { header: "Lab person", width: 18, value: (t) => t.record?.labPerson ?? "" },
@@ -115,13 +125,25 @@ export default function PlantTesting() {
       {/* ------------------------------------------------------------ header */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="text-[11.5px] font-bold uppercase tracking-[0.12em] text-orange">Step 2 · Plant testing</div>
-          <h1 className="mt-0.5 text-[26px] font-bold leading-tight text-navy">Plant testing</h1>
+          <div className="text-[11.5px] font-bold uppercase tracking-[0.12em] text-orange">
+            {stock ? "Closing stock · Step 2 · Plant testing" : "Step 2 · Plant testing"}
+          </div>
+          <h1 className="mt-0.5 text-[26px] font-bold leading-tight text-navy">Plant testing{stock ? " — closing stock" : ""}</h1>
           <p className="mt-1 text-[13px] text-grey">
-            Pick a category, open a test, choose Approve or Reject and submit it to Management.
+            Pick a category, open a test, choose Approve or Reject and submit. <b className="text-ryg-green">Approved</b> closes at once;
+            {" "}<b className="text-ryg-red">Rejected</b> goes to Management review.
+            {stock && " Only lots in stock today, at Enterprises Surat and Otec Surat."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {stock && (
+            <select value={company} onChange={(e) => setCompany(e.target.value)}
+              className={cn("h-9 rounded-lg border bg-white px-3 text-[13px] font-semibold",
+                company !== "all" ? "border-orange text-orange" : "border-line text-navy")}>
+              <option value="all">Both companies</option>
+              {STOCK_COMPANIES.map((c) => <option key={c.guid} value={c.guid}>{c.name}</option>)}
+            </select>
+          )}
           <select value={month} onChange={(e) => setMonth(e.target.value)}
             className="h-9 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold text-navy">
             {months.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
@@ -149,7 +171,9 @@ export default function PlantTesting() {
       )}
 
       {lotsQ.isLoading ? (
-        <Card className="p-14 text-center text-[13px] text-grey">Reading production lots from ConnectWave…</Card>
+        <Card className="p-14 text-center text-[13px] text-grey">
+          {stock ? "Reading today's closing stock from ConnectWave… (about a minute the first time)" : "Reading production lots from ConnectWave…"}
+        </Card>
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[290px_minmax(0,1fr)]">
           {/* -------------------------------------------------- category rail */}
@@ -203,7 +227,7 @@ export default function PlantTesting() {
                 <div className="w-full max-w-xs">
                   <StackBar parts={statusParts(cur.sc)} height="h-2.5" />
                   <div className="mt-1 text-right text-[11px] text-grey tabular-nums">
-                    {cur.sc.closed} closed · {cur.sc.submitted} in review · {cur.sc.returned} sent back · {cur.sc.pending} pending
+                    {cur.sc.closed} closed · {cur.sc.submitted} in review{cur.sc.returned ? ` · ${cur.sc.returned} sent back` : ""} · {cur.sc.pending} pending
                   </div>
                 </div>
               </div>
@@ -232,7 +256,8 @@ export default function PlantTesting() {
                   onChange={setTab}
                   options={[
                     { value: "todo", label: "To do", count: statusCount("todo") },
-                    { value: "returned", label: "Sent back", count: statusCount("returned") },
+                    // Send-back was removed (20270113120000); old ones still show until re-submitted.
+                    ...(statusCount("returned") ? [{ value: "returned" as const, label: "Sent back (old)", count: statusCount("returned") }] : []),
                     { value: "submitted", label: "Awaiting review", count: statusCount("submitted") },
                     { value: "closed", label: "Closed", count: statusCount("closed") },
                     { value: "all", label: "All", count: statusCount("all") },
@@ -246,8 +271,8 @@ export default function PlantTesting() {
               </div>
             </div>
 
-            <TestTable rows={rows} flow={flow} today={today} onOpen={setOpen}
-              resetKey={`${month}|${tab}|${search}|${carry}|${cat}|${testNo}`}
+            <TestTable rows={rows} flow={flow} today={today} onOpen={setOpen} showCompany={stock}
+              resetKey={`${month}|${tab}|${search}|${carry}|${cat}|${testNo}|${company}`}
               actionLabel={(t) => (mayAct && isPending(t) ? "Open & submit" : "View")} />
           </Card>
         </div>

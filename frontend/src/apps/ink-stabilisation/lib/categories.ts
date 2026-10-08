@@ -48,7 +48,6 @@ export interface CategoryMap {
   overridesRead: number;
 }
 
-const BASE_TENANT = `acct_orange::${SURAT_GUID}`;
 
 interface ItemRow { id: string; name: string; tally_tenant: string; category: string | null; ink_type: string | null }
 interface OverrideRow { item_id: string; fields: Record<string, unknown> | null }
@@ -68,7 +67,9 @@ async function readAll<T>(build: (a: number, b: number) => PromiseLike<{ data: T
 
 const clean = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-export async function fetchItemCategories(): Promise<CategoryMap> {
+/** `guid` = whose items to read; Enterprises Surat unless the Closing stock page asks for Otec Surat. */
+export async function fetchItemCategories(guid: string = SURAT_GUID): Promise<CategoryMap> {
+  const BASE_TENANT = `acct_orange::${guid}`;
   const [items, overrides] = await Promise.all([
     readAll<ItemRow>((a, b) => db.from("mst_items")
       .select("id,name,tally_tenant,category,ink_type")

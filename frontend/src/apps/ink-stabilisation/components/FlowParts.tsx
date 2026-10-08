@@ -57,16 +57,18 @@ export function TestFacts({ t }: { t: FlowTest }) {
       <div className="text-[13px] text-ink">{value}</div>
     </div>
   );
+  // A Closing stock lot carries its company; its qty is stock today and its date may be a purchase.
+  const stock = !!t.lot.company;
   return (
     <div className="grid grid-cols-2 gap-3 rounded-lg bg-page p-3 sm:grid-cols-4">
       {f("Stock item", t.lot.item)}
       {f("Lot no.", t.lot.lot)}
       {f("Test", `Test ${t.no} (+${t.no * 3} months)`)}
       {f("Due date", fmtDate(t.due))}
-      {f("Production date", fmtDate(t.lot.prod))}
+      {f(stock ? "Prod. / purchase date" : "Production date", fmtDate(t.lot.prod))}
       {f("Expiry (Tally)", t.lot.expiry ? fmtDate(t.lot.expiry) : "not in Tally")}
-      {f("Qty produced", `${t.lot.qty.toLocaleString("en-IN")} ${t.lot.uom ?? ""}`)}
-      {f("Ink family", t.lot.family)}
+      {f(stock ? "Qty in stock" : "Qty produced", `${t.lot.qty.toLocaleString("en-IN")} ${t.lot.uom ?? ""}`)}
+      {stock ? f("Company", t.lot.company!) : f("Ink family", t.lot.family)}
     </div>
   );
 }
@@ -116,6 +118,7 @@ const ACTION_LABEL: Record<TestActivity["action"], string> = {
   submitted: "Submitted by Plant",
   returned: "Sent back by Management",
   closed: "Closed by Management",
+  reassigned: "Reassigned",
 };
 
 export function Trail({ items }: { items: TestActivity[] }) {
@@ -126,9 +129,12 @@ export function Trail({ items }: { items: TestActivity[] }) {
       {items.map((a) => (
         <li key={a.id} className="relative">
           <span className={cn("absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full",
-            a.action === "closed" ? "bg-ryg-green" : a.action === "returned" ? "bg-ryg-red" : "bg-blue")} />
+            a.action === "closed" ? "bg-ryg-green" : a.action === "returned" ? "bg-ryg-red" : a.action === "reassigned" ? "bg-orange" : "bg-blue")} />
           <div className="text-[12.5px] font-semibold text-ink">
-            {ACTION_LABEL[a.action]} <span className="font-normal text-grey">· {person(a.actor)?.name ?? "Someone"} · {fmtStamp(a.createdAt)}</span>
+            {a.action === "closed" && !a.actor ? "Closed automatically (lab approved)"
+              : a.action === "reassigned" ? `Reassigned to ${a.toUser ? person(a.toUser)?.name ?? "someone" : "Management (handed back)"}`
+              : ACTION_LABEL[a.action]}{" "}
+            <span className="font-normal text-grey">· {a.actor ? person(a.actor)?.name ?? "Someone" : "System"} · {fmtStamp(a.createdAt)}</span>
           </div>
           {a.remarks && <div className="whitespace-pre-wrap text-[12.5px] text-ink">{a.remarks}</div>}
         </li>

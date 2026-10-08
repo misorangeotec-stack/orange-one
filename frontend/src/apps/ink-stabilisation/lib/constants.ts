@@ -9,5 +9,8 @@
 /** Enterprises Surat's company guid in ConnectWave and Central Masters. */
 export const SURAT_GUID = "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e";
 
+/** Otec Surat — only on the Closing stock page; the retest flow itself is Enterprises Surat's. */
+export const OTEC_SURAT_GUID = "a4e100d1-3b6f-4193-876a-c754f1a74552";
+
 /** The tab for inks with no Ink type in Bushra Central Master or Central Masters. */
 export const NOT_CATEGORISED = "Not categorised";

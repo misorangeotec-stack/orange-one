@@ -486,7 +486,7 @@ function GroupBlock({
         )}
       >
         <Chevron open={isOpen} />
-        <span className="flex-1 text-left truncate">{group.label}</span>
+        <span className="flex-1 text-left truncate" title={group.label}>{group.label}</span>
         {!isOpen && count > 0 && (
           <span className="text-[11px] font-semibold text-white/40 tabular-nums">{count}</span>
         )}
