@@ -84,7 +84,7 @@ const PILL = {
 export const CUSTOMER_STATUS: Record<CustomerStatusKey, CustomerStatus> = {
   request_raised: {
     label: "Request raised",
-    blurb: "We have your request. You can still change or cancel it until we accept it.",
+    blurb: "We have your request. You can still edit or cancel it until we accept it.",
     tone: PILL.blue,
   },
   accepted: {

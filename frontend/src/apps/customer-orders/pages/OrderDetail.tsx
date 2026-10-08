@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Button from "@/shared/components/ui/Button";
 import { TextArea } from "@/shared/components/ui/Form";
@@ -46,7 +46,9 @@ export default function OrderDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const [editing, setEditing] = useState(false);
+  const [searchParams] = useSearchParams();
+  /** "Edit order" on My orders lands here already editing. */
+  const [editing, setEditing] = useState(() => searchParams.get("edit") === "1");
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,7 +70,7 @@ export default function OrderDetail() {
     queryKey: itemsQueryKey(order?.companyId ?? null, order?.ledgerId ?? null),
     queryFn: () => fetchDeskItems(order?.companyId ?? null, order?.ledgerId ?? null),
     staleTime: 10 * 60_000,
-    enabled: editing && !!order,
+    enabled: editing && !!order?.canChange,
   });
 
   if (isLoading) {
@@ -124,9 +126,9 @@ export default function OrderDetail() {
     </Link>
   );
 
-  if (editing) {
+  if (editing && order.canChange) {
     return (
-      <OrderDeskShell title={`Change ${order.orderNo}`} subtitle={subtitle}>
+      <OrderDeskShell title={`Edit ${order.orderNo}`} subtitle={subtitle}>
         {items ? (
           <OrderForm
             items={items}
@@ -146,7 +148,7 @@ export default function OrderDetail() {
               lineRemark: l.lineRemark ?? "",
             }))}
             initialRemarks={order.orderRemarks ?? ""}
-            submitLabel="Save the change"
+            submitLabel="Save changes"
             busyLabel="Saving…"
             onSubmit={save}
             onCancel={() => setEditing(false)}
@@ -241,7 +243,7 @@ export default function OrderDetail() {
         {order.canChange ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => setEditing(true)}>Change this order</Button>
+              <Button onClick={() => setEditing(true)}>Edit order</Button>
               <Button variant="ghost" onClick={() => setCancelling(true)}>Cancel this order</Button>
             </div>
             {/* Says the deadline out loud. The buttons vanish the moment we accept,
