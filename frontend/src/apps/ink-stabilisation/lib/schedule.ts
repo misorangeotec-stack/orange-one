@@ -71,13 +71,20 @@ interface ProdRow { vch_date: string; voucher_no: string | null; stock_item: str
 interface DatedRow { vch_date: string; stock_item: string; batch_name: string | null; batch_mfd: string | null; batch_expiry_raw: string | null }
 interface GroupRow { tenant_id: string; item: string; group_path: string | null }
 
+/** ConnectWave's ~8 s statement timeout or a dropped connection: retry the page (same rule as ink-expiry). */
+const TRANSIENT = /statement timeout|canceling statement|fetch|network|timed? ?out|50[234]/i;
+
 async function readAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
   const out: T[] = [];
   for (let off = 0; ; off += PAGE) {
-    const { data, error } = await build(off, off + PAGE - 1);
-    if (error) throw new Error(error.message);
-    out.push(...(data ?? []));
-    if ((data ?? []).length < PAGE) return out;
+    let res = await build(off, off + PAGE - 1);
+    for (let attempt = 1; res.error && TRANSIENT.test(res.error.message) && attempt <= 3; attempt++) {
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      res = await build(off, off + PAGE - 1);
+    }
+    if (res.error) throw new Error(res.error.message);
+    out.push(...(res.data ?? []));
+    if ((res.data ?? []).length < PAGE) return out;
   }
 }
 

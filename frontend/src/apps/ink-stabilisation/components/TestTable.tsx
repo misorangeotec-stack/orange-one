@@ -70,7 +70,6 @@ export default function TestTable({
     { key: "lot", label: "Lot no." },
     { key: "prod", label: showCompany ? "Prod. / purchase" : "Production", sortByDate: true },
     ...(showSubmitted ? [{ key: "submitted" as const, label: "Submitted" }] : []),
-    ...(showHolder ? [{ key: "holder" as const, label: "With" }] : []),
     { key: "result", label: "Lab result" },
     { key: "files", label: "Files" },
     { key: "status", label: "Status" },
@@ -109,7 +108,9 @@ export default function TestTable({
           <thead className="border-y border-line bg-page">
             <tr>
               {cols.map((c) => <th key={c.key} className={th}>{c.label}</th>)}
-              <th className={th} />
+              {/* The action column is pinned right: the table is wider than a laptop screen,
+                  and the buttons are the one thing that must never scroll out of sight. */}
+              <th className={`${th} sticky right-0 z-[1] bg-page`} />
             </tr>
             <tr className="border-t border-line bg-page/40">
               {cols.map((c) => (
@@ -124,7 +125,7 @@ export default function TestTable({
                   />
                 </th>
               ))}
-              <th />
+              <th className="sticky right-0 z-[1] bg-page" />
             </tr>
           </thead>
           <tbody>
@@ -151,18 +152,21 @@ export default function TestTable({
                       <div className="text-[11px] text-grey">{fmtStamp(t.record?.submittedAt ?? null)}</div>
                     </td>
                   )}
-                  {showHolder && (
-                    <td className={td}>
-                      <span className={t.record?.assignedTo && t.status === "submitted" ? "font-semibold text-orange" : "text-grey"}>{holderOf(t)}</span>
-                    </td>
-                  )}
                   <td className={td}>
                     <ResultPill result={t.record?.result} />
                     {t.record?.labPerson && <div className="text-[11px] text-grey">{t.record.labPerson}</div>}
                   </td>
                   <td className={td}>{files || "—"}</td>
-                  <td className={td}><StatusPill status={t.status} /></td>
-                  <td className={`${td} text-right`}>
+                  <td className={td}>
+                    <StatusPill status={t.status} />
+                    {/* Who holds it, under the status — a column of its own pushed the buttons off-screen. */}
+                    {showHolder && t.status === "submitted" && (
+                      <div className={t.record?.assignedTo ? "text-[11px] font-semibold text-orange" : "text-[11px] text-grey"}>
+                        With {holderOf(t)}
+                      </div>
+                    )}
+                  </td>
+                  <td className={`${td} sticky right-0 z-[1] bg-white text-right shadow-[-10px_0_12px_-12px_rgba(15,35,75,.35)]`}>
                     {extraAction?.show(t) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); extraAction.onClick(t); }}
