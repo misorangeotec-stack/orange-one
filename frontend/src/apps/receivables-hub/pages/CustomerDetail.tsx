@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, ReferenceLine,
+  ResponsiveContainer, Legend,
 } from "recharts";
 import { Badge } from "@hub/components/ui/badge";
 import { Button } from "@hub/components/ui/button";
@@ -837,13 +837,28 @@ export default function CustomerDetail() {
   );
 
   // ── Bill-date aging ─────────────────────────────────────────────────────────
-  // Every OPEN bill (due or not yet due), bucketed by days since its bill date, measured to the
-  // data's as-of date — the same lens as the Aging Report's "Outstanding" columns. A bill with no
-  // date (an orphan Agst Ref debit, see agingReport.isOrphanDebitBill) has nothing to age it by
-  // and is left to the bridge line in the card instead.
+  // Tally's "Ledger Voucher Outstanding → Overdue Bills" for the period 1-Apr → today, which is
+  // how accounts pulls this report offline:
+  //   • OVERDUE bills only — due date on or before the as-of date (a bill due TODAY counts, Tally
+  //     lists it at 0 days);
+  //   • INVOICED in the period — bill date from 1-Apr of the as-of date's financial year to the
+  //     as-of date. Older overdue bills drop out, as in Tally (summed separately for the note);
+  //   • aged by days since the INVOICE date, not the due date;
+  //   • debit bills only, and no On Account deduction — Tally's period total carries neither.
+  // Checked against ConnectWave on ANGARIKA DIGITEX PVT LTD 08-10-2026: the same 31 bills to the
+  // rupee; Tally's screen showed 4 more (₹3,83,028) whose bank receipts are dated 09/11-Oct, i.e.
+  // post-dated receipts the ConnectWave snapshot has already netted.
   const asOfDate = dashboard?.asOfDate ?? "";
-  const billAgeKey = (billDate: string): string | null => {
-    if (!billDate || !asOfDate) return null;
+  const billPeriodFrom = useMemo(() => {
+    const m = /^(\d{4})-(\d{2})/.exec(asOfDate);
+    if (!m) return "";
+    const y = Number(m[1]);
+    return `${Number(m[2]) >= 4 ? y : y - 1}-04-01`;
+  }, [asOfDate]);
+  /** Invoice-age bucket of an overdue bill invoiced in the period; null when it is not one. */
+  const billDateKeyOf = (billDate: string | undefined, dueDate: string | undefined, pending: number): string | null => {
+    if (pending < 0.5 || !billDate || !dueDate || !asOfDate || !billPeriodFrom) return null;
+    if (dueDate > asOfDate || billDate < billPeriodFrom || billDate > asOfDate) return null;
     const age = daysBetween(billDate, asOfDate);
     if (age <= 30)  return "0_30";
     if (age <= 60)  return "31_60";
@@ -852,39 +867,24 @@ export default function CustomerDetail() {
     if (age <= 180) return "121_180";
     return "180_plus";
   };
-  //
-  // ⚠ CREDIT bills (negative pending — advances keyed with a ref such as "31.07.2026") sit in the
-  //   bucket of THEIR OWN bill date and net it down, exactly as Tally's bill-wise ageing prints
-  //   them. Lumping them into the On Account line instead (the first cut) left every bar gross and
-  //   disagreed with Tally — checked against ConnectWave on COLORIX DIGITAL PRINTING SOLUTIONS LLP
-  //   08-10-2026: ₹3.97 Cr of dated advances spread over 31–120 days, only the ₹2.39 Cr untagged
-  //   receipts + the undated "Adv" ref (₹0.27 Cr) are true On Account.
   const billDateAging = useMemo(() => {
     const buckets: Record<string, number> = {};
-    let bills = 0;
+    let total = 0, count = 0, earlier = 0, earlierCount = 0;
     for (const inv of invoices) {
-      if (Math.abs(inv.pending) < 0.5) continue;   // settled
-      const k = billAgeKey(inv.date);
-      if (!k) continue;                            // undated → nothing to age it by; rides the bridge
-      buckets[k] = (buckets[k] ?? 0) + inv.pending;
-      bills += inv.pending;
+      const k = billDateKeyOf(inv.date, inv.dueDate, inv.pending);
+      if (k) {
+        buckets[k] = (buckets[k] ?? 0) + inv.pending;
+        total += inv.pending;
+        count += 1;
+      } else if (inv.pending >= 0.5 && inv.date && inv.date < billPeriodFrom && inv.dueDate && inv.dueDate <= asOfDate) {
+        earlier += inv.pending;   // overdue, but invoiced before the period — outside Tally's list
+        earlierCount += 1;
+      }
     }
-    return { buckets, bills };
+    return { buckets, total, count, earlier, earlierCount };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoices, asOfDate]);
-  // Dated bills (net) − ledger. Positive = credit settling no dated bill (untagged On Account
-  // receipts, undated advance refs); negative = ledger balance no dated bill carries (opening-balance
-  // residue, untagged debits). Shown as one line so the card's Total ties to the Outstanding KPI.
-  // Meaningless under a sale-type filter (the ledger has no per-type split — same rule as
-  // agingReport.creditsOfLedger), so it is skipped there.
-  const billDateBridge = effectiveSaleType === "all" && customer
-    ? billDateAging.bills - customer.outstanding
-    : 0;
-  const billDateTotal = billDateAging.bills - billDateBridge;
-  // Debit side of the dated bills alone — the base for the bridge line's share.
-  const billDateGrossPositive = Object.values(billDateAging.buckets).reduce((t, v) => t + Math.max(0, v), 0);
-  // The lens actually in force: with nothing overdue only the Bill Date lens has anything to show.
-  const agingByBillDate = agingBasis === "billDate" || !((customer?.overdue ?? 0) > 0);
+  }, [invoices, asOfDate, billPeriodFrom]);
+  const agingByBillDate = agingBasis === "billDate";
 
   // ── Bill-reference universe (for the "Applied To" classification) ───────────
   // The full set of this customer's invoice/bill numbers across ALL fiscal years.
@@ -1329,7 +1329,7 @@ export default function CustomerDetail() {
       if (agingBucketFilter.size > 0) {
         if (t.kind !== "sales") return false;
         const key = agingByBillDate
-          ? (Math.abs(t.pending ?? 0) >= 0.5 ? billAgeKey(t.date) : null)
+          ? billDateKeyOf(t.date, t.dueDate, t.pending ?? 0)
           : invoiceAgingKey(t.overdueDays ?? 0);
         if (!agingBucketFilter.has(key ?? "")) return false;
       }
@@ -1699,7 +1699,7 @@ export default function CustomerDetail() {
       const aging = buckets
         ? Object.entries(agingLabels)
             .map(([k, label]) => ({
-              bucket: byBillDate ? `Bill age ${label}` : label,
+              bucket: byBillDate ? `Invoice age ${label}` : label,
               amount: Math.round(buckets[k] ?? 0),
             }))
             .filter((a) => a.amount !== 0)
@@ -1707,13 +1707,10 @@ export default function CustomerDetail() {
       // Mirror the on-screen strip: gross buckets, then the deduction, then the net Total —
       // otherwise the sheet's rows would sum to a different figure than the KPI above.
       if (byBillDate) {
-        if (Math.abs(billDateBridge) >= 0.5) {
-          aging.push({
-            bucket: billDateBridge > 0 ? "Less: On Account / advances" : "Add: Not on any bill",
-            amount: -Math.round(billDateBridge),
-          });
-        }
-        aging.push({ bucket: "Total Outstanding", amount: Math.round(billDateTotal) });
+        aging.push({
+          bucket: `Total Overdue (invoices ${formatDateDMY(billPeriodFrom)} to ${formatDateDMY(asOfDate)})`,
+          amount: Math.round(billDateAging.total),
+        });
       } else if (onAccount > 0) {
         aging.push({ bucket: "Less: On Account", amount: -Math.round(onAccount) });
         aging.push({ bucket: "Total Overdue (net)", amount: Math.round(overdueNet) });
@@ -2311,7 +2308,7 @@ export default function CustomerDetail() {
       </Collapsible>
 
       {/* Aging Breakdown — one card, two lenses: Overdue Aging (days past due date) | Bill Date Aging (days since bill date) */}
-      {(customer.overdue > 0 || Object.keys(billDateAging.buckets).length > 0) && (() => {
+      {customer.overdue > 0 && (() => {
         const AGING_BUCKETS = [
           { label: "0–30 days",    key: "0_30",     color: "hsl(142, 71%, 45%)" },
           { label: "31–60 days",   key: "31_60",    color: "hsl(82, 70%, 42%)"  },
@@ -2321,8 +2318,6 @@ export default function CustomerDetail() {
           { label: "180+ days",    key: "180_plus", color: "hsl(var(--destructive))" },
         ] as const;
 
-        // No overdue at all → only the Bill Date lens has anything to show.
-        const hasOverdue = customer.overdue > 0;
         const byBillDate = agingByBillDate;
 
         const switchBasis = (next: "overdue" | "billDate") => {
@@ -2351,17 +2346,13 @@ export default function CustomerDetail() {
         const bucketSource = byBillDate
           ? billDateAging.buckets
           : (customer.agingBuckets as unknown as Record<string, number>);
-        // A Bill Date bucket can net NEGATIVE when its advances outweigh its bills (as in Tally);
-        // those keep their row and bar, coloured as credit.
-        const CREDIT_COLOR = "hsl(152, 60%, 36%)";
-        const agingData = AGING_BUCKETS.map(({ label, key, color }) => {
-          const amount = bucketSource?.[key] ?? 0;
-          return { label, color: amount < 0 ? CREDIT_COLOR : color, amount };
-        }).filter((d) => (byBillDate ? Math.abs(d.amount) >= 0.5 : d.amount > 0));
+        const agingData = AGING_BUCKETS.map(({ label, key, color }) => ({
+          label,
+          color,
+          amount: bucketSource?.[key] ?? 0,
+        })).filter((d) => d.amount > 0);
 
-        // Shares are of the positive (debit) buckets, so a credit bucket cannot push a debit one past 100%.
-        const totalAgingAmt = agingData.reduce((s, d) => s + Math.max(0, d.amount), 0);
-        const hasCreditBucket = agingData.some((d) => d.amount < 0);
+        const totalAgingAmt = agingData.reduce((s, d) => s + d.amount, 0);
 
         return (
           <Collapsible open={agingOpen} onOpenChange={setAgingOpen}>
@@ -2375,7 +2366,7 @@ export default function CustomerDetail() {
                       {byBillDate ? "Bill Date Aging Breakdown" : "Overdue Aging Breakdown"}
                       <span className="text-xs font-normal text-muted-foreground ml-1">
                         {byBillDate
-                          ? <>— every open bill aged from its bill date{asOfDate ? ` to ${formatDateDMY(asOfDate)}` : ""}, advances netted in their own date's bucket (as in Tally){Math.abs(billDateBridge) >= 0.5 ? "; untagged On Account is deducted from the Total" : ""}</>
+                          ? <>— overdue bills invoiced {formatDateDMY(billPeriodFrom)} to {formatDateDMY(asOfDate)}, aged from the invoice date (as Tally's Overdue Bills for the period)</>
                           : <>— invoice-level only; opening balance excluded{onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}</>}
                       </span>
                     </CardTitle>
@@ -2389,17 +2380,13 @@ export default function CustomerDetail() {
                     { id: "billDate", label: "Bill Date Aging" },
                   ] as const).map((o) => {
                     const active = (o.id === "billDate") === byBillDate;
-                    const disabled = o.id === "overdue" && !hasOverdue;
                     return (
                       <button
                         key={o.id}
                         type="button"
-                        disabled={disabled}
-                        title={disabled ? "Nothing is overdue for this customer" : undefined}
                         onClick={() => switchBasis(o.id)}
                         className={`px-3 py-1 rounded-full text-xs font-medium transition-colors
-                          ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}
-                          ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                          ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                       >
                         {o.label}
                       </button>
@@ -2414,7 +2401,6 @@ export default function CustomerDetail() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={agingData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    {hasCreditBucket && <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />}
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
                     <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={fmtL} width={72} />
                     <Tooltip
@@ -2424,7 +2410,7 @@ export default function CustomerDetail() {
                         borderRadius: "var(--radius)",
                         fontSize: 12,
                       }}
-                      formatter={(v: number) => [fmt(v), byBillDate ? "Outstanding" : "Overdue"]}
+                      formatter={(v: number) => [fmt(v), "Overdue"]}
                     />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={72} cursor="pointer"
                       onClick={(entry) => handleBucketClick(AGING_BUCKETS.find((b) => b.label === entry.label)?.key ?? "")}>
@@ -2453,7 +2439,7 @@ export default function CustomerDetail() {
                         <span className="text-xs text-muted-foreground w-24 shrink-0">{d.label}</span>
                         <span className="text-xs font-bold font-mono" style={{ color: d.color }}>{fmt(d.amount)}</span>
                         <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
-                          {totalAgingAmt > 0 && d.amount > 0 ? `${((d.amount / totalAgingAmt) * 100).toFixed(1)}%` : "—"}
+                          {totalAgingAmt > 0 ? `${((d.amount / totalAgingAmt) * 100).toFixed(1)}%` : "—"}
                         </span>
                       </div>
                     );
@@ -2485,37 +2471,27 @@ export default function CustomerDetail() {
                       </span>
                     </div>
                   )}
-                  {/* Bill Date bridge — bills − ledger, so bars ± this line = Total Outstanding.
-                      Positive = credit settling no open bill (On Account / advances); negative =
-                      ledger balance no dated bill carries. */}
-                  {byBillDate && billDateBridge >= 0.5 && (
-                    <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-emerald-50/60 dark:bg-emerald-950/20 border border-dashed border-emerald-600/30">
-                      <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
-                      <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(billDateBridge)}</span>
-                      <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
-                        {billDateGrossPositive > 0 ? `${((billDateBridge / billDateGrossPositive) * 100).toFixed(1)}%` : "—"}
-                      </span>
-                    </div>
-                  )}
-                  {byBillDate && billDateBridge <= -0.5 && (
+                  {/* Bill Date lens: overdue bills invoiced before the period sit outside Tally's list —
+                      named here so the gap to the Overdue tab is never silent. */}
+                  {byBillDate && billDateAging.earlier >= 0.5 && (
                     <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-muted/40 border border-dashed border-muted-foreground/30">
-                      <span className="text-xs text-muted-foreground w-24 shrink-0 italic">Add: Not on bill</span>
-                      <span className="text-xs font-bold font-mono text-muted-foreground">+{fmt(-billDateBridge)}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 italic">
+                        Not included: invoiced before {formatDateDMY(billPeriodFrom)} ({billDateAging.earlierCount} bill{billDateAging.earlierCount === 1 ? "" : "s"})
+                      </span>
+                      <span className="text-xs font-bold font-mono text-muted-foreground">{fmt(billDateAging.earlier)}</span>
                       <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">—</span>
                     </div>
                   )}
                 </div>
                 {/* Right — total */}
                 {byBillDate ? (
-                  <div className="flex items-center justify-center bg-primary/10 border border-primary/20 rounded-input px-6 py-3 shrink-0">
+                  <div className="flex items-center justify-center bg-destructive/10 border border-destructive/20 rounded-input px-6 py-3 shrink-0">
                     <div className="text-center">
-                      <p className="text-[10px] text-primary font-medium uppercase tracking-wide">Total Outstanding</p>
-                      <p className="text-xl font-bold font-mono text-primary mt-1">{fmt(billDateTotal)}</p>
-                      {Math.abs(billDateBridge) >= 0.5 && (
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          bills {fmt(billDateAging.bills)} {billDateBridge > 0 ? "less On Account" : "plus balance not on any bill"}
-                        </p>
-                      )}
+                      <p className="text-[10px] text-destructive font-medium uppercase tracking-wide">Total Overdue</p>
+                      <p className="text-xl font-bold font-mono text-destructive mt-1">{fmt(billDateAging.total)}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {billDateAging.count} bill{billDateAging.count === 1 ? "" : "s"} invoiced {formatDateDMY(billPeriodFrom)} to {formatDateDMY(asOfDate)}
+                      </p>
                     </div>
                   </div>
                 ) : (
@@ -2755,7 +2731,7 @@ export default function CustomerDetail() {
                         setInvoicePage(1);
                       }}
                     >
-                      {agingByBillDate ? "Bill age " : ""}{labels[k] ?? k} <X className="h-3 w-3" />
+                      {agingByBillDate ? "Invoice age " : ""}{labels[k] ?? k} <X className="h-3 w-3" />
                     </Badge>
                   ))}
                   {selected.length > 1 && (
