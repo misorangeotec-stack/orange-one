@@ -15,14 +15,14 @@ import { categoryLabel } from "./PendingByCategory";
  * filters still leave, so picking an item never offers a lot that item does not have.
  */
 
-type ColKey = "due" | "test" | "item" | "lot" | "prod" | "submitted" | "result" | "files" | "status";
+type ColKey = "due" | "test" | "company" | "item" | "lot" | "prod" | "submitted" | "holder" | "result" | "files" | "status";
 
 const filterClass =
   "h-8 w-full min-w-0 rounded-lg border border-line bg-white px-2 text-[12px] text-ink " +
   "focus:outline-none focus:ring-2 focus:ring-orange/25 focus:border-orange/50";
 
 export default function TestTable({
-  rows, flow, today, onOpen, actionLabel, showSubmitted, resetKey,
+  rows, flow, today, onOpen, actionLabel, showSubmitted, showCompany, showHolder, extraAction, resetKey,
 }: {
   rows: FlowTest[];
   flow: FlowData | undefined;
@@ -30,18 +30,28 @@ export default function TestTable({
   onOpen: (t: FlowTest) => void;
   actionLabel: (t: FlowTest) => string;
   showSubmitted?: boolean;
+  /** Closing stock pages: a Company column. */
+  showCompany?: boolean;
+  /** Management review: who the test is with (an assignee, or Management). */
+  showHolder?: boolean;
+  /** A second row button beside the main one — Management review's Reassign. */
+  extraAction?: { label: string; show: (t: FlowTest) => boolean; onClick: (t: FlowTest) => void };
   resetKey: string;
 }) {
   const person = useOrgPersonById();
   const [filters, setFilters] = useState<Partial<Record<ColKey, string[]>>>({});
 
   const filesOf = (t: FlowTest) => (t.record ? flow?.docs.get(t.record.id)?.length ?? 0 : 0);
+  const holderOf = (t: FlowTest) =>
+    t.status !== "submitted" ? "—" : t.record?.assignedTo ? person(t.record.assignedTo)?.name ?? "Someone" : "Management";
 
   /** The text a column filters on — the same text the cell shows. */
   const valueOf = (t: FlowTest, k: ColKey): string => {
     switch (k) {
       case "due": return fmtDate(t.due);
       case "test": return `Test ${t.no}`;
+      case "company": return t.lot.company ?? "Enterprises Surat";
+      case "holder": return holderOf(t);
       case "item": return t.lot.item;
       case "lot": return t.lot.lot;
       case "prod": return fmtDate(t.lot.prod);
@@ -55,10 +65,12 @@ export default function TestTable({
   const cols: { key: ColKey; label: string; sortByDate?: boolean }[] = [
     { key: "due", label: "Due date", sortByDate: true },
     { key: "test", label: "Test" },
+    ...(showCompany ? [{ key: "company" as const, label: "Company" }] : []),
     { key: "item", label: "Stock item" },
     { key: "lot", label: "Lot no." },
-    { key: "prod", label: "Production", sortByDate: true },
+    { key: "prod", label: showCompany ? "Prod. / purchase" : "Production", sortByDate: true },
     ...(showSubmitted ? [{ key: "submitted" as const, label: "Submitted" }] : []),
+    ...(showHolder ? [{ key: "holder" as const, label: "With" }] : []),
     { key: "result", label: "Lab result" },
     { key: "files", label: "Files" },
     { key: "status", label: "Status" },
@@ -126,6 +138,7 @@ export default function TestTable({
                     {late && <div className="text-[11px] text-ryg-red">{daysBetween(t.due, today)} d past due</div>}
                   </td>
                   <td className={td}>Test {t.no}</td>
+                  {showCompany && <td className={`${td} text-grey`}>{t.lot.company ?? "Enterprises Surat"}</td>}
                   <td className={td}>
                     <div className="font-medium text-ink">{t.lot.item}</div>
                     <div className="text-[11px] text-grey">{categoryLabel(t.lot.category)} · {t.lot.family}</div>
@@ -138,6 +151,11 @@ export default function TestTable({
                       <div className="text-[11px] text-grey">{fmtStamp(t.record?.submittedAt ?? null)}</div>
                     </td>
                   )}
+                  {showHolder && (
+                    <td className={td}>
+                      <span className={t.record?.assignedTo && t.status === "submitted" ? "font-semibold text-orange" : "text-grey"}>{holderOf(t)}</span>
+                    </td>
+                  )}
                   <td className={td}>
                     <ResultPill result={t.record?.result} />
                     {t.record?.labPerson && <div className="text-[11px] text-grey">{t.record.labPerson}</div>}
@@ -145,6 +163,13 @@ export default function TestTable({
                   <td className={td}>{files || "—"}</td>
                   <td className={td}><StatusPill status={t.status} /></td>
                   <td className={`${td} text-right`}>
+                    {extraAction?.show(t) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); extraAction.onClick(t); }}
+                        className="mr-2 inline-flex rounded-button border border-orange px-3 py-1.5 text-[12px] font-bold text-orange hover:bg-orange/10">
+                        {extraAction.label}
+                      </button>
+                    )}
                     {actionLabel(t) === "View" ? (
                       <span className="text-[12.5px] font-semibold text-grey hover:text-navy">View →</span>
                     ) : (

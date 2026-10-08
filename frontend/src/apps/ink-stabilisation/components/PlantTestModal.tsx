@@ -10,7 +10,9 @@ import { deleteDoc, FLOW_QUERY, submitTest, type FlowData, type FlowTest, type L
 import { DocList, StatusPill, TestFacts, Trail } from "./FlowParts";
 
 /**
- * STEP 2 · PLANT — open one test, record the lab's verdict, submit to Management.
+ * STEP 2 · PLANT — open one test, record the lab's verdict and submit it.
+ *
+ * APPROVED closes the test on the spot; REJECTED goes to Management (20270113120000).
  *
  * Approve / Reject, the lab person and remarks are required; an attachment is optional.
  * The lab person pre-fills with whoever is logged in, but stays editable — the tech who ran
@@ -90,7 +92,9 @@ export default function PlantTestModal({
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             {editable && (
               <Button onClick={submit} disabled={busy}>
-                {busy ? "Submitting…" : test.status === "submitted" ? "Update submission" : "Submit to Management"}
+                {busy ? "Submitting…"
+                  : result === "approved" ? "Submit & close"
+                  : test.status === "submitted" ? "Update submission" : "Submit to Management"}
               </Button>
             )}
           </div>
@@ -131,6 +135,15 @@ export default function PlantTestModal({
             ))}
           </div>
         </div>
+
+        {editable && result && (
+          <div className={cn("rounded-lg px-3 py-2 text-[12.5px]",
+            result === "approved" ? "bg-ryg-green/10 text-ryg-green" : "bg-ryg-red/10 text-ryg-red")}>
+            {result === "approved"
+              ? "Approved tests close as soon as you submit — they do not go to Management."
+              : "Rejected tests go to Management review, who close it or hand it to someone to audit."}
+          </div>
+        )}
 
         <FieldLabel label="Lab person" required hint="Who ran the test.">
           <TextInput value={labPerson} onChange={(e) => setLabPerson(e.target.value)} readOnly={!editable} placeholder="Name of the lab person" />

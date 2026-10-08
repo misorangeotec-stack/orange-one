@@ -4,8 +4,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { daysBetween, fmtDate, TEST_MONTHS, type InkLot } from "../lib/schedule";
-import { RESULT_LABEL, STATUS_LABEL, testKey, type FlowData, type FlowStatus, type LabResult } from "../lib/flow";
-import { SURAT_GUID } from "../lib/constants";
+import { flowKey, RESULT_LABEL, STATUS_LABEL, type FlowData, type FlowStatus, type LabResult } from "../lib/flow";
 import { ResultPill, StatusPill } from "./FlowParts";
 
 /**
@@ -42,8 +41,7 @@ export default function LabTestView({
 
   const all: Row[] = useMemo(() => lots.map((lot) => {
     const date = lot.tests[no - 1];
-    // Another company's lot (Closing stock page) never borrows Enterprises Surat's flow records.
-    const rec = lot.companyGuid && lot.companyGuid !== SURAT_GUID ? undefined : flow?.tests.get(testKey(lot.item, lot.lot, no));
+    const rec = flow?.tests.get(flowKey(lot.companyGuid, lot.item, lot.lot, no));
     return { lot, date, days: daysBetween(today, date), status: rec?.status ?? "pending", result: rec?.result ?? null };
   }), [lots, no, today, flow]);
 

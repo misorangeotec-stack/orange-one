@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/core/platform/supabase";
 import { SURAT_GUID, fetchInkLots, type InkLot } from "./schedule";
 import { categoryFor, fetchItemCategories, NOT_CATEGORISED } from "./categories";
+import { useClosingStock } from "./closingStock";
 
 // The new tables are not in the generated Database type yet — same escape hatch every FMS uses.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,6 +15,12 @@ const db = supabase as any;
  * 20261217120000 hold only what people did: one `ink_stab_tests` row per test the Plant has
  * submitted. No row = pending. Every write is an RPC, so a status can only move along the
  * path the database allows.
+ *
+ * Since 20270113120000 (asked 08-10-2026):
+ *   - the lab APPROVES → the test closes itself at submit; only a REJECTED test reaches Management;
+ *   - Management CLOSES it or REASSIGNS it to someone to audit — there is no send-back any more;
+ *   - a test may be Otec Surat's (the Closing stock pages). Records are keyed by company, and an
+ *     Enterprises Surat lot's record is SHARED by both groups — one lot, one test (user's choice).
  */
 
 export type FlowStatus = "pending" | "submitted" | "returned" | "closed";
@@ -60,6 +67,12 @@ export interface TestRecord {
   reviewRemarks: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  companyGuid: string;
+  /** Who Management handed this rejected test to for audit (20270113120000). */
+  assignedTo: string | null;
+  assignedBy: string | null;
+  assignedAt: string | null;
+  assignNote: string | null;
 }
 
 export interface TestDoc {
@@ -76,9 +89,12 @@ export interface TestDoc {
 export interface TestActivity {
   id: number;
   testId: string;
-  action: "submitted" | "returned" | "closed";
+  action: "submitted" | "returned" | "closed" | "reassigned";
   remarks: string | null;
+  /** Null on a close the system did itself (lab approved). */
   actor: string | null;
+  /** Reassigned to whom — null = handed back to the review owners. */
+  toUser: string | null;
   createdAt: string;
 }
 
@@ -101,6 +117,13 @@ export interface FlowTest {
 }
 
 export const testKey = (item: string, lot: string, no: number) => `${item}\u0000${lot}\u0000${no}`;
+
+/**
+ * The flow-map key for a test. Enterprises Surat keeps the plain key (so both groups share its
+ * records, and older callers keep working); any other company's key is prefixed with its guid.
+ */
+export const flowKey = (companyGuid: string | null | undefined, item: string, lot: string, no: number) =>
+  !companyGuid || companyGuid === SURAT_GUID ? testKey(item, lot, no) : `${companyGuid}\u0000${testKey(item, lot, no)}`;
 
 /** Postgres "relation does not exist" / PostgREST "table not in schema cache". */
 const isMissingTable = (e: { code?: string; message?: string }) =>
@@ -145,10 +168,12 @@ export async function fetchFlow(): Promise<FlowData> {
       submittedBy: r.submitted_by as string | null, submittedAt: r.submitted_at as string | null,
       reviewRemarks: r.review_remarks as string | null, reviewedBy: r.reviewed_by as string | null,
       reviewedAt: r.reviewed_at as string | null,
+      companyGuid: r.company_guid as string,
+      assignedTo: (r.assigned_to as string | null) ?? null, assignedBy: (r.assigned_by as string | null) ?? null,
+      assignedAt: (r.assigned_at as string | null) ?? null, assignNote: (r.assign_note as string | null) ?? null,
     };
-    if (r.company_guid !== SURAT_GUID) continue;
     byId.set(t.id, t);
-    out.tests.set(testKey(t.stockItem, t.lotNo, t.testNo), t);
+    out.tests.set(flowKey(t.companyGuid, t.stockItem, t.lotNo, t.testNo), t);
   }
   for (const r of docs) {
     const d: TestDoc = {
@@ -162,6 +187,7 @@ export async function fetchFlow(): Promise<FlowData> {
     const a: TestActivity = {
       id: Number(r.id), testId: r.test_id as string, action: r.action as TestActivity["action"],
       remarks: r.remarks as string | null, actor: r.actor as string | null, createdAt: r.created_at as string,
+      toUser: (r.to_user as string | null) ?? null,
     };
     out.activity.set(a.testId, [...(out.activity.get(a.testId) ?? []), a]);
   }
@@ -198,6 +224,31 @@ export function useInkLots(enabled = true) {
   return useQuery({ queryKey: LOTS_QUERY, queryFn: fetchCategorisedLots, staleTime: 10 * 60_000, enabled });
 }
 
+/** Which group a page belongs to: the live production flow, or the Closing stock mirror. */
+export type StabMode = "production" | "stock";
+
+/**
+ * The lots for a group — Enterprises Surat's production, or both Surat companies' closing
+ * stock (only lots with stock today). Only the group's own read runs.
+ */
+export function useStabLots(mode: StabMode) {
+  const stock = mode === "stock";
+  const prod = useInkLots(!stock);
+  const cs = useClosingStock(stock);
+  const q = stock ? cs.q : prod;
+  return {
+    lots: (stock ? cs.q.data?.lots : prod.data) ?? null,
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error,
+    isFetching: q.isFetching,
+    refetch: q.refetch,
+    progress: cs.progress,
+    closing: stock ? cs.q.data ?? null : null,
+    asOf: cs.asOf,
+  };
+}
+
 export function useFlow() {
   return useQuery({
     queryKey: FLOW_QUERY,
@@ -221,13 +272,11 @@ export function inPlantScope(t: FlowTest, month: string, carry: boolean): boolea
 export function joinTests(lots: InkLot[], flow: FlowData | undefined): FlowTest[] {
   const out: FlowTest[] = [];
   for (const lot of lots) {
-    // The flow is Enterprises Surat's: another company's lot never borrows its records, even with
-    // the same item and lot name, and keeps a key of its own (Closing stock page).
-    const other = !!lot.companyGuid && lot.companyGuid !== SURAT_GUID;
+    // Keyed by company: an Otec lot never borrows an Enterprises Surat record of the same name.
     lot.tests.forEach((due, i) => {
       const no = (i + 1) as 1 | 2 | 3;
-      const key = other ? `${lot.companyGuid} ${testKey(lot.item, lot.lot, no)}` : testKey(lot.item, lot.lot, no);
-      const record = other ? null : flow?.tests.get(key) ?? null;
+      const key = flowKey(lot.companyGuid, lot.item, lot.lot, no);
+      const record = flow?.tests.get(key) ?? null;
       out.push({ key, lot, no, due, month: due.slice(0, 7), record, status: record?.status ?? "pending" });
     });
   }
@@ -239,6 +288,17 @@ export function joinTests(lots: InkLot[], flow: FlowData | undefined): FlowTest[
  * admin / listed / nobody listed. The database re-checks on every write; this only
  * decides which buttons to draw.
  */
+/**
+ * May this user close / reassign THIS test? The same rule as public.ink_stab_may_review: an
+ * assigned test is its assignee's (and admins'); otherwise the review step's.
+ */
+export function canReview(t: FlowTest, userId: string, isAdmin: boolean, canEdit: boolean, flow: FlowData | undefined): boolean {
+  if (!canEdit) return false;
+  if (isAdmin) return true;
+  if (t.record?.assignedTo) return t.record.assignedTo === userId;
+  return canAct("review", userId, isAdmin, canEdit, flow);
+}
+
 export function canAct(step: StepKey, userId: string, isAdmin: boolean, canEdit: boolean, flow: FlowData | undefined): boolean {
   if (!canEdit) return false;
   if (isAdmin) return true;
@@ -268,7 +328,7 @@ export interface SubmitInput {
 export async function submitTest(t: FlowTest, input: SubmitInput, files: File[]): Promise<void> {
   const { data, error } = await db.rpc("ink_stab_submit", {
     p: {
-      company_guid: SURAT_GUID, stock_item: t.lot.item, lot_no: t.lot.lot, test_no: t.no,
+      company_guid: t.lot.companyGuid ?? SURAT_GUID, stock_item: t.lot.item, lot_no: t.lot.lot, test_no: t.no,
       due_date: t.due, production_date: t.lot.prod, ink_family: t.lot.family,
       qty: t.lot.qty, uom: t.lot.uom,
       result: input.result, lab_person: input.labPerson, remarks: input.remarks,
@@ -307,8 +367,15 @@ export async function docUrl(path: string): Promise<string> {
   return data.signedUrl;
 }
 
-export async function reviewTest(id: string, action: "close" | "return", remarks: string): Promise<void> {
-  const { error } = await db.rpc("ink_stab_review", { p_id: id, p_action: action, p_remarks: remarks });
+/** Management closes a rejected test (send-back was removed in 20270113120000). */
+export async function closeTest(id: string, remarks: string): Promise<void> {
+  const { error } = await db.rpc("ink_stab_review", { p_id: id, p_action: "close", p_remarks: remarks });
+  if (error) throw new Error(error.message);
+}
+
+/** Hand a rejected test to someone to audit; `to` null hands it back to the review owners. */
+export async function reassignTest(id: string, to: string | null, note: string | null): Promise<void> {
+  const { error } = await db.rpc("ink_stab_reassign", { p_id: id, p_to: to, p_note: note });
   if (error) throw new Error(error.message);
 }
 

@@ -4,7 +4,8 @@
  * A standalone app on the home dashboard, built like Bushra Central Master: the shared
  * AppShell (left menu, header, breadcrumb) and its own routes. Three steps:
  *   1 · Main data          — every lot and its 3 / 6 / 9-month tests, live from ConnectWave
- *       Closing stock      — the same page for the ink Enterprises + Otec Surat hold in Tally today
+ * in two groups — Enterprise Production (the live flow) and Closing Stock (the mirror for
+ * lots in stock today at Enterprises + Otec Surat); see NAV.
  *   2 · Plant testing      — the month's list; remarks + attachment, submit
  *   3 · Management review  — close, or send back to the Plant
  * plus Settings (admins) for who owns steps 2 and 3.
@@ -29,11 +30,25 @@ const ic = {
   schedule: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M8 14h3M8 17h6" /></svg>),
 };
 
+/*
+  TWO GROUPS, same three steps each (asked 08-10-2026):
+    Enterprise Production — the live flow: every lot Enterprises Surat produced.
+    Closing Stock         — a mirror for the lots Enterprises Surat + Otec Surat hold in Tally
+                            today (only stock > 0), with a Company filter on every page.
+  Both share the same test records: an Enterprises Surat lot tested in one shows done in the other.
+  Paths are flat (stock, stock-plant, stock-review) — the sidebar marks a link active for any
+  path BELOW it, so /stock/plant would light up Main data too.
+*/
+const PROD = "Enterprise Production Ink Stabilisation";
+const STOCK = "Closing Stock Ink Stabilisation";
+
 const NAV: NavItem[] = [
-  { label: "1 · Main data", to: `${B}/schedule`, icon: ic.schedule, section: "Retest flow" },
-  { label: "1 · Closing stock", to: `${B}/stock`, icon: ic.stock },
-  { label: "2 · Plant testing", to: `${B}/plant`, icon: ic.plant },
-  { label: "3 · Management review", to: `${B}/review`, icon: ic.review },
+  { label: "1 · Main data", to: `${B}/schedule`, icon: ic.schedule, group: PROD, groupIcon: ic.plant, keepGroup: true },
+  { label: "2 · Plant testing", to: `${B}/plant`, icon: ic.plant, group: PROD },
+  { label: "3 · Management review", to: `${B}/review`, icon: ic.review, group: PROD },
+  { label: "1 · Main data", to: `${B}/stock`, icon: ic.stock, group: STOCK, groupIcon: ic.stock, keepGroup: true },
+  { label: "2 · Plant testing", to: `${B}/stock-plant`, icon: ic.plant, group: STOCK },
+  { label: "3 · Management review", to: `${B}/stock-review`, icon: ic.review, group: STOCK },
   { label: "Settings", to: `${B}/settings`, icon: ic.settings, section: "Administration", roles: ["admin"] },
 ];
 
@@ -56,6 +71,8 @@ export default function InkStabilisationApp() {
         <Route index element={<Navigate to="schedule" replace />} />
         <Route path="schedule" element={<RetestSchedule />} />
         <Route path="stock" element={<RetestSchedule mode="stock" key="stock" />} />
+        <Route path="stock-plant" element={<PlantTesting mode="stock" key="stock" />} />
+        <Route path="stock-review" element={<ManagementReview mode="stock" key="stock" />} />
         <Route path="plant" element={<PlantTesting />} />
         <Route path="review" element={<ManagementReview />} />
         <Route path="settings" element={<Settings />} />

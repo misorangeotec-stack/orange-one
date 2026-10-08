@@ -5,8 +5,9 @@
  *   - PLANT TESTING — a retest due this month (or carried over from an earlier
  *     month since the flow went live) that is not yet submitted, or that
  *     management sent back. Same rule as the Plant page (`inPlantScope`).
- *   - MANAGEMENT REVIEW — a submitted retest waiting to be closed or sent back.
- *     This one is the approval.
+ *   - MANAGEMENT REVIEW — a retest the lab REJECTED, waiting to be closed (approved ones
+ *     close themselves, 20270113120000). This one is the approval. A test Management
+ *     REASSIGNED belongs to its assignee alone (the holder rule of ink_stab_may_review).
  *
  * ⚠ ONLY PEOPLE NAMED ON A STEP GET ITS WORK. The app lets anyone with the edit
  *   grant act on a step that has NO owners listed (`canAct`). Listing every such
@@ -30,6 +31,9 @@ import type { WorkItem } from "../types";
 const SOURCE = "ink-stabilisation";
 const PLANT_HREF = "/ink-stabilisation/plant";
 const REVIEW_HREF = "/ink-stabilisation/review";
+/** Otec Surat tests live only in the Closing stock group. */
+const STOCK_REVIEW_HREF = "/ink-stabilisation/stock-review";
+const SURAT_GUID = "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e";
 
 export function inkStabilisationWorkItems(
   flow: FlowData,
@@ -42,11 +46,13 @@ export function inkStabilisationWorkItems(
   if (!canEdit) return [];
   const isPlant = flow.owners.plant.includes(uid);
   const isReview = flow.owners.review.includes(uid);
-  if (!isPlant && !isReview && !isAdmin) return [];
+  const holdsSome = [...flow.tests.values()].some((t) => t.status === "submitted" && t.assignedTo === uid);
+  if (!isPlant && !isReview && !isAdmin && !holdsSome) return [];
 
   const month = todayLocalIso().slice(0, 7);
   const out: WorkItem[] = [];
-  const item = (step: "plant" | "review", key: string, stockItem: string, lotNo: string, no: number, due: string): WorkItem => ({
+  const item = (step: "plant" | "review", key: string, stockItem: string, lotNo: string, no: number, due: string,
+    mine = step === "plant" ? isPlant : isReview, href?: string): WorkItem => ({
     id: `${SOURCE}:${key}:${step}`,
     source: SOURCE,
     sourceLabel: appName(SOURCE),
@@ -56,16 +62,19 @@ export function inkStabilisationWorkItems(
     // The plant's retest date is the PLANT's deadline. Review has no SLA of its
     // own, and inheriting that date painted almost every review overdue on arrival.
     dueIso: step === "plant" ? due : null,
-    to: step === "plant" ? PLANT_HREF : REVIEW_HREF,
-    assignment: (step === "plant" ? isPlant : isReview) ? "direct" : "team",
+    to: href ?? (step === "plant" ? PLANT_HREF : REVIEW_HREF),
+    assignment: mine ? "direct" : "team",
     isApproval: step === "review",
   });
 
   // Review work needs only the flow rows.
   const records: [string, TestRecord][] = [...flow.tests.entries()];
   for (const [key, t] of records) {
-    if (t.status === "submitted" && (isReview || isAdmin)) {
-      out.push(item("review", key, t.stockItem, t.lotNo, t.testNo, t.dueDate));
+    if (t.status !== "submitted") continue;
+    const mine = t.assignedTo ? t.assignedTo === uid : isReview;
+    if (mine || isAdmin) {
+      out.push(item("review", key, t.stockItem, t.lotNo, t.testNo, t.dueDate, mine,
+        t.companyGuid && t.companyGuid !== SURAT_GUID ? STOCK_REVIEW_HREF : REVIEW_HREF));
     }
   }
 

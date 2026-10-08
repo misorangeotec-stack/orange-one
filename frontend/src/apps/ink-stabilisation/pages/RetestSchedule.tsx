@@ -122,8 +122,9 @@ export default function RetestSchedule({ mode = "production" }: { mode?: "produc
     if (m) setMonth(m);
     requestAnimationFrame(() => registerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
+  const PLANT = `${B}/${stock ? "stock-plant" : "plant"}`;
   const openPlant = (cat: string, test: 1 | 2 | 3 | "all") =>
-    navigate(`${B}/plant?cat=${encodeURIComponent(cat)}&test=${test}`);
+    navigate(`${PLANT}?cat=${encodeURIComponent(cat)}&test=${test}`);
 
   const lots: LotRow[] = useMemo(() => (rawLots ?? []).map((L) => {
     const next = nextTest(L, today);
@@ -322,7 +323,7 @@ export default function RetestSchedule({ mode = "production" }: { mode?: "produc
             <RefreshCw className={cn("mr-1.5 h-4 w-4", q.isFetching && "animate-spin")} />
             {q.isFetching ? (stock && totalReq ? `Reading ${done}/${totalReq}…` : "Loading…") : "Refresh"}
           </Button>
-          <Button size="sm" onClick={() => navigate(`${B}/plant`)}>
+          <Button size="sm" onClick={() => navigate(PLANT)}>
             Go to Plant testing <ArrowRight className="ml-1.5 h-4 w-4" />
           </Button>
         </div>
